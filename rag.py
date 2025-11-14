@@ -10,11 +10,21 @@ from db import get_properties_filtered
 
 config = Config()
 
-embedding_model = SentenceTransformer(config.EMBEDDING_MODEL)
+# Lazy loading para ahorrar memoria en startup
+_embedding_model = None
+
+def get_embedding_model():
+    global _embedding_model
+    if _embedding_model is None:
+        _embedding_model = SentenceTransformer(config.EMBEDDING_MODEL)
+    return _embedding_model
+
+
 EMBEDDING_DIM = config.EMBEDDING_DIM
 
 def embed_text(text: str) -> np.ndarray:
-    return embedding_model.encode(text)
+    model = get_embedding_model()  # Carga solo si se usa
+    return model.encode(text)
 
 # Definiciones globales para expansiones y triggers (evita redefiniciones en cada llamada)
 LOCATIVE_EXPANSIONS = {

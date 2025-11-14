@@ -1,3 +1,4 @@
+"""
 #numpy==2.3.4
 #torch==2.5.0
 #transformers==4.56.1
@@ -16,3 +17,17 @@ numpy==1.26.4  # Baja si 2.3.4 causa issues con Torch
 torch==2.3.1+cpu  # CPU-only: pip install torch --index-url https://download.pytorch.org/whl/cpu
 transformers==4.41.2  # Baja si conflicts con sentence-transformers
 sentence-transformers==3.0.1  # Estable, liviana
+"""
+
+fastapi==0.121.0
+uvicorn[standard]==0.38.0
+requests==2.32.5
+pymongo==4.15.3
+python-dotenv==1.0.1
+scikit-learn==1.5.2  # Baja para compatibilidad con numpy 1.24
+gunicorn==23.0.0
+
+numpy==1.24.4  # Compatible con Python 3.13 y Torch; evita compilación lenta
+torch==2.4.1+cpu  # Versión estable CPU; usa index URL en build
+transformers==4.44.2  # Estable con sentence-transformers
+sentence-transformers==3.1.1  # Liviana, soporta MiniLM

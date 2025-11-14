@@ -98,13 +98,13 @@ async def cleanup_old_queues():
 
 # NUEVO: Timers per-phone (background tasks para buffering temporal)
 phone_timers: Dict[str, asyncio.Task] = {}
-PROCESS_DELAY = 15  # Segundos a esperar después del último mensaje antes de procesar (ampliado a 15s para menos frustración)
+PROCESS_DELAY = 8  # Segundos a esperar después del último mensaje antes de procesar (ampliado a s para menos frustración)
 
 async def schedule_phone_processor(phone: str, q: asyncio.Queue):
     """Background task: Espera PROCESS_DELAY después del último put, luego drena/procesa."""
     last_activity = datetime.now(timezone.utc)
     while True:
-        await asyncio.sleep(PROCESS_DELAY)  # Espera fija (15s ahora)
+        await asyncio.sleep(PROCESS_DELAY)
         now = datetime.now(timezone.utc)
         if (now - last_activity).total_seconds() >= PROCESS_DELAY and not q.empty():
             # Drena y procesa

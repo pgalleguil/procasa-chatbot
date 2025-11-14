@@ -1,0 +1,9 @@
+# Ignorar credenciales sensibles
+.env
+
+# Archivos Python compilados
+*.pyc
+__pycache__/
+
+# Archivos del sistema
+.DS_Store

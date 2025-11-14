@@ -297,6 +297,7 @@ async def webhook(request: Request):
             return JSONResponse(status_code=200, content={"status": "OK", "duplicate": True})
 
         # Encola y resetea timer
+        # Encola y resetea timer
         q = await get_message_queue(phone)
         q._last_used = datetime.now(timezone.utc)
         await q.put({
@@ -307,7 +308,7 @@ async def webhook(request: Request):
         })
         print(f"[QUEUE] Mensaje encolado: '{message}' para {phone} (reseteando timer)")
         
-        await get_or_start_timer(phone, q)  # ← NUEVO: Inicia/reinicia processor
+        get_or_start_timer(phone, q)  # FIX: Sin await – inicia/reinicia processor (sync)
         
         return JSONResponse(status_code=200, content={"status": "OK", "queued": True, "timer_reset": True})
     

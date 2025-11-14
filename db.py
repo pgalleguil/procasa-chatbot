@@ -353,8 +353,9 @@ def get_properties_filtered(criteria: dict, semantic_prefs: str = "", max_docs: 
                         neg_nor["$nor"].append(neg_or)
             if neg_nor["$nor"]:
                 and_conditions.append(neg_nor)
-                print(f"[LOG] Filtro NOR negativas para {[w for pref in negative_prefs for w in re.sub(r'\b(lejos|sin|evitar|del|un|la|de|en|las|los)\b', '', pref).strip().split() if len(w) > 2]}")
-        
+                neg_regex = r'\b(lejos|sin|evitar|del|un|la|de|en|las|los)\b'
+                neg_words = [w for pref in negative_prefs for w in re.sub(neg_regex, '', pref).strip().split() if len(w) > 2]
+                print(f"[LOG] Filtro NOR negativas para {neg_words}")
         # Si >2 prefs, agrega AND genérico para location (opcional, si quieres estricto)
         if len(prefs_list) > 2:
             location_and = {"$and": [{"descripcion": {"$regex": "ubicacion|sector|cerca|proximo", "$options": "i"}}, {"$expr": {"$gt": [{"$strLenCP": "$descripcion"}, 50]}}]}  # Asegura desc detallada

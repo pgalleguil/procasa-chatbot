@@ -98,79 +98,125 @@ async def cleanup_old_queues():
 
 # NUEVO: Timers per-phone (background tasks para buffering temporal)
 phone_timers: Dict[str, asyncio.Task] = {}
-PROCESS_DELAY = 8  # Segundos a esperar después del último mensaje antes de procesar (ampliado a s para menos frustración)
+PROCESS_DELAY = 8  # Segundos a esperar después del último mensaje antes de procesar (ampliado a 15s para menos frustración)
 
 async def schedule_phone_processor(phone: str, q: asyncio.Queue):
     """Background task: Espera PROCESS_DELAY después del último put, luego drena/procesa."""
     last_activity = datetime.now(timezone.utc)
     while True:
-        await asyncio.sleep(PROCESS_DELAY)
+        await asyncio.sleep(PROCESS_DELAY)  # Espera fija (15s ahora)
         now = datetime.now(timezone.utc)
         if (now - last_activity).total_seconds() >= PROCESS_DELAY and not q.empty():
             # Drena y procesa
             lock = await get_phone_lock(phone)
             async with lock:
-                try:  # FIX: Try/except para capturar crashes silenciosos (DB, Grok, etc.)
-                    lock._last_used = now
-                    logger.info(f"[TIMER] Procesando queue para {phone} después de {PROCESS_DELAY}s inactividad")
-                    
-                    pending_messages = []
-                    while not q.empty():
-                        pending = await q.get()
-                        msg_content = pending["message"].strip().lower()
-                        # NUEVO: Filtra ruido (cortos/fillers comunes en WhatsApp)
-                        if len(msg_content) > 1 and msg_content not in ['.', '..', ' ', 'ok', 'sip', 'si', 'no', 'ja']:
-                            pending_messages.append(pending)
-                    
-                    if not pending_messages:
-                        logger.info(f"[TIMER] Queue vacía después de filtro para {phone}")
-                        continue  # Ignora queues solo con ruido
-                    
-                    # Carga history
-                    history = load_chat_history(phone)
-                    if len(history) == 0:
-                        history = initialize_feedback_history(phone)
-                        print(f"[LOG] No hay historial previo para {phone}. Iniciando nuevo.")
-                    
-                    # NUEVO: Maneja merge inteligente
-                    if len(pending_messages) > 1:
-                        # Extrae contenidos válidos
-                        valid_contents = [pm["message"] for pm in pending_messages]
-                        merged_message = " ".join(valid_contents)
-                        print(f"[QUEUE] Procesando merged (filtrado): '{merged_message[:50]}...' ({len(pending_messages)} válidos)")
-                        # Procesa con merged
-                        success = process_message(phone, merged_message, history=history)
-                    else:
-                        # Single message
-                        pending = pending_messages[0]
-                        success = process_message(phone, pending["message"], history=history, extras=pending.get("extras", {}))
-                    
-                    if success:
-                        save_chat_history(phone, history)
-                        print(f"[LOG] Historial guardado para {phone} (timer liberado).")
-                    else:
-                        print(f"[LOG] Process falló para {phone} - no guardado.")
-                    
-                    logger.info(f"[TIMER] Procesamiento completado para {phone}")  # FIX: Log de éxito
-                except Exception as e:  # FIX: Catch y log error detallado
-                    logger.error(f"[TIMER] CRASH en {phone}: {str(e)} - Type: {type(e).__name__} - Traceback: {e.__traceback__}")
-                    print(f"[TIMER] Fallback: Enviando respuesta simple por crash en {phone}")
-                    # Opcional: Envío fallback (comenta si no tienes el import de apichat)
-                    # try:
-                    #     from apichat import send_response
-                    #     send_response(phone, "¡Ups! Error técnico. 😅 Estoy reconectando – ¿qué te interesaba de la propiedad?", msg_id="fallback_timer")
-                    # except ImportError:
-                    #     print("[TIMER] No se pudo enviar fallback (apichat no importado)")
+                lock._last_used = now
+                logger.info(f"[TIMER] Procesando queue para {phone} después de {PROCESS_DELAY}s inactividad")
                 
-                logger.info(f"[TIMER] Lock liberado para {phone}")
-        else:
-            # Actualiza last_activity si no procesa (pero solo si queue no vacía? No, siempre para reset)
-            last_activity = now
-            logger.debug(f"[TIMER] Esperando actividad en {phone}")
-    
-    # FIX: El while True maneja el loop; no necesita return aquí
+                pending_messages = []
+                while not q.empty():
+                    pending = await q.get()
+                    msg_content = pending["message"].strip().lower()
+                    # NUEVO: Filtra ruido (cortos/fillers comunes en WhatsApp)
+                    if len(msg_content) > 1 and msg_content not in ['.', '..', ' ', 'ok', 'sip', 'si', 'no', 'ja']:
+                        pending_messages.append(pending)
+                
+                if not pending_messages:
+                    continue  # Ignora queues solo con ruido
+                
+                # Carga history
+                history = load_chat_history(phone)
+                if len(history) == 0:
+                    history = initialize_feedback_history(phone)
+                
+                # NUEVO: Maneja merge inteligente
+                if len(pending_messages) > 1:
+                    # Extrae contenidos válidos
+                    valid_contents = [pm["message"] for pm in pending_messages]
+                    # Chequea si último es "refuerzo" (e.g., "por favor" → no merge, solo boost urgency después)
+                    last_msg = pending_messages[-1]["message"].strip().lower()
+                    if last_msg in ['por favor', 'plis', 'gracias', 'ok?']:
+                        merged_content = valid_contents[-2] if len(valid_contents) > 1 else valid_contents[0]  # Usa penúltimo como main
+                        extras = {"urgency_boost": True, **pending_messages[-1]["extras"]}  # Flag para urgency="alta" en process_message
+                        print(f"[QUEUE] Refuerzo detectado ('{last_msg}'), usando main: '{merged_content[:50]}...' ({len(pending_messages)} totales)")
+                    else:
+                        # Merge solo últimos 2 para chains cortas
+                        merged_content = ' '.join(valid_contents[-2:])
+                        extras = pending_messages[-1]["extras"]
+                        print(f"[QUEUE] Procesando merged (filtrado): '{merged_content[:50]}...' ({len(pending_messages)} válidos)")
+                    is_active = process_message(phone, merged_content, history=history, extras=extras)
+                else:
+                    pm = pending_messages[0]
+                    is_active = process_message(phone, pm["message"], history=history, extras=pm["extras"])
+                
+                # Response
+                response = ""
+                if history and history[-1]["role"] == "assistant":
+                    response = history[-1]["content"]
+                else:
+                    response = "¿En qué puedo ayudarte con propiedades?"
 
-# FIX: Versión robusta de normalize_timestamp (maneja str, datetime, unix, etc.)
+                # NUEVO: Guard final contra None/empty antes de enviar
+                if not response or response.strip() == "" or response == "None":
+                    response = "Estoy aquí para ayudarte con propiedades en Procasa. ¿Qué buscas hoy? 😊"
+                    logger.warning(f"[WEBHOOK] Response era inválida para {phone}; usando default.")
+
+                save_chat_history(phone, history)
+                logger.info(f"[WEBHOOK] Historial guardado para {phone} (timer liberado).")
+
+                # NUEVO: Validación antes de enviar - Chequea si llegó algo nuevo en la cola
+                # Loop rápido (1s x 3 = 3s max) para no bloquear, pero detectar arrivals recientes
+                abort_send = False
+                for _ in range(3):  # Chequea 3 veces con 1s delay
+                    if not q.empty():
+                        logger.info(f"[VALIDATION] Mensaje nuevo detectado en cola para {phone}; abortando envío para merge.")
+                        abort_send = True
+                        # Reinicia timer inmediatamente
+                        await get_or_start_timer(phone, q)
+                        break
+                    await asyncio.sleep(1)  # Espera 1s antes del próximo chequeo
+                
+                if abort_send:
+                    continue  # Salta el envío y deja que el timer maneje el nuevo batch
+                
+                # Envío (solo si no abortó)
+                number = phone[1:] if phone.startswith('+') else phone
+                send_url = f"{config.APICHAT_BASE_URL}/sendText"
+                send_data = {'number': number, 'text': response}
+                headers = {
+                    'client-id': str(config.APICHAT_CLIENT_ID),
+                    'token': config.APICHAT_TOKEN,
+                    'accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+                send_resp = requests.post(send_url, json=send_data, headers=headers, timeout=config.APICHAT_TIMEOUT)
+                
+                if send_resp.status_code != 200:
+                    error_text = send_resp.text if send_resp.text else "Empty response body"
+                    logger.error(f"[WEBHOOK] Error enviando response: {send_resp.status_code} - {error_text}")
+                    raise HTTPException(status_code=500, detail="Error sending response")
+                
+                logger.info(f"[WEBHOOK] Response enviada a {phone}: {response[:100]}... (msg_id: {send_resp.json().get('id', 'N/A')})")
+        
+        # Actualiza last_activity si hay actividad
+        if not q.empty():
+            last_activity = datetime.now(timezone.utc)
+            await asyncio.sleep(0.5)  # Polling ligero
+
+async def get_or_start_timer(phone: str, q: asyncio.Queue):
+    """Inicia/reinicia timer per-phone si no existe."""
+    if phone not in phone_timers:
+        task = asyncio.create_task(schedule_phone_processor(phone, q))
+        phone_timers[phone] = task
+        logger.info(f"[TIMER] Iniciado processor para {phone}")
+    # Reinicia: Cancela y recrea para resetear 'last_activity' implícito
+    else:
+        phone_timers[phone].cancel()
+        new_task = asyncio.create_task(schedule_phone_processor(phone, q))
+        phone_timers[phone] = new_task
+        logger.info(f"[TIMER] Reiniciado processor para {phone}")
+
+# FIX: Versión robusta de normalize_timestamp (maneja str, datetime, unix)
 def normalize_timestamp(ts):
     if ts is None:
         return None
@@ -193,32 +239,15 @@ def normalize_timestamp(ts):
     
     return None
 
-def get_or_start_timer(phone: str, q: asyncio.Queue):
-    """Obtiene o inicia el timer para phone. FIX: Maneja reinicio correctamente."""
-    if phone not in phone_timers or phone_timers[phone].done():
-        if phone in phone_timers:
-            phone_timers[phone].cancel()
-        task = asyncio.create_task(schedule_phone_processor(phone, q))
-        phone_timers[phone] = task
-        logger.info(f"[TIMER] Iniciado processor para {phone}")
-    else:
-        # Reinicia: Cancela y recrea para resetear last_activity
-        phone_timers[phone].cancel()
-        new_task = asyncio.create_task(schedule_phone_processor(phone, q))
-        phone_timers[phone] = new_task
-        logger.info(f"[TIMER] Reiniciado processor para {phone}")
-
-# FIX: Lifespan anti-deprecation
-@asynccontextmanager
+@asynccontextmanager  # ← FIX: Lifespan anti-deprecation
 async def lifespan(app: FastAPI):
     # Startup
     asyncio.create_task(cleanup_old_locks())
     asyncio.create_task(cleanup_old_queues())
     yield
     # Shutdown: Limpia timers
-    for task in list(phone_timers.values()):
-        if not task.done():
-            task.cancel()
+    for task in phone_timers.values():
+        task.cancel()
     phone_timers.clear()
 
 app.router.lifespan_context = lifespan  # Asigna al router
@@ -297,7 +326,6 @@ async def webhook(request: Request):
             return JSONResponse(status_code=200, content={"status": "OK", "duplicate": True})
 
         # Encola y resetea timer
-        # Encola y resetea timer
         q = await get_message_queue(phone)
         q._last_used = datetime.now(timezone.utc)
         await q.put({
@@ -308,7 +336,7 @@ async def webhook(request: Request):
         })
         print(f"[QUEUE] Mensaje encolado: '{message}' para {phone} (reseteando timer)")
         
-        get_or_start_timer(phone, q)  # FIX: Sin await – inicia/reinicia processor (sync)
+        await get_or_start_timer(phone, q)  # ← NUEVO: Inicia/reinicia processor
         
         return JSONResponse(status_code=200, content={"status": "OK", "queued": True, "timer_reset": True})
     

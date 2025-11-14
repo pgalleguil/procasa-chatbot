@@ -3,28 +3,35 @@
 
 import numpy as np
 import re  # Agregado para split de prefs múltiples
+import torch  # Para no_grad
+import threading  # Para lock en modelo
 from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics.pairwise import cosine_similarity  # Mantengo por fallback, pero uso dot
 from config import Config
 from db import get_properties_filtered
+import gc  # Para cleanup explícito
 
 config = Config()
 
-# Lazy loading para ahorrar memoria en startup
+# Lazy loading robusto para ahorrar memoria en startup
 _embedding_model = None
+_model_lock = threading.Lock()
 
 def get_embedding_model():
     global _embedding_model
-    if _embedding_model is None:
-        _embedding_model = SentenceTransformer(config.EMBEDDING_MODEL)
-    return _embedding_model
-
+    with _model_lock:
+        if _embedding_model is None:
+            print("[MODEL] Cargando SentenceTransformer (solo una vez)...")
+            _embedding_model = SentenceTransformer(config.EMBEDDING_MODEL, device='cpu')
+        return _embedding_model
 
 EMBEDDING_DIM = config.EMBEDDING_DIM
 
 def embed_text(text: str) -> np.ndarray:
     model = get_embedding_model()  # Carga solo si se usa
-    return model.encode(text)
+    with torch.no_grad():  # Evita gradientes (ahorra ~10-20% RAM)
+        emb = model.encode([text], batch_size=1, show_progress_bar=False, convert_to_tensor=False)
+    return np.array(emb[0])  # A np directamente
 
 # Definiciones globales para expansiones y triggers (evita redefiniciones en cada llamada)
 LOCATIVE_EXPANSIONS = {
@@ -86,8 +93,8 @@ def hybrid_semantic_search(properties: list, semantic_query: str, top_k: int = c
     prefs_list = [p.strip() for p in prefs_list if p.strip()]
     print(f"[LOG] Prefs split: {prefs_list}")
     
-    # Combina expansiones para query final (positivas + negativas)
-    combined_query = semantic_query  # Base
+    # Construye combined_query completo ANTES de embed
+    combined_query = semantic_query.lower()  # Base en lower
     for pref in prefs_list:
         # Lógica por pref (llama detección para cada uno)
         sub_key = None
@@ -103,34 +110,32 @@ def hybrid_semantic_search(properties: list, semantic_query: str, top_k: int = c
             combined_query += " " + sub_exp
             print(f"[LOG] Sub-expansión para '{pref}': '{sub_exp}' (neg: {sub_is_neg})")
     
-    query_emb = embed_text(combined_query.lower())
-    semantic_query = combined_query  # Usa combinada para final
-    
-    # Lógica de detección (simple)
+    # Lógica de detección EN combined_query (ya expandida)
     is_locative = False
     expansion_key = None
-    is_negative = any(phrase in semantic_query.lower() for phrase in ['lejos de', 'sin cerca', 'evitar', 'alejado'])
+    is_negative = any(phrase in combined_query for phrase in ['lejos de', 'sin cerca', 'evitar', 'alejado'])
     for key, words in LOCATIVE_TRIGGERS.items():
-        if any(word in semantic_query.lower() for word in words):
+        if any(word in combined_query for word in words):
             is_locative = True
             base_key = key.replace('neg_', '')
             expansion_key = key if is_negative and key.startswith('neg_') else (f'neg_{base_key}' if is_negative else base_key)
             break
     
+    semantic_query_final = combined_query  # Ya es la expandida/base
+    threshold = config.SEMANTIC_THRESHOLD_BASE
+    weights = config.WEIGHTS
+    
     if is_locative:
         expanded_query = LOCATIVE_EXPANSIONS.get(expansion_key, "propiedades con ubicación ideal en entornos tranquilos y convenientes")  # Fallback genérico
         if is_negative and not expansion_key.startswith('neg_'):
             expanded_query = expanded_query.replace('cerca de', 'alejada de').replace('proximidad a', 'distancia de').replace('a pasos de', 'lejos de')  # Flip simple
-            print(f"[LOG] Flip NEGATIVO aplicado: '{expanded_query}' para '{semantic_query}'")
+            print(f"[LOG] Flip NEGATIVO aplicado: '{expanded_query}' para '{combined_query}'")
         
-        semantic_query = expanded_query
-        query_emb = embed_text(semantic_query.lower())
+        semantic_query_final = expanded_query
         threshold = 0.35 if is_negative else (0.25 if len(properties) > 10 else 0.2)
         weights = [0.7 if is_negative else 0.6, 0.15, 0.15, 0.1]  # Más desc para neg (tranquilidad)
         print(f"[LOG] Expansión {'NEGATIVA' if is_negative else 'positiva'} para '{expansion_key}': '{expanded_query}' (threshold={threshold})")
     else:
-        weights = config.WEIGHTS
-        threshold = config.SEMANTIC_THRESHOLD_BASE
         if semantic_query:
             threshold = 0.15 if 'piscina' in semantic_query.lower() else 0.05  # Original
             initial_pass = len([p for p in properties if p.get('boost_score', 0) > 0])
@@ -140,24 +145,40 @@ def hybrid_semantic_search(properties: list, semantic_query: str, top_k: int = c
                 threshold *= 0.5
             print(f"[LOG] Threshold ajustado para '{semantic_query}': {threshold} (set size: {len(properties)}, initial_pass: {initial_pass})")
     
+    # UN SOLO EMBED: Para la query final
+    query_emb = embed_text(semantic_query_final)
+    query_emb = query_emb / np.linalg.norm(query_emb)  # Normaliza una vez para dot products
+    
+    semantic_query = semantic_query_final  # Para logs
+    
     sucre_props = [p for p in properties if p.get('oficina', '') == config.PRIORITY_OFICINA]
     other_props = [p for p in properties if p.get('oficina', '') != config.PRIORITY_OFICINA]
     
     print(f"[LOG] Props SUCRE: {len(sucre_props)}, Otras: {len(other_props)}")
     
-    # Scores SUCRE
+    # Scores SUCRE con dot manual (eficiente)
     weights = weights[:4] if len(weights) > 4 else weights + [0.0] * (4 - len(weights))  # Asegura 4 pesos
     sucre_scores = []
     for prop in sucre_props:
-        desc_emb = np.array(prop.get('vector_descripción', [0]*EMBEDDING_DIM)) if prop.get('vector_descripción') else np.zeros(EMBEDDING_DIM)
-        imgs_emb = np.array(prop.get('vector_images', [0]*EMBEDDING_DIM)) if prop.get('vector_images') else np.zeros(EMBEDDING_DIM)
-        amens_emb = np.array(prop.get('vector_amenities', [0]*EMBEDDING_DIM)) if prop.get('vector_amenities') else np.zeros(EMBEDDING_DIM)
-        desc_clean_emb = np.array(prop.get('vector_descripcion_clean', [0]*EMBEDDING_DIM)) if prop.get('vector_descripcion_clean') else np.zeros(EMBEDDING_DIM)
+        desc_emb = np.array(prop.get('vector_descripción', [0]*EMBEDDING_DIM))
+        if np.linalg.norm(desc_emb) > 0:
+            desc_emb = desc_emb / np.linalg.norm(desc_emb)
+        sim_desc = np.dot(query_emb, desc_emb)
         
-        sim_desc = cosine_similarity([query_emb], [desc_emb])[0][0]
-        sim_imgs = cosine_similarity([query_emb], [imgs_emb])[0][0]
-        sim_amens = cosine_similarity([query_emb], [amens_emb])[0][0]
-        sim_desc_clean = cosine_similarity([query_emb], [desc_clean_emb])[0][0]
+        imgs_emb = np.array(prop.get('vector_images', [0]*EMBEDDING_DIM))
+        if np.linalg.norm(imgs_emb) > 0:
+            imgs_emb = imgs_emb / np.linalg.norm(imgs_emb)
+        sim_imgs = np.dot(query_emb, imgs_emb)
+        
+        amens_emb = np.array(prop.get('vector_amenities', [0]*EMBEDDING_DIM))
+        if np.linalg.norm(amens_emb) > 0:
+            amens_emb = amens_emb / np.linalg.norm(amens_emb)
+        sim_amens = np.dot(query_emb, amens_emb)
+        
+        desc_clean_emb = np.array(prop.get('vector_descripcion_clean', [0]*EMBEDDING_DIM))
+        if np.linalg.norm(desc_clean_emb) > 0:
+            desc_clean_emb = desc_clean_emb / np.linalg.norm(desc_clean_emb)
+        sim_desc_clean = np.dot(query_emb, desc_clean_emb)
         
         semantic_score = (weights[0] * sim_desc + weights[1] * sim_imgs + weights[2] * sim_amens + weights[3] * sim_desc_clean)
         hybrid_score = config.HYBRID_WEIGHT * semantic_score + (1 - config.HYBRID_WEIGHT) * prop.get('boost_score', 0)
@@ -165,19 +186,32 @@ def hybrid_semantic_search(properties: list, semantic_query: str, top_k: int = c
         sucre_scores.append((prop, hybrid_score, sim_amens))
         if len(sucre_scores) <= 2:
             print(f"[LOG] SUCRE Prop {prop.get('codigo', 'N/A')} scores: desc={sim_desc:.3f}, imgs={sim_imgs:.3f}, amens={sim_amens:.3f}, desc_clean={sim_desc_clean:.3f}, hybrid={hybrid_score:.3f}")
+        
+        # Cleanup explícito
+        del desc_emb, imgs_emb, amens_emb, desc_clean_emb
     
     # Scores otras (mismo para other_props)
     other_scores = []
     for prop in other_props:
-        desc_emb = np.array(prop.get('vector_descripción', [0]*EMBEDDING_DIM)) if prop.get('vector_descripción') else np.zeros(EMBEDDING_DIM)
-        imgs_emb = np.array(prop.get('vector_images', [0]*EMBEDDING_DIM)) if prop.get('vector_images') else np.zeros(EMBEDDING_DIM)
-        amens_emb = np.array(prop.get('vector_amenities', [0]*EMBEDDING_DIM)) if prop.get('vector_amenities') else np.zeros(EMBEDDING_DIM)
-        desc_clean_emb = np.array(prop.get('vector_descripcion_clean', [0]*EMBEDDING_DIM)) if prop.get('vector_descripcion_clean') else np.zeros(EMBEDDING_DIM)
+        desc_emb = np.array(prop.get('vector_descripción', [0]*EMBEDDING_DIM))
+        if np.linalg.norm(desc_emb) > 0:
+            desc_emb = desc_emb / np.linalg.norm(desc_emb)
+        sim_desc = np.dot(query_emb, desc_emb)
         
-        sim_desc = cosine_similarity([query_emb], [desc_emb])[0][0]
-        sim_imgs = cosine_similarity([query_emb], [imgs_emb])[0][0]
-        sim_amens = cosine_similarity([query_emb], [amens_emb])[0][0]
-        sim_desc_clean = cosine_similarity([query_emb], [desc_clean_emb])[0][0]
+        imgs_emb = np.array(prop.get('vector_images', [0]*EMBEDDING_DIM))
+        if np.linalg.norm(imgs_emb) > 0:
+            imgs_emb = imgs_emb / np.linalg.norm(imgs_emb)
+        sim_imgs = np.dot(query_emb, imgs_emb)
+        
+        amens_emb = np.array(prop.get('vector_amenities', [0]*EMBEDDING_DIM))
+        if np.linalg.norm(amens_emb) > 0:
+            amens_emb = amens_emb / np.linalg.norm(amens_emb)
+        sim_amens = np.dot(query_emb, amens_emb)
+        
+        desc_clean_emb = np.array(prop.get('vector_descripcion_clean', [0]*EMBEDDING_DIM))
+        if np.linalg.norm(desc_clean_emb) > 0:
+            desc_clean_emb = desc_clean_emb / np.linalg.norm(desc_clean_emb)
+        sim_desc_clean = np.dot(query_emb, desc_clean_emb)
         
         semantic_score = (weights[0] * sim_desc + weights[1] * sim_imgs + weights[2] * sim_amens + weights[3] * sim_desc_clean)
         hybrid_score = config.HYBRID_WEIGHT * semantic_score + (1 - config.HYBRID_WEIGHT) * prop.get('boost_score', 0)
@@ -185,6 +219,9 @@ def hybrid_semantic_search(properties: list, semantic_query: str, top_k: int = c
         other_scores.append((prop, hybrid_score, sim_amens))
         if len(other_scores) <= 3:
             print(f"[LOG] OTRA Prop {prop.get('codigo', 'N/A')} scores: desc={sim_desc:.3f}, imgs={sim_imgs:.3f}, amens={sim_amens:.3f}, desc_clean={sim_desc_clean:.3f}, hybrid={hybrid_score:.3f}")
+        
+        # Cleanup explícito
+        del desc_emb, imgs_emb, amens_emb, desc_clean_emb
     
     ranked_sucre = sorted(sucre_scores, key=lambda x: x[1], reverse=True)
     ranked_other = sorted(other_scores, key=lambda x: x[1], reverse=True)
@@ -213,8 +250,9 @@ def hybrid_semantic_search(properties: list, semantic_query: str, top_k: int = c
     
     # MEJORA: Fallback si < top_k (e.g., solo 2 pasan)
     if len(top_properties) < top_k and properties:
+        seen_codes = {p['codigo'] for p in top_properties}  # Set para O(1)
         remaining_k = top_k - len(top_properties)
-        fallback_props = sorted([p for p in properties if p not in top_properties], key=lambda p: p.get('boost_score', 0), reverse=True)[:remaining_k]
+        fallback_props = [p for p in properties if p['codigo'] not in seen_codes][:remaining_k]
         top_properties.extend(fallback_props)
         print(f"[LOG] Fallback agregado: {len(fallback_props)} props para llegar a {top_k}.")
     
@@ -224,10 +262,15 @@ def hybrid_semantic_search(properties: list, semantic_query: str, top_k: int = c
         top_properties = sorted(properties, key=lambda p: p.get('boost_score', 0), reverse=True)[:top_k]
     
     print(f"[LOG] Búsqueda semántica: {len(top_properties)} propiedades top para query '{semantic_query}' (threshold {threshold}). Prioridad: SUCRE primero.")
+    
+    # Cleanup final
+    gc.collect()
+    
     return top_properties
 
 def search_properties(criteria: dict, semantic_prefs: str = "") -> list:
     # FIX PRINCIPAL: Pasa semantic_prefs al filtrado DB para aplicar keyword PRE-semántica
     filtered_props = get_properties_filtered(criteria, semantic_prefs=semantic_prefs)
     top_props = hybrid_semantic_search(filtered_props, semantic_prefs)
+    gc.collect()  # Cleanup post-search
     return top_props

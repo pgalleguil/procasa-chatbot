@@ -72,9 +72,3 @@ if config.GROK_BASE_URL is None:
     print("⚠️ WARNING: GROK_BASE_URL missing in .env")
 if config.GROK_TEMPERATURE is None:
     print("⚠️ WARNING: GROK_TEMPERATURE missing in .env")
-
-import logging
-logger = logging.getLogger(__name__)
-print(f"[CONFIG] MONGO_URI: {'SET' if config.MONGO_URI else 'MISSING'}")
-print(f"[CONFIG] XAI_API_KEY: {'SET' if config.XAI_API_KEY else 'MISSING'}")
-print(f"[CONFIG] APICHAT_TOKEN: {'SET' if config.APICHAT_TOKEN else 'MISSING'}")

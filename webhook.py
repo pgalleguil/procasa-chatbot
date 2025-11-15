@@ -104,7 +104,7 @@ async def schedule_phone_processor(phone: str, q: asyncio.Queue):
     """Background task: Espera PROCESS_DELAY después del último put, luego drena/procesa."""
     last_activity = datetime.now(timezone.utc)
     while True:
-        await asyncio.sleep(PROCESS_DELAY)  # Espera fija (15s ahora)
+        await asyncio.sleep(PROCESS_DELAY)  # Espera fija (8s ahora)
         now = datetime.now(timezone.utc)
         if (now - last_activity).total_seconds() >= PROCESS_DELAY and not q.empty():
             # Drena y procesa
@@ -164,22 +164,7 @@ async def schedule_phone_processor(phone: str, q: asyncio.Queue):
                 save_chat_history(phone, history)
                 logger.info(f"[WEBHOOK] Historial guardado para {phone} (timer liberado).")
 
-                # NUEVO: Validación antes de enviar - Chequea si llegó algo nuevo en la cola
-                # Loop rápido (1s x 3 = 3s max) para no bloquear, pero detectar arrivals recientes
-                abort_send = False
-                for _ in range(3):  # Chequea 3 veces con 1s delay
-                    if not q.empty():
-                        logger.info(f"[VALIDATION] Mensaje nuevo detectado en cola para {phone}; abortando envío para merge.")
-                        abort_send = True
-                        # Reinicia timer inmediatamente
-                        await get_or_start_timer(phone, q)
-                        break
-                    await asyncio.sleep(1)  # Espera 1s antes del próximo chequeo
-                
-                if abort_send:
-                    continue  # Salta el envío y deja que el timer maneje el nuevo batch
-                
-                # Envío (solo si no abortó)
+                # FIX: Envío SIEMPRE después de merge/guardado (sin validation loop para evitar skips en bursts)
                 number = phone[1:] if phone.startswith('+') else phone
                 send_url = f"{config.APICHAT_BASE_URL}/sendText"
                 send_data = {'number': number, 'text': response}

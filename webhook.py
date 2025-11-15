@@ -117,8 +117,8 @@ async def schedule_phone_processor(phone: str, q: asyncio.Queue):
                 while not q.empty():
                     pending = await q.get()
                     msg_content = pending["message"].strip().lower()
-                    # NUEVO: Filtra ruido (cortos/fillers comunes en WhatsApp)
-                    if len(msg_content) > 1 and msg_content not in ['.', '..', ' ', 'ok', 'sip', 'si', 'no', 'ja']:
+                    # FIX: Cambia >1 a >=1 para procesar cortos como "?" (nudge común), sin filtrar ruido listado
+                    if len(msg_content) >= 1 and msg_content not in ['.', '..', ' ', 'ok', 'sip', 'si', 'no', 'ja']:
                         pending_messages.append(pending)
                 
                 if not pending_messages:

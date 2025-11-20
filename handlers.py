@@ -448,7 +448,13 @@ def handle_continue(phone: str, user_msg: str, history: List[Dict[str, Any]], ti
         if not criteria.get("tipo"): faltan.append("¿casa, depto, oficina, local?")
         if not criteria.get("comuna"): faltan.append("¿en qué comuna(s)? (puedes decir varias)")
 
-        respuesta = f"¡Perfecto! Ya casi estamos 😊\nSolo me falta saber:\n• {'\n• '.join(faltan)}\n¡Y te muestro lo mejor al tiro!"
+        #respuesta = f"¡Perfecto! Ya casi estamos 😊\nSolo me falta saber:\n• {'\n• '.join(faltan)}\n¡Y te muestro lo mejor al tiro!"
+        respuesta = (
+    "¡Perfecto! Ya casi estamos 😊\n"
+    "Solo me falta saber:\n"
+    "• " + "\n• ".join(faltan) + "\n"
+    "¡Y te muestro lo mejor al tiro!"
+)
 
     # Guardar conversación
     metadata = {"intention": "continue", "action": "propiedades_ofrecidas" if tiene_todos else "recoleccion"}

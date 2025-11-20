@@ -6,4 +6,29 @@
 __pycache__/
 
 # Archivos del sistema
+.DS_Store# Ignorar credenciales sensibles
+.env
+
+# Archivos Python compilados
+*.pyc
+__pycache__/
+
+# Scripts de migración y campañas masivas
+migracion_campos_numericos.py
+migracion_campos_numericos_segura.py
+outreach_propietarios.py
+
+# Scripts de prueba o locales (opcional, pero recomendado)
+test_*.py
+debug_*.py
+pruebas_*.py
+simular_*.py
+
+# Carpetas temporales
+temp/
+tmp/
+__temp__/
+
+# Archivos del sistema
 .DS_Store
+Thumbs.db

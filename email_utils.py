@@ -1,3 +1,9 @@
+# email_utils.py
+# Versión corregida de email_utils.py: FIX principal: Remover server.quit() redundante en try.
+# Mover quit() SOLO a finally (después de send). En except SMTPDataError, recrea server para fallback.
+# Esto evita "SMTPServerDisconnected" al intentar quit() en server ya desconectado.
+# Resto sin cambios (mantiene tu HTML moderno, etc.).
+
 import os
 import smtplib
 from email.mime.text import MIMEText
@@ -314,6 +320,7 @@ def send_gmail_alert(phone: str, lead_type: str, lead_score: int, criteria: dict
     </html>
     """
 
+    server = None  # Inicializa fuera para finally
     try:
         msg = MIMEMultipart('related')
         msg['Subject'] = subject
@@ -341,7 +348,7 @@ def send_gmail_alert(phone: str, lead_type: str, lead_score: int, criteria: dict
         server.starttls()
         server.login(config.GMAIL_USER, config.GMAIL_PASSWORD)
         server.send_message(msg)
-        server.quit()
+        # NO quit() aquí: Va en finally
 
         print(f"[EMAIL] Correo enviado correctamente a {recipient} ({phone})")
     except smtplib.SMTPRecipientsRefused as e:  # ← Granular: Errores de destinatario
@@ -350,14 +357,28 @@ def send_gmail_alert(phone: str, lead_type: str, lead_score: int, criteria: dict
         print(f"[SMTP ERROR] Autenticación fallida: {e}")
     except smtplib.SMTPDataError as e:  # ← Syntax en data (tu caso)
         print(f"[SMTP ERROR] Syntax en mensaje: {e}. Chequea headers/encoding.")
-        # Fallback: Envía versión plain-text simple
-        simple_msg = MIMEText(f"Lead urgente: {phone} - {lead_type} (score {lead_score}). Criterios: {criteria}", 'plain', 'utf-8')
-        simple_msg['Subject'] = subject
-        simple_msg['From'] = msg['From']
-        simple_msg['To'] = recipient
-        server.send_message(simple_msg)
+        # Fallback: Envía versión plain-text simple (recrea server nuevo)
+        try:
+            simple_msg = MIMEText(f"Lead urgente: {phone} - {lead_type} (score {lead_score}). Criterios: {criteria}", 'plain', 'utf-8')
+            simple_msg['Subject'] = subject
+            simple_msg['From'] = f"Alertas Procasa <{config.GMAIL_USER}>"
+            simple_msg['To'] = recipient
+            if cc_email and cc_email != "# Opcional":
+                simple_msg['Cc'] = cc_email
+
+            fallback_server = smtplib.SMTP('smtp.gmail.com', 587)
+            fallback_server.starttls()
+            fallback_server.login(config.GMAIL_USER, config.GMAIL_PASSWORD)
+            fallback_server.send_message(simple_msg)
+            fallback_server.quit()
+            print(f"[EMAIL] Fallback plain-text enviado a {recipient} ({phone})")
+        except Exception as fallback_e:
+            print(f"[SMTP ERROR] Fallback falló: {fallback_e}")
     except Exception as e:
         print(f"[ERROR] Falló envío de correo: {e}")
     finally:
-        if 'server' in locals():
-            server.quit()
+        if server:
+            try:
+                server.quit()
+            except:
+                pass  # Ignora si ya desconectado

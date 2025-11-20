@@ -1,4 +1,3 @@
-# config.py — versión con xAI/Grok (corregida: fixes para warnings, defaults y AttributeError)
 import os
 from dotenv import load_dotenv
 
@@ -26,11 +25,8 @@ class Config:
     GROK_BASE_URL = os.getenv("GROK_BASE_URL", "https://api.x.ai/v1")
     GROK_TEMPERATURE = float(os.getenv("GROK_TEMPERATURE", "0.0"))
 
-    #EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-    #EMBEDDING_DIM = 768
 
-    #EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # Más chico (80MB vs 120MB), igual calidad para español
+    EMBEDDING_MODEL = "all-MiniLM-L6-v2"
     EMBEDDING_DIM = 384
 
     # === Parámetros de búsqueda ===
@@ -55,20 +51,3 @@ class Config:
     GMAIL_USER = os.getenv("GMAIL_USER")
     GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD")
     ALERT_EMAIL_RECIPIENT = os.getenv("ALERT_EMAIL_RECIPIENT", os.getenv("GMAIL_USER", ""))
-
-config = Config()
-
-if config.XAI_API_KEY is None:
-    print("⚠️ WARNING: XAI_API_KEY missing in .env")
-if config.APICHAT_TOKEN is None:
-    print("⚠️ WARNING: APICHAT_TOKEN missing in .env – API Chat deshabilitado")
-if config.TEST_PHONE is None and config.SIMULATION_MODE:
-    print("⚠️ WARNING: TEST_PHONE missing in .env (requerido en modo simulación)")
-if config.GMAIL_USER is None or config.GMAIL_PASSWORD is None:
-    print("⚠️ WARNING: GMAIL_USER o GMAIL_PASSWORD missing in .env – Alertas por email deshabilitadas")
-if config.GROK_MODEL is None:
-    print("⚠️ WARNING: GROK_MODEL missing in .env")
-if config.GROK_BASE_URL is None:
-    print("⚠️ WARNING: GROK_BASE_URL missing in .env")
-if config.GROK_TEMPERATURE is None:
-    print("⚠️ WARNING: GROK_TEMPERATURE missing in .env")

@@ -95,8 +95,8 @@ def handle_advisor(phone, user_msg, history, tipo_contacto, contactos_collection
     try:
         from email_utils import send_gmail_alert
         contacto = contactos_collection.find_one({"telefono": phone})
-        criteria = (contacto or {}).get("criteria", {})
-        full_history = (contacto or {}).get("messages", [])
+        criteria = contacto.get("criteria", {}) if contacto else {}
+        full_history = contacto.get("messages", []) if contacto and isinstance(contacto.get("messages"), list) else []
 
         send_gmail_alert(
             phone=phone,

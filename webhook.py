@@ -32,7 +32,6 @@ DEBOUNCE_SECONDS = 5.0
 
 
 async def process_with_debounce(phone: str, full_text: str):
-    # (exactamente igual que tenías, solo lo copio para que quede completo)
     if phone in pending_tasks and not pending_tasks[phone].done():
         pending_tasks[phone].cancel()
         logger.info(f"[DEBOUNCE] Tarea anterior cancelada para {phone}")
@@ -40,8 +39,11 @@ async def process_with_debounce(phone: str, full_text: str):
     accumulated_messages[phone] = full_text.strip()
     last_message_time[phone] = time.time()
 
+    # ←←←← AQUÍ EMPIEZA delayed_process ←←←←
     async def delayed_process():
-        await asyncio.sleep(DEBOUNCE_SECONDS)
+        await asyncio.sleep(DEBOUNCE_SECONDS)   # espera 5 segundos
+
+        # Si llegó otro mensaje mientras esperaba, se cancela y empieza de nuevo
         if time.time() - last_message_time.get(phone, 0) < DEBOUNCE_SECONDS - 0.1:
             logger.info(f"[DEBOUNCE] Nuevo mensaje → reinicia para {phone}")
             return
@@ -55,23 +57,26 @@ async def process_with_debounce(phone: str, full_text: str):
         try:
             bot_response = process_user_message(phone, final_message)
             if bot_response and bot_response.strip():
-                await send_whatsapp_message(phone, bot_response)
+                await send_whatsapp_message(phone, bot_response)   # ← AQUÍ SE ENVÍA LA RESPUESTA
+            else:
+                logger.warning(f"No hay respuesta del bot para {phone}")
         except Exception as e:
-            logger.error(f"[ERROR] procesando mensaje de {phone}: {e}", exc_info=True)
+            logger.error(f"Error procesando {phone}: {e}", exc_info=True)
         finally:
             pending_tasks.pop(phone, None)
             accumulated_messages.pop(phone, None)
             last_message_time.pop(phone, None)
 
+    # Crea y guarda la tarea
     task = asyncio.create_task(delayed_process())
     pending_tasks[phone] = task
 
 
 async def send_whatsapp_message(number: str, text: str):
-    """Envío con WasenderAPI.com"""
-    url = f"{config.WASENDER_BASE_URL}/send-message"
+    """Envía mensaje usando WasenderAPI.com - con reintentos y logs claros"""
+    url = "https://wasenderapi.com/api/send-message"  # directo, por si la config falla
     payload = {
-        "to": number,        # Wasender acepta con o sin +, pero con + funciona perfecto
+        "to": number,      # acepta +569...
         "text": text
     }
     headers = {
@@ -79,19 +84,23 @@ async def send_whatsapp_message(number: str, text: str):
         "Content-Type": "application/json"
     }
 
-    for intento in range(config.MAX_RETRIES + 1):
+    logger.info(f"[WHATSAPP →] Intentando enviar a {number}: {text[:50]}...")
+
+    for intento in range(3):  # 3 intentos máximo
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=15)
-            if resp.status_code == 200:
-                logger.info(f"[WHATSAPP ✓] Enviado a {number} | {resp.json().get('message_id', '')}")
-                return
+            response = requests.post(url, json=payload, headers=headers, timeout=20)
+            if response.status_code == 200:
+                logger.info(f"[WHATSAPP ✓] ¡Enviado perfecto a {number}! ID: {response.json().get('message_id', 'N/A')}")
+                return True
             else:
-                logger.error(f"[WHATSAPP ✗] Error {resp.status_code}: {resp.text}")
+                logger.error(f"[WHATSAPP ✗] Error {response.status_code}: {response.text}")
         except Exception as e:
             logger.error(f"[WHATSAPP ✗] Excepción intento {intento+1}: {e}")
 
-        if intento < config.MAX_RETRIES:
-            await asyncio.sleep(2)
+        await asyncio.sleep(2)
+
+    logger.error(f"[WHATSAPP ✗] Falló envío definitivo a {number}")
+    return False
 
 
 # ========================= ENDPOINTS =========================
@@ -157,5 +166,5 @@ async def health_check():
     return {"status": "healthy", "pending": len(pending_tasks)}
 
 if __name__ == "__main__":
-    logger.info("Iniciando Procasa WhatsApp con WasenderAPI en puerto 11422...")
+    #logger.info("Iniciando Procasa WhatsApp con WasenderAPI en puerto 11422...")
     uvicorn.run("webhook:app", host="0.0.0.0", port=11422, reload=False, workers=1, log_level="info")

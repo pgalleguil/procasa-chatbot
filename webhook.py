@@ -112,54 +112,82 @@ async def root():
 
 @app.post("/webhook")
 async def webhook(request: Request, x_webhook_secret: str = Header(None, alias="X-Webhook-Secret")):
-    # === Seguridad ===
+    # === Seguridad del Secret ===
     if config.WASENDER_WEBHOOK_SECRET and x_webhook_secret != config.WASENDER_WEBHOOK_SECRET:
         raise HTTPException(status_code=401, detail="Secret inválido")
 
     raw_data = await request.json()
     
-    # DEBUG temporal (puedes borrarlo después)
+    # DEBUG (puedes dejarlo o comentarlo cuando ya funcione todo)
     logger.info(f"[DEBUG WEBHOOK] Payload completo: {raw_data}")
 
-    # === Extracción 100% compatible con WasenderAPI gratuito ===
+    # ==================================================================
+    # 1. DETECCIÓN DEL TEST WEBHOOK (esto soluciona el error 422)
+    # ==================================================================
+    if (
+        raw_data.get("event") == "webhook.test"
+        and raw_data.get("data", {}).get("test") is True
+    ):
+        logger.info("[WEBHOOK TEST] ¡Test recibido y validado correctamente!")
+        return JSONResponse(
+            {
+                "status": "ok",
+                "message": "Test webhook recibido correctamente",
+                "received_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            },
+            status_code=200
+        )
+
+    # ==================================================================
+    # 2. PROCESAMIENTO DE MENSAJES REALES DE WHATSAPP
+    # ==================================================================
     try:
         data = raw_data.get("data", {})
         messages = data.get("messages", {}) or {}
-        
-        # Número de teléfono (el campo más confiable)
-        phone = messages.get("key", {}).get("cleanedSenderPn", "")
-        if not phone:
-            phone = messages.get("key", {}).get("senderPn", "").split("@")[0]
-        
-        # Texto del mensaje
-        text = messages.get("messageBody", "") or messages.get("message", {}).get("conversation", "")
 
-        if not phone or not text:
-            logger.warning(f"No se encontró teléfono o texto → {raw_data}")
-            return JSONResponse({"status": "ignored"})
+        # ------------------- Extracción del teléfono -------------------
+        phone = (
+            messages.get("key", {}).get("cleanedSenderPn") or
+            messages.get("key", {}).get("senderPn", "").split("@")[0] or
+            messages.get("from", "").split("@")[0]
+        )
 
-        # Normalizar +56 si falta
+        # ------------------- Extracción del texto -------------------
+        text = (
+            messages.get("messageBody") or
+            messages.get("message", {}).get("conversation") or
+            messages.get("message", {}).get("extendedTextMessage", {}).get("text", "") or
+            ""
+        )
+
+        if not phone or not text.strip():
+            logger.warning(f"Mensaje ignorado (sin teléfono o texto): {raw_data}")
+            return JSONResponse({"status": "ignored", "reason": "no_phone_or_text"})
+
+        # ------------------- Normalización del número -------------------
+        phone = phone.strip()
         if phone.startswith("56") and not phone.startswith("+"):
             phone = "+" + phone
-        elif not phone.startswith("+"):
-            phone = "+56" + phone  # Wasender a veces quita el +56
+        if not phone.startswith("+"):
+            phone = "+56" + phone.lstrip("0")
 
-        logger.info(f"✓ Mensaje recibido de {phone}: {text}")
+        logger.info(f"✓ Mensaje recibido de {phone}: {text[:100]}")
 
-        # === Debounce + acumulación ===
+        # ------------------- Debounce + acumulación -------------------
         current = accumulated_messages.get(phone, "")
-        nuevo = (current + "\n" + text).strip() if current else text
-        accumulated_messages[phone] = nuevo
+        nuevo_texto = (current + "\n" + text.strip()).strip() if current else text.strip()
+
+        accumulated_messages[phone] = nuevo_texto
         last_message_time[phone] = time.time()
 
-        asyncio.create_task(process_with_debounce(phone, nuevo))
+        # Lanzamos el procesamiento con debounce
+        asyncio.create_task(process_with_debounce(phone, nuevo_texto))
 
-        return JSONResponse({"status": "ok", "processed": True})
+        return JSONResponse({"status": "ok", "processed": True, "phone": phone})
 
     except Exception as e:
-        logger.error(f"Error parseando webhook: {e}", exc_info=True)
-        return JSONResponse({"status": "error"}, status_code=500)
-
+        logger.error(f"Error parseando webhook real: {e}", exc_info=True)
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 @app.get("/health")
 async def health_check():

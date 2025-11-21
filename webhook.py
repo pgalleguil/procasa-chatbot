@@ -71,6 +71,17 @@ async def process_with_debounce(phone: str, full_text: str):
 
 
 async def send_whatsapp_message(number: str, text: str):
+    # === MODO PRUEBAS INTENSIVAS: imprime en consola y NO envía a Wasender ===
+    if Config.SIMULATION_MODE or "trial" in str(config.WASENDER_TOKEN).lower() or True:  # <--- ¡¡¡AQUÍ LA MAGIA!!!
+        print("\n" + "="*60)
+        print(f"[MODO PRUEBAS] Mensaje que se enviaría a {number}:")
+        print("="*60)
+        print(text)
+        print("="*60 + "\n")
+        logger.info(f"[SIMULADO ✓] Mensaje mostrado en consola para {number}")
+        return True  # finge que se envió perfecto
+
+    # === CÓDIGO ORIGINAL (lo deja intacto para cuando tengas plan pago) ===
     url = "https://wasenderapi.com/api/send-message"
     payload = {"to": number, "text": text}
     headers = {

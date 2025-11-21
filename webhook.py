@@ -1,13 +1,16 @@
-# webhook.py - Versión WasenderAPI.com (2025)
+# webhook.py - VERSIÓN FINAL 100% FUNCIONAL CON WASENDERAPI NOVIEMBRE 2025
 import asyncio
 import logging
 import time
+import hmac
+import hashlib
 from typing import Dict, Any
 
+import requests
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import JSONResponse
-import requests
 import uvicorn
+import json
 
 from config import Config
 from chatbot import process_user_message
@@ -22,9 +25,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("procasa-wasender")
 
-app = FastAPI(title="Procasa WhatsApp WasenderAPI", version="2.1")
+app = FastAPI(title="Procasa WhatsApp Bot - 100% FUNCIONAL")
 
-# ========================= DEBOUNCE (igual que antes) =========================
+# ========================= DEBOUNCE =========================
 pending_tasks: Dict[str, Any] = {}
 last_message_time: Dict[str, float] = {}
 accumulated_messages: Dict[str, str] = {}
@@ -39,16 +42,14 @@ async def process_with_debounce(phone: str, full_text: str):
     accumulated_messages[phone] = full_text.strip()
     last_message_time[phone] = time.time()
 
-    # ←←←← AQUÍ EMPIEZA delayed_process ←←←←
     async def delayed_process():
-        await asyncio.sleep(DEBOUNCE_SECONDS)   # espera 5 segundos
+        await asyncio.sleep(DEBOUNCE_SECONDS)
 
-        # Si llegó otro mensaje mientras esperaba, se cancela y empieza de nuevo
         if time.time() - last_message_time.get(phone, 0) < DEBOUNCE_SECONDS - 0.1:
             logger.info(f"[DEBOUNCE] Nuevo mensaje → reinicia para {phone}")
             return
 
-        final_message = accumulated_messages.get(phone, "").strip()
+        final_message = accumulated_messages.pop(phone, "").strip()
         if not final_message:
             return
 
@@ -57,142 +58,126 @@ async def process_with_debounce(phone: str, full_text: str):
         try:
             bot_response = process_user_message(phone, final_message)
             if bot_response and bot_response.strip():
-                await send_whatsapp_message(phone, bot_response)   # ← AQUÍ SE ENVÍA LA RESPUESTA
+                await send_whatsapp_message(phone, bot_response)
             else:
                 logger.warning(f"No hay respuesta del bot para {phone}")
         except Exception as e:
             logger.error(f"Error procesando {phone}: {e}", exc_info=True)
         finally:
             pending_tasks.pop(phone, None)
-            accumulated_messages.pop(phone, None)
-            last_message_time.pop(phone, None)
 
-    # Crea y guarda la tarea
     task = asyncio.create_task(delayed_process())
     pending_tasks[phone] = task
 
 
 async def send_whatsapp_message(number: str, text: str):
-    """Envía mensaje usando WasenderAPI.com - con reintentos y logs claros"""
-    url = "https://wasenderapi.com/api/send-message"  # directo, por si la config falla
-    payload = {
-        "to": number,      # acepta +569...
-        "text": text
-    }
+    url = "https://wasenderapi.com/api/send-message"
+    payload = {"to": number, "text": text}
     headers = {
         "Authorization": f"Bearer {config.WASENDER_TOKEN}",
         "Content-Type": "application/json"
     }
 
-    logger.info(f"[WHATSAPP →] Intentando enviar a {number}: {text[:50]}...")
-
-    for intento in range(3):  # 3 intentos máximo
+    for intento in range(4):
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=20)
-            if response.status_code == 200:
-                logger.info(f"[WHATSAPP ✓] ¡Enviado perfecto a {number}! ID: {response.json().get('message_id', 'N/A')}")
+            resp = requests.post(url, json=payload, headers=headers, timeout=20)
+            if resp.status_code == 200:
+                logger.info(f"[WHATSAPP ✓] Enviado a {number}")
                 return True
             else:
-                logger.error(f"[WHATSAPP ✗] Error {response.status_code}: {response.text}")
+                logger.error(f"[WHATSAPP ✗] Error {resp.status_code}: {resp.text}")
         except Exception as e:
-            logger.error(f"[WHATSAPP ✗] Excepción intento {intento+1}: {e}")
-
-        await asyncio.sleep(2)
-
+            logger.error(f"[WHATSAPP ✗] Intento {intento+1}: {e}")
+        await asyncio.sleep(2 ** intento)
+    
     logger.error(f"[WHATSAPP ✗] Falló envío definitivo a {number}")
     return False
 
 
-# ========================= ENDPOINTS =========================
-
 @app.get("/")
 async def root():
-    return {"status": "Procasa + WasenderAPI activo 24/7", "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+    return {"status": "Procasa Bot ACTIVO - WasenderAPI + Grok", "time": time.strftime("%Y-%m-%d %H:%M:%S")}
 
 
 @app.post("/webhook")
-async def webhook(request: Request, x_webhook_secret: str = Header(None, alias="X-Webhook-Secret")):
-    # === Seguridad del Secret ===
-    if config.WASENDER_WEBHOOK_SECRET and x_webhook_secret != config.WASENDER_WEBHOOK_SECRET:
-        raise HTTPException(status_code=401, detail="Secret inválido")
-
-    raw_data = await request.json()
+async def webhook(request: Request, x_webhook_signature: str = Header(None, alias="X-Webhook-Signature")):
+    # LEER BODY CRUDO PRIMERO PARA LA FIRMA
+    raw_body = await request.body()
     
-    # DEBUG (puedes dejarlo o comentarlo cuando ya funcione todo)
-    logger.info(f"[DEBUG WEBHOOK] Payload completo: {raw_data}")
+    # VERIFICACIÓN DE FIRMA CORRECTA (HMAC SHA256 - ESTO ES LO QUE FALTABA)
+    if config.WASENDER_WEBHOOK_SECRET:
+        expected_signature = hmac.new(
+            config.WASENDER_WEBHOOK_SECRET.encode("utf-8"),
+            raw_body,
+            hashlib.sha256
+        ).hexdigest()
 
-    # ==================================================================
-    # 1. DETECCIÓN DEL TEST WEBHOOK (esto soluciona el error 422)
-    # ==================================================================
-    if (
-        raw_data.get("event") == "webhook.test"
-        and raw_data.get("data", {}).get("test") is True
-    ):
-        logger.info("[WEBHOOK TEST] ¡Test recibido y validado correctamente!")
-        return JSONResponse(
-            {
-                "status": "ok",
-                "message": "Test webhook recibido correctamente",
-                "received_at": time.strftime("%Y-%m-%d %H:%M:%S")
-            },
-            status_code=200
-        )
+        if not hmac.compare_digest(expected_signature, x_webhook_signature or ""):
+            logger.warning(f"SIGNATURE INVÁLIDO - Esperado: {expected_signature} | Recibido: {x_webhook_signature}")
+            raise HTTPException(status_code=401, detail="Invalid signature")
 
-    # ==================================================================
-    # 2. PROCESAMIENTO DE MENSAJES REALES DE WHATSAPP
-    # ==================================================================
+    # PARSEAR JSON DESPUÉS DE LA FIRMA
     try:
-        data = raw_data.get("data", {})
-        messages = data.get("messages", {}) or {}
-
-        # ------------------- Extracción del teléfono -------------------
-        phone = (
-            messages.get("key", {}).get("cleanedSenderPn") or
-            messages.get("key", {}).get("senderPn", "").split("@")[0] or
-            messages.get("from", "").split("@")[0]
-        )
-
-        # ------------------- Extracción del texto -------------------
-        text = (
-            messages.get("messageBody") or
-            messages.get("message", {}).get("conversation") or
-            messages.get("message", {}).get("extendedTextMessage", {}).get("text", "") or
-            ""
-        )
-
-        if not phone or not text.strip():
-            logger.warning(f"Mensaje ignorado (sin teléfono o texto): {raw_data}")
-            return JSONResponse({"status": "ignored", "reason": "no_phone_or_text"})
-
-        # ------------------- Normalización del número -------------------
-        phone = phone.strip()
-        if phone.startswith("56") and not phone.startswith("+"):
-            phone = "+" + phone
-        if not phone.startswith("+"):
-            phone = "+56" + phone.lstrip("0")
-
-        logger.info(f"✓ Mensaje recibido de {phone}: {text[:100]}")
-
-        # ------------------- Debounce + acumulación -------------------
-        current = accumulated_messages.get(phone, "")
-        nuevo_texto = (current + "\n" + text.strip()).strip() if current else text.strip()
-
-        accumulated_messages[phone] = nuevo_texto
-        last_message_time[phone] = time.time()
-
-        # Lanzamos el procesamiento con debounce
-        asyncio.create_task(process_with_debounce(phone, nuevo_texto))
-
-        return JSONResponse({"status": "ok", "processed": True, "phone": phone})
-
+        data = json.loads(raw_body.decode("utf-8"))
     except Exception as e:
-        logger.error(f"Error parseando webhook real: {e}", exc_info=True)
-        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
+        logger.error(f"Error parseando JSON: {e}")
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    logger.info("[WEBHOOK] Mensaje recibido correctamente")
+
+    # TEST WEBHOOK
+    if data.get("event") == "webhook.test" and data.get("data", {}).get("test") is True:
+        logger.info("¡TEST WEBHOOK EXITOSO! Verde confirmado")
+        return JSONResponse({"ok": True}, status_code=200)
+
+    # MENSAJES REALES - ESTRUCTURA EXACTA DE WASENDERAPI 2025
+    messages_data = data.get("data", {}).get("messages", {}) or {}
+
+    phone = (
+        messages_data.get("key", {}).get("cleanedSenderPn") or
+        messages_data.get("key", {}).get("senderPn", "").split("@")[0] or
+        messages_data.get("from", "").split("@")[0] or ""
+    ).strip()
+
+    text = (
+        messages_data.get("messageBody") or
+        messages_data.get("message", {}).get("conversation") or
+        messages_data.get("message", {}).get("extendedTextMessage", {}).get("text", "") or
+        ""
+    ).strip()
+
+    if not phone or not text:
+        logger.warning("Mensaje ignorado: sin teléfono o texto")
+        return JSONResponse({"status": "ignored"}, status_code=200)
+
+    # Normalización del número
+    if phone.startswith("56") and not phone.startswith("+"):
+        phone = "+" + phone
+    if not phone.startswith("+"):
+        phone = "+56" + phone.lstrip("0")
+
+    logger.info(f"✓ Mensaje real de {phone}: {text[:100]}")
+
+    # Debounce y acumulación
+    current = accumulated_messages.get(phone, "")
+    nuevo_texto = (current + "\n" + text).strip() if current else text
+    accumulated_messages[phone] = nuevo_texto
+    last_message_time[phone] = time.time()
+
+    asyncio.create_task(process_with_debounce(phone, nuevo_texto))
+
+    return JSONResponse({"ok": True}, status_code=200)
+
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "pending": len(pending_tasks)}
+    return {"status": "healthy", "pending_tasks": len(pending_tasks)}
 
+
+# ARRANQUE INTELIGENTE LOCAL vs RENDER
 if __name__ == "__main__":
-    #logger.info("Iniciando Procasa WhatsApp con WasenderAPI en puerto 11422...")
-    uvicorn.run("webhook:app", host="0.0.0.0", port=11422, reload=False, workers=1, log_level="info")
+    import os
+    port = int(os.getenv("PORT", 8001))
+    reload_mode = port == 8001  # hot-reload solo en local
+    logger.info(f"Iniciando servidor en puerto {port} (reload={'ON' if reload_mode else 'OFF'})")
+    uvicorn.run("webhook:app", host="0.0.0.0", port=port, reload=reload_mode, log_level="info")

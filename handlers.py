@@ -185,9 +185,13 @@ def handle_propietario_placeholder(phone, user_msg, history, contacto, contactos
 """
 
 def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, contactos_collection):
-    nombre_completo = contacto.get("nombre_propietario", "dueño/a")
-    primer_nombre = nombre_completo.split()[0] if nombre_completo else "dueño/a"
+    contacto = contacto or {}  # ← Blindaje total
+
+    nombre_raw = contacto.get("nombre_propietario")
+    nombre_completo = nombre_raw if isinstance(nombre_raw, str) and nombre_raw.strip() else "dueño/a"
+    primer_nombre = nombre_completo.strip().split(maxsplit=1)[0].title()
     codigo = contacto.get("codigo", "sin código")
+
     texto = user_msg.strip().lower()
     original = user_msg.strip()
 
@@ -215,8 +219,7 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
 
         accion = "autoriza_baja_automatica"
         score = 10
-        #enviar_email = not ya_autorizo_antes  # solo email la primera vez
-        enviar_email = False  # ← NUNCA envía email a propietarios
+        enviar_email = False  # ← Nunca email a propietarios
 
         if ya_autorizo_antes:
             respuesta = f"¡De nada {primer_nombre}! 😊\n\n" \
@@ -237,7 +240,7 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
         score = 1
 
     # ===================================================================
-    # 2. SI NO ENCAJA EN NINGUNA REGLA → fallback ultra-barato a Grok (solo 2 % de casos)
+    # 2. FALLBACK A GROK (solo 2 % de casos)
     # ===================================================================
     else:
         try:
@@ -259,7 +262,6 @@ Responde SOLO la palabra."""
                 respuesta = RESPONSES_PROPIETARIO["autoriza_baja"].format(primer_nombre=primer_nombre)
                 accion = "autoriza_baja_automatica"
                 score = 10
-                enviar_email = True
             elif clasif == "MANTIENE":
                 respuesta = RESPONSES_PROPIETARIO["mantiene"].format(primer_nombre=primer_nombre)
                 accion = "mantiene_precio"
@@ -272,14 +274,12 @@ Responde SOLO la palabra."""
                 respuesta = RESPONSES_PROPIETARIO["default_caliente"].format(primer_nombre=primer_nombre, codigo=codigo)
                 accion = "respuesta_caliente"
                 score = 8
-                enviar_email = True
 
         except Exception as e:
             print(f"[FALLBACK GROK FALLÓ] {e} → usando default")
             respuesta = RESPONSES_PROPIETARIO["default_caliente"].format(primer_nombre=primer_nombre, codigo=codigo)
             accion = "fallback_error"
             score = 7
-            enviar_email = True
 
     # ===================================================================
     # GUARDAR EN MONGO
@@ -298,6 +298,13 @@ Responde SOLO la palabra."""
              {"role": "assistant", "content": respuesta, "timestamp": datetime.now(timezone.utc), "metadata": {"accion": accion, "score": score}}
          ]}}}
     )
+
+    # ===================================================================
+    # ¡¡¡LO QUE FALTABA!!! → RETURN OBLIGATORIO
+    # ===================================================================
+    print(f"[PROPIETARIO] {phone} → {accion} (score {score})")
+    return respuesta
+
 """
     # ===================================================================
     # EMAIL solo a los que autorizan o están calientes

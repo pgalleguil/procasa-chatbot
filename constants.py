@@ -64,8 +64,7 @@ RESPONSES_PROPIETARIO = {
                      "¡Gracias por confiar! Esto es lo que más resultados está dando ahora mismo. 🔥",
 
     "mantiene": "Entendido {primer_nombre}, decides mantener el precio por ahora.\n\n"
-                "Te quedas en seguimiento automático: cada 30 días te llega un informe mensual.\n"
-                "Cuando quieras ajustar y vender más rápido, solo escribe \"1\" y lo activamos al tiro. 😊",
+                "Te quedas en seguimiento automático: cada 30 días te haremos llegar un informe mensual.",
 
     "pausa": "Recibido fuerte y claro {primer_nombre} 🙌\n\n"
              "Tu propiedad queda pausada y no recibirás más mensajes automáticos.\n"
@@ -77,3 +76,20 @@ RESPONSES_PROPIETARIO = {
                         "Quedó registrado tu interés y seguimos trabajando para posicionarla lo mejor posible.\n"
                         "Si necesitas algo puntual, un ejecutivo te contactará en las próximas horas."
 }
+
+# ===================================================================
+# NUEVAS RESPUESTAS INTELIGENTES PARA PROPIETARIOS (2025)
+# ===================================================================
+RESPONSES_PROPIETARIO.update({
+    "rechaza_baja": "Entendido {primer_nombre}, gracias por tu sinceridad 😊\n\n"
+                    "Respeto completamente tu valoración de la propiedad. "
+                    "El mercado está muy cambiante ahora mismo, pero cuando quieras "
+                    "te envío un informe actualizado con las últimas ventas reales "
+                    "en tu zona (sin compromiso alguno).\n\n"
+                    "Solo dime 'infórmame' y te lo mando al tiro.\n"
+                    "Quedamos a disposición cuando tú decidas. ¡Abrazo!",
+
+    "rechazo_agresivo": "Lamento mucho que te haya molestado el contacto {primer_nombre} 🙌\n\n"
+                        "Entiendo perfectamente y ya no recibirás más mensajes automáticos.\n"
+                        "Si en el futuro cambias de idea, solo escribe 'reactivar' y volvemos al instante.\n"
+})

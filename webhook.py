@@ -102,47 +102,50 @@ async def root():
 
 
 @app.post("/webhook")
-async def wasender_webhook(
-    request: Request,
-    x_webhook_secret: str = Header(None, alias="X-Webhook-Secret")
-):
-    # === Verificación de seguridad (muy recomendado) ===
-    if config.WASENDER_WEBHOOK_SECRET:
-        if x_webhook_secret != config.WASENDER_WEBHOOK_SECRET:
-            logger.warning(f"Webhook secret inválido: {x_webhook_secret}")
-            raise HTTPException(status_code=401, detail="Unauthorized")
+async def webhook(request: Request, x_webhook_secret: str = Header(None, alias="X-Webhook-Secret")):
+    # Seguridad
+    if config.WASENDER_WEBHOOK_SECRET and x_webhook_secret != config.WASENDER_WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Secret inválido")
 
-    try:
-        data = await request.json()
-    except Exception as e:
-        logger.error(f"JSON inválido: {e}")
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+    raw_data = await request.json()
+    
+    # DEBUG: ver exactamente qué llega (solo en pruebas)
+    logger.info(f"[DEBUG WEBHOOK] Payload completo: {raw_data}")
 
-    # WasenderAPI.com envía así:
-    # { "from": "56912345678", "message": "Hola", "message_id": "...", "timestamp": ... }
-    message = data if "from" in data else None
-    if not message:
-        logger.warning("Payload sin mensaje válido")
+    # WasenderAPI puede enviar de muchas formas → lo normalizamos todo aquí
+    data = raw_data
+    
+    # Caso 1: viene envuelto en "data"
+    if "data" in data and isinstance(data["data"], dict):
+        data = data["data"]
+    
+    # Caso 2: viene en array (raro pero pasa)
+    if isinstance(data, list) and len(data) > 0:
+        data = data[0]
+
+    # Extraer teléfono y mensaje con múltiples nombres posibles
+    phone = (data.get("from") or data.get("From") or data.get("sender") or data.get("phone") or "").strip()
+    text = (data.get("message") or data.get("text") or data.get("body") or data.get("content") or "").strip()
+
+    if not phone or not text:
+        logger.warning(f"Payload sin teléfono o texto válido → {raw_data}")
         return JSONResponse({"status": "ignored"})
 
-    text = message.get("message", "").strip()
-    if not text:
-        return JSONResponse({"status": "no text"})
+    # Normalizar +56
+    if not phone.startswith("+"):
+        phone = "+" + phone
 
-    raw_phone = message.get("from", "")
-    phone = f"+{raw_phone}" if not raw_phone.startswith("+") else raw_phone
+    logger.info(f"Mensaje recibido de {phone}: {text[:100]}")
 
-    logger.info(f"[WEBHOOK ←] {phone}: {text[:100]}")
-
-    # Debounce + acumulación (igual que antes)
+    # Debounce (igual que antes)
     current = accumulated_messages.get(phone, "")
-    new_text = (current + "\n" + text).strip() if current else text
-    accumulated_messages[phone] = new_text
+    nuevo = (current + "\n" + text).strip() if current else text
+    accumulated_messages[phone] = nuevo
     last_message_time[phone] = time.time()
 
-    asyncio.create_task(process_with_debounce(phone, new_text))
+    asyncio.create_task(process_with_debounce(phone, nuevo))
 
-    return JSONResponse({"status": "queued"})
+    return JSONResponse({"status": "ok"})
 
 
 @app.get("/health")

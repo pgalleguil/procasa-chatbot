@@ -9,9 +9,14 @@ class Config:
     MONGO_URI = os.getenv("MONGO_URI")
     DB_NAME = os.getenv("DB_NAME", "URLS")
 
-    APICHAT_TOKEN = os.getenv("APICHAT_TOKEN")
-    APICHAT_CLIENT_ID = os.getenv("APICHAT_CLIENT_ID")
-    APICHAT_BASE_URL = os.getenv("APICHAT_BASE_URL", "https://api.apichat.io/v1")
+    #APICHAT_TOKEN = os.getenv("APICHAT_TOKEN")
+    #APICHAT_CLIENT_ID = os.getenv("APICHAT_CLIENT_ID")
+    #APICHAT_BASE_URL = os.getenv("APICHAT_BASE_URL", "https://api.apichat.io/v1")
+
+    # === WASENDERAPI.COM (reemplaza ApiChat) ===
+    WASENDER_TOKEN = os.getenv("WASENDER_TOKEN")
+    WASENDER_WEBHOOK_SECRET = os.getenv("WASENDER_WEBHOOK_SECRET")
+    WASENDER_BASE_URL = os.getenv("WASENDER_BASE_URL", "https://wasenderapi.com/api")
 
     # === Modo y opciones ===
     SIMULATION_MODE = os.getenv("SIMULATION_MODE", "false").lower() == "true"

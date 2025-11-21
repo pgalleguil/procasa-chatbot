@@ -69,19 +69,7 @@ async def process_with_debounce(phone: str, full_text: str):
     task = asyncio.create_task(delayed_process())
     pending_tasks[phone] = task
 
-
 async def send_whatsapp_message(number: str, text: str):
-    # === MODO PRUEBAS INTENSIVAS: imprime en consola y NO envía a Wasender ===
-    if Config.SIMULATION_MODE or "trial" in str(config.WASENDER_TOKEN).lower() or True:  # <--- ¡¡¡AQUÍ LA MAGIA!!!
-        print("\n" + "="*60)
-        print(f"[MODO PRUEBAS] Mensaje que se enviaría a {number}:")
-        print("="*60)
-        print(text)
-        print("="*60 + "\n")
-        logger.info(f"[SIMULADO ✓] Mensaje mostrado en consola para {number}")
-        return True  # finge que se envió perfecto
-
-    # === CÓDIGO ORIGINAL (lo deja intacto para cuando tengas plan pago) ===
     url = "https://wasenderapi.com/api/send-message"
     payload = {"to": number, "text": text}
     headers = {
@@ -89,21 +77,34 @@ async def send_whatsapp_message(number: str, text: str):
         "Content-Type": "application/json"
     }
 
-    for intento in range(4):
+    for intento in range(10):  # más intentos por si hay varios 429 seguidos
         try:
             resp = requests.post(url, json=payload, headers=headers, timeout=20)
             if resp.status_code == 200:
                 logger.info(f"[WHATSAPP ✓] Enviado a {number}")
                 return True
-            else:
-                logger.error(f"[WHATSAPP ✗] Error {resp.status_code}: {resp.text}")
-        except Exception as e:
-            logger.error(f"[WHATSAPP ✗] Intento {intento+1}: {e}")
-        await asyncio.sleep(2 ** intento)
-    
-    logger.error(f"[WHATSAPP ✗] Falló envío definitivo a {number}")
-    return False
 
+            # === MANEJO INTELIGENTE DEL ERROR 429 (trial) ===
+            if resp.status_code == 429:
+                try:
+                    data = resp.json()
+                    retry = int(data.get("retry_after", 65))  # por defecto 65 seg
+                except:
+                    retry = 65
+                logger.warning(f"[WHATSAPP 429] Esperando {retry} segundos (trial limit)...")
+                await asyncio.sleep(retry + 2)  # +2 seg por si acaso
+                continue  # reintenta
+
+            # Otros errores (401, 422, etc.)
+            logger.error(f"[WHATSAPP ✗] Error {resp.status_code}: {resp.text}")
+
+        except Exception as e:
+            logger.error(f"[WHATSAPP ✗] Excepción intento {intento+1}: {e}")
+
+        await asyncio.sleep(2 ** intento)  # backoff normal
+
+    logger.error(f"[WHATSAPP ✗] Falló envío definitivo a {number} después de varios intentos")
+    return False
 
 @app.get("/")
 async def root():

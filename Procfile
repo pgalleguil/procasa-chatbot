@@ -1,0 +1,1 @@
+web: docker-compose -f evolution/docker-compose.yml up -d --build && uvicorn webhook:app --host 0.0.0.0 --port $PORT

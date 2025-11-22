@@ -60,7 +60,7 @@ RESPONSES = {
 RESPONSES_PROPIETARIO = {
     "autoriza_baja": "¡Perfecto {primer_nombre}! ✅ Recibimos tu autorización para ajustar el precio y vender mucho más rápido.\n\n"
                      "Todo quedó registrado automáticamente.\n"
-                     "En máximo 48-72 hrs verás tu propiedad con el nuevo valor publicado + campaña full activa en portales y redes.\n\n"
+                     "En máximo 72 hrs verás tu propiedad con el nuevo valor publicado + campaña full activa en portales y redes.\n\n"
                      "¡Gracias por confiar! Esto es lo que más resultados está dando ahora mismo. 🔥",
 
     "mantiene": "Entendido {primer_nombre}, decides mantener el precio por ahora.\n\n"

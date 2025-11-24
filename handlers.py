@@ -347,6 +347,82 @@ Responde solo la palabra."""
     )
 
     print(f"[CAMPAÑA 2025] {phone} → {estado_campana.upper()} | {accion} (score {score})")
+
+# ===================================================================
+    # NUEVO 2025: DETECCIÓN INTELIGENTE DE MÚLTIPLES PROPIEDADES
+    # ===================================================================
+    try:
+        tel_norm = "+" + re.sub(r"\D", "", phone)[-11:]
+
+        cursor = contactos_collection.find({
+            "$or": [
+                {"telefono": {"$regex": tel_norm[-9:]}},
+                {"propietario_telefono": {"$regex": tel_norm[-9:]}},
+                {"telefono": tel_norm}
+            ],
+            "tipo": "propiedad"
+        })
+        todas_propiedades = list(cursor)
+
+        if len(todas_propiedades) > 1:
+            def detectar_en_texto(texto):
+                matches = []
+                for prop in todas_propiedades:
+                    score = 0
+                    campos = [
+                        str(prop.get("comuna", "")).lower(),
+                        str(prop.get("direccion", "")).lower(),
+                        str(prop.get("proyecto", "")).lower(),
+                        str(prop.get("nombre_edificio", "")).lower(),
+                        str(prop.get("codigo", "")).lower(),
+                        f"{prop.get('dormitorios','')}d".lower(),
+                        f"{prop.get('dormitorios','')} dorm".lower(),
+                    ]
+                    for campo in campos:
+                        if campo and campo in texto: score += 30
+                        for palabra in campo.split():
+                            if len(palabra) > 3 and palabra in texto: score += 8
+                    if score > 15:
+                        matches.append({"prop": prop, "score": score})
+                matches.sort(key=lambda x: x["score"], reverse=True)
+                return matches[:5]
+
+            props_detectadas = detectar_en_texto(texto)
+
+            if props_detectadas and ("autoriza_baja" in accion or "pausa" in accion):
+                lista = "\n".join([
+                    f"• {p['prop'].get('comuna','?').title()} - {p['prop'].get('direccion','sin dirección')[:50]}"
+                    for p in props_detectadas
+                ])
+
+                if "autoriza_baja" in accion:
+                    respuesta = f"¡Perfecto {primer_nombre}! Entendí clarito:\n\n{lista}\n\nYa programé el ajuste de precio en esas propiedades específicas.\nEn máximo 72 hrs verás los nuevos valores publicados.\n¡Vamos con todo!"
+                else:  # pausa
+                    respuesta = f"Recibido {primer_nombre}, entendí:\n\n{lista}\n\nYa dejé esas propiedades en pausa. No recibirás más notificaciones de ellas.\nCuando quieras reactivar, solo escribe 'Reactivar'."
+
+                for match in props_detectadas:
+                    prop_id = match["prop"].get("_id")
+                    if prop_id:
+                        contactos_collection.update_one(
+                            {"_id": prop_id},
+                            {"$set": {
+                                "campanas.mercado_2025.estado": "ajuste_programado" if "autoriza_baja" in accion else "pausada_por_propietario",
+                                "campanas.mercado_2025.fecha_ultima_interaccion": datetime.now(timezone.utc)
+                            }}
+                        )
+
+                contactos_collection.update_one(
+                    {"telefono": phone},
+                    {"$set": {
+                        "campanas.mercado_2025.propiedades_detectadas": len(props_detectadas)
+                    }}
+                )
+
+                print(f"[MULTI-PROPIEDAD] Detectadas {len(props_detectadas)} propiedades específicas")
+
+    except Exception as e:
+        print(f"[ERROR MULTI-PROPIEDAD] {e}")
+
     return respuesta
 
 """

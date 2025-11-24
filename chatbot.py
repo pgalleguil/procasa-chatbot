@@ -20,9 +20,8 @@ from constants import (
 from prompts import INTENT_PROMPT
 from handlers import (
     handle_stop, handle_found, handle_waiting,
-    handle_advisor, handle_followup_advisor,
-    handle_closure, handle_continue, handle_propietario_respuesta
-    #handle_propietario_placeholder
+    handle_advisor,
+    handle_continue, handle_propietario_respuesta
 )
 
 # === Config y Mongo ===
@@ -203,10 +202,11 @@ def process_user_message(phone: str, user_msg: str):
         return handle_waiting(phone, user_msg, tipo_contacto, contactos_collection, RESPONSES)
     elif intent == "advisor":
         return handle_advisor(phone, user_msg, history, tipo_contacto, contactos_collection, RESPONSES)
-    elif intent == "followup_advisor":
-        return handle_followup_advisor(phone, user_msg, history, tipo_contacto, contactos_collection, RESPONSES)
+    #elif intent == "followup_advisor":
+    #    return handle_followup_advisor(phone, user_msg, history, tipo_contacto, contactos_collection, RESPONSES)
     elif intent == "closure":
-        return handle_closure(phone, user_msg, tipo_contacto, contactos_collection, RESPONSES)
+        # Tratamos "closure" como "stop" por ahora (es lo más seguro)
+        return handle_stop(phone, user_msg, tipo_contacto, contactos_collection, RESPONSES, deactivate_contacto)
     else:
         return handle_continue(phone, user_msg, history, tipo_contacto, contactos_collection, RESPONSES)
 

@@ -268,8 +268,18 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
         score = 2
         estado_campana = "pausa"
 
+# ===================================================================
+    # 6. PREGUNTA POR FUENTE DE DATOS (muy común y muy caliente)
     # ===================================================================
-    # 6. FALLBACK GROK (solo si nada coincidió)
+    elif re.search(r'\b(d[oó]nde|fuente|sacaste|datos|cchc|cmf|informe|estad[íi]stica|verd[aá]d)\b', texto, re.IGNORECASE):
+        respuesta = f"¡Buena pregunta {primer_nombre}!\n\nDatos oficiales:\n• CChC Informe MACH noviembre 2025 → 108.423 unidades en stock\n• CMF → créditos hipotecarios ↓38 % anual\n• TOCTOC/CChC → 32,4 meses absorción RM\n\nSi quieres te mando el PDF completo ahora mismo.\n\n¿Seguimos con el ajuste técnico? (1 = sí / 2 = no / 3 = pausa)"
+        accion = "pregunta_fuente"
+        score = 10
+        estado_campana = "caliente_pregunta_fuente"
+        # Aquí puedes disparar email automático si quieres
+
+    # ===================================================================
+    # 7. FALLBACK GROK (solo si nada coincidió)
     # ===================================================================
     else:
         try:

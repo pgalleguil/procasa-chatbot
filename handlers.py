@@ -358,7 +358,7 @@ Responde solo la palabra."""
 
     print(f"[CAMPAÑA 2025] {phone} → {estado_campana.upper()} | {accion} (score {score})")
 
-# ===================================================================
+    # ===================================================================
     # NUEVO 2025: DETECCIÓN INTELIGENTE DE MÚLTIPLES PROPIEDADES
     # ===================================================================
     try:

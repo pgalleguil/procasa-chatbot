@@ -1,4 +1,4 @@
-# webhook.py - VERSIÓN FINAL 100% FUNCIONAL CON WASENDERAPI NOVIEMBRE 2025
+# webhook.py - VERSIÓN FINAL PRO PAGADA - NOVIEMBRE 2025
 import asyncio
 import logging
 import time
@@ -25,9 +25,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("procasa-wasender")
 
-app = FastAPI(title="Procasa WhatsApp Bot - 100% FUNCIONAL")
+app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025")
 
-# ========================= DEBOUNCE =========================
+# ========================= DEBOUNCE (por usuario) =========================
 pending_tasks: Dict[str, Any] = {}
 last_message_time: Dict[str, float] = {}
 accumulated_messages: Dict[str, str] = {}
@@ -46,14 +46,13 @@ async def process_with_debounce(phone: str, full_text: str):
         await asyncio.sleep(DEBOUNCE_SECONDS)
 
         if time.time() - last_message_time.get(phone, 0) < DEBOUNCE_SECONDS - 0.1:
-            logger.info(f"[DEBOUNCE] Nuevo mensaje → reinicia para {phone}")
             return
 
         final_message = accumulated_messages.pop(phone, "").strip()
         if not final_message:
             return
 
-        logger.info(f"[PROCESS] Procesando: {phone} → {final_message[:80]}...")
+        logger.info(f"[PROCESS] Procesando mensaje de {phone}: {final_message[:80]}...")
 
         try:
             bot_response = process_user_message(phone, final_message)
@@ -69,6 +68,7 @@ async def process_with_debounce(phone: str, full_text: str):
     task = asyncio.create_task(delayed_process())
     pending_tasks[phone] = task
 
+
 async def send_whatsapp_message(number: str, text: str):
     url = "https://wasenderapi.com/api/send-message"
     payload = {"to": number, "text": text}
@@ -77,46 +77,41 @@ async def send_whatsapp_message(number: str, text: str):
         "Content-Type": "application/json"
     }
 
-    for intento in range(10):  # más intentos por si hay varios 429 seguidos
-        try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=20)
-            if resp.status_code == 200:
-                logger.info(f"[WHATSAPP ✓] Enviado a {number}")
-                return True
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            logger.info(f"[WHATSAPP SUCCESS] Enviado a {number}")
+            return True
+        else:
+            logger.error(f"[WHATSAPP ERROR] {resp.status_code}: {resp.text}")
+    except Exception as e:
+        logger.error(f"[WHATSAPP EXCEPTION] Error enviando a {number}: {e}")
 
-            # === MANEJO INTELIGENTE DEL ERROR 429 (trial) ===
-            if resp.status_code == 429:
-                try:
-                    data = resp.json()
-                    retry = int(data.get("retry_after", 65))  # por defecto 65 seg
-                except:
-                    retry = 65
-                logger.warning(f"[WHATSAPP 429] Esperando {retry} segundos (trial limit)...")
-                await asyncio.sleep(retry + 2)  # +2 seg por si acaso
-                continue  # reintenta
+    # Un solo reintento rápido (por si fue un blip)
+    await asyncio.sleep(2)
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            logger.info(f"[WHATSAPP SUCCESS] Enviado en 2do intento a {number}")
+            return True
+        else:
+            logger.error(f"[WHATSAPP ERROR] Falló 2do intento: {resp.status_code} - {resp.text}")
+    except Exception as e:
+        logger.error(f"[WHATSAPP EXCEPTION] 2do intento falló: {e}")
 
-            # Otros errores (401, 422, etc.)
-            logger.error(f"[WHATSAPP ✗] Error {resp.status_code}: {resp.text}")
-
-        except Exception as e:
-            logger.error(f"[WHATSAPP ✗] Excepción intento {intento+1}: {e}")
-
-        await asyncio.sleep(2 ** intento)  # backoff normal
-
-    logger.error(f"[WHATSAPP ✗] Falló envío definitivo a {number} después de varios intentos")
     return False
+
 
 @app.get("/")
 async def root():
-    return {"status": "Procasa Bot ACTIVO - WasenderAPI + Grok", "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+    return {"status": "Procasa Bot PRO ACTIVO - WasenderAPI PAGADO", "time": time.strftime("%Y-%m-%d %H:%M:%S")}
 
 
 @app.post("/webhook")
 async def webhook(request: Request, x_webhook_signature: str = Header(None, alias="X-Webhook-Signature")):
-    # LEER BODY CRUDO PRIMERO PARA LA FIRMA
     raw_body = await request.body()
     
-    # VERIFICACIÓN DE FIRMA CORRECTA (HMAC SHA256 - ESTO ES LO QUE FALTABA)
+    # Verificación de firma
     if config.WASENDER_WEBHOOK_SECRET:
         expected_signature = hmac.new(
             config.WASENDER_WEBHOOK_SECRET.encode("utf-8"),
@@ -125,24 +120,21 @@ async def webhook(request: Request, x_webhook_signature: str = Header(None, alia
         ).hexdigest()
 
         if not hmac.compare_digest(expected_signature, x_webhook_signature or ""):
-            logger.warning(f"SIGNATURE INVÁLIDO - Esperado: {expected_signature} | Recibido: {x_webhook_signature}")
+            logger.warning("FIRMA INVÁLIDA - Acceso denegado")
             raise HTTPException(status_code=401, detail="Invalid signature")
 
-    # PARSEAR JSON DESPUÉS DE LA FIRMA
     try:
         data = json.loads(raw_body.decode("utf-8"))
     except Exception as e:
-        logger.error(f"Error parseando JSON: {e}")
+        logger.error(f"JSON inválido: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    logger.info("[WEBHOOK] Mensaje recibido correctamente")
+    logger.info("[WEBHOOK] Mensaje recibido")
 
-    # TEST WEBHOOK
-    if data.get("event") == "webhook.test" and data.get("data", {}).get("test") is True:
-        logger.info("¡TEST WEBHOOK EXITOSO! Verde confirmado")
+    if data.get("event") == "webhook.test":
+        logger.info("TEST WEBHOOK EXITOSO")
         return JSONResponse({"ok": True}, status_code=200)
 
-    # MENSAJES REALES - ESTRUCTURA EXACTA DE WASENDERAPI 2025
     messages_data = data.get("data", {}).get("messages", {}) or {}
 
     phone = (
@@ -159,18 +151,16 @@ async def webhook(request: Request, x_webhook_signature: str = Header(None, alia
     ).strip()
 
     if not phone or not text:
-        logger.warning("Mensaje ignorado: sin teléfono o texto")
         return JSONResponse({"status": "ignored"}, status_code=200)
 
-    # Normalización del número
+    # Normalización
     if phone.startswith("56") and not phone.startswith("+"):
         phone = "+" + phone
     if not phone.startswith("+"):
         phone = "+56" + phone.lstrip("0")
 
-    logger.info(f"✓ Mensaje real de {phone}: {text[:100]}")
+    logger.info(f"Mensaje de {phone}: {text[:100]}")
 
-    # Debounce y acumulación
     current = accumulated_messages.get(phone, "")
     nuevo_texto = (current + "\n" + text).strip() if current else text
     accumulated_messages[phone] = nuevo_texto
@@ -183,13 +173,16 @@ async def webhook(request: Request, x_webhook_signature: str = Header(None, alia
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "pending_tasks": len(pending_tasks)}
+    return {
+        "status": "healthy",
+        "active_conversations": len(pending_tasks),
+        "uptime": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
 
 
-# ARRANQUE INTELIGENTE LOCAL vs RENDER
 if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8001))
-    reload_mode = port == 8001  # hot-reload solo en local
-    logger.info(f"Iniciando servidor en puerto {port} (reload={'ON' if reload_mode else 'OFF'})")
+    reload_mode = port == 8001
+    logger.info(f"Bot PRO iniciado en puerto {port} - MÚLTIPLES USUARIOS ACTIVADO")
     uvicorn.run("webhook:app", host="0.0.0.0", port=port, reload=reload_mode, log_level="info")

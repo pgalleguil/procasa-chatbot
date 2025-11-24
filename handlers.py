@@ -112,326 +112,235 @@ def handle_advisor(phone, user_msg, history, tipo_contacto, contactos_collection
 
     return response
 
-def handle_followup_advisor(phone, user_msg, history, tipo_contacto, contactos_collection, responses=None):
-    responses = responses or RESPONSES
-    response = responses["followup_advisor"]
-    metadata = {"intention": "followup_advisor", "action": "re-escalado urgente"}
-
-    contactos_collection.update_one(
-        {"telefono": phone},
-        {"$push": {"messages": {
-            "$each": [
-                {"role": "user", "content": user_msg, "timestamp": datetime.now(timezone.utc), "metadata": metadata},
-                {"role": "assistant", "content": response, "timestamp": datetime.now(timezone.utc), "metadata": metadata}
-            ]
-        }}}
-    )
-
-    print(f"[RE-ESCALADO URGENTE] {phone}")
-
-    # Email con urgencia máxima
-    try:
-        from email_utils import send_gmail_alert
-        contacto = contactos_collection.find_one({"telefono": phone})
-        criteria = (contacto or {}).get("criteria", {})
-        full_history = (contacto or {}).get("messages", [])
-
-        send_gmail_alert(
-            phone=phone,
-            lead_type="LEAD MUY CALIENTE - SE ESTÁ IMPACIENTANDO",
-            lead_score=10,
-            criteria=criteria,
-            last_user_msg=user_msg,
-            last_response=response,
-            full_history=full_history,
-            chat_id=str(contacto.get("_id")) if contacto else None
-        )
-        print(f"[EMAIL URGENTE ENVIADO] {phone}")
-    except Exception as e:
-        print(f"[ERROR EMAIL URGENTE] {e}")
-
-    return response
-
-def handle_closure(phone, user_msg, tipo_contacto, contactos_collection, responses=None):
-    responses = responses or RESPONSES
-    response = responses["closure"]
-    metadata = {"intention": "closure", "action": "cerrado amistosamente"}
-    contactos_collection.update_one(
-        {"telefono": phone},
-        {"$push": {"messages": [
-            {"role": "user", "content": user_msg, "timestamp": datetime.now(timezone.utc), "metadata": metadata},
-            {"role": "assistant", "content": response, "timestamp": datetime.now(timezone.utc), "metadata": metadata}
-        ]}}
-    )
-    return response
-
 def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, contactos_collection) -> str:
     contacto = contacto or {}
     
     nombre_raw = contacto.get("nombre_propietario") or contacto.get("nombre") or "Propietario"
-    primer_nombre = nombre_raw.strip().split(maxsplit=1)[0].title()
+    primer_nombre = nombre_raw.strip().split(maxsplit=1)[0].title() if nombre_raw.strip() else "Propietario"
     codigo = contacto.get("codigo", "sin código")
 
     original = user_msg.strip()
-    texto = original.lower()
+    texto = original.lower().strip()
 
-# ===================================================================
-    # 1. BAJA / AJUSTE / REBAJA (OPCIÓN 1)
+    # Variables para guardar al final
+    respuesta = ""
+    accion = "sin_clasificar"
+    score = 5
+    estado_campana = "pendiente"
+    desactivar = False
+    motivo_desactivacion = None
+
+    # ===================================================================
+    # 1. AUTORIZA BAJA (OPCIÓN 1) – PRIORIDAD MÁXIMA
     # ===================================================================
     if re.search(r'\b(1\s*(️⃣|$|\b)|uno|un[ao]?\b|'
-                 # Verbos de acción directa
                  r'baj(?:ar|en|emos|arle|émoslo|ale|ita|bájen(?:la|lo|me)?)\b|'
                  r'rebaj(?:a|e|ar|émosla|ita|émoslo|en|émosle)\b|'
                  r'ajust(?:ar|emos|e|émoslo|émosle|ito|en)\b|'
-                 r'modific(?:ar|a|an|alo|al[ao])\b|'  # NEW: Modificar
-                 r'cambi(?:ar|emos|a|alo)\s*(?:el\s*)?(?:precio|valor)\b|' # NEW: Cambiar precio
-                 # Sustantivos
+                 r'modific(?:ar|a|an|alo|al[ao])\b|'
+                 r'cambi(?:ar|emos|a|alo)\s*(?:el\s*)?(?:precio|valor)\b|'
                  r'baja|rebaja|ajuste|reducción|descuento|menor|menos|'
-                 # Afirmaciones chilenas / Coloquiales
                  r's[ií]+|ok+|dale+|claro|obvio|ya\s*po|vamos|adelante|proced(?:a|e)|'
-                 r'hag[áa]moslo|juegue|me\s*parece\s*bien|bueno|'
-                 # Autorizaciones formales
-                 r'autoriz|confirmo|acepto|apruebo|perfecto|listo|hecho|cuenta\s*conmigo|'
-                 r'opci[óo]n\s*1\b|' # NEW: Opción 1 explícita
-                 # Variaciones compuestas
-                 r'(?:baj|rebaj|ajust)[ae]n|'
+                 r'hag[áa]moslo|me\s*parece\s*bien|bueno|autoriz|confirmo|acepto|'
+                 r'apruebo|perfecto|listo|hecho|opci[óo]n\s*1\b|'
                  r'(?:5|6|7|8|9|10|12|15|20|25)\s*(%|por\s*ciento|puntos?)\b)', texto, re.IGNORECASE):
 
-        ya_autorizo = contacto.get("autoriza_baja", False)
         accion = "autoriza_baja_automatica"
         score = 10
         estado_campana = "baja_autorizada"
+        respuesta = f"¡Excelente decisión, {primer_nombre}!\n\n" \
+                    f"Ya programé el ajuste del precio para que tu propiedad entre en el rango de los pocos créditos que están aprobando hoy.\n" \
+                    f"En máximo 72 horas verás el nuevo valor publicado en todos los portales.\n\n" \
+                    f"¡Vamos con todo a cerrar esta venta rápido!"
 
-        if ya_autorizo:
-            respuesta = f"¡De nada {primer_nombre}! 😊\n\nYa tenemos todo listo para bajar el precio y venderla rápido.\nEn máximo 72 hrs verás los cambios publicados.\n¡Vamos con todo! 🔥"
-        else:
-            respuesta = RESPONSES_PROPIETARIO["autoriza_baja"].format(primer_nombre=primer_nombre)
-
-# ===================================================================
-    # 2. RECHAZO AGRESIVO (STOP / VETADO)
+    # ===================================================================
+    # 2. RECHAZO AGRESIVO → VETAR INMEDIATO
     # ===================================================================
     elif re.search(r'\b(no\s*molest|spam|denunci|bloqu|acoso|basta|para\s*ya|'
-                   r'déjame\s*en\s*paz|cállate|no\s*contact|molestando|insist|'
-                   r'qué\s*parte\s*de\s*no|déjame\s*tranquilo|'
-                   # NEW: Específicos de base de datos / Chile
-                   r'borr[ao]|elimin[ao]|sacame|sácame|borrar|eliminar|'
-                   r'sernac|polic[íi]a|demand|' # Peligro legal
-                   r'hincha|pesado|cortala|c[óo]rtala|' # Chilenismos de molestia
-                   r'no\s*quiero\s*recibir|me\s*tienen\s*harto)\b', texto, re.IGNORECASE):
-        respuesta = RESPONSES_PROPIETARIO["rechazo_agresivo"].format(primer_nombre=primer_nombre)
+                   r'd[ée]jame\s*en\s*paz|c[áa]llate|no\s*contact|molestando|insist|'
+                   r'borr[ao]|elimin[ao]|sacame|s[áa]came|sernac|polic[íi]a|demand|'
+                   r'qué\s*parte\s*de\s*no|hincha|pesado|cortala)\b', texto, re.IGNORECASE):
         accion = "rechazo_agresivo"
         score = 1
-        estado_campana = "rechazo_agresivo"
+        estado_campana = "vetado"
+        desactivar = True
+        motivo_desactivacion = "rechazo_agresivo"
+        respuesta = f"Lamento mucho si el mensaje fue inoportuno, {primer_nombre}. Ya eliminé tu número de todas nuestras campañas automáticas. No volverás a recibir mensajes de este tipo."
 
     # ===================================================================
-    # 3. RECHAZA LA BAJA (Vale más, no regalar)
+    # 3. RECHAZA LA BAJA (pero sin enojarse)
     # ===================================================================
     elif re.search(r'\b(vale\s+m[áa]s|est[áa]s?\s*loco|rid[ií]culo|muy\s+bajo|'
-                   r'no\s+acepto|no\s+estoy\s+de\s+acuerdo|tasaci[óo]n\s+errada|'
-                   r'inaceptable|exagerado|negativo|'
-                   # NEW: Conceptos de pérdida de valor
-                   r'regal(?:ar|o)|botar|poca\s*plata|ni\s*cag|' # "Ni cagando" (común)
-                   r'desvaloriz|pierd[oa]|perder|'
-                   r'robo|estafa|muy\s*barat[oa])\b', texto, re.IGNORECASE):
-        respuesta = RESPONSES_PROPIETARIO["rechaza_baja"].format(primer_nombre=primer_nombre)
+                   r'no\s+acepto|inaceptable|exagerado|regal(?:ar|o)|botar|'
+                   r'ni\s*cag|desvaloriz|pierd[oa])\b', texto, re.IGNORECASE):
         accion = "rechaza_baja_precio"
         score = 6
         estado_campana = "rechaza_baja"
+        respuesta = RESPONSES_PROPIETARIO["rechaza_baja"].format(primer_nombre=primer_nombre)
 
     # ===================================================================
     # 4. MANTIENE PRECIO (OPCIÓN 2)
     # ===================================================================
-    elif re.search(r'\b(2\s*(️⃣|$|\b)|dos|mantener|mantengo|dejo|queda|seguir\s*igual|'
-                   r'por\s*ahora\s*no|todav[íi]a\s*no|espero|veamos|veo|prefiero\s*mantener|'
-                   r'no\s+bajo|no\s+bajen|no\s+rebajo|no\s+ajusto|'
-                   # NEW: Paciencia / Sin cambios
-                   r'tal\s*cual|as[íi]\s*nom[áa]s|mismo\s*precio|mismo\s*valor|'
-                   r'aguant|no\s*tengo\s*apuro|sin\s*apuro|no\s*tengo\s*prisa|'
-                   r'opci[óo]n\s*2)\b', texto, re.IGNORECASE):
-        respuesta = RESPONSES_PROPIETARIO["mantiene"].format(primer_nombre=primer_nombre)
+    elif re.search(r'\b(2\s*(️⃣|$|\b)|dos|mantener|mantengo|dejo\s*igual|'
+                   r'no\s+bajo|no\s+rebajo|no\s+ajusto|por\s*ahora\s*no|'
+                   r'todav[íi]a\s*no|espero|prefiero\s*mantener|opci[óo]n\s*2)\b', texto, re.IGNORECASE):
         accion = "mantiene_precio"
         score = 5
         estado_campana = "mantiene_precio"
+        respuesta = RESPONSES_PROPIETARIO["mantiene"].format(primer_nombre=primer_nombre)
 
     # ===================================================================
-    # 5. PAUSA / SACAR / NO DISPONIBLE (OPCIÓN 3)
+    # 5. PAUSA / YA SE VENDIÓ (OPCIÓN 3)
     # ===================================================================
-    elif re.search(r'\b(3\s*(️⃣|$|\b)|tres|pausa|retirar|quitar|sacar|no\s+disponible|'
-                   r'ya\s*vend|se\s*vendi[óo]|arriend|no\s+vender|para\s*despu[ée]s|'
-                   # NEW: Terminología de publicación
-                   r'bajar\s*publicaci[óo]n|bajar\s*de\s*internet|'
-                   r'suspend|congel|b[áa]jala\s*de|'
-                   r'desist|no\s*sigan|'
-                   r'opci[óo]n\s*3)\b', texto, re.IGNORECASE):
-        respuesta = RESPONSES_PROPIETARIO["pausa"].format(primer_nombre=primer_nombre)
+    elif re.search(r'\b(3\s*(️⃣|$b)|tres|ya\s+se\s+(vend|arrend)|'
+                   r'no\s+disponible|retir|pausa|sacame|borr[ao]|elimin[ao]|'
+                   r'bajar\s*publicaci[óo]n|opci[óo]n\s*3)\b', texto, re.IGNORECASE):
         accion = "pausa_venta"
         score = 2
-        estado_campana = "pausa"
+        estado_campana = "pausada_por_propietario"
+        desactivar = True
+        motivo_desactivacion = "pausa_voluntaria"
+        respuesta = RESPONSES_PROPIETARIO["pausa"].format(primer_nombre=primer_nombre)
 
-# ===================================================================
-    # 6. PREGUNTA POR FUENTE DE DATOS (muy común y muy caliente)
+    # ===================================================================
+    # 6. PREGUNTA POR FUENTE DE DATOS → ¡CALIENTE!
     # ===================================================================
     elif re.search(r'\b(d[oó]nde|fuente|sacaste|datos|cchc|cmf|informe|estad[íi]stica|verd[aá]d)\b', texto, re.IGNORECASE):
-        respuesta = f"¡Buena pregunta {primer_nombre}!\n\nDatos oficiales:\n• CChC Informe MACH noviembre 2025 → 108.423 unidades en stock\n• CMF → créditos hipotecarios ↓38 % anual\n• TOCTOC/CChC → 32,4 meses absorción RM\n\nSi quieres te mando el PDF completo ahora mismo.\n\n¿Seguimos con el ajuste técnico? (1 = sí / 2 = no / 3 = pausa)"
         accion = "pregunta_fuente"
         score = 10
         estado_campana = "caliente_pregunta_fuente"
-        # Aquí puedes disparar email automático si quieres
+        respuesta = f"¡Buena pregunta, {primer_nombre}!\n\nDatos oficiales noviembre 2025:\n" \
+                    f"• CChC: 108.423 propiedades en stock\n" \
+                    f"• CMF: créditos hipotecarios ↓38% anual\n" \
+                    f"• Absorción RM: 32,4 meses (R.M.)\n\n" \
+                    f"¿Quieres que te mande el PDF completo?\n\n" \
+                    f"¿Seguimos con el ajuste del 7% para vender rápido? (1 = sí)"
 
     # ===================================================================
-    # 7. FALLBACK GROK (solo si nada coincidió)
+    # 7. FALLBACK: GROK AL RESCATE (cuando nada matchea)
     # ===================================================================
     else:
         try:
             from chatbot import call_grok
-            prompt = f"""Mensaje del propietario: "{original}"
+            prompt = f"""
+Eres asistente senior de Procasa Jorge Pablo Caro Propiedades.
+El propietario recibió una campaña proponiendo bajar 7% el precio 7% por el sobrestock.
 
-Clasifica con UNA sola palabra en mayúsculas:
-BAJA / MANTIENE / PAUSA / AGRESIVO / RECHAZA / CALIENTE
+Mensaje recibido:
+"{original}"
 
-Responde solo la palabra."""
-            clasif = call_grok(prompt, temperature=0.0, max_tokens=10).strip().upper()
+Clasifica la intención real con UNA palabra y responde exactamente así:
 
-            if clasif == "BAJA":
-                respuesta = RESPONSES_PROPIETARIO["autoriza_baja"].format(primer_nombre=primer_nombre)
-                accion = "autoriza_baja_automatica"
-                score = 10
-                estado_campana = "baja_autorizada"
-            elif clasif == "MANTIENE":
-                respuesta = RESPONSES_PROPIETARIO["mantiene"].format(primer_nombre=primer_nombre)
-                accion = "mantiene_precio"
-                score = 5
-                estado_campana = "mantiene_precio"
-            elif clasif == "PAUSA":
-                respuesta = RESPONSES_PROPIETARIO["pausa"].format(primer_nombre=primer_nombre)
-                accion = "pausa_venta"
-                score = 2
-                estado_campana = "pausa"
-            elif clasif == "AGRESIVO":
-                respuesta = RESPONSES_PROPIETARIO["rechazo_agresivo"].format(primer_nombre=primer_nombre)
-                accion = "rechazo_agresivo"
-                score = 1
-                estado_campana = "rechazo_agresivo"
-            elif clasif == "RECHAZA":
-                respuesta = RESPONSES_PROPIETARIO["rechaza_baja"].format(primer_nombre=primer_nombre)
-                accion = "rechaza_baja_precio"
-                score = 6
-                estado_campana = "rechaza_baja"
+BAJA → si acepta bajar (aunque diga "5%", "me parece mucho pero ok", etc.)
+MANTIENE → si NO quiere tocar el precio
+PAUSA → si ya vendió o quiere pausar
+AGRESIVO → si está enojado o pide no contactar
+PREGUNTA → si pregunta algo (cálculo, fuente, cuánto sería, etc.)
+ESCALAR → si pide hablar con persona ("llámenme", "ejecutivo", etc.)
+
+FORMATO OBLIGATORIO:
+PALABRA||mensaje exacto para WhatsApp (máximo 380 caracteres, cálido, chileno)
+
+Ejemplos:
+BAJA||Perfecto don Luis, hacemos 6% si te sirve mejor, ya lo programo...
+PREGUNTA||El 7% equivale a 280 UF menos, te paso el cálculo detallado...
+ESCALAR||Claro doña María, Jorge Pablo te llama en 10 minutos.
+"""
+
+            grok_response = call_grok(prompt, temperature=0.0, max_tokens=200)
+
+            if grok_response and "||" in grok_response:
+                codigo_grok, _, mensaje_grok = grok_response.partition("||")
+                codigo_grok = codigo_grok.strip().upper()
+
+                if codigo_grok == "BAJA":
+                    accion = "autoriza_baja_via_grok"
+                    score = 10
+                    estado_campana = "baja_autorizada_grok"
+                    respuesta = mensaje_grok.strip()
+
+                elif codigo_grok == "AGRESIVO":
+                    desactivar = True
+                    motivo_desactivacion = "rechazo_agresivo_grok"
+                    respuesta = mensaje_grok.strip() or f"Disculpas {primer_nombre}, ya no recibirás más mensajes automáticos."
+
+                elif codigo_grok in ["PREGUNTA", "ESCALAR"]:
+                    accion = "caliente_via_grok"
+                    score = 9
+                    estado_campana = "caliente_grok"
+                    respuesta = mensaje_grok.strip()
+
+                else:
+                    respuesta = mensaje_grok.strip()
+
             else:
-                respuesta = RESPONSES_PROPIETARIO["default_caliente"].format(primer_nombre=primer_nombre, codigo=codigo)
-                accion = "respuesta_caliente"
-                score = 8
-                estado_campana = "pendiente"
-        except:
+                raise ValueError("Formato inválido")
+        except Exception as e:
+            print(f"[GROK FALLÓ] {e}")
             respuesta = RESPONSES_PROPIETARIO["default_caliente"].format(primer_nombre=primer_nombre, codigo=codigo)
-            accion = "fallback_error"
-            score = 7
-            estado_campana = "pendiente"
+            accion = "fallback_grok_error"
+            score = 8
 
     # ===================================================================
-    # GUARDADO UNIFICADO Y FINAL → TODO EN campanas.mercado_2025
+    # GUARDADO EN MONGODB
     # ===================================================================
-    desactivar = accion in ["pausa_venta", "rechazo_agresivo"]
-    motivo = "pausa_voluntaria" if accion == "pausa_venta" else "rechazo_agresivo" if desactivar else None
+    update_data = {
+        "clasificacion_propietario": accion,
+        "ultima_respuesta": original,
+        "fecha_clasificacion": datetime.now(timezone.utc),
+        "autoriza_baja": "baja" in accion,
+        "activo": not desactivar,
+        "campanas.data_dura_7pct.estado": estado_campana,
+        "campanas.data_dura_7pct.fecha_respuesta": datetime.now(timezone.utc),
+        "campanas.data_dura_7pct.ultima_accion": accion,
+        "campanas.data_dura_7pct.score": score,
+    }
+    if motivo_desactivacion:
+        update_data["motivo_desactivacion"] = motivo_desactivacion
 
     contactos_collection.update_one(
         {"telefono": phone},
-        {"$set": {
-            "clasificacion_propietario": accion,
-            "ultima_respuesta": original,
-            "fecha_clasificacion": datetime.now(timezone.utc),
-            "autoriza_baja": accion == "autoriza_baja_automatica",
-            "activo": not desactivar,
-            "motivo_desactivacion": motivo,
-            # ← UNIFICACIÓN TOTAL
-            "campanas.mercado_2025.estado": estado_campana,
-            "campanas.mercado_2025.fecha_respuesta": datetime.now(timezone.utc),
-            "campanas.mercado_2025.ultima_accion": accion,
-            "campanas.mercado_2025.score": score
-        },
-        "$push": {"messages": {"$each": [
-            {"role": "user", "content": original, "timestamp": datetime.now(timezone.utc)},
-            {"role": "assistant", "content": respuesta, "timestamp": datetime.now(timezone.utc),
-             "metadata": {"accion": accion, "score": score}}
-        ]}}}
+        {"$set": update_data,
+         "$push": {"messages": {"$each": [
+             {"role": "user", "content": original, "timestamp": datetime.now(timezone.utc)},
+             {"role": "assistant", "content": respuesta, "timestamp": datetime.now(timezone.utc),
+              "metadata": {"accion": accion, "score": score}}
+         ]}}}
     )
 
-    print(f"[CAMPAÑA 2025] {phone} → {estado_campana.upper()} | {accion} (score {score})")
+    print(f"[DATA DURA 2025] {phone} → {accion.upper()} | score {score}")
 
     # ===================================================================
-    # NUEVO 2025: DETECCIÓN INTELIGENTE DE MÚLTIPLES PROPIEDADES
+    # ENVÍO DE EMAIL SI ES CALIENTE (autoriza, pregunta o Grok lo marcó)
     # ===================================================================
     try:
-        tel_norm = "+" + re.sub(r"\D", "", phone)[-11:]
+        from email_utils import send_propietario_alert
 
+        # Buscar todos los códigos del dueño
         cursor = contactos_collection.find({
             "$or": [
-                {"telefono": {"$regex": tel_norm[-9:]}},
-                {"propietario_telefono": {"$regex": tel_norm[-9:]}},
-                {"telefono": tel_norm}
+                {"telefono": phone},
+                {"telefono": {"$regex": phone[-9:]}},
+                {"propietario_telefono": {"$regex": phone[-9:]}}
             ],
-            "tipo": "propiedad"
+            "codigo": {"$exists": True}
         })
-        todas_propiedades = list(cursor)
+        codigos = list(set([doc.get("codigo", "") for doc in cursor if doc.get("codigo")]))
+        if not codigos:
+            codigos = [codigo]
 
-        if len(todas_propiedades) > 1:
-            def detectar_en_texto(texto):
-                matches = []
-                for prop in todas_propiedades:
-                    score = 0
-                    campos = [
-                        str(prop.get("comuna", "")).lower(),
-                        str(prop.get("direccion", "")).lower(),
-                        str(prop.get("proyecto", "")).lower(),
-                        str(prop.get("nombre_edificio", "")).lower(),
-                        str(prop.get("codigo", "")).lower(),
-                        f"{prop.get('dormitorios','')}d".lower(),
-                        f"{prop.get('dormitorios','')} dorm".lower(),
-                    ]
-                    for campo in campos:
-                        if campo and campo in texto: score += 30
-                        for palabra in campo.split():
-                            if len(palabra) > 3 and palabra in texto: score += 8
-                    if score > 15:
-                        matches.append({"prop": prop, "score": score})
-                matches.sort(key=lambda x: x["score"], reverse=True)
-                return matches[:5]
-
-            props_detectadas = detectar_en_texto(texto)
-
-            if props_detectadas and ("autoriza_baja" in accion or "pausa" in accion):
-                lista = "\n".join([
-                    f"• {p['prop'].get('comuna','?').title()} - {p['prop'].get('direccion','sin dirección')[:50]}"
-                    for p in props_detectadas
-                ])
-
-                if "autoriza_baja" in accion:
-                    respuesta = f"¡Perfecto {primer_nombre}! Entendí clarito:\n\n{lista}\n\nYa programé el ajuste de precio en esas propiedades específicas.\nEn máximo 72 hrs verás los nuevos valores publicados.\n¡Vamos con todo!"
-                else:  # pausa
-                    respuesta = f"Recibido {primer_nombre}, entendí:\n\n{lista}\n\nYa dejé esas propiedades en pausa. No recibirás más notificaciones de ellas.\nCuando quieras reactivar, solo escribe 'Reactivar'."
-
-                for match in props_detectadas:
-                    prop_id = match["prop"].get("_id")
-                    if prop_id:
-                        contactos_collection.update_one(
-                            {"_id": prop_id},
-                            {"$set": {
-                                "campanas.mercado_2025.estado": "ajuste_programado" if "autoriza_baja" in accion else "pausada_por_propietario",
-                                "campanas.mercado_2025.fecha_ultima_interaccion": datetime.now(timezone.utc)
-                            }}
-                        )
-
-                contactos_collection.update_one(
-                    {"telefono": phone},
-                    {"$set": {
-                        "campanas.mercado_2025.propiedades_detectadas": len(props_detectadas)
-                    }}
-                )
-
-                print(f"[MULTI-PROPIEDAD] Detectadas {len(props_detectadas)} propiedades específicas")
-
+        if score >= 8 or "baja" in accion or accion.endswith("_grok"):
+            send_propietario_alert(
+                phone=phone,
+                nombre=nombre_raw or "Propietario",
+                codigos=codigos,
+                mensaje_original=original,
+                accion_detectada=accion,
+                respuesta_bot=respuesta,
+                autoriza_baja="baja" in accion
+            )
     except Exception as e:
-        print(f"[ERROR MULTI-PROPIEDAD] {e}")
+        print(f"[ERROR EMAIL PROPIETARIO] {e}")
 
     return respuesta
 

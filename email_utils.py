@@ -259,3 +259,121 @@ def send_gmail_alert(phone: str, lead_type: str, lead_score: int, criteria: dict
         if server: 
             try: server.quit() 
             except: pass
+
+# ===================================================================
+# NUEVA FUNCIÓN 2025 → ALERTAS PROPIETARIOS "DATA DURA 7%"
+# ===================================================================
+def send_propietario_alert(
+    phone: str,
+    nombre: str,
+    codigos: list,
+    mensaje_original: str,
+    accion_detectada: str,
+    respuesta_bot: str = "",
+    autoriza_baja: bool = False
+):
+    """
+    Envía alerta por correo cuando un propietario responde a la campaña 2025.
+    Se usa desde handlers.py cuando detectamos algo caliente.
+    """
+    if not config.GMAIL_USER or not config.GMAIL_PASSWORD:
+        return
+
+    recipient = config.ALERT_EMAIL_RECIPIENT
+    cc_email = os.getenv("CC_EMAIL_JEFE")
+
+    # Colores según acción
+    if autoriza_baja:
+        color = "#DC2626"      # rojo
+        bg = "#FEF2F2"
+        icon = "AUTORIZÓ BAJA"
+        prioridad = "MÁXIMA PRIORIDAD"
+    elif accion_detectada in ["pregunta_fuente", "caliente_grok", "caliente_pregunta_grok"]:
+        color = "#EA580C"      # naranja fuerte
+        bg = "#FFF7ED"
+        icon = "PREGUNTÓ / DUDÓ"
+        prioridad = "REVISAR HOY"
+    elif accion_detectada == "rechaza_baja_precio":
+        color = "#D97706"
+        bg = "#FFFBEB"
+        icon = "RECHAZÓ PERO HABLÓ"
+        prioridad = "SEGUIR CONVERSACIÓN"
+    else:
+        color = "#6366F1"
+        bg = "#F8FAFC"
+        icon = "RESPUESTA PROPIETARIO"
+        prioridad = "REVISAR"
+
+    codigos_str = " | ".join(codigos) if isinstance(codigos, list) else str(codigos)
+    if len(codigos) > 3:
+        codigos_str = codigos_str[:100] + "..."
+
+    subject = f"{icon} Propietario {prioridad} → {phone}"
+
+    wa_link = f"https://wa.me/{phone.replace('+', '')}?text=Hola%20{nombre.split()[0]}%2C%20te%20escribo%20de%20Procasa%20por%20tu%20propiedad%20{codigos_str.replace('|', '%20')}%20%E2%9C%85"
+
+    body_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; background:#F8FAFC; margin:0; padding:20px; }}
+            .card {{ background:white; max-width:580px; margin:0 auto; border-radius:16px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,0.1); }}
+            .header {{ background:{color}; color:white; padding:20px; text-align:center; }}
+            .body {{ padding:30px; }}
+            .btn {{ display:inline-block; padding:14px 28px; background:#22C55E; color:white; text-decoration:none; border-radius:12px; font-weight:bold; margin:10px 5px; }}
+            .btn-call {{ background:#1E293B; }}
+            .quote {{ background:#F1F5F9; padding:16px; border-radius:12px; font-style:italic; margin:15px 0; border-left:5px solid {color}; }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="header">
+                <h1>{icon}</h1>
+                <h2 style="margin:10px 0 0 0;">{nombre}</h2>
+            </div>
+            <div class="body">
+                <p><strong>Teléfono:</strong> <a href="tel:{phone}">{phone}</a></p>
+                <p><strong>Código(s):</strong> {codigos_str or '—'}</p>
+                <p><strong>Acción detectada:</strong> <span style="background:{bg}; padding:4px 10px; border-radius:8px; font-weight:bold;">{accion_detectada.replace('_', ' ').title()}</span></p>
+
+                <div class="quote">
+                    "{mensaje_original}"
+                </div>
+
+                {"<p>EL BOT YA AUTORIZÓ LA BAJA AUTOMÁTICAMENTE</p>" if autoriza_baja else ""}
+
+                <p style="text-align:center; margin:30px 0;">
+                    <a href="{wa_link}" class="btn">Abrir WhatsApp</a>
+                    <a href="tel:{phone}" class="btn btn-call">Llamar Ahora</a>
+                </p>
+
+                {"<p style='color:#DC2626; font-weight:bold;'>Respuesta del bot:</p><blockquote>" + respuesta_bot + "</blockquote>" if respuesta_bot else ""}
+            </div>
+            <div style="background:#F1F5F9; padding:15px; text-align:center; font-size:12px; color:#64748B;">
+                Procasa AI • Campaña Data Dura 2025
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = f"Procasa Alertas <{config.GMAIL_USER}>"
+        msg['To'] = recipient
+        if cc_email:
+            msg['Cc'] = cc_email
+
+        msg.attach(MIMEText(body_html, 'html'))
+
+        with smtplib.SMTP('smtp.gmail.com', 587) as server:
+            server.starttls()
+            server.login(config.GMAIL_USER, config.GMAIL_PASSWORD)
+            server.send_message(msg)
+
+        print(f"[EMAIL PROPIETARIO] Enviado → {accion_detectada} | {phone}")
+    except Exception as e:
+        print(f"[ERROR EMAIL PROPIETARIO] {e}")

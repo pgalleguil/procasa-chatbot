@@ -12,7 +12,7 @@ Responde STOP para no recibir más mensajes.
 """
 
 INITIAL_TEMPLATE_PROPIETARIO = """
-Hola {{NOMBRE}} 👋, soy asistente inmobiliaria de PROCASA Jorge Pablo Caro Propiedades.
+Hola {{NOMBRE}} 👋, soy asistente inmobiliaria de PROCASA.
 Breve actualización: El mercado está presionado por factores que debemos considerar para la venta de tu propiedad. Te resumo la foto actual:
 
 📉 Sobre-Stock: Hay 108.000 viviendas disponibles (nivel histórico) y la velocidad de venta supera los 30 meses (CChC).
@@ -58,38 +58,40 @@ RESPONSES = {
 # RESPUESTAS PROPIETARIOS – VERSIÓN FINAL MASIVA 2025 (cero intervención humana)
 # ===================================================================
 RESPONSES_PROPIETARIO = {
-    "autoriza_baja": "¡Perfecto {primer_nombre}! ✅ Recibimos tu autorización para ajustar el precio y vender mucho más rápido.\n\n"
-                     "Todo quedó registrado automáticamente.\n"
-                     "En máximo 72 hrs verás tu propiedad con el nuevo valor publicado + campaña full activa en portales y redes.\n\n"
-                     "¡Gracias por confiar! Esto es lo que más resultados está dando ahora mismo. 🔥",
+# OPCIÓN 1: La más importante. Debe ser una celebración.
+    "autoriza_baja": "¡Excelente decisión, {primer_nombre}! 👏\n\n"
+                     "Créeme que es la estrategia correcta para movernos rápido en este mercado.\n"
+                     "Ya dejé programada la actualización. En máximo 72 hrs verás tu propiedad destacada con el nuevo valor en los portales.\n\n"
+                     "¡Vamos con todo a buscar ese cierre! 🔥",
 
-    "mantiene": "Entendido {primer_nombre}, decides mantener el precio por ahora.\n\n"
-                "Te quedas en seguimiento automático: cada 30 días te haremos llegar un informe mensual.",
+# OPCIÓN 2: Validación + Advertencia suave (sin ser pesados)
+    "mantiene": "Entendido, {primer_nombre}. Respetamos tu decisión al 100%. 👍\n\n"
+                "Mantendremos el precio actual. Ten en cuenta que, al haber mucha oferta, quizás el flujo de visitas sea más lento, pero seguiremos gestionando con la misma energía de siempre.\n\n"
+                "Cualquier cambio que quieras hacer a futuro, solo avísame.",
 
-    "pausa": "Recibido fuerte y claro {primer_nombre} 🙌\n\n"
-             "Tu propiedad queda pausada y no recibirás más mensajes automáticos.\n"
-             "Si cambias de idea, solo escribe \"reactivar\" o \"volver\" y la ponemos de nuevo en venta al instante.\n"
-             "¡Quedamos a disposición!",
+# OPCIÓN 3: Cierre limpio
+    "pausa": "Recibido, {primer_nombre}. 🙌\n\n"
+             "Dejamos la propiedad en 'Pausa' desde este momento para que no te lleguen más notificaciones.\n"
+             "Cuando sientas que es buen momento para retomar, solo escríbenos 'Reactivar' y volvemos a la carga.\n\n"
+             "¡Gracias por la confianza hasta ahora!",
 
-    "default_caliente": "¡Gracias por responder {primer_nombre}! 😊\n\n"
-                        "Entendemos que estás evaluando la venta de tu propiedad código {codigo}.\n"
-                        "Quedó registrado tu interés y seguimos trabajando para posicionarla lo mejor posible.\n"
-                        "Si necesitas algo puntual, un ejecutivo te contactará en las próximas horas."
+# FALLBACK / CALIENTE: Cuando dicen algo que no es 1, 2 o 3
+    "default_caliente": "Gracias por responder, {primer_nombre}. 😊\n\n"
+                        "Entiendo tu punto sobre la propiedad {codigo}. Como es un tema importante, le he pedido a uno de nuestros ejecutivos senior que revise tu caso y te contacte personalmente para verlo en detalle.\n"
+                        "¡Hablamos pronto!"
 }
 
 # ===================================================================
 # NUEVAS RESPUESTAS INTELIGENTES PARA PROPIETARIOS (2025)
 # ===================================================================
 RESPONSES_PROPIETARIO.update({
-    "rechaza_baja": "Entendido {primer_nombre}, gracias por tu sinceridad 😊\n\n"
-                    "Respeto completamente tu valoración de la propiedad. "
-                    "El mercado está muy cambiante ahora mismo, pero cuando quieras "
-                    "te envío un informe actualizado con las últimas ventas reales "
-                    "en tu zona (sin compromiso alguno).\n\n"
-                    "Solo dime 'infórmame' y te lo mando al tiro.\n"
-                    "Quedamos a disposición cuando tú decidas. ¡Abrazo!",
+# RECHAZA LA BAJA (Argumentativo): Educación ante todo
+    "rechaza_baja": "Te entiendo perfectamente, {primer_nombre}. Es difícil ajustar el valor cuando uno sabe lo que vale su propiedad. 🏠\n\n"
+                    "Por ahora sigamos como estamos. Si en unas semanas ves que el mercado sigue lento, podemos volver a evaluarlo sin compromiso.\n"
+                    "¡Seguimos trabajando para ti!",
 
-    "rechazo_agresivo": "Lamento mucho que te haya molestado el contacto {primer_nombre} 🙌\n\n"
-                        "Entiendo perfectamente y ya no recibirás más mensajes automáticos.\n"
-                        "Si en el futuro cambias de idea, solo escribe 'reactivar' y volvemos al instante.\n"
+# RECHAZO MOLESTO: Empatía total para evitar denuncias de spam
+    "rechazo_agresivo": "Lamento mucho si el mensaje fue inoportuno, {primer_nombre}. 🙏\n\n"
+                        "No era nuestra intención molestar. Ya eliminé tu número de nuestra lista de difusión automática para que no recibas más alertas de este tipo.\n"
+                        "Quedamos a tu disposición solo si tú nos contactas. Que tengas buena tarde.",
 })

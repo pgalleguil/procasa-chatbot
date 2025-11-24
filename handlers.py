@@ -56,7 +56,6 @@ def handle_found(phone, user_msg, tipo_contacto, contactos_collection, responses
     print(f"[LOG] Lead {phone} ya encontró propiedad.")
     return response
 
-
 def handle_waiting(phone, user_msg, tipo_contacto, contactos_collection, responses=None):
     responses = responses or RESPONSES
     response = responses["waiting"]
@@ -69,7 +68,6 @@ def handle_waiting(phone, user_msg, tipo_contacto, contactos_collection, respons
         ]}}
     )
     return response
-
 
 def handle_advisor(phone, user_msg, history, tipo_contacto, contactos_collection, responses=None):
     responses = responses or RESPONSES
@@ -167,26 +165,6 @@ def handle_closure(phone, user_msg, tipo_contacto, contactos_collection, respons
     )
     return response
 
-"""
-def handle_propietario_placeholder(phone, user_msg, history, contacto, contactos_collection, responses=None):
-    responses = responses or RESPONSES
-    codigo = contacto.get("codigo", "XXXXX")
-    cliente = contacto.get("nombre_propietario", "Estimado/a")
-    response = responses["propietario_placeholder"].format(cliente=cliente, codigo=codigo)
-    metadata = {"intention": "propietario_response", "action": "placeholder propietario"}
-    contactos_collection.update_one(
-        {"telefono": phone},
-        {"$push": {"messages": [
-            {"role": "user", "content": user_msg, "timestamp": datetime.now(timezone.utc), "metadata": metadata},
-            {"role": "assistant", "content": response, "timestamp": datetime.now(timezone.utc), "metadata": metadata}
-        ]}}
-    )
-    return response
-"""
-
-import re
-from datetime import datetime, timezone
-
 def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, contactos_collection) -> str:
     contacto = contacto or {}
     
@@ -197,16 +175,25 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
     original = user_msg.strip()
     texto = original.lower()
 
-    # ===================================================================
-    # 1. BAJA / AJUSTE / REBAJA → PRIORIDAD ABSOLUTA (imposible que falle)
+# ===================================================================
+    # 1. BAJA / AJUSTE / REBAJA (OPCIÓN 1)
     # ===================================================================
     if re.search(r'\b(1\s*(️⃣|$|\b)|uno|un[ao]?\b|'
+                 # Verbos de acción directa
                  r'baj(?:ar|en|emos|arle|émoslo|ale|ita|bájen(?:la|lo|me)?)\b|'
                  r'rebaj(?:a|e|ar|émosla|ita|émoslo|en|émosle)\b|'
                  r'ajust(?:ar|emos|e|émoslo|émosle|ito|en)\b|'
+                 r'modific(?:ar|a|an|alo|al[ao])\b|'  # NEW: Modificar
+                 r'cambi(?:ar|emos|a|alo)\s*(?:el\s*)?(?:precio|valor)\b|' # NEW: Cambiar precio
+                 # Sustantivos
                  r'baja|rebaja|ajuste|reducción|descuento|menor|menos|'
-                 r's[ií]+|ok+|dale+|claro|obvio|ya\s*po|vamos|adelante|proced|'
+                 # Afirmaciones chilenas / Coloquiales
+                 r's[ií]+|ok+|dale+|claro|obvio|ya\s*po|vamos|adelante|proced(?:a|e)|'
+                 r'hag[áa]moslo|juegue|me\s*parece\s*bien|bueno|'
+                 # Autorizaciones formales
                  r'autoriz|confirmo|acepto|apruebo|perfecto|listo|hecho|cuenta\s*conmigo|'
+                 r'opci[óo]n\s*1\b|' # NEW: Opción 1 explícita
+                 # Variaciones compuestas
                  r'(?:baj|rebaj|ajust)[ae]n|'
                  r'(?:5|6|7|8|9|10|12|15|20|25)\s*(%|por\s*ciento|puntos?)\b)', texto, re.IGNORECASE):
 
@@ -216,48 +203,66 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
         estado_campana = "baja_autorizada"
 
         if ya_autorizo:
-            respuesta = f"¡De nada {primer_nombre}! 😊\n\nYa tenemos todo listo para bajar el precio y venderla rápido.\nEn máximo 48 hrs verás los cambios publicados.\n¡Vamos con todo! 🔥"
+            respuesta = f"¡De nada {primer_nombre}! 😊\n\nYa tenemos todo listo para bajar el precio y venderla rápido.\nEn máximo 72 hrs verás los cambios publicados.\n¡Vamos con todo! 🔥"
         else:
             respuesta = RESPONSES_PROPIETARIO["autoriza_baja"].format(primer_nombre=primer_nombre)
 
-    # ===================================================================
-    # 2. RECHAZO AGRESIVO
+# ===================================================================
+    # 2. RECHAZO AGRESIVO (STOP / VETADO)
     # ===================================================================
     elif re.search(r'\b(no\s*molest|spam|denunci|bloqu|acoso|basta|para\s*ya|'
                    r'déjame\s*en\s*paz|cállate|no\s*contact|molestando|insist|'
-                   r'qué\s*parte\s*de\s*no|déjame\s*tranquilo)\b', texto, re.IGNORECASE):
+                   r'qué\s*parte\s*de\s*no|déjame\s*tranquilo|'
+                   # NEW: Específicos de base de datos / Chile
+                   r'borr[ao]|elimin[ao]|sacame|sácame|borrar|eliminar|'
+                   r'sernac|polic[íi]a|demand|' # Peligro legal
+                   r'hincha|pesado|cortala|c[óo]rtala|' # Chilenismos de molestia
+                   r'no\s*quiero\s*recibir|me\s*tienen\s*harto)\b', texto, re.IGNORECASE):
         respuesta = RESPONSES_PROPIETARIO["rechazo_agresivo"].format(primer_nombre=primer_nombre)
         accion = "rechazo_agresivo"
         score = 1
         estado_campana = "rechazo_agresivo"
 
     # ===================================================================
-    # 3. RECHAZA LA BAJA (está loco, vale más, etc.)
+    # 3. RECHAZA LA BAJA (Vale más, no regalar)
     # ===================================================================
     elif re.search(r'\b(vale\s+m[áa]s|est[áa]s?\s*loco|rid[ií]culo|muy\s+bajo|'
                    r'no\s+acepto|no\s+estoy\s+de\s+acuerdo|tasaci[óo]n\s+errada|'
-                   r'inaceptable|exagerado|negativo)\b', texto, re.IGNORECASE):
+                   r'inaceptable|exagerado|negativo|'
+                   # NEW: Conceptos de pérdida de valor
+                   r'regal(?:ar|o)|botar|poca\s*plata|ni\s*cag|' # "Ni cagando" (común)
+                   r'desvaloriz|pierd[oa]|perder|'
+                   r'robo|estafa|muy\s*barat[oa])\b', texto, re.IGNORECASE):
         respuesta = RESPONSES_PROPIETARIO["rechaza_baja"].format(primer_nombre=primer_nombre)
         accion = "rechaza_baja_precio"
         score = 6
         estado_campana = "rechaza_baja"
 
     # ===================================================================
-    # 4. MANTIENE PRECIO → solo si es CLARO
+    # 4. MANTIENE PRECIO (OPCIÓN 2)
     # ===================================================================
     elif re.search(r'\b(2\s*(️⃣|$|\b)|dos|mantener|mantengo|dejo|queda|seguir\s*igual|'
                    r'por\s*ahora\s*no|todav[íi]a\s*no|espero|veamos|veo|prefiero\s*mantener|'
-                   r'no\s+bajo|no\s+bajen|no\s+rebajo|no\s+ajusto)\b', texto, re.IGNORECASE):
+                   r'no\s+bajo|no\s+bajen|no\s+rebajo|no\s+ajusto|'
+                   # NEW: Paciencia / Sin cambios
+                   r'tal\s*cual|as[íi]\s*nom[áa]s|mismo\s*precio|mismo\s*valor|'
+                   r'aguant|no\s*tengo\s*apuro|sin\s*apuro|no\s*tengo\s*prisa|'
+                   r'opci[óo]n\s*2)\b', texto, re.IGNORECASE):
         respuesta = RESPONSES_PROPIETARIO["mantiene"].format(primer_nombre=primer_nombre)
         accion = "mantiene_precio"
         score = 5
         estado_campana = "mantiene_precio"
 
     # ===================================================================
-    # 5. PAUSA / SACAR / NO DISPONIBLE
+    # 5. PAUSA / SACAR / NO DISPONIBLE (OPCIÓN 3)
     # ===================================================================
     elif re.search(r'\b(3\s*(️⃣|$|\b)|tres|pausa|retirar|quitar|sacar|no\s+disponible|'
-                   r'ya\s*vend|se\s*vendi[óo]|arriend|no\s+vender|para\s*despu[ée]s)\b', texto, re.IGNORECASE):
+                   r'ya\s*vend|se\s*vendi[óo]|arriend|no\s+vender|para\s*despu[ée]s|'
+                   # NEW: Terminología de publicación
+                   r'bajar\s*publicaci[óo]n|bajar\s*de\s*internet|'
+                   r'suspend|congel|b[áa]jala\s*de|'
+                   r'desist|no\s*sigan|'
+                   r'opci[óo]n\s*3)\b', texto, re.IGNORECASE):
         respuesta = RESPONSES_PROPIETARIO["pausa"].format(primer_nombre=primer_nombre)
         accion = "pausa_venta"
         score = 2
@@ -388,7 +393,7 @@ Reglas de oro:
 - Integra la descripción de las fotos y los amenities de forma natural dentro del relato (ej: "la foto del living es increíble, se ve súper luminoso con esa vista al jardín")
 - Nunca digas "Imagen:", "Amenities:" ni "Ubicación:" → eso queda robótico y está prohibido
 - Termina siempre invitando a la acción de forma clara y profesional: "¿Cuál te gustó más?", "¿Agendamos visita?"
-- Máximo 2 frases cortas por propiedad (máximo 110 caracteres en total por una)
+- Máximo 2 frases cortas por propiedad (máximo 90 caracteres en total por una)
 
 Responde SOLO el texto natural, sin json, sin código, sin comillas.
 """
@@ -494,12 +499,11 @@ def handle_continue(phone: str, user_msg: str, history: List[Dict[str, Any]], ti
         if not criteria.get("tipo"): faltan.append("¿casa, depto, oficina, local?")
         if not criteria.get("comuna"): faltan.append("¿en qué comuna(s)? (puedes decir varias)")
 
-        #respuesta = f"¡Perfecto! Ya casi estamos 😊\nSolo me falta saber:\n• {'\n• '.join(faltan)}\n¡Y te muestro lo mejor al tiro!"
         respuesta = (
     "¡Perfecto! Ya casi estamos 😊\n"
     "Solo me falta saber:\n"
     "• " + "\n• ".join(faltan) + "\n"
-    "¡Y te muestro lo mejor al tiro!"
+    "¡Y te muestro lo mejor de inmediato!"
 )
 
     # Guardar conversación

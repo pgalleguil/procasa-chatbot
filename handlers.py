@@ -113,238 +113,145 @@ def handle_advisor(phone, user_msg, history, tipo_contacto, contactos_collection
     return response
 
 def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, contactos_collection) -> str:
-    contacto = contacto or {}
     original = user_msg.strip()
     texto = original.lower().strip()
 
-    nombre_raw = contacto.get("nombre_propietario") or contacto.get("nombre") or "Propietario"
-    primer_nombre = nombre_raw.strip().split(maxsplit=1)[0].title()
-    codigo = contacto.get("codigo", "sin código")
+    nombre_raw = contacto.get("nombre_propietario") or contacto.get("nombre") or "Cliente"
+    primer_nombre = nombre_raw.split(maxsplit=1)[0].title()
+    codigos = [contacto.get("codigo")] if contacto.get("codigo") else []
+    if not codigos:
+        codigos = [doc.get("codigo") for doc in contactos_collection.find({"telefono": phone}, {"codigo": 1}) if doc.get("codigo")]
 
-    # === HISTORIAL RECIENTE (para que Grok no se olvide) ===
-    messages = contacto.get("messages", []) if contacto else []
-    ultimo_bot = next((m["content"] for m in reversed(messages) if m.get("role") == "assistant"), "")
+    # Cargar datos reales de todas sus propiedades
+    datos_propiedades = {}
+    calculos_7pct = []
+    for cod in codigos:
+        if cod:
+            info = cargar_datos_propiedad(cod)
+            if info:
+                datos_propiedades[cod] = info
+                if info["precio_uf_actual"]:
+                    nuevo = round(info["precio_uf_actual"] * 0.93, 1)
+                    calculos_7pct.append(f"{cod} ({info['comuna']}): {info['precio_uf_actual']} → {nuevo} UF")
+
+    # Historial para Grok
+    messages = contacto.get("messages", [])
+    historial = "\n".join([f"{m.get('role','?')}: {m.get('content','')}" for m in messages[-10:]])
     ya_autorizo = any("excelente decisión" in m.get("content", "").lower() for m in messages if m.get("role") == "assistant")
-    ultima_accion = contacto.get("campanas", {}).get("data_dura_7pct", {}).get("ultima_accion", "")
+
+    # Regex ultra-precisos (solo lo 100% claro)
+    ACEPTA_CLARO = re.compile(r'\b(1\b|opci[oó]n\s*1|uno|s[íií]+\b|ok+\b|dale+\b|adelante\b|perfecto\b|confirm[ao]\b|autoriz[ao]\b|proced[ae]\b|hecho\b|listo\b)\b', re.I)
+    MANTIENE_CLARO = re.compile(r'\b(2\b|opci[oó]n\s*2|dos|mantener\b|prefiero\s*mantener)\b', re.I)
+    PAUSA_CLARO = re.compile(r'\b(3\b|opci[oó]n\s*3|tres|ya\s*(vend|arriend)|retirar|pausa|sacar|no\s*disponible|bajar\s*publicaci[óo]n)\b', re.I)
+    RECHAZO_AGRESIVO = re.compile(r'\b(spam|denunci|bloque|acoso|basta|para\s*ya|déjame\s*en\s*paz|borra|elimina|sácame|sernac|molest|hincha|pesado|insistiendo|cortala)\b', re.I)
 
     respuesta = ""
-    accion = "sin_clasificar"
-    score = 5
-    estado_campana = "pendiente"
-    desactivar = False
-    motivo_desactivacion = None
+    accion = "continua_con_grok"
+    score = 8
 
-    # ===================================================================
-    # 1. RECHAZO AGRESIVO → PRIORIDAD MÁXIMA (vetar)
-    # ===================================================================
-    if re.search(r'\b(no\s*molest|spam|denunci|bloqu|acoso|basta|para\s*ya|'
-                 r'd[ée]jame\s*en\s*paz|c[áa]llate|no\s*contact|molestando|insist|'
-                 r'borr[ao]|elimin[ao]|sacame|s[áa]came|sernac|polic[íi]a|demand|'
-                 r'qué\s*parte\s*de\s*no|hincha|pesado|cortala|no\s*escribas\s*m[áa]s)\b', texto, re.IGNORECASE):
+    # 1. Rechazo agresivo → vetar inmediatamente
+    if RECHAZO_AGRESIVO.search(texto):
+        respuesta = f"Lamento profundamente si el mensaje fue inoportuno, {primer_nombre}. He eliminado tu número de todas nuestras campañas. No recibirás más comunicaciones. Que tengas buena jornada."
         accion = "rechazo_agresivo"
         score = 1
-        estado_campana = "vetado"
-        desactivar = True
-        motivo_desactivacion = "rechazo_agresivo"
-        respuesta = f"Lamento mucho si fue inoportuno, {primer_nombre}. Ya eliminé tu número de todas las campañas. No recibirás más mensajes."
+        contactos_collection.update_one({"telefono": phone}, {"$set": {"activo": False}})
 
-    # ===================================================================
-    # 2. YA VENDIÓ / PAUSA / SACAR PUBLICACIÓN
-    # ===================================================================
-    elif re.search(r'\b(ya\s+se\s+(vend|arrend)|retir|pausa|sacame|borr[ao]|elimin[ao]|'
-                   r'bajar\s*publicaci[óo]n|no\s+disponible|opci[óo]n\s*3)\b', texto, re.IGNORECASE):
+    # 2. Pausa clara
+    elif PAUSA_CLARO.search(texto):
+        respuesta = RESPONSES_PROPIETARIO["pausa"].format(primer_nombre=primer_nombre)
         accion = "pausa_venta"
         score = 2
-        estado_campana = "pausada_por_propietario"
-        desactivar = True
-        motivo_desactivacion = "pausa_voluntaria"
-        respuesta = RESPONSES_PROPIETARIO["pausa"].format(primer_nombre=primer_nombre)
 
-    # ===================================================================
-    # 3. ACEPTA BAJA CLARO (solo la primera vez)
-    # ===================================================================
-    elif not ya_autorizo and re.search(r'\b(1\b|uno\b|s[ií]+\b|ok+\b|dale+\b|claro\b|ya\s*po\b|vamos\b|'
-                                       r'adelante\b|proced(?:a|e)\b|hag[áa]moslo\b|perfecto\b|listo\b|hecho\b|'
-                                       r'autoriz[ao]\b|confirm[ao]\b|acept[ao]\b|aprueb[ao]\b|opci[óo]n\s*1)\b', texto, re.IGNORECASE):
+    # 3. Acepta claramente (solo la primera vez)
+    elif not ya_autorizo and ACEPTA_CLARO.search(texto):
+        respuesta = RESPONSES_PROPIETARIO["autoriza_baja"].format(primer_nombre=primer_nombre)
         accion = "autoriza_baja_automatica"
         score = 10
-        estado_campana = "baja_autorizada"
-        respuesta = f"¡Excelente decisión, {primer_nombre}!\n\n" \
-                    f"Ya programé el ajuste del precio para que tu propiedad entre en el rango de los pocos créditos que están aprobando hoy.\n" \
-                    f"En máximo 72 horas verás el nuevo valor publicado en todos los portales.\n\n" \
-                    f"¡Vamos con todo a cerrar esta venta rápido! 🔥"
 
-    # ===================================================================
-    # 4. NEGOCIACIÓN DE % (después de aceptar o en cualquier momento)
-    # ===================================================================
-    elif re.search(r'\b(\d+\s*%|\d+\s*puntos?|solo\s*\d+%|puedo\s*\d+%|m[áa]ximo\s*\d+%|'
-                   r'\d+%\s*(mejor|est[áa] bien)|me\s*parece\s*mucho|much[io]simo|exagerado)\b', texto, re.IGNORECASE):
-        accion = "negociacion_porcentaje"
-        score = 10
-        estado_campana = "baja_negociada"
-        respuesta = f"¡Entendido perfectamente, {primer_nombre}!\n\n" \
-                    f"Estamos 100% alineados en vender rápido. Un ajuste más suave también nos ayuda muchísimo.\n" \
-                    f"¿Te sirve {primer_nombre} un 4,5% o 5%? Así entramos al rango top de créditos aprobados esta semana.\n\n" \
-                    f"¡Dime y lo programamos hoy mismo!"
+    # 4. Mantiene precio claramente
+    elif MANTIENE_CLARO.search(texto):
+        respuesta = RESPONSES_PROPIETARIO["mantiene"].format(primer_nombre=primer_nombre)
+        accion = "mantiene_precio"
+        score = 5
 
-    # ===================================================================
-    # 5. PREGUNTA POR FUENTE / DATOS / CCHC / ESTADÍSTICAS
-    # ===================================================================
-    elif re.search(r'\b(d[oó]nde|fuente|sacaste|datos|cchc|cmf|informe|estad[íi]stica|'
-                   r'cu[áa]nto\s*ser[íi]an|cu[áa]nto\s*uf|verd[aá]d|real)\b', texto, re.IGNORECASE):
-        accion = "pregunta_fuente_o_uf"
-        score = 10
-        estado_campana = "caliente_pregunta"
-        respuesta = f"¡Buena pregunta, {primer_nombre}!\n\n" \
-                    f"Datos oficiales noviembre 2025:\n" \
-                    f"• CChC: 108.423 propiedades en stock\n" \
-                    f"• CMF: créditos hipotecarios ↓38% anual\n" \
-                    f"• Absorción RM: 32,4 meses\n\n" \
-                    f"¿Te mando el PDF completo?\n" \
-                    f"¿O seguimos con el ajuste (aunque sea 5%) para vender antes de fin de año?"
-
-    # ===================================================================
-    # 6. RECHAZA LA BAJA (pero no está enojado)
-    # ===================================================================
-    elif re.search(r'\b(no\s+acepto|inaceptable|muy\s+bajo|rid[ií]culo|exagerado|'
-                   r'no\s+bajo|no\s+rebajo|mantengo|opci[óo]n\s*2)\b', texto, re.IGNORECASE):
-        accion = "rechaza_baja_precio"
-        score = 6
-        estado_campana = "rechaza_baja"
-        respuesta = RESPONSES_PROPIETARIO["rechaza_baja"].format(primer_nombre=primer_nombre)
-
-    # ===================================================================
-    # 7. FALLBACK INTELIGENTE CON GROK (usa todo el contexto)
-    # ===================================================================
+    # 5. Todo lo demás → Grok con datos 100% reales
     else:
-        try:
-            from chatbot import call_grok
+        datos_str = "No se encontraron datos de la propiedad."
+        if datos_propiedades:
+            datos_str = "\n".join([
+                f"• Código {cod}: {info['tipo']} en {info['comuna']}, {info['precio_uf_actual'] or '?'} UF"
+                + (f", {info['dormitorios']} dorm, {info['m2_util']} m² útiles" if info.get('dormitorios') else "")
+                for cod, info in datos_propiedades.items()
+            ])
 
-            # Resumen del historial para Grok
-            contexto = ""
-            for m in messages[-8:]:
-                rol = "Propietario" if m.get("role") == "user" else "Bot"
-                contenido = m.get("content", "")[:100]
-                contexto += f"{rol}: {contenido}\n"
+        prompt = f"""
+        Eres Bernardita, ejecutiva senior de Procasa Jorge Pablo Caro Propiedades.
+        Tono profesional, cálido y elegante. Hablas con respeto y claridad.
 
-            prompt = f"""
-Eres una asistete de Jorge Pablo Caro, corredor senior de Procasa. Estás hablando con {primer_nombre}, propietario código {codigo}.
+        Datos reales de la(s) propiedad(es):
+        {datos_str}
 
-Contexto completo del chat:
-{contexto}
+        Cálculo exacto del -7%:
+        {chr(10).join(calculos_7pct) if calculos_7pct else "No disponible"}
 
-Último mensaje del propietario:
-"{original}"
+        Links directos (úsalos siempre cuando menciones una propiedad):
+        {chr(10).join([f"• Código {cod}: https://www.procasa.cl/{cod}" for cod in datos_propiedades.keys()] if datos_propiedades else "No disponible")}
 
-Ya propusiste bajar 7% por sobrestock. El propietario ya dijo "sí" o está negociando.
+        Historial:
+        {historial}
 
-Clasifica y responde EXACTAMENTE así:
-INTENCIÓN||Respuesta natural cálida chilena (máx 380 caracteres)
+        Mensaje del propietario:
+        {original}
 
-Posibles intenciones:
-- ACEPTA_MENOS (acepta 3-6%)
-- PIDE_LLAMADA (quiere hablar con persona)
-- PREGUNTA_UF (cuánto sería en plata)
-- DUDOSO (pide tiempo o más info)
-- MANTIENE (no quiere bajar nada)
+        Reglas clave:
+        - Si pregunta “¿cuál propiedad?” o “¿de qué hablas?” → responde con código, tipo, comuna, precio actual y el link directo.
+        - Siempre incluye el link https://www.procasa.cl/CÓDIGO cuando hagas referencia a la propiedad.
+        - Si pregunta cuánto quedaría → usa el cálculo exacto de arriba.
+        - Máximo 5 líneas. Termina invitando a confirmar el ajuste.
 
-Ejemplos:
-ACEPTA_MENOS||Perfecto {primer_nombre}, 5% está genial! Así vendemos antes de navidad. ¿Lo programamos?
-PIDE_LLAMADA||Claro {primer_nombre}, te llamo en 5 minutos para cerrar el ajuste juntos
-PREGUNTA_UF||Serían 245 UF menos aproximadamente. ¿Te paso el cálculo exacto por mail?
-"""
+        Responde SOLO el texto para WhatsApp.
+        """
 
-            grok_out = call_grok(prompt, temperature=0.15, max_tokens=300)
-            if grok_out and "||" in grok_out:
-                intencion, _, resp = grok_out.partition("||")
-                intencion = intencion.strip().upper()
+        from chatbot import call_grok
+        respuesta_grok = call_grok(prompt, temperature=0.3, max_tokens=800)
+        respuesta = respuesta_grok.strip() if respuesta_grok else RESPONSES_PROPIETARIO["default_caliente"].format(primer_nombre=primer_nombre, codigo=codigos[0] if codigos else "tu propiedad")
 
-                if "ACEPTA" in intencion:
-                    accion = "baja_aceptada_grok"
-                    score = 10
-                    estado_campana = "baja_autorizada_grok"
-                elif "PIDE_LLAMADA" in intencion:
-                    accion = "escalado_llamada"
-                    score = 10
-                elif "PREGUNTA_UF" in intencion:
-                    accion = "pregunta_calculo"
-                    score = 9
-                else:
-                    accion = "continua_con_grok"
-                    score = 8
-
-                respuesta = resp.strip()
-            else:
-                raise ValueError("Sin ||")
-        except Exception as e:
-            print(f"[GROK FALLÓ PROPIETARIO] {e}")
-            respuesta = f"Entendido {primer_nombre}, gracias por responder. ¿En qué te puedo ayudar exactamente con el precio? ¿Prefieres que te llame?"
-
-    # ===================================================================
-    # GUARDADO FINAL EN MONGO + EMAIL SI ES CALIENTE
-    # ===================================================================
+    # Guardar en Mongo
     update_data = {
-        "clasificacion_propietario": accion,
-        "ultima_respuesta": original,
-        "fecha_clasificacion": datetime.now(timezone.utc),
-        "autoriza_baja": "baja" in accion or "acepta" in accion,
-        "activo": not desactivar,
-        "campanas.data_dura_7pct.estado": estado_campana,
-        "campanas.data_dura_7pct.fecha_respuesta": datetime.now(timezone.utc),
         "campanas.data_dura_7pct.ultima_accion": accion,
         "campanas.data_dura_7pct.score": score,
+        "campanas.data_dura_7pct.fecha_respuesta": datetime.now(timezone.utc),
+        "clasificacion_propietario": accion,
+        "autoriza_baja": accion in ["autoriza_baja_automatica", "baja_aceptada_grok"]
     }
-    if motivo_desactivacion:
-        update_data["motivo_desactivacion"] = motivo_desactivacion
 
     contactos_collection.update_one(
         {"telefono": phone},
         {"$set": update_data,
          "$push": {"messages": {"$each": [
-             {"role": "user", "content": original, "timestamp": datetime.now(timezone.utc)},
-             {"role": "assistant", "content": respuesta, "timestamp": datetime.now(timezone.utc),
-              "metadata": {"accion": accion, "score": score}}
+             {"role": "user", "content": original},
+             {"role": "assistant", "content": respuesta, "metadata": {"accion": accion, "score": score}}
          ]}}}
     )
 
-    # Email solo si es caliente
-    if score >= 8 or "baja" in accion or "acepta" in accion:
+    # Email si es caliente o autoriza
+    if score >= 8 or "autoriza" in accion or "baja" in accion:
         try:
             from email_utils import send_propietario_alert
-            codigos = [doc.get("codigo") for doc in contactos_collection.find(
-                {"$or": [{"telefono": phone}, {"telefono": {"$regex": phone[-9:]}}]}, {"codigo": 1}
-            ) if doc.get("codigo")]
             send_propietario_alert(
-                phone=phone, nombre=nombre_raw, codigos=codigos or [codigo],
-                mensaje_original=original, accion_detectada=accion,
-                respuesta_bot=respuesta, autoriza_baja="baja" in accion or "acepta" in accion
-            )
-        except Exception as e:
-            print(f"[ERROR EMAIL PROP] {e}")
-
-    return respuesta
-
-"""
-    # ===================================================================
-    # EMAIL solo a los que autorizan o están calientes
-    # ===================================================================
-    if enviar_email:
-        try:
-            from email_utils import send_gmail_alert
-            titulo = "AUTORIZÓ BAJA" if "autoriza_baja" in accion else "PROPIETARIO CALIENTE"
-            send_gmail_alert(
                 phone=phone,
-                lead_type=f"PROPIETARIO 🔥 {titulo}",
-                lead_score=score,
-                criteria={"codigo": codigo, "nombre": nombre_completo, "accion": accion},
-                last_user_msg=original,
-                last_response=respuesta
+                nombre=nombre_raw,
+                codigos=codigos,
+                mensaje_original=original,
+                accion_detectada=accion,
+                respuesta_bot=respuesta,
+                autoriza_baja="autoriza" in accion or "baja" in accion
             )
         except Exception as e:
-            print(f"[ERROR EMAIL] {e}")
+            print(f"[ERROR EMAIL PROPIETARIO] {e}")
 
     return respuesta
-"""
+
 # ===================================================================
 # HUMANIZAR RESPUESTA CON GROK (usa campos truncados → pocos tokens)
 # ===================================================================
@@ -491,3 +398,58 @@ def handle_continue(phone: str, user_msg: str, history: List[Dict[str, Any]], ti
         ]}}}
     )
     return respuesta
+
+# ===================================================================
+# NUEVA FUNCIÓN: Cargar datos reales desde universo_obelix
+# ===================================================================
+def cargar_datos_propiedad(codigo: str) -> dict:
+    """Busca en universo_obelix por código y devuelve datos limpios y útiles"""
+    if not codigo:
+        return {}
+
+    from config import Config
+    from pymongo import MongoClient
+    config = Config()
+    client = MongoClient(config.MONGO_URI)
+    db = client[config.DB_NAME]
+
+    prop = db["universo_obelix"].find_one(
+        {"codigo": codigo},
+        {
+            "tipo_propiedad": 1,
+            "comuna": 1,
+            "precio_uf": 1,
+            "precio_clp": 1,
+            "operacion": 1,
+            "dormitorios": 1,
+            "banos": 1,
+            "superficie_util": 1,
+            "superficie_total": 1,
+            "calle_referencia_1": 1,
+            "calle_referencia_2": 1,
+            "descripcion": 1
+        }
+    )
+
+    if not prop:
+        return {"codigo": codigo, "comuna": "No encontrada", "precio_uf_actual": None}
+
+    precio_uf = prop.get("precio_uf")
+    if isinstance(precio_uf, dict):
+        precio_uf = next(iter(precio_uf.values()), None) if precio_uf else None
+
+    return {
+        "codigo": codigo,
+        "tipo": str(prop.get("tipo_propiedad", "Propiedad")).split()[0].title(),
+        "comuna": str(prop.get("comuna", "Santiago")).title(),
+        "precio_uf_actual": float(precio_uf) if precio_uf else None,
+        "precio_clp": prop.get("precio_clp"),
+        "operacion": str(prop.get("operacion", "Venta")).title(),
+        "dormitorios": prop.get("dormitorios"),
+        "banos": prop.get("banos"),
+        "m2_util": prop.get("superficie_util"),
+        "m2_total": prop.get("superficie_total"),
+        "calle1": prop.get("calle_referencia_1"),
+        "calle2": prop.get("calle_referencia_2"),
+        "descripcion": str(prop.get("descripcion", "") or "")[:400]
+    }

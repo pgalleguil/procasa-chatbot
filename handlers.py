@@ -145,7 +145,7 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
     comuna = info.get("comuna", "Santiago")
     tipo = info.get("tipo", "Propiedad")
 
-    # === ESTADO DE CONVERSACIÓN (asumiendo template ya enviado) ===
+    # === ESTADO DE CONVERSACIÓN ===
     messages = contacto.get("messages", [])
     historial = [m for m in messages[-10:] if m.get("role") == "assistant"]
     ya_mostro_link = any("procasa.cl" in m.get("content", "") for m in historial)
@@ -181,6 +181,55 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
     accion = "continua_con_grok"
     score = 8
 
+    # ====================================================================
+    # NUEVO: ANTI-LOOP DEFINITIVO – SE ACTIVA ANTES DE TODO LO DEMÁS
+    # ====================================================================
+    respuestas_anteriores = [m.get("content", "").lower() for m in messages if m.get("role") == "assistant"]
+    veces_pregunto_luz_verde = sum(1 for r in respuestas_anteriores if any(p in r for p in ["luz verde", "autoriz", "bajar el precio", "¿me das luz verde", "confirmar"]))
+
+    # Rechazo fuerte o "no molestes"
+    rechazo_fuerte = any(frase in texto_lower for frase in [
+        "no molestes", "deja de molestar", "no me escribas más", "no insistas", "basta", "para", "no sigas",
+        "no quiero", "mejor no", "no me interesa", "olvídalo", "ni cagando", "jamás", "nunca", "de ninguna manera"
+    ])
+
+    # Insiste en menos del 7% o dice que esperará (después de 2 intentos)
+    insiste_menos_7 = any(frase in texto_lower for frase in ["solo 5", "un 5", "5%", "cinco", "menos de 7", "solo 6"])
+    quiere_esperar = any(frase in texto_lower for frase in ["esperaré", "lo pensaré", "más adelante", "por ahora no", "en otro momento"])
+
+    if rechazo_fuerte or (veces_pregunto_luz_verde >= 2 and (insiste_menos_7 or quiere_esperar)):
+        respuesta = f"Perfecto {primer_nombre}, entiendo completamente y respeto tu decisión 😊\n\n" \
+                    f"Quedamos atentos por si más adelante cambian las condiciones o te animas.\n" \
+                    f"Solo me escribes cuando quieras y lo hacemos al tiro.\n\n" \
+                    f"¡Que tengas un excelente día!"
+        accion = "rechazo_definitivo_7pct"
+        score = 2
+
+        # Marcar como cerrado para que nunca más entre en campañas
+        contactos_collection.update_one(
+            {"telefono": phone},
+            {"$set": {
+                "campanas.data_dura_7pct.estado": "rechazado_definitivo",
+                "campanas.data_dura_7pct.cerrado": True,
+                "campanas.data_dura_7pct.ultima_accion": accion,
+                "campanas.data_dura_7pct.score": score
+            }}
+        )
+
+        # Guardar mensajes y salir
+        contactos_collection.update_one(
+            {"telefono": phone},
+            {"$push": {"messages": {"$each": [
+                {"role": "user", "content": original},
+                {"role": "assistant", "content": respuesta, "metadata": {"accion": accion, "score": score}}
+            ]}}}
+        )
+        return respuesta
+
+    # ====================================================================
+    # TODO LO DEMÁS QUEDA 100% COMO LO TENÍAS
+    # ====================================================================
+
     # 1. ACEPTA LA BAJA
     if not autorizo_baja and ACEPTA.search(texto_lower):
         respuesta = RESPONSES_PROPIETARIO["autoriza_baja"].format(primer_nombre=primer_nombre)
@@ -188,7 +237,7 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
         score = 10
         contactos_collection.update_one({"telefono": phone}, {"$set": {"autoriza_baja": True}})
 
-    # 2. PAUSA / NO DISPONIBLE → Bajar del sistema (sin email)
+    # 2. PAUSA / NO DISPONIBLE
     elif PAUSA.search(texto_lower):
         respuesta = RESPONSES_PROPIETARIO["pausa"].format(primer_nombre=primer_nombre)
         accion = "pausa_venta"
@@ -201,7 +250,7 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
                     f"Ese valor nos posiciona perfecto en el rango que los bancos están financiando hoy (1.800-1.900 créditos/mes, tasas ~4.42%).\n\n" \
                     f"¿Me das luz verde para bajarla a {precio_nuevo:,.1f} UF y empezar a recibir ofertas serias esta semana?"
 
-    # 4. PREGUNTA POR VISITAS / VELOCIDAD (datos reales)
+    # 4. PREGUNTA POR VISITAS / VELOCIDAD
     elif PREGUNTA_VISITAS.search(texto_lower):
         respuesta = f"Entiendo perfectamente tu preocupación, {primer_nombre} — es normal en este mercado estancado (CChC: absorción 30-32 meses).\n\n" \
                     f"Sí, el ajuste acelera: propiedades similares ven ventas +5-10% (Colliers noviembre 2025), cerrando en 90-120 días vs. 18-24 meses promedio.\n\n" \
@@ -216,33 +265,14 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
                     f"Link directo: {link}\n\n" \
                     f"¿Me das luz verde para el ajuste y empecemos a moverla?"
 
-    # 6. CUALQUIER OTRA RESPUESTA → TU PROMPT ORIGINAL + ANTI-LOOP
+    # 6. CUALQUIER OTRA COSA → TU PROMPT ORIGINAL 100% INTACTO
     else:
-        # === ANTI-LOOP: Detectar rechazo fuerte o insistencia en "solo 5%" o "no" ===
-        rechazo_fuerte = any(pal in texto_lower for pal in [
-            "entonces no", "entonce no", "no quiero", "no me interesa", "prefiero no", "mejor no",
-            "olvídalo", "ni cagando", "imposible", "nunca", "jamás", "no gracias", "de ninguna manera"
-        ])
-        insiste_menos_7 = any(pal in texto_lower for pal in ["solo 5", "un 5", "5%", "cinco", "menos de 7"])
+        historial_corto = "\n".join([
+            f"{m.get('role','?')}: {str(m.get('content',''))[:140]}"
+            for m in messages[-4:] if m.get("content")
+        ]) or "Sin historial"
 
-        respuestas_previas = [m.get("content","").lower() for m in messages if m.get("role")=="assistant"]
-        veces_pregunto_luz_verde = sum("luz verde" in r or "autoriz" in r for r in respuestas_previas)
-
-        if rechazo_fuerte or (veces_pregunto_luz_verde >= 2 and insiste_menos_7):
-            respuesta = f"Perfecto {primer_nombre}, entiendo completamente. No hay drama 😊\n\n" \
-                        f"Quedamos atentos por si más adelante cambian las condiciones del mercado o te animas al ajuste.\n" \
-                        f"Cuando quieras, solo me escribes y lo hacemos al tiro.\n\n" \
-                        f"¡Que tengas un excelente día!"
-            accion = "rechazo_definitivo_7pct"
-            contactos_collection.update_one({"telefono": phone}, {"$set": {"campanas.data_dura_7pct.estado": "rechazado_7pct"}})
-        else:
-            # TU PROMPT ORIGINAL 100% INTACTO
-            historial_corto = "\n".join([
-                f"{m.get('role','?')}: {str(m.get('content',''))[:140]}"
-                for m in messages[-4:] if m.get("content")
-            ]) or "Sin historial"
-
-            prompt = f"""
+        prompt = f"""
 Eres asistente del área de Inteligencia de Negocios de Procasa Jorge Pablo Caro Propiedades.
 El cliente ya recibió el template inicial (mensaje con datos mercado y opciones 1-3). Continúa la conversación de forma natural, como respuesta directa al mensaje anterior.
 
@@ -278,13 +308,13 @@ Reglas estrictas (PRIORIDAD 1):
 Responde SOLO el texto natural para WhatsApp.
 """
 
-            from chatbot import call_grok
-            respuesta_grok = call_grok(prompt, temperature=0.3, max_tokens=500)
+        from chatbot import call_grok
+        respuesta_grok = call_grok(prompt, temperature=0.3, max_tokens=500)
 
-            if not respuesta_grok or "Hola" in respuesta_grok or len(respuesta_grok) < 50:
-                respuesta = f"Entiendo tu punto, {primer_nombre}. Siguiendo lo que te contábamos hace unos minutos, con {precio_nuevo:,.1f} UF entramos al rango viable (CChC: absorción 30 meses). ¿Me das luz verde para reactivarla y empecemos a recibir ofertas?"
-            else:
-                respuesta = respuesta_grok.strip()
+        if not respuesta_grok or "Hola" in respuesta_grok or len(respuesta_grok) < 50:
+            respuesta = f"Entiendo tu punto, {primer_nombre}. Siguiendo lo que te contábamos hace unos minutos, con {precio_nuevo:,.1f} UF entramos al rango viable (CChC: absorción 30 meses). ¿Me das luz verde para reactivarla y empecemos a recibir ofertas?"
+        else:
+            respuesta = respuesta_grok.strip()
 
     # === GUARDAR EN MONGO ===
     update_data = {

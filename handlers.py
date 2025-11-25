@@ -118,38 +118,77 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
 
     nombre_raw = contacto.get("nombre_propietario") or contacto.get("nombre") or "Cliente"
     primer_nombre = nombre_raw.split(maxsplit=1)[0].title()
+
+    # === OBTENER CÓDIGOS (puede tener varios o ninguno) ===
     codigos = [contacto.get("codigo")] if contacto.get("codigo") else []
     if not codigos:
         codigos = [doc.get("codigo") for doc in contactos_collection.find({"telefono": phone}, {"codigo": 1}) if doc.get("codigo")]
 
-    # Cargar datos reales de todas sus propiedades
+    # === CARGAR DATOS REALES DE universo_obelix ===
     datos_propiedades = {}
-    calculos_7pct = []
     for cod in codigos:
         if cod:
             info = cargar_datos_propiedad(cod)
             if info:
                 datos_propiedades[cod] = info
-                if info["precio_uf_actual"]:
-                    nuevo = round(info["precio_uf_actual"] * 0.93, 1)
-                    calculos_7pct.append(f"{cod} ({info['comuna']}): {info['precio_uf_actual']} → {nuevo} UF")
 
-    # Historial para Grok
+    # === CONSTRUCCIÓN 100% SEGURA DE TEXTOS PARA GROK ===
+    datos_lines = []
+    calculos_7pct = []
+    links_lines = []
+
+    for cod, info in datos_propiedades.items():
+        if info.get("error"):
+            datos_lines.append(f"• Código {cod}: No encontrado en base de datos")
+            continue
+
+        tipo = info.get("tipo", "Propiedad")
+        comuna = info.get("comuna", "?")
+        precio = info.get("precio_uf_actual")
+        precio_txt = f"{precio:,.0f} UF".replace(",", ".") if precio else "sin precio"
+
+        extra = []
+        if info.get("dormitorios"): extra.append(f"{info['dormitorios']} dorm")
+        if info.get("m2_util"): extra.append(f"{info['m2_util']} m² útiles")
+        extra_str = f" ({', '.join(extra)})" if extra else ""
+
+        datos_lines.append(f"• Código {cod}: {tipo} en {comuna}, {precio_txt}{extra_str}")
+        links_lines.append(f"• https://www.procasa.cl/{cod}")
+
+        if precio and precio > 0:
+            nuevo = round(precio * 0.93, 1)
+            calculos_7pct.append(f"{cod} ({comuna}): {precio:,.0f} → {nuevo:,.1f} UF".replace(",", "."))
+
+    datos_str = "\n".join(datos_lines) if datos_lines else "No se encontraron datos de la propiedad."
+    links_str = "\n".join(links_lines) if links_lines else "No disponible"
+
+    # === HISTORIAL Y ESTADO ===
     messages = contacto.get("messages", [])
     historial = "\n".join([f"{m.get('role','?')}: {m.get('content','')}" for m in messages[-10:]])
     ya_autorizo = any("excelente decisión" in m.get("content", "").lower() for m in messages if m.get("role") == "assistant")
 
-    # Regex ultra-precisos (solo lo 100% claro)
-    ACEPTA_CLARO = re.compile(r'\b(1\b|opci[oó]n\s*1|uno|s[íií]+\b|ok+\b|dale+\b|adelante\b|perfecto\b|confirm[ao]\b|autoriz[ao]\b|proced[ae]\b|hecho\b|listo\b)\b', re.I)
-    MANTIENE_CLARO = re.compile(r'\b(2\b|opci[oó]n\s*2|dos|mantener\b|prefiero\s*mantener)\b', re.I)
-    PAUSA_CLARO = re.compile(r'\b(3\b|opci[oó]n\s*3|tres|ya\s*(vend|arriend)|retirar|pausa|sacar|no\s*disponible|bajar\s*publicaci[óo]n)\b', re.I)
+    # === ANTI-SPAM DE EMAILS (solo 1 por contacto en esta campaña) ===
+    campana_data = contacto.get("campanas", {}).get("data_dura_7pct", {})
+    if campana_data.get("email_enviado", False):
+        enviar_email = False
+    else:
+        enviar_email = True
+        contactos_collection.update_one(
+            {"telefono": phone},
+            {"$set": {"campanas.data_dura_7pct.email_enviado": True}}
+        )
+
+    # === REGEX ULTRA-PRECISES ===
+    ACEPTA_CLARO = re.compile(r'\b(1|opci[oó]n\s*1|uno|s[íií]+|ok+|dale+|adelante|perfecto|confirm[ao]|autoriz[ao]|proced[ae]|hecho|listo)\b', re.I)
+    MANTIENE_CLARO = re.compile(r'\b(2|opci[oó]n\s*2|dos|mantener|prefiero\s*mantener)\b', re.I)
+    PAUSA_CLARO = re.compile(r'\b(3|opci[oó]n\s*3|tres|ya\s*(vend|arriend)|retirar|pausa|sacar|no\s*disponible|bajar\s*publicaci[óo]n)\b', re.I)
     RECHAZO_AGRESIVO = re.compile(r'\b(spam|denunci|bloque|acoso|basta|para\s*ya|déjame\s*en\s*paz|borra|elimina|sácame|sernac|molest|hincha|pesado|insistiendo|cortala)\b', re.I)
 
     respuesta = ""
     accion = "continua_con_grok"
     score = 8
 
-    # 1. Rechazo agresivo → vetar inmediatamente
+    # 1. Rechazo agresivo → vetar
     if RECHAZO_AGRESIVO.search(texto):
         respuesta = f"Lamento profundamente si el mensaje fue inoportuno, {primer_nombre}. He eliminado tu número de todas nuestras campañas. No recibirás más comunicaciones. Que tengas buena jornada."
         accion = "rechazo_agresivo"
@@ -174,49 +213,40 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
         accion = "mantiene_precio"
         score = 5
 
-    # 5. Todo lo demás → Grok con datos 100% reales
+    # 5. Todo lo demás → Grok con datos reales + links + cálculo exacto
     else:
-        datos_str = "No se encontraron datos de la propiedad."
-        if datos_propiedades:
-            datos_str = "\n".join([
-                f"• Código {cod}: {info['tipo']} en {info['comuna']}, {info['precio_uf_actual'] or '?'} UF"
-                + (f", {info['dormitorios']} dorm, {info['m2_util']} m² útiles" if info.get('dormitorios') else "")
-                for cod, info in datos_propiedades.items()
-            ])
-
         prompt = f"""
-        Eres Bernardita, ejecutiva senior de Procasa Jorge Pablo Caro Propiedades.
-        Tono profesional, cálido y elegante. Hablas con respeto y claridad.
+Eres Bernardita, ejecutiva senior de Procasa Jorge Pablo Caro Propiedades.
+Tono profesional, cálido, respetuoso y elegante. Nunca uses "tinca", "ya po", "volamos".
 
-        Datos reales de la(s) propiedad(es):
-        {datos_str}
+Datos reales de la(s) propiedad(es):
+{datos_str}
 
-        Cálculo exacto del -7%:
-        {chr(10).join(calculos_7pct) if calculos_7pct else "No disponible"}
+Cálculo exacto del -7%:
+{chr(10).join(calculos_7pct) if calculos_7pct else "No disponible"}
 
-        Links directos (úsalos siempre cuando menciones una propiedad):
-        {chr(10).join([f"• Código {cod}: https://www.procasa.cl/{cod}" for cod in datos_propiedades.keys()] if datos_propiedades else "No disponible")}
+Links directos:
+{links_str}
 
-        Historial:
-        {historial}
+Historial de la conversación:
+{historial}
 
-        Mensaje del propietario:
-        {original}
+Mensaje actual del propietario:
+{original}
 
-        Reglas clave:
-        - Si pregunta “¿cuál propiedad?” o “¿de qué hablas?” → responde con código, tipo, comuna, precio actual y el link directo.
-        - Siempre incluye el link https://www.procasa.cl/CÓDIGO cuando hagas referencia a la propiedad.
-        - Si pregunta cuánto quedaría → usa el cálculo exacto de arriba.
-        - Máximo 5 líneas. Termina invitando a confirmar el ajuste.
-
-        Responde SOLO el texto para WhatsApp.
-        """
+Instrucciones:
+- Usa siempre los datos reales de arriba.
+- Si pregunta "¿cuál propiedad?" → responde con código, tipo, comuna, precio y link.
+- Si pregunta "¿cuánto quedaría?" → responde con el cálculo exacto del 7%.
+- Máximo 5 líneas. Termina invitando a confirmar o preguntando cómo prefiere avanzar.
+- Responde SOLO el texto natural para WhatsApp.
+"""
 
         from chatbot import call_grok
         respuesta_grok = call_grok(prompt, temperature=0.3, max_tokens=800)
         respuesta = respuesta_grok.strip() if respuesta_grok else RESPONSES_PROPIETARIO["default_caliente"].format(primer_nombre=primer_nombre, codigo=codigos[0] if codigos else "tu propiedad")
 
-    # Guardar en Mongo
+    # === GUARDAR EN MONGO ===
     update_data = {
         "campanas.data_dura_7pct.ultima_accion": accion,
         "campanas.data_dura_7pct.score": score,
@@ -234,24 +264,25 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
          ]}}}
     )
 
-    # Email si es caliente o autoriza
-    if score >= 8 or "autoriza" in accion or "baja" in accion:
+    # === EMAIL → SOLO UNA VEZ POR CONTACTO ===
+    if enviar_email and (score >= 8 or "autoriza" in accion or "baja" in accion):
         try:
             from email_utils import send_propietario_alert
             send_propietario_alert(
                 phone=phone,
                 nombre=nombre_raw,
-                codigos=codigos,
+                codigos=codigos or ["sin código"],
                 mensaje_original=original,
                 accion_detectada=accion,
                 respuesta_bot=respuesta,
-                autoriza_baja="autoriza" in accion or "baja" in accion
+                autoriza_baja=("autoriza" in accion or "baja" in accion)
             )
+            print(f"[EMAIL ENVIADO 1 VEZ] {phone} → {accion}")
         except Exception as e:
-            print(f"[ERROR EMAIL PROPIETARIO] {e}")
+            print(f"[ERROR EMAIL] {e}")
 
     return respuesta
-
+    
 # ===================================================================
 # HUMANIZAR RESPUESTA CON GROK (usa campos truncados → pocos tokens)
 # ===================================================================
@@ -400,10 +431,10 @@ def handle_continue(phone: str, user_msg: str, history: List[Dict[str, Any]], ti
     return respuesta
 
 # ===================================================================
-# NUEVA FUNCIÓN: Cargar datos reales desde universo_obelix
+# FUNCIÓN DEFINITIVA → CARGA DATOS REALES DESDE universo_obelix (2025)
 # ===================================================================
 def cargar_datos_propiedad(codigo: str) -> dict:
-    """Busca en universo_obelix por código y devuelve datos limpios y útiles"""
+    """Busca en universo_obelix por código y devuelve datos 100% reales y seguros"""
     if not codigo:
         return {}
 
@@ -416,40 +447,50 @@ def cargar_datos_propiedad(codigo: str) -> dict:
     prop = db["universo_obelix"].find_one(
         {"codigo": codigo},
         {
-            "tipo_propiedad": 1,
+            "tipo": 1,
             "comuna": 1,
-            "precio_uf": 1,
+            "precio": 1,           # ← este es el precio en UF (entero)
+            "precio_uf": 1,         # ← a veces viene como dict, a veces no
             "precio_clp": 1,
             "operacion": 1,
             "dormitorios": 1,
             "banos": 1,
-            "superficie_util": 1,
-            "superficie_total": 1,
+            "m2_utiles": 1,
+            "m2_totales": 1,
             "calle_referencia_1": 1,
             "calle_referencia_2": 1,
-            "descripcion": 1
+            "descripcion": 1,
+            "descripcion_clean": 1
         }
     )
 
     if not prop:
-        return {"codigo": codigo, "comuna": "No encontrada", "precio_uf_actual": None}
+        return {"codigo": codigo, "error": "Propiedad no encontrada en universo_obelix"}
 
-    precio_uf = prop.get("precio_uf")
-    if isinstance(precio_uf, dict):
-        precio_uf = next(iter(precio_uf.values()), None) if precio_uf else None
+    # === PRECIO EN UF: puede venir de varias formas ===
+    precio_uf_raw = prop.get("precio") or prop.get("precio_uf")
+    if isinstance(precio_uf_raw, dict):
+        precio_uf = next((v for v in precio_uf_raw.values() if v), None)
+    else:
+        precio_uf = precio_uf_raw
+
+    try:
+        precio_uf = float(precio_uf) if precio_uf else None
+    except:
+        precio_uf = None
 
     return {
         "codigo": codigo,
-        "tipo": str(prop.get("tipo_propiedad", "Propiedad")).split()[0].title(),
+        "tipo": str(prop.get("tipo", "Propiedad")).split()[0].title() if prop.get("tipo") else "Propiedad",
         "comuna": str(prop.get("comuna", "Santiago")).title(),
-        "precio_uf_actual": float(precio_uf) if precio_uf else None,
+        "precio_uf_actual": precio_uf,
         "precio_clp": prop.get("precio_clp"),
         "operacion": str(prop.get("operacion", "Venta")).title(),
         "dormitorios": prop.get("dormitorios"),
         "banos": prop.get("banos"),
-        "m2_util": prop.get("superficie_util"),
-        "m2_total": prop.get("superficie_total"),
+        "m2_util": prop.get("m2_utiles"),
+        "m2_total": prop.get("m2_totales"),
         "calle1": prop.get("calle_referencia_1"),
         "calle2": prop.get("calle_referencia_2"),
-        "descripcion": str(prop.get("descripcion", "") or "")[:400]
+        "descripcion": (prop.get("descripcion_clean") or prop.get("descripcion") or "")[:400]
     }

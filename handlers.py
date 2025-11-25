@@ -151,7 +151,7 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
     ya_mostro_link = any("procasa.cl" in m.get("content", "") for m in historial)
     autorizo_baja = contacto.get("autoriza_baja", False)
 
-    # === ANTI-SPAM EMAIL (solo 1 vez, solo si calienta) ===
+    # === ANTI-SPAM EMAIL ===
     campana = contacto.get("campanas", {}).get("data_dura_7pct", {})
     ya_envio_email = campana.get("email_enviado", False)
 
@@ -159,8 +159,8 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
     if not ya_envio_email:
         if autorizo_baja or contacto.get("clasificacion_propietario", "").startswith("autoriza"):
             debe_enviar_email = True
-        elif any(palabra in texto_lower for palabra in ["precio", "cuanto", "quedaría", "visitas", "ofertas", "ajuste", "bajar", "confirmar", "segura", "rápido"]):
-            debe_enviar_email = True
+        elif any(palabra in texto_lower for palabra in ["precio", "cuanto", "quedaría", "visitas", "ofertas", "ajuste", "bajar", "confirmar", "segura", "rápido", "contactar", "llamar"]):
+            debe_enviar_email = True  # Incluye "contactar/llamar" para escalados
         elif len(messages) <= 6:
             debe_enviar_email = True
 
@@ -175,6 +175,7 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
     PREGUNTA_PRECIO = re.compile(r'\b(cu[áa]nto|precio|quedar[íi]a|final|uf|valor)\b', re.I)
     PREGUNTA_VISITAS = re.compile(r'\b(visitas|interes|ofertas|movimiento|gente|verla|segura|rápido|cerrar|vender|tiempo)\b', re.I)
     PREGUNTA_PROPIEDAD = re.compile(r'\b(cu[áa]l|qué|de qué|de cual|código|propiedad)\b', re.I)
+    PAUSA = re.compile(r'\b(3|opci[oó]n\s*3|tres|ya\s*(vend|arriend)|retirar|pausa|sacar|no\s*disponible)\b', re.I)  # Para "no disponible" – bajar del sistema
 
     respuesta = ""
     accion = "continua_con_grok"
@@ -187,66 +188,76 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
         score = 10
         contactos_collection.update_one({"telefono": phone}, {"$set": {"autoriza_baja": True}})
 
-    # 2. PREGUNTA POR PRECIO (continúa natural)
+    # 2. PAUSA / NO DISPONIBLE → Bajar del sistema (sin email)
+    elif PAUSA.search(texto_lower):
+        respuesta = RESPONSES_PROPIETARIO["pausa"].format(primer_nombre=primer_nombre)
+        accion = "pausa_venta"
+        score = 2
+        contactos_collection.update_one({"telefono": phone}, {"$set": {"activo": False, "disponible": False, "fecha_pausa": datetime.now(timezone.utc)}})  # Bajar propiedad
+
+    # 3. PREGUNTA POR PRECIO
     elif PREGUNTA_PRECIO.search(texto_lower):
-        respuesta = f"Entiendo, {primer_nombre}. El precio quedaría en **{precio_nuevo:,.1f} UF**.\n\n" \
-                    f"Ese valor nos posiciona perfecto en el rango que los bancos están financiando hoy (1.800-1.900 créditos/mes, tasas ~4.5%).\n\n" \
+        respuesta = f"Entiendo, {primer_nombre}. Siguiendo el mensaje de hace unos minutos, el precio quedaría en **{precio_nuevo:,.1f} UF**.\n\n" \
+                    f"Ese valor nos posiciona perfecto en el rango que los bancos están financiando hoy (1.800-1.900 créditos/mes, tasas ~4.42%).\n\n" \
                     f"¿Me das luz verde para bajarla a {precio_nuevo:,.1f} UF y empezar a recibir ofertas serias esta semana?"
 
-    # 3. PREGUNTA POR VISITAS / VELOCIDAD / EFECTO (datos reales CChC/Colliers 2025)
+    # 4. PREGUNTA POR VISITAS / VELOCIDAD (datos reales)
     elif PREGUNTA_VISITAS.search(texto_lower):
-        respuesta = f"Entiendo perfectamente tu duda, {primer_nombre} — es normal en este mercado lento.\n\n" \
-                    f"Según el Informe CChC (Q2 2025), el stock es de 108.000 propiedades con absorción de 30 meses. Las que ajustaron 5-7% ven ventas +1-5% (Colliers), cerrando en 90-120 días vs. 18-24 meses promedio.\n\n" \
-                    f"Con {precio_nuevo:,.1f} UF tu {tipo.lower()} entra al rango viable. No es mágico, pero acelera mucho.\n\n" \
-                    f"¿Me autorizas el ajuste para que empecemos a moverla esta semana?"
+        respuesta = f"Entiendo perfectamente tu preocupación, {primer_nombre} — es normal en este mercado estancado (CChC: absorción 30-32 meses).\n\n" \
+                    f"Sí, el ajuste acelera: propiedades similares ven ventas +5-10% (Colliers noviembre 2025), cerrando en 90-120 días vs. 18-24 meses promedio.\n\n" \
+                    f"Con {precio_nuevo:,.1f} UF tu {tipo.lower()} entra al rango viable, antes de que el cambio político incremente la oferta +10-20% (El Mercurio).\n\n" \
+                    f"¿Me autorizas el 7% para reactivarla esta semana?"
 
-    # 4. PREGUNTA “¿CUÁL PROPIEDAD?” → LINK + CONTEXTO
+    # 5. PREGUNTA “¿CUÁL PROPIEDAD?”
     elif PREGUNTA_PROPIEDAD.search(texto_lower):
         link = f"https://www.procasa.cl/{cod}"
-        respuesta = f"Es tu {tipo.lower()} en {comuna}, código {cod} — la que te mencionamos en el mensaje de hace unos minutos.\n\n" \
+        respuesta = f"Es tu {tipo.lower()} en {comuna}, código {cod} — la que te mencionamos en el mensaje inicial.\n\n" \
                     f"Actualmente en {precio_uf:,.0f} UF → con el 7% quedaría en **{precio_nuevo:,.1f} UF**.\n\n" \
                     f"Link directo: {link}\n\n" \
-                    f"¿Me das luz verde para el ajuste y reactivarla con movimiento?"
+                    f"¿Me das luz verde para el ajuste y empecemos a moverla?"
 
-    # 5. CUALQUIER OTRA RESPUESTA → GROK FLUIDO (continúa el diálogo)
+    # 6. CUALQUIER OTRA RESPUESTA → GROK FLUIDO (prompt corto, enfocado en no repetir)
     else:
         prompt = f"""
 Eres asistente del área de Inteligencia de Negocios de Procasa Jorge Pablo Caro Propiedades.
-El cliente ya recibió el mensaje inicial (el template que enviamos hace minutos) y sabe el contexto de la campaña 7%.
+El cliente ya recibió el template inicial (mensaje con datos mercado y opciones 1-3). Continúa la conversación de forma natural, como respuesta directa al mensaje anterior.
 
 Propiedad: {tipo} en {comuna}, código {cod}
 Precio actual: {precio_uf:,.0f} UF
 Precio con -7%: {precio_nuevo:,.1f} UF
-Link: https://www.procasa.cl/{cod} (solo mostrar si pregunta explícitamente por la propiedad)
+Link: https://www.procasa.cl/{cod} (solo si pregunta por la propiedad)
 
-Datos reales mercado Chile 25 noviembre 2025 (usa para convencer con honestidad, empatía y credibilidad – cita fuentes breves como "según CChC noviembre"):
-- CChC Q3 2025: Stock RM ~108.000 propiedades (histórico alto), absorción 30-32 meses (tiempo para agotar inventario), ventas estancadas (-13% 2024, +5-10% proyectado 2025 por baja tasas).
-- Cesantía: Desempleo RM ~8-8.5% (INE noviembre 2025), reduce acceso a créditos (familias postergan compras, impacto -10-15% demanda vivienda media).
-- Incremento UF: UF +3.5-4% anual (Banco Central IPoM noviembre), presiona precios reales (viviendas UF suben nominalmente pero ajustan -2-5% en CLP por inflación controlada ~3.5%).
-- Créditos hipotecarios: ~1.800-1.900 aprobaciones/mes (bajo histórico, CChC/Banco Central), tasas promedio 4.42% (mínimo anual, Diario Financiero noviembre), pero endurecimiento por cesantía.
-- Efecto ajuste 5-7%: Ventas +5-10% (Colliers noviembre 2025), cierres en 90-120 días vs. 18-24 meses promedio (absorción lenta; ajustes obligatorios por sobreoferta 105k-108k unidades, GlobalBrokers).
-- Nuevo gobierno de derecha (escenario post-elecciones): Posible cambio a políticas pro-mercado (incentivos inversión, Kast-like), pero prepara +10-20% propiedades disponibles (más oferta por confianza inversionista, El Mercurio noviembre).
-- Escenario cambio gobierno: Volatilidad en tasas (posible baja a 4-4.5% si estabilidad), pero riesgo estancamiento ventas si cesantía persiste (8%+); recuperación gradual (+5-10% ventas 2025), foco en sostenibilidad/regionales (Valparaíso/Biobío +45% hipotecas fuera RM, Colliers).
-- Tendencia general: Mercado lento (precios a la baja -1-3% en comunas premium como Vitacura/Las Condes), pero oportunidades en ajustes (ventas +1-5% anual estancado, pero +10% con financiamiento; políticas MINVU para acceso vivienda eficiente).
+Datos reales noviembre 2025 (usa breves, cita fuentes para credibilidad):
+- CChC Q3: Stock RM ~108k propiedades, absorción 30-32 meses, ventas +5-10% proyectado 2025.
+- Cesantía RM 8.0-8.5% (INE noviembre): Reduce demanda -10-15%, posterga compras.
+- UF +3.5-4% anual (Banco Central IPoM): Presiona precios reales -2-5% CLP en vivienda.
+- Créditos: 1.800-1.900/mes, tasas 4.42% (DF noviembre).
+- Ajuste 5-7%: +5-10% ventas (Colliers), cierres 90-120 días vs. 18-24 meses.
+- Gobierno derecha (Kast escenario): Pro-mercado, pero +10-20% oferta propiedades (El Mercurio).
+- Cambio gobierno: Volatilidad tasas (baja a 4-4.5% si estabilidad), ventas estancadas si cesantía >8%.
 
-Historial reciente:
-{chr(10).join([m.get('content','') for m in historial[-3:]]) if historial else "Cliente recién responde al template inicial"}
+Historial reciente (responde basado en esto, sin repetir):
+{chr(10).join([f"{m.get('role','?')}: {m.get('content','')[:100]}..." for m in messages[-4:]])}
 
 Mensaje del cliente: {original}
 
-Instrucciones estrictas:
-- Continúa la conversación de forma natural, como si respondieras al template inicial (sin repetir saludo ni presentación).
-- Valida la duda del cliente con empatía ("Entiendo tu preocupación, es normal en este mercado").
-- Convence con datos reales de arriba (honestidad total: nada de "15 días" – usa 90-120 días, +5-10% ventas).
-- Máximo 5 líneas, tono cálido y profesional.
-- Termina SIEMPRE invitando a confirmar: "¿Me das luz verde para el ajuste?" o similar.
+Reglas estrictas (PRIORIDAD 1):
+- NO digas "Hola", NO te presentes, NO repitas datos del template inicial.
+- Valida duda con empatía: "Entiendo tu preocupación, es normal en este mercado lento".
+- Fluye natural: Responde directo al mensaje anterior, usa historial para no repetir.
+- Convence con 1-2 datos reales (cita breve: "según CChC noviembre").
+- Máximo 4-5 líneas, tono cálido-profesional.
+- Termina SIEMPRE invitando a confirmar: "¿Me das luz verde para el ajuste?".
 
 Responde SOLO el texto natural para WhatsApp.
 """
 
         from chatbot import call_grok
-        respuesta_grok = call_grok(prompt, temperature=0.35, max_tokens=600)
-        respuesta = respuesta_grok.strip() if respuesta_grok else f"Entiendo tu punto, {primer_nombre}. Según CChC, ajustes como este reducen el tiempo de venta a 90-120 días en este mercado estancado. ¿Me das luz verde para el 7% y empecemos a moverla?"
+        respuesta_grok = call_grok(prompt, temperature=0.3, max_tokens=500)  # Temp baja para menos "creatividad"
+        if not respuesta_grok or "Hola" in respuesta_grok or len(respuesta_grok) < 50:  # Fallback si falla flujo
+            respuesta = f"Entiendo tu punto, {primer_nombre}. Siguiendo lo que te contábamos hace unos minutos, con {precio_nuevo:,.1f} UF entramos al rango viable (CChC: absorción 30 meses). ¿Me das luz verde para reactivarla y empecemos a recibir ofertas?"
+        else:
+            respuesta = respuesta_grok.strip()
 
     # === GUARDAR EN MONGO ===
     update_data = {
@@ -264,7 +275,7 @@ Responde SOLO el texto natural para WhatsApp.
          ]}}}
     )
 
-    # === EMAIL → SOLO 1 VEZ Y CUANDO VALE LA PENA ===
+    # === EMAIL → SOLO 1 VEZ Y CUANDO VALE LA PENA (incluye "contactar/llamar") ===
     if debe_enviar_email:
         try:
             from email_utils import send_propietario_alert

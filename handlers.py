@@ -114,14 +114,14 @@ def handle_advisor(phone, user_msg, history, tipo_contacto, contactos_collection
 
 def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, contactos_collection) -> str:
     original = user_msg.strip()
-    texto = original.lower().strip()
+    texto_lower = original.lower().strip()
 
     nombre_raw = contacto.get("nombre_propietario") or contacto.get("nombre") or "Cliente"
     primer_nombre = nombre_raw.split(maxsplit=1)[0].title()
 
-    # === MODO PRUEBA PARA TI (Jorge) → siempre usa una propiedad real y conocida ===
+    # === MODO PRUEBA PARA TI (Jorge) → usa propiedad real ===
     if phone == "+56983219804":
-        codigos = ["55268"]  # Casa en Santiago Centro – 16.900 UF – existe 100%
+        codigos = ["55268"]  # Casa real: 16.900 UF, Santiago Centro
     else:
         codigos = [contacto.get("codigo")] if contacto.get("codigo") else []
         if not codigos:
@@ -136,33 +136,33 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
                 datos_propiedades[cod] = info
 
     if not datos_propiedades:
-        return "Hola, disculpa. No logro encontrar tu propiedad en este momento. ¿Me confirmas el código para ayudarte mejor?"
+        return "Disculpa, no logro identificar tu propiedad. ¿Me confirmas el código para ayudarte mejor?"
 
-    # === TOMAR LA PRIMERA PROPIEDAD (la principal) ===
+    # === PROPIEDAD PRINCIPAL ===
     cod, info = list(datos_propiedades.items())[0]
     precio_uf = info.get("precio_uf_actual")
     precio_nuevo = round(precio_uf * 0.93, 1) if precio_uf else None
     comuna = info.get("comuna", "Santiago")
     tipo = info.get("tipo", "Propiedad")
 
-    # === HISTORIAL Y ESTADO DE CONVERSACIÓN ===
+    # === ESTADO DE CONVERSACIÓN ===
     messages = contacto.get("messages", [])
     historial = [m for m in messages[-10:] if m.get("role") == "assistant"]
-    ya_se_presento = any("Bernardita" in m.get("content", "") for m in historial)
+    ya_se_presento = any("Procasa" in m.get("content", "") for m in historial)
     ya_mostro_link = any("procasa.cl" in m.get("content", "") for m in historial)
     autorizo_baja = contacto.get("autoriza_baja", False)
 
-    # === ANTI-SPAM + ENVÍO INTELIGENTE DE EMAILS ===
+    # === ANTI-SPAM EMAIL (solo 1 vez, solo si calienta) ===
     campana = contacto.get("campanas", {}).get("data_dura_7pct", {})
     ya_envio_email = campana.get("email_enviado", False)
 
     debe_enviar_email = False
     if not ya_envio_email:
-        if autorizo_baja or "autoriza" in contacto.get("clasificacion_propietario", ""):
+        if autorizo_baja or contacto.get("clasificacion_propietario", "").startswith("autoriza"):
             debe_enviar_email = True
-        elif any(palabra in texto for palabra in ["precio", "cuanto", "quedaría", "visitas", "ofertas", "ajuste", "bajar", "confirmar"]):
+        elif any(palabra in texto_lower for palabra in ["precio", "cuanto", "quedaría", "visitas", "ofertas", "ajuste", "bajar", "confirmar", "segura", "rápido"]):
             debe_enviar_email = True
-        elif len(messages) <= 6:  # Primeros mensajes = alta intención
+        elif len(messages) <= 6:
             debe_enviar_email = True
 
     if debe_enviar_email:
@@ -173,65 +173,81 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
 
     # === REGEX PARA DETECCIÓN RÁPIDA ===
     ACEPTA = re.compile(r'\b(1|opci[oó]n\s*1|uno|s[íií]+|ok+|dale+|adelante|perfecto|confirm[ao]|autoriz[ao]|listo)\b', re.I)
-    PREGUNTA_VISITAS = re.compile(r'\b(visitas|interes|llamadas|ofertas|movimiento|gente|verla)\b', re.I)
     PREGUNTA_PRECIO = re.compile(r'\b(cu[áa]nto|precio|quedar[íi]a|final|uf|valor)\b', re.I)
+    PREGUNTA_VISITAS = re.compile(r'\b(visitas|interes|ofertas|movimiento|gente|verla|segura|rápido|cerrar|vender|tiempo)\b', re.I)
+    PREGUNTA_PROPIEDAD = re.compile(r'\b(cu[áa]l|qué|de qué|de cual|código|propiedad)\b', re.I)
 
     respuesta = ""
     accion = "continua_con_grok"
     score = 8
 
     # 1. ACEPTA LA BAJA
-    if not autorizo_baja and ACEPTA.search(texto):
+    if not autorizo_baja and ACEPTA.search(texto_lower):
         respuesta = RESPONSES_PROPIETARIO["autoriza_baja"].format(primer_nombre=primer_nombre)
         accion = "autoriza_baja_automatica"
         score = 10
         contactos_collection.update_one({"telefono": phone}, {"$set": {"autoriza_baja": True}})
 
-    # 2. PREGUNTA POR VISITAS / INTERÉS
-    elif PREGUNTA_VISITAS.search(texto):
-        respuesta = f"Te respondo con total sinceridad, {primer_nombre}: sí, definitivamente habrá más visitas.\n\n" \
-                    f"Las propiedades que ajustaron cerca del 7 % están recibiendo entre 3 y 5 veces más consultas reales que antes.\n\n" \
-                    f"Con {precio_nuevo:,.1f} UF tu {tipo.lower()} en {comuna} entra justo en el rango que los bancos están financiando hoy. " \
-                    f"Esa es la diferencia entre tener movimiento… o cerrar antes de fin de año.\n\n" \
-                    f"¿Confirmamos el ajuste y la reactivamos esta misma semana?"
-
-    # 3. PREGUNTA POR PRECIO
-    elif PREGUNTA_PRECIO.search(texto):
+    # 2. PREGUNTA POR PRECIO
+    elif PREGUNTA_PRECIO.search(texto_lower):
         respuesta = f"El precio quedaría en **{precio_nuevo:,.1f} UF**, {primer_nombre}.\n\n" \
                     f"Ese valor nos posiciona perfecto para recibir ofertas serias en las próximas semanas.\n\n" \
-                    f"¿Te parece bien confirmar los {precio_nuevo:,.1f} UF y le damos luz verde?"
+                    f"¿Confirmamos los {precio_nuevo:,.1f} UF y le damos luz verde al ajuste?"
+
+    # 3. PREGUNTA POR VISITAS / VELOCIDAD / EFECTO DEL AJUSTE (DATOS REALES CChC 2025)
+    elif PREGUNTA_VISITAS.search(texto_lower):
+        respuesta = f"Te lo digo con total sinceridad, {primer_nombre}: sí, el ajuste acelera las ventas.\n\n" \
+                    f"Según datos de la CChC (noviembre 2025), el stock en RM es de 108.000 propiedades con absorción de 32 meses. " \
+                    f"Las que bajaron 5-7% ven ventas +5-10% (Colliers), cerrando en 90-120 días vs. 18-24 meses promedio.\n\n" \
+                    f"Con {precio_nuevo:,.1f} UF tu {tipo.lower()} entra al rango financiable (1.800 créditos/mes).\n\n" \
+                    f"¿Confirmamos el ajuste y la reactivamos esta semana?"
 
     # 4. PRIMERA VEZ → SALUDO + LINK
     elif not ya_se_presento:
         link = f"https://www.procasa.cl/{cod}"
         respuesta = f"Hola {primer_nombre} 😊\n\n" \
-                    f"Soy Bernardita, ejecutiva senior de Procasa. Te escribo por tu {tipo.lower()} en {comuna} (código {cod}).\n\n" \
-                    f"Actualmente está en {precio_uf:,.0f} UF y con el ajuste del 7 % quedaría en **{precio_nuevo:,.1f} UF**.\n\n" \
-                    f"Ese es el rango donde estamos cerrando ventas rápido este mes.\n\n" \
+                    f"Soy del área de Inteligencia de Negocios de Procasa Jorge Pablo Caro Propiedades.\n\n" \
+                    f"Te escribo por tu {tipo.lower()} en {comuna} (código {cod}), actualmente en {precio_uf:,.0f} UF.\n\n" \
+                    f"Con un ajuste del 7 % quedaría en **{precio_nuevo:,.1f} UF** — justo el rango donde estamos cerrando ventas rápido este mes (datos CChC: absorción 32 meses).\n\n" \
                     f"Acá la puedes ver: {link}\n\n" \
                     f"¿Me das luz verde para bajarla a {precio_nuevo:,.1f} UF y reactivarla con fuerza esta semana?"
 
-    # 5. CONVERSACIÓN NORMAL → GROK INTELIGENTE
+    # 5. PREGUNTA “¿CUÁL PROPIEDAD?” → SOLO LINK + DATOS REALES
+    elif PREGUNTA_PROPIEDAD.search(texto_lower):
+        link = f"https://www.procasa.cl/{cod}"
+        respuesta = f"Es tu {tipo.lower()} en {comuna}, código {cod}.\n\n" \
+                    f"Actualmente en {precio_uf:,.0f} UF → con el ajuste quedaría en **{precio_nuevo:,.1f} UF**.\n\n" \
+                    f"Link directo: {link}\n\n" \
+                    f"¿Confirmamos el ajuste y la ponemos en zona de venta inmediata?"
+
+    # 6. CONVERSACIÓN NORMAL → GROK CON DATOS REALES 2025
     else:
         prompt = f"""
-Eres Bernardita, ejecutiva senior de Procasa. Ya te presentaste y el cliente sabe de qué propiedad hablas.
+Eres asistente del área de Inteligencia de Negocios de Procasa Jorge Pablo Caro Propiedades.
+Ya saludaste y el cliente sabe quién eres y de qué propiedad hablas.
 
 Propiedad: {tipo} en {comuna}, código {cod}
 Precio actual: {precio_uf:,.0f} UF
 Precio con -7%: {precio_nuevo:,.1f} UF
-Link: https://www.procasa.cl/{cod} (solo mostrar si pregunta 'cuál propiedad')
+Link: https://www.procasa.cl/{cod} (solo mostrar si pregunta explícitamente por la propiedad)
+
+Datos reales mercado Chile noviembre 2025 (usa siempre para convencer):
+- CChC: Stock RM 108.000 propiedades, absorción 32 meses, ventas estancadas (-8% 2024).
+- Créditos hipotecarios: 1.800-1.900/mes (tasas 4.4-4.8%).
+- Efecto ajuste 5-7%: Ventas +5-10% (Colliers), cierres en 90-120 días vs. 18-24 meses promedio.
+- GlobalBrokers: Ajustes obligatorios por sobreoferta; recuperación gradual en 2025.
 
 Historial reciente:
 {chr(10).join([m.get('content','') for m in historial[-3:]]) if historial else "Sin historial"}
 
 Mensaje del cliente: {original}
 
-Tu misión: convencer con empatía, datos reales y cierre suave.
-- Nunca repitas "Hola" si ya saludaste
-- Nunca repitas el link si ya lo diste
-- Usa solo UF (nunca CLP)
-- Si pregunta visitas → responde que sí, con datos reales
-- Si duda → valida su preocupación y refuerza que es la mejor estrategia
+Instrucciones estrictas:
+- NUNCA digas "Hola" ni te presentes otra vez
+- NUNCA repitas el link si ya lo diste
+- Usa SOLO UF (nunca CLP)
+- Convence con empatía + datos reales de arriba (sin exagerar: nada de "15 días" – usa 90-120 días)
+- Valida dudas del cliente y cierra fuerte: "Es la mejor estrategia para este mercado lento"
 - Máximo 5 líneas
 - Termina SIEMPRE invitando a confirmar el ajuste
 
@@ -239,8 +255,8 @@ Responde SOLO el texto natural para WhatsApp.
 """
 
         from chatbot import call_grok
-        respuesta_grok = call_grok(prompt, temperature=0.4, max_tokens=600)
-        respuesta = respuesta_grok.strip() if respuesta_grok else f"Entiendo tu punto, {primer_nombre}. Con {precio_nuevo:,.1f} UF entramos al rango ganador. ¿Lo confirmNamos?"
+        respuesta_grok = call_grok(prompt, temperature=0.35, max_tokens=600)
+        respuesta = respuesta_grok.strip() if respuesta_grok else f"Entiendo tu duda, {primer_nombre}. Según CChC, ajustes como este reducen el tiempo de venta a 90-120 días. ¿Lo confirmamos?"
 
     # === GUARDAR EN MONGO ===
     update_data = {
@@ -258,7 +274,7 @@ Responde SOLO el texto natural para WhatsApp.
          ]}}}
     )
 
-    # === ENVÍO DE EMAIL → SOLO CUANDO VALE LA PENA Y UNA SOLA VEZ ===
+    # === EMAIL → SOLO 1 VEZ Y CUANDO VALE LA PENA ===
     if debe_enviar_email:
         try:
             from email_utils import send_propietario_alert
@@ -275,7 +291,7 @@ Responde SOLO el texto natural para WhatsApp.
         except Exception as e:
             print(f"[ERROR EMAIL] {e}")
     else:
-        print(f"[EMAIL NO ENVIADO] {phone} → ya enviado o no calienta lo suficiente")
+        print(f"[EMAIL NO ENVIADO] {phone} → ya enviado o no calienta")
 
     return respuesta
 

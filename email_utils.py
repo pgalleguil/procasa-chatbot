@@ -6,7 +6,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
 from config import Config
 from dotenv import load_dotenv
-import re
 import html
 from urllib.parse import quote
 
@@ -32,6 +31,29 @@ def format_price_display(criteria: dict) -> str:
         return val.replace("millones", "MM").replace("millon", "MM")
     
     return None
+
+def _attach_logo(msg):
+    """Helper interno para adjuntar el logo si existe."""
+    base_dir = os.path.dirname(os.path.abspath(__file__)) 
+    # Intentar buscar en static relativo o un nivel arriba
+    possible_paths = [
+        os.path.join(base_dir, 'static', 'logo.png'),
+        os.path.join(base_dir, '..', 'static', 'logo.png')
+    ]
+    
+    logo_path = None
+    for p in possible_paths:
+        if os.path.exists(p):
+            logo_path = p
+            break
+
+    if logo_path:
+        with open(logo_path, 'rb') as f:
+            img = MIMEImage(f.read())
+            img.add_header('Content-ID', '<logo_procasa>') 
+            msg.attach(img)
+            return True
+    return False
 
 def send_gmail_alert(phone: str, lead_type: str, lead_score: int, criteria: dict,
                      last_response: str = '', last_user_msg: str = '',
@@ -79,7 +101,7 @@ def send_gmail_alert(phone: str, lead_type: str, lead_score: int, criteria: dict
     estac_raw = criteria.get('estacionamientos')
     estac = str(estac_raw) if estac_raw else '<span style="color:#CBD5E1; font-size:18px;">-</span>'
     
-    # --- Chat History (8 mensajes, sin scroll) ---
+    # --- Chat History ---
     chat_html = ""
     if full_history and isinstance(full_history, list):
         bubbles = []
@@ -121,7 +143,6 @@ def send_gmail_alert(phone: str, lead_type: str, lead_score: int, criteria: dict
     <html lang="es">
     <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body {{ margin: 0; padding: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #F1F5F9; }}
         .wrapper {{ width: 100%; table-layout: fixed; background-color: #F1F5F9; padding: 30px 0; }}
@@ -236,16 +257,7 @@ def send_gmail_alert(phone: str, lead_type: str, lead_score: int, criteria: dict
 
         msg.attach(MIMEText(body_html, 'html', 'utf-8'))
 
-        base_dir = os.path.dirname(os.path.abspath(__file__)) 
-        logo_path = os.path.join(base_dir, 'static', 'logo.png')
-        if not os.path.exists(logo_path):
-             logo_path = os.path.join(base_dir, '..', 'static', 'logo.png')
-
-        if os.path.exists(logo_path):
-            with open(logo_path, 'rb') as f:
-                img = MIMEImage(f.read())
-                img.add_header('Content-ID', '<logo_procasa>') 
-                msg.attach(img)
+        _attach_logo(msg)
 
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -261,7 +273,7 @@ def send_gmail_alert(phone: str, lead_type: str, lead_score: int, criteria: dict
             except: pass
 
 # ===================================================================
-# NUEVA FUNCIÓN 2025 → ALERTAS PROPIETARIOS "DATA DURA 7%"
+# ALERTAS PROPIETARIOS (DATA DURA) - DISEÑO MEJORADO
 # ===================================================================
 def send_propietario_alert(
     phone: str,
@@ -273,8 +285,8 @@ def send_propietario_alert(
     autoriza_baja: bool = False
 ):
     """
-    Envía alerta por correo cuando un propietario responde a la campaña 2025.
-    Se usa desde handlers.py cuando detectamos algo caliente.
+    Envía alerta visual de alta calidad cuando un propietario responde.
+    Mismo estilo gráfico que la alerta de leads.
     """
     if not config.GMAIL_USER or not config.GMAIL_PASSWORD:
         return
@@ -282,98 +294,186 @@ def send_propietario_alert(
     recipient = config.ALERT_EMAIL_RECIPIENT
     cc_email = os.getenv("CC_EMAIL_JEFE")
 
-    # Colores según acción
+    # --- Configuración Visual y Lógica de Prioridad ---
     if autoriza_baja:
-        color = "#DC2626"      # rojo
-        bg = "#FEF2F2"
-        icon = "AUTORIZÓ BAJA"
-        prioridad = "MÁXIMA PRIORIDAD"
+        color_theme = "#DC2626" # Rojo intenso
+        bg_theme = "#FEF2F2"
+        icon = "🚨"
+        label = "BAJA AUTORIZADA"
+        status_text = "El cliente aceptó bajar el precio."
     elif accion_detectada in ["pregunta_fuente", "caliente_grok", "caliente_pregunta_grok"]:
-        color = "#EA580C"      # naranja fuerte
-        bg = "#FFF7ED"
-        icon = "PREGUNTÓ / DUDÓ"
-        prioridad = "REVISAR HOY"
+        color_theme = "#EA580C" # Naranja
+        bg_theme = "#FFF7ED"
+        icon = "🔥"
+        label = "ALTA INTERACCIÓN"
+        status_text = "Cliente preguntando o muy interesado."
     elif accion_detectada == "rechaza_baja_precio":
-        color = "#D97706"
-        bg = "#FFFBEB"
-        icon = "RECHAZÓ PERO HABLÓ"
-        prioridad = "SEGUIR CONVERSACIÓN"
+        color_theme = "#D97706" # Amarillo oscuro
+        bg_theme = "#FFFBEB"
+        icon = "✋"
+        label = "OBJECIÓN / RECHAZO"
+        status_text = "Cliente rechazó propuesta inicial."
     else:
-        color = "#6366F1"
-        bg = "#F8FAFC"
-        icon = "RESPUESTA PROPIETARIO"
-        prioridad = "REVISAR"
+        color_theme = "#4F46E5" # Indigo/Azul
+        bg_theme = "#EEF2FF"
+        icon = "📩"
+        label = "RESPUESTA NUEVA"
+        status_text = "Respuesta general recibida."
 
-    codigos_str = " | ".join(codigos) if isinstance(codigos, list) else str(codigos)
-    if len(codigos) > 3:
-        codigos_str = codigos_str[:100] + "..."
+    # Procesamiento de datos
+    codigos_str = ", ".join(codigos) if isinstance(codigos, list) else str(codigos)
+    if len(codigos_str) > 25: codigos_str = codigos_str[:25] + "..."
+    
+    clean_action = accion_detectada.replace('_', ' ').title()
+    short_name = nombre.split()[0] if nombre else "Propietario"
+    
+    subject = f"{icon} {label} | {short_name} ({codigos_str})"
 
-    subject = f"{icon} Propietario {prioridad} → {phone}"
+    # Links
+    wa_msg = quote(f"Hola {short_name}, te escribo de Procasa por tu propiedad {codigos_str}...")
+    wa_link = f"https://wa.me/{phone.replace('+','')}?text={wa_msg}"
 
-    wa_link = f"https://wa.me/{phone.replace('+', '')}?text=Hola%20{nombre.split()[0]}%2C%20te%20escribo%20de%20Procasa%20por%20tu%20propiedad%20{codigos_str.replace('|', '%20')}%20%E2%9C%85"
+    # Construcción de Burbujas de Chat
+    user_msg_html = html.escape(mensaje_original)
+    bot_msg_html = html.escape(respuesta_bot) if respuesta_bot else ""
+    
+    chat_html = f'''
+        <div style="margin-bottom: 15px; overflow: hidden;">
+            <div style="float: right; width: auto; max-width: 88%;">
+                <div style="font-size: 9px; color: #94A3B8; text-align: right; margin-bottom: 2px; margin-right: 2px; font-weight: 700;">PROPIETARIO</div>
+                <div style="background: #004488; color: #FFFFFF; padding: 10px 14px; border-radius: 12px 12px 2px 12px; font-size: 14px; line-height: 1.4; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    {user_msg_html}
+                </div>
+            </div>
+        </div>
+    '''
+    
+    if bot_msg_html:
+        chat_html += f'''
+        <div style="margin-bottom: 10px; overflow: hidden;">
+            <div style="float: left; width: auto; max-width: 88%;">
+                <div style="font-size: 9px; color: #94A3B8; margin-bottom: 2px; margin-left: 2px; font-weight: 700;">PROCASA AI</div>
+                <div style="background: #F1F5F9; color: #334155; padding: 10px 14px; border-radius: 12px 12px 12px 2px; font-size: 13px; line-height: 1.4; border: 1px solid #E2E8F0;">
+                    {bot_msg_html}
+                </div>
+            </div>
+        </div>
+        '''
 
+    # --- HTML STRUCTURE (Reutilizando estilos de Lead Alert) ---
     body_html = f"""
     <!DOCTYPE html>
-    <html>
+    <html lang="es">
     <head>
-        <meta charset="UTF-8">
-        <style>
-            body {{ font-family: Arial, sans-serif; background:#F8FAFC; margin:0; padding:20px; }}
-            .card {{ background:white; max-width:580px; margin:0 auto; border-radius:16px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,0.1); }}
-            .header {{ background:{color}; color:white; padding:20px; text-align:center; }}
-            .body {{ padding:30px; }}
-            .btn {{ display:inline-block; padding:14px 28px; background:#22C55E; color:white; text-decoration:none; border-radius:12px; font-weight:bold; margin:10px 5px; }}
-            .btn-call {{ background:#1E293B; }}
-            .quote {{ background:#F1F5F9; padding:16px; border-radius:12px; font-style:italic; margin:15px 0; border-left:5px solid {color}; }}
-        </style>
+    <meta charset="UTF-8">
+    <style>
+        body {{ margin: 0; padding: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #F8FAFC; }}
+        .wrapper {{ width: 100%; table-layout: fixed; background-color: #F8FAFC; padding: 30px 0; }}
+        .card {{ 
+            background: #FFFFFF; 
+            max-width: 550px; 
+            margin: 0 auto; 
+            border-radius: 16px; 
+            box-shadow: 0 10px 30px -5px rgba(0,0,0,0.06);
+            overflow: hidden; 
+            border: 1px solid #E2E8F0;
+        }}
+    </style>
     </head>
     <body>
-        <div class="card">
-            <div class="header">
-                <h1>{icon}</h1>
-                <h2 style="margin:10px 0 0 0;">{nombre}</h2>
-            </div>
-            <div class="body">
-                <p><strong>Teléfono:</strong> <a href="tel:{phone}">{phone}</a></p>
-                <p><strong>Código(s):</strong> {codigos_str or '—'}</p>
-                <p><strong>Acción detectada:</strong> <span style="background:{bg}; padding:4px 10px; border-radius:8px; font-weight:bold;">{accion_detectada.replace('_', ' ').title()}</span></p>
-
-                <div class="quote">
-                    "{mensaje_original}"
+        <div class="wrapper">
+            <div class="card">
+                
+                <div style="padding: 25px 0 10px 0; text-align: center; background: #FFFFFF;">
+                    <img src="cid:logo_procasa" alt="Procasa" width="140" style="display: block; margin: 0 auto; height: auto;">
                 </div>
 
-                {"<p>EL BOT YA AUTORIZÓ LA BAJA AUTOMÁTICAMENTE</p>" if autoriza_baja else ""}
+                <div style="padding: 5px 30px 20px 30px; text-align: center;">
+                    <div style="display: inline-block; background: {bg_theme}; color: {color_theme}; padding: 5px 14px; border-radius: 99px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">
+                        {icon} {label}
+                    </div>
+                    
+                    <h1 style="margin: 0 0 6px 0; font-size: 26px; letter-spacing: -0.5px; color: #1E293B; font-weight: 800;">{nombre}</h1>
+                    <p style="margin: 0; color: #64748B; font-size: 15px;">
+                        Propiedades: <strong style="color:#334155;">{codigos_str}</strong>
+                    </p>
+                </div>
 
-                <p style="text-align:center; margin:30px 0;">
-                    <a href="{wa_link}" class="btn">Abrir WhatsApp</a>
-                    <a href="tel:{phone}" class="btn btn-call">Llamar Ahora</a>
-                </p>
+                <div style="padding: 0 30px 25px 30px; text-align: center;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr>
+                            <td width="48%">
+                                <a href="{wa_link}" style="display: block; background: #22C55E; color: #fff; text-decoration: none; padding: 12px 0; border-radius: 10px; font-weight: 600; font-size: 14px; text-align: center; box-shadow: 0 3px 6px rgba(34, 197, 94, 0.25);">
+                                    💬 WhatsApp
+                                </a>
+                            </td>
+                            <td width="4%"></td>
+                            <td width="48%">
+                                <a href="tel:{phone}" style="display: block; background: #1E293B; color: #FFFFFF; text-decoration: none; padding: 12px 0; border-radius: 10px; font-weight: 600; font-size: 14px; text-align: center; box-shadow: 0 3px 6px rgba(30, 41, 59, 0.2);">
+                                    📞 Llamar
+                                </a>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
 
-                {"<p style='color:#DC2626; font-weight:bold;'>Respuesta del bot:</p><blockquote>" + respuesta_bot + "</blockquote>" if respuesta_bot else ""}
+                <div style="background: #FAFAFA; padding: 20px 30px; border-top: 1px solid #F1F5F9; border-bottom: 1px solid #F1F5F9;">
+                    <table width="100%" cellspacing="0" cellpadding="0">
+                        <tr>
+                            <td width="49%" style="background: #FFFFFF; padding: 12px; border-radius: 8px; border: 1px solid #E2E8F0; vertical-align: top;">
+                                <div style="font-size: 10px; color: #94A3B8; text-transform: uppercase; font-weight: 700; margin-bottom: 4px;">Acción Detectada</div>
+                                <div style="font-size: 13px; color: #0F172A; font-weight: 600;">{clean_action}</div>
+                            </td>
+                            <td width="2%"></td>
+                            <td width="49%" style="background: #FFFFFF; padding: 12px; border-radius: 8px; border: 1px solid #E2E8F0; vertical-align: top;">
+                                <div style="font-size: 10px; color: #94A3B8; text-transform: uppercase; font-weight: 700; margin-bottom: 4px;">Teléfono</div>
+                                <div style="font-size: 13px; color: #0F172A; font-weight: 600;">{phone}</div>
+                            </td>
+                        </tr>
+                    </table>
+                    <div style="margin-top: 10px; font-size: 12px; color: #64748B; text-align: center; font-style: italic;">
+                        "{status_text}"
+                    </div>
+                </div>
+
+                <div style="padding: 25px 30px 20px 30px;">
+                    <div style="font-size: 10px; font-weight: 700; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 15px; text-align: center;">
+                        Interacción Reciente
+                    </div>
+                    {chat_html}
+                </div>
             </div>
-            <div style="background:#F1F5F9; padding:15px; text-align:center; font-size:12px; color:#64748B;">
-                Procasa AI • Campaña Data Dura 2025
+            
+            <div style="text-align: center; margin-top: 20px; color: #CBD5E1; font-size: 11px;">
+                © 2026 Procasa AI • Campaña Propietarios
             </div>
         </div>
     </body>
     </html>
     """
 
+    server = None
     try:
-        msg = MIMEMultipart('alternative')
+        msg = MIMEMultipart('related')
         msg['Subject'] = subject
         msg['From'] = f"Procasa Alertas <{config.GMAIL_USER}>"
         msg['To'] = recipient
-        if cc_email:
-            msg['Cc'] = cc_email
+        msg.add_header('Content-Language', 'es')
+        if cc_email: msg['Cc'] = cc_email
 
-        msg.attach(MIMEText(body_html, 'html'))
+        msg.attach(MIMEText(body_html, 'html', 'utf-8'))
 
-        with smtplib.SMTP('smtp.gmail.com', 587) as server:
-            server.starttls()
-            server.login(config.GMAIL_USER, config.GMAIL_PASSWORD)
-            server.send_message(msg)
+        _attach_logo(msg)
 
-        print(f"[EMAIL PROPIETARIO] Enviado → {accion_detectada} | {phone}")
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(config.GMAIL_USER, config.GMAIL_PASSWORD)
+        server.send_message(msg)
+        print(f"[EMAIL PROPIETARIO] Enviado a {recipient} | {accion_detectada}")
+
     except Exception as e:
         print(f"[ERROR EMAIL PROPIETARIO] {e}")
+    finally:
+        if server:
+            try: server.quit()
+            except: pass

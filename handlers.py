@@ -160,7 +160,7 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
         if autorizo_baja or contacto.get("clasificacion_propietario", "").startswith("autoriza"):
             debe_enviar_email = True
         elif any(palabra in texto_lower for palabra in ["precio", "cuanto", "quedaría", "visitas", "ofertas", "ajuste", "bajar", "confirmar", "segura", "rápido", "contactar", "llamar"]):
-            debe_enviar_email = True  # Incluye "contactar/llamar" para escalados
+            debe_enviar_email = True
         elif len(messages) <= 6:
             debe_enviar_email = True
 
@@ -175,7 +175,7 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
     PREGUNTA_PRECIO = re.compile(r'\b(cu[áa]nto|precio|quedar[íi]a|final|uf|valor)\b', re.I)
     PREGUNTA_VISITAS = re.compile(r'\b(visitas|interes|ofertas|movimiento|gente|verla|segura|rápido|cerrar|vender|tiempo)\b', re.I)
     PREGUNTA_PROPIEDAD = re.compile(r'\b(cu[áa]l|qué|de qué|de cual|código|propiedad)\b', re.I)
-    PAUSA = re.compile(r'\b(3|opci[oó]n\s*3|tres|ya\s*(vend|arriend)|retirar|pausa|sacar|no\s*disponible)\b', re.I)  # Para "no disponible" – bajar del sistema
+    PAUSA = re.compile(r'\b(3|opci[oó]n\s*3|tres|ya\s*(vend|arriend)|retirar|pausa|sacar|no\s*disponible)\b', re.I)
 
     respuesta = ""
     accion = "continua_con_grok"
@@ -193,7 +193,7 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
         respuesta = RESPONSES_PROPIETARIO["pausa"].format(primer_nombre=primer_nombre)
         accion = "pausa_venta"
         score = 2
-        contactos_collection.update_one({"telefono": phone}, {"$set": {"activo": False, "disponible": False, "fecha_pausa": datetime.now(timezone.utc)}})  # Bajar propiedad
+        contactos_collection.update_one({"telefono": phone}, {"$set": {"activo": False, "disponible": False, "fecha_pausa": datetime.now(timezone.utc)}})
 
     # 3. PREGUNTA POR PRECIO
     elif PREGUNTA_PRECIO.search(texto_lower):
@@ -216,9 +216,33 @@ def handle_propietario_respuesta(phone: str, user_msg: str, contacto: dict, cont
                     f"Link directo: {link}\n\n" \
                     f"¿Me das luz verde para el ajuste y empecemos a moverla?"
 
-    # 6. CUALQUIER OTRA RESPUESTA → GROK FLUIDO (prompt corto, enfocado en no repetir)
+    # 6. CUALQUIER OTRA RESPUESTA → TU PROMPT ORIGINAL + ANTI-LOOP
     else:
-        prompt = f"""
+        # === ANTI-LOOP: Detectar rechazo fuerte o insistencia en "solo 5%" o "no" ===
+        rechazo_fuerte = any(pal in texto_lower for pal in [
+            "entonces no", "entonce no", "no quiero", "no me interesa", "prefiero no", "mejor no",
+            "olvídalo", "ni cagando", "imposible", "nunca", "jamás", "no gracias", "de ninguna manera"
+        ])
+        insiste_menos_7 = any(pal in texto_lower for pal in ["solo 5", "un 5", "5%", "cinco", "menos de 7"])
+
+        respuestas_previas = [m.get("content","").lower() for m in messages if m.get("role")=="assistant"]
+        veces_pregunto_luz_verde = sum("luz verde" in r or "autoriz" in r for r in respuestas_previas)
+
+        if rechazo_fuerte or (veces_pregunto_luz_verde >= 2 and insiste_menos_7):
+            respuesta = f"Perfecto {primer_nombre}, entiendo completamente. No hay drama 😊\n\n" \
+                        f"Quedamos atentos por si más adelante cambian las condiciones del mercado o te animas al ajuste.\n" \
+                        f"Cuando quieras, solo me escribes y lo hacemos al tiro.\n\n" \
+                        f"¡Que tengas un excelente día!"
+            accion = "rechazo_definitivo_7pct"
+            contactos_collection.update_one({"telefono": phone}, {"$set": {"campanas.data_dura_7pct.estado": "rechazado_7pct"}})
+        else:
+            # TU PROMPT ORIGINAL 100% INTACTO
+            historial_corto = "\n".join([
+                f"{m.get('role','?')}: {str(m.get('content',''))[:140]}"
+                for m in messages[-4:] if m.get("content")
+            ]) or "Sin historial"
+
+            prompt = f"""
 Eres asistente del área de Inteligencia de Negocios de Procasa Jorge Pablo Caro Propiedades.
 El cliente ya recibió el template inicial (mensaje con datos mercado y opciones 1-3). Continúa la conversación de forma natural, como respuesta directa al mensaje anterior.
 
@@ -239,7 +263,7 @@ Datos reales mercado Chile 25 noviembre 2025 (usa para convencer con honestidad,
 - Acciones inmediatas post-ajuste (motiva confirmación agresiva): Actualizamos precio en portales YA (24-48 hrs), destacamos propiedad en top búsquedas (+20-30% visibilidad, Colliers), lanzamos campaña agresiva notificando de inmediato a TODOS los clientes/leads que se interesaron en la propiedad ("¡Rebaja 7%! Nuevo precio {precio_nuevo} UF – ¡Visita ya!"), y enviamos blast a 50+ leads/prospectos interesados en propiedades similares en {comuna}/tipo/precio para + visitas en 72 hrs; reactivamos marketing total (anuncios targeted, emails calientes, reactivación leads dormidos).
 
 Historial reciente (responde basado en esto, sin repetir):
-{chr(10).join([f"{m.get('role','?')}: {m.get('content','')[:100]}..." for m in messages[-4:]])}
+{historial_corto}
 
 Mensaje del cliente: {original}
 
@@ -254,12 +278,13 @@ Reglas estrictas (PRIORIDAD 1):
 Responde SOLO el texto natural para WhatsApp.
 """
 
-        from chatbot import call_grok
-        respuesta_grok = call_grok(prompt, temperature=0.3, max_tokens=500)  # Temp baja para menos "creatividad"
-        if not respuesta_grok or "Hola" in respuesta_grok or len(respuesta_grok) < 50:  # Fallback si falla flujo
-            respuesta = f"Entiendo tu punto, {primer_nombre}. Siguiendo lo que te contábamos hace unos minutos, con {precio_nuevo:,.1f} UF entramos al rango viable (CChC: absorción 30 meses). ¿Me das luz verde para reactivarla y empecemos a recibir ofertas?"
-        else:
-            respuesta = respuesta_grok.strip()
+            from chatbot import call_grok
+            respuesta_grok = call_grok(prompt, temperature=0.3, max_tokens=500)
+
+            if not respuesta_grok or "Hola" in respuesta_grok or len(respuesta_grok) < 50:
+                respuesta = f"Entiendo tu punto, {primer_nombre}. Siguiendo lo que te contábamos hace unos minutos, con {precio_nuevo:,.1f} UF entramos al rango viable (CChC: absorción 30 meses). ¿Me das luz verde para reactivarla y empecemos a recibir ofertas?"
+            else:
+                respuesta = respuesta_grok.strip()
 
     # === GUARDAR EN MONGO ===
     update_data = {
@@ -277,7 +302,7 @@ Responde SOLO el texto natural para WhatsApp.
          ]}}}
     )
 
-    # === EMAIL → SOLO 1 VEZ Y CUANDO VALE LA PENA (incluye "contactar/llamar") ===
+    # === EMAIL → SOLO 1 VEZ ===
     if debe_enviar_email:
         try:
             from email_utils import send_propietario_alert

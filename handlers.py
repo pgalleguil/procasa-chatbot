@@ -227,14 +227,16 @@ Precio actual: {precio_uf:,.0f} UF
 Precio con -7%: {precio_nuevo:,.1f} UF
 Link: https://www.procasa.cl/{cod} (solo si pregunta por la propiedad)
 
-Datos reales noviembre 2025 (usa breves, cita fuentes para credibilidad):
-- CChC Q3: Stock RM ~108k propiedades, absorción 30-32 meses, ventas +5-10% proyectado 2025.
-- Cesantía RM 8.0-8.5% (INE noviembre): Reduce demanda -10-15%, posterga compras.
-- UF +3.5-4% anual (Banco Central IPoM): Presiona precios reales -2-5% CLP en vivienda.
-- Créditos: 1.800-1.900/mes, tasas 4.42% (DF noviembre).
-- Ajuste 5-7%: +5-10% ventas (Colliers), cierres 90-120 días vs. 18-24 meses.
-- Gobierno derecha (Kast escenario): Pro-mercado, pero +10-20% oferta propiedades (El Mercurio).
-- Cambio gobierno: Volatilidad tasas (baja a 4-4.5% si estabilidad), ventas estancadas si cesantía >8%.
+Datos reales mercado Chile 25 noviembre 2025 (usa para convencer con honestidad, empatía y urgencia agresiva – cita fuentes breves, motiva con acciones inmediatas post-ajuste):
+- CChC Q3 2025: Stock RM ~108.000 propiedades (histórico alto), absorción 30-32 meses, ventas estancadas (-13% 2024, +5-10% proyectado 2025 por tasas bajas).
+- Cesantía RM 8.0-8.5% (INE noviembre): Reduce demanda -10-15% (posterga compras, impacto créditos medios).
+- Incremento UF +3.5-4% anual (Banco Central IPoM noviembre): Presiona precios reales -2-5% CLP en vivienda (inflación ~3.5%).
+- Créditos hipotecarios ~1.800-1.900/mes (CChC/Banco Central), tasas 4.42% (mínimo anual noviembre, DF) – endurecimiento por cesantía.
+- Efecto ajuste 5-7%: Ventas +5-10% (Colliers noviembre), cierres 90-120 días vs. 18-24 meses promedio (ajustes obligatorios por sobreoferta 105k-108k, GlobalBrokers).
+- Nuevo gobierno derecha (eventual escenario presidencial de Kast): Políticas pro-mercado (incentivos inversión), pero prepara +10-20% propiedades disponibles (más oferta por confianza, El Mercurio/CNN).
+- Escenario cambio gobierno: Volatilidad tasas (baja a 4-4.5% si estabilidad), riesgo estancamiento ventas si cesantía >8%; recuperación gradual (+5-10% ventas 2025, foco regionales Valparaíso/Biobío +45% hipotecas, Colliers).
+- Tendencia: Precios a la baja -1-3% (premium Vitacura/Las Condes); inversión -8.3% 2024 a +2-5% 2025 (CChC); sostenibilidad (MINVU Agenda Urbana 2025, +30% proyectos certificados).
+- Acciones inmediatas post-ajuste (motiva confirmación agresiva): Actualizamos precio en portales YA (24-48 hrs), destacamos propiedad en top búsquedas (+20-30% visibilidad, Colliers), lanzamos campaña agresiva notificando de inmediato a TODOS los clientes/leads que se interesaron en la propiedad ("¡Rebaja 7%! Nuevo precio {precio_nuevo} UF – ¡Visita ya!"), y enviamos blast a 50+ leads/prospectos interesados en propiedades similares en {comuna}/tipo/precio para + visitas en 72 hrs; reactivamos marketing total (anuncios targeted, emails calientes, reactivación leads dormidos).
 
 Historial reciente (responde basado en esto, sin repetir):
 {chr(10).join([f"{m.get('role','?')}: {m.get('content','')[:100]}..." for m in messages[-4:]])}

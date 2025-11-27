@@ -17,7 +17,9 @@ __pycache__/
 migracion_campos_numericos.py
 migracion_campos_numericos_segura.py
 outreach_propietarios.py
+outreach_propietarios2.py
 ver_respultador.py
+correccion_envios_bloqueados.py
 
 # Scripts de prueba o locales (opcional, pero recomendado)
 test_*.py

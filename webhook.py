@@ -8,7 +8,7 @@ from typing import Dict, Any
 
 import requests
 from fastapi import FastAPI, Request, HTTPException, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 import uvicorn
 import json
 

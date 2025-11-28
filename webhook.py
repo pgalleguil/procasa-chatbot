@@ -9,6 +9,7 @@ from typing import Dict, Any
 import requests
 from fastapi import FastAPI, Request, HTTPException, Header, Query
 from fastapi.responses import JSONResponse, HTMLResponse
+from pymongo import MongoClient
 from datetime import datetime
 import uvicorn
 import json

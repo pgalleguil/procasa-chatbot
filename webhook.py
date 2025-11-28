@@ -183,137 +183,98 @@ async def health_check():
 def campana_respuesta(
     email: str = Query(..., description="Email del propietario"),
     accion: str = Query(..., description="'ajuste', 'llamada' o 'baja'"),
-    codigos: str = Query("N/A", description="Códigos de propiedad")
+    codigos: str = Query("N/A", description="Códigos separados por coma"),
+    campana: str = Query(..., description="Nombre de la campaña (obligatorio)")
 ):
-    """
-    Ruta que se activa cuando el propietario hace clic en un botón del email.
-    Actualiza MongoDB inmediatamente.
-    """
-    if not MONGO_URI:
-        return HTMLResponse(content=HTML_ERROR.format(error="MONGO_URI no configurado."), status_code=500)
-    
     if accion not in ["ajuste", "llamada", "baja"]:
-        return HTMLResponse(content=HTML_ERROR.format(error="Acción inválida."), status_code=400)
+        return HTMLResponse("Acción inválida", status_code=400)
 
     try:
-        # 1. Conexión a MongoDB
-        client = MongoClient(MONGO_URI)
-        db = client[DB_NAME]
-        collection = db[COLLECTION_NAME]
-        
-        # 2. Preparación de la Actualización y Mensaje de Cliente
-        update_data = {
-            f"campanas.{NOMBRE_CAMPANA}.respuesta_cliente": accion,
-            f"campanas.{NOMBRE_CAMPANA}.fecha_respuesta": datetime.utcnow(),
-            "ultima_accion": f"webhook_{accion}",
-            f"campanas.{NOMBRE_CAMPANA}.test_ejecutado": False 
-        }
-        
-        # Lógica para manejar la acción
-        if accion == "ajuste":
-            update_data["estado"] = "ajuste_autorizado"
-            mensaje_cliente = "¡Autorización recibida! Hemos registrado su solicitud para aplicar el ajuste de precio del 7% y actualizar el portal inmediatamente."
-            
-        elif accion == "llamada":
-            update_data["estado"] = "pendiente_llamada"
-            mensaje_cliente = "¡Solicitud de contacto registrada! Un ejecutivo revisará su solicitud y le llamará a la brevedad."
-            
-        elif accion == "baja":
-            update_data["estado"] = "baja_solicitada"
-            mensaje_cliente = "Su solicitud de baja ha sido registrada. Procederemos a archivar sus propiedades y a eliminar su correo de futuras campañas."
-            # Marcamos baja general para futuras campañas, si aplica en tu esquema
-            update_data["estado_general"] = "no_contactar" 
+        client = MongoClient(Config.MONGO_URI)
+        db = client[Config.DB_NAME]
+        contactos_col = db[Config.COLLECTION_CONTACTOS]
+        respuestas_col = db[Config.COLLECTION_RESPUESTAS]
 
-        # 3. Ejecutar la Actualización
-        # Buscamos todas las propiedades asociadas a ese email que fueron marcadas como enviadas en ESTA campaña
+        ahora = datetime.utcnow()
+
+        # 1. Log histórico
+        respuestas_col.insert_one({
+            "email": email.lower().strip(),
+            "campana_nombre": campana,
+            "accion": accion,
+            "codigos_propiedad": [c.strip() for c in codigos.split(",") if c.strip() and c.strip() != "N/A"],
+            "fecha_respuesta": ahora,
+            "canal_origen": "email"
+        })
+
+        # 2. Actualización en contactos (CORREGIDO: sin "918")
         query = {
-            "email_propietario": email,
-            f"campanas.{NOMBRE_CAMPANA}.enviado": True 
+            "email_propietario": email.lower().strip(),
+            "update_price.campana_nombre": campana
         }
 
-        result = collection.update_many(
-            query,
-            {"$set": update_data}
-        )
+        update_set = {
+            "update_price.respuesta": accion,
+            "update_price.fecha_respuesta": ahora,
+            "update_price.accion_elegida": accion,
+            "update_price.ultima_actualizacion": ahora,
+            "ultima_accion": f"respuesta_{accion}_{campana}"
+        }
 
-        # 4. Respuesta al Cliente
-        if result.modified_count > 0:
-            html_final = HTML_CONFIRMACION.format(
-                accion=accion.title(), 
-                email=email, 
-                mensaje=mensaje_cliente,
-                codigos=codigos
-            )
-        else:
-            mensaje_re_respuesta = "Su respuesta ha sido registrada previamente. Gracias por su colaboración."
-            html_final = HTML_CONFIRMACION.format(
-                accion=accion.title(), 
-                email=email, 
-                mensaje=mensaje_re_respuesta,
-                codigos=codigos
-            )
-            
+        if accion == "ajuste":
+            update_set["estado"] = "ajuste_autorizado"
+            mensaje_cliente = "¡Perfecto! Hemos registrado su autorización para aplicar el ajuste del 7%. Se reflejará en el portal en las próximas horas."
+        elif accion == "llamada":
+            update_set["estado"] = "pendiente_llamada"
+            mensaje_cliente = "¡Entendido! Un ejecutivo se pondrá en contacto con usted a la brevedad para coordinar."
+        else:  # baja
+            update_set["estado"] = "baja_solicitada"
+            update_set["estado_general"] = "no_contactar"
+            mensaje_cliente = "Solicitud de baja recibida. Sus propiedades serán archivadas y no recibirá más comunicaciones."
+
+        result = contactos_col.update_many(query, {"$set": update_set})
+
+        # 3. HTML de respuesta (todo dentro de la función)
+        titulo = "¡Respuesta Registrada con Éxito!" if result.modified_count > 0 else "Respuesta ya registrada"
+        color = "#10b981" if result.modified_count > 0 else "#6366f1"
+
+        html_final = f"""
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <title>Procasa - Respuesta Recibida</title>
+            <style>
+                body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f9fafb; padding: 40px 20px; margin: 0; }}
+                .container {{ max-width: 520px; margin: 0 auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }}
+                .header {{ background: {color}; color: white; padding: 30px 20px; text-align: center; }}
+                .header h1 {{ margin: 0; font-size: 24px; font-weight: 600; }}
+                .content {{ padding: 40px 30px; text-align: center; color: #374151; }}
+                .content p {{ font-size: 16px; line-height: 1.6; margin: 16px 0; }}
+                .codigos {{ background: #f3f4f6; padding: 12px; border-radius: 8px; margin: 20px 0; font-family: monospace; }}
+                .footer {{ background: #f1f5f9; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header"><h1>{titulo}</h1></div>
+                <div class="content">
+                    <p><strong>Acción:</strong> {accion.title()}</p>
+                    <p>{mensaje_cliente}</p>
+                    <div class="codigos">Propiedades: {codigos.replace(',', ', ') if codigos != 'N/A' else 'No especificadas'}</div>
+                    <p><small>Email registrado: {email}</small></p>
+                </div>
+                <div class="footer">© 2025 Procasa • Gestión Inteligente de Cartera</div>
+            </div>
+        </body>
+        </html>
+        """
+
         return HTMLResponse(content=html_final, status_code=200)
 
     except Exception as e:
-        # Manejo de errores de conexión o DB
-        error_msg = str(e).replace('"', '`').replace("'", "`")
-        return HTMLResponse(content=HTML_ERROR.format(error=error_msg, email=email), status_code=500)
-
-
-# ====================================================================
-# PLANTILLAS HTML PARA LA RESPUESTA AL CLIENTE (FastAPI compatible)
-# NOTA: Usamos .format() en lugar de Jinja/render_template_string
-# ====================================================================
-
-HTML_CONFIRMACION = """
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <title>Respuesta Registrada - Procasa</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #f4f4f9; }}
-        .box {{ background-color: #fff; padding: 40px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); max-width: 500px; margin: 0 auto; }}
-        .success {{ color: #10b981; font-size: 24px; margin-bottom: 20px; font-weight: bold;}}
-        .action {{ font-size: 18px; margin-bottom: 10px; color: #333; }}
-        .footer-note {{ font-size: 12px; color: #777; margin-top: 20px; }}
-    </style>
-</head>
-<body>
-    <div class="box">
-        <div class="success">🎉 {accion} Registrada</div>
-        <p class="action">Propiedades: {codigos}</p>
-        <p>{mensaje}</p>
-        <p class="footer-note">Hemos actualizado el estado de sus propiedades en nuestra base de datos. Email asociado: {email}.</p>
-    </div>
-</body>
-</html>
-"""
-
-HTML_ERROR = """
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <title>Error de Procesamiento - Procasa</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; background-color: #fef2f2; }}
-        .box {{ background-color: #fff; padding: 40px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); max-width: 500px; margin: 0 auto; border: 1px solid #dc2626; }}
-        .error {{ color: #dc2626; font-size: 24px; margin-bottom: 20px; font-weight: bold;}}
-    </style>
-</head>
-<body>
-    <div class="box">
-        <div class="error">⚠️ Error al procesar su solicitud</div>
-        <p>Disculpe, ocurrió un problema técnico al intentar registrar su respuesta.</p>
-        <p>Por favor, responda directamente al correo que recibió para que un ejecutivo pueda asistirle.</p>
-        <p style="font-size: 10px; color: #999;">Detalle Técnico: {error}</p>
-    </div>
-</body>
-</html>
-"""
-
+        logger.error(f"Error en /campana/respuesta: {e}")
+        return HTMLResponse("Error interno del servidor", status_code=500)
 
 if __name__ == "__main__":
     import os

@@ -1,3 +1,4 @@
+# config.py
 import os
 from dotenv import load_dotenv
 
@@ -5,18 +6,25 @@ load_dotenv()
 
 class Config:
     # === Claves externas ===
-    XAI_API_KEY = os.getenv("XAI_API_KEY")  # Nueva: Para Grok
+    XAI_API_KEY = os.getenv("XAI_API_KEY")  # Para Grok
     MONGO_URI = os.getenv("MONGO_URI")
     DB_NAME = os.getenv("DB_NAME", "URLS")
 
-    #APICHAT_TOKEN = os.getenv("APICHAT_TOKEN")
-    #APICHAT_CLIENT_ID = os.getenv("APICHAT_CLIENT_ID")
-    #APICHAT_BASE_URL = os.getenv("APICHAT_BASE_URL", "https://api.apichat.io/v1")
-
-    # === WASENDERAPI.COM (reemplaza ApiChat) ===
+    # === WASENDERAPI.COM (WhatsApp) ===
     WASENDER_TOKEN = os.getenv("WASENDER_TOKEN")
     WASENDER_WEBHOOK_SECRET = os.getenv("WASENDER_WEBHOOK_SECRET")
     WASENDER_BASE_URL = os.getenv("WASENDER_BASE_URL", "https://wasenderapi.com/api")
+
+    # === GMAIL ===
+    GMAIL_USER = os.getenv("GMAIL_USER")
+    GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD")
+    ALERT_EMAIL_RECIPIENT = os.getenv("ALERT_EMAIL_RECIPIENT", os.getenv("GMAIL_USER", ""))
+
+    # === COLECCIONES MONGO – CAMPAÑAS UPDATE PRICE (NUEVAS Y OBLIGATORIAS) ===
+    COLLECTION_CONTACTOS = os.getenv("COLLECTION_CONTACTOS", "contactos")
+    COLLECTION_RESPUESTAS = os.getenv("COLLECTION_RESPUESTAS", "price_updates")
+    COLLECTION_WHATSAPP_ENVIADOS = os.getenv("COLLECTION_WHATSAPP_ENVIADOS", "whatsapp_price_updates")
+    COLLECTION_CAMPANAS_LOG = os.getenv("COLLECTION_CAMPANAS_LOG", "campanas_historico")
 
     # === Modo y opciones ===
     SIMULATION_MODE = os.getenv("SIMULATION_MODE", "false").lower() == "true"
@@ -25,11 +33,10 @@ class Config:
     MAX_RETRIES = int(os.getenv("MAX_RETRIES", 2))
     TEST_PHONE = os.getenv("TEST_PHONE")
 
-    # === Modelos internos (xAI/Grok) ===
+    # === Modelos Grok / xAI ===
     GROK_MODEL = os.getenv("GROK_MODEL")
     GROK_BASE_URL = os.getenv("GROK_BASE_URL", "https://api.x.ai/v1")
     GROK_TEMPERATURE = float(os.getenv("GROK_TEMPERATURE", "0.0"))
-
 
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"
     EMBEDDING_DIM = 384
@@ -51,8 +58,3 @@ class Config:
     LOG_LEVEL = "INFO"
     CORE_KEYS = ["operacion", "tipo", "comuna"]
     FEATURE_KEYS = ["precio_clp","precio_uf","dormitorios", "banos", "estacionamientos"]
-
-    # === GMAIL ALERTS ===
-    GMAIL_USER = os.getenv("GMAIL_USER")
-    GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD")
-    ALERT_EMAIL_RECIPIENT = os.getenv("ALERT_EMAIL_RECIPIENT", os.getenv("GMAIL_USER", ""))

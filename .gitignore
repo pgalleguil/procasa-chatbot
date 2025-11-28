@@ -20,6 +20,7 @@ outreach_propietarios.py
 outreach_propietarios2.py
 ver_respultador.py
 correccion_envios_bloqueados.py
+email_campaña_propietarios.py
 
 # Scripts de prueba o locales (opcional, pero recomendado)
 test_*.py

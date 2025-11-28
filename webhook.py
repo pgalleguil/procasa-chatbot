@@ -181,27 +181,29 @@ async def health_check():
         "uptime": time.strftime("%Y-%m-%d %H:%M:%S")
     }
 
+# === RUTA ACTUALIZADA CON 4 ACCIONES ===
 @app.get("/campana/respuesta", response_class=HTMLResponse)
 def campana_respuesta(
     email: str = Query(..., description="Email del propietario"),
-    accion: str = Query(..., description="'ajuste', 'llamada' o 'baja'"),
-    codigos: str = Query("N/A", description="Códigos separados por coma"),
-    campana: str = Query(..., description="Nombre de la campaña (obligatorio)")
+    accion: str = Query(..., description="ajuste / llamada / baja / unsubscribe"),
+    codigos: str = Query("N/A", description="Códigos de propiedades"),
+    campana: str = Query(..., description="Nombre de la campaña (ej: update_price_202512)")
 ):
-    if accion not in ["ajuste", "llamada", "baja"]:
-        return HTMLResponse("Acción inválida", status_code=400)
+    if accion not in ["ajuste", "llamada", "baja", "unsubscribe"]:
+        return HTMLResponse("Acción no válida", status_code=400)
 
     try:
         client = MongoClient(Config.MONGO_URI)
         db = client[Config.DB_NAME]
-        contactos_col = db[Config.COLLECTION_CONTACTOS]
-        respuestas_col = db[Config.COLLECTION_RESPUESTAS]
+        contactos = db[Config.COLLECTION_CONTACTOS]
+        respuestas = db[Config.COLLECTION_RESPUESTAS]
 
         ahora = datetime.utcnow()
+        email_lower = email.lower().strip()
 
-        # 1. Log histórico
-        respuestas_col.insert_one({
-            "email": email.lower().strip(),
+        # 1. Log histórico completo
+        respuestas.insert_one({
+            "email": email_lower,
             "campana_nombre": campana,
             "accion": accion,
             "codigos_propiedad": [c.strip() for c in codigos.split(",") if c.strip() and c.strip() != "N/A"],
@@ -209,74 +211,106 @@ def campana_respuesta(
             "canal_origen": "email"
         })
 
-        # 2. Actualización en contactos (CORREGIDO: sin "918")
+        # 2. Búsqueda del contacto
         query = {
-            "email_propietario": email.lower().strip(),
-            "update_price.campana_nombre": campana
+            "email_propietario": email_lower,
+            f"update_price.{campana}": {"$exists": True}
         }
 
-        update_set = {
-            "update_price.respuesta": accion,
-            "update_price.fecha_respuesta": ahora,
-            "update_price.accion_elegida": accion,
-            "update_price.ultima_actualizacion": ahora,
-            "ultima_accion": f"respuesta_{accion}_{campana}"
-        }
-
+        # 3. Actualización según acción
+        update = {"$set": {f"update_price.{campana}.fecha_respuesta": ahora}}
+        
         if accion == "ajuste":
-            update_set["estado"] = "ajuste_autorizado"
-            mensaje_cliente = "¡Perfecto! Hemos registrado su autorización para aplicar el ajuste del 7%. Se reflejará en el portal en las próximas horas."
+            update["$set"].update({
+                f"update_price.{campana}.respuesta": "ajuste",
+                f"update_price.{campana}.accion_elegida": "ajuste",
+                "estado": "ajuste_autorizado",
+                "ultima_accion": f"respuesta_ajuste_{campana}",
+                "bloqueo_email": False,
+                "bloqueo_general": False
+            })
+            titulo = "¡Autorización recibida!"
+            mensaje = "Perfecto, Pablo. Ya estamos aplicando el ajuste del 7% en tus propiedades. Te avisamos cuando esté publicado."
+            color = "#10b981"
+
         elif accion == "llamada":
-            update_set["estado"] = "pendiente_llamada"
-            mensaje_cliente = "¡Entendido! Un ejecutivo se pondrá en contacto con usted a la brevedad para coordinar."
-        else:  # baja
-            update_set["estado"] = "baja_solicitada"
-            update_set["estado_general"] = "no_contactar"
-            mensaje_cliente = "Solicitud de baja recibida. Sus propiedades serán archivadas y no recibirá más comunicaciones."
+            update["$set"].update({
+                f"update_price.{campana}.respuesta": "llamada",
+                f"update_price.{campana}.accion_elegida": "llamada",
+                "estado": "pendiente_llamada",
+                "ultima_accion": f"respuesta_llamada_{campana}",
+                "bloqueo_email": False,
+                "bloqueo_general": False
+            })
+            titulo = "¡Solicitud recibida!"
+            mensaje = "Genial. Un ejecutivo te llamará en las próximas 24-48 hrs para conversar con calma."
+            color = "#3b82f6"
 
-        result = contactos_col.update_many(query, {"$set": update_set})
+        elif accion == "baja":
+            update["$set"].update({
+                f"update_price.{campana}.respuesta": "baja",
+                f"update_price.{campana}.accion_elegida": "baja",
+                f"update_price.{campana}.bloqueo_solicitado": "email",
+                "estado": "baja_solicitada",
+                "ultima_accion": f"respuesta_baja_{campana}",
+                "bloqueo_email": True,
+                "bloqueo_general": False
+            })
+            titulo = "Entendido"
+            mensaje = "Tus propiedades serán archivadas y no recibirás más actualizaciones por email. Si cambias de idea, solo avísanos."
+            color = "#ef4444"
 
-        # 3. HTML de respuesta (todo dentro de la función)
-        titulo = "¡Respuesta Registrada con Éxito!" if result.modified_count > 0 else "Respuesta ya registrada"
-        color = "#10b981" if result.modified_count > 0 else "#6366f1"
+        else:  # unsubscribe
+            update["$set"].update({
+                "bloqueo_email": True,
+                "bloqueo_general": False,
+                "ultima_accion": f"unsubscribe_{campana}",
+                "estado": "suscripcion_anulada"
+            })
+            titulo = "Suscripción anulada"
+            mensaje = "Listo. Ya no recibirás más correos de actualizaciones de mercado ni campañas. Gracias por haber confiado en nosotros."
+            color = "#6b7280"
 
-        html_final = f"""
+        # Ejecutar actualización
+        contactos.update_one(query, update, upsert=False)
+
+        # 4. Respuesta al cliente (HTML bonito)
+        html = f"""
         <!DOCTYPE html>
         <html lang="es">
         <head>
             <meta charset="UTF-8">
-            <title>Procasa - Respuesta Recibida</title>
+            <title>Procasa - Confirmación</title>
             <style>
-                body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f9fafb; padding: 40px 20px; margin: 0; }}
-                .container {{ max-width: 520px; margin: 0 auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }}
-                .header {{ background: {color}; color: white; padding: 30px 20px; text-align: center; }}
-                .header h1 {{ margin: 0; font-size: 24px; font-weight: 600; }}
-                .content {{ padding: 40px 30px; text-align: center; color: #374151; }}
-                .content p {{ font-size: 16px; line-height: 1.6; margin: 16px 0; }}
-                .codigos {{ background: #f3f4f6; padding: 12px; border-radius: 8px; margin: 20px 0; font-family: monospace; }}
-                .footer {{ background: #f1f5f9; padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; }}
+                body {{font-family:Arial;background:#f9fafb;padding:40px;margin:0}}
+                .container {{max-width:520px;margin:auto;background:white;border-radius:16px;overflow:hidden;box-shadow:0 10px 25px rgba(0,0,0,0.1)}}
+                .header {{background:{color};color:white;padding:30px;text-align:center}}
+                .header h1 {{margin:0;font-size:24px;font-weight:600}}
+                .content {{padding:40px 30px;text-align:center;color:#374151}}
+                .content p {{font-size:16px;line-height:1.6;margin:16px 0}}
+                .footer {{background:#f1f5f9;padding:20px;text-align:center;font-size:12px;color:#94a3b8}}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header"><h1>{titulo}</h1></div>
                 <div class="content">
-                    <p><strong>Acción:</strong> {accion.title()}</p>
-                    <p>{mensaje_cliente}</p>
-                    <div class="codigos">Propiedades: {codigos.replace(',', ', ') if codigos != 'N/A' else 'No especificadas'}</div>
-                    <p><small>Email registrado: {email}</small></p>
+                    <p><strong>{accion.title() if accion != 'unsubscribe' else 'Anulación'}</strong></p>
+                    <p>{mensaje}</p>
+                    <p style="color:#666;font-size:14px">Email: {email_lower}<br>Campaña: {campana}</p>
                 </div>
-                <div class="footer">© 2025 Procasa • Gestión Inteligente de Cartera</div>
+                <div class="footer">
+                    © 2025 Procasa • Pablo Caro y equipo
+                </div>
             </div>
         </body>
         </html>
         """
-
-        return HTMLResponse(content=html_final, status_code=200)
+        return HTMLResponse(html)
 
     except Exception as e:
         logger.error(f"Error en /campana/respuesta: {e}")
-        return HTMLResponse("Error interno del servidor", status_code=500)
+        return HTMLResponse("Error interno del servidor. Intenta más tarde.", status_code=500)
 
 if __name__ == "__main__":
     import os

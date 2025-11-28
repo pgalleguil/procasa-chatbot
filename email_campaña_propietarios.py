@@ -43,7 +43,7 @@ def generar_html(nombre, propiedades, email_real):
         <tr>
             <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #334155;"><strong>{cod}</strong></td>
             <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #64748b;">{p.get('tipo', 'Propiedad').title()}</td>
-            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #64748b;">En cartera</td>
+            <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #64748b;">En cartera (sin movimiento reciente)</td>
         </tr>
         """
     
@@ -52,9 +52,10 @@ def generar_html(nombre, propiedades, email_real):
     codigos_encoded = quote(codigos_str)
     link_base = f"{RENDER_BASE_URL}{WEBHOOK_PATH}?email={email_encoded}&codigos={codigos_encoded}&campana={NOMBRE_CAMPANA}"
     
-    link_ok = f"{link_base}&accion=ajuste"
-    link_call = f"{link_base}&accion=llamada"
-    link_stop = f"{link_base}&accion=baja"
+    link_ajuste = f"{link_base}&accion=ajuste"
+    link_llamada = f"{link_base}&accion=llamada"
+    link_baja = f"{link_base}&accion=baja"
+    link_unsubscribe = f"{link_base}&accion=unsubscribe"  # 4to botón: anular suscripción
 
     html = f"""
     <!DOCTYPE html>
@@ -72,29 +73,33 @@ def generar_html(nombre, propiedades, email_real):
             .btn {{ display: inline-block; padding: 12px 24px; margin: 5px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px; transition: background 0.3s; }}
             .btn-primary {{ background: #22c55e; color: #ffffff; border: 1px solid #16a34a; }} 
             .btn-secondary {{ background: #3b82f6; color: #ffffff; border: 1px solid #2563eb; }} 
+            .btn-danger {{ background: #ef4444; color: #ffffff; border: 1px solid #dc2626; }} 
+            .btn-unsubscribe {{ background: #6b7280; color: #ffffff; border: 1px solid #4b5563; font-size: 12px; }} 
             .table-props {{ width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }}
             .footer {{ background: #f1f5f9; padding: 20px; text-align: center; font-size: 11px; color: #94a3b8; }}
-            .unsubscribe {{ color: #ef4444; text-decoration: underline; }}
+            .unsubscribe {{ color: #ef4444; text-decoration: underline; font-size: 12px; }}
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
-                <h1>Informe de Mercado y Estrategia - Procasa</h1>
+                <h1>Actualización Personal - Procasa (Pablo Galleguillos)</h1>
             </div>
             <div class="content">
-                <p>Estimado(a) <strong>{nombre}</strong>,</p>
-                <p>Le contactamos para informarle de los resultados de nuestro reciente análisis de mercado...</p>
+                <p>Estimado <strong>{nombre}</strong>,</p>
+                <p>Soy Pablo del equipo de gestión de cartera en Procasa, y te escribo directamente porque veo que tus propiedades ({codigos_str}) llevan tiempo sin movimiento. Me da un poco de pena que sigas pagando contribuciones mensuales por algo que el mercado actual no está absorbiendo al precio publicado. No es justo, ¿verdad?</p>
                 
                 <div class="highlight">
-                    <strong>Análisis Crítico:</strong><br>
-                    Actualmente, el mercado en la Región Metropolitana cuenta con <strong>más de 108.000 propiedades</strong> en oferta...
+                    <strong>Lo que está pasando en realidad (datos de noviembre 2025):</strong><br>
+                    - <strong>Sobreoferta masiva:</strong> Más de 108.000-113.000 viviendas disponibles en todo Chile (Cámara Chilena de la Construcción), con velocidad de venta en 30 meses – el doble de lo normal.<br>
+                    - <strong>Tasas hipotecarias altas:</strong> 4,29% promedio (bajaron de 5,05% en 2023, pero aún +115% vs. 1,99% en 2019; Banco Central). Aprobaciones de créditos: -12% anual, con solo ~1.800-1.900 mensuales.<br>
+                    - <strong>Cesantía e inflación:</strong> 8,5% nacional (INE), inflación 4,5% (IPC dic 2024), UF cayendo a $38.359 – precios de viviendas bajaron 7-14% en comunas premium como Vitacura.<br>
+                    - <strong>Incertidumbre política:</strong> Con elecciones en noviembre y posible cambio a Kast (reformas pro-mercado), se espera mejora económica en 2026 (+5-10% ventas), pero subsidios actuales (60 puntos base para <4.000 UF) son ahora o nunca.
                 </div>
 
-                <p>Nuestra data muestra que la inmensa mayoría de las ventas exitosas...</p>
+                <p>El panorama es desafiante, pero hay luz: propiedades con ajuste inicial del 6-8% (para entrar en rangos bancarios) cierran en <90 días. Esta semana cerramos 3 casos idénticos a los tuyos: bajamos 7%, recibieron ofertas reales en 15 días. No quiero que pierdas más tiempo – con la economía reconfigurándose, es momento de preparar tus unidades para la recuperación.</p>
 
-                <p>Estamos revisando la situación de las siguientes unidades bajo su nombre:</p>
-
+                <p>Tus propiedades bajo revisión:</p>
                 <table class="table-props">
                     <thead>
                         <tr style="background-color: #f8fafc; text-align: left;">
@@ -106,25 +111,32 @@ def generar_html(nombre, propiedades, email_real):
                     <tbody>{filas}</tbody>
                 </table>
 
+                <p style="margin-top: 25px;">¿Qué hacemos? Te propongo actuar rápido para no quedarte atrás en esta transición:</p>
+                
                 <div class="btn-group">
-                    <a href="{link_ok}" class="btn btn-primary">
-                        Autorizar el Ajuste Sugerido
+                    <a href="{link_ajuste}" class="btn btn-primary">
+                        ✅ Autorizar Ajuste 7% (Reactivar Ya)
                     </a>
                     <br><br>
-                    <a href="{link_call}" class="btn btn-secondary">
-                        Tengo Dudas (Solicito una Llamada)
+                    <a href="{link_llamada}" class="btn btn-secondary">
+                        📞 Tengo Dudas (Solicito Llamada Personal)
+                    </a>
+                    <br><br>
+                    <a href="{link_baja}" class="btn btn-danger">
+                        ❌ Dar de Baja (Ya Vendí/No Interesa)
                     </a>
                 </div>
             </div>
 
             <div class="footer">
-                <p>Atentamente, Equipo de Gestión de Cartera Procasa.</p>
+                <p>Atentamente, <strong>Pablo Caro</strong> - Equipo de Gestión Procasa<br>
+                pablo@procasa.cl | +56 9 8321 9804</p>
                 <p>
-                    <a href="{link_stop}" class="unsubscribe">
-                        No deseo recibir más comunicaciones (Dar de baja)
+                    <a href="{link_unsubscribe}" class="btn btn-unsubscribe">
+                        ✕ No deseo más actualizaciones (Anular Suscripción)
                     </a>
                 </p>
-                <p>© 2025 Procasa AI</p>
+                <p>© 2025 Procasa AI | Datos basados en CChC, Banco Central e INE (nov 2025). Este es un email personalizado, no publicidad.</p>
             </div>
         </div>
     </body>

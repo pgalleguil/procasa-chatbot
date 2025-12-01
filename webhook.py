@@ -181,15 +181,16 @@ async def health_check():
         "uptime": time.strftime("%Y-%m-%d %H:%M:%S")
     }
 
-# === RUTA ACTUALIZADA CON 4 ACCIONES ===
+# === RUTA ACTUALIZADA CON ACCIONES DEL CORREO (ajuste_7, mantener, no_disponible) ===
 @app.get("/campana/respuesta", response_class=HTMLResponse)
 def campana_respuesta(
     email: str = Query(..., description="Email del propietario"),
-    accion: str = Query(..., description="ajuste / llamada / baja / unsubscribe"),
+    accion: str = Query(..., description="ajuste_7 / llamada / mantener / no_disponible / unsubscribe"),
     codigos: str = Query("N/A", description="Códigos de propiedades"),
-    campana: str = Query(..., description="Nombre de la campaña (ej: update_price_202512)")
+    campana: str = Query(..., description="Nombre de la campaña (ej: ajuste_precio_202512)")
 ):
-    if accion not in ["ajuste", "llamada", "baja", "unsubscribe"]:
+    # Acciones válidas actualizadas para la campaña
+    if accion not in ["ajuste_7", "llamada", "mantener", "no_disponible", "unsubscribe"]:
         return HTMLResponse("Acción no válida", status_code=400)
 
     try:
@@ -220,12 +221,12 @@ def campana_respuesta(
         # 3. Actualización según acción
         update = {"$set": {f"update_price.{campana}.fecha_respuesta": ahora}}
         
-        if accion == "ajuste":
+        if accion == "ajuste_7":
             update["$set"].update({
-                f"update_price.{campana}.respuesta": "ajuste",
-                f"update_price.{campana}.accion_elegida": "ajuste",
+                f"update_price.{campana}.respuesta": "ajuste_7",
+                f"update_price.{campana}.accion_elegida": "ajuste_7",
                 "estado": "ajuste_autorizado",
-                "ultima_accion": f"respuesta_ajuste_{campana}",
+                "ultima_accion": f"respuesta_ajuste_7_{campana}",
                 "bloqueo_email": False,
                 "bloqueo_general": False
             })
@@ -246,18 +247,31 @@ def campana_respuesta(
             mensaje = "Genial. Un ejecutivo te llamará en las próximas 24-48 hrs para conversar con calma."
             color = "#3b82f6"
 
-        elif accion == "baja":
+        elif accion == "mantener":
             update["$set"].update({
-                f"update_price.{campana}.respuesta": "baja",
-                f"update_price.{campana}.accion_elegida": "baja",
+                f"update_price.{campana}.respuesta": "mantener",
+                f"update_price.{campana}.accion_elegida": "mantener",
+                "estado": "precio_mantenido",
+                "ultima_accion": f"respuesta_mantener_{campana}",
+                "bloqueo_email": False,
+                "bloqueo_general": False
+            })
+            titulo = "Precio mantenido"
+            mensaje = "Entendido. Seguiremos monitoreando el mercado y te avisaremos si hay oportunidades para tus propiedades."
+            color = "#f59e0b"
+
+        elif accion == "no_disponible":
+            update["$set"].update({
+                f"update_price.{campana}.respuesta": "no_disponible",
+                f"update_price.{campana}.accion_elegida": "no_disponible",
                 f"update_price.{campana}.bloqueo_solicitado": "email",
-                "estado": "baja_solicitada",
-                "ultima_accion": f"respuesta_baja_{campana}",
+                "estado": "no_disponible",
+                "ultima_accion": f"respuesta_no_disponible_{campana}",
                 "bloqueo_email": True,
                 "bloqueo_general": False
             })
             titulo = "Entendido"
-            mensaje = "Tus propiedades serán archivadas y no recibirás más actualizaciones por email. Si cambias de idea, solo avísanos."
+            mensaje = "Tus propiedades han sido marcadas como no disponibles. Gracias por avisarnos. Si cambias de idea, contáctanos."
             color = "#ef4444"
 
         else:  # unsubscribe
@@ -295,7 +309,7 @@ def campana_respuesta(
             <div class="container">
                 <div class="header"><h1>{titulo}</h1></div>
                 <div class="content">
-                    <p><strong>{accion.title() if accion != 'unsubscribe' else 'Anulación'}</strong></p>
+                    <p><strong>{accion.replace('_', ' ').title()}</strong></p>
                     <p>{mensaje}</p>
                     <p style="color:#666;font-size:14px">Email: {email_lower}<br>Campaña: {campana}</p>
                 </div>

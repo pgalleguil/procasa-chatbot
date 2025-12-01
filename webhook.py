@@ -226,7 +226,12 @@ def campana_respuesta(
                 "bloqueo_email": False
             })
             titulo = "¡Autorización recibida!"
-            mensaje = "Perfecto, Pablo. Ya estamos aplicando el ajuste del 7% en tus propiedades. Te avisamos cuando esté publicado."
+            mensaje = """Ya realizamos la actualización del precio de tu propiedad en Procasa.
+
+            El nuevo valor se verá reflejado en los portales inmobiliarios dentro de aproximadamente 72 horas, dependiendo de los tiempos de sincronización de cada sitio.
+
+            Si necesitas realizar otro ajuste o revisar alguna estrategia de visibilidad, quedaremos atentos"""
+
             color = "#10b981"
 
         elif accion == "llamada":
@@ -236,7 +241,12 @@ def campana_respuesta(
                 "bloqueo_email": False
             })
             titulo = "¡Solicitud recibida!"
-            mensaje = "Genial. Un ejecutivo te llamará en las próximas 24-48 hrs para conversar con calma."
+            mensaje = """Perfecto, derivamos tu solicitud para que un ejecutivo de Procasa se ponga en contacto contigo.
+
+            El equipo revisará tu caso y te llamarán dentro de las próximas 24 a 48 horas, según disponibilidad.
+
+            Quedaremos atentos si necesitas algo adicional mientras tanto."""
+
             color = "#3b82f6"
 
         elif accion == "mantener":
@@ -246,7 +256,12 @@ def campana_respuesta(
                 "bloqueo_email": False
             })
             titulo = "Precio mantenido"
-            mensaje = "Entendido. Seguiremos monitoreando el mercado y te avisaremos si hay oportunidades."
+            mensaje = """Perfecto, dejamos el precio de tu propiedad tal como está.
+
+            Seguiremos monitoreando el comportamiento del mercado para evaluar futuras oportunidades de ajuste si fuese necesario.
+
+            Quedaremos atentos ante cualquier consulta o cambio que quieras realizar."""
+
             color = "#f59e0b"
 
         elif accion == "no_disponible":
@@ -256,7 +271,12 @@ def campana_respuesta(
                 "ultima_accion": f"no_disponible_{campana}"
             })
             titulo = "Entendido"
-            mensaje = "Tus propiedades han sido marcadas como no disponibles. Gracias por avisarnos."
+            mensaje = """Perfecto, dejamos marcada tu propiedad como No Disponible en nuestro sistema.
+
+            Si en el futuro cuentas con otra propiedad para vender o arrendar, estaremos encantados de ayudarte con la gestión y apoyarte en todo el proceso.
+
+            Quedaremos atentos a cualquier cosa que necesites."""
+
             color = "#ef4444"
 
         else:  # unsubscribe
@@ -266,7 +286,10 @@ def campana_respuesta(
                 "ultima_accion": "unsubscribe"
             })
             titulo = "Suscripción anulada"
-            mensaje = "Listo. Ya no recibirás más correos de campañas. Gracias por haber confiado en nosotros."
+            mensaje = """Perfecto, hemos procesado tu solicitud y quedaste desinscrito de nuestras comunicaciones comerciales.
+
+            Gracias por habernos permitido mantenerte informado. Si en algún momento deseas volver a recibir novedades o necesitas apoyo con una propiedad, estaremos encantados de ayudarte."""
+
             color = "#6b7280"
 
         contactos.update_one({"email_propietario": email_lower}, update, upsert=False)

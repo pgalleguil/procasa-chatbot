@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# email_campaña_propietarios.py → VERSIÓN FINAL DEFINITIVA
+# email_campaña_propietarios.py → VERSIÓN FINAL DEFINITIVA (TODOS LOS CÓDIGOS CLICABLES)
 
 import os
 import smtplib
@@ -17,7 +17,7 @@ from config import Config
 # CONFIGURACIÓN
 # ==============================================================================
 NOMBRE_CAMPANA = "ajuste_precio_202512"
-MODO_PRUEBA = True                     # ← Cambia a False solo cuando envíes de verdad
+MODO_PRUEBA = False                    # ← Cambia a False solo cuando envíes de verdad
 EMAIL_PRUEBA_DESTINO = "p.galleguil@gmail.com"
 
 RENDER_BASE_URL = "https://procasa-chatbot-yr8d.onrender.com"
@@ -56,22 +56,30 @@ def attach_images(msg):
             break
 
 # ==============================================================================
-# GENERACIÓN DE HTML (igual que antes, no toqué nada)
+# GENERACIÓN DE HTML (TODOS los códigos son hipervínculos azules)
 # ==============================================================================
 def generar_html(nombre, propiedades, email_real):
     filas = ""
     lista_codigos = []
+    codigos_con_link = []        # ← Para el texto del primer párrafo
+
     for p in propiedades:
         cod = p.get('codigo', 'S/C')
         lista_codigos.append(cod)
+        codigos_con_link.append(f'<a href="https://www.procasa.cl/{cod}" style="color:#0066CC; font-weight:600; text-decoration:underline;" target="_blank">{cod}</a>')
+        
         filas += f"""
         <tr>
-            <td style="padding: 12px 16px; border-bottom: 1px solid #E2E8F0; color: #1E293B; font-weight: 600; font-size: 15px;">{cod}</td>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #E2E8F0; font-weight: 600; font-size: 15px;">
+                <a href="https://www.procasa.cl/{cod}" style="color: #0066CC; text-decoration: underline;" target="_blank">{cod}</a>
+            </td>
             <td style="padding: 12px 16px; border-bottom: 1px solid #E2E8F0; color: #64748B; font-size: 15px;">{p.get('tipo', 'Propiedad').title()}</td>
             <td style="padding: 12px 16px; border-bottom: 1px solid #E2E8F0; color: #F59E0B; font-weight: 600; font-size: 13px;">Revisión sugerida</td>
         </tr>
         """
+
     codigos_str = ", ".join(lista_codigos)
+    codigos_html = ", ".join(codigos_con_link)   # ← Versión con hipervínculos
     es_plural = len(propiedades) > 1
     texto_prop = "sus propiedades" if es_plural else "su propiedad"
 
@@ -124,7 +132,7 @@ def generar_html(nombre, propiedades, email_real):
                 </div>
                 <div class="content">
                     <p>Hola {nombre},</p>
-                    <p>Desde Procasa, hemos analizado {texto_prop} ({codigos_str}). A pesar de su calidad, no han cerrado ventas en el trimestre reciente, acumulando costos como contribuciones y oportunidad perdida. El mercado inmobiliario chileno actual exige ajustes para acelerar cierres.</p>
+                    <p>Desde Procasa hemos analizado {texto_prop} (<strong>{codigos_html}</strong>). A pesar de su calidad y buen estándar, la propiedad no ha generado el nivel de movimiento esperado en el último trimestre. El mercado inmobiliario chileno actual exige ajustes para impulsar mayor visibilidad y acelerar el proceso de venta.</p>
                     <div class="highlight-box">
                         <strong>Sobreoferta en el Gran Santiago:</strong> Stock supera las <strong>50.000 unidades en RM</strong> y ~100.000 nacional (CChC, Q3 2025), con tiempo de absorción de ~30 meses —el doble del ideal (14-20 meses)—.<br><br>
                         <strong>Tiempos de Venta Extendidos:</strong> Promedio >180 días nacional (Colliers y Portalinmobiliario, Q3 2025); en comunas como Ñuñoa o Santiago, propiedades >180 días reciben 70% menos visitas.<br><br>
@@ -149,12 +157,12 @@ def generar_html(nombre, propiedades, email_real):
                 <div class="footer">
                     <strong>Procasa Jorge Pablo Caro Propiedades</strong><br>
                     Gestión de Cartera Exclusiva<br><br>
-                    <span class="telefono">+56 9 8321 9804</span>
+                    <span class="telefono">+56 9 4090 4971</span>
                     <div style="margin:12px 0 0;">
-                        <a href="https://wa.me/56983219804?text=Hola%20Pablo%2C%20te%20escribo%20por%20la%20propiedad%20{codigos_str.replace(',', '%20')}"
+                        <a href="https://wa.me/56940904971?text=Hola%20Pablo%2C%20te%20escribo%20por%20la%20propiedad%20{codigos_str.replace(',', '%20')}"
                            class="wa-text" target="_blank">Escríbenos por WhatsApp</a>
                         &nbsp;&nbsp;
-                        <a href="https://wa.me/56983219804?text=Hola%20Pablo%2C%20te%20escribo%20por%20la%20propiedad%20{codigos_str.replace(',', '%20')}"
+                        <a href="https://wa.me/56940904971?text=Hola%20Pablo%2C%20te%20escribo%20por%20la%20propiedad%20{codigos_str.replace(',', '%20')}"
                            target="_blank">
                             <img src="cid:whatsapp_icon" alt="WhatsApp" style="width:36px; height:36px; vertical-align:middle;">
                         </a>
@@ -192,7 +200,7 @@ def enviar_correo(destinatario, asunto, html_body):
         return False, str(e)
 
 # ==============================================================================
-# MAIN
+# MAIN (con lookup a universo_obelix para obtener la región)
 # ==============================================================================
 def main():
     print("="*70)
@@ -200,23 +208,61 @@ def main():
     print(f"MODO PRUEBA: {'SÍ' if MODO_PRUEBA else 'NO'}")
     print("="*70)
 
-    query = {
-        "tipo": "propietario",
-        "email_propietario": {"$exists": True, "$ne": ""},
-        "estado": {"$ne": "baja_general"},
-        "$or": [
-            {"update_price.campana_nombre": {"$ne": NOMBRE_CAMPANA}},
-            {"update_price.campana_nombre": {"$exists": False}}
-        ]
-    }
+    # PIPELINE: unimos contactos con universo_obelix por código para obtener la región
+    pipeline = [
+        {
+            "$match": {
+                "tipo": "propietario",
+                "email_propietario": {"$exists": True, "$ne": "", "$ne": None},
+                "estado": {"$ne": "baja_general"},
+                "$or": [
+                    {"update_price.campana_nombre": {"$ne": NOMBRE_CAMPANA}},
+                    {"update_price.campana_nombre": {"$exists": False}}
+                ]
+            }
+        },
+        {
+            "$lookup": {
+                "from": "universo_obelix",
+                "localField": "codigo",
+                "foreignField": "codigo",
+                "as": "propiedad_info"
+            }
+        },
+        {
+            "$unwind": {
+                "path": "$propiedad_info",
+                "preserveNullAndEmptyArrays": True  # si no existe en obelix, sigue (raro pero por seguridad)
+            }
+        },
+        {
+            "$match": {
+                "$or": [
+                    {"propiedad_info.region": "XIII Región Metropolitana"},
+                    {"propiedad_info.region": "Región Metropolitana de Santiago"}  # por si está escrito distinto
+                ]
+            }
+        },
+        {
+            "$project": {
+                "email_propietario": 1,
+                "nombre_propietario": 1,
+                "codigo": 1,
+                "tipo": 1,
+                "update_price": 1,
+                "_id": 1
+            }
+        }
+    ]
 
-    candidatos = collection.find(query)
+    candidatos = collection.aggregate(pipeline)
     grouped_data = {}
 
     for doc in candidatos:
         email = doc.get("email_propietario", "").strip().lower()
         codigo = doc.get("codigo", "S/C")
-        if codigo in CODIGOS_EXCLUIDOS or "@" not in email: continue
+        if codigo in CODIGOS_EXCLUIDOS or "@" not in email:
+            continue
         if email not in grouped_data:
             nombre_raw = doc.get("nombre_propietario", "")
             primer_nombre = nombre_raw.strip().split()[0].title() if nombre_raw.strip() else "Cliente"
@@ -234,7 +280,8 @@ def main():
 
     enviados = 0
     for email_real, data in grouped_data.items():
-        if MODO_PRUEBA and enviados >= 1: break
+        if MODO_PRUEBA and enviados >= 1:
+            break
 
         destinatario = EMAIL_PRUEBA_DESTINO if MODO_PRUEBA else email_real
         codigo_principal = data['propiedades'][0]['codigo']
@@ -244,8 +291,6 @@ def main():
         exito, msg = enviar_correo(destinatario, asunto, html)
 
         ahora = datetime.now(timezone.utc)
-
-        # LÓGICA INTELIGENTE: en prueba solo actualiza si es tu correo
         debe_actualizar = not MODO_PRUEBA or email_real.lower() == "p.galleguil@gmail.com"
 
         if debe_actualizar:

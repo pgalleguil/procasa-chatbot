@@ -27,6 +27,7 @@ test_*.py
 debug_*.py
 pruebas_*.py
 simular_*.py
+reporte*.py
 
 # Carpetas temporales
 temp/

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# email_campaña_propietarios.py → VERSIÓN FINAL 100% LISTA
+# email_campaña_propietarios.py → VERSIÓN FINAL DEFINITIVA
 
 import os
 import smtplib
@@ -17,7 +17,7 @@ from config import Config
 # CONFIGURACIÓN
 # ==============================================================================
 NOMBRE_CAMPANA = "ajuste_precio_202512"
-MODO_PRUEBA = True                     # ← Cambia a False cuando estés listo para enviar de verdad
+MODO_PRUEBA = True                     # ← Cambia a False solo cuando envíes de verdad
 EMAIL_PRUEBA_DESTINO = "p.galleguil@gmail.com"
 
 RENDER_BASE_URL = "https://procasa-chatbot-yr8d.onrender.com"
@@ -32,12 +32,10 @@ db = client[Config.DB_NAME]
 collection = db[Config.COLLECTION_CONTACTOS]
 
 # ==============================================================================
-# ADJUNTA LOGOS (Procasa + WhatsApp)
+# ADJUNTA LOGOS
 # ==============================================================================
 def attach_images(msg):
     base_dir = os.path.dirname(os.path.abspath(__file__))
-
-    # Logo Procasa
     for p in [os.path.join(base_dir, 'static', 'logo.png'),
               os.path.join(base_dir, '..', 'static', 'logo.png'),
               os.path.join(base_dir, 'logo.png')]:
@@ -47,8 +45,6 @@ def attach_images(msg):
                 img.add_header('Content-ID', '<logo_procasa>')
                 msg.attach(img)
             break
-
-    # Logo WhatsApp
     for p in [os.path.join(base_dir, 'static', 'whatsapp.png'),
               os.path.join(base_dir, '..', 'static', 'whatsapp.png'),
               os.path.join(base_dir, 'whatsapp.png')]:
@@ -60,12 +56,11 @@ def attach_images(msg):
             break
 
 # ==============================================================================
-# GENERACIÓN DE HTML (100% FINAL)
+# GENERACIÓN DE HTML (igual que antes, no toqué nada)
 # ==============================================================================
 def generar_html(nombre, propiedades, email_real):
     filas = ""
     lista_codigos = []
-
     for p in propiedades:
         cod = p.get('codigo', 'S/C')
         lista_codigos.append(cod)
@@ -76,7 +71,6 @@ def generar_html(nombre, propiedades, email_real):
             <td style="padding: 12px 16px; border-bottom: 1px solid #E2E8F0; color: #F59E0B; font-weight: 600; font-size: 13px;">Revisión sugerida</td>
         </tr>
         """
-
     codigos_str = ", ".join(lista_codigos)
     es_plural = len(propiedades) > 1
     texto_prop = "sus propiedades" if es_plural else "su propiedad"
@@ -128,38 +122,30 @@ def generar_html(nombre, propiedades, email_real):
                 <div class="header">
                     <img src="cid:logo_procasa" alt="Procasa">
                 </div>
-
                 <div class="content">
                     <p>Hola {nombre},</p>
                     <p>Desde Procasa, hemos analizado {texto_prop} ({codigos_str}). A pesar de su calidad, no han cerrado ventas en el trimestre reciente, acumulando costos como contribuciones y oportunidad perdida. El mercado inmobiliario chileno actual exige ajustes para acelerar cierres.</p>
-
                     <div class="highlight-box">
                         <strong>Sobreoferta en el Gran Santiago:</strong> Stock supera las <strong>50.000 unidades en RM</strong> y ~100.000 nacional (CChC, Q3 2025), con tiempo de absorción de ~30 meses —el doble del ideal (14-20 meses)—.<br><br>
                         <strong>Tiempos de Venta Extendidos:</strong> Promedio >180 días nacional (Colliers y Portalinmobiliario, Q3 2025); en comunas como Ñuñoa o Santiago, propiedades >180 días reciben 70% menos visitas.<br><br>
                         <strong>Restricciones Crediticias:</strong> Tasas hipotecarias en 4.2% (Banco Central, octubre 2025), reduciendo ~20% la capacidad de endeudamiento de compradores.<br><br>
                         <strong>Ajustes para Ventas:</strong> Hasta 90% de cierres en RM involucran correcciones de 5-10% (Colliers, 2025), bajando precios para competir en portales.
                     </div>
-
                     <p>Con tasas proyectadas a ~4% para fines de 2025 (Colliers), hay oportunidades, pero mantener precios actuales podría extender la detención 6-12 meses más. Recomendamos un <strong>ajuste del 7%</strong>, basado en >500 transacciones similares: +300% en consultas iniciales y cierre 40-50% más rápido (datos CChC/Colliers).</p>
-
                     <table><thead><tr><th>Código</th><th>Tipo</th><th>Estado</th></tr></thead><tbody>{filas}</tbody></table>
-
                     <p style="text-align:center; font-size:17px; font-weight:700; color:#0F172A; margin:30px 0 20px;">
                         Por favor, seleccione una de las siguientes opciones:
                     </p>
-
                     <div class="btn-container">
                         <a href="{link_ajuste}" class="btn btn-ajuste">Ajustar precio 7% (Recomendado)</a>
                         <a href="{link_llamada}" class="btn btn-otros">Quiero que me llamen para conversarlo</a>
                         <a href="{link_mantener}" class="btn btn-otros">Mantener precio actual</a>
                         <a href="{link_baja}" class="btn btn-otros">Propiedad ya vendida / No disponible</a>
                     </div>
-
                     <p style="text-align:center; font-size:14.5px; color:#475569; margin:16px 0 0;">
                         Respuesta inmediata con un clic • Datos basados en fuentes oficiales al noviembre 2025
                     </p>
                 </div>
-
                 <div class="footer">
                     <strong>Procasa Jorge Pablo Caro Propiedades</strong><br>
                     Gestión de Cartera Exclusiva<br><br>
@@ -186,17 +172,15 @@ def generar_html(nombre, propiedades, email_real):
     return html
 
 # ==============================================================================
-# ENVÍO DE CORREO
+# ENVÍO
 # ==============================================================================
 def enviar_correo(destinatario, asunto, html_body):
     msg = MIMEMultipart('related')
     msg['From'] = f"Gestión Procasa <{Config.GMAIL_USER}>"
     msg['To'] = destinatario
     msg['Subject'] = asunto
-
     msg.attach(MIMEText(html_body, 'html', 'utf-8'))
     attach_images(msg)
-
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -233,12 +217,10 @@ def main():
         email = doc.get("email_propietario", "").strip().lower()
         codigo = doc.get("codigo", "S/C")
         if codigo in CODIGOS_EXCLUIDOS or "@" not in email: continue
-
         if email not in grouped_data:
             nombre_raw = doc.get("nombre_propietario", "")
             primer_nombre = nombre_raw.strip().split()[0].title() if nombre_raw.strip() else "Cliente"
             grouped_data[email] = {"nombre": primer_nombre, "propiedades": [], "ids": []}
-
         grouped_data[email]["propiedades"].append({"codigo": codigo, "tipo": doc.get("tipo", "Propiedad")})
         grouped_data[email]["ids"].append(doc["_id"])
 
@@ -263,8 +245,10 @@ def main():
 
         ahora = datetime.now(timezone.utc)
 
-        # Solo actualiza la base de datos en envío real
-        if not MODO_PRUEBA:
+        # LÓGICA INTELIGENTE: en prueba solo actualiza si es tu correo
+        debe_actualizar = not MODO_PRUEBA or email_real.lower() == "p.galleguil@gmail.com"
+
+        if debe_actualizar:
             collection.update_many(
                 {"_id": {"$in": data["ids"]}},
                 {"$set": {
@@ -273,8 +257,9 @@ def main():
                     "update_price.canales.email": {"enviado": exito, "fecha": ahora}
                 }}
             )
+            log.info(f"Actualizado en MongoDB: {email_real}")
         else:
-            log.info(f"MODO PRUEBA → No se actualiza MongoDB para {email_real}")
+            log.info(f"MODO PRUEBA → No se actualiza MongoDB (no es tu correo)")
 
         if exito:
             log.info(f"Envío exitoso a {destinatario}")

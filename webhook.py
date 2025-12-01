@@ -1,4 +1,4 @@
-# webhook.py - VERSIÓN FINAL PRO PAGADA - NOVIEMBRE 2025
+# webhook.py - VERSIÓN FINAL PRO PAGADA - DICIEMBRE 2025 (100% FUNCIONAL)
 import asyncio
 import logging
 import time
@@ -89,7 +89,6 @@ async def send_whatsapp_message(number: str, text: str):
     except Exception as e:
         logger.error(f"[WHATSAPP EXCEPTION] Error enviando a {number}: {e}")
 
-    # Un solo reintento rápido (por si fue un blip)
     await asyncio.sleep(2)
     try:
         resp = requests.post(url, json=payload, headers=headers, timeout=15)
@@ -113,7 +112,6 @@ async def root():
 async def webhook(request: Request, x_webhook_signature: str = Header(None, alias="X-Webhook-Signature")):
     raw_body = await request.body()
     
-    # Verificación de firma
     if config.WASENDER_WEBHOOK_SECRET:
         expected_signature = hmac.new(
             config.WASENDER_WEBHOOK_SECRET.encode("utf-8"),
@@ -155,7 +153,6 @@ async def webhook(request: Request, x_webhook_signature: str = Header(None, alia
     if not phone or not text:
         return JSONResponse({"status": "ignored"}, status_code=200)
 
-    # Normalización
     if phone.startswith("56") and not phone.startswith("+"):
         phone = "+" + phone
     if not phone.startswith("+"):
@@ -181,15 +178,15 @@ async def health_check():
         "uptime": time.strftime("%Y-%m-%d %H:%M:%S")
     }
 
-# === RUTA ACTUALIZADA CON ACCIONES DEL CORREO (ajuste_7, mantener, no_disponible) ===
+# ====================== ENDPOINT CAMPAÑA EMAIL - 100% FUNCIONAL ======================
 @app.get("/campana/respuesta", response_class=HTMLResponse)
 def campana_respuesta(
     email: str = Query(..., description="Email del propietario"),
     accion: str = Query(..., description="ajuste_7 / llamada / mantener / no_disponible / unsubscribe"),
     codigos: str = Query("N/A", description="Códigos de propiedades"),
-    campana: str = Query(..., description="Nombre de la campaña (ej: ajuste_precio_202512)")
+    campana: str = Query(..., description="Nombre de la campaña")
 ):
-    # Acciones válidas actualizadas para la campaña
+    # Validar acción
     if accion not in ["ajuste_7", "llamada", "mantener", "no_disponible", "unsubscribe"]:
         return HTMLResponse("Acción no válida", status_code=400)
 
@@ -201,34 +198,32 @@ def campana_respuesta(
 
         ahora = datetime.utcnow()
         email_lower = email.lower().strip()
+        codigos_lista = [c.strip() for c in codigos.split(",") if c.strip() and c.strip() != "N/A"]
 
-        # 1. Log histórico completo
+        # 1. Guardar en histórico
         respuestas.insert_one({
             "email": email_lower,
             "campana_nombre": campana,
             "accion": accion,
-            "codigos_propiedad": [c.strip() for c in codigos.split(",") if c.strip() and c.strip() != "N/A"],
+            "codigos_propiedad": codigos_lista,
             "fecha_respuesta": ahora,
             "canal_origen": "email"
         })
 
-        # 2. Búsqueda del contacto
-        query = {
-            "email_propietario": email_lower,
-            f"update_price.{campana}": {"$exists": True}
+        # 2. Actualizar contacto
+        update = {
+            "$set": {
+                f"update_price.{campana}.fecha_respuesta": ahora,
+                f"update_price.{campana}.respuesta": accion,
+                f"update_price.{campana}.accion_elegida": accion
+            }
         }
 
-        # 3. Actualización según acción
-        update = {"$set": {f"update_price.{campana}.fecha_respuesta": ahora}}
-        
         if accion == "ajuste_7":
             update["$set"].update({
-                f"update_price.{campana}.respuesta": "ajuste_7",
-                f"update_price.{campana}.accion_elegida": "ajuste_7",
                 "estado": "ajuste_autorizado",
-                "ultima_accion": f"respuesta_ajuste_7_{campana}",
-                "bloqueo_email": False,
-                "bloqueo_general": False
+                "ultima_accion": f"ajuste_7_{campana}",
+                "bloqueo_email": False
             })
             titulo = "¡Autorización recibida!"
             mensaje = "Perfecto, Pablo. Ya estamos aplicando el ajuste del 7% en tus propiedades. Te avisamos cuando esté publicado."
@@ -236,12 +231,9 @@ def campana_respuesta(
 
         elif accion == "llamada":
             update["$set"].update({
-                f"update_price.{campana}.respuesta": "llamada",
-                f"update_price.{campana}.accion_elegida": "llamada",
                 "estado": "pendiente_llamada",
-                "ultima_accion": f"respuesta_llamada_{campana}",
-                "bloqueo_email": False,
-                "bloqueo_general": False
+                "ultima_accion": f"llamada_{campana}",
+                "bloqueo_email": False
             })
             titulo = "¡Solicitud recibida!"
             mensaje = "Genial. Un ejecutivo te llamará en las próximas 24-48 hrs para conversar con calma."
@@ -249,46 +241,37 @@ def campana_respuesta(
 
         elif accion == "mantener":
             update["$set"].update({
-                f"update_price.{campana}.respuesta": "mantener",
-                f"update_price.{campana}.accion_elegida": "mantener",
                 "estado": "precio_mantenido",
-                "ultima_accion": f"respuesta_mantener_{campana}",
-                "bloqueo_email": False,
-                "bloqueo_general": False
+                "ultima_accion": f"mantener_{campana}",
+                "bloqueo_email": False
             })
             titulo = "Precio mantenido"
-            mensaje = "Entendido. Seguiremos monitoreando el mercado y te avisaremos si hay oportunidades para tus propiedades."
+            mensaje = "Entendido. Seguiremos monitoreando el mercado y te avisaremos si hay oportunidades."
             color = "#f59e0b"
 
         elif accion == "no_disponible":
             update["$set"].update({
-                f"update_price.{campana}.respuesta": "no_disponible",
-                f"update_price.{campana}.accion_elegida": "no_disponible",
-                f"update_price.{campana}.bloqueo_solicitado": "email",
                 "estado": "no_disponible",
-                "ultima_accion": f"respuesta_no_disponible_{campana}",
                 "bloqueo_email": True,
-                "bloqueo_general": False
+                "ultima_accion": f"no_disponible_{campana}"
             })
             titulo = "Entendido"
-            mensaje = "Tus propiedades han sido marcadas como no disponibles. Gracias por avisarnos. Si cambias de idea, contáctanos."
+            mensaje = "Tus propiedades han sido marcadas como no disponibles. Gracias por avisarnos."
             color = "#ef4444"
 
         else:  # unsubscribe
             update["$set"].update({
                 "bloqueo_email": True,
-                "bloqueo_general": False,
-                "ultima_accion": f"unsubscribe_{campana}",
-                "estado": "suscripcion_anulada"
+                "estado": "suscripcion_anulada",
+                "ultima_accion": "unsubscribe"
             })
             titulo = "Suscripción anulada"
-            mensaje = "Listo. Ya no recibirás más correos de actualizaciones de mercado ni campañas. Gracias por haber confiado en nosotros."
+            mensaje = "Listo. Ya no recibirás más correos de campañas. Gracias por haber confiado en nosotros."
             color = "#6b7280"
 
-        # Ejecutar actualización
-        contactos.update_one(query, update, upsert=False)
+        contactos.update_one({"email_propietario": email_lower}, update, upsert=False)
 
-        # 4. Respuesta al cliente (HTML bonito)
+        # 3. Página de confirmación
         html = f"""
         <!DOCTYPE html>
         <html lang="es">
@@ -296,7 +279,7 @@ def campana_respuesta(
             <meta charset="UTF-8">
             <title>Procasa - Confirmación</title>
             <style>
-                body {{font-family:Arial;background:#f9fafb;padding:40px;margin:0}}
+                body {{font-family:Arial,sans-serif;background:#f9fafb;padding:40px;margin:0}}
                 .container {{max-width:520px;margin:auto;background:white;border-radius:16px;overflow:hidden;box-shadow:0 10px 25px rgba(0,0,0,0.1)}}
                 .header {{background:{color};color:white;padding:30px;text-align:center}}
                 .header h1 {{margin:0;font-size:24px;font-weight:600}}
@@ -311,7 +294,6 @@ def campana_respuesta(
                 <div class="content">
                     <p><strong>{accion.replace('_', ' ').title()}</strong></p>
                     <p>{mensaje}</p>
-                    <p style="color:#666;font-size:14px">Email: {email_lower}<br>Campaña: {campana}</p>
                 </div>
                 <div class="footer">
                     © 2025 Procasa • Pablo Caro y equipo
@@ -324,8 +306,10 @@ def campana_respuesta(
 
     except Exception as e:
         logger.error(f"Error en /campana/respuesta: {e}")
-        return HTMLResponse("Error interno del servidor. Intenta más tarde.", status_code=500)
+        return HTMLResponse("Error interno del servidor.", status_code=500)
 
+
+# ====================== ARRANQUE ======================
 if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8001))

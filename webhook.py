@@ -244,76 +244,71 @@ def campana_respuesta(
     codigos: str = Query("N/A", description="Códigos de propiedades"),
     campana: str = Query(..., description="Nombre de la campaña")
 ):
-    # =================================== VALIDACIONES INICIALES ===================================
+    # Validación de acción
     if accion not in ["ajuste_7", "llamada", "mantener", "no_disponible", "unsubscribe"]:
-        logger.warning(f"[CAMPAÑA] Acción inválida: {accion} | Email: {email}")
+        logger.warning(f"Acción inválida: {accion} desde email {email}")
         return HTMLResponse("Acción no válida", status_code=400)
 
-    email_lower = email.lower().strip()
-    codigos_lista = [c.strip() for c in codigos.split(",") if c.strip() and c.strip() != "N/A"]
-    ahora = datetime.utcnow()
-
-    logger.info(f"[CAMPAÑA] Procesando respuesta → Email: {email_lower} | Acción: {accion} | Campaña: {campana} | Códigos: {codigos_lista}")
-
     try:
-        # ====================== CONEXIÓN SEGURA A MONGODB ======================
+        email_lower = email.lower().strip()
+        codigos_lista = [c.strip() for c in codigos.split(",") if c.strip() and c.strip() != "N/A"]
+        ahora = datetime.utcnow()
+
+        logger.info(f"[CAMPAÑA] Procesando respuesta de {email_lower} → {accion} | Campaña: {campana}")
+
+        # Conexión segura a MongoDB con ping real
         client = MongoClient(
             config.MONGO_URI,
             serverSelectionTimeoutMS=6000,
             connectTimeoutMS=6000,
-            socketTimeoutMS=10000,
-            maxPoolSize=10
+            socketTimeoutMS=10000
         )
-        # Forzamos prueba de conexión real
         client.admin.command('ping')
-        logger.info("[MONGO] Conexión exitosa y ping OK")
+        logger.info("[MONGO] Conexión exitosa")
 
         db = client[config.DB_NAME]
         contactos = db[config.COLLECTION_CONTACTOS]
         respuestas = db[config.COLLECTION_RESPUESTAS]
 
-        # ====================== 1. GUARDAR RESPUESTA EN HISTÓRICO ======================
+        # 1. Guardar en histórico
         insert_result = respuestas.insert_one({
             "email": email_lower,
             "campana_nombre": campana,
             "accion": accion,
             "codigos_propiedad": codigos_lista,
             "fecha_respuesta": ahora,
-            "canal_origen": "email",
-            "ip_origen": None  # opcional: puedes agregar request.client.host si lo pasas como parámetro
+            "canal_origen": "email"
         })
         logger.info(f"[MONGO] Respuesta guardada → ID: {insert_result.inserted_id}")
 
-        # ====================== 2. ACTUALIZAR CONTACTO ======================
-        base_update = {
+        # 2. Actualizar contacto
+        update = {
             "$set": {
                 f"update_price.{campana}.fecha_respuesta": ahora,
                 f"update_price.{campana}.respuesta": accion,
-                f"update_price.{campana}.accion_elegida": accion,
-                "ultima_interaccion": ahora
+                f"update_price.{campana}.accion_elegida": accion
             }
         }
 
-        # Configuración específica por acción
         if accion == "ajuste_7":
-            base_update["$set"].update({
+            update["$set"].update({
                 "estado": "ajuste_autorizado",
-                "bloqueo_email": False,
-                "ultima_accion": f"ajuste_7_{campana}"
+                "ultima_accion": f"ajuste_7_{campana}",
+                "bloqueo_email": False
             })
             titulo = "¡Autorización recibida!"
             mensaje = """Ya realizamos la actualización del precio de tu propiedad en Procasa.
 
 El nuevo valor se verá reflejado en los portales inmobiliarios dentro de aproximadamente 72 horas, dependiendo de los tiempos de sincronización de cada sitio.
 
-Si necesitas realizar otro ajuste o revisar alguna estrategia de visibilidad, quedaremos atentos."""
+Si necesitas realizar otro ajuste o revisar alguna estrategia de visibilidad, quedaremos atentos"""
             color = "#10b981"
 
         elif accion == "llamada":
-            base_update["$set"].update({
+            update["$set"].update({
                 "estado": "pendiente_llamada",
-                "bloqueo_email": False,
-                "ultima_accion": f"llamada_{campana}"
+                "ultima_accion": f"llamada_{campana}",
+                "bloqueo_email": False
             })
             titulo = "¡Solicitud recibida!"
             mensaje = """Perfecto, derivamos tu solicitud para que un ejecutivo de Procasa se ponga en contacto contigo.
@@ -324,10 +319,10 @@ Quedaremos atentos si necesitas algo adicional mientras tanto."""
             color = "#3b82f6"
 
         elif accion == "mantener":
-            base_update["$set"].update({
+            update["$set"].update({
                 "estado": "precio_mantenido",
-                "bloqueo_email": False,
-                "ultima_accion": f"mantener_{campana}"
+                "ultima_accion": f"mantener_{campana}",
+                "bloqueo_email": False
             })
             titulo = "Precio mantenido"
             mensaje = """Perfecto, dejamos el precio de tu propiedad tal como está.
@@ -338,7 +333,7 @@ Quedaremos atentos ante cualquier consulta o cambio que quieras realizar."""
             color = "#f59e0b"
 
         elif accion == "no_disponible":
-            base_update["$set"].update({
+            update["$set"].update({
                 "estado": "no_disponible",
                 "bloqueo_email": True,
                 "ultima_accion": f"no_disponible_{campana}"
@@ -352,9 +347,9 @@ Quedaremos atentos a cualquier cosa que necesites."""
             color = "#ef4444"
 
         else:  # unsubscribe
-            base_update["$set"].update({
-                "estado": "suscripcion_anulada",
+            update["$set"].update({
                 "bloqueo_email": True,
+                "estado": "suscripcion_anulada",
                 "ultima_accion": "unsubscribe"
             })
             titulo = "Suscripción anulada"
@@ -363,14 +358,10 @@ Quedaremos atentos a cualquier cosa que necesites."""
 Gracias por habernos permitido mantenerte informado. Si en algún momento deseas volver a recibir novedades o necesitas apoyo con una propiedad, estaremos encantados de ayudarte."""
             color = "#6b7280"
 
-        update_result = contactos.update_one(
-            {"email_propietario": email_lower},
-            base_update,
-            upsert=False
-        )
+        update_result = contactos.update_one({"email_propietario": email_lower}, update)
         logger.info(f"[MONGO] Contacto actualizado → matched: {update_result.matched_count}, modified: {update_result.modified_count}")
 
-        # ====================== 3. RESPUESTA HTML AL CLIENTE ======================
+        # HTML exactamente como lo tenías tú (con \n → <br>)
         html = f"""
         <!DOCTYPE html>
         <html lang="es">
@@ -392,7 +383,7 @@ Gracias por habernos permitido mantenerte informado. Si en algún momento deseas
                 <div class="header"><h1>{titulo}</h1></div>
                 <div class="content">
                     <p><strong>{accion.replace('_', ' ').title()}</strong></p>
-                    <p>{mensaje.replace('\n', '<br>')}</p>
+                    <p>{mensaje.replace(chr(10), '<br>')}</p>
                 </div>
                 <div class="footer">
                     © 2025 Procasa • Pablo Caro y equipo
@@ -401,15 +392,13 @@ Gracias por habernos permitido mantenerte informado. Si en algún momento deseas
         </body>
         </html>
         """
-        logger.info(f"[CAMPAÑA] Respuesta procesada CORRECTAMENTE → {email_lower}")
-        return HTMLResponse(html, status_code=200)
+
+        logger.info(f"[CAMPAÑA] Respuesta procesada con éxito → {email_lower}")
+        return HTMLResponse(html)
 
     except Exception as e:
-        logger.error(f"[ERROR CRÍTICO] Falló /campana/respuesta → Email: {email_lower} | Acción: {accion} | Error: {str(e)}", exc_info=True)
-        return HTMLResponse(
-            "<h2>Error interno</h2><p>No se pudo procesar tu respuesta. Por favor contacta a soporte@procasa.cl</p>",
-            status_code=500
-        )
+        logger.error(f"[ERROR CRÍTICO] Falló /campana/respuesta → {email} | Acción: {accion} | Error: {e}", exc_info=True)
+        return HTMLResponse("Error interno del servidor. Contacta a soporte.", status_code=500)
 
 
 # ====================== ARRANQUE (EXPANDIDO CON LOGIN) ======================

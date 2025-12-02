@@ -270,7 +270,7 @@ def campana_respuesta(
         contactos = db[config.COLLECTION_CONTACTOS]
         respuestas = db[config.COLLECTION_RESPUESTAS]
 
-        # 1. Guardar en histórico
+        # 1. Guardar en histórico (esto SÍ funciona perfecto)
         insert_result = respuestas.insert_one({
             "email": email_lower,
             "campana_nombre": campana,
@@ -281,21 +281,25 @@ def campana_respuesta(
         })
         logger.info(f"[MONGO] Respuesta guardada → ID: {insert_result.inserted_id}")
 
-        # 2. Actualizar contacto
-        update = {
+        # ===================================================================
+        # 2. ACTUALIZACIÓN CORREGIDA 100% → Usa tu esquema real (plano)
+        # ===================================================================
+        update_data = {
             "$set": {
-                f"update_price.{campana}.fecha_respuesta": ahora,
-                f"update_price.{campana}.respuesta": accion,
-                f"update_price.{campana}.accion_elegida": accion
+                "update_price.campana_nombre": campana,
+                "update_price.respuesta": accion,
+                "update_price.accion_elegida": accion,
+                "update_price.fecha_respuesta": ahora,
+                "update_price.ultima_actualizacion": ahora,
+                # Campos globales del contacto
+                "ultima_accion": f"{accion}_{campana}" if accion != "unsubscribe" else "unsubscribe",
+                "bloqueo_email": accion in ["no_disponible", "unsubscribe"]
             }
         }
 
+        # Estados según acción
         if accion == "ajuste_7":
-            update["$set"].update({
-                "estado": "ajuste_autorizado",
-                "ultima_accion": f"ajuste_7_{campana}",
-                "bloqueo_email": False
-            })
+            update_data["$set"]["estado"] = "ajuste_autorizado"
             titulo = "¡Autorización recibida!"
             mensaje = """Ya realizamos la actualización del precio de tu propiedad en Procasa.
 
@@ -305,11 +309,7 @@ Si necesitas realizar otro ajuste o revisar alguna estrategia de visibilidad, qu
             color = "#10b981"
 
         elif accion == "llamada":
-            update["$set"].update({
-                "estado": "pendiente_llamada",
-                "ultima_accion": f"llamada_{campana}",
-                "bloqueo_email": False
-            })
+            update_data["$set"]["estado"] = "pendiente_llamada"
             titulo = "¡Solicitud recibida!"
             mensaje = """Perfecto, derivamos tu solicitud para que un ejecutivo de Procasa se ponga en contacto contigo.
 
@@ -319,11 +319,7 @@ Quedaremos atentos si necesitas algo adicional mientras tanto."""
             color = "#3b82f6"
 
         elif accion == "mantener":
-            update["$set"].update({
-                "estado": "precio_mantenido",
-                "ultima_accion": f"mantener_{campana}",
-                "bloqueo_email": False
-            })
+            update_data["$set"]["estado"] = "precio_mantenido"
             titulo = "Precio mantenido"
             mensaje = """Perfecto, dejamos el precio de tu propiedad tal como está.
 
@@ -333,11 +329,7 @@ Quedaremos atentos ante cualquier consulta o cambio que quieras realizar."""
             color = "#f59e0b"
 
         elif accion == "no_disponible":
-            update["$set"].update({
-                "estado": "no_disponible",
-                "bloqueo_email": True,
-                "ultima_accion": f"no_disponible_{campana}"
-            })
+            update_data["$set"]["estado"] = "no_disponible"
             titulo = "Entendido"
             mensaje = """Perfecto, dejamos marcada tu propiedad como No Disponible en nuestro sistema.
 
@@ -347,21 +339,24 @@ Quedaremos atentos a cualquier cosa que necesites."""
             color = "#ef4444"
 
         else:  # unsubscribe
-            update["$set"].update({
-                "bloqueo_email": True,
-                "estado": "suscripcion_anulada",
-                "ultima_accion": "unsubscribe"
-            })
+            update_data["$set"]["estado"] = "suscripcion_anulada"
             titulo = "Suscripción anulada"
             mensaje = """Perfecto, hemos procesado tu solicitud y quedaste desinscrito de nuestras comunicaciones comerciales.
 
 Gracias por habernos permitido mantenerte informado. Si en algún momento deseas volver a recibir novedades o necesitas apoyo con una propiedad, estaremos encantados de ayudarte."""
             color = "#6b7280"
 
-        update_result = contactos.update_one({"email_propietario": email_lower}, update)
+        # Búsqueda case-insensitive (por si hay mayúsculas)
+        import re
+        update_result = contactos.update_one(
+            {"email_propietario": {"$regex": f"^{re.escape(email_lower)}$", "$options": "i"}},
+            update_data
+        )
         logger.info(f"[MONGO] Contacto actualizado → matched: {update_result.matched_count}, modified: {update_result.modified_count}")
 
-        # HTML exactamente como lo tenías tú (con \n → <br>)
+        # ===================================================================
+        # HTML de confirmación (igual que antes)
+        # ===================================================================
         html = f"""
         <!DOCTYPE html>
         <html lang="es">

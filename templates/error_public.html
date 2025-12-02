@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; text-align: center; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; }
+        h1 { color: #d32f2f; }
+        .logos { margin-top: 30px; }
+        .logos img { width: 100px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Error en PROCASA</h1>
+        <p>{{ message }}</p>
+        <p><a href="https://www.procasa.cl">Visita PROCASA</a></p>
+    </div>
+    
+    <div class="logos">
+        {% for logo in logos %}
+            <img src="{{ url_for('static', filename=logo) }}" alt="Logo">
+        {% endfor %}
+    </div>
+</body>
+</html>

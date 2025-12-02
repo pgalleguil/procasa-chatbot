@@ -1,0 +1,23 @@
+# debug_estructura.py
+import os
+from pathlib import Path
+
+print("ESTRUCTURA COMPLETA DEL PROYECTO")
+print("=" * 60)
+print("Carpeta actual de trabajo:", os.getcwd())
+print("Contenido de esta carpeta:")
+print("-" * 40)
+
+for item in sorted(Path(".").iterdir()):
+    if item.is_dir():
+        print(f"📁 {item.name}/")
+        # Mostrar lo que hay dentro de static y templates
+        if item.name in ["static", "templates"]:
+            print("   └──>", ", ".join([p.name for p in item.iterdir()]))
+    else:
+        print(f"📄 {item.name}")
+
+print("\n¿Existe la carpeta 'static' en la raíz?", Path("static").exists())
+print("¿Existe la carpeta 'templates'?", Path("templates").exists())
+print("¿Existe webhook.py?", Path("webhook.py").exists())
+print("¿Existe config.py?", Path("config.py").exists())

@@ -1,141 +1,144 @@
-#!/usr/bin/env python3
-# reporte_completo_campana.py
-# → REPORTE 100% COMPLETO DE LA CAMPAÑA EN UN SOLO COMANDO
+# reporte_completo_campana.py → EL ÚNICO QUE FUNCIONA DE VERDAD (FECHA REAL 100%)
 
 from pymongo import MongoClient
-from datetime import datetime, timezone
 from config import Config
-
-# ==============================================================================
-# CONFIGURACIÓN (cambia solo esto si quieres ver otra campaña)
-# ==============================================================================
-NOMBRE_CAMPANA = "ajuste_precio_202512"
+import pandas as pd
+from datetime import datetime
 
 client = MongoClient(Config.MONGO_URI)
 db = client[Config.DB_NAME]
 collection = db[Config.COLLECTION_CONTACTOS]
 
-def fmt(fecha):
-    if not fecha: return "sin fecha"
-    if isinstance(fecha, datetime):
-        return fecha.astimezone().strftime("%d/%m %H:%M")
-    return str(fecha)[:16]
+NOMBRE_CAMPANA = "ajuste_precio_202512"
 
-print("\n" + "="*85)
-print(f" REPORTE COMPLETO DE CAMPAÑA → {NOMBRE_CAMPANA} ".center(85, " "))
-print("="*85 + "\n")
+pipeline = [
+    {"$match": {"update_price.campana_nombre": NOMBRE_CAMPANA}},
 
-# 1. ENVÍOS TOTALES
-enviados_query = {"update_price.campana_nombre": NOMBRE_CAMPANA}
-total_enviados = collection.count_documents(enviados_query)
+    # Convertimos todo el documento a array para poder acceder al campo dinámico
+    {"$addFields": {
+        "doc_array": {"$objectToArray": "$$ROOT"},
+        "nombre_completo": {
+            "$concat": ["$nombre_propietario", " ", "$apellido_paterno_propietario", " ",
+                        {"$ifNull": ["$apellido_materno_propietario", ""]}]
+        }
+    }},
 
-# 2. EXITOSOS vs FALLIDOS
-exitosos = collection.count_documents({
+    # Extraemos la fecha del objeto anidado "ajuste_precio_202512"
+    {"$addFields": {
+        "fecha_campana": {
+            "$let": {
+                "vars": {
+                    "campo": {
+                        "$arrayElemAt": [
+                            {"$filter": {
+                                "input": "$doc_array",
+                                "cond": {"$eq": ["$$this.k", NOMBRE_CAMPANA]}
+                            }},
+                            0
+                        ]
+                    }
+                },
+                "in": {
+                    "$getField": {
+                        "field": "fecha_respuesta",
+                        "input": {"$ifNull": ["$$campo.v", {}]}
+                    }
+                }
+            }
+        }
+    }},
+
+    # Elegimos la fecha definitiva
+    {"$addFields": {
+        "fecha_final": {
+            "$switch": {
+                "branches": [
+                    {"case": {"$ne": ["$fecha_campana", None]}, "then": "$fecha_campana"},
+                    {"case": {"$ne": ["$fecha_respuesta", None]}, "then": "$fecha_respuesta"},
+                    {"case": {"$ne": ["$update_price.canales.email.fecha", None]}, "then": "$update_price.canales.email.fecha"}
+                ],
+                "default": None
+            }
+        },
+        "fecha_mostrar": {
+            "$dateToString": {
+                "format": "%d-%m-%Y %H:%M",
+                "date": "$fecha_final",
+                "onNull": "Sin fecha"
+            }
+        }
+    }},
+
+    # Filtramos solo los que respondieron
+    {"$match": {
+        "$or": [
+            {"ultima_accion": {"$regex": "ajuste_precio_202512$"}},
+            {"ultima_accion": "unsubscribe"},
+            {"fecha_campana": {"$ne": None}}
+        ]
+    }},
+
+    # Clasificación final
+    {"$addFields": {
+        "respuesta_texto": {
+            "$switch": {
+                "branches": [
+                    {"case": {"$regexMatch": {"input": "$ultima_accion", "regex": "ajuste_7"}}, "then": "ACEPTÓ AJUSTE 7%"},
+                    {"case": {"$in": ["$ultima_accion", ["mantener", "mantener_ajuste_precio_202512"]]}, "then": "MANTENER PRECIO"},
+                    {"case": {"$in": ["$ultima_accion", ["llamada", "llamada_ajuste_precio_202512"]]}, "then": "QUIERE QUE LO LLAMEN"},
+                    {"case": {"$in": ["$ultima_accion", ["no_disponible", "no_disponible_ajuste_precio_202512"]]}, "then": "PROPIEDAD VENDIDA/NO DISPONIBLE"},
+                    {"case": {"$eq": ["$ultima_accion", "unsubscribe"]}, "then": "SE DIO DE BAJA"},
+                    {"case": {"$eq": [f"${NOMBRE_CAMPANA}.accion_elegida", "unsubscribe"]}, "then": "SE DIO DE BAJA"}
+                ],
+                "default": "OTRO"
+            }
+        }
+    }},
+
+    {"$sort": {"fecha_final": -1}}
+]
+
+total_enviados = collection.count_documents({
     "update_price.campana_nombre": NOMBRE_CAMPANA,
     "update_price.canales.email.enviado": True
 })
 
-fallidos = collection.count_documents({
-    "update_price.campana_nombre": NOMBRE_CAMPANA,
-    "update_price.canales.email.enviado": False
-})
+respuestas = list(collection.aggregate(pipeline))
 
-# 3. RESPUESTAS
-con_respuesta = collection.count_documents({
-    "update_price.campana_nombre": NOMBRE_CAMPANA,
-    "update_price.respuesta": {"$exists": True}
-})
+print(f"\n{'='*90}")
+print(f"CAMPAÑA AJUSTE DE PRECIO - DICIEMBRE 2025")
+print(f"{'='*90}")
+print(f"Correos enviados       : {total_enviados}")
+print(f"Respuestas recibidas   : {len(respuestas)}")
+print(f"Tasa de respuesta      : {len(respuestas)/total_enviados*100:.1f}%\n")
 
-# 4. DETALLE DE RESPUESTAS
-acciones = {}
-cursor_acciones = collection.aggregate([
-    {"$match": {"update_price.campana_nombre": NOMBRE_CAMPANA, "update_price.respuesta": {"$exists": True}}},
-    {"$group": {"_id": "$update_price.respuesta.accion", "cantidad": {"$sum": 1}}}
-])
-for item in cursor_acciones:
-    accion = item["_id"]
-    texto = {
-        "ajuste_7": "AJUSTE 7% (Recomendado)",
-        "mantener": "Mantener precio actual",
-        "no_disponible": "Ya vendida / No disponible",
-        "llamada": "Quiere que lo llamen",
-        "unsubscribe": "Darse de baja"
-    }.get(accion, accion)
-    acciones[accion] = {"cantidad": item["cantidad"], "texto": texto}
+aceptaron = sum(1 for x in respuestas if x['respuesta_texto'] == "ACEPTÓ AJUSTE 7%")
+mantener  = sum(1 for x in respuestas if x['respuesta_texto'] == "MANTENER PRECIO")
+llamada   = sum(1 for x in respuestas if x['respuesta_texto'] == "QUIERE QUE LO LLAMEN")
+vendida   = sum(1 for x in respuestas if x['respuesta_texto'] == "PROPIEDAD VENDIDA/NO DISPONIBLE")
+baja      = sum(1 for x in respuestas if x['respuesta_texto'] == "SE DIO DE BAJA")
 
-# ==============================================================================
-# RESUMEN GENERAL
-# ==============================================================================
-print("RESUMEN GENERAL")
-print("-" * 50)
-print(f"Total enviados                   : {total_enviados}")
-print(f"  → Enviados con éxito           : {exitosos}     (éxito)")
-print(f"  → Rebotaron / Error            : {fallidos}     (fallo)")
-print(f"Total con respuesta              : {con_respuesta}")
-print(f"Sin respuesta aún                : {exitosos - con_respuesta}  (de los enviados con éxito)\n")
+print(f"Aceptaron ajuste 7%     : {aceptaron}  {'★'*aceptaron}")
+print(f"Mantener precio         : {mantener}")
+print(f"Quieren que los llamen  : {llamada}")
+print(f"Vendida/no disponible   : {vendida}")
+print(f"Se dieron de baja       : {baja}")
+print(f"{'-'*50}\n")
 
-if con_respuesta > 0:
-    print("RESPUESTAS DETALLADAS")
-    print("-" * 50)
-    for acc, data in acciones.items():
-        print(f"  • {data['texto']:<30} → {data['cantidad']}")
-    print()
+for c in respuestas:
+    print(f"{c['codigo']:6} | {c['nombre_completo']:42} | {c.get('telefono',''):14} | {c['respuesta_texto']:32} | {c['fecha_mostrar']}")
 
-# ==============================================================================
-# LISTA DE REBOTADOS (con motivo del error)
-# ==============================================================================
-if fallidos > 0:
-    print("CORREOS QUE REBOTARON O FALLARON")
-    print("-" * 100)
-    print(f"{'#' :<3} {'Nombre':<20} {'Email':<40} {'Código(s)':<20} {'Error'}")
-    print("-" * 100)
-    cursor_fallidos = collection.find({
-        "update_price.campana_nombre": NOMBRE_CAMPANA,
-        "update_price.canales.email.enviado": False
-    }).sort("update_price.canales.email.fecha", -1)
+if respuestas:
+    df = pd.DataFrame([{
+        "Código": c["codigo"],
+        "Nombre": c["nombre_completo"],
+        "Teléfono": c.get("telefono", ""),
+        "Email": c.get("email_propietario", ""),
+        "Respuesta": c["respuesta_texto"],
+        "Fecha Respuesta": c["fecha_mostrar"]
+    } for c in respuestas])
+    archivo = f"REPORTE_FINAL_REAL_{NOMBRE_CAMPANA}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    df.to_excel(archivo, index=False)
+    print(f"\nEXCEL GUARDADO → {archivo}")
 
-    i = 1
-    for doc in cursor_fallidos:
-        email = doc.get("email_propietario", "sin email")
-        nombre = (doc.get("nombre_propietario", "") or "Sin nombre").split()[0]
-        codigos = ", ".join([p.get("codigo","?") for p in doc.get("propiedades",[])] ) or doc.get("codigo","?")
-        error_msg = doc.get("update_price", {}).get("canales", {}).get("email", {}).get("error", "Error desconocido")
-        # Limpiar mensaje largo
-        if len(error_msg) > 80:
-            error_msg = error_msg[:77] + "..."
-        print(f"{i :<3} {nombre:<20} {email:<40} {codigos:<20} {error_msg}")
-        i += 1
-    print()
-
-# ==============================================================================
-# SIN RESPUESTA AÚN (los que abrieron pero no hicieron clic)
-# ==============================================================================
-sin_respuesta = exitosos - con_respuesta
-if sin_respuesta > 0:
-    print(f"AÚN NO RESPONDIERON ({sin_respuesta} propietarios)")
-    print("-" * 80)
-    print(f"{'Nombre':<20} {'Email':<40} {'Código(s)':<20} {'Enviado el'}")
-    print("-" * 80)
-    cursor_pendientes = collection.find({
-        "update_price.campana_nombre": NOMBRE_CAMPANA,
-        "update_price.canales.email.enviado": True,
-        "update_price.respuesta": {"$exists": False}
-    }).sort("update_price.canales.email.fecha", -1).limit(30)  # solo primeros 30
-
-    for doc in cursor_pendientes:
-        nombre = (doc.get("nombre_propietario", "") or "Sin nombre").split()[0]
-        email = doc.get("email_propietario", "")
-        codigos = ", ".join([p.get("codigo","?") for p in doc.get("propiedades",[])] ) or doc.get("codigo","?")
-        fecha_envio = doc.get("update_price", {}).get("canales", {}).get("email", {}).get("fecha")
-        print(f"{nombre:<20} {email:<40} {codigos:<20} {fmt(fecha_envio)}")
-    if collection.count_documents({
-        "update_price.campana_nombre": NOMBRE_CAMPANA,
-        "update_price.canales.email.enviado": True,
-        "update_price.respuesta": {"$exists": False}
-    }) > 30:
-        print("   ... y otros más ...")
-    print()
-
-print("REPORTE FINALIZADO")
-print(f"Hora del reporte: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-print("\n¡Ejecuta este archivo cuando quieras para ver el estado actual en tiempo real!\n")
+print(f"{'='*90}")

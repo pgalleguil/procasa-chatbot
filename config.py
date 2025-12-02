@@ -58,3 +58,16 @@ class Config:
     LOG_LEVEL = "INFO"
     CORE_KEYS = ["operacion", "tipo", "comuna"]
     FEATURE_KEYS = ["precio_clp","precio_uf","dormitorios", "banos", "estacionamientos"]
+
+    # === GOOGLE OAUTH (para login del dashboard) ===
+    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+
+    # === CLAVE SECRETA PARA SESIONES (OBLIGATORIA) ===
+    # Si no está en .env, genera una segura automáticamente
+    SECRET_KEY = os.getenv("SECRET_KEY")
+    if not SECRET_KEY:
+        import secrets
+        SECRET_KEY = secrets.token_hex(32)
+        print("\nSECRET_KEY generada automáticamente (guárdala en tu .env para producción):")
+        print(f"SECRET_KEY={SECRET_KEY}\n")

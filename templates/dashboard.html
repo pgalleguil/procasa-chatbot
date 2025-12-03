@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="dark">
+<html lang="es" data-theme="light">
+
+</html>
 
 <head>
     <meta charset="UTF-8">
@@ -487,6 +489,7 @@
                             <th>Cliente</th>
                             <th>Contacto</th>
                             <th class="text-center">Estado</th>
+                            <th class="text-center"><i class="fas fa-check-circle"></i> Gestionado</th>
                         </tr>
                     </thead>
                     <tbody id="tabla-body">
@@ -519,7 +522,7 @@
             if (typeof Plotly !== 'undefined') cargarReporte(); // Redibuja gráfico para ajustar colores
         }
 
-        const savedTheme = localStorage.getItem("theme") || "dark";
+        const savedTheme = localStorage.getItem("theme") || "light";
         applyTheme(savedTheme);
 
         toggle.addEventListener("click", () => {
@@ -661,6 +664,10 @@
                         <td class="text-center">
                             <span class="badge-status ${badgeClass}">${badgeText}</span>
                         </td>
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input gestionado-check" 
+                                data-email="${r.email_para_update}" ${r.gestionado ? 'checked' : ''}>
+                        </td>
                     `;
                     tbody.appendChild(tr);
                 });
@@ -673,6 +680,29 @@
         // Init
         cargarReporte();
         setInterval(cargarReporte, 60000); // Actualiza cada 1 minuto
+
+        // --- CHECKBOX GESTIONADO (se guarda en MongoDB) ---
+        document.addEventListener("change", async (e) => {
+            if (!e.target.classList.contains("gestionado-check")) return;
+
+            const checkbox = e.target;
+            const email = checkbox.dataset.email;
+            const gestionado = checkbox.checked;
+
+            try {
+                await fetch("/api/marcar_gestionado", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email, gestionado })
+                });
+                // Opcional: cambiar color cuando está gestionado
+                checkbox.closest("tr").style.opacity = gestionado ? "0.7" : "1";
+            } catch (err) {
+                console.error("Error marcando gestionado", err);
+                checkbox.checked = !gestionado; // revierte
+            }
+        });
+
     </script>
 </body>
 

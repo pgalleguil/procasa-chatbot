@@ -446,36 +446,37 @@ Gracias por habernos permitido mantenerte informado. Si en algún momento deseas
 
 @app.get("/api/reporte_real")
 async def api_reporte_real():
-    # Ejecutamos tu script real y devolvemos los datos exactos
-    from reporte_completo_campana import respuestas, total_enviados
-    
-    aceptaron = sum(1 for r in respuestas if r.get("respuesta_texto", "").startswith("ACEPTÓ"))
-    mantener = sum(1 for r in respuestas if "MANTENER" in r.get("respuesta_texto", ""))
-    llamada = sum(1 for r in respuestas if "LLAMEN" in r.get("respuesta_texto", ""))
-    vendida = sum(1 for r in respuestas if "NO DISPONIBLE" in r.get("respuesta_texto", ""))
-    baja = sum(1 for r in respuestas if "BAJA" in r.get("respuesta_texto", ""))
+    from api_reporte_real import get_reporte_real
+    data = get_reporte_real()
+    return data
 
-    return {
-        "total_enviados": total_enviados,
-        "total_respuestas": len(respuestas),
-        "tasa_respuesta": round(len(respuestas)/total_enviados*100, 1) if total_enviados else 0,
-        "aceptaron": aceptaron,
-        "mantener": mantener,
-        "llamada": llamada,
-        "vendida": vendida,
-        "baja": baja,
-        "respuestas": [
-            {
-                "codigo": r.get("codigo", "S/C"),
-                "nombre": r.get("nombre_completo", "Sin nombre"),
-                "telefono": r.get("telefono", ""),
-                "email": r.get("email_propietario", ""),
-                "respuesta": r.get("respuesta_texto", "Otro"),
-                "fecha": r.get("fecha_mostrar", "Sin fecha")
-            }
-            for r in respuestas
-        ]
-    }
+@app.post("/api/marcar_gestionado")
+async def marcar_gestionado(request: Request):
+    data = await request.json()
+    email = data.get("email")
+    gestionado = data.get("gestionado", False)
+
+    if not email:
+        return {"error": "Falta email"}
+
+    client = MongoClient(Config.MONGO_URI)
+    db = client[Config.DB_NAME]
+    col = db[Config.COLLECTION_CONTACTOS]
+
+    # Actualiza por email (exacto o case-insensitive)
+    result = col.update_one(
+        {"email_propietario": email.lower()},
+        {"$set": {"gestionado": gestionado}}
+    )
+
+    if result.matched_count == 0:
+        # Intento case-insensitive
+        col.update_one(
+            {"email_propietario": {"$regex": f"^{re.escape(email.lower())}$", "$options": "i"}},
+            {"$set": {"gestionado": gestionado}}
+        )
+
+    return {"status": "ok", "gestionado": gestionado}
 
 # ====================== ARRANQUE CORRECTO ======================
 if __name__ == "__main__":

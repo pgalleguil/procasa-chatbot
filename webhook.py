@@ -14,14 +14,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi import Response
 from pymongo import MongoClient
 from datetime import datetime, timedelta
 from pathlib import Path
 import uvicorn
 import json
 import os
-
 
 # ========================= USAMOS TU config.py REAL =========================
 from config import Config
@@ -120,50 +118,41 @@ async def login_get(request: Request):
     )
 
 @app.post("/login")
-async def login(request: Request, response: Response):
+async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
     try:
-        form = await request.form()
-        username = form.get("username")
-        password = form.get("password", "")[:72]  # corta a 72 bytes de una
-
-        if not username or not password:
-            raise HTTPException(status_code=400, detail="Faltan datos")
-
-        #400 si falta algo
-
-        # ESTAS SON LAS 3 POSIBLES COLECCIONES QUE TIENES (una de estas es la tuya)
-        usuario = None
-        for coleccion in ["usuarios", "users", "collection_usuarios"]:
-            usuario = db.get_collection(coleccion).find_one({"username": username})
-            if usuario:
-                break
-
-        if not usuario:
-            raise HTTPException(status_code=401, detail="Usuario no encontrado")
-
-        # Verifica contraseña
-        if not pwd_context.verify(password, usuario["hashed_password"]):
-            raise HTTPException(status_code=401, detail="Contraseña incorrecta")
-
-        # Token
-        access_token = create_access_token(data={"sub": username})
-
-        response.set_cookie(
-            key="access_token",
-            value=f"Bearer {access_token}",
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            max_age=3600
+        client = MongoClient(Config.MONGO_URI)
+        db = client[Config.DB_NAME]
+        usuarios = db["usuarios"]
+        user = usuarios.find_one({"username": username})
+        
+        if user and verify_password(password, user["hashed_password"]):
+            token = create_access_token({"sub": username})
+            response = RedirectResponse("/dashboard", status_code=303)
+            response.set_cookie(
+                "access_token", token,
+                httponly=True, secure=True, samesite="lax", max_age=28800
+            )
+            return response
+        
+        # Si falla: vuelve al login con mensaje de error
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "images": get_images(),
+                "error": "Usuario o contraseña incorrectos"
+            }
         )
-
-        return RedirectResponse(url="/dashboard", status_code=303)
-
-    except HTTPException:
-        raise
     except Exception as e:
-        print("ERROR LOGIN:", e)
-        raise HTTPException(status_code=500, detail="Error interno")
+        logger.error(f"Error en login: {e}")
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "images": get_images(),
+                "error": "Error del servidor"
+            }
+        )
 
 @app.get("/dashboard")
 async def dashboard(request: Request):

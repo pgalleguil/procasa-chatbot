@@ -294,10 +294,10 @@ async def health_check():
     return {"status": "healthy", "active_conversations": len(pending_tasks), "uptime": time.strftime("%Y-%m-%d %H:%M:%S")}
 
 # ====================== ENDPOINT CAMPAÑA EMAIL - 100% TUS MENSAJES ORIGINALES ======================
-@app.get("/campana/respuesta", response_class=HTMLResponse)
-def campana_respuesta(
+@app.get("/campana/respuesta")
+async def campana_respuesta(
     email: str = Query(..., description="Email del propietario"),
-    accion: str = Query(..., description="ajuste_7 / llamada / mantener / no_disponible / unsubscribe"),
+    accion: str = Query(..., description="Acción elegida: ajuste_7 / llamada / mantener / no_disponible / unsubscribe"),
     codigos: str = Query("N/A", description="Códigos de propiedades"),
     campana: str = Query(..., description="Nombre de la campaña")
 ):
@@ -320,7 +320,8 @@ def campana_respuesta(
         contactos = db[Config.COLLECTION_CONTACTOS]
         respuestas = db[Config.COLLECTION_RESPUESTAS]
 
-        insert_result = respuestas.insert_one({
+        # Guardar en colección respuestas (opcional, por historial)
+        respuestas.insert_one({
             "email": email_lower,
             "campana_nombre": campana,
             "accion": accion,
@@ -328,9 +329,8 @@ def campana_respuesta(
             "fecha_respuesta": ahora,
             "canal_origen": "email"
         })
-        logger.info(f"[MONGO] Respuesta guardada → ID: {insert_result.inserted_id}")
 
-        # TU MISMA LÓGICA EXACTA
+        # Datos para actualizar el contacto
         update_data = {
             "$set": {
                 "update_price.campana_nombre": campana,
@@ -343,69 +343,115 @@ def campana_respuesta(
             }
         }
 
+        # Configuración por acción
         if accion == "ajuste_7":
             update_data["$set"]["estado"] = "ajuste_autorizado"
             titulo = "¡Autorización recibida!"
-            mensaje = """Ya realizamos la actualización del precio de tu propiedad en Procasa.
-
-El nuevo valor se verá reflejado en los portales inmobiliarios dentro de aproximadamente 72 horas, dependiendo de los tiempos de sincronización de cada sitio.
-
-Si necesitas realizar otro ajuste o revisar alguna estrategia de visibilidad, quedaremos atentos"""
+            mensaje = """Ya realizamos la actualización del precio de tu propiedad en Procasa.\n\nEl nuevo valor se verá reflejado en los portales inmobiliarios dentro de aproximadamente 72 horas.\n\nQuedaremos atentos"""
             color = "#10b981"
 
         elif accion == "llamada":
             update_data["$set"]["estado"] = "pendiente_llamada"
             titulo = "¡Solicitud recibida!"
-            mensaje = """Perfecto, derivamos tu solicitud para que un ejecutivo de Procasa se ponga en contacto contigo.
-
-El equipo revisará tu caso y te llamarán dentro de las próximas 24 a 48 horas, según disponibilidad.
-
-Quedaremos atentos si necesitas algo adicional mientras tanto."""
+            mensaje = """Perfecto, derivamos tu solicitud para que un ejecutivo de Procasa se ponga en contacto contigo.\n\nTe llamaremos dentro de las próximas 24-48 horas.\n\n¡Gracias por confiar en nosotros!"""
             color = "#3b82f6"
 
         elif accion == "mantener":
             update_data["$set"]["estado"] = "precio_mantenido"
             titulo = "Precio mantenido"
-            mensaje = """Perfecto, dejamos el precio de tu propiedad tal como está.
-
-Seguiremos monitoreando el comportamiento del mercado para evaluar futuras oportunidades de ajuste si fuese necesario.
-
-Quedaremos atentos ante cualquier consulta o cambio que quieras realizar."""
+            mensaje = """Perfecto, dejamos el precio de tu propiedad tal como está.\n\nSeguiremos monitoreando el mercado para avisarte si cambia la situación.\n\nQuedamos a tu disposición."""
             color = "#f59e0b"
 
         elif accion == "no_disponible":
             update_data["$set"]["estado"] = "no_disponible"
             titulo = "Entendido"
-            mensaje = """Perfecto, dejamos marcada tu propiedad como No Disponible en nuestro sistema.
-
-Si en el futuro cuentas con otra propiedad para vender o arrendar, estaremos encantados de ayudarte con la gestión y apoyarte en todo el proceso.
-
-Quedaremos atentos a cualquier cosa que necesites."""
+            mensaje = """Perfecto, marcamos tu propiedad como no disponible.\n\nSi en el futuro tienes otra para vender o arrendar, aquí estaremos.\n\n¡Gracias por tu confianza!"""
             color = "#ef4444"
 
         else:  # unsubscribe
             update_data["$set"]["estado"] = "suscripcion_anulada"
             titulo = "Suscripción anulada"
-            mensaje = """Perfecto, hemos procesado tu solicitud y quedaste desinscrito de nuestras comunicaciones comerciales.
-
-Gracias por habernos permitido mantenerte informado. Si en algún momento deseas volver a recibir novedades o necesitas apoyo con una propiedad, estaremos encantados de ayudarte."""
+            mensaje = """Hemos procesado tu solicitud y quedaste desinscrito de nuestras comunicaciones.\n\nSi deseas volver a recibir novedades, solo avísanos.\n\n¡Gracias por haber sido parte de Procasa!"""
             color = "#6b7280"
 
-        # FIX DEFINITIVO: DOBLE INTENTO DE ACTUALIZACIÓN
-        # 1. Primero busca exacto
-        update_result = contactos.update_one({"email_propietario": email_lower}, update_data)
-        
-        # 2. Si no encontró, busca case-insensitive
-        if update_result.matched_count == 0:
+        # Actualizar en MongoDB
+        result1 = contactos.update_one({"email_propietario": email_lower}, update_data)
+        if result1.matched_count == 0:
             import re
-            update_result = contactos.update_one(
+            contactos.update_one(
                 {"email_propietario": {"$regex": f"^{re.escape(email_lower)}$", "$options": "i"}},
                 update_data
             )
-        
-        logger.info(f"[MONGO] Contacto actualizado → matched: {update_result.matched_count}, modified: {update_result.modified_count}")
 
-        # TU HTML 100% ORIGINAL
+        # ===========================================================
+        # === ENVÍO AUTOMÁTICO DE EMAIL AL EQUIPO ===
+        # ===========================================================
+        try:
+            contacto = contactos.find_one({
+                "email_propietario": {"$regex": f"^{re.escape(email_lower)}$", "$options": "i"}
+            })
+
+            nombre = "Nombre no encontrado"
+            telefono = "Sin teléfono"
+            codigo_principal = codigos_lista[0] if codigos_lista else "S/C"
+
+            if contacto:
+                nombre = f"{contacto.get('nombre_propietario','')} {contacto.get('apellido_paterno_propietario','')} {contacto.get('apellido_materno_propietario','')}".strip()
+                if not nombre.strip():
+                    nombre = "Nombre no encontrado"
+                telefono = contacto.get("telefono", "Sin teléfono")
+
+            accion_texto = {
+                "ajuste_7": "ACEPTÓ EL AJUSTE DEL 7%",
+                "llamada": "SOLICITÓ QUE LO LLAMEN",
+                "mantener": "DECIDIÓ MANTENER EL PRECIO",
+                "no_disponible": "PROPIEDAD YA NO DISPONIBLE",
+                "unsubscribe": "SE DIO DE BAJA"
+            }.get(accion, accion.upper())
+
+            cuerpo = f"""
+¡NUEVA RESPUESTA - CAMPAÑA AJUSTE DE PRECIO DICIEMBRE 2025!
+
+Cliente      : {nombre}
+Código(s)    : {", ".join(codigos_lista) if codigos_lista else codigo_principal}
+Teléfono     : {telefono}
+Email        : {email_lower}
+Respuesta    : {accion_texto}
+Fecha y hora : {ahora.strftime('%d de %B %Y - %H:%M')}
+
+Enlace directo → https://www.procasa.cl/{codigo_principal}
+
+¡Gestionar lo antes posible!
+
+---
+Sistema automático Procasa
+"""
+
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            import smtplib
+
+            msg = MIMEMultipart()
+            msg['From'] = f"Procasa Alertas <{Config.GMAIL_USER}>"
+            msg['To'] = "jpcaro@procasa.cl"        # ← AQUÍ PON TU CORREO O DEL EQUIPO
+            msg['To'] = "pgalleguillos@procasa.cl, p.galleguil@gmail.com"  # ← puedes poner varios
+            msg['Subject'] = f" NUEVA RESPUESTA: {nombre} - {accion_texto}"
+
+            msg.attach(MIMEText(cuerpo, 'plain', 'utf-8'))
+
+            with smtplib.SMTP('smtp.gmail.com', 587) as server:
+                server.starttls()
+                server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
+                server.sendmail(Config.GMAIL_USER, msg['To'].split(","), msg.as_string())
+
+            logger.info(f"Email de alerta enviado al equipo: {email_lower}")
+
+        except Exception as e:
+            logger.error(f"Error enviando email al equipo: {e}")
+
+        # ===========================================================
+        # === RESPUESTA AL CLIENTE (HTML bonito) ===
+        # ===========================================================
         html = f"""
         <!DOCTYPE html>
         <html lang="es">
@@ -441,7 +487,7 @@ Gracias por habernos permitido mantenerte informado. Si en algún momento deseas
         return HTMLResponse(html)
 
     except Exception as e:
-        logger.error(f"[ERROR CRÍTICO] Falló /campana/respuesta → {email} | Acción: {accion} | Error: {e}", exc_info=True)
+        logger.error(f"[ERROR CRÍTICO] Falló /campana/respuesta → {email} | Error: {e}", exc_info=True)
         return HTMLResponse("Error interno del servidor. Contacta a soporte.", status_code=500)
 
 @app.get("/api/reporte_real")

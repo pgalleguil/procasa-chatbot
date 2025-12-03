@@ -99,7 +99,7 @@
     <div class="background-slider">
         {% for image in images %}
         <div class="slide {% if loop.first %}active{% endif %}">
-            <img src="{{ url_for('static', path=image) }}" alt="Propiedad" loading="lazy">
+            <img src="/static/{{ image }}" alt="Propiedad" loading="lazy">
         </div>
         {% endfor %}
     </div>
@@ -107,22 +107,19 @@
     <!-- LOGIN -->
     <div class="login-container">
         <div class="text-center">
-            <img src="{{ url_for('static', path='logo.png') }}" alt="PROCASA" class="logo" loading="lazy">
+            <img src="/static/logo.png" alt="PROCASA" class="logo" loading="lazy">
         </div>
         <h2 class="text-center mb-4">Iniciar Sesión</h2>
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        {% for category, message in messages %}
-        <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show">
-            {{ message }}
+        <!-- Mensaje de error (FastAPI pasa "error" en el contexto) -->
+        {% if error %}
+        <div class="alert alert-danger alert-dismissible fade show">
+            {{ error }}
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
-        {% endfor %}
         {% endif %}
-        {% endwith %}
 
-        <form method="POST" action="{{ url_for('login') }}">
+        <form method="POST" action="/login">
             <div class="mb-3">
                 <label class="form-label">Usuario</label>
                 <input type="text" class="form-control" name="username" required placeholder="Tu usuario">
@@ -135,7 +132,7 @@
         </form>
 
         <div class="text-center mt-3">
-            <a href="{{ url_for('forgot_password') }}" class="text-muted small">¿Olvidaste tu contraseña?</a>
+            <a href="/forgot-password" class="text-muted small">¿Olvidaste tu contraseña?</a>
         </div>
     </div>
 

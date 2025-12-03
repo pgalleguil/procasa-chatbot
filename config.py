@@ -6,7 +6,7 @@ load_dotenv()
 
 class Config:
     # === Claves externas ===
-    XAI_API_KEY = os.getenv("XAI_API_KEY")  # Para Grok
+    XAI_API_KEY = os.getenv("XAI_API_KEY")
     MONGO_URI = os.getenv("MONGO_URI")
     DB_NAME = os.getenv("DB_NAME", "URLS")
 
@@ -20,7 +20,7 @@ class Config:
     GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD")
     ALERT_EMAIL_RECIPIENT = os.getenv("ALERT_EMAIL_RECIPIENT", os.getenv("GMAIL_USER", ""))
 
-    # === COLECCIONES MONGO – CAMPAÑAS UPDATE PRICE (NUEVAS Y OBLIGATORIAS) ===
+    # === COLECCIONES MONGO – CAMPAÑAS UPDATE PRICE ===
     COLLECTION_CONTACTOS = os.getenv("COLLECTION_CONTACTOS", "contactos")
     COLLECTION_RESPUESTAS = os.getenv("COLLECTION_RESPUESTAS", "price_updates")
     COLLECTION_WHATSAPP_ENVIADOS = os.getenv("COLLECTION_WHATSAPP_ENVIADOS", "whatsapp_price_updates")
@@ -59,15 +59,14 @@ class Config:
     CORE_KEYS = ["operacion", "tipo", "comuna"]
     FEATURE_KEYS = ["precio_clp","precio_uf","dormitorios", "banos", "estacionamientos"]
 
-    # === GOOGLE OAUTH (para login del dashboard) ===
+    # === GOOGLE OAUTH (opcional) ===
     GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
     # === CLAVE SECRETA PARA SESIONES (OBLIGATORIA) ===
-    # Si no está en .env, genera una segura automáticamente
     SECRET_KEY = os.getenv("SECRET_KEY")
     if not SECRET_KEY:
         import secrets
         SECRET_KEY = secrets.token_hex(32)
-        print("\nSECRET_KEY generada automáticamente (guárdala en tu .env para producción):")
-        print(f"SECRET_KEY={SECRET_KEY}\n")
+        #print(f"\nSECRET_KEY generada automáticamente (guárdala en .env):")
+        #print(f"SECRET_KEY={SECRET_KEY}\n")

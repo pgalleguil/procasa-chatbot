@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Bajas de Precio | Diciembre 2025</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@300;400;600&display=swap"
+        rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+    <style>
+        :root {
+            --primary-bg: #0b1120;
+            --secondary-bg: #1e293b;
+            --accent-color: #6366f1;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+            --text-main: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --glass-bg: rgba(30, 41, 59, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.05);
+        }
+
+        [data-theme="light"] {
+            --primary-bg: #f8fafc;
+            --secondary-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-secondary: #475569;
+            --text-muted: #64748b;
+            --glass-bg: rgba(255, 255, 255, 0.85);
+            --glass-border: rgba(0, 0, 0, 0.08);
+        }
+
+        body {
+            background-color: var(--primary-bg);
+            background-image:
+                radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 25%);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            padding-bottom: 40px;
+            transition: all 0.4s ease;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5 {
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 25px 0;
+            margin-bottom: 40px;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .brand-section {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+        }
+
+        .brand-logo-img {
+            height: 95px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        .brand-text h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin: 0;
+            line-height: 1.1;
+            background: linear-gradient(90deg, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .campaign-badge {
+            background: rgba(99, 102, 241, 0.15);
+            color: #818cf8;
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            margin-top: 5px;
+            display: inline-block;
+        }
+
+        .btn-logout {
+            padding: 8px 20px;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            border: 1px solid var(--glass-border);
+            text-decoration: none;
+            transition: 0.3s;
+        }
+
+        .btn-logout:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+        }
+
+        /* Botón Día/Noche */
+        .theme-toggle {
+            width: 46px;
+            height: 46px;
+            border-radius: 50%;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: .3s;
+        }
+
+        .theme-toggle:hover {
+            transform: scale(1.12);
+        }
+
+        /* KPI Cards */
+        .kpi-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 25px;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.3s ease;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .kpi-label {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+
+        .kpi-number {
+            font-size: 3rem;
+            font-weight: 700;
+            margin: 10px 0;
+            font-family: 'Outfit', sans-serif;
+            line-height: 1;
+        }
+
+        .kpi-subtext {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .icon-bg {
+            position: absolute;
+            right: -10px;
+            bottom: -10px;
+            font-size: 5rem;
+            opacity: 0.03;
+            transform: rotate(-15deg);
+        }
+
+        .channel-status {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            height: 100%;
+            justify-content: center;
+        }
+
+        .channel-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+        }
+
+        .status-dot {
+            height: 8px;
+            width: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+
+        .dot-green {
+            background: #10b981;
+            box-shadow: 0 0 8px #10b981;
+        }
+
+        .dot-gray {
+            background: #475569;
+        }
+
+        .chart-wrapper {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 30px;
+            margin-top: 30px;
+            min-height: 400px;
+        }
+
+        .table-wrapper {
+            margin-top: 30px;
+            background: var(--glass-bg);
+            border-radius: 20px;
+            border: 1px solid var(--glass-border);
+            overflow: hidden;
+        }
+
+        .table th {
+            background: rgba(15, 23, 42, 0.9);
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--glass-border);
+            padding: 18px;
+        }
+
+        .table td {
+            background: transparent !important;
+            color: var(--text-main);
+            border-bottom: 1px solid var(--glass-border);
+            padding: 18px;
+            vertical-align: middle;
+        }
+
+        .contact-info {
+            color: var(--text-secondary) !important;
+            font-size: 0.9rem;
+        }
+
+        .code-link {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: #818cf8;
+            background: rgba(99, 102, 241, 0.1);
+            padding: 5px 10px;
+            border-radius: 4px;
+            text-decoration: none;
+            transition: all 0.2s;
+            display: inline-block;
+        }
+
+        .code-link:hover {
+            background: rgba(99, 102, 241, 0.25);
+            color: #fff;
+            transform: scale(1.05);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .badge-status {
+            padding: 6px 12px;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .bg-success-soft {
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .bg-warning-soft {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        .bg-danger-soft {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .bg-info-soft {
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="top-bar">
+            <div class="brand-section">
+                <img src="/static/logo.png" alt="Procasa" class="brand-logo-img">
+                <div class="brand-text">
+                    <h1>DASHBOARD</h1>
+                    <div class="campaign-badge">GESTION BAJAS DE PRECIO - DIC 2025</div>
+                </div>
+            </div>
+
+            <div class="d-flex align-items-center gap-3">
+                <span class="text-secondary">Hola, <strong>{{ username }}</strong></span>
+                <div class="theme-toggle" id="themeToggle">
+                    <i class="fas fa-moon" id="moon"></i>
+                    <i class="fas fa-sun d-none" id="sun"></i>
+                </div>
+                <a href="/logout" class="btn-logout">Cerrar Sesión</a>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-md-6 col-lg-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Total Enviados</div>
+                    <div class="kpi-number" id="enviados">0</div>
+                    <div class="kpi-subtext">Base Email</div>
+                    <i class="fas fa-paper-plane icon-bg"></i>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-lg-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Respuestas</div>
+                    <div class="kpi-number text-warning" id="respuestas">0</div>
+                    <div class="kpi-subtext">Tasa de respuesta: <span id="tasa" class="text-white fw-bold">0%</span>
+                    </div>
+                    <i class="fas fa-comments icon-bg"></i>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-lg-3">
+                <div class="kpi-card" style="border-color: rgba(16, 185, 129, 0.3);">
+                    <div class="kpi-label text-success">Aceptaron 7%</div>
+                    <div class="kpi-number text-success" id="aceptaron">0</div>
+                    <div class="kpi-subtext">Oportunidades ganadas</div>
+                    <i class="fas fa-check-circle icon-bg text-success"></i>
+                </div>
+            </div>
+
+            <div class="col-md-6 col-lg-3">
+                <div class="kpi-card p-3">
+                    <div class="channel-status">
+                        <div class="kpi-label mb-1">Estado de Canales</div>
+                        <div class="channel-row">
+                            <span class="text-secondary"><i class="fas fa-envelope me-2"></i>Email</span>
+                            <span class="small fw-bold text-success"><span class="status-dot dot-green"></span>EN
+                                CURSO</span>
+                        </div>
+                        <div class="channel-row" style="opacity: 0.5;">
+                            <span class="text-secondary"><i class="fab fa-whatsapp me-2"></i>WhatsApp</span>
+                            <span class="small fw-bold text-secondary"><span
+                                    class="status-dot dot-gray"></span>PENDIENTE</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4 justify-content-center">
+            <div class="col-lg-8">
+                <div class="chart-wrapper text-center">
+                    <h5 class="mb-4">Distribución de Respuestas</h5>
+                    <div id="grafico-torta" style="height: 350px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-wrapper">
+            <div class="d-flex justify-content-between align-items-center p-4">
+                <h5 class="mb-0">Gestión en Tiempo Real</h5>
+                <span class="badge bg-secondary">Datos 100% Reales</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Código Propiedad</th>
+                            <th>Nombre Cliente</th>
+                            <th>Contacto</th>
+                            <th class="text-center">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // TEMA DÍA / NOCHE
+        const html = document.documentElement;
+        const toggle = document.getElementById("themeToggle");
+        const moon = document.getElementById("moon");
+        const sun = document.getElementById("sun");
+
+        if (localStorage.getItem("theme") === "light") {
+            html.setAttribute("data-theme", "light");
+            moon.classList.add("d-none");
+            sun.classList.remove("d-none");
+        }
+
+        toggle.addEventListener("click", () => {
+            if (html.getAttribute("data-theme") === "light") {
+                html.setAttribute("data-theme", "dark");
+                localStorage.setItem("theme", "dark");
+                moon.classList.remove("d-none");
+                sun.classList.add("d-none");
+            } else {
+                html.setAttribute("data-theme", "light");
+                localStorage.setItem("theme", "light");
+                moon.classList.add("d-none");
+                sun.classList.remove("d-none");
+            }
+            cargarReporte(); // actualiza color del gráfico
+        });
+
+        // ANIMACIÓN NÚMEROS
+        function animateValue(obj, start, end, duration) {
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                obj.innerHTML = Math.floor(progress * (end - start) + start);
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                } else if (obj.id === 'tasa') {
+                    obj.innerHTML = end + "%";
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        // CARGA DE DATOS
+        const layoutConfig = {
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { color: '#cbd5e1', family: 'Inter' },
+            margin: { t: 0, b: 20, l: 20, r: 20 },
+            showlegend: true,
+            legend: { orientation: 'h', y: -0.1, xanchor: 'center', x: 0.5 }
+        };
+
+        const configPlotly = { responsive: true, displayModeBar: false };
+
+        async function cargarReporte() {
+            try {
+                const res = await fetch("/api/reporte_real");
+                const data = await res.json();
+
+                // KPIs
+                animateValue(document.getElementById("enviados"), 0, data.total_enviados, 800);
+                animateValue(document.getElementById("respuestas"), 0, data.total_respuestas, 800);
+                animateValue(document.getElementById("aceptaron"), 0, data.aceptaron, 1200);
+                document.getElementById("tasa").textContent = data.tasa_respuesta + "%";
+
+                // Gráfico dona
+                const donutData = [{
+                    values: [data.aceptaron, data.mantener, data.llamada, data.vendida, data.baja],
+                    labels: ["Aceptó 7%", "Mantener", "Llamar", "Vendida", "Baja"],
+                    marker: {
+                        colors: ["#10b981", "#f59e0b", "#6366f1", "#ef4444", "#475569"],
+                        line: { color: '#1e293b', width: 2 }
+                    },
+                    type: "pie",
+                    hole: 0.65,
+                    textinfo: "value+percent",
+                    textposition: 'outside',
+                    hoverinfo: "label+value"
+                }];
+
+                // Actualiza color de texto del gráfico según tema
+                layoutConfig.font.color = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim();
+
+                Plotly.react("grafico-torta", donutData, layoutConfig, configPlotly);
+
+                // Tabla
+                const tbody = document.getElementById("tabla-body");
+                tbody.innerHTML = "";
+
+                data.respuestas.slice(0, 50).forEach(r => {
+                    let badgeHTML = '';
+                    const resp = r.respuesta.toLowerCase();
+
+                    if (resp.includes("acept") || resp.includes("si")) {
+                        badgeHTML = `<span class="badge-status bg-success-soft">ACEPTÓ 7%</span>`;
+                    } else if (resp.includes("no") || resp.includes("baja") || resp.includes("vend")) {
+                        badgeHTML = `<span class="badge-status bg-danger-soft">BAJA / VENDIDA</span>`;
+                    } else if (resp.includes("llam") || resp.includes("contact")) {
+                        badgeHTML = `<span class="badge-status bg-info-soft">LLAMAR</span>`;
+                    } else {
+                        badgeHTML = `<span class="badge-status bg-warning-soft">${r.respuesta}</span>`;
+                    }
+
+                    const linkCodigo = `https://www.procasa.cl/${r.codigo}`;
+
+                    const tr = document.createElement("tr");
+                    tr.innerHTML = `
+                        <td>
+                            <a href="${linkCodigo}" target="_blank" class="code-link">
+                                ${r.codigo} <i class="fas fa-external-link-alt ms-1" style="font-size:0.7em;"></i>
+                            </a>
+                        </td>
+                        <td class="fw-bold">${r.nombre}</td>
+                        <td>
+                            <div class="contact-info"><i class="fas fa-envelope me-2 text-secondary"></i> ${r.email}</div>
+                            <div class="contact-info"><i class="fas fa-phone me-2 text-secondary"></i> ${r.telefono}</div>
+                        </td>
+                        <td class="text-center">${badgeHTML}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+            } catch (e) {
+                console.error("Error:", e);
+            }
+        }
+
+        // Carga inicial y cada 5 minutos
+        cargarReporte();
+        setInterval(cargarReporte, 300000);
+    </script>
+</body>
+
+</html>

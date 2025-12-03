@@ -21,6 +21,7 @@ import uvicorn
 import json
 import os
 
+
 # ========================= USAMOS TU config.py REAL =========================
 from config import Config
 
@@ -118,41 +119,54 @@ async def login_get(request: Request):
     )
 
 @app.post("/login")
-async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
+async def login(request: Request, response: Response):
     try:
-        client = MongoClient(Config.MONGO_URI)
-        db = client[Config.DB_NAME]
-        usuarios = db["usuarios"]
-        user = usuarios.find_one({"username": username})
-        
-        if user and verify_password(password, user["hashed_password"]):
-            token = create_access_token({"sub": username})
-            response = RedirectResponse("/dashboard", status_code=303)
-            response.set_cookie(
-                "access_token", token,
-                httponly=True, secure=True, samesite="lax", max_age=28800
-            )
-            return response
-        
-        # Si falla: vuelve al login con mensaje de error
-        return templates.TemplateResponse(
-            "login.html",
-            {
-                "request": request,
-                "images": get_images(),
-                "error": "Usuario o contraseña incorrectos"
-            }
+        # Lee el formulario (username y password vienen por Form)
+        form_data = await request.form()
+        username = form_data.get("username")
+        password = form_data.get("password")
+
+        # Validación básica
+        if not username or not password:
+            raise HTTPException(status_code=400, detail="Usuario y contraseña requeridos")
+
+        # CLAVE: recortamos a 72 bytes → evita el error de bcrypt
+        password = password[:72]
+
+        # Busca el usuario en MongoDB
+        usuario = collection_usuarios.find_one({"username": username.strip()})
+        if not usuario:
+            raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+
+        # Verifica la contraseña
+        if not pwd_context.verify(password, usuario["hashed_password"]):
+            raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+
+        # Crea el token JWT
+        access_token = create_access_token(
+            data={"sub": username},
+            expires_delta=timedelta(minutes=60)  # o el tiempo que quieras
         )
+
+        # Guarda el token en cookie HttpOnly (segura)
+        response.set_cookie(
+            key="access_token",
+            value=f"Bearer {access_token}",
+            httponly=True,
+            secure=True,           # importante en producción (HTTPS)
+            samesite="lax",
+            max_age=3600,          # 1 hora
+            expires=3600
+        )
+
+        return {"message": "Login exitoso", "username": username}
+
+    except HTTPException:
+        raise  # vuelve a lanzar los 400/401 para que el frontend los vea
     except Exception as e:
-        logger.error(f"Error en login: {e}")
-        return templates.TemplateResponse(
-            "login.html",
-            {
-                "request": request,
-                "images": get_images(),
-                "error": "Error del servidor"
-            }
-        )
+        import logging
+        logging.exception("Error inesperado en login")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 @app.get("/dashboard")
 async def dashboard(request: Request):

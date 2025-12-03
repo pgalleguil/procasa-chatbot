@@ -122,52 +122,48 @@ async def login_get(request: Request):
 @app.post("/login")
 async def login(request: Request, response: Response):
     try:
-        # Lee el formulario (username y password vienen por Form)
-        form_data = await request.form()
-        username = form_data.get("username")
-        password = form_data.get("password")
+        form = await request.form()
+        username = form.get("username")
+        password = form.get("password", "")[:72]  # corta a 72 bytes de una
 
-        # Validación básica
         if not username or not password:
-            raise HTTPException(status_code=400, detail="Usuario y contraseña requeridos")
+            raise HTTPException(status_code=400, detail="Faltan datos")
 
-        # CLAVE: recortamos a 72 bytes → evita el error de bcrypt
-        password = password[:72]
+        #400 si falta algo
 
-        # Busca el usuario en MongoDB
-        usuario = collection_usuarios.find_one({"username": username.strip()})
+        # ESTAS SON LAS 3 POSIBLES COLECCIONES QUE TIENES (una de estas es la tuya)
+        usuario = None
+        for coleccion in ["usuarios", "users", "collection_usuarios"]:
+            usuario = db.get_collection(coleccion).find_one({"username": username})
+            if usuario:
+                break
+
         if not usuario:
-            raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+            raise HTTPException(status_code=401, detail="Usuario no encontrado")
 
-        # Verifica la contraseña
+        # Verifica contraseña
         if not pwd_context.verify(password, usuario["hashed_password"]):
-            raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+            raise HTTPException(status_code=401, detail="Contraseña incorrecta")
 
-        # Crea el token JWT
-        access_token = create_access_token(
-            data={"sub": username},
-            expires_delta=timedelta(minutes=60)  # o el tiempo que quieras
-        )
+        # Token
+        access_token = create_access_token(data={"sub": username})
 
-        # Guarda el token en cookie HttpOnly (segura)
         response.set_cookie(
             key="access_token",
             value=f"Bearer {access_token}",
             httponly=True,
-            secure=True,           # importante en producción (HTTPS)
+            secure=True,
             samesite="lax",
-            max_age=3600,          # 1 hora
-            expires=3600
+            max_age=3600
         )
 
-        return {"message": "Login exitoso", "username": username}
+        return RedirectResponse(url="/dashboard", status_code=303)
 
     except HTTPException:
-        raise  # vuelve a lanzar los 400/401 para que el frontend los vea
+        raise
     except Exception as e:
-        import logging
-        logging.exception("Error inesperado en login")
-        raise HTTPException(status_code=500, detail="Error interno del servidor")
+        print("ERROR LOGIN:", e)
+        raise HTTPException(status_code=500, detail="Error interno")
 
 @app.get("/dashboard")
 async def dashboard(request: Request):

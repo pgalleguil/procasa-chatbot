@@ -384,7 +384,7 @@ async def campana_respuesta(
             )
 
         # ===========================================================
-        # === ENVÍO AUTOMÁTICO DE EMAIL AL EQUIPO ===
+        # === ENVÍO AUTOMÁTICO DE EMAIL AL EQUIPO (CON DASHBOARD Y CREDENCIALES) ===
         # ===========================================================
         try:
             contacto = contactos.find_one({
@@ -410,18 +410,25 @@ async def campana_respuesta(
             }.get(accion, accion.upper())
 
             cuerpo = f"""
-¡NUEVA RESPUESTA - CAMPAÑA AJUSTE DE PRECIO DICIEMBRE 2025!
+¡NUEVA RESPUESTA EN VIVO - CAMPAÑA AJUSTE DE PRECIO DICIEMBRE 2025!
 
 Cliente      : {nombre}
 Código(s)    : {", ".join(codigos_lista) if codigos_lista else codigo_principal}
 Teléfono     : {telefono}
 Email        : {email_lower}
 Respuesta    : {accion_texto}
-Fecha y hora : {ahora.strftime('%d de %B %Y - %H:%M')}
+Hora         : {ahora.strftime('%d/%m/%Y %H:%M')}
 
-Enlace directo → https://www.procasa.cl/{codigo_principal}
+ENLACE DIRECTO A LA PROPIEDAD:
+https://www.procasa.cl/{codigo_principal}
 
-¡Gestionar lo antes posible!
+DASHBOARD EN TIEMPO REAL (para marcar como gestionado):
+https://procasa-chatbot-yr8d.onrender.com
+
+Usuario     : admin
+Contraseña  : procasa2025
+
+¡Entrar YA y gestionar esta respuesta caliente!
 
 ---
 Sistema automático Procasa
@@ -433,8 +440,7 @@ Sistema automático Procasa
 
             msg = MIMEMultipart()
             msg['From'] = f"Procasa Alertas <{Config.GMAIL_USER}>"
-            msg['To'] = "jpcaro@procasa.cl"        # ← AQUÍ PON TU CORREO O DEL EQUIPO
-            msg['To'] = "pgalleguillos@procasa.cl, p.galleguil@gmail.com"  # ← puedes poner varios
+            msg['To'] = "jpcaro@procasa.cl, pgalleguillos@procasa.cl ,p.galleguil@gmail.com"  # ← TUS CORREOS AQUÍ
             msg['Subject'] = f" NUEVA RESPUESTA: {nombre} - {accion_texto}"
 
             msg.attach(MIMEText(cuerpo, 'plain', 'utf-8'))
@@ -442,9 +448,9 @@ Sistema automático Procasa
             with smtplib.SMTP('smtp.gmail.com', 587) as server:
                 server.starttls()
                 server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
-                server.sendmail(Config.GMAIL_USER, msg['To'].split(","), msg.as_string())
+                server.sendmail(Config.GMAIL_USER, [x.strip() for x in msg['To'].split(",")], msg.as_string())
 
-            logger.info(f"Email de alerta enviado al equipo: {email_lower}")
+            logger.info(f"Email de alerta con enlace y credenciales enviado → {email_lower}")
 
         except Exception as e:
             logger.error(f"Error enviando email al equipo: {e}")

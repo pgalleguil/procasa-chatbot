@@ -15,7 +15,10 @@ sentence-transformers==3.1.1
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.9
-
-# ← Línea mágica que arregla todo en Render
 bcrypt==4.0.1
+
+# ← Estas 3 líneas son las que faltaban para el dashboard
+pandas==2.2.3
+openpyxl==3.1.5
+xlsxwriter==3.2.0
 --only-binary=all

@@ -6,6 +6,7 @@ import hmac
 import hashlib
 from typing import Dict, Any
 import re
+import os
 import secrets
 
 import requests
@@ -19,7 +20,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import uvicorn
 import json
-import os
+
+
 
 # ========================= USAMOS TU config.py REAL =========================
 from config import Config
@@ -377,7 +379,6 @@ async def campana_respuesta(
         # Actualizar en MongoDB
         result1 = contactos.update_one({"email_propietario": email_lower}, update_data)
         if result1.matched_count == 0:
-            import re
             contactos.update_one(
                 {"email_propietario": {"$regex": f"^{re.escape(email_lower)}$", "$options": "i"}},
                 update_data

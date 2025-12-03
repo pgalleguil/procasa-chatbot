@@ -11,42 +11,58 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
     <style>
         :root {
+            /* Variables Base Dark */
             --primary-bg: #0b1120;
             --secondary-bg: #1e293b;
             --accent-color: #6366f1;
-            --success-color: #10b981;
-            --warning-color: #f59e0b;
-            --danger-color: #ef4444;
             --text-main: #f8fafc;
             --text-secondary: #cbd5e1;
-            --text-muted: #94a3b8;
-            --glass-bg: rgba(30, 41, 59, 0.6);
-            --glass-border: rgba(255, 255, 255, 0.05);
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --card-hover: translateY(-5px);
+
+            /* Degradado del Título (Dark) */
+            --title-gradient: linear-gradient(90deg, #fff 0%, #94a3b8 100%);
+
+            /* Tabla Headers (Dark) */
+            --table-head-bg: rgba(15, 23, 42, 0.95);
+            --table-head-text: #cbd5e1;
         }
 
         [data-theme="light"] {
-            --primary-bg: #f8fafc;
+            /* Variables Base Light */
+            --primary-bg: #f1f5f9;
             --secondary-bg: #ffffff;
-            --text-main: #1e293b;
+            --text-main: #0f172a;
+            /* Texto muy oscuro para contraste */
             --text-secondary: #475569;
-            --text-muted: #64748b;
-            --glass-bg: rgba(255, 255, 255, 0.85);
-            --glass-border: rgba(0, 0, 0, 0.08);
+            /* Gris medio fuerte */
+            --glass-bg: rgba(255, 255, 255, 0.9);
+            --glass-border: rgba(0, 0, 0, 0.1);
+
+            /* Degradado del Título (Light) - Corregido para visibilidad */
+            --title-gradient: linear-gradient(90deg, #1e293b 0%, #4f46e5 100%);
+
+            /* Tabla Headers (Light) */
+            --table-head-bg: #e2e8f0;
+            --table-head-text: #334155;
         }
 
         body {
             background-color: var(--primary-bg);
+            /* Fondo sutil */
             background-image:
-                radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 25%),
-                radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 25%);
+                radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.05) 0%, transparent 40%);
             color: var(--text-main);
             font-family: 'Inter', sans-serif;
             min-height: 100vh;
-            padding-bottom: 40px;
-            transition: all 0.4s ease;
+            padding-bottom: 60px;
+            transition: background-color 0.4s ease, color 0.4s ease;
         }
 
         h1,
@@ -57,70 +73,81 @@
             font-family: 'Outfit', sans-serif;
         }
 
+        /* --- TOP BAR & HEADER --- */
         .top-bar {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 25px 0;
-            margin-bottom: 40px;
+            padding: 20px 0;
+            margin-bottom: 30px;
             border-bottom: 1px solid var(--glass-border);
         }
 
         .brand-section {
             display: flex;
             align-items: center;
-            gap: 18px;
+            gap: 20px;
         }
 
         .brand-logo-img {
-            height: 95px;
+            height: 85px;
             width: auto;
             object-fit: contain;
+            transition: height 0.3s;
         }
 
         .brand-text h1 {
             font-size: 1.8rem;
-            font-weight: 700;
+            font-weight: 800;
             margin: 0;
             line-height: 1.1;
-            background: linear-gradient(90deg, #fff, #94a3b8);
+            background: var(--title-gradient);
+            /* Variable dinámica */
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }
 
         .campaign-badge {
-            background: rgba(99, 102, 241, 0.15);
-            color: #818cf8;
-            padding: 5px 12px;
+            background: rgba(99, 102, 241, 0.1);
+            color: #6366f1;
+            padding: 4px 10px;
             border-radius: 6px;
-            font-size: 0.75rem;
-            font-weight: 600;
+            font-size: 0.7rem;
+            font-weight: 700;
             letter-spacing: 0.5px;
-            border: 1px solid rgba(99, 102, 241, 0.3);
+            border: 1px solid rgba(99, 102, 241, 0.2);
             margin-top: 5px;
             display: inline-block;
+        }
+
+        /* --- CONTROLES DE USUARIO --- */
+        .user-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
         }
 
         .btn-logout {
             padding: 8px 20px;
             border-radius: 30px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: var(--text-secondary);
             border: 1px solid var(--glass-border);
             text-decoration: none;
             transition: 0.3s;
+            background: transparent;
         }
 
         .btn-logout:hover {
-            background: rgba(255, 255, 255, 0.05);
-            color: white;
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--text-main);
+            border-color: rgba(99, 102, 241, 0.3);
         }
 
-        /* Botón Día/Noche */
         .theme-toggle {
-            width: 46px;
-            height: 46px;
+            width: 40px;
+            height: 40px;
             border-radius: 50%;
             background: var(--glass-bg);
             border: 1px solid var(--glass-border);
@@ -133,183 +160,226 @@
         }
 
         .theme-toggle:hover {
-            transform: scale(1.12);
+            transform: rotate(15deg);
+            color: var(--text-main);
         }
 
-        /* KPI Cards */
+        /* --- KPI CARDS --- */
         .kpi-card {
             background: var(--glass-bg);
-            backdrop-filter: blur(10px);
+            backdrop-filter: blur(12px);
             border: 1px solid var(--glass-border);
-            border-radius: 16px;
-            padding: 25px;
+            border-radius: 20px;
+            padding: 24px;
             height: 100%;
             position: relative;
             overflow: hidden;
-            transition: transform 0.3s ease;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+            transition: transform 0.3s ease, border-color 0.3s ease;
         }
 
         .kpi-card:hover {
             transform: translateY(-5px);
-            border-color: rgba(255, 255, 255, 0.1);
+            border-color: rgba(99, 102, 241, 0.3);
         }
 
         .kpi-label {
             color: var(--text-secondary);
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             text-transform: uppercase;
             letter-spacing: 1px;
-            font-weight: 600;
+            font-weight: 700;
         }
 
         .kpi-number {
-            font-size: 3rem;
+            font-size: 2.8rem;
             font-weight: 700;
             margin: 10px 0;
             font-family: 'Outfit', sans-serif;
+            color: var(--text-main);
             line-height: 1;
         }
 
         .kpi-subtext {
             color: var(--text-secondary);
-            font-size: 0.9rem;
+            font-size: 0.85rem;
         }
 
         .icon-bg {
             position: absolute;
             right: -10px;
-            bottom: -10px;
-            font-size: 5rem;
-            opacity: 0.03;
-            transform: rotate(-15deg);
+            bottom: -15px;
+            font-size: 6rem;
+            opacity: 0.04;
+            transform: rotate(-20deg);
+            pointer-events: none;
         }
 
-        .channel-status {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            height: 100%;
-            justify-content: center;
-        }
-
-        .channel-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 12px;
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 8px;
-        }
-
-        .status-dot {
-            height: 8px;
-            width: 8px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 6px;
-        }
-
-        .dot-green {
-            background: #10b981;
-            box-shadow: 0 0 8px #10b981;
-        }
-
-        .dot-gray {
-            background: #475569;
-        }
-
+        /* --- CHART & TABLE --- */
         .chart-wrapper {
             background: var(--glass-bg);
             border: 1px solid var(--glass-border);
-            border-radius: 20px;
+            border-radius: 24px;
             padding: 30px;
             margin-top: 30px;
-            min-height: 400px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
         }
 
         .table-wrapper {
             margin-top: 30px;
             background: var(--glass-bg);
-            border-radius: 20px;
+            border-radius: 24px;
             border: 1px solid var(--glass-border);
             overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+        }
+
+        .table-header-custom {
+            padding: 20px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        /* Tabla Estilos Corregidos */
+        .table {
+            margin-bottom: 0;
+            --bs-table-bg: transparent;
+            /* Importante para que tome el fondo del padre */
         }
 
         .table th {
-            background: rgba(15, 23, 42, 0.9);
-            color: var(--text-secondary);
-            font-weight: 500;
+            background: var(--table-head-bg);
+            color: var(--table-head-text);
+            font-weight: 700;
             text-transform: uppercase;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             letter-spacing: 1px;
             border-bottom: 1px solid var(--glass-border);
-            padding: 18px;
+            padding: 16px 20px;
+            white-space: nowrap;
         }
 
         .table td {
             background: transparent !important;
             color: var(--text-main);
             border-bottom: 1px solid var(--glass-border);
-            padding: 18px;
+            padding: 16px 20px;
             vertical-align: middle;
-        }
-
-        .contact-info {
-            color: var(--text-secondary) !important;
             font-size: 0.9rem;
         }
 
+        .table-hover tbody tr:hover td {
+            background-color: rgba(99, 102, 241, 0.03) !important;
+        }
+
+        /* Botón Excel */
+        .btn-excel {
+            background: rgba(16, 185, 129, 0.1);
+            color: #10b981;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-excel:hover {
+            background: #10b981;
+            color: white;
+            transform: scale(1.02);
+        }
+
+        /* Code Link */
         .code-link {
             font-family: 'Courier New', monospace;
             font-weight: bold;
-            color: #818cf8;
+            color: #6366f1;
             background: rgba(99, 102, 241, 0.1);
-            padding: 5px 10px;
+            padding: 4px 8px;
             border-radius: 4px;
             text-decoration: none;
-            transition: all 0.2s;
-            display: inline-block;
+            transition: 0.2s;
         }
 
         .code-link:hover {
-            background: rgba(99, 102, 241, 0.25);
+            background: #6366f1;
             color: #fff;
-            transform: scale(1.05);
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
         }
 
+        /* Badges */
         .badge-status {
             padding: 6px 12px;
-            border-radius: 30px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
         }
 
-        .bg-success-soft {
-            background: rgba(16, 185, 129, 0.15);
-            color: #34d399;
-            border: 1px solid rgba(16, 185, 129, 0.2);
-        }
+        /* --- MOBILE RESPONSIVE (NIVEL DIOS) --- */
+        @media (max-width: 768px) {
+            body {
+                padding-bottom: 30px;
+            }
 
-        .bg-warning-soft {
-            background: rgba(245, 158, 11, 0.15);
-            color: #fbbf24;
-            border: 1px solid rgba(245, 158, 11, 0.2);
-        }
+            .top-bar {
+                flex-direction: column;
+                gap: 20px;
+                text-align: center;
+            }
 
-        .bg-danger-soft {
-            background: rgba(239, 68, 68, 0.15);
-            color: #f87171;
-            border: 1px solid rgba(239, 68, 68, 0.2);
-        }
+            .brand-section {
+                flex-direction: column;
+                gap: 10px;
+            }
 
-        .bg-info-soft {
-            background: rgba(59, 130, 246, 0.15);
-            color: #60a5fa;
-            border: 1px solid rgba(59, 130, 246, 0.2);
+            .brand-logo-img {
+                height: 60px;
+            }
+
+            .brand-text h1 {
+                font-size: 1.5rem;
+            }
+
+            .user-controls {
+                width: 100%;
+                justify-content: center;
+                background: rgba(0, 0, 0, 0.03);
+                padding: 10px;
+                border-radius: 12px;
+            }
+
+            .kpi-card {
+                padding: 20px;
+                margin-bottom: 10px;
+            }
+
+            .kpi-number {
+                font-size: 2.5rem;
+            }
+
+            /* Ajuste de Tabla en Móvil */
+            .table-wrapper {
+                border-radius: 16px;
+                margin-top: 20px;
+            }
+
+            .table-header-custom {
+                flex-direction: column;
+                gap: 15px;
+                align-items: flex-start;
+            }
+
+            .btn-excel {
+                width: 100%;
+                justify-content: center;
+            }
         }
     </style>
 </head>
@@ -322,42 +392,46 @@
                 <img src="/static/logo.png" alt="Procasa" class="brand-logo-img">
                 <div class="brand-text">
                     <h1>DASHBOARD</h1>
-                    <div class="campaign-badge">GESTION BAJAS DE PRECIO - DIC 2025</div>
+                    <div class="campaign-badge">GESTIÓN BAJAS - DIC 2025</div>
                 </div>
             </div>
 
-            <div class="d-flex align-items-center gap-3">
-                <span class="text-secondary">Hola, <strong>{{ username }}</strong></span>
-                <div class="theme-toggle" id="themeToggle">
+            <div class="user-controls">
+                <span class="text-secondary d-none d-md-block">Hola, <strong>{{ username }}</strong></span>
+
+                <div class="theme-toggle" id="themeToggle" title="Cambiar Tema">
                     <i class="fas fa-moon" id="moon"></i>
                     <i class="fas fa-sun d-none" id="sun"></i>
                 </div>
-                <a href="/logout" class="btn-logout">Cerrar Sesión</a>
+
+                <a href="/logout" class="btn-logout">
+                    <i class="fas fa-sign-out-alt me-2 d-md-none"></i>Salir
+                </a>
             </div>
         </div>
 
-        <div class="row g-4">
-            <div class="col-md-6 col-lg-3">
+        <div class="row g-3 g-lg-4">
+            <div class="col-12 col-md-6 col-lg-3">
                 <div class="kpi-card">
                     <div class="kpi-label">Total Enviados</div>
                     <div class="kpi-number" id="enviados">0</div>
-                    <div class="kpi-subtext">Base Email</div>
-                    <i class="fas fa-paper-plane icon-bg"></i>
+                    <div class="kpi-subtext">Base de correos procesada</div>
+                    <i class="fas fa-paper-plane icon-bg text-primary"></i>
                 </div>
             </div>
 
-            <div class="col-md-6 col-lg-3">
+            <div class="col-12 col-md-6 col-lg-3">
                 <div class="kpi-card">
                     <div class="kpi-label">Respuestas</div>
                     <div class="kpi-number text-warning" id="respuestas">0</div>
-                    <div class="kpi-subtext">Tasa de respuesta: <span id="tasa" class="text-white fw-bold">0%</span>
-                    </div>
-                    <i class="fas fa-comments icon-bg"></i>
+                    <div class="kpi-subtext">Tasa de éxito: <span id="tasa" class="fw-bold"
+                            style="color: var(--text-main)">0%</span></div>
+                    <i class="fas fa-reply icon-bg text-warning"></i>
                 </div>
             </div>
 
-            <div class="col-md-6 col-lg-3">
-                <div class="kpi-card" style="border-color: rgba(16, 185, 129, 0.3);">
+            <div class="col-12 col-md-6 col-lg-3">
+                <div class="kpi-card" style="border-left: 4px solid #10b981;">
                     <div class="kpi-label text-success">Aceptaron 7%</div>
                     <div class="kpi-number text-success" id="aceptaron">0</div>
                     <div class="kpi-subtext">Oportunidades ganadas</div>
@@ -365,19 +439,19 @@
                 </div>
             </div>
 
-            <div class="col-md-6 col-lg-3">
-                <div class="kpi-card p-3">
-                    <div class="channel-status">
-                        <div class="kpi-label mb-1">Estado de Canales</div>
-                        <div class="channel-row">
+            <div class="col-12 col-md-6 col-lg-3">
+                <div class="kpi-card">
+                    <div class="d-flex flex-column justify-content-center h-100">
+                        <div class="kpi-label mb-3">Estado de Canales</div>
+                        <div class="d-flex justify-content-between align-items-center mb-2 p-2 rounded"
+                            style="background: rgba(255,255,255,0.05)">
                             <span class="text-secondary"><i class="fas fa-envelope me-2"></i>Email</span>
-                            <span class="small fw-bold text-success"><span class="status-dot dot-green"></span>EN
-                                CURSO</span>
+                            <span class="badge bg-success bg-opacity-25 text-success">ACTIVO</span>
                         </div>
-                        <div class="channel-row" style="opacity: 0.5;">
+                        <div class="d-flex justify-content-between align-items-center p-2 rounded"
+                            style="background: rgba(255,255,255,0.02)">
                             <span class="text-secondary"><i class="fab fa-whatsapp me-2"></i>WhatsApp</span>
-                            <span class="small fw-bold text-secondary"><span
-                                    class="status-dot dot-gray"></span>PENDIENTE</span>
+                            <span class="badge bg-secondary bg-opacity-25 text-secondary">PENDIENTE</span>
                         </div>
                     </div>
                 </div>
@@ -387,63 +461,98 @@
         <div class="row mt-4 justify-content-center">
             <div class="col-lg-8">
                 <div class="chart-wrapper text-center">
-                    <h5 class="mb-4">Distribución de Respuestas</h5>
+                    <h5 class="mb-4 fw-bold" style="color: var(--text-main)">Distribución de Respuestas</h5>
                     <div id="grafico-torta" style="height: 350px;"></div>
                 </div>
             </div>
         </div>
 
         <div class="table-wrapper">
-            <div class="d-flex justify-content-between align-items-center p-4">
-                <h5 class="mb-0">Gestión en Tiempo Real</h5>
-                <span class="badge bg-secondary">Datos 100% Reales</span>
+            <div class="table-header-custom">
+                <div>
+                    <h5 class="mb-1 fw-bold" style="color: var(--text-main)">Gestión en Tiempo Real</h5>
+                    <small class="text-secondary">Última actualización: <span id="last-update">Ahora
+                            mismo</span></small>
+                </div>
+                <button onclick="exportToExcel()" class="btn-excel">
+                    <i class="fas fa-file-excel"></i> Descargar Excel
+                </button>
             </div>
+
             <div class="table-responsive">
-                <table class="table table-hover mb-0">
+                <table class="table table-hover mb-0" id="mainTable">
                     <thead>
                         <tr>
-                            <th>Código Propiedad</th>
-                            <th>Nombre Cliente</th>
+                            <th>Código</th>
+                            <th>Cliente</th>
                             <th>Contacto</th>
                             <th class="text-center">Estado</th>
                         </tr>
                     </thead>
-                    <tbody id="tabla-body"></tbody>
+                    <tbody id="tabla-body">
+                    </tbody>
                 </table>
             </div>
         </div>
     </div>
 
     <script>
-        // TEMA DÍA / NOCHE
+        // --- 1. CONFIGURACIÓN GLOBAL ---
+        let GLOBAL_DATA = []; // Almacenará los datos para exportar a Excel
+
+        // --- 2. TEMA DÍA / NOCHE ---
         const html = document.documentElement;
         const toggle = document.getElementById("themeToggle");
         const moon = document.getElementById("moon");
         const sun = document.getElementById("sun");
 
-        if (localStorage.getItem("theme") === "light") {
-            html.setAttribute("data-theme", "light");
-            moon.classList.add("d-none");
-            sun.classList.remove("d-none");
-        }
-
-        toggle.addEventListener("click", () => {
-            if (html.getAttribute("data-theme") === "light") {
-                html.setAttribute("data-theme", "dark");
-                localStorage.setItem("theme", "dark");
-                moon.classList.remove("d-none");
-                sun.classList.add("d-none");
-            } else {
-                html.setAttribute("data-theme", "light");
-                localStorage.setItem("theme", "light");
+        function applyTheme(theme) {
+            html.setAttribute("data-theme", theme);
+            localStorage.setItem("theme", theme);
+            if (theme === "light") {
                 moon.classList.add("d-none");
                 sun.classList.remove("d-none");
+            } else {
+                moon.classList.remove("d-none");
+                sun.classList.add("d-none");
             }
-            cargarReporte(); // actualiza color del gráfico
+            if (typeof Plotly !== 'undefined') cargarReporte(); // Redibuja gráfico para ajustar colores
+        }
+
+        const savedTheme = localStorage.getItem("theme") || "dark";
+        applyTheme(savedTheme);
+
+        toggle.addEventListener("click", () => {
+            const current = html.getAttribute("data-theme");
+            applyTheme(current === "light" ? "dark" : "light");
         });
 
-        // ANIMACIÓN NÚMEROS
+        // --- 3. EXPORTAR A EXCEL (NUEVO) ---
+        function exportToExcel() {
+            if (GLOBAL_DATA.length === 0) {
+                alert("No hay datos para exportar aún.");
+                return;
+            }
+
+            // Mapeamos los datos para que el Excel quede limpio (sin HTML)
+            const cleanData = GLOBAL_DATA.map(item => ({
+                "Código Propiedad": item.codigo,
+                "Nombre Cliente": item.nombre,
+                "Email": item.email,
+                "Teléfono": item.telefono,
+                "Respuesta Cliente": item.respuesta,
+                "Fecha": new Date().toLocaleDateString()
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(cleanData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Respuestas");
+            XLSX.writeFile(wb, "Reporte_Bajas_Dic2025.xlsx");
+        }
+
+        // --- 4. LÓGICA DE DATOS ---
         function animateValue(obj, start, end, duration) {
+            if (!obj) return;
             let startTimestamp = null;
             const step = (timestamp) => {
                 if (!startTimestamp) startTimestamp = timestamp;
@@ -458,94 +567,112 @@
             window.requestAnimationFrame(step);
         }
 
-        // CARGA DE DATOS
         const layoutConfig = {
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
-            font: { color: '#cbd5e1', family: 'Inter' },
+            font: { family: 'Inter' },
             margin: { t: 0, b: 20, l: 20, r: 20 },
             showlegend: true,
-            legend: { orientation: 'h', y: -0.1, xanchor: 'center', x: 0.5 }
+            legend: { orientation: 'h', y: -0.15, xanchor: 'center', x: 0.5 }
         };
 
         const configPlotly = { responsive: true, displayModeBar: false };
 
         async function cargarReporte() {
             try {
+                // Simulación para evitar error si no hay API real conectada en este momento
+                // En producción, descomentar el fetch y borrar el objeto simulado
                 const res = await fetch("/api/reporte_real");
                 const data = await res.json();
 
-                // KPIs
+                // Guardamos datos para Excel
+                GLOBAL_DATA = data.respuestas || [];
+
+                // Actualizar KPIs
                 animateValue(document.getElementById("enviados"), 0, data.total_enviados, 800);
                 animateValue(document.getElementById("respuestas"), 0, data.total_respuestas, 800);
                 animateValue(document.getElementById("aceptaron"), 0, data.aceptaron, 1200);
                 document.getElementById("tasa").textContent = data.tasa_respuesta + "%";
 
-                // Gráfico dona
+                // Hora actualización
+                const now = new Date();
+                document.getElementById("last-update").textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                // Configurar Colores Gráfico según Tema
+                const isLight = html.getAttribute("data-theme") === "light";
+                layoutConfig.font.color = isLight ? '#475569' : '#cbd5e1';
+
                 const donutData = [{
                     values: [data.aceptaron, data.mantener, data.llamada, data.vendida, data.baja],
                     labels: ["Aceptó 7%", "Mantener", "Llamar", "Vendida", "Baja"],
                     marker: {
-                        colors: ["#10b981", "#f59e0b", "#6366f1", "#ef4444", "#475569"],
-                        line: { color: '#1e293b', width: 2 }
+                        colors: ["#10b981", "#f59e0b", "#6366f1", "#ef4444", "#94a3b8"],
+                        line: { color: isLight ? '#ffffff' : '#1e293b', width: 2 }
                     },
                     type: "pie",
                     hole: 0.65,
-                    textinfo: "value+percent",
+                    textinfo: "value",
                     textposition: 'outside',
-                    hoverinfo: "label+value"
+                    hoverinfo: "label+value+percent"
                 }];
-
-                // Actualiza color de texto del gráfico según tema
-                layoutConfig.font.color = getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim();
 
                 Plotly.react("grafico-torta", donutData, layoutConfig, configPlotly);
 
-                // Tabla
+                // Renderizar Tabla
                 const tbody = document.getElementById("tabla-body");
                 tbody.innerHTML = "";
 
-                data.respuestas.slice(0, 50).forEach(r => {
-                    let badgeHTML = '';
+                if (GLOBAL_DATA.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-muted">Esperando respuestas...</td></tr>';
+                    return;
+                }
+
+                GLOBAL_DATA.slice(0, 50).forEach(r => {
+                    let badgeClass = 'bg-secondary bg-opacity-25 text-secondary';
+                    let badgeText = r.respuesta;
                     const resp = r.respuesta.toLowerCase();
 
                     if (resp.includes("acept") || resp.includes("si")) {
-                        badgeHTML = `<span class="badge-status bg-success-soft">ACEPTÓ 7%</span>`;
+                        badgeClass = 'bg-success bg-opacity-25 text-success border border-success border-opacity-25';
+                        badgeText = '<i class="fas fa-check me-1"></i> ACEPTÓ';
                     } else if (resp.includes("no") || resp.includes("baja") || resp.includes("vend")) {
-                        badgeHTML = `<span class="badge-status bg-danger-soft">BAJA / VENDIDA</span>`;
+                        badgeClass = 'bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25';
+                        badgeText = 'BAJA / VENDIDA';
                     } else if (resp.includes("llam") || resp.includes("contact")) {
-                        badgeHTML = `<span class="badge-status bg-info-soft">LLAMAR</span>`;
-                    } else {
-                        badgeHTML = `<span class="badge-status bg-warning-soft">${r.respuesta}</span>`;
+                        badgeClass = 'bg-primary bg-opacity-25 text-primary border border-primary border-opacity-25';
+                        badgeText = 'LLAMAR';
+                    } else if (resp.includes("mant")) {
+                        badgeClass = 'bg-warning bg-opacity-25 text-warning border border-warning border-opacity-25';
+                        badgeText = 'MANTENER';
                     }
-
-                    const linkCodigo = `https://www.procasa.cl/${r.codigo}`;
 
                     const tr = document.createElement("tr");
                     tr.innerHTML = `
                         <td>
-                            <a href="${linkCodigo}" target="_blank" class="code-link">
-                                ${r.codigo} <i class="fas fa-external-link-alt ms-1" style="font-size:0.7em;"></i>
+                            <a href="https://www.procasa.cl/${r.codigo}" target="_blank" class="code-link">
+                                ${r.codigo}
                             </a>
                         </td>
-                        <td class="fw-bold">${r.nombre}</td>
+                        <td class="fw-bold" style="color: var(--text-main)">${r.nombre}</td>
                         <td>
-                            <div class="contact-info"><i class="fas fa-envelope me-2 text-secondary"></i> ${r.email}</div>
-                            <div class="contact-info"><i class="fas fa-phone me-2 text-secondary"></i> ${r.telefono}</div>
+                            <div style="font-size: 0.85rem; color: var(--text-secondary)">${r.email}</div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted)">${r.telefono}</div>
                         </td>
-                        <td class="text-center">${badgeHTML}</td>
+                        <td class="text-center">
+                            <span class="badge-status ${badgeClass}">${badgeText}</span>
+                        </td>
                     `;
                     tbody.appendChild(tr);
                 });
 
             } catch (e) {
-                console.error("Error:", e);
+                console.error("Error cargando reporte:", e);
             }
         }
 
-        // Carga inicial y cada 5 minutos
+        // Init
         cargarReporte();
-        setInterval(cargarReporte, 300000);
+        setInterval(cargarReporte, 60000); // Actualiza cada 1 minuto
     </script>
 </body>
 

@@ -229,26 +229,56 @@ async def process_with_debounce(phone: str, full_text: str):
     task = asyncio.create_task(delayed_process())
     pending_tasks[phone] = task
 
-async def send_whatsapp_message(number: str, text: str):
-    url = "https://wasenderapi.com/api/send-message"
-    payload = {"to": number, "text": text}
-    headers = {"Authorization": f"Bearer {Config.WASENDER_TOKEN}", "Content-Type": "application/json"}
+import requests
+import logging
+from config import Config
+
+logger = logging.getLogger(__name__)
+
+async def send_whatsapp_message(number: str, text: str) -> bool:
+    """
+    Envía un mensaje por WhatsApp usando WASenderAPI (V1 - la que funciona y siempre funcionó).
+    Retorna True si se envió correctamente, False si hubo error.
+    """
+    # Normalizamos el número: quitamos el + y dejamos solo dígitos
+    clean_number = "".join(filter(str.isdigit, number))
+    
+    # Si es chileno y empieza con 56, quitamos el 56 inicial (WASenderAPI lo prefiere así)
+    if clean_number.startswith("56") and len(clean_number) == 11:
+        clean_number = clean_number[2:]  # deja solo 9XXXXXXXX
+
+    url = "https://wasenderapi.com/api/send"
+
+    payload = {
+        "token": Config.WASENDER_TOKEN,
+        "to": clean_number,
+        "message": text
+    }
+
     try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=15)
-        if resp.status_code == 200:
-            logger.info(f"[WHATSAPP SUCCESS] Enviado a {number}")
-            return True
+        response = requests.post(url, json=payload, timeout=20)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("status") == "success" or data.get("sent"):
+                logger.info(f"Mensaje enviado correctamente a {number}")
+                return True
+            else:
+                logger.warning(f"WASenderAPI respondió error: {data}")
+                return False
+        else:
+            logger.error(f"Error HTTP {response.status_code} de WASenderAPI: {response.text}")
+            return False
+
+    except requests.exceptions.Timeout:
+        logger.error("Timeout al enviar mensaje por WASenderAPI")
+        return False
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error de conexión con WASenderAPI: {e}")
+        return False
     except Exception as e:
-        logger.error(f"[WHATSAPP EXCEPTION] Error enviando a {number}: {e}")
-    await asyncio.sleep(2)
-    try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=15)
-        if resp.status_code == 200:
-            logger.info(f"[WHATSAPP SUCCESS] Enviado en 2do intento a {number}")
-            return True
-    except Exception as e:
-        logger.error(f"[WHATSAPP EXCEPTION] 2do intento falló: {e}")
-    return False
+        logger.error(f"Error inesperado al enviar mensaje: {e}")
+        return False
 
 @app.post("/webhook")
 async def webhook(

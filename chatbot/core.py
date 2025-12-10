@@ -1,4 +1,4 @@
-# chatbot/core.py → VERSIÓN OFICIAL FINAL 100% CORREGIDA – 10 DIC 2025
+# chatbot/core.py → VERSIÓN OFICIAL FINAL PROFESIONAL – 10 DIC 2025
 import logging
 import re
 from datetime import datetime
@@ -90,12 +90,6 @@ def process_user_message(phone: str, message: str) -> str:
 
     palabras_visita = ["visita", "verla", "interesa", "agendar", "quiero ver", "me interesa"]
     quiere_visitar = any(p in message_lower for p in palabras_visita) or esta_preguntando_horario_visita
-    
-    # Pregunta técnica (excluimos explícitamente palabras de tiempo/horario para que no se confunda)
-    es_pregunta_dato = any(p in message_lower for p in [
-        "orientacion", "orientación", "gastos", "piso", "año", "tiene", "cuánto", "m2", "metros", 
-        "estacionamiento", "bodega", "baños", "dormitorios", "qué", "que", "requisitos", "piscina", "quincho"
-    ]) and "?" in original_message and not esta_preguntando_horario_visita
 
     # === 4. BUSCAR PROPIEDAD (LINK O CÓDIGO) ===
     propiedad = None
@@ -108,12 +102,12 @@ def process_user_message(phone: str, message: str) -> str:
         if es_link and temp:
             propiedad = temp
         
-        # B) Código 5 dígitos → BÚSQUEDA REAL EN CAMPO "codigo"
+        # B) Código Procasa
         if not propiedad:
             codigo_match = re.search(r"\b(\d{4,6})\b", original_message)
             if codigo_match:
                 codigo_str = codigo_match.group(1)
-                logger.info(f"[CÓDIGO PROCASA] Detectado código interno: {codigo_str}")
+                logger.info(f"[CÓDIGO PROCASA] Detectado: {codigo_str}")
 
                 db = get_db()
                 coleccion = db[Config.COLLECTION_NAME]
@@ -161,13 +155,13 @@ Instrucciones:
     if ya_presentamos:
         ultimo = next((m for m in reversed(historial) if "propiedad_data" in m), None)
         
-        # --- A) FILTRO COMERCIAL (Crédito/Contado) ---
+        # --- A) FILTRO COMERCIAL ---
         if quiere_visitar and not ya_preguntamos_financiamiento and not ya_preguntamos_horarios:
             respuesta = "¡Genial! Para coordinar la visita: ¿Esta compra sería con **crédito hipotecario** o **al contado**?"
             guardar_mensaje(phone, "assistant", respuesta, {"pregunto_financiamiento": True})
             return respuesta
 
-        # --- B) AGENDAR VISITA – RESPUESTA FIJA (NUNCA MÁS GROK INVENTA HORARIOS) ---
+        # --- B) PREGUNTA HORARIOS ---
         es_respuesta_financiamiento = any(x in message_lower for x in ["credito", "crédito", "hipotecario", "banco", "contado", "efectivo", "preaprobado"])
         
         if (es_respuesta_financiamiento or quiere_visitar) and not ya_preguntamos_horarios:
@@ -175,17 +169,15 @@ Instrucciones:
              guardar_mensaje(phone, "assistant", respuesta, {"pregunto_horarios": True})
              return respuesta
 
-        # --- C) BLOQUE FINAL: PREGUNTAS TÉCNICAS O HORARIOS DESPUÉS DE PRESENTAR ---
+        # --- C) PREGUNTAS TÉCNICAS O HORARIOS ---
         if ultimo and "propiedad_data" in ultimo:
             propiedad = ultimo["propiedad_data"]
 
-            # SI PREGUNTA POR HORARIOS/VISITAS → RESPUESTA FIJA
             if any(pal in message_lower for pal in ["cuando", "cuándo", "horario", "día", "visitar", "verla", "verlo", "agendar", "puedo ver"]):
                 respuesta_fija = "Perfecto. Los horarios dependen 100% de la disponibilidad del dueño.\n\nPara no perder tiempo, ¿me indicas **qué días y horarios te acomodan a ti** esta semana o la próxima? Así el ejecutivo te confirma el bloque exacto en minutos."
                 guardar_mensaje(phone, "assistant", respuesta_fija, {"pregunto_horarios": True})
                 return respuesta_fija
 
-            # CUALQUIER OTRA PREGUNTA → GROK CON FICHA ULTRA REFORZADA
             ficha = formatear_ficha_tecnica(propiedad)
             system_prompt = f"""
 Eres ejecutiva de Procasa.
@@ -193,11 +185,11 @@ TU REGLA DE ORO: Solo hablas de lo que ves en la FICHA TÉCNICA de abajo.
 
 {ficha}
 
-REGLAS ESTRICTAS DE RESPUESTA:
-1. **NO SALUDES** repetitivamente. Ve directo al grano.
-2. **HORARIOS PROHIBIDOS**: Si preguntan "¿Cuándo se puede ver?", responde exactamente: "Los horarios los coordina el dueño según disponibilidad. ¿Qué días/horarios te sirven a ti?"
-3. **DIRECCIÓN**: "Se entrega al confirmar la visita".
-4. **DATOS N/D**: "Lo consulto con el ejecutivo".
+REGLAS ESTRICTAS:
+1. NO SALUDES repetitivamente.
+2. HORARIOS PROHIBIDOS: responde exactamente: "Los horarios los coordina el dueño. ¿Qué días/horarios te sirven a ti?"
+3. DIRECCIÓN: "Se entrega al confirmar la visita".
+4. DATOS N/D: "Lo consulto con el ejecutivo".
 
 Responde corto y preciso.
 """
@@ -206,7 +198,6 @@ Responde corto y preciso.
                 *historial[-10:],
                 {"role": "user", "content": original_message}
             ], "prospecto")
-
             guardar_mensaje(phone, "assistant", respuesta)
             return respuesta
 
@@ -216,14 +207,93 @@ Responde corto y preciso.
         guardar_mensaje(phone, "assistant", respuesta, {"escalado": True, "estado": "visita_pendiente"})
         return respuesta
 
-    # === 8. MODO CONVERSACIONAL (SIN LINK) ===
-    prompt_ayuda = f"""
+    # === 8.5 CAPTURA PROACTIVA DE DATOS (3 ESCENARIOS MÁXIMA CONVERSIÓN) ===
+    if ya_preguntamos_horarios or (quiere_visitar and not ya_preguntamos_financiamiento) or es_respuesta_financiamiento:
+        ya_pedimos_datos = any("nombre completo" in m["content"].lower() or "correo" in m["content"].lower() for m in historial if m["role"] == "assistant")
+        if not ya_pedimos_datos:
+            codigo_interes = None
+            for msg in reversed(historial):
+                if msg.get("codigo_procasa"):
+                    codigo_interes = msg["codigo_procasa"]
+                    break
+            if codigo_interes:
+                respuesta_datos = (
+                    "¡Genial, ya estamos muy cerca de cerrar tu visita!\n\n"
+                    "Para que el ejecutivo te llame con todo listo, me ayudás si me dejás (100% opcional):\n\n"
+                    "• Nombre completo\n"
+                    "• Correo electrónico\n"
+                    "• RUT (solo si lo tenés)\n\n"
+                    f"Así asocio todo al código **{codigo_interes}**. ¡Cuando quieras me lo pasas!"
+                )
+                guardar_mensaje(phone, "assistant", respuesta_datos, {"solicitando_datos_lead": True})
+                return respuesta_datos
+
+    # === 8.7 DETECCIÓN Y GUARDADO DE DATOS + ESTRUCTURA PROFESIONAL EN RAÍZ ===
+    email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', original_message)
+    rut_match = re.search(r'\b(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])\b', original_message)
+    nombre_detectado = None
+    if any(t in message_lower for t in ["me llamo", "mi nombre", "soy ", "nombre es"]):
+        resto = original_message.lower()
+        for t in ["me llamo", "mi nombre es", "mi nombre", "soy", "nombre es"]:
+            if t in resto:
+                resto = resto.split(t, 1)[-1]
+        posible = resto.strip(" .,!:@\n").split("\n")[0].split()
+        if 2 <= len(posible) <= 5:
+            nombre_detectado = " ".join(posible).strip(". ,!").title()
+
+    if email_match or rut_match or nombre_detectado:
+        update_fields = {"datos_capturados": True}
+        if email_match:
+            update_fields["email"] = email_match.group(0).lower()
+        if rut_match:
+            update_fields["rut"] = re.sub(r'\.', '', rut_match.group(1)).upper()
+        if nombre_detectado:
+            update_fields["nombre"] = nombre_detectado
+
+        db = get_db()
+        db[Config.COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            {"$set": update_fields},
+            upsert=False
+        )
+
+        nombre_saludo = update_fields.get("nombre", "").split()[0] if update_fields.get("nombre") else ""
+        respuesta = f"¡Gracias{nombre_saludo and ' ' + nombre_saludo + ' ' or ' '} Ya tengo tus datos! El ejecutivo te llama en minutos con la orden de visita lista."
+        guardar_mensaje(phone, "assistant", respuesta, {"lead_datos_ok": True, "escalado": True})
+        return respuesta
+
+    # === 9. ACTUALIZACIÓN PROFESIONAL DEL DOCUMENTO RAÍZ (LA CLAVE) ===
+    update_root = {"ultima_actividad": datetime.utcnow().isoformat() + "Z"}
+    if ya_presentamos:
+        if ultimo and "propiedad_data" in ultimo:
+            p = ultimo["propiedad_data"]
+            update_root.update({
+                "codigo_actual": p.get("codigo"),
+                "tipo_actual": p.get("tipo"),
+                "comuna_actual": p.get("comuna"),
+                "precio_uf_actual": p.get("precio_uf"),
+                "estado": "visita_pendiente" if ya_preguntamos_horarios else "interesado",
+                "intencion_detectada": "visita" if quiere_visitar else "consulta",
+                "$addToSet": {"codigos_vistos": p.get("codigo")}
+            })
+
+    if update_root:
+        db = get_db()
+        db[Config.COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            {
+                "$set": update_root,
+                "$setOnInsert": {"created_at": datetime.utcnow().isoformat() + "Z"}
+            },
+            upsert=True
+        )
+
+    # === 10. MODO CONVERSACIONAL POR DEFECTO ===
+    prompt_ayuda = """
 Eres asistente Procasa.
 El cliente NO ha enviado link ni código.
 Ayúdalo amablemente, pero explícale que necesitas el **Link** o el **Código (5 dígitos)** para dar detalles.
 No seas robótica. Conversa brevemente sobre lo que busca.
-
-Ejemplo: "Para esa información necesito el código, pero cuéntame qué buscas..."
 """
     respuesta = generar_respuesta([
         {"role": "system", "content": prompt_ayuda},

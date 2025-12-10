@@ -235,36 +235,50 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
+# ========================= FUNCIONES CORREGIDAS =========================
+
 async def send_whatsapp_message(number: str, text: str) -> bool:
-    # Normaliza número (igual que siempre)
+    """
+    Función auxiliar (El Mensajero): Solo se encarga de enviar.
+    Usa la ruta correcta '/send-message' que ya comprobaste que funciona.
+    """
+    if not text:
+        return False
+
+    # 1. Limpieza de número (Mantenemos tu lógica actual)
     clean = "".join(filter(str.isdigit, number))
     if len(clean) == 9 and clean.startswith("9"):
         clean = "569" + clean
     elif len(clean) == 11 and clean.startswith("56"):
-        clean = clean
+        pass # ya está bien
     elif len(clean) == 12 and clean.startswith("569"):
-        clean = clean[1:]
-    elif len(clean) == 11 and clean.startswith("569"):
-        clean = clean
-
-    # USA TU CONFIG.EXACTAMENTE COMO LO TENÍAS
-    url = f"{Config.WASENDER_BASE_URL}/send-message"   # ← ESTO ES LO QUE FUNCIONA
+        clean = clean[1:] # quita el + si está pegado raro
+    # Aseguramos formato internacional sin el + para la API si así lo requiere, 
+    # o con +, depende de tu proveedor, pero tu código original usaba esto:
+    
+    # IMPORTANTE: La ruta correcta según tu configuración y pruebas
+    url = f"{Config.WASENDER_BASE_URL}/send-message"
 
     payload = {"to": clean, "text": text}
+    
+    # Autenticación correcta por Header (Bearer)
     headers = {
         "Authorization": f"Bearer {Config.WASENDER_TOKEN}",
         "Content-Type": "application/json"
     }
 
-    # 1er intento
+    # Intento 1
     try:
         resp = requests.post(url, json=payload, headers=headers, timeout=15)
         if resp.status_code == 200 and resp.json().get("success"):
-            logger.info(f"Enviado a {clean}")
+            logger.info(f"Enviado correctamente a {clean}")
             return True
+        else:
+            logger.warning(f"Fallo envío 1: {resp.text}")
     except Exception as e:
-        logger.error(f"Error envío: {e}")
+        logger.error(f"Excepción envío 1: {e}")
 
+    # Reintento (Intento 2)
     await asyncio.sleep(2)
     try:
         resp = requests.post(url, json=payload, headers=headers, timeout=15)
@@ -272,18 +286,22 @@ async def send_whatsapp_message(number: str, text: str) -> bool:
             logger.info(f"Enviado en reintento a {clean}")
             return True
     except Exception as e:
-        logger.error(f"Reintento falló: {e}")
+        logger.error(f"Excepción reintento: {e}")
 
     return False
+
 
 @app.post("/webhook")
 async def webhook(
     request: Request,
     x_webhook_signature: str = Header(None, alias="X-Webhook-Signature")
 ):
+    """
+    Función principal (El Recepcionista): Recibe, piensa y ordena responder.
+    """
     raw_body = await request.body()
 
-    # === 1. Verificación de firma (WASenderAPI) ===
+    # === 1. Verificación de firma ===
     if Config.WASENDER_WEBHOOK_SECRET:
         expected = hmac.new(
             Config.WASENDER_WEBHOOK_SECRET.encode("utf-8"),
@@ -300,21 +318,19 @@ async def webhook(
         logger.error(f"JSON inválido: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    logger.info(f"[WEBHOOK] Payload completo: {data}")
-
-    # === 2. Test del webhook (WASenderAPI lo manda al activar) ===
+    # === 2. Test del webhook ===
     if data.get("event") == "webhook.test":
         logger.info("TEST WEBHOOK EXITOSO")
         return JSONResponse({"ok": True}, status_code=200)
 
-    # === 3. Extraer teléfono y mensaje (compatible con WASenderAPI) ===
+    # === 3. Extraer datos ===
     messages_data = data.get("data", {}).get("messages", {}) or {}
     if not messages_data:
         return JSONResponse({"status": "no messages"}, status_code=200)
 
-    # WASenderAPI manda el mensaje como objeto o como string
     msg_obj = messages_data if isinstance(messages_data, dict) else messages_data[0]
 
+    # Extraer teléfono
     phone = (
         msg_obj.get("key", {}).get("cleanedSenderPn") or
         msg_obj.get("key", {}).get("senderPn", "").split("@")[0] or
@@ -322,6 +338,7 @@ async def webhook(
         ""
     ).strip()
 
+    # Extraer texto
     text = (
         msg_obj.get("messageBody") or
         msg_obj.get("message", {}).get("conversation") or
@@ -330,39 +347,31 @@ async def webhook(
     ).strip()
 
     if not phone or not text:
-        logger.info("Mensaje vacío o sin teléfono → ignorado")
         return JSONResponse({"status": "ignored"}, status_code=200)
 
-    # === 4. Normalizar teléfono (formato +569XXXXXXXX) ===
+    # === 4. Normalizar teléfono para el sistema interno (+569...) ===
     phone = phone.replace("@c.us", "").replace("@s.whatsapp.net", "")
     if phone.startswith("56") and len(phone) == 11:
-        phone = "+56" + phone[2:]
-    elif phone.startswith("56"):
         phone = "+" + phone
     elif not phone.startswith("+"):
         phone = "+56" + phone.lstrip("0")
 
     logger.info(f"[WHATSAPP] Mensaje de {phone}: {text}")
 
-    # === 5. LA CLAVE: LLAMAR AL CHATBOT REAL (igual que test_consola.py) ===
+    # === 5. PROCESAR CON EL CHATBOT ===
     from chatbot import process_user_message
     respuesta = process_user_message(phone, text)
 
     logger.info(f"[WHATSAPP] Respuesta generada: {respuesta}")
 
-    # === 6. Enviar respuesta por WASenderAPI ===
-    try:
-        send_url = f"{Config.WASENDER_BASE_URL}/send"
-        payload = {
-            "token": Config.WASENDER_TOKEN,
-            "to": phone,           # número con +
-            "message": respuesta
-        }
-        response = requests.post(send_url, json=payload, timeout=15)
-        if response.status_code != 200:
-            logger.error(f"Error enviando mensaje: {response.text}")
-    except Exception as e:
-        logger.error(f"Error al enviar respuesta por WASenderAPI: {e}")
+    # === 6. ENVIAR RESPUESTA (CORREGIDO) ===
+    # Aquí es donde fallaba antes. Ahora reutilizamos la función correcta.
+    if respuesta:
+        try:
+            # Llamamos a la función de arriba que SÍ sabe cómo enviar
+            await send_whatsapp_message(phone, respuesta)
+        except Exception as e:
+            logger.error(f"Error crítico llamando a send_whatsapp_message: {e}")
 
     return JSONResponse({"ok": True}, status_code=200)
 

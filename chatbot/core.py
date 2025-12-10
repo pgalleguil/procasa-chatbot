@@ -95,29 +95,57 @@ def process_user_message(phone: str, message: str) -> str:
         "estacionamiento", "bodega", "baños", "dormitorios", "qué", "que", "requisitos", "piscina", "quincho"
     ]) and "?" in original_message and not esta_preguntando_horario_visita
 
-    # === 4. BUSCAR PROPIEDAD (LINK O CÓDIGO) ===
+# === 4. BUSCAR PROPIEDAD (LINK O CÓDIGO) ===
     propiedad = None
+    source = ""
+
     if not ya_presentamos:
-        # A) Link
-        es_link, temp, _ = analizar_mensaje_para_link(original_message)
-        if es_link and temp:
-            propiedad = temp
-        
-        # B) Código 5 dígitos
+        # A) Link de MercadoLibre / cualquier portal
+        es_link, temp_prop, fuente = analizar_mensaje_para_link(original_message)
+        if es_link and temp_prop:
+            propiedad = temp_prop
+            source = fuente
+
+        # B) CÓDIGO PROCASA 4-6 DÍGITOS → BÚSQUEDA DIRECTA EN CAMPO "codigo"
         if not propiedad:
-            codigo_detectado = re.search(r"\b(\d{4,6})\b", original_message)
-            if codigo_detectado:
-                codigo_str = codigo_detectado.group(1)
-                # Simulamos la búsqueda
-                _, temp_code, _ = analizar_mensaje_para_link(f"codigo {codigo_str}") 
-                if temp_code:
-                    propiedad = temp_code
+            codigo_match = re.search(r"\b(\d{4,6})\b", original_message)
+            if codigo_match:
+                codigo_str = codigo_match.group(1)
+                logger.info(f"[CÓDIGO PROCASA] Detectado código interno: {codigo_str}")
+
+                db = get_db()
+                coleccion = db[Config.COLLECTION_NAME]
+
+                propiedad = coleccion.find_one({
+                    "$or": [
+                        {"codigo": codigo_str},
+                        {"codigo": int(codigo_str)}
+                    ]
+                })
+
+                if propiedad:
+                    logger.info(f"[ÉXITO] Propiedad encontrada por código Procasa {codigo_str}")
+                    source = f"Código Procasa {codigo_str}"
+                else:
+                    logger.warning(f"[FALLO] Código Procasa {codigo_str} NO encontrado")
+
+    # === AQUÍ VA EL BLOQUE ANTI-ALUCINACIÓN (PEGA EXACTAMENTE ACÁ) ===
+    if (es_link or (codigo_match if 'codigo_match' in locals() else False)) and not propiedad:
+        respuesta = (
+            "Gracias por enviarme la referencia.\n\n"
+            "Estoy revisando el sistema y parece que esta propiedad aún no está cargada completamente o el código/link corresponde a otro portal.\n\n"
+            "Para darte información 100% precisa, ¿podrías confirmarme el código Procasa de 5-6 dígitos o reenviarme el enlace exacto?\n\n"
+            "Mientras tanto, cuéntame qué tipo de propiedad buscas (compra/arriendo, comuna, dormitorios, presupuesto) y te ayudo a encontrar opciones similares disponibles."
+        )
+        guardar_mensaje(phone, "assistant", respuesta)
+        return respuesta
+    # === FIN DEL BLOQUE ANTI-ALUCINACIÓN ===
 
     # === 5. PRIMERA PRESENTACIÓN ===
     if propiedad and not ya_presentamos:
         ficha = formatear_ficha_tecnica(propiedad)
         prompt = f"""
-Eres ejecutiva Procasa.
+Eres asesora inmobiliaria de Procasa.
 PROHIBIDO USAR "HOLA" SI NO ES NECESARIO.
 NUNCA DES DIRECCIÓN EXACTA.
 
@@ -166,7 +194,7 @@ Instrucciones:
             ficha = formatear_ficha_tecnica(propiedad)
 
             system_prompt = f"""
-Eres ejecutiva de Procasa.
+Eres asesora inmobiliaria de Procasa.
 TU REGLA DE ORO: Solo hablas de lo que ves en la FICHA TÉCNICA de abajo.
 
 {ficha}
@@ -196,9 +224,9 @@ Responde corto y preciso.
 
     # === 8. MODO CONVERSACIONAL (SIN LINK) ===
     prompt_ayuda = f"""
-Eres asistente Procasa.
+Eres asistente inmobiliaria de Procasa.
 El cliente NO ha enviado link ni código.
-Ayúdalo amablemente, pero explícale que necesitas el **Link** o el **Código (5 dígitos)** para dar detalles.
+Ayúdalo amablemente, pero explícale que necesitas el **enlace** o el **Código (5 dígitos)** que se encuentra al inicio de la descripción de la publicación para dar detalles.
 No seas robótica. Conversa brevemente sobre lo que busca.
 
 Ejemplo: "Para esa información necesito el código, pero cuéntame qué buscas..."

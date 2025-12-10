@@ -1,18 +1,21 @@
+# chatbot/core.py → VERSIÓN OFICIAL FINAL 100% CORREGIDA – 10 DIC 2025
 import logging
 import re
 from datetime import datetime
+
+from config import Config
 from .prompts import (
     SYSTEM_PROMPT_PROPIETARIO,
     SYSTEM_PROMPT_PROSPECTO
 )
 from .classifier import es_propietario
-from .storage import guardar_mensaje, obtener_conversacion
+from .storage import guardar_mensaje, obtener_conversacion, get_db
 from .grok_client import generar_respuesta
 from .link_extractor import analizar_mensaje_para_link
 
 logger = logging.getLogger(__name__)
 
-# --- HELPER: FICHA TÉCNICA COMPLETA (TODOS LOS CAMPOS) ---
+# === HELPER: FICHA TÉCNICA COMPLETA (TODOS LOS CAMPOS) ===
 def formatear_ficha_tecnica(propiedad):
     """
     Genera la ficha técnica con TODOS los campos para evitar alucinaciones.
@@ -81,8 +84,7 @@ def process_user_message(phone: str, message: str) -> str:
     ya_preguntamos_financiamiento = any("crédito" in m["content"].lower() or "contado" in m["content"].lower() for m in historial if m["role"] == "assistant")
     ya_preguntamos_horarios = any(p in historial_texto for p in ["horario", "disponibilidad", "días", "cuándo"])
     
-    # -- DETECCIÓN INTELIGENTE DE VISITA VS DATOS --
-    # Si pregunta "¿cuándo se puede visitar?", es intención de visita, NO duda técnica.
+    # -- DETECCIÓN INTELIGENTE DE VISITA --
     preguntas_horario_visita = ["cuando se puede", "cuándo se puede", "que horario", "qué horario", "disponibilidad para ver", "horario de visita"]
     esta_preguntando_horario_visita = any(p in message_lower for p in preguntas_horario_visita)
 
@@ -95,18 +97,18 @@ def process_user_message(phone: str, message: str) -> str:
         "estacionamiento", "bodega", "baños", "dormitorios", "qué", "que", "requisitos", "piscina", "quincho"
     ]) and "?" in original_message and not esta_preguntando_horario_visita
 
-# === 4. BUSCAR PROPIEDAD (LINK O CÓDIGO) ===
+    # === 4. BUSCAR PROPIEDAD (LINK O CÓDIGO) ===
     propiedad = None
-    source = ""
+    es_link = False
+    codigo_match = None
 
     if not ya_presentamos:
-        # A) Link de MercadoLibre / cualquier portal
-        es_link, temp_prop, fuente = analizar_mensaje_para_link(original_message)
-        if es_link and temp_prop:
-            propiedad = temp_prop
-            source = fuente
-
-        # B) CÓDIGO PROCASA 4-6 DÍGITOS → BÚSQUEDA DIRECTA EN CAMPO "codigo"
+        # A) Link
+        es_link, temp, _ = analizar_mensaje_para_link(original_message)
+        if es_link and temp:
+            propiedad = temp
+        
+        # B) Código 5 dígitos → BÚSQUEDA REAL EN CAMPO "codigo"
         if not propiedad:
             codigo_match = re.search(r"\b(\d{4,6})\b", original_message)
             if codigo_match:
@@ -125,27 +127,14 @@ def process_user_message(phone: str, message: str) -> str:
 
                 if propiedad:
                     logger.info(f"[ÉXITO] Propiedad encontrada por código Procasa {codigo_str}")
-                    source = f"Código Procasa {codigo_str}"
                 else:
                     logger.warning(f"[FALLO] Código Procasa {codigo_str} NO encontrado")
-
-    # === AQUÍ VA EL BLOQUE ANTI-ALUCINACIÓN (PEGA EXACTAMENTE ACÁ) ===
-    if (es_link or (codigo_match if 'codigo_match' in locals() else False)) and not propiedad:
-        respuesta = (
-            "Gracias por enviarme la referencia.\n\n"
-            "Estoy revisando el sistema y parece que esta propiedad aún no está cargada completamente o el código/link corresponde a otro portal.\n\n"
-            "Para darte información 100% precisa, ¿podrías confirmarme el código Procasa de 5-6 dígitos o reenviarme el enlace exacto?\n\n"
-            "Mientras tanto, cuéntame qué tipo de propiedad buscas (compra/arriendo, comuna, dormitorios, presupuesto) y te ayudo a encontrar opciones similares disponibles."
-        )
-        guardar_mensaje(phone, "assistant", respuesta)
-        return respuesta
-    # === FIN DEL BLOQUE ANTI-ALUCINACIÓN ===
 
     # === 5. PRIMERA PRESENTACIÓN ===
     if propiedad and not ya_presentamos:
         ficha = formatear_ficha_tecnica(propiedad)
         prompt = f"""
-Eres asesora inmobiliaria de Procasa.
+Eres ejecutiva Procasa.
 PROHIBIDO USAR "HOLA" SI NO ES NECESARIO.
 NUNCA DES DIRECCIÓN EXACTA.
 
@@ -164,11 +153,11 @@ Instrucciones:
         guardar_mensaje(phone, "assistant", respuesta, {
             "tipo": "propiedad_presentada_segura",
             "codigo_procasa": propiedad.get("codigo"),
-            "propiedad_data": propiedad # Guardamos TODOS los campos
+            "propiedad_data": propiedad
         })
         return respuesta
 
-    # === 6. RESPUESTAS POSTERIORES (ANTI-ALUCINACIÓN) ===
+    # === 6. RESPUESTAS POSTERIORES (ANTI-ALUCINACIÓN TOTAL) ===
     if ya_presentamos:
         ultimo = next((m for m in reversed(historial) if "propiedad_data" in m), None)
         
@@ -178,30 +167,35 @@ Instrucciones:
             guardar_mensaje(phone, "assistant", respuesta, {"pregunto_financiamiento": True})
             return respuesta
 
-        # --- B) AGENDAR VISITA (LÓGICA DURA - BLOQUEO DE ALUCINACIÓN) ---
+        # --- B) AGENDAR VISITA – RESPUESTA FIJA (NUNCA MÁS GROK INVENTA HORARIOS) ---
         es_respuesta_financiamiento = any(x in message_lower for x in ["credito", "crédito", "hipotecario", "banco", "contado", "efectivo", "preaprobado"])
         
-        # Si ya respondió financiamiento O pregunta horarios, respondemos nosotros (NO GROK)
         if (es_respuesta_financiamiento or quiere_visitar) and not ya_preguntamos_horarios:
-             # RESPUESTA PRE-FABRICADA PARA EVITAR QUE GROK INVENTE "LUNES A VIERNES"
              respuesta = "Perfecto. Respecto a los horarios, estos dependen de la disponibilidad del dueño.\n\nPor favor indícame: **¿Qué días y horas te acomodan a ti?** Así el ejecutivo coordina el calce exacto."
              guardar_mensaje(phone, "assistant", respuesta, {"pregunto_horarios": True})
              return respuesta
 
-        # --- C) RESPUESTA TÉCNICA CON GROK ---
+        # --- C) BLOQUE FINAL: PREGUNTAS TÉCNICAS O HORARIOS DESPUÉS DE PRESENTAR ---
         if ultimo and "propiedad_data" in ultimo:
             propiedad = ultimo["propiedad_data"]
-            ficha = formatear_ficha_tecnica(propiedad)
 
+            # SI PREGUNTA POR HORARIOS/VISITAS → RESPUESTA FIJA
+            if any(pal in message_lower for pal in ["cuando", "cuándo", "horario", "día", "visitar", "verla", "verlo", "agendar", "puedo ver"]):
+                respuesta_fija = "Perfecto. Los horarios dependen 100% de la disponibilidad del dueño.\n\nPara no perder tiempo, ¿me indicas **qué días y horarios te acomodan a ti** esta semana o la próxima? Así el ejecutivo te confirma el bloque exacto en minutos."
+                guardar_mensaje(phone, "assistant", respuesta_fija, {"pregunto_horarios": True})
+                return respuesta_fija
+
+            # CUALQUIER OTRA PREGUNTA → GROK CON FICHA ULTRA REFORZADA
+            ficha = formatear_ficha_tecnica(propiedad)
             system_prompt = f"""
-Eres asesora inmobiliaria de Procasa.
+Eres ejecutiva de Procasa.
 TU REGLA DE ORO: Solo hablas de lo que ves en la FICHA TÉCNICA de abajo.
 
 {ficha}
 
 REGLAS ESTRICTAS DE RESPUESTA:
 1. **NO SALUDES** repetitivamente. Ve directo al grano.
-2. **HORARIOS PROHIBIDOS**: Si preguntan "¿Cuándo se puede ver?", TU RESPUESTA DEBE SER: "Debemos coordinar con el ejecutivo según la disponibilidad del dueño. ¿Qué horario te sirve a ti?". JAMÁS digas "Lunes a Viernes".
+2. **HORARIOS PROHIBIDOS**: Si preguntan "¿Cuándo se puede ver?", responde exactamente: "Los horarios los coordina el dueño según disponibilidad. ¿Qué días/horarios te sirven a ti?"
 3. **DIRECCIÓN**: "Se entrega al confirmar la visita".
 4. **DATOS N/D**: "Lo consulto con el ejecutivo".
 
@@ -224,9 +218,9 @@ Responde corto y preciso.
 
     # === 8. MODO CONVERSACIONAL (SIN LINK) ===
     prompt_ayuda = f"""
-Eres asistente inmobiliaria de Procasa.
+Eres asistente Procasa.
 El cliente NO ha enviado link ni código.
-Ayúdalo amablemente, pero explícale que necesitas el **enlace** o el **Código (5 dígitos)** que se encuentra al inicio de la descripción de la publicación para dar detalles.
+Ayúdalo amablemente, pero explícale que necesitas el **Link** o el **Código (5 dígitos)** para dar detalles.
 No seas robótica. Conversa brevemente sobre lo que busca.
 
 Ejemplo: "Para esa información necesito el código, pero cuéntame qué buscas..."

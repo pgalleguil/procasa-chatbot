@@ -207,7 +207,10 @@ Responde corto y preciso.
         guardar_mensaje(phone, "assistant", respuesta, {"escalado": True, "estado": "visita_pendiente"})
         return respuesta
 
-    # === 8.5 CAPTURA PROACTIVA DE DATOS (3 ESCENARIOS MÁXIMA CONVERSIÓN) ===
+    # === 8.5 CAPTURA PROACTIVA DE DATOS (3 ESCENARIOS MÁXIMA CONVERSIÓN) - CORREGIDO ===
+    # Definimos la variable ANTES de usarla
+    es_respuesta_financiamiento = any(x in message_lower for x in ["credito", "crédito", "hipotecario", "banco", "contado", "efectivo", "preaprobado"])
+
     if ya_preguntamos_horarios or (quiere_visitar and not ya_preguntamos_financiamiento) or es_respuesta_financiamiento:
         ya_pedimos_datos = any("nombre completo" in m["content"].lower() or "correo" in m["content"].lower() for m in historial if m["role"] == "assistant")
         if not ya_pedimos_datos:
@@ -222,7 +225,7 @@ Responde corto y preciso.
                     "Para que el ejecutivo te llame con todo listo, me ayudás si me dejás (100% opcional):\n\n"
                     "• Nombre completo\n"
                     "• Correo electrónico\n"
-                    "• RUT (solo si lo tenés)\n\n"
+                    "• RUT (si lo tenés)\n\n"
                     f"Así asocio todo al código **{codigo_interes}**. ¡Cuando quieras me lo pasas!"
                 )
                 guardar_mensaje(phone, "assistant", respuesta_datos, {"solicitando_datos_lead": True})

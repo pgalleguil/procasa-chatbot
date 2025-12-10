@@ -9,6 +9,7 @@ class Config:
     XAI_API_KEY = os.getenv("XAI_API_KEY")
     MONGO_URI = os.getenv("MONGO_URI")
     DB_NAME = os.getenv("DB_NAME", "URLS")
+    
 
     # === WASENDERAPI.COM (WhatsApp) ===
     WASENDER_TOKEN = os.getenv("WASENDER_TOKEN")
@@ -53,6 +54,7 @@ class Config:
     # === Chatbot / colección ===
     HISTORIAL_MAX = 8
     COLLECTION_NAME = "universo_obelix"
+    COLLECTION_CONVERSATIONS = "conversaciones_whatsapp"
 
     # === Logs y claves ===
     LOG_LEVEL = "INFO"

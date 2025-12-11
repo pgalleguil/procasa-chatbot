@@ -60,3 +60,54 @@ def establecer_nombre_usuario(phone: str, nombre: str):
         {"$set": {"user_name": nombre.strip().title()}},
         upsert=True
     )
+
+def actualizar_datos_prospecto(phone: str, datos: dict):
+    """
+    Actualiza campos estructurados del prospecto de forma incremental.
+    datos: dict con claves como rut, nombre, email, codigo_procasa, portal_origen, etc.
+    """
+    if not datos:
+        return
+    db = get_db()
+    update_fields = {}
+    for key, value in datos.items():
+        if value not in [None, "", "desconocido"]:
+            update_fields[f"prospecto.{key}"] = str(value).strip()
+    
+    if update_fields:
+        db[COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            {"$set": update_fields},
+            upsert=True
+        )
+
+def obtener_datos_prospecto(phone: str) -> dict:
+    """Devuelve los datos estructurados del prospecto"""
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone})
+    return doc.get("prospecto", {}) if doc else {}
+
+
+###################################
+
+def actualizar_prospecto(phone: str, datos: dict):
+    """Almacena datos estructurados del prospecto FUERA de messages para análisis fáciles"""
+    if not datos:
+        return
+    db = get_db()
+    update_fields = {"$set": {}}
+    for key, value in datos.items():
+        if value:
+            update_fields["$set"][f"prospecto.{key}"] = str(value).strip()
+    
+    if update_fields["$set"]:
+        db[COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            update_fields,
+            upsert=True
+        )
+
+def obtener_prospecto(phone: str) -> dict:
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone})
+    return doc.get("prospecto", {}) if doc else {}

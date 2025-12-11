@@ -1,306 +1,247 @@
-# chatbot/core.py → VERSIÓN OFICIAL FINAL PROFESIONAL – 10 DIC 2025
+# chatbot/core.py → VERSIÓN ANALYTICS + FLUJO NATURAL
 import logging
 import re
 from datetime import datetime
 
 from config import Config
-from .prompts import (
-    SYSTEM_PROMPT_PROPIETARIO,
-    SYSTEM_PROMPT_PROSPECTO
-)
+from .prompts import SYSTEM_PROMPT_PROSPECTO
 from .classifier import es_propietario
-from .storage import guardar_mensaje, obtener_conversacion, get_db
+from .storage import (
+    guardar_mensaje, 
+    obtener_conversacion, 
+    get_db, 
+    actualizar_prospecto, 
+    obtener_prospecto,
+    establecer_nombre_usuario
+)
 from .grok_client import generar_respuesta
 from .link_extractor import analizar_mensaje_para_link
+from .utils import extraer_rut, extraer_email, extraer_nombre_posible
 
 logger = logging.getLogger(__name__)
 
-# === HELPER: FICHA TÉCNICA COMPLETA (TODOS LOS CAMPOS) ===
+# === FICHA SEGURA (Sin alucinaciones) ===
 def formatear_ficha_tecnica(propiedad):
     """
-    Genera la ficha técnica con TODOS los campos para evitar alucinaciones.
+    Ficha técnica OFICIAL. 
+    NOTA: Si un dato no está aquí, el modelo NO debe inventarlo.
     """
     return f"""
-=== FICHA TÉCNICA OFICIAL (SOLO USA ESTOS DATOS) ===
-Código Procasa: {propiedad.get('codigo', 'N/D')}
-Tipo: {propiedad.get('tipo', 'Departamento').title()}
-Operación: {propiedad.get('operacion', 'Venta').title()}
-Comuna: {propiedad.get('comuna', 'Santiago').title()}
-Precio: {propiedad.get('precio_uf', 'N/D')} UF | ${int(propiedad.get('precio_clp', 0)):,}
-Metros útiles: {propiedad.get('m2_utiles', 'N/D')} m²
-Metros totales: {propiedad.get('m2_totales', 'N/D')} m²
-Terraza: {propiedad.get('m2_terraza', '0')} m²
-Dormitorios: {propiedad.get('dormitorios', 'N/D')}
-Baños: {propiedad.get('banos', 'N/D')}
-Estacionamientos: {propiedad.get('estacionamientos', '0')}
-Bodega: {'Sí' if str(propiedad.get('bodega','')).lower() in ['sí','si','1'] else 'No'}
-Gastos comunes: ${int(propiedad.get('gastos_comunes', 0)):,}
-Orientación: {propiedad.get('orientacion', 'No especificada')}
-Calefacción: {propiedad.get('calefaccion', 'No especificada')}
-Piscina: {propiedad.get('piscina', 'No')}
-Quincho: {'Sí' if str(propiedad.get('quincho','')).lower() in ['sí','si','1'] else 'No'}
-Jardín: {'Sí' if str(propiedad.get('jardin','')).lower() in ['sí','si'] else 'No'}
-Gimnasio: {'Sí' if str(propiedad.get('gimnasio','')).lower() in ['sí','si','1'] else 'No'}
-Lavandería: {'Sí' if str(propiedad.get('lavanderia_edificio','')).lower() in ['sí','si','1'] else 'No'}
-Sala multiuso: {'Sí' if str(propiedad.get('sala_multiuso','')).lower() in ['sí','si','1'] else 'No'}
-Mascotas permitidas: {'Sí' if str(propiedad.get('adecuado_mascotas','')).lower() in ['si','sí'] else 'No'}
-Seguridad: {propiedad.get('seguridad', 'No especificada')}
-Ubicación Referencial: {propiedad.get('nombre_calle', '')} (NO DAR NÚMERO EXACTO)
-Amenities: {propiedad.get('amenities_text', 'muy bien conectado')[:200]}...
-Descripción: {propiedad.get('descripcion_clean', '')[:300]}...
-"""
+    === FICHA TÉCNICA (CÓDIGO {propiedad.get('codigo')}) ===
+    Operación: {propiedad.get('operacion', 'Venta')}
+    Tipo: {propiedad.get('tipo', 'Propiedad')}
+    Comuna: {propiedad.get('comuna', '')}
+    Precio: {propiedad.get('precio_uf', 'N/D')} UF
+    Gastos Comunes: ${int(propiedad.get('gastos_comunes', 0)):,} (aprox)
+    
+    Dormitorios: {propiedad.get('dormitorios', 'N/D')}
+    Baños: {propiedad.get('banos', 'N/D')}
+    M2 Útiles: {propiedad.get('m2_utiles', 'N/D')}
+    Terraza: {propiedad.get('m2_terraza', '0')} m²
+    Estacionamiento: {propiedad.get('estacionamientos', '0')}
+    Bodega: {'Sí' if str(propiedad.get('bodega','')).lower() in ['sí','si','1'] else 'No'}
+    
+    Orientación: {propiedad.get('orientacion', 'No indicada')}
+    Descripción: {propiedad.get('descripcion_clean', '')[:400]}...
+    
+    UBICACIÓN REFERENCIAL: Sector {propiedad.get('calle', '')}, {propiedad.get('comuna')}.
+    (La dirección exacta se entrega SOLO en la Orden de Visita).
+    """
+
+def detectar_intencion(mensaje: str) -> str:
+    m = mensaje.lower()
+    if any(x in m for x in ["visita", "verla", "verlo", "agendar", "ir a ver", "conocer"]):
+        return "agendar_visita"
+    if any(x in m for x in ["precio", "valor", "cuanto vale", "uf", "gastos", "comunes"]):
+        return "consulta_precio"
+    if any(x in m for x in ["ubicacion", "direccion", "donde", "calle", "sector"]):
+        return "consulta_ubicacion"
+    if any(x in m for x in ["requisitos", "papeles", "documentos", "credito", "pie"]):
+        return "consulta_financiera"
+    return "consulta_general"
 
 def process_user_message(phone: str, message: str) -> str:
     original_message = message
     message_lower = message.strip().lower()
 
+    # 1. Guardar mensaje usuario
     guardar_mensaje(phone, "user", original_message)
 
-    # === 1. BOTÓN DE PÁNICO ===
-    palabras_alarma = ["hablar con persona", "ejecutivo real", "humano", "reclamo", "estafa", "mentira", "gerente"]
+    # === 2. ESCALADO DE URGENCIA ===
+    palabras_alarma = ["hablar con persona", "ejecutivo real", "humano", "reclamo", "estafa", "gerente"]
     if any(p in message_lower for p in palabras_alarma):
-        respuesta = "Entiendo perfectamente. He marcado esta conversación como prioritaria para que un ejecutivo humano te llame personalmente a la brevedad posible."
+        respuesta = "Entiendo. He notificado a un supervisor. Un ejecutivo humano te contactará a la brevedad."
         guardar_mensaje(phone, "assistant", respuesta, {"escalado_urgente": True})
         return respuesta
 
-    # === 2. FLUJO PROPIETARIO ===
+    # === 3. FLUJO PROPIETARIO ===
     es_prop, _ = es_propietario(phone)
     if es_prop:
         respuesta = generar_respuesta([
-            {"role": "system", "content": "Eres asistente premium de Procasa. Habla directo y claro."},
-            *obtener_conversacion(phone)[-30:],
+            {"role": "system", "content": "Eres asistente Procasa para propietarios. Sé breve y directo."},
+            *obtener_conversacion(phone)[-8:],
             {"role": "user", "content": original_message}
         ], "propietario")
         guardar_mensaje(phone, "assistant", respuesta)
         return respuesta
 
-    # === 3. ANÁLISIS DE CONTEXTO ===
+    # === 4. PROCESAMIENTO INTELIGENTE PROSPECTO ===
+    prospecto_actual = obtener_prospecto(phone)
     historial = obtener_conversacion(phone)
-    historial_texto = " ".join(m["content"].lower() for m in historial)
     
-    ya_presentamos = any("procasa" in m["content"].lower() and ("uf" in m["content"].lower() or "dorm" in m["content"].lower())
-                         for m in historial if m["role"] == "assistant")
-    
-    ya_preguntamos_financiamiento = any("crédito" in m["content"].lower() or "contado" in m["content"].lower() for m in historial if m["role"] == "assistant")
-    ya_preguntamos_horarios = any(p in historial_texto for p in ["horario", "disponibilidad", "días", "cuándo"])
-    
-    # -- DETECCIÓN INTELIGENTE DE VISITA --
-    preguntas_horario_visita = ["cuando se puede", "cuándo se puede", "que horario", "qué horario", "disponibilidad para ver", "horario de visita"]
-    esta_preguntando_horario_visita = any(p in message_lower for p in preguntas_horario_visita)
-
-    palabras_visita = ["visita", "verla", "interesa", "agendar", "quiero ver", "me interesa"]
-    quiere_visitar = any(p in message_lower for p in palabras_visita) or esta_preguntando_horario_visita
-
-    # === 4. BUSCAR PROPIEDAD (LINK O CÓDIGO) ===
+    # A) Detectar Origen (Link) y Código
     propiedad = None
-    es_link = False
-    codigo_match = None
+    es_link, temp_prop, origen_str = analizar_mensaje_para_link(original_message)
+    
+    nuevo_origen = None
+    codigo_detectado = None
 
-    if not ya_presentamos:
-        # A) Link
-        es_link, temp, _ = analizar_mensaje_para_link(original_message)
-        if es_link and temp:
-            propiedad = temp
-        
-        # B) Código Procasa
-        if not propiedad:
-            codigo_match = re.search(r"\b(\d{4,6})\b", original_message)
-            if codigo_match:
-                codigo_str = codigo_match.group(1)
-                logger.info(f"[CÓDIGO PROCASA] Detectado: {codigo_str}")
+    if es_link and temp_prop:
+        propiedad = temp_prop
+        nuevo_origen = origen_str
+        codigo_detectado = str(propiedad.get("codigo"))
+    
+    # B) Si no es link, buscar código explícito en texto
+    if not propiedad:
+        match_cod = re.search(r"\b(\d{4,6})\b", original_message)
+        if match_cod:
+            cod_str = match_cod.group(1)
+            propiedad = get_db()[Config.COLLECTION_NAME].find_one({
+                "$or": [{"codigo": cod_str}, {"codigo": int(cod_str)}]
+            })
+            if propiedad:
+                codigo_detectado = str(propiedad.get("codigo"))
+                if not prospecto_actual.get("origen"):
+                    nuevo_origen = "Chat/Codigo_Directo"
 
-                db = get_db()
-                coleccion = db[Config.COLLECTION_NAME]
+    # C) Actualizar Analytics en Mongo (Prospecto)
+    updates = {
+        "ultimo_mensaje": datetime.utcnow().isoformat(),
+        "intencion_actual": detectar_intencion(original_message)
+    }
+    
+    if codigo_detectado:
+        updates["codigo_procasa"] = codigo_detectado
+        # Datos estáticos solo para snapshot
+        if propiedad:
+            updates["snapshot_precio"] = propiedad.get("precio_uf")
+            updates["snapshot_comuna"] = propiedad.get("comuna")
+            updates["snapshot_tipo"] = propiedad.get("tipo")
 
-                propiedad = coleccion.find_one({
-                    "$or": [
-                        {"codigo": codigo_str},
-                        {"codigo": int(codigo_str)}
-                    ]
-                })
+    if nuevo_origen:
+        updates["origen"] = nuevo_origen # Ej: "MercadoLibre MLC..."
 
-                if propiedad:
-                    logger.info(f"[ÉXITO] Propiedad encontrada por código Procasa {codigo_str}")
-                else:
-                    logger.warning(f"[FALLO] Código Procasa {codigo_str} NO encontrado")
+    # D) Extracción de Datos Personales (Siempre activa y silenciosa)
+    rut = extraer_rut(original_message)
+    email = extraer_email(original_message)
+    nombre = extraer_nombre_posible(original_message)
 
-    # === 5. PRIMERA PRESENTACIÓN ===
-    if propiedad and not ya_presentamos:
+    if rut: updates["rut"] = rut
+    if email: updates["email"] = email
+    if nombre: 
+        updates["nombre"] = nombre
+        establecer_nombre_usuario(phone, nombre)
+
+    actualizar_prospecto(phone, updates)
+    
+    # Recargar prospecto actualizado
+    prospecto_actual = obtener_prospecto(phone)
+    
+    # Estado del lead
+    tiene_datos_clave = bool(prospecto_actual.get("rut") or prospecto_actual.get("email"))
+    estado_lead = "caliente" if tiene_datos_clave else "tibio"
+    actualizar_prospecto(phone, {"estado": estado_lead})
+
+    # === 5. GENERACIÓN DE RESPUESTA ===
+
+    # CASO A: PRIMERA DETECCIÓN DE PROPIEDAD
+    if propiedad and not any("presentacion_propiedad" in m.get("metadata", {}).get("tipo", "") for m in historial[-5:]):
         ficha = formatear_ficha_tecnica(propiedad)
         prompt = f"""
-Eres ejecutiva Procasa.
-PROHIBIDO USAR "HOLA" SI NO ES NECESARIO.
-NUNCA DES DIRECCIÓN EXACTA.
+        Eres ejecutiva de Procasa. Tono cercano pero profesional.
+        Acabas de encontrar la ficha del código {propiedad.get('codigo')}.
 
-{ficha}
+        DATOS:
+        {ficha}
 
-Instrucciones:
-1. Confirma: "Tengo la ficha del código {propiedad.get('codigo')}: {propiedad.get('tipo')} en {propiedad.get('comuna')}."
-2. Menciona 2 cosas clave.
-3. Pregunta: "¿Te gustaría coordinar una visita?"
-"""
-        respuesta = generar_respuesta([
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": "Presenta la propiedad"}
-        ], "prospecto")
-
-        guardar_mensaje(phone, "assistant", respuesta, {
-            "tipo": "propiedad_presentada_segura",
-            "codigo_procasa": propiedad.get("codigo"),
-            "propiedad_data": propiedad
-        })
+        TU OBJETIVO:
+        1. Confirma que la encontraste: "{propiedad.get('tipo')} en {propiedad.get('comuna')}."
+        2. Menciona el precio y 1 característica destacada.
+        3. Pregunta abierta: "¿Te gustaría coordinar una visita o tienes alguna duda?"
+        """
+        respuesta = generar_respuesta([{"role": "system", "content": prompt}], "prospecto")
+        guardar_mensaje(phone, "assistant", respuesta, {"tipo": "presentacion_propiedad"})
         return respuesta
 
-    # === 6. RESPUESTAS POSTERIORES (ANTI-ALUCINACIÓN TOTAL) ===
-    if ya_presentamos:
-        ultimo = next((m for m in reversed(historial) if "propiedad_data" in m), None)
+    # CASO B: CLIENTE QUIERE VISITAR (INTENCIÓN DE VISITA)
+    if updates["intencion_actual"] == "agendar_visita":
+        # ¿Tenemos datos de contacto?
+        faltantes = []
+        if not prospecto_actual.get("nombre"): faltantes.append("nombre")
+        if not prospecto_actual.get("rut"): faltantes.append("RUT")
+        if not prospecto_actual.get("email"): faltantes.append("email")
+
+        system_prompt = f"""
+        El cliente quiere visitar la propiedad.
+        TU OBJETIVO: Conseguir sus datos para ESCALAR a un humano.
+        NO intentes agendar fecha y hora exacta. Eso lo hace el humano.
+
+        Instrucciones:
+        1. Dile que es una excelente opción.
+        2. Explica: "Un ejecutivo especialista te contactará para coordinar la visita."
+        3. Pide amablemente los datos faltantes ({', '.join(faltantes)}) diciendo que son para generar la **Orden de Visita con Firma Electrónica** que llegará a su correo.
+        4. Si ya tienes todo, solo confirma que lo llamarán.
+        """
         
-        # --- A) FILTRO COMERCIAL ---
-        if quiere_visitar and not ya_preguntamos_financiamiento and not ya_preguntamos_horarios:
-            respuesta = "¡Genial! Para coordinar la visita: ¿Esta compra sería con **crédito hipotecario** o **al contado**?"
-            guardar_mensaje(phone, "assistant", respuesta, {"pregunto_financiamiento": True})
-            return respuesta
-
-        # --- B) PREGUNTA HORARIOS ---
-        es_respuesta_financiamiento = any(x in message_lower for x in ["credito", "crédito", "hipotecario", "banco", "contado", "efectivo", "preaprobado"])
-        
-        if (es_respuesta_financiamiento or quiere_visitar) and not ya_preguntamos_horarios:
-             respuesta = "Perfecto. Respecto a los horarios, estos dependen de la disponibilidad del dueño.\n\nPor favor indícame: **¿Qué días y horas te acomodan a ti?** Así el ejecutivo coordina el calce exacto."
-             guardar_mensaje(phone, "assistant", respuesta, {"pregunto_horarios": True})
-             return respuesta
-
-        # --- C) PREGUNTAS TÉCNICAS O HORARIOS ---
-        if ultimo and "propiedad_data" in ultimo:
-            propiedad = ultimo["propiedad_data"]
-
-            if any(pal in message_lower for pal in ["cuando", "cuándo", "horario", "día", "visitar", "verla", "verlo", "agendar", "puedo ver"]):
-                respuesta_fija = "Perfecto. Los horarios dependen 100% de la disponibilidad del dueño.\n\nPara no perder tiempo, ¿me indicas **qué días y horarios te acomodan a ti** esta semana o la próxima? Así el ejecutivo te confirma el bloque exacto en minutos."
-                guardar_mensaje(phone, "assistant", respuesta_fija, {"pregunto_horarios": True})
-                return respuesta_fija
-
-            ficha = formatear_ficha_tecnica(propiedad)
-            system_prompt = f"""
-Eres ejecutiva de Procasa.
-TU REGLA DE ORO: Solo hablas de lo que ves en la FICHA TÉCNICA de abajo.
-
-{ficha}
-
-REGLAS ESTRICTAS:
-1. NO SALUDES repetitivamente.
-2. HORARIOS PROHIBIDOS: responde exactamente: "Los horarios los coordina el dueño. ¿Qué días/horarios te sirven a ti?"
-3. DIRECCIÓN: "Se entrega al confirmar la visita".
-4. DATOS N/D: "Lo consulto con el ejecutivo".
-
-Responde corto y preciso.
-"""
+        # Si ya tenemos todo
+        if not faltantes:
+            respuesta = f"¡Perfecto, {prospecto_actual.get('nombre', '')}! Ya tengo tus datos registrados.\n\nHe escalado tu solicitud. Un asesor inmobiliario te llamará en breve para coordinar el horario exacto y enviarte la orden de visita electrónica a tu correo {prospecto_actual.get('email')}.\n\n¡Gracias!"
+            actualizar_prospecto(phone, {"estado": "listo_para_cierre"})
+        else:
             respuesta = generar_respuesta([
                 {"role": "system", "content": system_prompt},
-                *historial[-10:],
+                *historial[-5:],
                 {"role": "user", "content": original_message}
             ], "prospecto")
-            guardar_mensaje(phone, "assistant", respuesta)
-            return respuesta
 
-    # === 7. CONFIRMACIÓN HORARIOS (CIERRE) ===
-    if ya_preguntamos_horarios and any(d in message_lower for d in ["lunes","martes","miércoles","jueves","viernes","sábado","domingo","mañana","tarde"]):
-        respuesta = "¡Listo! Ya registré sus horarios. Un ejecutivo te contactará pronto para confirmar la dirección exacta y el bloque definitivo.\n\n¡Gracias por confiar en Procasa!"
-        guardar_mensaje(phone, "assistant", respuesta, {"escalado": True, "estado": "visita_pendiente"})
+        guardar_mensaje(phone, "assistant", respuesta, {"tipo": "gestion_visita"})
         return respuesta
 
-    # === 8.5 CAPTURA PROACTIVA DE DATOS (3 ESCENARIOS MÁXIMA CONVERSIÓN) - CORREGIDO ===
-    # Definimos la variable ANTES de usarla
-    es_respuesta_financiamiento = any(x in message_lower for x in ["credito", "crédito", "hipotecario", "banco", "contado", "efectivo", "preaprobado"])
+    # CASO C: PREGUNTAS TÉCNICAS (USANDO FICHA O ESCALANDO)
+    codigo_activo = prospecto_actual.get("codigo_procasa")
+    if codigo_activo:
+        # Recuperar ficha si no está en memoria
+        if not propiedad:
+            propiedad = get_db()[Config.COLLECTION_NAME].find_one({"codigo": {"$in": [codigo_activo, int(codigo_activo)]}})
+        
+        ficha = formatear_ficha_tecnica(propiedad) if propiedad else "Ficha no disponible."
+        
+        system_prompt = f"""
+        Eres asistente Procasa.
+        El cliente pregunta sobre la propiedad {codigo_activo}.
+        
+        INFORMACIÓN OFICIAL:
+        {ficha}
 
-    if ya_preguntamos_horarios or (quiere_visitar and not ya_preguntamos_financiamiento) or es_respuesta_financiamiento:
-        ya_pedimos_datos = any("nombre completo" in m["content"].lower() or "correo" in m["content"].lower() for m in historial if m["role"] == "assistant")
-        if not ya_pedimos_datos:
-            codigo_interes = None
-            for msg in reversed(historial):
-                if msg.get("codigo_procasa"):
-                    codigo_interes = msg["codigo_procasa"]
-                    break
-            if codigo_interes:
-                respuesta_datos = (
-                    "¡Genial, ya estamos muy cerca de cerrar tu visita!\n\n"
-                    "Para que el ejecutivo te llame con todo listo, me ayudás si me dejás (100% opcional):\n\n"
-                    "• Nombre completo\n"
-                    "• Correo electrónico\n"
-                    "• RUT (si lo tenés)\n\n"
-                    f"Así asocio todo al código **{codigo_interes}**. ¡Cuando quieras me lo pasas!"
-                )
-                guardar_mensaje(phone, "assistant", respuesta_datos, {"solicitando_datos_lead": True})
-                return respuesta_datos
-
-    # === 8.7 DETECCIÓN Y GUARDADO DE DATOS + ESTRUCTURA PROFESIONAL EN RAÍZ ===
-    email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', original_message)
-    rut_match = re.search(r'\b(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])\b', original_message)
-    nombre_detectado = None
-    if any(t in message_lower for t in ["me llamo", "mi nombre", "soy ", "nombre es"]):
-        resto = original_message.lower()
-        for t in ["me llamo", "mi nombre es", "mi nombre", "soy", "nombre es"]:
-            if t in resto:
-                resto = resto.split(t, 1)[-1]
-        posible = resto.strip(" .,!:@\n").split("\n")[0].split()
-        if 2 <= len(posible) <= 5:
-            nombre_detectado = " ".join(posible).strip(". ,!").title()
-
-    if email_match or rut_match or nombre_detectado:
-        update_fields = {"datos_capturados": True}
-        if email_match:
-            update_fields["email"] = email_match.group(0).lower()
-        if rut_match:
-            update_fields["rut"] = re.sub(r'\.', '', rut_match.group(1)).upper()
-        if nombre_detectado:
-            update_fields["nombre"] = nombre_detectado
-
-        db = get_db()
-        db[Config.COLLECTION_CONVERSATIONS].update_one(
-            {"phone": phone},
-            {"$set": update_fields},
-            upsert=False
-        )
-
-        nombre_saludo = update_fields.get("nombre", "").split()[0] if update_fields.get("nombre") else ""
-        respuesta = f"¡Gracias{nombre_saludo and ' ' + nombre_saludo + ' ' or ' '} Ya tengo tus datos! El ejecutivo te llama en minutos con la orden de visita lista."
-        guardar_mensaje(phone, "assistant", respuesta, {"lead_datos_ok": True, "escalado": True})
+        REGLAS ESTRICTAS:
+        1. Si el dato está en la ficha, respóndelo amablemente.
+        2. Si el dato NO está (ej: gastos comunes exactos si dice aprox, año construcción, contribuciones), DI LA VERDAD: "Ese dato específico no aparece en mi ficha, pero le pediré al ejecutivo que te lo averigüe."
+        3. NUNCA INVENTES INFORMACIÓN.
+        4. Al final, pregunta suavemente: "¿Te interesa coordinar una visita?"
+        """
+        respuesta = generar_respuesta([
+            {"role": "system", "content": system_prompt},
+            *historial[-10:],
+            {"role": "user", "content": original_message}
+        ], "prospecto")
+        
+        guardar_mensaje(phone, "assistant", respuesta)
         return respuesta
 
-    # === 9. ACTUALIZACIÓN PROFESIONAL DEL DOCUMENTO RAÍZ (LA CLAVE) ===
-    update_root = {"ultima_actividad": datetime.utcnow().isoformat() + "Z"}
-    if ya_presentamos:
-        if ultimo and "propiedad_data" in ultimo:
-            p = ultimo["propiedad_data"]
-            update_root.update({
-                "codigo_actual": p.get("codigo"),
-                "tipo_actual": p.get("tipo"),
-                "comuna_actual": p.get("comuna"),
-                "precio_uf_actual": p.get("precio_uf"),
-                "estado": "visita_pendiente" if ya_preguntamos_horarios else "interesado",
-                "intencion_detectada": "visita" if quiere_visitar else "consulta",
-                "$addToSet": {"codigos_vistos": p.get("codigo")}
-            })
-
-    if update_root:
-        db = get_db()
-        db[Config.COLLECTION_CONVERSATIONS].update_one(
-            {"phone": phone},
-            {
-                "$set": update_root,
-                "$setOnInsert": {"created_at": datetime.utcnow().isoformat() + "Z"}
-            },
-            upsert=True
-        )
-
-    # === 10. MODO CONVERSACIONAL POR DEFECTO ===
-    prompt_ayuda = """
-Eres asistente Procasa.
-El cliente NO ha enviado link ni código.
-Ayúdalo amablemente, pero explícale que necesitas el **Link** o el **Código (5 dígitos)** para dar detalles.
-No seas robótica. Conversa brevemente sobre lo que busca.
-"""
+    # CASO D: GENÉRICO (Sin código)
     respuesta = generar_respuesta([
-        {"role": "system", "content": prompt_ayuda},
-        *historial[-20:],
+        {"role": "system", "content": "Eres asistente Procasa. El cliente no ha dado código. Pídelo amablemente o pregunta si busca comprar o arrendar."},
+        *historial[-5:],
         {"role": "user", "content": original_message}
     ], "prospecto")
     

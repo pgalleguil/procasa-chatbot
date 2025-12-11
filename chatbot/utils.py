@@ -23,21 +23,37 @@ def extraer_email(texto: str) -> str | None:
 
 def extraer_nombre_posible(texto: str) -> str | None:
     """
-    Intenta extraer un nombre propio limpiando prefijos comunes, incluyendo repeticiones.
+    Intenta extraer un nombre propio limpiando RUTs, emails y prefijos.
     """
-    # 1. Limpieza agresiva de prefijos (incluyendo repeticiones como "es es")
-    # Usa \b para límites de palabra y un match no-greedy para evitar problemas
+    # 1. Eliminar RUTs y Emails del texto para que no se confundan con nombres
+    texto_limpio = re.sub(r'\b\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK]\b', '', texto) # Quitar RUTs
+    texto_limpio = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', '', texto_limpio) # Quitar Emails
+    
+    # 2. Limpieza de prefijos comunes
     prefixes = r'(?i)\b(hola|buenas|mi nombre es|me llamo|soy|el nombre es|es|mi|nombre)\b\s*'
-    texto_limpio = re.sub(prefixes, '', texto).strip()
+    texto_limpio = re.sub(prefixes, '', texto_limpio).strip()
 
-    # 2. Buscar palabras con mayúscula inicial (Title Case)
-    palabras_ignoradas = ["Hola", "Gracias", "Si", "No", "Quiero", "Busco", "Necesito", "El", "La", "Los", "Un", "Una", "Dato", "Correo", "Rut", "Nombre"]
+    # 3. Lista negra de palabras comunes
+    palabras_ignoradas = [
+        "Hola", "Gracias", "Si", "No", "Quiero", "Busco", "Necesito", 
+        "El", "La", "Los", "Un", "Una", "Dato", "Correo", "Rut", "Nombre", 
+        "Visit", "Visitar", "Ver", "Agendar", "Por", "Favor", "Saludos",
+        "Fin", "Semana", "Mañana", "Tarde", "Noche", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"
+    ]
     
-    tokens = [p.strip(".,!?") for p in texto_limpio.split() if p and p[0].isupper()]
-    
-    nombres_reales = [t for t in tokens if t.title() not in palabras_ignoradas]
+    tokens = [p.strip(".,!?") for p in texto_limpio.split()]
+    nombres_candidatos = []
 
-    if 1 <= len(nombres_reales) <= 4:
-        return " ".join(nombres_reales)
+    for t in tokens:
+        if len(t) < 2 or any(char.isdigit() for char in t): 
+            continue
+        
+        t_cap = t.title() 
+        if t_cap not in palabras_ignoradas:
+            nombres_candidatos.append(t_cap)
+
+    # Solo retornamos si parece un nombre válido (1 a 4 palabras)
+    if 1 <= len(nombres_candidatos) <= 4:
+        return " ".join(nombres_candidatos)
     
     return None

@@ -1,20 +1,24 @@
 # chatbot/alert_service.py
 import logging
+import json
 from datetime import datetime, timedelta
 from .storage import obtener_prospecto, actualizar_prospecto
 from .email_utils import send_gmail_alert
 
 logger = logging.getLogger(__name__)
 
-def should_send_alert(phone: str, lead_type: str, window_minutes: int = 10) -> bool:
-    """
-    Retorna True si NO se ha enviado ya una alerta de este tipo
-    en los últimos X minutos.
-    """
+def should_send_alert(phone: str, lead_type: str, window_minutes: int) -> bool:
     prospecto = obtener_prospecto(phone) or {}
-    alerts = prospecto.get("alerts_sent", {}) or {}
-
+    alerts = prospecto.get("alerts_sent", {})
+    
+    if isinstance(alerts, str):
+        try:
+            alerts = json.loads(alerts.replace("'", "\""))
+        except:
+            alerts = {}
+    
     ts_iso = alerts.get(lead_type)
+    
     if not ts_iso:
         return True
 
@@ -28,11 +32,15 @@ def should_send_alert(phone: str, lead_type: str, window_minutes: int = 10) -> b
 
 
 def mark_alert_sent(phone: str, lead_type: str) -> None:
-    """
-    Marca en el prospecto que se envió una alerta de este tipo.
-    """
     prospecto = obtener_prospecto(phone) or {}
-    alerts = prospecto.get("alerts_sent", {}) or {}
+    alerts = prospecto.get("alerts_sent", {})
+    
+    if isinstance(alerts, str):
+        try:
+            alerts = json.loads(alerts.replace("'", "\""))
+        except:
+            alerts = {}
+    
     alerts[lead_type] = datetime.utcnow().isoformat()
     actualizar_prospecto(phone, {"alerts_sent": alerts})
 
@@ -45,17 +53,23 @@ def send_alert_once(
     last_response: str,
     last_user_msg: str,
     full_history: list,
-    window_minutes: int = 2, # Aumenté un poco el default para evitar spam
+    window_minutes: int = 1, # DEFAULT AUMENTADO A 60 MINUTOS
     lead_type_label: str | None = None
 ):
     """
-    Gestiona el envío de la alerta:
-    1. Verifica si ya se envió recientemente.
-    2. Si no, envía el correo.
-    3. Marca el envío.
+    Gestiona el envío de la alerta para evitar spam.
+    window_minutes: Tiempo mínimo entre correos del MISMO tipo.
     """
+    
+    # Lógica extra: Si es solo un agradecimiento ("gracias"), aumentamos la restricción
+    # para evitar duplicar alertas que no aportan valor.
+    msg_lower = last_user_msg.lower().strip()
+    if len(msg_lower) < 10 and any(w in msg_lower for w in ["gracias", "ok", "bueno", "listo"]):
+        logger.info(f"[EMAIL] SKIPPED LOW VALUE MSG: {msg_lower}")
+        return
+
     if not should_send_alert(phone, lead_type, window_minutes):
-        logger.info(f"[EMAIL] SKIPPED DUPLICATE ALERT {lead_type} for {phone}")
+        logger.info(f"[EMAIL] SKIPPED DUPLICATE ALERT {lead_type} for {phone} (Wait {window_minutes}m)")
         return
 
     try:
@@ -68,9 +82,9 @@ def send_alert_once(
             full_history=full_history,
             lead_type=lead_type_label or lead_type
         )
-        # Solo marcamos si el envío fue exitoso (o si la función send_gmail_alert maneja sus propios errores)
+        # Marcamos envío exitoso
         mark_alert_sent(phone, lead_type)
-        logger.info(f"[EMAIL] ALERT SENT {lead_type} for {phone}")
-        
+        print(f"[EMAIL] Enviado a ejecutivo | Score: {lead_score} | Tipo: {lead_type}")
+
     except Exception as e:
         logger.error(f"[EMAIL] ERROR sending alert: {e}")

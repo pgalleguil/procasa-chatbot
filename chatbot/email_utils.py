@@ -45,30 +45,44 @@ def format_price_display(criteria: dict) -> str:
     return None
 
 def _attach_logo(msg):
-    """Helper interno para adjuntar el logo si existe."""
+    """Helper interno para adjuntar el logo principal y el de WhatsApp si existen."""
     base_dir = os.path.dirname(os.path.abspath(__file__)) 
-    possible_paths = [
-        os.path.join(base_dir, 'static', 'logo.png'),
-        os.path.join(base_dir, '..', 'static', 'logo.png'),
-        os.path.join(os.getcwd(), 'static', 'logo.png') # Busqueda en root
+    
+    attached_procasa = False
+    
+    # Lista de archivos a buscar y su Content-ID
+    logos_to_attach = [
+        {'id': '<logo_procasa>', 'filename': 'logo.png'},
+        {'id': '<logo_wa>', 'filename': 'whatsapp.png'} 
     ]
     
-    logo_path = None
-    for p in possible_paths:
-        if os.path.exists(p):
-            logo_path = p
-            break
+    for logo_data in logos_to_attach:
+        logo_path = None
+        # Buscar en las ubicaciones habituales
+        possible_paths = [
+            os.path.join(base_dir, 'static', logo_data['filename']),
+            os.path.join(base_dir, '..', 'static', logo_data['filename']),
+            os.path.join(os.getcwd(), 'static', logo_data['filename']) 
+        ]
+        
+        for p in possible_paths:
+            if os.path.exists(p):
+                logo_path = p
+                break
 
-    if logo_path:
-        try:
-            with open(logo_path, 'rb') as f:
-                img = MIMEImage(f.read())
-                img.add_header('Content-ID', '<logo_procasa>') 
-                msg.attach(img)
-                return True
-        except Exception:
-            return False
-    return False
+        if logo_path:
+            try:
+                with open(logo_path, 'rb') as f:
+                    img = MIMEImage(f.read())
+                    img.add_header('Content-ID', logo_data['id']) 
+                    msg.attach(img)
+                    if logo_data['id'] == '<logo_procasa>':
+                        attached_procasa = True
+            except Exception:
+                pass # Continúa si falla adjuntar una imagen
+                
+    # Retorna True solo si el logo principal de Procasa se pudo adjuntar (mantiene la lógica original)
+    return attached_procasa
 
 def send_gmail_alert(phone: str, lead_score: int, criteria: dict,
                      last_response: str = '', last_user_msg: str = '',
@@ -100,6 +114,20 @@ def send_gmail_alert(phone: str, lead_score: int, criteria: dict,
 
     subject = f"{icon} Prospecto {label} | {phone}"
 
+    # --- Formateo de Teléfono para mejor lectura ---
+    phone_formatted = phone
+    phone_digits = phone.replace('+', '').strip()
+    
+    # Si es un número chileno (+56) de 11 dígitos sin el '+', lo reformateamos
+    if phone_digits.startswith('56') and len(phone_digits) == 11:
+        # Formato esperado: +56 9 6640 9364
+        try:
+            phone_formatted = f"+{phone_digits[0:2]} {phone_digits[2]} {phone_digits[3:7]} {phone_digits[7:]}"
+        except IndexError:
+            # En caso de que la cadena no tenga la longitud esperada por algún error
+            pass
+    # --- FIN Formateo de Teléfono ---
+    
     # Datos Propiedad
     precio_val = format_price_display(criteria)
     precio = precio_val if precio_val else '<span style="color:#CBD5E1; font-size:18px;">-</span>'
@@ -121,7 +149,7 @@ def send_gmail_alert(phone: str, lead_score: int, criteria: dict,
     if full_history and isinstance(full_history, list):
         bubbles = []
         # Tomamos los últimos 8 mensajes para contexto
-        recent_msgs = full_history[-8:]
+        recent_msgs = full_history[-15:]
         
         for msg in recent_msgs: 
             txt = html.escape(str(msg.get("content", "")).strip())
@@ -153,7 +181,8 @@ def send_gmail_alert(phone: str, lead_score: int, criteria: dict,
 
     # Links
     wa_msg = quote(f"Hola, te escribo de Procasa. Vi que consultaste por {tipo}...")
-    wa_link = f"https://wa.me/{phone.replace('+','')}?text={wa_msg}"
+    # wa_link y tel:phone usan la variable original 'phone' para asegurar el correcto marcado y link
+    wa_link = f"https://wa.me/{phone.replace('+','')}?text={wa_msg}" 
 
     # --- HTML STRUCTURE ---
     body_html = f"""
@@ -189,7 +218,7 @@ def send_gmail_alert(phone: str, lead_score: int, criteria: dict,
                         {icon} {label}
                     </div>
                     
-                    <h1 style="margin: 0 0 6px 0; font-size: 30px; letter-spacing: -0.8px; color: #0F172A; font-weight: 800;">{phone}</h1>
+                    <h1 style="margin: 0 0 6px 0; font-size: 30px; letter-spacing: -0.8px; color: #0F172A; font-weight: 800;">{phone_formatted}</h1>
                     <p style="margin: 0; color: #64748B; font-size: 15px;">
                         Interés en <strong style="color:#334155;">{comuna}</strong>
                     </p>
@@ -199,8 +228,9 @@ def send_gmail_alert(phone: str, lead_score: int, criteria: dict,
                     <table width="100%" cellspacing="0" cellpadding="0">
                         <tr>
                             <td width="48%">
-                                <a href="{wa_link}" style="display: block; background: #22C55E; color: #fff; text-decoration: none; padding: 12px 0; border-radius: 10px; font-weight: 600; font-size: 14px; text-align: center; box-shadow: 0 2px 4px rgba(34, 197, 94, 0.2);">
-                                    💬 WhatsApp
+                                <a href="{wa_link}" style="display: block; background: #22C55E; color: #fff; text-decoration: none; padding: 10px 0; border-radius: 10px; font-weight: 600; font-size: 14px; text-align: center; box-shadow: 0 2px 4px rgba(34, 197, 94, 0.2); line-height: 1;">
+                                    <img src="cid:logo_wa" alt="WhatsApp" width="18" height="18" style="vertical-align: middle; margin-right: 6px;">
+                                    WhatsApp
                                 </a>
                             </td>
                             <td width="4%"></td>

@@ -1,5 +1,5 @@
-# chatbot/grok_client.py (MODIFICADO)
-import json # <--- AÑADIDO
+# chatbot/grok_client.py
+import json
 from openai import OpenAI
 from config import Config
 
@@ -10,18 +10,17 @@ client = OpenAI(
 
 MAX_TOKENS = {
     "propietario": 600,
-    "prospecto": 400
+    "prospecto": 500
 }
 
 def generar_respuesta(messages: list, tipo: str = "prospecto") -> str:
-    # [CÓDIGO EXISTENTE DE generar_respuesta PARA FLUJOS SIN ESTRUCTURA]
     try:
         print(f"[GROK] Enviando {len(messages)} mensajes al modelo...")
         response = client.chat.completions.create(
             model=Config.GROK_MODEL or "grok-4-1-fast-non-reasoning",
             messages=messages,
             temperature=Config.GROK_TEMPERATURE,
-            max_tokens=MAX_TOKENS.get(tipo, 400),
+            max_tokens=MAX_TOKENS.get(tipo, 500),
             timeout=30
         )
         contenido = response.choices[0].message.content.strip()
@@ -32,93 +31,120 @@ def generar_respuesta(messages: list, tipo: str = "prospecto") -> str:
         return "Lo siento, tengo un problema técnico en este momento. En un segundo vuelvo a estar disponible."
 
 
-def generar_respuesta_estructurada(messages: list, tipo: str = "prospecto") -> dict:
+def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None) -> dict:
     """
-    NUEVA FUNCIÓN: Usa Grok para extraer datos estructurados y generar la respuesta, forzando JSON.
+    Genera respuesta conversacional Y extrae datos nuevos si el usuario los menciona.
+    Combina el Prompt Original de Negocio + Instrucciones de Extracción.
     """
-    system_prompt = f"""
-    Eres un asistente inmobiliario IA (Procasa) con personalidad cercana pero profesional.
-    Tu objetivo es ayudar al cliente, extraer la información clave y generar la respuesta del bot.
-    
-    ANALIZA el historial y el último mensaje del usuario para:
-    1. CLASIFICAR la intención.
-    2. EXTRAER NOMBRE, EMAIL y CÓDIGO de propiedad.
-    3. GENERAR la respuesta conversacional del bot (campo 'respuesta_bot').
+    if prospecto_actual is None:
+        prospecto_actual = {}
+        
+    # Filtramos datos conocidos para no re-extraerlos
+    datos_conocidos = {k: v for k, v in prospecto_actual.items() if v}
 
-    REGLAS DE CLASIFICACIÓN (Campo 'intencion', debe ser una sola palabra clave en minúscula):
+    # =========================================================================
+    # 1. TU PROMPT DE NEGOCIO ORIGINAL (RESTAURADO)
+    # =========================================================================
+    system_prompt_base = """
+    Eres el asistente virtual premium de Procasa, inmobiliaria con más de 20 años en Chile.
+    Hablas español chileno como una ejecutiva inmobiliaria real: cálido, profesional, genuina, conversacional y sin chilenismos. Tu objetivo es generar confianza y cerrar visitas.
+
+    REGLAS DE CONVERSACIÓN NATURAL Y GENUINA:
+    - Habla como una persona real en WhatsApp: fluido, cercano, sin repetir saludos.
+    - Cuando el cliente envía el enlace por primera vez:
+      - Confirma que lo encontraste con entusiasmo breve: "Perfecto, encontré la propiedad..." o "Excelente elección, es el código procasa 67281..."
+      - Destaca SOLO 3-4 atributos clave más atractivos (ej: precio, m² útiles, dormitorios/baños, ubicación céntrica, amenities principales).
+      - NO listes toda la ficha técnica ni detalles secundarios (gastos comunes, calefacción, bodega, etc.) de golpe.
+      - Deja detalles para cuando pregunten.
+      - Cierra con una pregunta abierta suave: "¿Qué te parece?" o "¿Te gustaría agendar una visita para conocerlo?" o "¿Hay algún detalle que te interese saber más?"
+
+    - En respuestas siguientes:
+      - Responde preguntas técnicas con precisión usando la ficha.
+      - Si el dato está → respóndelo natural y positivo.
+      - Si no está → sé honesto: "Ese dato específico no lo tengo disponible en la ficha actual, pero un asesor puede confirmártelo en la visita."
+      - Siempre impulsa suavemente hacia la visita.
+      - Si hay PROPIEDADES ENCONTRADAS por búsqueda (RAG), ofrécelas amablemente.
+
+    REGLA SUPREMA - USA LA FICHA COMO VERDAD ABSOLUTA:
+    - La sección "DATOS OFICIALES DE LA PROPIEDAD" (o Listado RAG) es tu única fuente fiable.
+    - Si el dato está → respóndelo con precisión.
+    - Si no está → di honestamente que no lo tienes y ofrece visita o asesor.
+
+    REGLAS PARA COORDINAR VISITA:
+    - Estamos en WhatsApp → nunca pidas teléfono.
+    - Pide nombre opcional solo si hay interés alto y no lo tenemos.
+    - **PROHIBIDO DAR DISPONIBILIDAD ESPECÍFICA (días o franjas horarias).**
+    - Si el cliente muestra interés → confirma que tienes **"alta disponibilidad esta semana"** o **"tenemos horarios disponibles"** y di que **un asesor confirmará el horario exacto por WhatsApp** después de que el cliente sugiera un día.
+    - Ejemplo de respuesta para visita: "¡Genial! Tenemos alta disponibilidad. ¿Qué día y horario te acomoda más? Lo gestiono con el asesor para que te confirme por aquí mismo."
+
+    REGLAS PARA INTENCIÓN:
     - agendar_visita
-    - consulta_precio
-    - consulta_ubicacion
     - contacto_directo
     - escalado_urgente
-    - consulta_general (si no es ninguna de las anteriores)
-
-    REGLAS DE EXTRACCIÓN:
-    - SÓLO extrae el dato si aparece CLARAMENTE en la conversación o si es inferible como nombre.
-    - Si un dato no existe, usa EXÁCTAMENTE el valor: null. (Ej: "nombre": null)
-    
-    FORMATO DE SALIDA:
-    Debes responder ÚNICAMENTE con un objeto JSON válido, siguiendo esta estructura:
-    {{
-        "intencion": "palabra_clave_intencion",
-        "nombre": "Nombre Apellido",
-        "email": "correo@ejemplo.com",
-        "codigo_propiedad": "Ej: 123456",
-        "respuesta_bot": "La respuesta natural del bot para el cliente, lista para enviar."
-    }}
-    
-    Asegúrate de que la salida sea solo el objeto JSON, sin texto explicativo.
+    - consulta_precio
+    - consulta_ubicacion
+    - consulta_general
     """
-    
+
+    # =========================================================================
+    # 2. INSTRUCCIONES TÉCNICAS DE EXTRACCIÓN (AGREGADO AL FINAL)
+    # =========================================================================
+    system_prompt_extraction = f"""
+    [TAREA SECUNDARIA DE EXTRACCIÓN DE DATOS]
+    Además de responder, analiza el mensaje del usuario.
+    Si menciona datos nuevos que NO están en: {json.dumps(datos_conocidos, ensure_ascii=False)}, extráelos en el JSON.
+    CAMPOS VALIDOS A EXTRAER: 'operacion' (Venta/Arriendo), 'tipo', 'comuna', 'presupuesto' (solo números), 'dormitorios', 'email', 'nombre', 'rut'.
+
+    SALIDA OBLIGATORIA (JSON):
+    {{
+        "intencion": "una_sola_palabra",
+        "datos_extraidos": {{ "campo": "valor" }}, 
+        "respuesta_bot": "Texto completo natural y genuino siguiendo las reglas de arriba"
+    }}
+    Responde SOLO con JSON válido.
+    """
+
+    full_system_prompt = system_prompt_base + "\n\n" + system_prompt_extraction
+
     structured_messages = [
-        {"role": "system", "content": system_prompt},
-        *messages[-10:] # Enviamos solo el prompt del sistema y los últimos 10 mensajes
+        {"role": "system", "content": full_system_prompt},
+        *messages
     ]
 
     try:
-        print(f"[GROK_STRUCT] Enviando {len(structured_messages)} mensajes para extracción y respuesta...")
+        print(f"[GROK_STRUCT] Procesando conversación ({len(structured_messages)} msgs)...")
         
         response = client.chat.completions.create(
             model=Config.GROK_MODEL or "grok-4-1-fast-non-reasoning",
             messages=structured_messages,
-            temperature=Config.GROK_TEMPERATURE,
-            max_tokens=800, # Aumentamos para la estructura JSON + respuesta
-            timeout=45,
-            # response_format={"type": "json_object"} # Si tu API lo soporta, descomentar
+            temperature=0.2, # Un poco más bajo para asegurar JSON correcto
+            max_tokens=700,
+            timeout=45
         )
         
         contenido_json_str = response.choices[0].message.content.strip()
-        print(f"[GROK_STRUCT] Respuesta JSON recibida.")
-        
-        try:
-            # Limpieza básica para asegurar que solo quede el objeto JSON
-            if contenido_json_str.startswith("```json"):
-                contenido_json_str = contenido_json_str.strip("`").strip("json").strip()
-                
-            contenido = json.loads(contenido_json_str)
-            # Normalizamos los valores 'null' o 'none' a None de Python
-            for key, value in contenido.items():
-                 if isinstance(value, str) and value.lower() in ["null", "none", "n/a", "no aplica"]:
-                      contenido[key] = None
 
-            return contenido
-        except json.JSONDecodeError as e:
-            print(f"[ERROR GROK_STRUCT] Fallo al parsear JSON: {e} - Contenido: {contenido_json_str[:200]}...")
-            # Fallback en caso de JSON mal formado
-            return {
-                "intencion": "consulta_general",
-                "nombre": None,
-                "email": None,
-                "codigo_propiedad": None,
-                "respuesta_bot": "Lo siento, mi sistema de análisis de datos falló. Por favor, repíteme tu consulta."
-            }
+        if contenido_json_str.startswith("```json"):
+            contenido_json_str = contenido_json_str[7:-3].strip()
+        elif contenido_json_str.startswith("```"):
+            contenido_json_str = contenido_json_str[3:-3].strip()
+
+        datos = json.loads(contenido_json_str)
+
+        intencion = datos.get("intencion", "consulta_general").lower().strip()
+        respuesta_bot = datos.get("respuesta_bot", "").strip()
+        datos_extraidos = datos.get("datos_extraidos", {})
+
+        return {
+            "intencion": intencion,
+            "datos_extraidos": datos_extraidos,
+            "respuesta_bot": respuesta_bot or "Gracias por tu consulta. Estoy aquí para ayudarte."
+        }
 
     except Exception as e:
-        print(f"[ERROR GROK] Fallo en la API estructurada: {e}")
+        print(f"[ERROR GROK_STRUCT] {e}")
         return {
             "intencion": "consulta_general",
-            "nombre": None,
-            "email": None,
-            "codigo_propiedad": None,
-            "respuesta_bot": "Lo siento, tengo un problema técnico en este momento. Vuelvo a estar disponible en un segundo."
+            "datos_extraidos": {},
+            "respuesta_bot": "Disculpa, tengo un problema técnico. ¿Me puedes repetir tu consulta?"
         }

@@ -116,8 +116,8 @@ def formatear_resultados_texto(propiedades: List[Dict]) -> str:
             f"  Precio: UF {p.get('precio_uf')} (aprox CLP {p.get('precio_clp')})\n"
             f"  Programa: {p.get('dormitorios')} dorms, {p.get('banos')} baños\n"
             f"  Superficie: {p.get('m2_utiles')} m2 útiles\n"
-            f"  Amenities/Desc: {str(p.get('descripcion_clean', ''))[:200]}...\n" # Recortamos para no saturar token
-            f"  Link: https://www.procasa.cl/propiedad/{p.get('codigo')}\n\n"
+            f"  Amenities/Desc: {str(p.get('descripcion_clean', ''))[:250]}...\n" # Recortamos para no saturar token
+            f"  Link: https://www.procasa.cl/{p.get('codigo')}\n\n"
         )
     texto += "--- FIN LISTADO ---"
     return texto

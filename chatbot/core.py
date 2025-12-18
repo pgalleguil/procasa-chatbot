@@ -256,9 +256,15 @@ def process_user_message(phone: str, message: str) -> str:
             texto_rag = formatear_resultados_texto(resultados_rag)
             
             if resultados_rag:
-                # Registramos las nuevas como vistas (solo si las vamos a mostrar)
-                nuevos_codigos = [p["codigo"] for p in resultados_rag]
-                registrar_propiedades_vistas(phone, nuevos_codigos)
+                # --- CORRECCIÓN: ALMACENAMIENTO DE VISTOS ---
+                # Usamos p.get() para seguridad y forzamos str() para que coincida con MongoDB
+                nuevos_codigos = [str(p.get("codigo")) for p in resultados_rag if p.get("codigo")]
+                
+                # Guardamos inmediatamente en Mongo para que la próxima búsqueda los excluya
+                if nuevos_codigos:
+                    registrar_propiedades_vistas(phone, nuevos_codigos)
+                    logger.info(f"[RAG] Propiedades registradas como vistas para {phone}: {nuevos_codigos}")
+                # ---------------------------------------------
                 
                 system_parts.append(f"""
                 [SISTEMA DE BÚSQUEDA - NUEVAS OPCIONES]

@@ -18,7 +18,7 @@ from pathlib import Path
 # CONFIGURACIÓN
 # ==============================================================================
 MODO_PRUEBA = True  # ← Cambia a False para envío real
-EMAIL_PRUEBA = "p.galleguil@gmail.com"
+EMAIL_PRUEBA = "pgalleguillos@procasa.cl"
 
 RENDER_BASE_URL = "https://procasa-chatbot-yr8d.onrender.com"
 PUBLICACION_BASE_URL = "https://www.procasa.cl/propiedad/"  # ← NUEVO

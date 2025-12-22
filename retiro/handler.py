@@ -1,4 +1,4 @@
-# retiro/handler.py → Versión FINAL DEFINITIVA con logo en respuestas al cliente (22-12-2025)
+# retiro/handler.py → Versión FINAL con correcciones solicitadas (22-12-2025)
 
 import logging
 import smtplib
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # Variable global para detectar modo prueba
 ES_MODO_PRUEBA = False
 
-# Ruta al logo
+# Ruta al logo (solo se usa en respuestas HTML al cliente)
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOGO_PATH = BASE_DIR / "static" / "logo.png"
 
@@ -35,13 +35,13 @@ def enviar_notificacion_interna(tipo_accion: str, email_cliente: str, codigo_pro
     if "pgalleguillos@procasa.cl" in email_cliente or "galleguil@gmail.com" in email_cliente or "prueba" in email_cliente:
         ES_MODO_PRUEBA = True
 
-    # Destinatarios
+    # Destinatarios: siempre jpcaro, y el ejecutivo solo si existe y es diferente
     if ES_MODO_PRUEBA:
         destinatarios = ["pgalleguillos@procasa.cl"]
     else:
         destinatarios = ["jpcaro@procasa.cl"]
         if email_ejecutivo and email_ejecutivo.strip() and email_ejecutivo.lower() != "jpcaro@procasa.cl":
-            destinatarios.append(email_ejecutivo)
+            destinatarios.append(email_ejecutivo.lower())
 
     if not destinatarios:
         logger.warning(f"No hay destinatarios para notificación de {codigo_prop}")
@@ -55,9 +55,6 @@ def enviar_notificacion_interna(tipo_accion: str, email_cliente: str, codigo_pro
         <html>
             <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b; margin: 0; padding: 20px;">
                 <div style="max-width: 700px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
-                    <div style="background: #f8fafc; padding: 20px; text-align: center; border-bottom: 1px solid #e2e8f0;">
-                        <img src="cid:logo_procasa" alt="Procasa" style="height: 60px;">
-                    </div>
                     <div style="padding: 30px;">
                         <h2 style="color: #1e293b; margin-top: 0;">Notificación de Sistema</h2>
                         <p>Estimado equipo,</p>
@@ -97,9 +94,6 @@ def enviar_notificacion_interna(tipo_accion: str, email_cliente: str, codigo_pro
         <html>
             <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b; margin: 0; padding: 20px;">
                 <div style="max-width: 700px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
-                    <div style="background: #f8fafc; padding: 20px; text-align: center; border-bottom: 1px solid #e2e8f0;">
-                        <img src="cid:logo_procasa" alt="Procasa" style="height: 60px;">
-                    </div>
                     <div style="padding: 30px;">
                         <h2 style="color: #1e293b; margin-top: 0;">Notificación de Sistema</h2>
                         <p>Estimado equipo,</p>
@@ -131,19 +125,20 @@ def enviar_notificacion_interna(tipo_accion: str, email_cliente: str, codigo_pro
         </html>
         """
 
-    msg = MIMEMultipart("related")
-    msg["From"] = f"Sistema Procasa <{Config.GMAIL_USER}>"
+    # NO adjuntamos logo en notificaciones internas
+    msg = MIMEMultipart("alternative")
+    msg["From"] = f"Gestión Procasa <{Config.GMAIL_USER}>"
     msg["To"] = ", ".join(destinatarios)
     msg["Subject"] = asunto
     msg.attach(MIMEText(cuerpo, "html"))
-    attach_logo(msg)
 
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls()
-            server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
-            server.sendmail(Config.GMAIL_USER, destinatarios, msg.as_string())
-        logger.info(f"Notificación '{tipo_accion}' enviada para propiedad {codigo_prop} a {', '.join(destinatarios)}")
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        logger.info(f"Notificación interna enviada a {destinatarios} - {asunto}")
     except Exception as e:
         logger.error(f"Error enviando notificación interna: {e}")
 
@@ -285,13 +280,25 @@ async def handle_solicitud_contacto(email: str, codigo: str, ip: str):
     prop_data = db["universo_obelix"].find_one({"codigo": codigo_norm})
     email_ejecutivo = prop_data.get("email_ejecutivo") if prop_data else None
 
-    db["retiros_propiedades"].insert_one({
-        "email_propietario": email_norm,
-        "codigo_propiedad": codigo_norm,
-        "accion": "solicitud_contacto_ejecutivo",
-        "fecha": datetime.now(timezone.utc),
-        "ip": ip
-    })
+    # AHORA USA update_one con upsert para evitar duplicados
+    db["retiros_propiedades"].update_one(
+        {"codigo_propiedad": codigo_norm},
+        {
+            "$set": {
+                "email_propietario": email_norm,
+                "accion": "solicitud_contacto_ejecutivo",
+                "fecha": datetime.now(timezone.utc),
+                "ip": ip,
+                "fecha_actualizacion": datetime.now(timezone.utc)
+            },
+            "$setOnInsert": {
+                "documento": "Carta_Retiro_Procasa.pdf",
+                "fecha_envio": datetime.now(timezone.utc),
+                "notas": "Solicitud de contacto"
+            }
+        },
+        upsert=True
+    )
 
     enviar_notificacion_interna("SOLICITUD DE CONTACTO", email_norm, codigo_norm, email_ejecutivo, ip)
 

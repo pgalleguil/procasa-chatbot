@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# email_retiro_propiedad.py → Versión FINAL DEFINITIVA + ENLACE PÚBLICO + TEXTO MEJORADO
+# email_retiro_propiedad.py → Versión FINAL DEFINITIVA + CC FIJO SOLO A JPCARO Y PGALLEGUILLOS
 
 import os
 import smtplib
@@ -44,7 +44,7 @@ if not PDF_PATH.exists():
 html_template = PLANTILLA.read_text(encoding="utf-8")
 
 # ==============================================================================
-# REGISTRO DE ENVÍO EN MONGODB
+# REGISTRO DE ENVÍO EN MONGODB (con upsert para no duplicar)
 # ==============================================================================
 def registrar_envio_carta(email: str, codigo: str, modo_prueba: bool = False):
     try:
@@ -52,16 +52,22 @@ def registrar_envio_carta(email: str, codigo: str, modo_prueba: bool = False):
         db = client[Config.DB_NAME]
         retiros = db["retiros_propiedades"]
 
-        retiros.insert_one({
-            "email_propietario": email.lower().strip(),
-            "codigo_propiedad": codigo.upper().strip(),
-            "documento": "Carta_Retiro_Procasa.pdf",
-            "accion": "carta_enviada",
-            "fecha": datetime.now(timezone.utc),
-            "ip": "admin_script_local" if not modo_prueba else "admin_prueba",
-            "notas": "Carta enviada vía script administrativo",
-            "modo_prueba": modo_prueba
-        })
+        retiros.update_one(
+            {"codigo_propiedad": codigo.upper().strip()},
+            {
+                "$set": {
+                    "email_propietario": email.lower().strip(),
+                    "documento": "Carta_Retiro_Procasa.pdf",
+                    "accion": "carta_enviada",
+                    "fecha": datetime.now(timezone.utc),
+                    "ip": "admin_script_local" if not modo_prueba else "admin_prueba",
+                    "notas": "Carta enviada vía script administrativo",
+                    "modo_prueba": modo_prueba,
+                    "fecha_actualizacion": datetime.now(timezone.utc)
+                }
+            },
+            upsert=True
+        )
         log.info(f"Registrado en DB: carta enviada a {email} (propiedad {codigo})")
     except Exception as e:
         log.error(f"Error registrando envío en MongoDB: {e}")
@@ -92,7 +98,6 @@ def generar_html(nombre, codigo, email_para_link):
     email_enc = quote(email_para_link)
     codigo_enc = quote(codigo)
     
-    # El segundo botón ahora apunta a tu servidor /retiro/contactar
     link_confirmar = f"{RENDER_BASE_URL}/retiro/confirmar?email={email_enc}&codigo={codigo_enc}"
     link_llamada = f"{RENDER_BASE_URL}/retiro/contactar?email={email_enc}&codigo={codigo_enc}"
     link_publicacion = f"{PUBLICACION_BASE_URL}{codigo}"
@@ -107,7 +112,7 @@ def generar_html(nombre, codigo, email_para_link):
         .replace("{{ link_whatsapp }}", link_whatsapp)
 
 # ==============================================================================
-# ENVÍO DE CORREO
+# ENVÍO DE CORREO (con CC fijo solo a jpcaro y pgalleguillos)
 # ==============================================================================
 def enviar_correo(destinatario: str, asunto: str, html: str) -> bool:
     msg = MIMEMultipart("mixed")
@@ -121,13 +126,18 @@ def enviar_correo(destinatario: str, asunto: str, html: str) -> bool:
     msg["To"] = destinatario
     msg["Subject"] = asunto
 
+    # CC fijo solo a estos dos (sin ejecutivo)
+    msg["Cc"] = "jpcaro@procasa.cl, pgalleguillos@procasa.cl"
+
+    destinatarios_totales = [destinatario, "jpcaro@procasa.cl", "pgalleguillos@procasa.cl"]
+
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
-        server.send_message(msg)
+        server.sendmail(Config.GMAIL_USER, destinatarios_totales, msg.as_string())
         server.quit()
-        log.info(f"Correo enviado exitosamente a {destinatario}")
+        log.info(f"Correo enviado exitosamente a {destinatario} (CC: jpcaro y pgalleguillos)")
         return True
     except Exception as e:
         log.error(f"Error enviando correo a {destinatario}: {e}")

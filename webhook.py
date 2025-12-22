@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from campanas.handler import handle_campana_respuesta
+from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 
 
 # ========================= USAMOS TU config.py REAL =========================
@@ -422,6 +423,17 @@ async def marcar_gestionado(request: Request):
 
     return {"status": "ok", "gestionado": gestionado}
 
+@app.get("/retiro/confirmar")
+async def retiro_confirmar(request: Request, email: str = Query(...), codigo: str = Query(...)):
+    ip = request.client.host if request.client else "0.0.0.0"
+    return await handle_retiro_confirmacion(email, codigo, ip)
+
+@app.get("/retiro/contactar")
+async def retiro_contactar(request: Request, email: str = Query(...), codigo: str = Query(...)):
+    ip = request.client.host if request.client else "0.0.0.0"
+    return await handle_solicitud_contacto(email, codigo, ip)
+
+    
 # ====================== ARRANQUE CORRECTO ======================
 if __name__ == "__main__":
     import pathlib

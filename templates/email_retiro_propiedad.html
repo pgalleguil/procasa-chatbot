@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f8fafc;
+            font-family: 'Inter', -apple-system, system-ui, sans-serif;
+        }
+
+        .wrapper {
+            width: 100%;
+            padding: 30px 0;
+            background-color: #f8fafc;
+        }
+
+        .main-card {
+            max-width: 580px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+        }
+
+        /* Header Ultra-Compacto */
+        .header {
+            padding: 30px 20px 10px;
+            text-align: center;
+        }
+
+        .logo {
+            width: 155px;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+
+        .content {
+            padding: 0 45px 40px;
+            color: #1e293b;
+            line-height: 1.7;
+        }
+
+        h1 {
+            color: #0f172a;
+            font-size: 24px;
+            font-weight: 800;
+            text-align: center;
+            margin: 15px 0 25px;
+            letter-spacing: -0.025em;
+        }
+
+        /* Caja de Identificación de Acto Jurídico */
+        .property-box {
+            background: #f1f5f9;
+            border: 1.5px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 22px;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .prop-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #64748b;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .prop-code {
+            font-size: 28px;
+            font-weight: 900;
+            color: #be123c;
+            margin: 0;
+            display: block;
+        }
+
+        .view-link {
+            color: #2563eb;
+            font-size: 13px;
+            text-decoration: none;
+            font-weight: 600;
+            display: inline-block;
+            margin-top: 8px;
+        }
+
+        /* Cláusula de Protección de Comisión (Chile) */
+        .legal-notice {
+            background: #fffbeb;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 28px;
+            border: 1px solid #fef3c7;
+            border-left: 5px solid #f59e0b;
+        }
+
+        .legal-title {
+            font-size: 12px;
+            font-weight: 800;
+            color: #92400e;
+            display: block;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .legal-text {
+            font-size: 12px;
+            color: #78350f;
+            margin: 0;
+            text-align: justify;
+            line-height: 1.5;
+        }
+
+        /* Botones de Alta Conversión */
+        .btn {
+            display: block;
+            text-align: center;
+            padding: 18px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 15px;
+            margin-bottom: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: #be123c;
+            color: #ffffff !important;
+            box-shadow: 0 10px 15px -3px rgba(190, 18, 60, 0.25);
+        }
+
+        .btn-secondary {
+            background: #ffffff;
+            color: #475569 !important;
+            border: 1.5px solid #e2e8f0;
+        }
+
+        .footer {
+            background: #0f172a;
+            color: #94a3b8;
+            padding: 40px;
+            text-align: center;
+            font-size: 12px;
+        }
+
+        .footer strong {
+            color: #ffffff;
+            display: block;
+            margin-bottom: 6px;
+            font-size: 15px;
+            letter-spacing: 0.5px;
+        }
+
+        .wa-link {
+            color: #4ade80;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 14px;
+            display: inline-block;
+            margin-top: 15px;
+            padding: 8px 16px;
+            border: 1px solid #1e293b;
+            border-radius: 25px;
+        }
+
+        .disclaimer {
+            font-size: 10px;
+            color: #64748b;
+            margin-top: 30px;
+            line-height: 1.4;
+            border-top: 1px solid #1e293b;
+            padding-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrapper">
+        <div class="main-card">
+            <div class="header">
+                <img src="cid:logo_procasa" alt="Procasa" class="logo">
+            </div>
+
+            <div class="content">
+                <h1>Certificación de Retiro de Cartera</h1>
+
+                <p>Estimado(a) <strong>{{ nombre }}</strong>,</p>
+
+                <p>
+                    Hacemos acuse de recibo de su solicitud para formalizar la <strong>resciliación del encargo de
+                        venta/arriendo</strong>
+                    de su propiedad. Para procesar la baja definitiva de nuestros portales y sistemas, se requiere su
+                    validación digital.
+                </p>
+
+                <div class="property-box">
+                    <span class="prop-label">Código de Gestión Certificado</span>
+                    <span class="prop-code">{{ codigo }}</span>
+                    <a href="{{ link_publicacion }}" class="view-link" target="_blank">Ver estado de publicación actual
+                        →</a>
+                </div>
+
+                <div class="legal-notice">
+                    <span class="legal-title">Resguardo de Honorarios y Firma Electrónica</span>
+                    <p class="legal-text">
+                        Conforme a la Ley Nº 19.799, su confirmación constituye una <strong>Firma Electrónica
+                            Simple</strong>.
+                        Se deja constancia que la presente baja no extingue la responsabilidad de pago de honorarios de
+                        corretaje en caso de que la propiedad
+                        sea enajenada o arrendada a clientes presentados por <strong>Procasa</strong> durante la
+                        vigencia del encargo,
+                        dentro de los plazos legales de protección de cartera establecidos en el Código de Comercio.
+                    </p>
+                </div>
+
+                <div class="actions">
+                    <a href="{{ link_confirmar }}" class="btn btn-primary">CONFIRMAR RETIRO DEFINITIVO</a>
+                    <a href="{{ link_llamada }}" class="btn btn-secondary">Prefiero hablar con un asesor primero</a>
+                </div>
+
+                <p style="font-size: 13px; color: #64748b; text-align: center; margin-top: 35px; font-style: italic;">
+                    Este proceso es irreversible una vez confirmado.
+                </p>
+            </div>
+
+            <div class="footer">
+                <strong>PROCASA JORGE PABLO CARO PROPIEDADES</strong>
+                División de Gestión de Cartera Exclusiva<br>
+                Teléfono: +56 9 4090 4971
+
+                <br>
+                <a href="{{ link_whatsapp }}" class="wa-link">Continuar por WhatsApp Corporativo</a>
+
+                <div class="disclaimer">
+                    © 2025 Procasa. Todos los derechos reservados. Información confidencial destinada
+                    únicamente al destinatario. La firma digital registra IP, fecha y geolocalización del usuario.
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

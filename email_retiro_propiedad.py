@@ -21,7 +21,7 @@ MODO_PRUEBA = True  # ← Cambia a False para envío real
 EMAIL_PRUEBA = "pgalleguillos@procasa.cl"
 
 RENDER_BASE_URL = "https://procasa-chatbot-yr8d.onrender.com"
-PUBLICACION_BASE_URL = "https://www.procasa.cl/propiedad/"  # ← NUEVO
+PUBLICACION_BASE_URL = "https://www.procasa.cl/propiedad/"
 
 BASE_DIR = Path(__file__).resolve().parent
 PLANTILLA = BASE_DIR / "templates" / "email_retiro_propiedad.html"

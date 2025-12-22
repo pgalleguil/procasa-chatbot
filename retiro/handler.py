@@ -1,4 +1,8 @@
-# retiro/handler.py → Versión FINAL COMPLETA con todas las correcciones
+# retiro/handler.py → Versión FINAL COMPLETA (22-12-2025)
+# - Corrección de llaves en CSS (f-strings)
+# - Notificación interna omitida en modo prueba
+# - Email de prueba actualizado a pgalleguillos@procasa.cl
+# - Notificación interna operativa y clara para el equipo Procasa
 
 import logging
 import smtplib
@@ -14,12 +18,12 @@ logger = logging.getLogger(__name__)
 # Variable global para detectar modo prueba
 ES_MODO_PRUEBA = False
 
-def enviar_notificacion_interna(tipo_accion, email_cliente, codigo_prop, email_ejecutivo):
+def enviar_notificacion_interna(tipo_accion, email_cliente, codigo_prop, email_ejecutivo, ip_confirmacion="Desconocida"):
     global ES_MODO_PRUEBA
     email_cliente = email_cliente.lower().strip()
 
-    # Detectar si es modo prueba
-    if "pgalleguillos@procasa.cl" in email_cliente or "prueba" in email_cliente:
+    # Detectar si es modo prueba (por el email de prueba)
+    if "pgalleguillos@procasa.cl" in email_cliente or "galleguil@gmail.com" in email_cliente or "prueba" in email_cliente:
         ES_MODO_PRUEBA = True
 
     if ES_MODO_PRUEBA:
@@ -27,24 +31,39 @@ def enviar_notificacion_interna(tipo_accion, email_cliente, codigo_prop, email_e
         logger.info(f"[MODO PRUEBA] Simulada: {tipo_accion} - Cliente: {email_cliente}")
         return
 
-    # Producción: envío normal con título corregido
-    asunto = f"Retiro de Propiedad {codigo_prop}"
-    destinatarios = [email_ejecutivo] if email_ejecutivo and email_ejecutivo.strip() else ["soporte@procasa.cl"]
-    cc = ["jpcaro@procasa.cl"]
-    
-    cuerpo = f""" 
+    # Producción: correo interno operativo y profesional
+    asunto = f"Retiro de Propiedad {codigo_prop} - Confirmado por Propietario"
+    fecha_actual = datetime.now().strftime("%d-%m-%Y %H:%M")
+
+    cuerpo = f"""
     <html>
-        <body style="font-family: Arial; line-height: 1.6;">
-            <h2>Notificación de Sistema - Procasa</h2>
-            <p><strong>Acción:</strong> RETIRO FIRMADO</p>
-            <p><strong>Propiedad:</strong> {codigo_prop}</p>
-            <p><strong>Cliente:</strong> {email_cliente}</p>
-            <p><strong>Ejecutivo Responsable:</strong> {email_ejecutivo or "No asignado"}</p>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b;">
+            <h2 style="color: #be123c;">Notificación de Sistema - Procasa</h2>
             <hr>
-            <p>Favor proceder con las gestiones administrativas correspondientes.</p>
+            <h3 style="color: #be123c;">RETIRO DE PROPIEDAD CONFIRMADO POR EL PROPIETARIO</h3>
+            <p><strong>Código de Propiedad:</strong> {codigo_prop}</p>
+            <p><strong>Cliente:</strong> {email_cliente}</p>
+            <p><strong>Fecha de Confirmación:</strong> {fecha_actual}</p>
+            <p><strong>IP de Confirmación:</strong> {ip_confirmacion}</p>
+            <p><strong>Firma Electrónica:</strong> Ley Nº 19.799 (Firma Electrónica Simple)</p>
+            <br>
+            <p><strong>Acción requerida:</strong></p>
+            <ul>
+                <li>Dar de baja definitiva la propiedad en todos los portales (Procasa.cl, PortalInmobiliario, Yapo, etc.)</li>
+                <li>Eliminar de cartera activa en sistemas internos</li>
+                <li>Archivar documentación correspondiente</li>
+            </ul>
+            <br>
+            <p>Queda formalizada la resciliación del encargo.</p>
+            <p><strong>Favor coordinar las gestiones administrativas a la brevedad.</strong></p>
+            <hr>
+            <p style="color: #64748b; font-size: 12px;">Sistema Automático Procasa - No responder este correo</p>
         </body>
     </html>
     """
+
+    destinatarios = [email_ejecutivo] if email_ejecutivo and email_ejecutivo.strip() else ["soporte@procasa.cl"]
+    cc = ["jpcaro@procasa.cl"]
     
     msg = MIMEMultipart()
     msg["From"] = f"Sistema Procasa <{Config.GMAIL_USER}>"
@@ -58,13 +77,13 @@ def enviar_notificacion_interna(tipo_accion, email_cliente, codigo_prop, email_e
             server.starttls()
             server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
             server.sendmail(Config.GMAIL_USER, destinatarios + cc, msg.as_string())
-        logger.info(f"Notificación interna enviada para {codigo_prop}")
+        logger.info(f"Notificación interna operativa enviada para {codigo_prop}")
     except Exception as e:
         logger.error(f"Error enviando notificación interna: {e}")
 
 def enviar_confirmacion_cliente(email_destino: str, codigo: str):
     asunto = f"Confirmación de Retiro - Propiedad {codigo}"
-    html_cuerpo = f""" 
+    html_cuerpo = f"""
     <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b; background: #f8fafc; padding: 20px;">
             <div style="max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
@@ -75,12 +94,12 @@ def enviar_confirmacion_cliente(email_destino: str, codigo: str):
                 <p>Quedamos a su disposición para cualquier consulta o gestión futura.</p>
                 <p>Si en el futuro desea volver a confiar en nosotros para gestionar una propiedad, será un placer acompañarlo con la misma dedicación de siempre.</p>
                 <p style="margin-top: 40px;">Atentamente,<br><strong>Equipo Procasa</strong><br>Jorge Pablo Caro Propiedades</p>
-                <hr style="margin: ۴۰px 0;">
+                <hr style="margin: 40px 0;">
                 <small style="color: #64748b;">Este es un mensaje automático. La confirmación quedó registrada con fecha, hora e IP.</small>
             </div>
         </body>
     </html>
-    """ 
+    """
 
     msg = MIMEMultipart("alternative")
     msg["From"] = f"Gestión Procasa <{Config.GMAIL_USER}>"
@@ -108,19 +127,18 @@ async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
     email_norm = email.lower().strip()
     codigo_norm = codigo.upper().strip()
 
-    # Detectar modo prueba
-    if "galleguil@gmail.com" in email_norm or "prueba" in email_norm:
+    # Detectar modoonacci prueba
+    if "pgalleguillos@procasa.cl" in email_norm or "galleguil@gmail.com" in email_norm:
         ES_MODO_PRUEBA = True
 
-    # Evitar duplicados
-    existente = col.find_one({
-        "email_propietario": email_norm,
+    # Verificar si ya existe un retiro confirmado (para evitar procesar dos veces)
+    ya_confirmado = col.find_one({
         "codigo_propiedad": codigo_norm,
         "accion": "retiro_confirmado"
     })
 
-    if existente:
-        return HTMLResponse(f""" 
+    if ya_confirmado:
+        return HTMLResponse(f"""
         <!DOCTYPE html>
         <html lang="es">
         <head>
@@ -128,12 +146,12 @@ async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Ya Confirmado - Procasa</title>
             <style>
-                body { font-family: 'Inter', Arial, sans-serif; background: #f8fafc; color: #1e293b; padding: 40px; text-align: center; }
-                .card { max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; padding: 40px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; }
-                h1 { color: #be123c; font-size: 28px; margin-bottom: 20px; }
-                p { font-size: 16px; line-height: 1.6; margin: 15px 0; }
-                .footer { margin-top: 40px; font-size: 14px; color: #64748b; }
-                .wa { color: #4ade80; font-weight: bold; }
+                body {{ font-family: 'Inter', Arial, sans-serif; background: #f8fafc; color: #1e293b; padding: 40px; text-align: center; }}
+                .card {{ max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; padding: 40px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; }}
+                h1 {{ color: #be123c; font-size: 28px; margin-bottom: 20px; }}
+                p {{ font-size: 16px; line-height: 1.6; margin: 15px 0; }}
+                .footer {{ margin-top: 40px; font-size: 14px; color: #64748b; }}
+                .wa {{ color: #4ade80; font-weight: bold; }}
             </style>
         </head>
         <body>
@@ -150,21 +168,33 @@ async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
         </html>
         """)
 
-    # Datos ejecutivo
+    # Datos del ejecutivo
     prop_data = db["universo_obelix"].find_one({"codigo": codigo_norm})
     email_ejecutivo = prop_data.get("email_ejecutivo") if prop_data else None
 
-    # Registrar confirmación
-    col.insert_one({
-        "email_propietario": email_norm,
-        "codigo_propiedad": codigo_norm,
-        "accion": "retiro_confirmado",
-        "fecha": datetime.now(timezone.utc),
-        "ip": ip,
-        "ley": "19.799"
-    })
+    # ACTUALIZAR el registro existente (buscado por codigo_propiedad)
+    # Si no existe, crear uno nuevo (upsert=True)
+    result = col.update_one(
+        {"codigo_propiedad": codigo_norm},  # Filtro: único por código de propiedad
+        {
+            "$set": {
+                "email_propietario": email_norm,
+                "accion": "retiro_confirmado",
+                "fecha_confirmacion": datetime.now(timezone.utc),  # Nueva fecha de confirmación
+                "ip": ip,
+                "ley": "19.799",
+                "fecha_actualizacion": datetime.now(timezone.utc)
+            },
+            "$setOnInsert": {  # Solo si se crea nuevo
+                "documento": "Carta_Retiro_Procasa.pdf",
+                "fecha_envio": datetime.now(timezone.utc),
+                "notas": "Actualizado automáticamente al confirmar retiro"
+            }
+        },
+        upsert=True  # Crea si no existe
+    )
 
-    # Desactivar propiedad
+    # Desactivar propiedad (idempotente)
     db["universo_obelix"].update_one(
         {"codigo": codigo_norm},
         {"$set": {
@@ -174,14 +204,14 @@ async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
         }}
     )
 
-    # Notificación interna (omite en prueba)
-    enviar_notificacion_interna("RETIRO FIRMADO", email_norm, codigo_norm, email_ejecutivo)
+    # Notificación interna
+    enviar_notificacion_interna("RETIRO FIRMADO", email_norm, codigo_norm, email_ejecutivo, ip)
 
-    # Confirmación al cliente (en prueba va al EMAIL_PRUEBA automáticamente por el flujo)
+    # Confirmación al cliente
     enviar_confirmacion_cliente(email_norm, codigo_norm)
 
     # Página de éxito
-    return HTMLResponse(f""" 
+    return HTMLResponse(f"""
     <!DOCTYPE html>
     <html lang="es">
     <head>
@@ -189,12 +219,12 @@ async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Retiro Confirmado - Procasa</title>
         <style>
-            body { font-family: 'Inter', Arial, sans-serif; background: #f8fafc; color: #1e293b; padding: 40px; text-align: center; }
-            .card { max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; padding: 40px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; }
-            h1 { color: #be123c; font-size: 28px; margin-bottom: 20px; }
-            p { font-size: 16px; line-height: 1.6; margin: 15px 0; }
-            .footer { margin-top: 40px; font-size: 14px; color: #64748b; }
-            .wa { color: #4ade80; font-weight: bold; }
+            body {{ font-family: 'Inter', Arial, sans-serif; background: #f8fafc; color: #1e293b; padding: 40px; text-align: center; }}
+            .card {{ max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; padding: 40px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; }}
+            h1 {{ color: #be123c; font-size: 28px; margin-bottom: 20px; }}
+            p {{ font-size: 16px; line-height: 1.6; margin: 15px 0; }}
+            .footer {{ margin-top: 40px; font-size: 14px; color: #64748b; }}
+            .wa {{ color: #4ade80; font-weight: bold; }}
         </style>
     </head>
     <body>
@@ -221,7 +251,7 @@ async def handle_solicitud_contacto(email: str, codigo: str, ip: str):
     email_norm = email.lower().strip()
     codigo_norm = codigo.upper().strip()
 
-    if "galleguil@gmail.com" in email_norm:
+    if "pgalleguillos@procasa.cl" in email_norm or "galleguil@gmail.com" in email_norm:
         ES_MODO_PRUEBA = True
 
     client = MongoClient(Config.MONGO_URI)
@@ -238,9 +268,9 @@ async def handle_solicitud_contacto(email: str, codigo: str, ip: str):
         "ip": ip
     })
 
-    enviar_notificacion_interna("SOLICITUD DE CONTACTO", email_norm, codigo_norm, email_ejecutivo)
+    enviar_notificacion_interna("SOLICITUD DE CONTACTO", email_norm, codigo_norm, email_ejecutivo, ip)
 
-    return HTMLResponse(""" 
+    return HTMLResponse("""
     <!DOCTYPE html>
     <html lang="es">
     <head>

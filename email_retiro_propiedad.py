@@ -167,7 +167,7 @@ def enviar_por_codigo(codigo: str):
     destinatario = EMAIL_PRUEBA if MODO_PRUEBA else email_real
     email_para_link = EMAIL_PRUEBA if MODO_PRUEBA else email_real
     prefijo = "[PRUEBA] " if MODO_PRUEBA else ""
-    asunto = f"{prefijo}Carta de Retiro – Propiedad {codigo}"
+    asunto = f"{prefijo}Retiro de propiedad | {codigo}"
 
     html = generar_html(nombre, codigo, email_para_link)
 

@@ -1,4 +1,4 @@
-# retiro/handler.py → Versión PREMIUM DEFINITIVA con UX mejorada (22-12-2025)
+# retiro/handler.py → Versión PREMIUM DEFINITIVA con UX mejorada y hora Chile en DB (22-12-2025)
 
 import logging
 import smtplib
@@ -193,6 +193,9 @@ async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
     prop_data = db["universo_obelix"].find_one({"codigo": codigo_norm})
     email_ejecutivo = prop_data.get("email_ejecutivo") if prop_data else None
 
+    # Hora local Chile para guardar en DB
+    ahora_chile = datetime.now(TZ_CHILE)
+
     # Actualización en MongoDB
     col.update_one(
         {"codigo_propiedad": codigo_norm},
@@ -201,11 +204,15 @@ async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
                 "email_propietario": email_norm,
                 "accion": "retiro_confirmado",
                 "fecha_confirmacion": datetime.utcnow(),
+                "fecha_chile": ahora_chile,  # ← AÑADIDO: hora local Chile
                 "ip": ip,
                 "ley": "19.799",
                 "fecha_actualizacion": datetime.utcnow()
             },
-            "$setOnInsert": {{ "documento": "Carta_Retiro_Procasa.pdf", "fecha_envio": datetime.utcnow() }}
+            "$setOnInsert": { 
+                "documento": "Carta_Retiro_Procasa.pdf", 
+                "fecha_envio": datetime.utcnow() 
+            }
         },
         upsert=True
     )
@@ -255,6 +262,9 @@ async def handle_solicitud_contacto(email: str, codigo: str, ip: str):
     prop_data = db["universo_obelix"].find_one({"codigo": codigo_norm})
     email_ejecutivo = prop_data.get("email_ejecutivo") if prop_data else None
 
+    # Hora local Chile para guardar en DB
+    ahora_chile = datetime.now(TZ_CHILE)
+
     db["retiros_propiedades"].update_one(
         {"codigo_propiedad": codigo_norm},
         {
@@ -262,6 +272,7 @@ async def handle_solicitud_contacto(email: str, codigo: str, ip: str):
                 "email_propietario": email_norm,
                 "accion": "solicitud_contacto_ejecutivo",
                 "fecha": datetime.utcnow(),
+                "fecha_chile": ahora_chile,  # ← AÑADIDO: hora local Chile
                 "ip": ip,
                 "fecha_actualizacion": datetime.utcnow()
             }
@@ -282,7 +293,7 @@ async def handle_solicitud_contacto(email: str, codigo: str, ip: str):
                 <h1>Solicitud de Asesoría Recibida</h1>
                 <p>Hemos registrado su requerimiento para la propiedad <span class="highlight">{codigo_norm}</span>.</p>
                 
-                <p>A la brevedad, un <strong>Consultor Senior de Procasa</strong> se pondrá en contacto con usted para brindarle una asesoría personalizada, resolver sus inquietudes y asegurar que su propiedad reciba el tratamiento comercial adecuado.</p>
+                <p>A la brevedad, un <strong>Asesor Inmobiliario de Procasa</strong> se pondrá en contacto con usted para brindarle una asesoría personalizada, resolver sus inquietudes y asegurar que su propiedad reciba el tratamiento comercial adecuado.</p>
                 
                 <p>Valoramos la oportunidad de seguir trabajando juntos.</p>
                 

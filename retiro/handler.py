@@ -1,4 +1,4 @@
-# retiro/handler.py → Versión PREMIUM DEFINITIVA con UX mejorada y hora Chile en DB (22-12-2025)
+# retiro/handler.py → Versión PREMIUM DEFINITIVA con BLOQUEO SELECTIVO para correos internos (23-12-2025)
 
 import logging
 import smtplib
@@ -20,6 +20,62 @@ TZ_CHILE = ZoneInfo("America/Santiago")
 # Ruta al logo y estática
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOGO_PATH = BASE_DIR / "static" / "logo.png"
+
+# ==============================================================================
+# CONFIGURACIÓN DE SEGURIDAD: BLOQUEO PARA CORREOS INTERNOS
+# ==============================================================================
+# Correo del administrador que SÍ puede realizar acciones aunque sea interno
+ADMIN_CORREO = "pgalleguillos@procasa.cl"
+
+def correo_autorizado(email: str) -> bool:
+    """
+    Determina si el correo que viene en el enlace está autorizado a realizar la acción.
+    - Propietarios externos (no @procasa.cl): SÍ
+    - Administrador (pgalleguillos@procasa.cl): SÍ
+    - Otros correos @procasa.cl (ejecutivos, jefe, etc.): NO
+    """
+    email_norm = email.lower().strip()
+    
+    if email_norm == ADMIN_CORREO:
+        return True  # Administrador siempre puede (pruebas y gestión)
+    
+    if email_norm.endswith("@procasa.cl"):
+        logger.warning(f"Intento bloqueado desde correo interno no autorizado: {email_norm}")
+        return False
+    
+    return True  # Cualquier correo externo (propietario real) está autorizado
+
+def pantalla_acceso_denegado(codigo: str):
+    """Pantalla que se muestra cuando un correo interno no autorizado intenta la acción."""
+    return HTMLResponse(f"""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        {CSS_ESTILOS}
+        <style>
+            .error-title {{ color: #dc2626; }}
+            .error-msg {{ color: #991b1b; font-weight: 600; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <img src="/static/logo.png" alt="Procasa" class="logo">
+            </div>
+            <div class="content">
+                <h1 class="error-title">Acceso No Autorizado</h1>
+                <p>Esta acción solo puede ser realizada por el <strong>propietario</strong> de la propiedad código <span class="highlight">{codigo}</span>.</p>
+                <p class="error-msg">Los enlaces recibidos en copia (CC) no tienen permiso para confirmar el retiro ni solicitar contacto.</p>
+                <p>Si necesita gestionar esta propiedad de forma administrativa, contacte al administrador del sistema.</p>
+            </div>
+            <div class="footer">
+                Jorge Pablo Caro Propiedades • Seguridad de Procesos
+            </div>
+        </div>
+    </body>
+    </html>
+    """)
 
 # --- DISEÑO UI PROFESIONAL PARA EL CLIENTE ---
 CSS_ESTILOS = """
@@ -157,13 +213,18 @@ def enviar_notificacion_interna(tipo_accion: str, email_cliente: str, codigo_pro
 
 async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
     """Procesa la confirmación de retiro y muestra pantalla de éxito al cliente."""
+    email_norm = email.lower().strip()
+    codigo_norm = codigo.upper().strip()
+
+    # === BLOQUEO DE SEGURIDAD ===
+    if not correo_autorizado(email_norm):
+        logger.warning(f"Bloqueado intento de confirmación desde correo no autorizado: {email_norm} (IP: {ip}) - Propiedad {codigo_norm}")
+        return pantalla_acceso_denegado(codigo_norm)
+
     client = MongoClient(Config.MONGO_URI)
     db = client[Config.DB_NAME]
     col = db["retiros_propiedades"]
     
-    email_norm = email.lower().strip()
-    codigo_norm = codigo.upper().strip()
-
     # Verificar si ya existe el retiro
     ya_confirmado = col.find_one({
         "codigo_propiedad": codigo_norm,
@@ -204,7 +265,7 @@ async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
                 "email_propietario": email_norm,
                 "accion": "retiro_confirmado",
                 "fecha_confirmacion": datetime.utcnow(),
-                "fecha_chile": ahora_chile,  # ← AÑADIDO: hora local Chile
+                "fecha_chile": ahora_chile,
                 "ip": ip,
                 "ley": "19.799",
                 "fecha_actualizacion": datetime.utcnow()
@@ -256,6 +317,11 @@ async def handle_solicitud_contacto(email: str, codigo: str, ip: str):
     email_norm = email.lower().strip()
     codigo_norm = codigo.upper().strip()
 
+    # === BLOQUEO DE SEGURIDAD ===
+    if not correo_autorizado(email_norm):
+        logger.warning(f"Bloqueado intento de solicitud de contacto desde correo no autorizado: {email_norm} (IP: {ip}) - Propiedad {codigo_norm}")
+        return pantalla_acceso_denegado(codigo_norm)
+
     client = MongoClient(Config.MONGO_URI)
     db = client[Config.DB_NAME]
     
@@ -272,7 +338,7 @@ async def handle_solicitud_contacto(email: str, codigo: str, ip: str):
                 "email_propietario": email_norm,
                 "accion": "solicitud_contacto_ejecutivo",
                 "fecha": datetime.utcnow(),
-                "fecha_chile": ahora_chile,  # ← AÑADIDO: hora local Chile
+                "fecha_chile": ahora_chile,
                 "ip": ip,
                 "fecha_actualizacion": datetime.utcnow()
             }

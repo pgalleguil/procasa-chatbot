@@ -109,7 +109,6 @@ def get_images():
     return images or ["propiedades/default.jpg"]
 
 # === LOGIN Y DASHBOARD ===
-# === LOGIN Y DASHBOARD (100% FUNCIONAL EN FASTAPI) ===
 @app.get("/")
 async def login_get(request: Request):
     return templates.TemplateResponse(
@@ -382,12 +381,13 @@ async def health_check():
 
 @app.get("/campana/respuesta")
 async def campana_respuesta(
+    request: Request,  # ← AÑADIDO
     email: str = Query(...),
     accion: str = Query(...),
     codigos: str = Query("N/A"),
     campana: str = Query(...)
 ):
-    return await handle_campana_respuesta(email, accion, codigos, campana)
+    return await handle_campana_respuesta(request, email, accion, codigos, campana)
 
 @app.get("/api/reporte_real")
 async def api_reporte_real():

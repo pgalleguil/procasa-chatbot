@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# email_retiro_propiedad.py → Versión FINAL con hora local Chile en DB (22-12-2025)
+# email_retiro_propiedad.py → Versión FINAL con Copia a Ejecutivo (29-12-2025)
 
 import os
 import smtplib
@@ -24,7 +24,7 @@ EMAIL_PRUEBA = "pgalleguillos@procasa.cl"
 RENDER_BASE_URL = "https://procasa-chatbot-yr8d.onrender.com"
 PUBLICACION_BASE_URL = "https://www.procasa.cl/propiedad/"
 
-# Zona horaria de Chile (maneja automáticamente verano/invierno)
+# Zona horaria de Chile
 TZ_CHILE = ZoneInfo("America/Santiago")
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -47,7 +47,7 @@ if not PDF_PATH.exists():
 html_template = PLANTILLA.read_text(encoding="utf-8")
 
 # ==============================================================================
-# REGISTRO DE ENVÍO EN MONGODB (con hora local Chile)
+# REGISTRO DE ENVÍO EN MONGODB
 # ==============================================================================
 def registrar_envio_carta(email: str, codigo: str, modo_prueba: bool = False):
     try:
@@ -56,7 +56,7 @@ def registrar_envio_carta(email: str, codigo: str, modo_prueba: bool = False):
         retiros = db["retiros_propiedades"]
 
         ahora_utc = datetime.utcnow()
-        ahora_chile = datetime.now(TZ_CHILE)  # Hora local Chile
+        ahora_chile = datetime.now(TZ_CHILE)
 
         retiros.update_one(
             {"codigo_propiedad": codigo.upper().strip()},
@@ -65,8 +65,8 @@ def registrar_envio_carta(email: str, codigo: str, modo_prueba: bool = False):
                     "email_propietario": email.lower().strip(),
                     "documento": "Carta_Retiro_Procasa.pdf",
                     "accion": "carta_enviada",
-                    "fecha": ahora_utc,  # UTC (estándar MongoDB)
-                    "fecha_chile": ahora_chile,  # NUEVO: hora visible correcta en Chile
+                    "fecha": ahora_utc,
+                    "fecha_chile": ahora_chile,
                     "ip": "admin_script_local" if not modo_prueba else "admin_prueba",
                     "notas": "Carta enviada vía script administrativo",
                     "modo_prueba": modo_prueba,
@@ -75,7 +75,7 @@ def registrar_envio_carta(email: str, codigo: str, modo_prueba: bool = False):
             },
             upsert=True
         )
-        log.info(f"Registrado en DB: carta enviada a {email} (propiedad {codigo}) - Hora Chile: {ahora_chile}")
+        log.info(f"Registrado en DB: propiedad {codigo} - Hora Chile: {ahora_chile}")
     except Exception as e:
         log.error(f"Error registrando envío en MongoDB: {e}")
 
@@ -118,9 +118,9 @@ def generar_html(nombre, codigo, email_para_link):
         .replace("{{ link_whatsapp }}", link_whatsapp)
 
 # ==============================================================================
-# ENVÍO DE CORREO (CC correcto según modo prueba)
+# ENVÍO DE CORREO
 # ==============================================================================
-def enviar_correo(destinatario: str, asunto: str, html: str) -> bool:
+def enviar_correo(destinatario: str, asunto: str, html: str, email_ejecutivo: str = None) -> bool:
     msg = MIMEMultipart("mixed")
     related = MIMEMultipart("related")
     related.attach(MIMEText(html, "html", "utf-8"))
@@ -132,14 +132,23 @@ def enviar_correo(destinatario: str, asunto: str, html: str) -> bool:
     msg["To"] = destinatario
     msg["Subject"] = asunto
 
+    # Configuración de CC (Copias)
+    cc_emails = []
+    
     if MODO_PRUEBA:
-        msg["Cc"] = "pgalleguillos@procasa.cl"
-        destinatarios_totales = [destinatario, "pgalleguillos@procasa.cl"]
-        log_text = "pgalleguillos@procasa.cl (solo pruebas)"
+        cc_emails = ["pgalleguillos@procasa.cl"]
     else:
-        msg["Cc"] = "jpcaro@procasa.cl, pgalleguillos@procasa.cl"
-        destinatarios_totales = [destinatario, "jpcaro@procasa.cl", "pgalleguillos@procasa.cl"]
-        log_text = "jpcaro@procasa.cl y pgalleguillos@procasa.cl"
+        # Destinatarios fijos en producción
+        cc_emails = ["jpcaro@procasa.cl", "pgalleguillos@procasa.cl"]
+        
+        # Agregar ejecutivo si existe y no es jpcaro (para no duplicar)
+        if email_ejecutivo:
+            email_ejecutivo = email_ejecutivo.strip().lower()
+            if email_ejecutivo and email_ejecutivo not in cc_emails:
+                cc_emails.append(email_ejecutivo)
+
+    msg["Cc"] = ", ".join(cc_emails)
+    destinatarios_totales = [destinatario] + cc_emails
 
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587)
@@ -147,7 +156,7 @@ def enviar_correo(destinatario: str, asunto: str, html: str) -> bool:
         server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
         server.sendmail(Config.GMAIL_USER, destinatarios_totales, msg.as_string())
         server.quit()
-        log.info(f"Correo enviado exitosamente a {destinatario} (CC: {log_text})")
+        log.info(f"Correo enviado a {destinatario} | CC: {', '.join(cc_emails)}")
         return True
     except Exception as e:
         log.error(f"Error enviando correo a {destinatario}: {e}")
@@ -158,49 +167,58 @@ def enviar_correo(destinatario: str, asunto: str, html: str) -> bool:
 # ==============================================================================
 def enviar_por_codigo(codigo: str):
     codigo = codigo.strip().upper()
-    
     nombre = "Cliente"
     email_real = None
+    email_ejecutivo = None
 
-    if not MODO_PRUEBA:
-        try:
-            client = MongoClient(Config.MONGO_URI)
-            db = client[Config.DB_NAME]
-            prop = db["universo_obelix"].find_one({"codigo": codigo})
+    # Búsqueda de datos en MongoDB
+    try:
+        client = MongoClient(Config.MONGO_URI)
+        db = client[Config.DB_NAME]
+        prop = db["universo_obelix"].find_one({"codigo": codigo})
 
-            if not prop:
-                print(f"❌ Propiedad {codigo} no encontrada en universo_obelix")
-                return False
-
-            email_real = prop.get("email_propietario", "").strip().lower()
-            if not email_real:
-                print(f"❌ Propiedad {codigo} sin email de propietario (campo 'email_propietario' vacío o no existe)")
-                return False
-
-            nombre_raw = prop.get("nombre_propietario", "").strip()
-            if nombre_raw:
-                nombre = nombre_raw.split()[0].title()
-        except Exception as e:
-            print(f"❌ Error conectando a MongoDB: {e}")
+        if not prop:
+            print(f"❌ Propiedad {codigo} no encontrada en universo_obelix")
             return False
 
+        # Email Propietario
+        email_real = prop.get("email_propietario", "").strip().lower()
+        if not email_real and not MODO_PRUEBA:
+            print(f"❌ Propiedad {codigo} sin email de propietario")
+            return False
+
+        # Email Ejecutivo (NUEVO)
+        email_ejecutivo = prop.get("email_ejecutivo", "").strip().lower()
+
+        # Nombre Propietario
+        nombre_raw = prop.get("nombre_propietario", "").strip()
+        if nombre_raw:
+            nombre = nombre_raw.split()[0].title()
+
+    except Exception as e:
+        print(f"❌ Error conectando a MongoDB: {e}")
+        return False
+
+    # Definir destinatario según modo
     destinatario = EMAIL_PRUEBA if MODO_PRUEBA else email_real
     email_para_link = EMAIL_PRUEBA if MODO_PRUEBA else email_real
+    
     prefijo = "[PRUEBA] " if MODO_PRUEBA else ""
     asunto = f"{prefijo}Retiro de propiedad | {codigo}"
 
     html = generar_html(nombre, codigo, email_para_link)
 
-    # Mostramos hora local Chile en consola
+    # Log de consola
     ahora_chile = datetime.now(TZ_CHILE)
     print(f"\n📧 Preparando envío (Hora Chile: {ahora_chile.strftime('%d/%m/%Y %H:%M')})")
-    print(f"   👤 Destinatario: {destinatario}")
-    print(f"   🏠 Propiedad: {codigo} ({nombre})")
-    print(f"   {'🧪 MODO PRUEBA' if MODO_PRUEBA else '✅ ENVÍO REAL'}")
+    print(f"    👤 Destinatario: {destinatario}")
+    print(f"    👔 Ejecutivo: {email_ejecutivo if email_ejecutivo else 'No asignado'}")
+    print(f"    🏠 Propiedad: {codigo} ({nombre})")
+    print(f"    {'🧪 MODO PRUEBA' if MODO_PRUEBA else '✅ ENVÍO REAL'}")
 
     registrar_envio_carta(email_para_link, codigo, modo_prueba=MODO_PRUEBA)
 
-    if enviar_correo(destinatario, asunto, html):
+    if enviar_correo(destinatario, asunto, html, email_ejecutivo):
         print("✅ ¡Correo enviado y registrado con éxito!")
         return True
     else:
@@ -212,12 +230,10 @@ def enviar_por_codigo(codigo: str):
 # ==============================================================================
 if __name__ == "__main__":
     print("=" * 70)
-    print("       ENVÍO DE CARTA DE RETIRO - PROCASA 2025")
-    print("       + ENLACE PÚBLICO + REGISTRO EN MONGODB")
+    print("        ENVÍO DE CARTA DE RETIRO - PROCASA 2025")
+    print("        + COPIA A EJECUTIVO + REGISTRO EN MONGODB")
     print("=" * 70)
-    print(f"URL base confirmación: {RENDER_BASE_URL}/retiro/confirmar")
-    print(f"URL pública propiedad: {PUBLICACION_BASE_URL}<código>")
-    print(f"Modo prueba: {'SÍ → Todo a ' + EMAIL_PRUEBA if MODO_PRUEBA else 'NO → Envío real'}")
+    print(f"Modo prueba: {'SÍ' if MODO_PRUEBA else 'NO'}")
     print("=" * 70)
 
     while True:

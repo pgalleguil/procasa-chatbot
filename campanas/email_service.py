@@ -4,6 +4,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import Config
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +19,14 @@ Código(s)    : {", ".join(codigos) if codigos else codigo_principal}
 Teléfono     : {telefono}
 Email        : {email}
 Respuesta    : {accion_texto}
-Hora         : {datetime.utcnow().strftime('%d/%m/%Y %H:%M')}
+Hora         : {datetime.utcnow().strftime('%d/%m/%Y %H:%M')}  # ← ahora datetime está definido
 
 ENLACE DIRECTO:
 https://www.procasa.cl/{codigo_principal}
 
 DASHBOARD EN TIEMPO REAL:
 https://procasa-chatbot-yr8d.onrender.com
-Usuario: admin | Contraseña: procasa2025
+# (Se quitaron usuario/contraseña por seguridad – si las necesitas, agrégalas manualmente)
 
 ---
 Sistema automático Procasa
@@ -33,7 +34,7 @@ Sistema automático Procasa
 
         msg = MIMEMultipart()
         msg['From'] = f"Procasa Alertas <{Config.GMAIL_USER}>"
-        msg['To'] = "jpcaro@procasa.cl, pgalleguillos@procasa.cl, p.galleguil@gmail.com"
+        msg['To'] = "jpcaro@procasa.cl, pgalleguillos@procasa.cl"
         msg['Subject'] = f" NUEVA RESPUESTA: {nombre} - {accion_texto}"
 
         msg.attach(MIMEText(cuerpo, 'plain', 'utf-8'))

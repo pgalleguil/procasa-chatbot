@@ -3,6 +3,7 @@ import logging
 import re
 from datetime import datetime
 from pymongo import MongoClient
+from fastapi import Request  # ← AÑADIDO
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from config import Config
@@ -12,7 +13,13 @@ from .email_service import enviar_alerta_equipo
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="campanas/templates")
 
-async def handle_campana_respuesta(email: str, accion: str, codigos: str, campana: str):
+async def handle_campana_respuesta(
+    request: Request,  # ← AÑADIDO: parámetro request
+    email: str,
+    accion: str,
+    codigos: str,
+    campana: str
+):
     if accion not in ["ajuste_7", "llamada", "mantener", "no_disponible", "unsubscribe"]:
         return HTMLResponse("Acción no válida", status_code=400)
 
@@ -56,9 +63,9 @@ async def handle_campana_respuesta(email: str, accion: str, codigos: str, campan
         accion_texto = config_accion["titulo"].upper().replace("!", "")
         enviar_alerta_equipo(nombre, telefono, email_lower, codigos_lista, accion_texto, campana)
 
-        # 4. Respuesta al cliente
+        # 4. Respuesta al cliente (ahora con request real)
         return templates.TemplateResponse("base.html", {
-            "request": None,
+            "request": request,  # ← CORREGIDO: request real en vez de None
             "titulo": config_accion["titulo"],
             "color": config_accion["color"],
             "accion": accion.replace("_", " ").title(),

@@ -39,14 +39,55 @@ def safe_int_conversion(valor) -> int:
 # ==========================================
 # 3. EXTRACCIÓN DE DATOS PERSONALES
 # ==========================================
+
+def validar_rut(rut_sin_formato: str) -> bool:
+    """
+    Valida el dígito verificador de un RUT chileno.
+    rut_sin_formato: solo números + posible K al final (ej: "28546597")
+    """
+    if not re.match(r"^\d+[Kk\d]$", rut_sin_formato):
+        return False
+    
+    dv_provisto = rut_sin_formato[-1].upper()
+    cuerpo = rut_sin_formato[:-1]
+    
+    if not cuerpo.isdigit():
+        return False
+    
+    suma = 0
+    multiplo = 2
+    for digito in reversed(cuerpo):
+        suma += int(digito) * multiplo
+        multiplo = 7 if multiplo == 8 else multiplo + 1  # serie: 2,3,4,5,6,7,2,3...
+    
+    resto = suma % 11
+    dv_calculado = "0" if resto == 0 else "K" if resto == 1 else str(11 - resto)
+    
+    return dv_calculado == dv_provisto
+
 def extraer_rut(texto: str) -> Optional[str]:
-    # Busca formato 12.345.678-9 o 12345678-9
-    match = re.search(r'\b(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])\b', texto)
-    if match:
-        rut_raw = match.group(1).replace(".", "").replace("-", "").upper()
-        if len(rut_raw) > 1:
-            return f"{rut_raw[:-1]}-{rut_raw[-1]}"
-    return None
+    """
+    Versión mejorada: extrae solo si pasa validación de DV.
+    """
+    # Busca formatos comunes (con o sin puntos/guion)
+    match = re.search(r'\b(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])\b', texto, re.IGNORECASE)
+    if not match:
+        return None
+    
+    rut_raw = match.group(1).replace(".", "").replace("-", "").upper()
+    
+    # Normaliza longitud (algunos escriben con 0 iniciales, pero no afecta)
+    if len(rut_raw) < 2:
+        return None
+    
+    cuerpo = rut_raw[:-1]
+    dv = rut_raw[-1]
+    
+    # Validación estricta
+    if not validar_rut(cuerpo + dv):
+        return None  # ← Aquí se rechazan los códigos de propiedades falsos
+    
+    return f"{cuerpo}-{dv}"
 
 def extraer_email(texto: str) -> Optional[str]:
     match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', texto)

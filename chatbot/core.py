@@ -86,10 +86,14 @@ def process_user_message(phone: str, message: str) -> str:
     # 1. Guardar mensaje usuario
     guardar_mensaje(phone, "user", original_message)
 
-# === MODIFICACIÓN PARA FORZAR EL ORIGEN A WHATSAPP ===
-    actualizar_prospecto(phone, {"origen": "WhatsApp"})
-
     historial = obtener_conversacion(phone)
+
+    # === OBTENEMOS PROSPECTO TEMPRANO PARA PODER USARLO EN ORIGEN Y EN TODO EL FLUJO ===
+    prospecto_actual = obtener_prospecto(phone) or {}
+
+    # Solo forzar WhatsApp como fallback si no hay origen previo (permite Yapo, MercadoLibre, etc.)
+    if not prospecto_actual.get("origen"):
+        actualizar_prospecto(phone, {"origen": "WhatsApp"})
 
     # =======================================================
     # 2. FLUJO PROPIETARIO
@@ -134,27 +138,27 @@ def process_user_message(phone: str, message: str) -> str:
         prospecto_actual.update(updates_datos)
 
     # =======================================================
-    # 4. ANÁLISIS DE PROPIEDAD (LINK O CÓDIGO)
+    # 4. ANÁLISIS DE PROPIEDAD (LINK O CÓDIGO) - VERSIÓN CORREGIDA
     # =======================================================
     propiedad = None
     nuevo_origen = None
-    codigo_mercadolibre = None
+    codigo_externo = None  # Genérico: será yapo o mercadolibre según plataforma
     codigo_detectado = None
     
     # 1. Intentar detectar Link o Código en el mensaje actual
-    es_link, temp_prop, plataforma_origen, codigo_ml_externo = analizar_mensaje_para_link(original_message)
+    es_link, temp_prop, plataforma_origen, codigo_externo_raw = analizar_mensaje_para_link(original_message)
 
     if es_link and temp_prop:
         propiedad = temp_prop
-        nuevo_origen = plataforma_origen
+        nuevo_origen = plataforma_origen or "WhatsApp"
         codigo_detectado = str(propiedad.get("codigo"))
-        codigo_mercadolibre = codigo_ml_externo
+        codigo_externo = codigo_externo_raw  # Guardamos el código externo crudo
     elif es_link and not temp_prop:
-        nuevo_origen = plataforma_origen
-        codigo_mercadolibre = codigo_ml_externo
+        nuevo_origen = plataforma_origen or "WhatsApp"
+        codigo_externo = codigo_externo_raw
 
     if not propiedad:
-        # Buscar código numérico explícito en el mensaje
+        # Buscar código numérico explícito en el mensaje (código Procasa interno)
         match = re.search(r"\b(\d{4,6})\b", original_message)
         if match:
             cod = match.group(1)
@@ -164,7 +168,7 @@ def process_user_message(phone: str, message: str) -> str:
                 if not prospecto_actual.get("origen"):
                     nuevo_origen = "WhatsApp"
 
-    # 2. Si NO hay propiedad en mensaje actual, recuperar histórica SOLO SI NO ESTAMOS BUSCANDO OTRA COSA
+    # 2. Si NO hay propiedad en mensaje actual, recuperar histórica
     if not propiedad and not any(x in msg_lower for x in ["busco", "otra", "tienes", "opciones"]):
         codigo_guardado = prospecto_actual.get("codigo")
         if codigo_guardado:
@@ -178,12 +182,21 @@ def process_user_message(phone: str, message: str) -> str:
             "precio_uf": propiedad.get("precio_uf"),
             "comuna": propiedad.get("comuna"),
             "tipo": propiedad.get("tipo"),
-            "operacion": propiedad.get("operacion")
+            "operacion": propiedad.get("operacion"),
+            "origen": nuevo_origen  # Siempre actualiza origen si viene de link
         }
-        if nuevo_origen: updates_prop["origen"] = nuevo_origen
-        if codigo_mercadolibre: updates_prop["codigo_mercadolibre"] = codigo_mercadolibre
+        
+        # === CORRECCIÓN CLAVE: Guardar código externo en campo correcto ===
+        if codigo_externo:
+            if plataforma_origen == "Yapo":
+                updates_prop["codigo_yapo"] = codigo_externo
+            elif plataforma_origen in ["MercadoLibre", "PortalInmobiliario", "Otro Portal (MLC code)"]:
+                updates_prop["codigo_mercadolibre"] = codigo_externo
+        
         actualizar_prospecto(phone, updates_prop)
-
+        
+        # Registrar para anti-repetición en RAG
+        registrar_propiedades_vistas(phone, [codigo_detectado])
 
     # =======================================================
     # 5. PREPARACIÓN DE MESSAGES PARA GROK

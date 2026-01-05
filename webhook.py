@@ -324,10 +324,11 @@ async def webhook(
         return JSONResponse({"ok": True}, status_code=200)
 
     # === 3. Extraer datos ===
-    messages_data = data.get("data", {}).get("messages", {}) or {}   
-if not messages_data:
-    logger.debug("[WHATSAPP] Webhook recibido sin mensaje (probablemente status update)")
-    return JSONResponse({"status": "no messages"}, status_code=200)
+    messages_data = data.get("data", {}).get("messages", {}) or {}
+
+    if not messages_data:
+        logger.debug("[WHATSAPP] Webhook recibido sin mensaje (probablemente status update)")
+        return JSONResponse({"status": "no messages"}, status_code=200)
 
     msg_obj = messages_data if isinstance(messages_data, dict) else messages_data[0]
 
@@ -365,16 +366,15 @@ if not messages_data:
 
     logger.info(f"[WHATSAPP] Respuesta generada: {respuesta}")
 
-    # === 6. ENVIAR RESPUESTA (CORREGIDO) ===
-    # Aquí es donde fallaba antes. Ahora reutilizamos la función correcta.
+    # === 6. ENVIAR RESPUESTA ===
     if respuesta:
         try:
-            # Llamamos a la función de arriba que SÍ sabe cómo enviar
             await send_whatsapp_message(phone, respuesta)
         except Exception as e:
             logger.error(f"Error crítico llamando a send_whatsapp_message: {e}")
 
     return JSONResponse({"ok": True}, status_code=200)
+
 
 @app.get("/health")
 async def health_check():

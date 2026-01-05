@@ -296,9 +296,6 @@ async def webhook(
     request: Request,
     x_webhook_signature: str = Header(None, alias="X-Webhook-Signature")
 ):
-    """
-    Función principal (El Recepcionista): Recibe, piensa y ordena responder.
-    """
     raw_body = await request.body()
 
     # === 1. Verificación de firma ===
@@ -324,11 +321,13 @@ async def webhook(
         return JSONResponse({"ok": True}, status_code=200)
 
     # === 3. Extraer datos ===
-    messages_data = data.get("data", {}).get("messages", {}) or {}   
-if not messages_data:
-    logger.debug("[WHATSAPP] Webhook recibido sin mensaje (probablemente status update)")
-    return JSONResponse({"status": "no messages"}, status_code=200)
+    messages_data = data.get("data", {}).get("messages", {}) or {}
 
+    if not messages_data:
+        logger.debug("[WHATSAPP] Webhook recibido sin mensaje (probablemente status update)")
+        return JSONResponse({"status": "no messages"}, status_code=200)
+
+    # ← Aquí continúa el código normal (fuera del if)
     msg_obj = messages_data if isinstance(messages_data, dict) else messages_data[0]
 
     # Extraer teléfono
@@ -350,7 +349,7 @@ if not messages_data:
     if not phone or not text:
         return JSONResponse({"status": "ignored"}, status_code=200)
 
-    # === 4. Normalizar teléfono para el sistema interno (+569...) ===
+    # === 4. Normalizar teléfono ===
     phone = phone.replace("@c.us", "").replace("@s.whatsapp.net", "")
     if phone.startswith("56") and len(phone) == 11:
         phone = "+" + phone
@@ -360,16 +359,13 @@ if not messages_data:
     logger.info(f"[WHATSAPP] Mensaje de {phone}: {text}")
 
     # === 5. PROCESAR CON EL CHATBOT ===
-    from chatbot import process_user_message
-    respuesta = process_user_message(phone, text)
+    respuesta = process_user_message(phone, text)  # ya importado arriba con try/except
 
     logger.info(f"[WHATSAPP] Respuesta generada: {respuesta}")
 
-    # === 6. ENVIAR RESPUESTA (CORREGIDO) ===
-    # Aquí es donde fallaba antes. Ahora reutilizamos la función correcta.
+    # === 6. ENVIAR RESPUESTA ===
     if respuesta:
         try:
-            # Llamamos a la función de arriba que SÍ sabe cómo enviar
             await send_whatsapp_message(phone, respuesta)
         except Exception as e:
             logger.error(f"Error crítico llamando a send_whatsapp_message: {e}")

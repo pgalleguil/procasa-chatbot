@@ -324,9 +324,10 @@ async def webhook(
         return JSONResponse({"ok": True}, status_code=200)
 
     # === 3. Extraer datos ===
-    messages_data = data.get("data", {}).get("messages", {}) or {}
-    if not messages_data:
-        return JSONResponse({"status": "no messages"}, status_code=200)
+    messages_data = data.get("data", {}).get("messages", {}) or {}   
+if not messages_data:
+    logger.debug("[WHATSAPP] Webhook recibido sin mensaje (probablemente status update)")
+    return JSONResponse({"status": "no messages"}, status_code=200)
 
     msg_obj = messages_data if isinstance(messages_data, dict) else messages_data[0]
 
@@ -432,6 +433,51 @@ async def retiro_confirmar(request: Request, email: str = Query(...), codigo: st
 async def retiro_contactar(request: Request, email: str = Query(...), codigo: str = Query(...)):
     ip = request.client.host if request.client else "0.0.0.0"
     return await handle_solicitud_contacto(email, codigo, ip)
+
+@app.post("/api/iniciar-lead-portal")
+async def iniciar_lead_portal(
+    telefono: str = Form(...),
+    mensaje_simulado: str = Form("Hola, estoy interesado en la propiedad que vi en MercadoLibre."),
+    nombre_cliente: str = Form(None),
+    codigo_externo: str = Form(None),
+    plataforma: str = Form("MercadoLibre")
+):
+    from chatbot import process_user_message
+    from chatbot.storage import actualizar_prospecto, establecer_nombre_usuario
+
+    # Normalizar teléfono (exacto como en webhook real)
+    clean = "".join(filter(str.isdigit, telefono))
+    if len(clean) == 9 and clean.startswith("9"):
+        clean = "569" + clean
+    elif len(clean) == 11 and clean.startswith("56"):
+        clean = "56" + clean
+    phone = clean
+
+    # Opcional: guardar datos del lead antes de simular (nombre, código, etc.)
+    updates = {"origen": plataforma}
+    if nombre_cliente:
+        updates["nombre"] = nombre_cliente
+        establecer_nombre_usuario(phone, nombre_cliente)  # Para que el bot lo salude por nombre
+    if codigo_externo:
+        if "MercadoLibre" in plataforma or "PortalInmobiliario" in plataforma:
+            updates["codigo_mercadolibre"] = codigo_externo
+        elif "Yapo" in plataforma:
+            updates["codigo_yapo"] = codigo_externo
+    if updates:
+        actualizar_prospecto(phone, updates)
+
+    # === AQUÍ SIMULAMOS EL MENSAJE DEL CLIENTE (despierta el bot) ===
+    logger.info(f"[INICIO LEAD] Simulando mensaje de {phone}: {mensaje_simulado}")
+    respuesta_bot = process_user_message(phone, mensaje_simulado)
+
+    # Enviar la respuesta real al cliente
+    if respuesta_bot:
+        success = await send_whatsapp_message(phone, respuesta_bot)
+        if success:
+            return {"status": "ok", "mensaje": "Lead iniciado con éxito. Bot despertado y mensaje enviado al cliente.", "respuesta": respuesta_bot}
+        else:
+            return {"status": "error", "mensaje": "Bot procesó pero fallo al enviar"}
+    return {"status": "error", "mensaje": "No se generó respuesta"}
 
     
 # ====================== ARRANQUE CORRECTO ======================

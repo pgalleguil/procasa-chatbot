@@ -445,7 +445,7 @@ async def iniciar_lead_portal(
     from chatbot import process_user_message
     from chatbot.storage import actualizar_prospecto, establecer_nombre_usuario
 
-    # Normalizar teléfono (igual que webhook real)
+    # Normalizar teléfono
     clean = "".join(filter(str.isdigit, telefono))
     if len(clean) == 9 and clean.startswith("9"):
         clean = "569" + clean
@@ -466,18 +466,18 @@ async def iniciar_lead_portal(
     if updates:
         actualizar_prospecto(phone, updates)
 
-    # Simular mensaje → despierta bot con flujo normal
+    # Simular mensaje del cliente → usa el flujo EXACTO del bot
     logger.info(f"[INICIO LEAD] Simulando mensaje de {phone}: {mensaje_simulado}")
     respuesta_bot = process_user_message(phone, mensaje_simulado)
 
-    # Enviar respuesta real
+    # Enviar respuesta real al cliente
     if respuesta_bot:
         success = await send_whatsapp_message(phone, respuesta_bot)
         if success:
-            return {"status": "ok", "mensaje": "Lead iniciado con éxito", "respuesta": respuesta_bot}
+            return {"status": "ok", "mensaje": "Lead iniciado con éxito. Bot despertado y respuesta enviada.", "respuesta": respuesta_bot}
         else:
-            return {"status": "error", "mensaje": "Falló envío"}
-    return {"status": "error", "mensaje": "No respuesta"}
+            return {"status": "error", "mensaje": "Bot procesó pero falló el envío a WhatsApp"}
+    return {"status": "error", "mensaje": "El bot no generó respuesta"}
 
     
 # ====================== ARRANQUE CORRECTO ======================

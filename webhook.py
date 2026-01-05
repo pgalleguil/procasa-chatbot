@@ -445,7 +445,7 @@ async def iniciar_lead_portal(
     from chatbot import process_user_message
     from chatbot.storage import actualizar_prospecto, establecer_nombre_usuario
 
-    # Normalizar teléfono (exacto como en webhook real)
+    # Normalizar teléfono (igual que webhook real)
     clean = "".join(filter(str.isdigit, telefono))
     if len(clean) == 9 and clean.startswith("9"):
         clean = "569" + clean
@@ -453,11 +453,11 @@ async def iniciar_lead_portal(
         clean = "56" + clean
     phone = clean
 
-    # Opcional: guardar datos del lead antes de simular (nombre, código, etc.)
+    # Guardar datos previos
     updates = {"origen": plataforma}
     if nombre_cliente:
         updates["nombre"] = nombre_cliente
-        establecer_nombre_usuario(phone, nombre_cliente)  # Para que el bot lo salude por nombre
+        establecer_nombre_usuario(phone, nombre_cliente)
     if codigo_externo:
         if "MercadoLibre" in plataforma or "PortalInmobiliario" in plataforma:
             updates["codigo_mercadolibre"] = codigo_externo
@@ -466,18 +466,18 @@ async def iniciar_lead_portal(
     if updates:
         actualizar_prospecto(phone, updates)
 
-    # === AQUÍ SIMULAMOS EL MENSAJE DEL CLIENTE (despierta el bot) ===
+    # Simular mensaje → despierta bot con flujo normal
     logger.info(f"[INICIO LEAD] Simulando mensaje de {phone}: {mensaje_simulado}")
     respuesta_bot = process_user_message(phone, mensaje_simulado)
 
-    # Enviar la respuesta real al cliente
+    # Enviar respuesta real
     if respuesta_bot:
         success = await send_whatsapp_message(phone, respuesta_bot)
         if success:
-            return {"status": "ok", "mensaje": "Lead iniciado con éxito. Bot despertado y mensaje enviado al cliente.", "respuesta": respuesta_bot}
+            return {"status": "ok", "mensaje": "Lead iniciado con éxito", "respuesta": respuesta_bot}
         else:
-            return {"status": "error", "mensaje": "Bot procesó pero fallo al enviar"}
-    return {"status": "error", "mensaje": "No se generó respuesta"}
+            return {"status": "error", "mensaje": "Falló envío"}
+    return {"status": "error", "mensaje": "No respuesta"}
 
     
 # ====================== ARRANQUE CORRECTO ======================

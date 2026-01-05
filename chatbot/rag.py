@@ -45,10 +45,17 @@ def construir_query(criterios: Dict) -> Dict:
     tipo = normalizar_criterio("tipo", criterios.get("tipo"))
     if tipo: query["tipo"] = tipo
 
-    # 3. Comuna (búsqueda flexible)
+    # 3. Comuna (CORRECCIÓN CRÍTICA PARA MULTI-COMUNA)
     comuna = criterios.get("comuna")
     if comuna:
-        query["comuna"] = {"$regex": comuna, "$options": "i"}
+        # Si hay comas, dividimos y usamos $or para buscar en cualquiera de esas comunas
+        if "," in comuna:
+            comunas_lista = [c.strip() for c in comuna.split(",") if c.strip()]
+            if comunas_lista:
+                query["$or"] = [{"comuna": {"$regex": c, "$options": "i"}} for c in comunas_lista]
+        else:
+            # Búsqueda simple si es solo una comuna
+            query["comuna"] = {"$regex": comuna, "$options": "i"}
 
     # 4. Precio (Rango inteligente)
     presupuesto = safe_int_conversion(criterios.get("presupuesto"))

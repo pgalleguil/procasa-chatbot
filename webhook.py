@@ -194,7 +194,7 @@ async def reset_password(request: Request, token: str):
 pending_tasks: Dict[str, Any] = {}
 last_message_time: Dict[str, float] = {}
 accumulated_messages: Dict[str, str] = {}
-DEBOUNCE_SECONDS = 5.0
+DEBOUNCE_SECONDS = 10.0
 
 try:
     from chatbot import process_user_message
@@ -203,29 +203,56 @@ except ImportError:
         return f"Respuesta de prueba para {phone}: {message[:50]}..."
 
 async def process_with_debounce(phone: str, full_text: str):
+    # 1. Si ya había una tarea pendiente para este número, la cancelamos (reinicio del reloj)
     if phone in pending_tasks and not pending_tasks[phone].done():
         pending_tasks[phone].cancel()
-        logger.info(f"[DEBOUNCE] Tarea anterior cancelada para {phone}")
-    accumulated_messages[phone] = full_text.strip()
+        logger.info(f"[DEBOUNCE] Tarea anterior cancelada para {phone} (Usuario sigue escribiendo)")
+    
+    # 2. Acumulamos el texto nuevo al anterior
+    current_text = accumulated_messages.get(phone, "")
+    # Agregamos espacio si ya había texto
+    if current_text:
+        accumulated_messages[phone] = current_text + " " + full_text.strip()
+    else:
+        accumulated_messages[phone] = full_text.strip()
+        
     last_message_time[phone] = time.time()
 
+    # 3. Definimos la tarea diferida
     async def delayed_process():
-        await asyncio.sleep(DEBOUNCE_SECONDS)
-        if time.time() - last_message_time.get(phone, 0) < DEBOUNCE_SECONDS - 0.1:
-            return
-        final_message = accumulated_messages.pop(phone, "").strip()
-        if not final_message:
-            return
-        logger.info(f"[PROCESS] Procesando mensaje de {phone}: {final_message[:80]}...")
         try:
+            # Esperamos los segundos definidos (ej. 5s)
+            await asyncio.sleep(DEBOUNCE_SECONDS)
+            
+            # Verificación final: Si el tiempo pasó y no hay mensajes nuevos recientes
+            if time.time() - last_message_time.get(phone, 0) < DEBOUNCE_SECONDS - 0.1:
+                return
+
+            # Extraemos el mensaje final completo y limpiamos memoria
+            final_message = accumulated_messages.pop(phone, "").strip()
+            if not final_message:
+                return
+                
+            logger.info(f"[PROCESS] Procesando mensaje AGRUPADO de {phone}: {final_message[:80]}...")
+            
+            # --- AQUÍ LLAMAMOS AL CEREBRO (CORE) UNA SOLA VEZ ---
+            # Esto genera 1 sola respuesta y 1 solo correo de alerta
             bot_response = process_user_message(phone, final_message)
+            
             if bot_response and bot_response.strip():
                 await send_whatsapp_message(phone, bot_response)
+                
+        except asyncio.CancelledError:
+            # Normal si el usuario escribió de nuevo rápido
+            pass
         except Exception as e:
             logger.error(f"Error procesando {phone}: {e}", exc_info=True)
         finally:
-            pending_tasks.pop(phone, None)
+            # Limpieza final de la tarea en el diccionario
+            if phone in pending_tasks:
+                pending_tasks.pop(phone, None)
 
+    # 4. Lanzamos la tarea y la guardamos
     task = asyncio.create_task(delayed_process())
     pending_tasks[phone] = task
 
@@ -324,10 +351,9 @@ async def webhook(
     messages_data = data.get("data", {}).get("messages", {}) or {}
 
     if not messages_data:
-        logger.debug("[WHATSAPP] Webhook recibido sin mensaje (probablemente status update)")
+        # logger.debug("[WHATSAPP] Webhook recibido sin mensaje") 
         return JSONResponse({"status": "no messages"}, status_code=200)
 
-    # ← Aquí continúa el código normal (fuera del if)
     msg_obj = messages_data if isinstance(messages_data, dict) else messages_data[0]
 
     # Extraer teléfono
@@ -356,20 +382,14 @@ async def webhook(
     elif not phone.startswith("+"):
         phone = "+56" + phone.lstrip("0")
 
-    logger.info(f"[WHATSAPP] Mensaje de {phone}: {text}")
+    logger.info(f"[WHATSAPP] Mensaje recibido de {phone}: {text}")
 
-    # === 5. PROCESAR CON EL CHATBOT ===
-    respuesta = process_user_message(phone, text)  # ya importado arriba con try/except
+    # === 5. PROCESAR CON DEBOUNCE (CORREGIDO) ===
+    # En lugar de responder inmediato, lo pasamos al gestor de espera.
+    # Esto acumula mensajes si escribe varios seguidos.
+    await process_with_debounce(phone, text)
 
-    logger.info(f"[WHATSAPP] Respuesta generada: {respuesta}")
-
-    # === 6. ENVIAR RESPUESTA ===
-    if respuesta:
-        try:
-            await send_whatsapp_message(phone, respuesta)
-        except Exception as e:
-            logger.error(f"Error crítico llamando a send_whatsapp_message: {e}")
-
+    # Retornamos OK inmediatamente a WhatsApp para que no reintente el envío
     return JSONResponse({"ok": True}, status_code=200)
 
 @app.get("/health")

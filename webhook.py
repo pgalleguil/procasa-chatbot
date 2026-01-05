@@ -433,6 +433,7 @@ async def retiro_confirmar(request: Request, email: str = Query(...), codigo: st
 async def retiro_contactar(request: Request, email: str = Query(...), codigo: str = Query(...)):
     ip = request.client.host if request.client else "0.0.0.0"
     return await handle_solicitud_contacto(email, codigo, ip)
+
     
 # ====================== ARRANQUE CORRECTO ======================
 if __name__ == "__main__":

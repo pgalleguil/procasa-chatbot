@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="campanas/templates")
 
 async def handle_campana_respuesta(
-    request: Request,  # ← AÑADIDO: parámetro request
+    request: Request,
     email: str,
     accion: str,
     codigos: str,
@@ -34,10 +34,34 @@ async def handle_campana_respuesta(
         contactos = db[Config.COLLECTION_CONTACTOS]
         respuestas = db[Config.COLLECTION_RESPUESTAS]
 
-        # 1. Guardar respuesta
+        # === BUSCAMOS EL CONTACTO PRIMERO ===
+        contacto = contactos.find_one({
+            "email_propietario": {"$regex": f"^{re.escape(email_lower)}$", "$options": "i"}
+        })
+
+        # === CHEQUEO DE IDEMPOTENCIA ===
+        update_price = contacto.get("update_price", {}) if contacto else {}
+        if (contacto and
+            update_price.get("campana_nombre") == campana and
+            update_price.get("respuesta") == accion):
+            # Ya fue procesada esta misma respuesta → no hacemos nada más, solo mostramos confirmación
+            logger.info(f"[CAMPAÑA] Respuesta ya procesada (idempotencia) → {email_lower} | {accion} | {campana}")
+            return templates.TemplateResponse("base.html", {
+                "request": request,
+                "titulo": config_accion["titulo"],
+                "color": config_accion["color"],
+                "accion": accion.replace("_", " ").title(),
+                "mensaje": config_accion["mensaje"]
+            })
+
+        # === SI NO ESTÁ PROCESADA, CONTINUAMOS NORMAL ===
+        # 1. Guardar respuesta (historial)
         respuestas.insert_one({
-            "email": email_lower, "campana_nombre": campana, "accion": accion,
-            "codigos_propiedad": codigos_lista, "fecha_respuesta": ahora
+            "email": email_lower,
+            "campana_nombre": campana,
+            "accion": accion,
+            "codigos_propiedad": codigos_lista,
+            "fecha_respuesta": ahora
         })
 
         # 2. Actualizar contacto
@@ -52,8 +76,10 @@ async def handle_campana_respuesta(
             }}
         )
 
-        # 3. Enviar alerta al equipo
-        contacto = contactos.find_one({"email_propietario": {"$regex": f"^{re.escape(email_lower)}$", "$options": "i"}})
+        # 3. Obtener datos para alerta (refrescamos contacto por si acaso)
+        contacto = contactos.find_one({
+            "email_propietario": {"$regex": f"^{re.escape(email_lower)}$", "$options": "i"}
+        })
         nombre = "Sin nombre"
         telefono = "Sin teléfono"
         if contacto:
@@ -63,9 +89,9 @@ async def handle_campana_respuesta(
         accion_texto = config_accion["titulo"].upper().replace("!", "")
         enviar_alerta_equipo(nombre, telefono, email_lower, codigos_lista, accion_texto, campana)
 
-        # 4. Respuesta al cliente (ahora con request real)
+        # 4. Respuesta al cliente
         return templates.TemplateResponse("base.html", {
-            "request": request,  # ← CORREGIDO: request real en vez de None
+            "request": request,
             "titulo": config_accion["titulo"],
             "color": config_accion["color"],
             "accion": accion.replace("_", " ").title(),

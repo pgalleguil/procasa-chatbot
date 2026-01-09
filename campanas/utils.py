@@ -22,7 +22,7 @@ ACCIONES_MAP = {
     },
     "no_disponible": {
         "estado": "no_disponible",
-        "titulo": "Entendido",
+        "titulo": "No disponible",
         "color": "#ef4444",
         "mensaje": "Perfecto, marcamos tu propiedad como no disponible.\n\nSi en el futuro tienes otra para vender o arrendar, aquí estaremos.\n\n¡Gracias por tu confianza!"
     },

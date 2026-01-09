@@ -26,7 +26,6 @@ https://www.procasa.cl/{codigo_principal}
 
 DASHBOARD EN TIEMPO REAL:
 https://procasa-chatbot-yr8d.onrender.com
-# (Se quitaron usuario/contraseña por seguridad – si las necesitas, agrégalas manualmente)
 
 ---
 Sistema automático Procasa

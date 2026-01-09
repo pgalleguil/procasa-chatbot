@@ -79,7 +79,7 @@ async def handle_campana_respuesta(email: str, accion: str, codigos: str, campan
 
         elif accion == "no_disponible":
             update_data["$set"]["estado"] = "no_disponible"
-            titulo = "Entendido"
+            titulo = "No disponible"
             mensaje = """Perfecto, marcamos tu propiedad como no disponible.\n\nSi en el futuro tienes otra para vender o arrendar, aquí estaremos.\n\n¡Gracias por tu confianza!"""
             color = "#ef4444"
 
@@ -115,7 +115,7 @@ async def handle_campana_respuesta(email: str, accion: str, codigos: str, campan
                     nombre = "Nombre no encontrado"
                 telefono = contacto.get("telefono", "Sin teléfono")
 
-            accion_texto = {
+            d = {
                 "ajuste_7": "ACEPTÓ EL AJUSTE DEL 7%",
                 "llamada": "SOLICITÓ QUE LO LLAMEN",
                 "mantener": "DECIDIÓ MANTENER EL PRECIO",
@@ -150,7 +150,7 @@ Sistema automático Procasa
 
             msg = MIMEMultipart()
             msg['From'] = f"Procasa Alertas <{Config.GMAIL_USER}>"
-            msg['To'] = "jpcaro@procasa.cl, pgalleguillos@procasa.cl ,p.galleguil@gmail.com"  # ← TUS CORREOS AQUÍ
+            msg['To'] = "jpcaro@procasa.cl, pgalleguillos@procasa.cl"  # ← TUS CORREOS AQUÍ
             msg['Subject'] = f" NUEVA RESPUESTA: {nombre} - {accion_texto}"
 
             msg.attach(MIMEText(cuerpo, 'plain', 'utf-8'))

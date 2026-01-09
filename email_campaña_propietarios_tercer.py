@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# email_campaña_propietarios_tercer.py → TERCER ENVÍO - ENERO 2026 - FORMATO EXACTO DEL SEGUNDO ENVÍO
+
 import os
 import smtplib
 import time
@@ -15,8 +17,9 @@ from config import Config
 # ==============================================================================
 # CONFIGURACIÓN
 # ==============================================================================
-NOMBRE_CAMPANA = "ajuste_precio_regiones_202512_REPASO" 
-MODO_PRUEBA = True
+NOMBRE_CAMPANA = "ajuste_precio_202601_TERCER"
+NOMBRE_ANTERIOR = "ajuste_precio_202512_REPASO"
+MODO_PRUEBA = False                                             # ← True = prueba segura (SOLO 1 correo a tu email). False = envío real
 EMAIL_PRUEBA_DESTINO = "p.galleguil@gmail.com"
 EMAIL_ADMIN = "jpcaro@procasa.cl"
 
@@ -52,7 +55,7 @@ def attach_images(msg):
             msg.attach(img)
 
 # ==============================================================================
-# GENERACIÓN DE HTML
+# GENERACIÓN DE HTML - FORMATO Y DISEÑO 100% IGUAL AL SEGUNDO ENVÍO (datos actualizados enero 2026)
 # ==============================================================================
 def generar_html(nombre, propiedades, email_real, ejecutivo_nombre, ejecutivo_movil):
     filas = ""
@@ -86,8 +89,14 @@ def generar_html(nombre, propiedades, email_real, ejecutivo_nombre, ejecutivo_mo
     return f"""
     <!DOCTYPE html>
     <html>
-    <head><meta charset="UTF-8"></head>
-    <body style="margin:0; padding:0; background-color:#F1F5F9; font-family: Arial, sans-serif;">
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            .btn-main:hover {{ background-color: #003366 !important; }}
+            .btn-sec:hover {{ background-color: #F8FAFC !important; border-color: #004A99 !important; }}
+        </style>
+    </head>
+    <body style="margin:0; padding:0; background-color:#F1F5F9; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
         <table width="100%" border="0" cellspacing="0" cellpadding="0" style="padding: 20px;">
             <tr>
                 <td align="center">
@@ -99,14 +108,14 @@ def generar_html(nombre, propiedades, email_real, ejecutivo_nombre, ejecutivo_mo
                         </tr>
                         <tr>
                             <td style="padding: 40px 50px;">
-                                <h2 style="color: #0F172A; font-size: 22px; margin: 0 0 20px 0;">Propuesta Estratégica Regional 2026: {nombre}</h2>
+                                <h2 style="color: #0F172A; font-size: 22px; margin: 0 0 20px 0;">Propuesta Estratégica de Mercado 2026: {nombre}</h2>
                                 
                                 <p style="color: #475569; font-size: 15px; line-height: 1.7;">
-                                    Estimado cliente, iniciamos este ciclo con una oportunidad clave para el mercado regional: <strong>la Tasa Hipotecaria ha bajado al 4.2%</strong>. Este ajuste está impulsando la llegada de nuevos compradores con créditos aprobados buscando propiedades en regiones.
+                                    Estimado cliente, iniciamos 2026 con señales positivas en el sector inmobiliario. La <strong>Tasa Hipotecaria se ubica cerca del 4,1%</strong>, significativamente más atractiva que los niveles del año anterior.
                                 </p>
                                 
                                 <p style="color: #475569; font-size: 15px; line-height: 1.7;">
-                                    <strong>Realidad del mercado actual:</strong> Con un stock que supera las <b>35.000 unidades en regiones</b>, la competitividad es el factor determinante. Las estadísticas indican que las propiedades que se posicionan con el precio correcto hoy, logran capturar este nuevo flujo de demanda de forma inmediata.
+                                    <strong>¿Qué significa esto para usted?</strong> Que hoy existe un flujo creciente de compradores con créditos aprobados buscando invertir. Sin embargo, con un <b>stock elevado de ~70.000 propiedades</b> solo en la RM, los compradores tienen el poder de elegir. Las estadísticas muestran que las propiedades que ajustan valor al inicio del ciclo de bajas tasas venden más rápido y en mejores condiciones.
                                 </p>
 
                                 <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #0F172A; border-radius: 12px; margin: 25px 0; color: #ffffff;">
@@ -116,15 +125,15 @@ def generar_html(nombre, propiedades, email_real, ejecutivo_nombre, ejecutivo_mo
                                                 <tr>
                                                     <td align="center" width="33%">
                                                         <div style="font-size: 10px; color: #94A3B8; text-transform: uppercase;">Tasa Hipotecaria</div>
-                                                        <div style="font-size: 20px; color: #ffffff; font-weight: bold;">4.2% <span style="font-size: 22px; color:#E11D48;">↓</span></div>
+                                                        <div style="font-size: 20px; color: #ffffff; font-weight: bold;">~4,1% <span style="font-size: 22px; color:#22C55E;">↓</span></div>
                                                     </td>
                                                     <td align="center" width="33%" style="border-left: 1px solid #334155; border-right: 1px solid #334155;">
-                                                        <div style="font-size: 10px; color: #94A3B8; text-transform: uppercase;">Sobreoferta Regiones</div>
-                                                        <div style="font-size: 20px; font-weight: bold;">+35k Unid.</div>
+                                                        <div style="font-size: 10px; color: #94A3B8; text-transform: uppercase;">Sobreoferta RM</div>
+                                                        <div style="font-size: 20px; font-weight: bold;">~70k Unid.</div>
                                                     </td>
                                                     <td align="center" width="33%">
-                                                        <div style="font-size: 10px; color: #94A3B8; text-transform: uppercase;">Plazo Venta Regional</div>
-                                                        <div style="font-size: 20px; font-weight: bold;">210 días</div>
+                                                        <div style="font-size: 10px; color: #94A3B8; text-transform: uppercase;">Plazo Venta</div>
+                                                        <div style="font-size: 20px; font-weight: bold;">180+ días</div>
                                                     </td>
                                                 </tr>
                                             </table>
@@ -138,15 +147,15 @@ def generar_html(nombre, propiedades, email_real, ejecutivo_nombre, ejecutivo_mo
 
                                 <div style="background-color: #F0F9FF; border-left: 4px solid #004A99; padding: 15px; margin-bottom: 30px;">
                                     <p style="margin: 0; font-size: 14px; color: #0C4A6E;">
-                                        <strong>Acción Procasa:</strong> Al aplicar el ajuste del 7%, su propiedad será destacada como una oportunidad de inversión real, atrayendo a los compradores bancarizados que hoy regresan al mercado regional.
+                                        <strong>Acción Procasa:</strong> Al aplicar el ajuste del 7%, activaremos un <strong>Posicionamiento de Élite</strong>. Su propiedad será destacada con algoritmos de "Oportunidad de Inversión", asegurando que aparezca en los primeros resultados para este nuevo flujo de compradores bancarizados.
                                     </p>
                                 </div>
 
-                                <a href="{link_ajuste}" style="display: block; background-color: #004A99; color: #ffffff; padding: 18px; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 16px; text-align: center; margin-bottom: 15px;">
+                                <a href="{link_ajuste}" class="btn-main" style="display: block; background-color: #004A99; color: #ffffff; padding: 18px; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 16px; text-align: center; margin-bottom: 15px;">
                                     SÍ, aplicar ajuste 7% y activar prioridad
                                 </a>
 
-                                <a href="{link_mantener}" style="display: block; text-align: center; border: 1px solid #CBD5E1; color: #475569; padding: 14px; text-decoration: none; border-radius: 10px; font-size: 14px; font-weight: 600;">Mantener precio actual</a>
+                                <a href="{link_mantener}" class="btn-sec" style="display: block; text-align: center; border: 1px solid #CBD5E1; color: #475569; padding: 14px; text-decoration: none; border-radius: 10px; font-size: 14px; font-weight: 600;">Mantener precio actual</a>
 
                                 <div style="text-align: center; margin-top: 25px;">
                                     <a href="{link_baja}" style="color: #94A3B8; font-size: 12px; text-decoration: underline;">Mi propiedad ya no está disponible</a>
@@ -160,7 +169,7 @@ def generar_html(nombre, propiedades, email_real, ejecutivo_nombre, ejecutivo_mo
                                     💬 Conversar por WhatsApp
                                 </a>
                                 <div style="margin-top: 35px; border-top: 1px solid #1E293B; padding-top: 20px; color: #64748B; font-size: 11px;">
-                                    © 2026 Procasa Chile. Gestión estratégica de activos inmobiliarios en regiones.<br>
+                                    © 2026 Procasa Chile. Gestión estratégica de activos inmobiliarios.<br>
                                     <a href="{link_base}&accion=unsubscribe" style="color: #475569;">Darse de baja</a>
                                 </div>
                             </td>
@@ -174,7 +183,7 @@ def generar_html(nombre, propiedades, email_real, ejecutivo_nombre, ejecutivo_mo
     """
 
 # ==============================================================================
-# ENVÍO Y LÓGICA DE COPIAS
+# ENVÍO Y CC
 # ==============================================================================
 def enviar_correo(destinatario, asunto, html_body, email_ejecutivo):
     msg = MIMEMultipart('related')
@@ -205,18 +214,33 @@ def enviar_correo(destinatario, asunto, html_body, email_ejecutivo):
         return False, str(e)
 
 # ==============================================================================
-# MAIN (LÓGICA REGIONES)
+# MAIN - PRUEBA SEGURA: SOLO 1 CORREO EN MODO PRUEBA
 # ==============================================================================
 def main():
-    NOMBRE_ORIGINAL_REGIONES = "ajuste_precio_regiones_202512"
+    print("="*80)
+    print("TERCER ENVÍO CAMPAÑA AJUSTE PRECIO - ENERO 2026")
+    print(f"MODO_PRUEBA: {'SÍ → SOLO 1 correo a {EMAIL_PRUEBA_DESTINO}' if MODO_PRUEBA else 'NO → ENVÍO REAL'}")
+    print("="*80)
+
+    if not MODO_PRUEBA:
+        print("\n⚠️  ADVERTENCIA: ENVÍO REAL A CLIENTES ⚠️")
+        confirm1 = input("Escribe exactamente 'SI' para continuar: ").strip()
+        if confirm1 != "SI":
+            print("Cancelado.")
+            return
+        confirm2 = input("Confirmación final: Escribe 'ENVIAR REAL': ").strip()
+        if confirm2 != "ENVIAR REAL":
+            print("Cancelado.")
+            return
+        print("Procediendo...\n")
 
     pipeline = [
         { "$match": {
             "tipo": "propietario",
             "email_propietario": {"$exists": True, "$ne": "", "$ne": None},
             "estado_general": {"$ne": "baja_general"},
-            "update_price.campana_nombre": NOMBRE_ORIGINAL_REGIONES,
-            "estado": {"$exists": False} 
+            "update_price.campana_nombre": NOMBRE_ANTERIOR,
+            "estado": {"$exists": False}
         }},
         { "$lookup": {
             "from": "universo_obelix",
@@ -226,9 +250,9 @@ def main():
         }},
         { "$unwind": { "path": "$info", "preserveNullAndEmptyArrays": True }},
         { "$match": {
-            "$and": [
-                {"info.region": {"$ne": "XIII Región Metropolitana"}},
-                {"info.region": {"$ne": "Región Metropolitana de Santiago"}}
+            "$or": [
+                {"info.region": "XIII Región Metropolitana"},
+                {"info.region": "Región Metropolitana de Santiago"}
             ]
         }},
         { "$project": {
@@ -248,7 +272,6 @@ def main():
     for doc in candidatos:
         email = doc.get("email_propietario", "").strip().lower()
         if "@" not in email: continue
-            
         if email not in grouped_data:
             nombre_raw = doc.get("nombre_propietario", "")
             grouped_data[email] = {
@@ -262,30 +285,38 @@ def main():
         grouped_data[email]["propiedades"].append({"codigo": doc["codigo"], "tipo": doc.get("tipo", "Propiedad")})
         grouped_data[email]["ids"].append(doc["_id"])
 
-    print(f"Encontrados {len(grouped_data)} propietarios de REGIONES para re-envío.")
+    print(f"Encontrados {len(grouped_data)} propietarios para tercer envío.")
 
-    enviados_count = 0
+    enviados = 0
+    max_prueba = 1  # ← AHORA SOLO 1 CORREO EN MODO PRUEBA
+
     for email_real, data in grouped_data.items():
-        if MODO_PRUEBA and enviados_count >= 1: break
+        if MODO_PRUEBA and enviados >= max_prueba:
+            print(f"Límite de prueba alcanzado (1 correo).")
+            break
             
         destinatario_final = EMAIL_PRUEBA_DESTINO if MODO_PRUEBA else email_real
-        asunto = f"IMPORTANTE: Propuesta estratégica para su propiedad {data['propiedades'][0]['codigo']}"
+        codigo_principal = data['propiedades'][0]['codigo']
+        asunto = f"RECORDATORIO: Propuesta estratégica 2026 para su propiedad {codigo_principal}"
         
         html = generar_html(data["nombre"], data["propiedades"], email_real, data["ejecutivo_nombre"], data["ejecutivo_movil"])
         exito, msg = enviar_correo(destinatario_final, asunto, html, data["ejecutivo_email"])
 
-        if exito and (not MODO_PRUEBA or email_real.lower() == EMAIL_PRUEBA_DESTINO.lower()):
+        if exito and not MODO_PRUEBA:
             collection.update_many(
                 {"_id": {"$in": data["ids"]}},
                 {"$set": {
                     "update_price.campana_nombre": NOMBRE_CAMPANA,
-                    "update_price.canales.email_reintento": {"enviado": True, "fecha": datetime.now(timezone.utc)}
+                    "update_price.canales.email_tercer": {"enviado": True, "fecha": datetime.now(timezone.utc)}
                 }}
             )
-        
-        enviados_count += 1
-        log.info(f"Re-envío Regiones a {destinatario_final}: {msg}")
-        if not MODO_PRUEBA: time.sleep(2)
+
+        enviados += 1
+        log.info(f"Envío a {destinatario_final}: {msg}")
+        if not MODO_PRUEBA:
+            time.sleep(2)
+
+    print(f"\nTerminado. Enviados: {enviados} correos.")
 
 if __name__ == "__main__":
     main()

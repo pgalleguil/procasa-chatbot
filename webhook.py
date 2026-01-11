@@ -194,7 +194,7 @@ async def reset_password(request: Request, token: str):
 pending_tasks: Dict[str, Any] = {}
 last_message_time: Dict[str, float] = {}
 accumulated_messages: Dict[str, str] = {}
-DEBOUNCE_SECONDS = 10.0
+DEBOUNCE_SECONDS = 15.0
 
 try:
     from chatbot import process_user_message

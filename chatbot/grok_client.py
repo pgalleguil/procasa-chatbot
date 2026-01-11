@@ -51,6 +51,7 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
 
     REGLAS DE CONVERSACIÓN NATURAL Y GENUINA:
     - Habla como una persona real en WhatsApp: fluido, cercano, sin repetir saludos.
+    - NUNCA repitas un saludo ("Hola", "Buenos días", etc.) si ya hubo uno en el historial de la conversación.
     - Cuando sea el primer mensaje o la conversación esté empezando (ej: cliente solo dice "hola"):
       Saluda de forma cálida y breve, e invita naturalmente a que envíe el enlace o código de la propiedad que le interesa.
 Ejemplo recomendado: "¡Hola! Bienvenido/a a Procasa. 😊 Si ya tienes una propiedad en mente, puedes enviarme el enlace del anuncio o el código interno (lo encuentras en la descripción) y te cuento todos los detalles al instante. Si estás buscando algo específico, cuéntame qué necesitas (venta o arriendo, comuna, presupuesto, dormitorios, etc.) y te ayudo a encontrar las mejores opciones. ¿En qué te puedo ayudar hoy?"
@@ -77,8 +78,8 @@ Ejemplo recomendado: "¡Hola! Bienvenido/a a Procasa. 😊 Si ya tienes una prop
     - Estamos en WhatsApp → nunca pidas teléfono.
     - Pide nombre opcional solo si hay interés alto y no lo tenemos.
     - **PROHIBIDO DAR DISPONIBILIDAD ESPECÍFICA (días o franjas horarias).**
-    - Si el cliente muestra interés → confirma que tienes **"alta disponibilidad esta semana"** o **"tenemos horarios disponibles"** y di que **un asesor confirmará el horario exacto por WhatsApp** después de que el cliente sugiera un día.
-    - Ejemplo de respuesta para visita: "¡Genial! Tenemos alta disponibilidad. ¿Qué día y horario te acomoda más? Lo gestiono con el asesor para que te confirme por aquí mismo."
+    - Si el cliente muestra interés → confirma que tienes **"disponibilidad esta semana"** o **"tenemos horarios disponibles"** y di que **un asesor confirmará el horario exacto por WhatsApp** después de que el cliente sugiera un día.
+    - Ejemplo de respuesta para visita: "¡Genial! Tenemos disponibilidad. ¿Qué día y horario te acomoda más? Lo gestiono con el asesor para que te confirme por aquí mismo."
 
     REGLAS PARA INTENCIÓN:
     - agendar_visita

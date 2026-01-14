@@ -23,6 +23,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from campanas.handler import handle_campana_respuesta
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
+from api_leads_intelligence import get_leads_intelligence_data
 
 
 # ========================= USAMOS TU config.py REAL =========================
@@ -157,24 +158,22 @@ async def login_post(request: Request, username: str = Form(...), password: str 
             }
         )
 
-@app.get("/dashboard")
-async def dashboard(request: Request):
-    token = request.cookies.get("access_token")
-    if not token:
-        return RedirectResponse("/", status_code=303)
-    
+@app.get("/api/leads_reporte")
+async def api_leads_reporte():
+    """Endpoint consumido por el Dashboard de Leads"""
     try:
-        payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
-        username = payload.get("sub")
-        if not username:
-            return RedirectResponse("/", status_code=303)
-        
-        return templates.TemplateResponse(
-            "dashboard.html", 
-            {"request": request, "username": username}
-        )
-    except JWTError:
-        return RedirectResponse("/", status_code=303)
+        data = get_leads_intelligence_data()
+        return data
+    except Exception as e:
+        logger.error(f"Error en inteligencia de leads: {e}")
+        return {"error": str(e)}
+
+@app.get("/leads-dashboard")
+async def leads_dashboard(request: Request, current_user: str = Depends(get_current_user)):
+    return templates.TemplateResponse(
+        "leads_dashboard.html", 
+        {"request": request, "username": current_user}
+    )
 
 @app.get("/logout")
 async def logout():
@@ -317,7 +316,6 @@ async def send_whatsapp_message(number: str, text: str) -> bool:
 
     return False
 
-
 @app.post("/webhook")
 async def webhook(
     request: Request,
@@ -449,78 +447,6 @@ async def retiro_confirmar(request: Request, email: str = Query(...), codigo: st
 async def retiro_contactar(request: Request, email: str = Query(...), codigo: str = Query(...)):
     ip = request.client.host if request.client else "0.0.0.0"
     return await handle_solicitud_contacto(email, codigo, ip)
-
-# ====================== NUEVO DASHBOARD DE LEADS ======================
-
-from chatbot.storage import get_db  # Asegúrate de que esta importación exista
-
-@app.get("/leads-dashboard")
-async def leads_dashboard(request: Request, current_user: str = Depends(get_current_user)):
-    return templates.TemplateResponse(
-        "leads_dashboard.html", 
-        {"request": request, "username": current_user}
-    )
-
-@app.get("/api/leads_reporte")
-async def api_leads_reporte():
-    db = get_db()
-    prospectos_col = db["prospectos"]  # ← Cambia el nombre si tu colección se llama distinto
-    
-    # Obtenemos todos los prospectos activos (puedes filtrar por fecha si quieres)
-    prospectos = list(prospectos_col.find(
-        {}, 
-        {
-            "_id": 0,
-            "phone": 1,
-            "nombre": 1,
-            "email": 1,
-            "rut": 1,
-            "codigo": 1,
-            "comuna": 1,
-            "operacion": 1,
-            "ultimo_mensaje": 1,
-            "lead_score": 1,
-            "intencion_actual": 1,  # si guardas la última intención
-            "gestionado": 1,
-            "created_at": 1
-        }
-    ).sort("ultimo_mensaje", -1))
-
-    # Si tienes colección de propiedades para enriquecer el código
-    propiedades_col = db[Config.COLLECTION_NAME]
-    codigos = {p.get("codigo") for p in prospectos if p.get("codigo")}
-    props_dict = {str(p["codigo"]): p for p in propiedades_col.find({"codigo": {"$in": list(codigos)}}, {"codigo": 1, "titulo": 1, "precio_uf": 1})}
-
-    # Calculamos KPIs
-    total_leads = len(prospectos)
-    leads_calientes = len([p for p in prospectos if p.get("lead_score", 0) >= 7])
-    interes_visita = len([p for p in prospectos if p.get("intencion_actual") == "agendar_visita"])
-    contacto_directo = len([p for p in prospectos if p.get("intencion_actual") == "contacto_directo"])
-
-    # Enriquecemos cada lead
-    for p in prospectos:
-        codigo = p.get("codigo")
-        if codigo and str(codigo) in props_dict:
-            prop = props_dict[str(codigo)]
-            p["prop_titulo"] = prop.get("titulo", "Sin título")
-            p["prop_precio"] = prop.get("precio_uf", "N/D")
-            p["prop_link"] = f"https://www.procasa.cl/{codigo}"
-        else:
-            p["prop_titulo"] = "Búsqueda general"
-            p["prop_precio"] = ""
-            p["prop_link"] = ""
-
-        # Formateo de fechas
-        if p.get("ultimo_mensaje"):
-            p["ultimo_mensaje_fmt"] = datetime.fromisoformat(p["ultimo_mensaje"].replace("Z", "+00:00")).strftime("%d/%m %H:%M")
-
-    return {
-        "leads": prospectos,
-        "total_leads": total_leads,
-        "leads_calientes": leads_calientes,
-        "interes_visita": interes_visita,
-        "contacto_directo": contacto_directo
-    }
 
     
 # ====================== ARRANQUE CORRECTO ======================

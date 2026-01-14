@@ -4,9 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Leads WhatsApp | Procasa 2026</title>
+    <title>Lead Intelligence | Procasa AI</title>
     <link
-        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@300;400;600&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@300;400;500;600&display=swap"
         rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -15,625 +15,494 @@
 
     <style>
         :root {
-            --primary-bg: #0b1120;
-            --secondary-bg: #1e293b;
-            --accent-color: #6366f1;
-            --text-main: #f8fafc;
-            --text-secondary: #cbd5e1;
-            --glass-bg: rgba(30, 41, 59, 0.7);
-            --glass-border: rgba(255, 255, 255, 0.08);
-            --title-gradient: linear-gradient(90deg, #fff 0%, #94a3b8 100%);
-            --table-head-bg: rgba(15, 23, 42, 0.95);
-            --table-head-text: #cbd5e1;
+            --primary-bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #0f172a;
+            --text-light: #64748b;
+            --accent: #6366f1;
+            --border: #e2e8f0;
+            --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -1px rgb(0 0 0 / 0.06);
         }
 
-        [data-theme="light"] {
-            --primary-bg: #f1f5f9;
-            --secondary-bg: #ffffff;
-            --text-main: #0f172a;
-            --text-secondary: #475569;
-            --glass-bg: rgba(255, 255, 255, 0.9);
-            --glass-border: rgba(0, 0, 0, 0.1);
-            --title-gradient: linear-gradient(90deg, #1e293b 0%, #4f46e5 100%);
-            --table-head-bg: #e2e8f0;
-            --table-head-text: #334155;
+        [data-theme="dark"] {
+            --primary-bg: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f1f5f9;
+            --text-light: #94a3b8;
+            --border: #334155;
         }
 
         body {
             background-color: var(--primary-bg);
-            background-image:
-                radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 40%),
-                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.05) 0%, transparent 40%);
             color: var(--text-main);
             font-family: 'Inter', sans-serif;
-            min-height: 100vh;
             padding-bottom: 60px;
-            transition: background-color 0.4s ease, color 0.4s ease;
         }
 
-        h1,
-        h2,
-        h3,
-        h4,
-        h5 {
-            font-family: 'Outfit', sans-serif;
-        }
-
+        /* --- NAVBAR ESTILO SAAS --- */
         .top-bar {
+            background: var(--card-bg);
+            border-bottom: 1px solid var(--border);
+            padding: 15px 30px;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 20px 0;
-            margin-bottom: 30px;
-            border-bottom: 1px solid var(--glass-border);
         }
 
-        .brand-section {
-            display: flex;
-            align-items: center;
-            gap: 20px;
+        .nav-pills-custom {
+            background: var(--primary-bg);
+            padding: 4px;
+            border-radius: 8px;
+            display: inline-flex;
+            border: 1px solid var(--border);
         }
 
-        .brand-logo-img {
-            height: 110px;
-            width: auto;
-            object-fit: contain;
-            transition: height 0.3s;
-        }
-
-        .brand-text h1 {
-            font-size: 1.8rem;
-            font-weight: 800;
-            margin: 0;
-            line-height: 1.1;
-            background: var(--title-gradient);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .campaign-badge {
-            background: rgba(99, 102, 241, 0.1);
-            color: #6366f1;
-            padding: 4px 10px;
+        .nav-link-custom {
+            padding: 6px 16px;
             border-radius: 6px;
-            font-size: 0.7rem;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            border: 1px solid rgba(99, 102, 241, 0.2);
-            margin-top: 5px;
-            display: inline-block;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-decoration: none;
+            color: var(--text-light);
+            transition: all 0.2s;
         }
 
-        .user-controls {
+        .nav-link-custom:hover {
+            color: var(--text-main);
+        }
+
+        .nav-link-custom.active {
+            background: var(--card-bg);
+            color: var(--accent);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* --- SECTION HEADERS --- */
+        .section-title {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 1.1rem;
+            margin-bottom: 1.5rem;
             display: flex;
             align-items: center;
-            gap: 15px;
-        }
-
-        .btn-logout {
-            padding: 8px 20px;
-            border-radius: 30px;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            border: 1px solid var(--glass-border);
-            text-decoration: none;
-            transition: 0.3s;
-            background: transparent;
-        }
-
-        .btn-logout:hover {
-            background: rgba(99, 102, 241, 0.1);
+            gap: 10px;
             color: var(--text-main);
-            border-color: rgba(99, 102, 241, 0.3);
         }
 
-        .theme-toggle {
-            width: 40px;
-            height: 40px;
+        .section-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 2rem 0;
+        }
+
+        /* --- KPI CARDS (OPERATIONAL) --- */
+        .kpi-card-mini {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .kpi-mini-value {
+            font-family: 'Outfit';
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 5px;
+        }
+
+        .kpi-mini-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+            color: var(--text-light);
+        }
+
+        /* --- ANALYTICS CARDS (STRATEGIC) --- */
+        .analytics-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            height: 100%;
+            box-shadow: var(--shadow-md);
+        }
+
+        .chart-container {
+            height: 320px;
+            width: 100%;
+        }
+
+        /* --- DATA TABLE --- */
+        .table-custom-container {
+            background: var(--card-bg);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .table thead th {
+            background: var(--primary-bg);
+            color: var(--text-light);
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .table tbody td {
+            padding: 16px;
+            vertical-align: middle;
+            background: transparent;
+            color: var(--text-main);
+            border-bottom: 1px solid var(--border);
+        }
+
+        /* --- SCORE BADGE --- */
+        .score-badge {
+            width: 35px;
+            height: 35px;
             border-radius: 50%;
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            color: var(--text-secondary);
             display: flex;
             align-items: center;
             justify-content: center;
-            cursor: pointer;
-            transition: .3s;
-        }
-
-        .theme-toggle:hover {
-            transform: rotate(15deg);
-            color: var(--text-main);
-        }
-
-        .kpi-card {
-            background: var(--glass-bg);
-            backdrop-filter: blur(12px);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 24px;
-            height: 100%;
-            position: relative;
-            overflow: hidden;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
-            transition: transform 0.3s ease, border-color 0.3s ease;
-        }
-
-        .kpi-card:hover {
-            transform: translateY(-5px);
-            border-color: rgba(99, 102, 241, 0.3);
-        }
-
-        .kpi-label {
-            color: var(--text-secondary);
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
             font-weight: 700;
-        }
-
-        .kpi-number {
-            font-size: 2.8rem;
-            font-weight: 700;
-            margin: 10px 0;
-            font-family: 'Outfit', sans-serif;
-            color: var(--text-main);
-            line-height: 1;
-        }
-
-        .kpi-subtext {
-            color: var(--text-secondary);
-            font-size: 0.85rem;
-        }
-
-        .icon-bg {
-            position: absolute;
-            right: -10px;
-            bottom: -15px;
-            font-size: 6rem;
-            opacity: 0.04;
-            transform: rotate(-20deg);
-            pointer-events: none;
-        }
-
-        .chart-wrapper {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 24px;
-            padding: 30px;
-            margin-top: 30px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
-        }
-
-        .table-wrapper {
-            margin-top: 30px;
-            background: var(--glass-bg);
-            border-radius: 24px;
-            border: 1px solid var(--glass-border);
-            overflow: hidden;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
-        }
-
-        .table-header-custom {
-            padding: 20px 25px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--glass-border);
-        }
-
-        .table {
-            margin-bottom: 0;
-            --bs-table-bg: transparent;
-        }
-
-        .table th {
-            background: var(--table-head-bg);
-            color: var(--table-head-text);
-            font-weight: 700;
-            text-transform: uppercase;
-            font-size: 0.7rem;
-            letter-spacing: 1px;
-            border-bottom: 1px solid var(--glass-border);
-            padding: 16px 20px;
-            white-space: nowrap;
-        }
-
-        .table td {
-            background: transparent !important;
-            color: var(--text-main);
-            border-bottom: 1px solid var(--glass-border);
-            padding: 16px 20px;
-            vertical-align: middle;
-            font-size: 0.9rem;
-        }
-
-        .table-hover tbody tr:hover td {
-            background-color: rgba(99, 102, 241, 0.03) !important;
-        }
-
-        .btn-excel {
-            background: rgba(16, 185, 129, 0.1);
-            color: #10b981;
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            padding: 8px 16px;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn-excel:hover {
-            background: #10b981;
             color: white;
-            transform: scale(1.02);
-        }
-
-        .code-link {
-            font-family: 'Courier New', monospace;
-            font-weight: bold;
-            color: #6366f1;
-            background: rgba(99, 102, 241, 0.1);
-            padding: 4px 8px;
-            border-radius: 4px;
-            text-decoration: none;
-            transition: 0.2s;
-        }
-
-        .code-link:hover {
-            background: #6366f1;
-            color: #fff;
-        }
-
-        .badge-status {
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 0.7rem;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-        }
-
-        @media (max-width: 768px) {
-            .top-bar {
-                flex-direction: column;
-                gap: 20px;
-                text-align: center;
-            }
-
-            .brand-section {
-                flex-direction: column;
-                gap: 10px;
-            }
-
-            .brand-logo-img {
-                height: 60px;
-            }
-
-            .brand-text h1 {
-                font-size: 1.5rem;
-            }
-
-            .user-controls {
-                width: 100%;
-                justify-content: center;
-                background: rgba(0, 0, 0, 0.03);
-                padding: 10px;
-                border-radius: 12px;
-            }
-
-            .kpi-card {
-                padding: 20px;
-                margin-bottom: 10px;
-            }
-
-            .kpi-number {
-                font-size: 2.5rem;
-            }
-
-            .table-header-custom {
-                flex-direction: column;
-                gap: 15px;
-                align-items: flex-start;
-            }
-
-            .btn-excel {
-                width: 100%;
-                justify-content: center;
-            }
+            font-size: 0.9rem;
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <div class="top-bar">
-            <div class="brand-section">
-                <img src="/static/logo.png" alt="Procasa" class="brand-logo-img">
-                <div class="brand-text">
-                    <h1>LEADS WHATSAPP</h1>
-                    <div class="campaign-badge">GESTIÓN EN TIEMPO REAL - 2026</div>
-                </div>
-            </div>
 
-            <div class="user-controls">
-                <span class="text-secondary d-none d-md-block">Hola, <strong>{{ username }}</strong></span>
-                <div class="theme-toggle" id="themeToggle" title="Cambiar Tema">
-                    <i class="fas fa-moon" id="moon"></i>
-                    <i class="fas fa-sun d-none" id="sun"></i>
-                </div>
-                <a href="/logout" class="btn-logout">
-                    <i class="fas fa-sign-out-alt me-2 d-md-none"></i>Salir
-                </a>
+    <header class="top-bar">
+        <div class="d-flex align-items-center gap-3">
+            <img src="/static/logo.png" alt="Logo" style="height: 35px;">
+            <div class="d-none d-md-block">
+                <h6 class="m-0 fw-bold" style="font-family: 'Outfit'">Lead Intelligence</h6>
+                <small class="text-muted" style="font-size: 0.75rem;">AI Powered Dashboard</small>
             </div>
         </div>
 
-        <div class="row g-3 g-lg-4">
-            <div class="col-12 col-md-6 col-lg-3">
-                <div class="kpi-card">
-                    <div class="kpi-label">Leads Totales</div>
-                    <div class="kpi-number" id="total_leads">0</div>
-                    <div class="kpi-subtext">Conversaciones activas</div>
-                    <i class="fas fa-users icon-bg"></i>
+        <div class="nav-pills-custom">
+            <a href="/leads-dashboard" class="nav-link-custom active">
+                <i class="fas fa-robot me-2"></i>Leads AI
+            </a>
+            <a href="/dashboard" class="nav-link-custom">
+                <i class="fas fa-bullhorn me-2"></i>Campañas
+            </a>
+        </div>
+
+        <div class="d-flex align-items-center gap-3">
+            <button class="btn btn-outline-secondary btn-sm rounded-circle border-0" id="themeToggle">
+                <i class="fas fa-moon"></i>
+            </button>
+            <div class="text-end d-none d-md-block lh-1">
+                <div class="fw-bold fs-7">{{ username }}</div>
+                <small class="text-muted" style="font-size: 0.7rem;">Analista</small>
+            </div>
+            <a href="/logout" class="text-danger ms-2"><i class="fas fa-sign-out-alt"></i></a>
+        </div>
+    </header>
+
+    <div class="container py-4">
+
+        <div class="section-title">
+            <i class="fas fa-tachometer-alt text-primary"></i>
+            Operational Overview
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="kpi-card-mini border-start border-4 border-primary">
+                    <div>
+                        <div class="kpi-mini-value" id="kpi-total">0</div>
+                        <div class="kpi-mini-label">Total Leads</div>
+                    </div>
+                    <i class="fas fa-users text-primary opacity-25 fa-2x"></i>
                 </div>
             </div>
-
-            <div class="col-12 col-md-6 col-lg-3">
-                <div class="kpi-card">
-                    <div class="kpi-label">Leads Calientes</div>
-                    <div class="kpi-number text-warning" id="calientes">0</div>
-                    <div class="kpi-subtext">Score ≥ 7</div>
-                    <i class="fas fa-fire icon-bg text-warning"></i>
+            <div class="col-6 col-md-3">
+                <div class="kpi-card-mini border-start border-4 border-success">
+                    <div>
+                        <div class="kpi-mini-value text-success" id="kpi-activos">0</div>
+                        <div class="kpi-mini-label">Activos 48h</div>
+                    </div>
+                    <i class="fas fa-bolt text-success opacity-25 fa-2x"></i>
                 </div>
             </div>
-
-            <div class="col-12 col-md-6 col-lg-3">
-                <div class="kpi-card" style="border-left: 4px solid #10b981;">
-                    <div class="kpi-label text-success">Interés Visita</div>
-                    <div class="kpi-number text-success" id="visitas">0</div>
-                    <div class="kpi-subtext">Quieren agendar</div>
-                    <i class="fas fa-calendar-check icon-bg text-success"></i>
+            <div class="col-6 col-md-3">
+                <div class="kpi-card-mini border-start border-4 border-warning">
+                    <div>
+                        <div class="kpi-mini-value text-warning" id="kpi-calientes">0</div>
+                        <div class="kpi-mini-label">Hot Leads (7+)</div>
+                    </div>
+                    <i class="fas fa-fire text-warning opacity-25 fa-2x"></i>
                 </div>
             </div>
-
-            <div class="col-12 col-md-6 col-lg-3">
-                <div class="kpi-card">
-                    <div class="kpi-label">Contacto Directo</div>
-                    <div class="kpi-number text-primary" id="contacto">0</div>
-                    <div class="kpi-subtext">Piden ser llamados</div>
-                    <i class="fas fa-phone-volume icon-bg text-primary"></i>
+            <div class="col-6 col-md-3">
+                <div class="kpi-card-mini border-start border-4 border-info">
+                    <div>
+                        <div class="kpi-mini-value text-info" id="kpi-conversion">0</div>
+                        <div class="kpi-mini-label">Conversión Visitas</div>
+                    </div>
+                    <i class="fas fa-calendar-check text-info opacity-25 fa-2x"></i>
                 </div>
             </div>
         </div>
 
-        <div class="row mt-4 justify-content-center">
-            <div class="col-lg-8">
-                <div class="chart-wrapper text-center">
-                    <h5 class="mb-4 fw-bold" style="color: var(--text-main)">Distribución de Intenciones</h5>
-                    <div id="grafico-torta" style="height: 350px;"></div>
+        <div class="section-divider"></div>
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="section-title m-0">
+                <i class="fas fa-chart-pie text-accent"></i>
+                Strategic Analysis
+            </div>
+            <button class="btn btn-sm btn-light border text-muted" onclick="loadData()">
+                <i class="fas fa-sync-alt me-1"></i> Refresh
+            </button>
+        </div>
+
+        <div class="row g-4 mb-4">
+            <div class="col-lg-6">
+                <div class="analytics-card">
+                    <h6 class="fw-bold mb-1">Distribución de Intención</h6>
+                    <small class="text-muted d-block mb-3">¿Qué están buscando realmente los clientes?</small>
+                    <div id="chart-intencion" class="chart-container"></div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="analytics-card">
+                    <h6 class="fw-bold mb-1">Segmentación de Calidad (Scoring)</h6>
+                    <small class="text-muted d-block mb-3">Salud de la base de datos basada en IA</small>
+                    <div id="chart-segmentacion" class="chart-container"></div>
                 </div>
             </div>
         </div>
 
-        <div class="table-wrapper">
-            <div class="table-header-custom">
-                <div>
-                    <h5 class="mb-1 fw-bold" style="color: var(--text-main)">Leads Activos</h5>
-                    <small class="text-secondary">Última actualización: <span id="last-update">Ahora
-                            mismo</span></small>
-                </div>
-                <button onclick="exportToExcel()" class="btn-excel">
-                    <i class="fas fa-file-excel"></i> Descargar Excel
+        <div class="table-custom-container mt-5">
+            <div class="d-flex justify-content-between align-items-center p-3 border-bottom bg-light bg-opacity-10">
+                <h6 class="m-0 fw-bold"><i class="fas fa-list me-2 text-secondary"></i>Live Data Feed</h6>
+                <button onclick="exportExcel()" class="btn btn-sm btn-success">
+                    <i class="fas fa-file-excel me-2"></i>Exportar Reporte
                 </button>
             </div>
-
             <div class="table-responsive">
-                <table class="table table-hover mb-0" id="mainTable">
+                <table class="table mb-0">
                     <thead>
                         <tr>
-                            <th>Último Mensaje</th>
-                            <th>Teléfono</th>
+                            <th>Última Interacción</th>
                             <th>Cliente</th>
+                            <th class="text-center">Lead Score</th>
                             <th>Propiedad Interés</th>
-                            <th class="text-center">Intención</th>
-                            <th class="text-center">Score</th>
-                            <th class="text-center"><i class="fas fa-check-circle"></i> Gestionado</th>
+                            <th>Estado Actual</th>
                         </tr>
                     </thead>
-                    <tbody id="tabla-body">
+                    <tbody id="table-body">
                     </tbody>
                 </table>
             </div>
         </div>
+
     </div>
 
     <script>
-        let GLOBAL_DATA = [];
-
+        // --- 1. CONFIGURACIÓN E INICIALIZACIÓN ---
+        let RAW_DATA = [];
         const html = document.documentElement;
-        const toggle = document.getElementById("themeToggle");
-        const moon = document.getElementById("moon");
-        const sun = document.getElementById("sun");
+        const themeToggle = document.getElementById('themeToggle');
 
-        function applyTheme(theme) {
-            html.setAttribute("data-theme", theme);
-            localStorage.setItem("theme", theme);
-            if (theme === "light") {
-                moon.classList.add("d-none");
-                sun.classList.remove("d-none");
-            } else {
-                moon.classList.remove("d-none");
-                sun.classList.add("d-none");
-            }
-            if (typeof Plotly !== 'undefined') cargarReporte();
+        // Función Tema (Dark/Light)
+        function setTheme(theme) {
+            html.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            themeToggle.innerHTML = theme === 'light' ? '<i class="fas fa-moon"></i>' : '<i class="fas fa-sun"></i>';
+            if (typeof Plotly !== 'undefined') loadData(); // Recargar gráficos para ajustar colores
         }
 
-        const savedTheme = localStorage.getItem("theme") || "light";
-        applyTheme(savedTheme);
-
-        toggle.addEventListener("click", () => {
-            const current = html.getAttribute("data-theme");
-            applyTheme(current === "light" ? "dark" : "light");
+        themeToggle.addEventListener('click', () => {
+            const current = html.getAttribute('data-theme');
+            setTheme(current === 'light' ? 'dark' : 'light');
         });
 
-        function exportToExcel() {
-            if (GLOBAL_DATA.length === 0) {
-                alert("No hay datos para exportar aún.");
-                return;
+        setTheme(localStorage.getItem('theme') || 'light');
+
+        // --- 2. CARGA DE DATOS ---
+        async function loadData() {
+            try {
+                const response = await fetch('/api/leads_reporte');
+                const data = await response.json();
+
+                // Actualizar KPIs Clásicos
+                animateValue("kpi-total", data.kpis.total);
+                animateValue("kpi-activos", data.kpis.activos);
+                animateValue("kpi-calientes", data.kpis.calientes);
+                animateValue("kpi-conversion", data.kpis.conversion);
+
+                // Renderizar Gráficos de Análisis
+                renderIntencionChart(data.analytics.intencion);
+                renderSegmentacionChart(data.analytics.segmentacion);
+
+                // Renderizar Tabla
+                RAW_DATA = data.tabla;
+                renderTable(data.tabla);
+
+            } catch (error) {
+                console.error("Error cargando dashboard:", error);
             }
-
-            const cleanData = GLOBAL_DATA.map(item => ({
-                "Fecha Último": item.ultimo_mensaje_fmt || "",
-                "Teléfono": item.phone,
-                "Nombre": item.nombre || "Sin nombre",
-                "Email": item.email || "",
-                "RUT": item.rut || "",
-                "Código Propiedad": item.codigo || "Búsqueda general",
-                "Título Propiedad": item.prop_titulo || "",
-                "Precio UF": item.prop_precio || "",
-                "Intención": item.intencion_actual || "General",
-                "Lead Score": item.lead_score || 0,
-                "Gestionado": item.gestionado ? "Sí" : "No"
-            }));
-
-            const ws = XLSX.utils.json_to_sheet(cleanData);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Leads_WhatsApp");
-            XLSX.writeFile(wb, "Leads_WhatsApp_2026.xlsx");
         }
 
-        function animateValue(obj, start, end, duration) {
-            if (!obj) return;
-            let startTimestamp = null;
-            const step = (timestamp) => {
-                if (!startTimestamp) startTimestamp = timestamp;
-                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-                obj.innerHTML = Math.floor(progress * (end - start) + start);
-                if (progress < 1) {
-                    window.requestAnimationFrame(step);
+        // --- 3. GRÁFICOS (PLOTLY) ---
+        function getChartConfig() {
+            const isDark = html.getAttribute('data-theme') === 'dark';
+            return {
+                text: isDark ? '#94a3b8' : '#334155',
+                bg: 'rgba(0,0,0,0)',
+                grid: isDark ? '#334155' : '#e2e8f0'
+            };
+        }
+
+        function renderIntencionChart(data) {
+            const cfg = getChartConfig();
+
+            // Si data viene vacía, poner placeholder
+            if (!data || data.length === 0) return;
+
+            const values = data.map(d => d.count);
+            const labels = data.map(d => d._id || "Sin Definir");
+
+            const trace = {
+                values: values,
+                labels: labels,
+                type: 'pie',
+                hole: 0.6,
+                textinfo: 'label+percent',
+                textposition: 'outside',
+                automargin: true,
+                marker: {
+                    colors: ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#94a3b8']
                 }
             };
-            window.requestAnimationFrame(step);
+
+            const layout = {
+                paper_bgcolor: cfg.bg,
+                plot_bgcolor: cfg.bg,
+                font: { family: 'Inter', color: cfg.text },
+                showlegend: false,
+                margin: { t: 0, b: 0, l: 0, r: 0 },
+                height: 300
+            };
+
+            Plotly.newPlot('chart-intencion', [trace], layout, { displayModeBar: false, responsive: true });
         }
 
-        const layoutConfig = {
-            paper_bgcolor: 'rgba(0,0,0,0)',
-            plot_bgcolor: 'rgba(0,0,0,0)',
-            font: { family: 'Inter' },
-            margin: { t: 0, b: 20, l: 20, r: 20 },
-            showlegend: true,
-            legend: { orientation: 'h', y: -0.15, xanchor: 'center', x: 0.5 }
-        };
+        function renderSegmentacionChart(data) {
+            const cfg = getChartConfig();
 
-        const configPlotly = { responsive: true, displayModeBar: false };
+            // Ordenar lógicamente los segmentos
+            const order = ["Cold (0-3)", "Warm (4-6)", "Hot (7-9)", "VIP (10+)"];
+            data.sort((a, b) => order.indexOf(a._id) - order.indexOf(b._id));
 
-        async function cargarReporte() {
-            try {
-                const res = await fetch("/api/leads_reporte");
-                const data = await res.json();
+            const x = data.map(d => d._id);
+            const y = data.map(d => d.count);
 
-                GLOBAL_DATA = data.leads || [];
+            const trace = {
+                x: x,
+                y: y,
+                type: 'bar',
+                marker: {
+                    color: x.map(cat => {
+                        if (cat.includes("VIP")) return '#10b981';
+                        if (cat.includes("Hot")) return '#f59e0b';
+                        if (cat.includes("Warm")) return '#6366f1';
+                        return '#94a3b8';
+                    }),
+                    cornerradius: 5
+                },
+                text: y.map(String),
+                textposition: 'auto'
+            };
 
-                animateValue(document.getElementById("total_leads"), 0, data.total_leads, 800);
-                animateValue(document.getElementById("calientes"), 0, data.leads_calientes, 800);
-                animateValue(document.getElementById("visitas"), 0, data.interes_visita, 1200);
-                animateValue(document.getElementById("contacto"), 0, data.contacto_directo, 1200);
+            const layout = {
+                paper_bgcolor: cfg.bg,
+                plot_bgcolor: cfg.bg,
+                font: { family: 'Inter', color: cfg.text },
+                margin: { t: 20, b: 30, l: 30, r: 0 },
+                xaxis: { showgrid: false },
+                yaxis: { showgrid: true, gridcolor: cfg.grid },
+                height: 300
+            };
 
-                const now = new Date();
-                document.getElementById("last-update").textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                const isLight = html.getAttribute("data-theme") === "light";
-                layoutConfig.font.color = isLight ? '#475569' : '#cbd5e1';
-
-                // Contadores para el gráfico
-                const counts = {
-                    visita: data.interes_visita,
-                    contacto: data.contacto_directo,
-                    caliente: data.leads_calientes,
-                    general: data.total_leads - data.leads_calientes
-                };
-
-                const donutData = [{
-                    values: [counts.visita, counts.contacto, counts.caliente, counts.general],
-                    labels: ["Interés Visita", "Contacto Directo", "Calientes (Score ≥7)", "General"],
-                    marker: {
-                        colors: ["#10b981", "#6366f1", "#f59e0b", "#94a3b8"],
-                        line: { color: isLight ? '#ffffff' : '#1e293b', width: 2 }
-                    },
-                    type: "pie",
-                    hole: 0.65,
-                    textinfo: "value",
-                    textposition: 'outside',
-                    hoverinfo: "label+value+percent"
-                }];
-
-                Plotly.react("grafico-torta", donutData, layoutConfig, configPlotly);
-
-                const tbody = document.getElementById("tabla-body");
-                tbody.innerHTML = "";
-
-                if (GLOBAL_DATA.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No hay leads activos aún...</td></tr>';
-                    return;
-                }
-
-                GLOBAL_DATA.forEach(r => {
-                    let badgeClass = 'bg-secondary bg-opacity-25 text-secondary';
-                    let badgeText = 'General';
-                    let intencion = r.intencion_actual || 'general';
-
-                    if (intencion.includes("visita") || intencion.includes("agendar")) {
-                        badgeClass = 'bg-success bg-opacity-25 text-success';
-                        badgeText = '<i class="fas fa-home me-1"></i> VISITA';
-                    } else if (intencion.includes("contacto") || intencion.includes("llamar")) {
-                        badgeClass = 'bg-primary bg-opacity-25 text-primary';
-                        badgeText = '<i class="fas fa-phone me-1"></i> CONTACTO';
-                    } else if ((r.lead_score || 0) >= 7) {
-                        badgeClass = 'bg-warning bg-opacity-25 text-warning';
-                        badgeText = '<i class="fas fa-fire me-1"></i> CALIENTE';
-                    }
-
-                    const propLink = r.prop_link ? `<a href="${r.prop_link}" target="_blank" class="code-link">${r.codigo || 'Búsqueda general'}</a><div class="text-secondary small">${r.prop_titulo || ''}</div>` : 'Búsqueda general';
-
-                    const tr = document.createElement("tr");
-                    tr.innerHTML = `
-                        <td>${r.ultimo_mensaje_fmt || 'N/D'}</td>
-                        <td class="fw-bold">${r.phone}</td>
-                        <td>
-                            <div>${r.nombre || 'Sin nombre'}</div>
-                            <div class="text-secondary small">${r.email || ''}</div>
-                            <div class="text-secondary small">${r.rut || ''}</div>
-                        </td>
-                        <td>${propLink}</td>
-                        <td class="text-center"><span class="badge-status ${badgeClass}">${badgeText}</span></td>
-                        <td class="text-center"><strong>${r.lead_score || 0}</strong></td>
-                        <td class="text-center">
-                            <input type="checkbox" class="form-check-input gestionado-check" 
-                                data-phone="${r.phone}" ${r.gestionado ? 'checked' : ''}>
-                        </td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-
-            } catch (e) {
-                console.error("Error cargando leads:", e);
-            }
+            Plotly.newPlot('chart-segmentacion', [trace], layout, { displayModeBar: false, responsive: true });
         }
 
-        cargarReporte();
-        setInterval(cargarReporte, 60000);
+        // --- 4. TABLA ---
+        function renderTable(rows) {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
 
-        // Checkbox gestionado (futuro: puedes agregar un endpoint similar a marcar_gestionado pero por phone)
-        document.addEventListener("change", async (e) => {
-            if (!e.target.classList.contains("gestionado-check")) return;
-            // Aquí puedes agregar fetch a un nuevo endpoint /api/marcar_gestionado_lead si lo implementas
-            const checkbox = e.target;
-            checkbox.closest("tr").style.opacity = checkbox.checked ? "0.7" : "1";
-        });
+            rows.forEach(r => {
+                let badgeColor = '#94a3b8';
+                if (r.score >= 10) badgeColor = '#10b981';
+                else if (r.score >= 7) badgeColor = '#f59e0b';
+                else if (r.score >= 4) badgeColor = '#6366f1';
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>
+                        <div class="fw-bold">${r.fecha}</div>
+                        <small class="text-muted">WhatsApp</small>
+                    </td>
+                    <td>
+                        <div class="fw-bold">${r.nombre}</div>
+                        <div class="small text-muted">${r.phone}</div>
+                    </td>
+                    <td class="text-center">
+                        <div class="d-flex justify-content-center">
+                            <div class="score-badge" style="background-color: ${badgeColor}">${r.score}</div>
+                        </div>
+                    </td>
+                    <td>
+                        ${r.codigo ? `<a href="${r.link}" target="_blank" class="badge bg-light text-primary border text-decoration-none">${r.codigo}</a>` : ''}
+                        <div class="text-truncate small" style="max-width: 180px;">${r.titulo}</div>
+                    </td>
+                    <td>
+                        <span class="badge bg-secondary bg-opacity-10 text-secondary border">${r.intencion}</span>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // --- 5. UTILIDADES ---
+        function animateValue(id, end) {
+            const obj = document.getElementById(id);
+            if (obj) obj.innerText = end;
+        }
+
+        function exportExcel() {
+            if (RAW_DATA.length === 0) return alert("Sin datos para exportar");
+            const ws = XLSX.utils.json_to_sheet(RAW_DATA);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Leads_Intelligence");
+            XLSX.writeFile(wb, "Reporte_Leads_Procasa.xlsx");
+        }
+
+        // Init
+        loadData();
+        setInterval(loadData, 60000); // Refresco cada 60s
+
     </script>
 </body>
 

@@ -1,12 +1,10 @@
 <!DOCTYPE html>
 <html lang="es" data-theme="light">
 
-</html>
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Bajas de Precio | Diciembre 2025</title>
+    <title>Dashboard Campañas | Procasa 2026</title>
     <link
         href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@300;400;600&display=swap"
         rel="stylesheet">
@@ -17,7 +15,6 @@
 
     <style>
         :root {
-            /* Variables Base Dark */
             --primary-bg: #0b1120;
             --secondary-bg: #1e293b;
             --accent-color: #6366f1;
@@ -25,38 +22,25 @@
             --text-secondary: #cbd5e1;
             --glass-bg: rgba(30, 41, 59, 0.7);
             --glass-border: rgba(255, 255, 255, 0.08);
-            --card-hover: translateY(-5px);
-
-            /* Degradado del Título (Dark) */
             --title-gradient: linear-gradient(90deg, #fff 0%, #94a3b8 100%);
-
-            /* Tabla Headers (Dark) */
             --table-head-bg: rgba(15, 23, 42, 0.95);
             --table-head-text: #cbd5e1;
         }
 
         [data-theme="light"] {
-            /* Variables Base Light */
             --primary-bg: #f1f5f9;
             --secondary-bg: #ffffff;
             --text-main: #0f172a;
-            /* Texto muy oscuro para contraste */
             --text-secondary: #475569;
-            /* Gris medio fuerte */
             --glass-bg: rgba(255, 255, 255, 0.9);
             --glass-border: rgba(0, 0, 0, 0.1);
-
-            /* Degradado del Título (Light) - Corregido para visibilidad */
             --title-gradient: linear-gradient(90deg, #1e293b 0%, #4f46e5 100%);
-
-            /* Tabla Headers (Light) */
             --table-head-bg: #e2e8f0;
             --table-head-text: #334155;
         }
 
         body {
             background-color: var(--primary-bg);
-            /* Fondo sutil */
             background-image:
                 radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 40%),
                 radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.05) 0%, transparent 40%);
@@ -75,36 +59,40 @@
             font-family: 'Outfit', sans-serif;
         }
 
-        /* --- TOP BAR & HEADER --- */
+        /* --- TOP BAR & HEADER (CORREGIDO) --- */
         .top-bar {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 20px 0;
-            margin-bottom: 30px;
+            padding: 15px 30px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
             border-bottom: 1px solid var(--glass-border);
+            margin-bottom: 30px;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
         }
 
         .brand-section {
             display: flex;
             align-items: center;
-            gap: 20px;
+            gap: 15px;
         }
 
         .brand-logo-img {
-            height: 110px;
+            height: 45px;
+            /* Ajustado para barra superior */
             width: auto;
             object-fit: contain;
-            transition: height 0.3s;
         }
 
         .brand-text h1 {
-            font-size: 1.8rem;
+            font-size: 1.2rem;
             font-weight: 800;
             margin: 0;
-            line-height: 1.1;
+            line-height: 1;
             background: var(--title-gradient);
-            /* Variable dinámica */
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -113,17 +101,50 @@
         .campaign-badge {
             background: rgba(99, 102, 241, 0.1);
             color: #6366f1;
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.65rem;
             font-weight: 700;
             letter-spacing: 0.5px;
             border: 1px solid rgba(99, 102, 241, 0.2);
-            margin-top: 5px;
             display: inline-block;
         }
 
-        /* --- CONTROLES DE USUARIO --- */
+        /* --- NAVEGACIÓN (TABS) --- */
+        .nav-pills-custom {
+            background: var(--primary-bg);
+            padding: 4px;
+            border-radius: 10px;
+            display: flex;
+            gap: 5px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .nav-link-custom {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-decoration: none;
+            color: var(--text-secondary);
+            transition: 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-link-custom:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-link-custom.active {
+            background: var(--accent-color);
+            color: white;
+            box-shadow: 0 2px 4px rgba(99, 102, 241, 0.3);
+        }
+
+        /* --- CONTROLES USUARIO --- */
         .user-controls {
             display: flex;
             align-items: center;
@@ -131,27 +152,20 @@
         }
 
         .btn-logout {
-            padding: 8px 20px;
-            border-radius: 30px;
-            font-size: 0.85rem;
             color: var(--text-secondary);
-            border: 1px solid var(--glass-border);
             text-decoration: none;
             transition: 0.3s;
-            background: transparent;
         }
 
         .btn-logout:hover {
-            background: rgba(99, 102, 241, 0.1);
-            color: var(--text-main);
-            border-color: rgba(99, 102, 241, 0.3);
+            color: #ef4444;
         }
 
         .theme-toggle {
-            width: 40px;
-            height: 40px;
+            width: 35px;
+            height: 35px;
             border-radius: 50%;
-            background: var(--glass-bg);
+            background: rgba(255, 255, 255, 0.05);
             border: 1px solid var(--glass-border);
             color: var(--text-secondary);
             display: flex;
@@ -162,8 +176,8 @@
         }
 
         .theme-toggle:hover {
-            transform: rotate(15deg);
             color: var(--text-main);
+            background: rgba(255, 255, 255, 0.1);
         }
 
         /* --- KPI CARDS --- */
@@ -244,11 +258,9 @@
             border-bottom: 1px solid var(--glass-border);
         }
 
-        /* Tabla Estilos Corregidos */
         .table {
             margin-bottom: 0;
             --bs-table-bg: transparent;
-            /* Importante para que tome el fondo del padre */
         }
 
         .table th {
@@ -276,7 +288,6 @@
             background-color: rgba(99, 102, 241, 0.03) !important;
         }
 
-        /* Botón Excel */
         .btn-excel {
             background: rgba(16, 185, 129, 0.1);
             color: #10b981;
@@ -298,7 +309,6 @@
             transform: scale(1.02);
         }
 
-        /* Code Link */
         .code-link {
             font-family: 'Courier New', monospace;
             font-weight: bold;
@@ -315,7 +325,6 @@
             color: #fff;
         }
 
-        /* Badges */
         .badge-status {
             padding: 6px 12px;
             border-radius: 20px;
@@ -324,52 +333,21 @@
             letter-spacing: 0.5px;
         }
 
-        /* --- MOBILE RESPONSIVE (NIVEL DIOS) --- */
         @media (max-width: 768px) {
-            body {
-                padding-bottom: 30px;
-            }
-
             .top-bar {
                 flex-direction: column;
-                gap: 20px;
+                gap: 15px;
                 text-align: center;
+                padding: 20px;
             }
 
-            .brand-section {
-                flex-direction: column;
-                gap: 10px;
-            }
-
-            .brand-logo-img {
-                height: 60px;
-            }
-
-            .brand-text h1 {
-                font-size: 1.5rem;
-            }
-
-            .user-controls {
+            .nav-pills-custom {
                 width: 100%;
                 justify-content: center;
-                background: rgba(0, 0, 0, 0.03);
-                padding: 10px;
-                border-radius: 12px;
             }
 
             .kpi-card {
-                padding: 20px;
                 margin-bottom: 10px;
-            }
-
-            .kpi-number {
-                font-size: 2.5rem;
-            }
-
-            /* Ajuste de Tabla en Móvil */
-            .table-wrapper {
-                border-radius: 16px;
-                margin-top: 20px;
             }
 
             .table-header-custom {
@@ -388,30 +366,42 @@
 
 <body>
 
-    <div class="container">
-        <div class="top-bar">
-            <div class="brand-section">
-                <img src="/static/logo.png" alt="Procasa" class="brand-logo-img">
-                <div class="brand-text">
-                    <h1>DASHBOARD</h1>
-                    <div class="campaign-badge">GESTIÓN BAJAS - DIC 2025</div>
-                </div>
-            </div>
-
-            <div class="user-controls">
-                <span class="text-secondary d-none d-md-block">Hola, <strong>{{ username }}</strong></span>
-
-                <div class="theme-toggle" id="themeToggle" title="Cambiar Tema">
-                    <i class="fas fa-moon" id="moon"></i>
-                    <i class="fas fa-sun d-none" id="sun"></i>
-                </div>
-
-                <a href="/logout" class="btn-logout">
-                    <i class="fas fa-sign-out-alt me-2 d-md-none"></i>Salir
-                </a>
+    <header class="top-bar">
+        <div class="brand-section">
+            <img src="/static/logo.png" alt="Procasa" class="brand-logo-img">
+            <div class="brand-text">
+                <h1>CAMPAÑAS</h1>
+                <div class="campaign-badge">GESTIÓN BAJAS - DIC 2025</div>
             </div>
         </div>
 
+        <div class="nav-pills-custom">
+            <a href="/leads-dashboard" class="nav-link-custom">
+                <i class="fas fa-robot"></i> Chatbot
+            </a>
+            <a href="/dashboard" class="nav-link-custom active">
+                <i class="fas fa-bullhorn"></i> Campañas
+            </a>
+        </div>
+
+        <div class="user-controls">
+            <div class="d-none d-md-block text-end lh-1">
+                <span class="d-block fw-bold" style="font-size: 0.9rem;">{{ username }}</span>
+                <small class="text-secondary" style="font-size: 0.7rem;">Gestor</small>
+            </div>
+
+            <div class="theme-toggle" id="themeToggle" title="Cambiar Tema">
+                <i class="fas fa-moon" id="moon"></i>
+                <i class="fas fa-sun d-none" id="sun"></i>
+            </div>
+
+            <a href="/logout" class="btn-logout" title="Cerrar Sesión">
+                <i class="fas fa-sign-out-alt"></i>
+            </a>
+        </div>
+    </header>
+
+    <div class="container">
         <div class="row g-3 g-lg-4">
             <div class="col-12 col-md-6 col-lg-3">
                 <div class="kpi-card">
@@ -501,7 +491,7 @@
 
     <script>
         // --- 1. CONFIGURACIÓN GLOBAL ---
-        let GLOBAL_DATA = []; // Almacenará los datos para exportar a Excel
+        let GLOBAL_DATA = [];
 
         // --- 2. TEMA DÍA / NOCHE ---
         const html = document.documentElement;
@@ -519,7 +509,7 @@
                 moon.classList.remove("d-none");
                 sun.classList.add("d-none");
             }
-            if (typeof Plotly !== 'undefined') cargarReporte(); // Redibuja gráfico para ajustar colores
+            if (typeof Plotly !== 'undefined') cargarReporte();
         }
 
         const savedTheme = localStorage.getItem("theme") || "light";
@@ -530,14 +520,12 @@
             applyTheme(current === "light" ? "dark" : "light");
         });
 
-        // --- 3. EXPORTAR A EXCEL (NUEVO) ---
+        // --- 3. EXPORTAR A EXCEL ---
         function exportToExcel() {
             if (GLOBAL_DATA.length === 0) {
                 alert("No hay datos para exportar aún.");
                 return;
             }
-
-            // Mapeamos los datos para que el Excel quede limpio (sin HTML)
             const cleanData = GLOBAL_DATA.map(item => ({
                 "Código Propiedad": item.codigo,
                 "Nombre Cliente": item.nombre,
@@ -583,25 +571,19 @@
 
         async function cargarReporte() {
             try {
-                // Simulación para evitar error si no hay API real conectada en este momento
-                // En producción, descomentar el fetch y borrar el objeto simulado
                 const res = await fetch("/api/reporte_real");
                 const data = await res.json();
 
-                // Guardamos datos para Excel
                 GLOBAL_DATA = data.respuestas || [];
 
-                // Actualizar KPIs
                 animateValue(document.getElementById("enviados"), 0, data.total_enviados, 800);
                 animateValue(document.getElementById("respuestas"), 0, data.total_respuestas, 800);
                 animateValue(document.getElementById("aceptaron"), 0, data.aceptaron, 1200);
                 document.getElementById("tasa").textContent = data.tasa_respuesta + "%";
 
-                // Hora actualización
                 const now = new Date();
                 document.getElementById("last-update").textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-                // Configurar Colores Gráfico según Tema
                 const isLight = html.getAttribute("data-theme") === "light";
                 layoutConfig.font.color = isLight ? '#475569' : '#cbd5e1';
 
@@ -621,12 +603,11 @@
 
                 Plotly.react("grafico-torta", donutData, layoutConfig, configPlotly);
 
-                // Renderizar Tabla
                 const tbody = document.getElementById("tabla-body");
                 tbody.innerHTML = "";
 
                 if (GLOBAL_DATA.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-muted">Esperando respuestas...</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">Esperando respuestas...</td></tr>';
                     return;
                 }
 
@@ -677,14 +658,11 @@
             }
         }
 
-        // Init
         cargarReporte();
-        setInterval(cargarReporte, 60000); // Actualiza cada 1 minuto
+        setInterval(cargarReporte, 60000);
 
-        // --- CHECKBOX GESTIONADO (se guarda en MongoDB) ---
         document.addEventListener("change", async (e) => {
             if (!e.target.classList.contains("gestionado-check")) return;
-
             const checkbox = e.target;
             const email = checkbox.dataset.email;
             const gestionado = checkbox.checked;
@@ -695,14 +673,12 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ email, gestionado })
                 });
-                // Opcional: cambiar color cuando está gestionado
                 checkbox.closest("tr").style.opacity = gestionado ? "0.7" : "1";
             } catch (err) {
                 console.error("Error marcando gestionado", err);
-                checkbox.checked = !gestionado; // revierte
+                checkbox.checked = !gestionado;
             }
         });
-
     </script>
 </body>
 

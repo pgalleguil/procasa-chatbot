@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Leads WhatsApp | Procasa 2026</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@300;400;600&display=swap"
+        rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        :root {
+            --primary-bg: #0b1120;
+            --secondary-bg: #1e293b;
+            --accent-color: #6366f1;
+            --text-main: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --title-gradient: linear-gradient(90deg, #fff 0%, #94a3b8 100%);
+            --table-head-bg: rgba(15, 23, 42, 0.95);
+            --table-head-text: #cbd5e1;
+        }
+
+        [data-theme="light"] {
+            --primary-bg: #f1f5f9;
+            --secondary-bg: #ffffff;
+            --text-main: #0f172a;
+            --text-secondary: #475569;
+            --glass-bg: rgba(255, 255, 255, 0.9);
+            --glass-border: rgba(0, 0, 0, 0.1);
+            --title-gradient: linear-gradient(90deg, #1e293b 0%, #4f46e5 100%);
+            --table-head-bg: #e2e8f0;
+            --table-head-text: #334155;
+        }
+
+        body {
+            background-color: var(--primary-bg);
+            background-image:
+                radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.05) 0%, transparent 40%);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            padding-bottom: 60px;
+            transition: background-color 0.4s ease, color 0.4s ease;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5 {
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            margin-bottom: 30px;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .brand-section {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .brand-logo-img {
+            height: 110px;
+            width: auto;
+            object-fit: contain;
+            transition: height 0.3s;
+        }
+
+        .brand-text h1 {
+            font-size: 1.8rem;
+            font-weight: 800;
+            margin: 0;
+            line-height: 1.1;
+            background: var(--title-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .campaign-badge {
+            background: rgba(99, 102, 241, 0.1);
+            color: #6366f1;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            margin-top: 5px;
+            display: inline-block;
+        }
+
+        .user-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .btn-logout {
+            padding: 8px 20px;
+            border-radius: 30px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            border: 1px solid var(--glass-border);
+            text-decoration: none;
+            transition: 0.3s;
+            background: transparent;
+        }
+
+        .btn-logout:hover {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--text-main);
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+
+        .theme-toggle {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: .3s;
+        }
+
+        .theme-toggle:hover {
+            transform: rotate(15deg);
+            color: var(--text-main);
+        }
+
+        .kpi-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 24px;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+
+        .kpi-label {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 700;
+        }
+
+        .kpi-number {
+            font-size: 2.8rem;
+            font-weight: 700;
+            margin: 10px 0;
+            font-family: 'Outfit', sans-serif;
+            color: var(--text-main);
+            line-height: 1;
+        }
+
+        .kpi-subtext {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        .icon-bg {
+            position: absolute;
+            right: -10px;
+            bottom: -15px;
+            font-size: 6rem;
+            opacity: 0.04;
+            transform: rotate(-20deg);
+            pointer-events: none;
+        }
+
+        .chart-wrapper {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 30px;
+            margin-top: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+        }
+
+        .table-wrapper {
+            margin-top: 30px;
+            background: var(--glass-bg);
+            border-radius: 24px;
+            border: 1px solid var(--glass-border);
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+        }
+
+        .table-header-custom {
+            padding: 20px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .table {
+            margin-bottom: 0;
+            --bs-table-bg: transparent;
+        }
+
+        .table th {
+            background: var(--table-head-bg);
+            color: var(--table-head-text);
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--glass-border);
+            padding: 16px 20px;
+            white-space: nowrap;
+        }
+
+        .table td {
+            background: transparent !important;
+            color: var(--text-main);
+            border-bottom: 1px solid var(--glass-border);
+            padding: 16px 20px;
+            vertical-align: middle;
+            font-size: 0.9rem;
+        }
+
+        .table-hover tbody tr:hover td {
+            background-color: rgba(99, 102, 241, 0.03) !important;
+        }
+
+        .btn-excel {
+            background: rgba(16, 185, 129, 0.1);
+            color: #10b981;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-excel:hover {
+            background: #10b981;
+            color: white;
+            transform: scale(1.02);
+        }
+
+        .code-link {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: #6366f1;
+            background: rgba(99, 102, 241, 0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            text-decoration: none;
+            transition: 0.2s;
+        }
+
+        .code-link:hover {
+            background: #6366f1;
+            color: #fff;
+        }
+
+        .badge-status {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        @media (max-width: 768px) {
+            .top-bar {
+                flex-direction: column;
+                gap: 20px;
+                text-align: center;
+            }
+
+            .brand-section {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .brand-logo-img {
+                height: 60px;
+            }
+
+            .brand-text h1 {
+                font-size: 1.5rem;
+            }
+
+            .user-controls {
+                width: 100%;
+                justify-content: center;
+                background: rgba(0, 0, 0, 0.03);
+                padding: 10px;
+                border-radius: 12px;
+            }
+
+            .kpi-card {
+                padding: 20px;
+                margin-bottom: 10px;
+            }
+
+            .kpi-number {
+                font-size: 2.5rem;
+            }
+
+            .table-header-custom {
+                flex-direction: column;
+                gap: 15px;
+                align-items: flex-start;
+            }
+
+            .btn-excel {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="top-bar">
+            <div class="brand-section">
+                <img src="/static/logo.png" alt="Procasa" class="brand-logo-img">
+                <div class="brand-text">
+                    <h1>LEADS WHATSAPP</h1>
+                    <div class="campaign-badge">GESTIÓN EN TIEMPO REAL - 2026</div>
+                </div>
+            </div>
+
+            <div class="user-controls">
+                <span class="text-secondary d-none d-md-block">Hola, <strong>{{ username }}</strong></span>
+                <div class="theme-toggle" id="themeToggle" title="Cambiar Tema">
+                    <i class="fas fa-moon" id="moon"></i>
+                    <i class="fas fa-sun d-none" id="sun"></i>
+                </div>
+                <a href="/logout" class="btn-logout">
+                    <i class="fas fa-sign-out-alt me-2 d-md-none"></i>Salir
+                </a>
+            </div>
+        </div>
+
+        <div class="row g-3 g-lg-4">
+            <div class="col-12 col-md-6 col-lg-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Leads Totales</div>
+                    <div class="kpi-number" id="total_leads">0</div>
+                    <div class="kpi-subtext">Conversaciones activas</div>
+                    <i class="fas fa-users icon-bg"></i>
+                </div>
+            </div>
+
+            <div class="col-12 col-md-6 col-lg-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Leads Calientes</div>
+                    <div class="kpi-number text-warning" id="calientes">0</div>
+                    <div class="kpi-subtext">Score ≥ 7</div>
+                    <i class="fas fa-fire icon-bg text-warning"></i>
+                </div>
+            </div>
+
+            <div class="col-12 col-md-6 col-lg-3">
+                <div class="kpi-card" style="border-left: 4px solid #10b981;">
+                    <div class="kpi-label text-success">Interés Visita</div>
+                    <div class="kpi-number text-success" id="visitas">0</div>
+                    <div class="kpi-subtext">Quieren agendar</div>
+                    <i class="fas fa-calendar-check icon-bg text-success"></i>
+                </div>
+            </div>
+
+            <div class="col-12 col-md-6 col-lg-3">
+                <div class="kpi-card">
+                    <div class="kpi-label">Contacto Directo</div>
+                    <div class="kpi-number text-primary" id="contacto">0</div>
+                    <div class="kpi-subtext">Piden ser llamados</div>
+                    <i class="fas fa-phone-volume icon-bg text-primary"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4 justify-content-center">
+            <div class="col-lg-8">
+                <div class="chart-wrapper text-center">
+                    <h5 class="mb-4 fw-bold" style="color: var(--text-main)">Distribución de Intenciones</h5>
+                    <div id="grafico-torta" style="height: 350px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-wrapper">
+            <div class="table-header-custom">
+                <div>
+                    <h5 class="mb-1 fw-bold" style="color: var(--text-main)">Leads Activos</h5>
+                    <small class="text-secondary">Última actualización: <span id="last-update">Ahora
+                            mismo</span></small>
+                </div>
+                <button onclick="exportToExcel()" class="btn-excel">
+                    <i class="fas fa-file-excel"></i> Descargar Excel
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" id="mainTable">
+                    <thead>
+                        <tr>
+                            <th>Último Mensaje</th>
+                            <th>Teléfono</th>
+                            <th>Cliente</th>
+                            <th>Propiedad Interés</th>
+                            <th class="text-center">Intención</th>
+                            <th class="text-center">Score</th>
+                            <th class="text-center"><i class="fas fa-check-circle"></i> Gestionado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let GLOBAL_DATA = [];
+
+        const html = document.documentElement;
+        const toggle = document.getElementById("themeToggle");
+        const moon = document.getElementById("moon");
+        const sun = document.getElementById("sun");
+
+        function applyTheme(theme) {
+            html.setAttribute("data-theme", theme);
+            localStorage.setItem("theme", theme);
+            if (theme === "light") {
+                moon.classList.add("d-none");
+                sun.classList.remove("d-none");
+            } else {
+                moon.classList.remove("d-none");
+                sun.classList.add("d-none");
+            }
+            if (typeof Plotly !== 'undefined') cargarReporte();
+        }
+
+        const savedTheme = localStorage.getItem("theme") || "light";
+        applyTheme(savedTheme);
+
+        toggle.addEventListener("click", () => {
+            const current = html.getAttribute("data-theme");
+            applyTheme(current === "light" ? "dark" : "light");
+        });
+
+        function exportToExcel() {
+            if (GLOBAL_DATA.length === 0) {
+                alert("No hay datos para exportar aún.");
+                return;
+            }
+
+            const cleanData = GLOBAL_DATA.map(item => ({
+                "Fecha Último": item.ultimo_mensaje_fmt || "",
+                "Teléfono": item.phone,
+                "Nombre": item.nombre || "Sin nombre",
+                "Email": item.email || "",
+                "RUT": item.rut || "",
+                "Código Propiedad": item.codigo || "Búsqueda general",
+                "Título Propiedad": item.prop_titulo || "",
+                "Precio UF": item.prop_precio || "",
+                "Intención": item.intencion_actual || "General",
+                "Lead Score": item.lead_score || 0,
+                "Gestionado": item.gestionado ? "Sí" : "No"
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(cleanData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Leads_WhatsApp");
+            XLSX.writeFile(wb, "Leads_WhatsApp_2026.xlsx");
+        }
+
+        function animateValue(obj, start, end, duration) {
+            if (!obj) return;
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                obj.innerHTML = Math.floor(progress * (end - start) + start);
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        const layoutConfig = {
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { family: 'Inter' },
+            margin: { t: 0, b: 20, l: 20, r: 20 },
+            showlegend: true,
+            legend: { orientation: 'h', y: -0.15, xanchor: 'center', x: 0.5 }
+        };
+
+        const configPlotly = { responsive: true, displayModeBar: false };
+
+        async function cargarReporte() {
+            try {
+                const res = await fetch("/api/leads_reporte");
+                const data = await res.json();
+
+                GLOBAL_DATA = data.leads || [];
+
+                animateValue(document.getElementById("total_leads"), 0, data.total_leads, 800);
+                animateValue(document.getElementById("calientes"), 0, data.leads_calientes, 800);
+                animateValue(document.getElementById("visitas"), 0, data.interes_visita, 1200);
+                animateValue(document.getElementById("contacto"), 0, data.contacto_directo, 1200);
+
+                const now = new Date();
+                document.getElementById("last-update").textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                const isLight = html.getAttribute("data-theme") === "light";
+                layoutConfig.font.color = isLight ? '#475569' : '#cbd5e1';
+
+                // Contadores para el gráfico
+                const counts = {
+                    visita: data.interes_visita,
+                    contacto: data.contacto_directo,
+                    caliente: data.leads_calientes,
+                    general: data.total_leads - data.leads_calientes
+                };
+
+                const donutData = [{
+                    values: [counts.visita, counts.contacto, counts.caliente, counts.general],
+                    labels: ["Interés Visita", "Contacto Directo", "Calientes (Score ≥7)", "General"],
+                    marker: {
+                        colors: ["#10b981", "#6366f1", "#f59e0b", "#94a3b8"],
+                        line: { color: isLight ? '#ffffff' : '#1e293b', width: 2 }
+                    },
+                    type: "pie",
+                    hole: 0.65,
+                    textinfo: "value",
+                    textposition: 'outside',
+                    hoverinfo: "label+value+percent"
+                }];
+
+                Plotly.react("grafico-torta", donutData, layoutConfig, configPlotly);
+
+                const tbody = document.getElementById("tabla-body");
+                tbody.innerHTML = "";
+
+                if (GLOBAL_DATA.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No hay leads activos aún...</td></tr>';
+                    return;
+                }
+
+                GLOBAL_DATA.forEach(r => {
+                    let badgeClass = 'bg-secondary bg-opacity-25 text-secondary';
+                    let badgeText = 'General';
+                    let intencion = r.intencion_actual || 'general';
+
+                    if (intencion.includes("visita") || intencion.includes("agendar")) {
+                        badgeClass = 'bg-success bg-opacity-25 text-success';
+                        badgeText = '<i class="fas fa-home me-1"></i> VISITA';
+                    } else if (intencion.includes("contacto") || intencion.includes("llamar")) {
+                        badgeClass = 'bg-primary bg-opacity-25 text-primary';
+                        badgeText = '<i class="fas fa-phone me-1"></i> CONTACTO';
+                    } else if ((r.lead_score || 0) >= 7) {
+                        badgeClass = 'bg-warning bg-opacity-25 text-warning';
+                        badgeText = '<i class="fas fa-fire me-1"></i> CALIENTE';
+                    }
+
+                    const propLink = r.prop_link ? `<a href="${r.prop_link}" target="_blank" class="code-link">${r.codigo || 'Búsqueda general'}</a><div class="text-secondary small">${r.prop_titulo || ''}</div>` : 'Búsqueda general';
+
+                    const tr = document.createElement("tr");
+                    tr.innerHTML = `
+                        <td>${r.ultimo_mensaje_fmt || 'N/D'}</td>
+                        <td class="fw-bold">${r.phone}</td>
+                        <td>
+                            <div>${r.nombre || 'Sin nombre'}</div>
+                            <div class="text-secondary small">${r.email || ''}</div>
+                            <div class="text-secondary small">${r.rut || ''}</div>
+                        </td>
+                        <td>${propLink}</td>
+                        <td class="text-center"><span class="badge-status ${badgeClass}">${badgeText}</span></td>
+                        <td class="text-center"><strong>${r.lead_score || 0}</strong></td>
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input gestionado-check" 
+                                data-phone="${r.phone}" ${r.gestionado ? 'checked' : ''}>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+            } catch (e) {
+                console.error("Error cargando leads:", e);
+            }
+        }
+
+        cargarReporte();
+        setInterval(cargarReporte, 60000);
+
+        // Checkbox gestionado (futuro: puedes agregar un endpoint similar a marcar_gestionado pero por phone)
+        document.addEventListener("change", async (e) => {
+            if (!e.target.classList.contains("gestionado-check")) return;
+            // Aquí puedes agregar fetch a un nuevo endpoint /api/marcar_gestionado_lead si lo implementas
+            const checkbox = e.target;
+            checkbox.closest("tr").style.opacity = checkbox.checked ? "0.7" : "1";
+        });
+    </script>
+</body>
+
+</html>

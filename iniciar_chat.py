@@ -174,9 +174,9 @@ if __name__ == "__main__":
     # LISTA DE PRUEBA
     LISTA_PROSPECTOS = [
         {
-            "telefono": "+56990519403", 
-            "nombre": "Adriana Vargas", 
-            "link": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-carmen-av-santa-isabel/28547458"
+            "telefono": "+56951441330", 
+            "nombre": "Fabiola Ignacia Milan López", 
+            "link": "https://casa.mercadolibre.cl/MLC-3265470740-casa-general-bulnessanto-domingo-_JM"
         }
     ]
     

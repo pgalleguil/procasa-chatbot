@@ -24,7 +24,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from campanas.handler import handle_campana_respuesta
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_intelligence_data
-
+from fastapi import Cookie
 
 # ========================= USAMOS TU config.py REAL =========================
 from config import Config
@@ -60,15 +60,28 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, Config.SECRET_KEY, algorithm="HS256")
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(request: Request):
+    # Intentar obtener el token de la cookie primero (para el navegador)
+    token = request.cookies.get("access_token")
+    
+    # Si no hay cookie, intentar desde el header (para la API)
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+    
+    if not token:
+        logger.warning("Intento de acceso sin token")
+        raise HTTPException(status_code=401, detail="No autenticado")
+    
     try:
-        payload = jwt.decode(credentials.credentials, Config.SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
         username: str = payload.get("sub")
         if not username:
             raise HTTPException(status_code=401, detail="Token inválido")
         return username
     except JWTError:
-        raise HTTPException(status_code=401, detail="Token inválido")
+        raise HTTPException(status_code=401, detail="Sesión expirada o inválida")
 
 def crear_admin_si_no_existe():
     try:
@@ -131,32 +144,36 @@ async def login_post(request: Request, username: str = Form(...), password: str 
         
         if user and verify_password(password, user["hashed_password"]):
             token = create_access_token({"sub": username})
-            response = RedirectResponse("/dashboard", status_code=303)
+            
+            # REDIRECCIÓN: Asegúrate de que apunte a donde quieres ir por defecto
+            response = RedirectResponse("/leads-dashboard", status_code=303) 
+            
+            # COOKIE: secure=False para que funcione en localhost (sin HTTPS)
             response.set_cookie(
-                "access_token", token,
-                httponly=True, secure=True, samesite="lax", max_age=28800
+                "access_token", 
+                token,
+                httponly=True, 
+                secure=False, # CAMBIADO A FALSE para pruebas locales
+                samesite="lax", 
+                max_age=28800
             )
             return response
         
-        # Si falla: vuelve al login con mensaje de error
-        return templates.TemplateResponse(
-            "login.html",
-            {
-                "request": request,
-                "images": get_images(),
-                "error": "Usuario o contraseña incorrectos"
-            }
-        )
+        return templates.TemplateResponse("login.html", {
+            "request": request, "images": get_images(), "error": "Usuario o contraseña incorrectos"
+        })
     except Exception as e:
         logger.error(f"Error en login: {e}")
-        return templates.TemplateResponse(
-            "login.html",
-            {
-                "request": request,
-                "images": get_images(),
-                "error": "Error del servidor"
-            }
-        )
+        return templates.TemplateResponse("login.html", {
+            "request": request, "images": get_images(), "error": "Error del servidor"
+        })
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_campanas(request: Request, current_user: str = Depends(get_current_user)):
+    return templates.TemplateResponse(
+        "dashboard.html", 
+        {"request": request, "username": current_user}
+    )
 
 @app.get("/api/leads_reporte")
 async def api_leads_reporte():
@@ -168,7 +185,7 @@ async def api_leads_reporte():
         logger.error(f"Error en inteligencia de leads: {e}")
         return {"error": str(e)}
 
-@app.get("/leads-dashboard")
+@app.get("/leads-dashboard", response_class=HTMLResponse)
 async def leads_dashboard(request: Request, current_user: str = Depends(get_current_user)):
     return templates.TemplateResponse(
         "leads_dashboard.html", 

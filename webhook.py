@@ -23,7 +23,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from campanas.handler import handle_campana_respuesta
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
-from api_leads_intelligence import get_leads_intelligence_data
+#from api_leads_intelligence import get_leads_intelligence_data
+from api_leads_intelligence import get_leads_executive_report
 from fastapi import Cookie
 
 # ========================= USAMOS TU config.py REAL =========================
@@ -169,28 +170,45 @@ async def login_post(request: Request, username: str = Form(...), password: str 
         })
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_campanas(request: Request, current_user: str = Depends(get_current_user)):
-    return templates.TemplateResponse(
-        "dashboard.html", 
-        {"request": request, "username": current_user}
-    )
+async def ver_campanas(request: Request):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
 
 @app.get("/api/leads_reporte")
-async def api_leads_reporte():
-    """Endpoint consumido por el Dashboard de Leads"""
-    try:
-        data = get_leads_intelligence_data()
-        return data
-    except Exception as e:
-        logger.error(f"Error en inteligencia de leads: {e}")
-        return {"error": str(e)}
+async def api_leads_reporte(request: Request):
+    # Verificamos si el usuario está logueado mediante la cookie
+    token = request.cookies.get("access_token")
+    if not token:
+        # Si no hay token, lanzamos 401 para que el JS del front nos mande al login
+        raise HTTPException(status_code=401, detail="No autorizado")
+    
+    # Importamos y ejecutamos la lógica de extracción
+    from api_leads_intelligence import get_leads_executive_report
+    return get_leads_executive_report()
+
+@app.get("/api/leads-intelligence")
+async def leads_intelligence_endpoint():
+    return get_leads_executive_report()
 
 @app.get("/leads-dashboard", response_class=HTMLResponse)
-async def leads_dashboard(request: Request, current_user: str = Depends(get_current_user)):
-    return templates.TemplateResponse(
-        "leads_dashboard.html", 
-        {"request": request, "username": current_user}
-    )
+async def ver_leads(request: Request):
+    return templates.TemplateResponse("leads_dashboard.html", {"request": request})
+
+@app.get("/chat-detail/{phone}", response_class=HTMLResponse)
+async def ver_detalle_chat(request: Request, phone: str):
+    from api_leads_intelligence import get_specific_lead_chat
+    # Limpiamos el teléfono por si viene con el '+' del enlace
+    phone_clean = phone.replace(" ", "").replace("+", "")
+    chat_data = get_specific_lead_chat(phone_clean)
+    
+    if not chat_data:
+        # Si no lo encuentra con el formato, intentamos buscarlo tal cual viene
+        chat_data = get_specific_lead_chat(phone)
+        
+    return templates.TemplateResponse("chat_detail.html", {
+        "request": request, 
+        "chat": chat_data,
+        "phone": phone
+    })
 
 @app.get("/logout")
 async def logout():

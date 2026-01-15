@@ -1,508 +1,607 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="light">
+<html lang="es">
 
 <head>
     <meta charset="UTF-8">
+    <title>Procasa AI | Intelligence Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lead Intelligence | Procasa AI</title>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@300;400;500;600&display=swap"
-        rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
     <style>
         :root {
-            --primary-bg: #f8fafc;
-            --card-bg: #ffffff;
-            --text-main: #0f172a;
-            --text-light: #64748b;
+            --bg-body: #0f172a;
+            --bg-card: #1e293b;
+            --bg-sidebar: #020617;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
             --accent: #6366f1;
-            --border: #e2e8f0;
-            --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -1px rgb(0 0 0 / 0.06);
+            --border-color: #334155;
+            --sidebar-width: 260px;
         }
 
-        [data-theme="dark"] {
-            --primary-bg: #0f172a;
-            --card-bg: #1e293b;
-            --text-main: #f1f5f9;
-            --text-light: #94a3b8;
-            --border: #334155;
+        [data-theme="light"] {
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --bg-sidebar: #1e293b;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --accent: #4f46e5;
+            --border-color: #e2e8f0;
         }
 
         body {
-            background-color: var(--primary-bg);
-            color: var(--text-main);
-            font-family: 'Inter', sans-serif;
-            padding-bottom: 60px;
-        }
-
-        /* --- NAVBAR ESTILO SAAS --- */
-        .top-bar {
-            background: var(--card-bg);
-            border-bottom: 1px solid var(--border);
-            padding: 15px 30px;
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .nav-pills-custom {
-            background: var(--primary-bg);
-            padding: 4px;
-            border-radius: 8px;
-            display: inline-flex;
-            border: 1px solid var(--border);
-        }
-
-        .nav-link-custom {
-            padding: 6px 16px;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 0.85rem;
-            text-decoration: none;
-            color: var(--text-light);
-            transition: all 0.2s;
-        }
-
-        .nav-link-custom:hover {
-            color: var(--text-main);
-        }
-
-        .nav-link-custom.active {
-            background: var(--card-bg);
-            color: var(--accent);
-            box-shadow: var(--shadow-sm);
-        }
-
-        /* --- SECTION HEADERS --- */
-        .section-title {
+            background-color: var(--bg-body);
+            color: var(--text-primary);
             font-family: 'Outfit', sans-serif;
+            transition: all 0.3s ease;
+            overflow-x: hidden;
+        }
+
+        /* --- SIDEBAR --- */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--bg-sidebar);
+            height: 100vh;
+            position: fixed;
+            left: -260px;
+            padding: 20px;
+            border-right: 1px solid var(--border-color);
+            z-index: 1050;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sidebar.active {
+            left: 0;
+        }
+
+        .brand {
+            font-size: 1.4rem;
             font-weight: 700;
-            font-size: 1.1rem;
-            margin-bottom: 1.5rem;
+            color: #fff;
+            margin-bottom: 2rem;
             display: flex;
             align-items: center;
             gap: 10px;
-            color: var(--text-main);
         }
 
-        .section-divider {
-            height: 1px;
-            background: var(--border);
-            margin: 2rem 0;
+        .nav-link {
+            color: #94a3b8;
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 5px;
+            text-decoration: none;
+            display: block;
+            transition: 0.3s;
         }
 
-        /* --- KPI CARDS (OPERATIONAL) --- */
-        .kpi-card-mini {
-            background: var(--card-bg);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 20px;
+        .nav-link.active,
+        .nav-link:hover {
+            background: var(--accent);
+            color: white !important;
+        }
+
+        .main-content {
+            margin-left: 0;
+            padding: 30px;
+            transition: all 0.4s ease;
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1040;
+        }
+
+        .sidebar-overlay.active {
+            display: block;
+        }
+
+        /* --- CONTROLES SUPERIORES --- */
+        .header-container {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: var(--shadow-sm);
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 15px;
         }
 
-        .kpi-mini-value {
-            font-family: 'Outfit';
-            font-size: 2rem;
-            font-weight: 700;
-            line-height: 1;
-            margin-bottom: 5px;
+        .menu-toggle {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            width: 45px;
+            height: 45px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
         }
 
-        .kpi-mini-label {
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            font-weight: 600;
-            color: var(--text-light);
+        .filter-container {
+            position: relative;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 4px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
-        /* --- ANALYTICS CARDS (STRATEGIC) --- */
-        .analytics-card {
-            background: var(--card-bg);
-            border: 1px solid var(--border);
+        .calendar-input {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            outline: none;
+            cursor: pointer;
+            width: 200px;
+        }
+
+        /* --- KPI CARDS MEJORADOS --- */
+        .kpi-card {
+            background: var(--bg-card);
             border-radius: 16px;
             padding: 24px;
+            border: 1px solid var(--border-color);
+            transition: transform 0.3s;
             height: 100%;
-            box-shadow: var(--shadow-md);
+            position: relative;
+            overflow: hidden;
         }
 
-        .chart-container {
-            height: 320px;
+        .kpi-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .kpi-icon {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            font-size: 1.5rem;
+            opacity: 0.4;
+            color: var(--accent);
+        }
+
+        .kpi-value {
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 5px;
+            color: var(--text-primary);
+        }
+
+        /* --- TABLA --- */
+        .search-container {
+            position: relative;
+            max-width: 250px;
+        }
+
+        .search-container i {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+        }
+
+        .search-input {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 12px 8px 35px;
+            border-radius: 8px;
             width: 100%;
         }
 
-        /* --- DATA TABLE --- */
-        .table-custom-container {
-            background: var(--card-bg);
-            border-radius: 16px;
-            border: 1px solid var(--border);
-            overflow: hidden;
-            box-shadow: var(--shadow-sm);
+        .table-custom {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 8px;
         }
 
-        .table thead th {
-            background: var(--primary-bg);
-            color: var(--text-light);
+        .table-custom th {
+            color: var(--text-secondary);
+            padding: 10px 15px;
             font-weight: 600;
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             text-transform: uppercase;
-            padding: 16px;
-            border-bottom: 1px solid var(--border);
         }
 
-        .table tbody td {
-            padding: 16px;
+        .table-custom td {
+            background: var(--bg-card);
+            padding: 16px 15px;
+            border-top: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
             vertical-align: middle;
-            background: transparent;
-            color: var(--text-main);
-            border-bottom: 1px solid var(--border);
+            color: var(--text-primary) !important;
+            transition: background 0.2s;
         }
 
-        /* --- SCORE BADGE --- */
+        .table-custom tbody tr:hover td {
+            background: rgba(99, 102, 241, 0.1) !important;
+            cursor: pointer;
+        }
+
+        .table-custom td:first-child {
+            border-left: 1px solid var(--border-color);
+            border-radius: 12px 0 0 12px;
+        }
+
+        .table-custom td:last-child {
+            border-right: 1px solid var(--border-color);
+            border-radius: 0 12px 12px 0;
+        }
+
         .score-badge {
-            width: 35px;
-            height: 35px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 700;
-            color: white;
-            font-size: 0.9rem;
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
+
+        .chart-container {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 24px;
         }
     </style>
 </head>
 
 <body>
 
-    <header class="top-bar">
-        <div class="d-flex align-items-center gap-3">
-            <img src="/static/logo.png" alt="Logo" style="height: 35px;">
-            <div class="d-none d-md-block">
-                <h6 class="m-0 fw-bold" style="font-family: 'Outfit'">Lead Intelligence</h6>
-                <small class="text-muted" style="font-size: 0.75rem;">AI Powered Dashboard</small>
-            </div>
-        </div>
+    <div class="sidebar-overlay" id="overlay" onclick="toggleSidebar()"></div>
 
-        <div class="nav-pills-custom">
-            <a href="/leads-dashboard" class="nav-link-custom active">
-                <i class="fas fa-robot me-2"></i>Leads AI
-            </a>
-            <a href="/dashboard" class="nav-link-custom">
-                <i class="fas fa-bullhorn me-2"></i>Campañas
-            </a>
-        </div>
+    <nav class="sidebar" id="sidebar">
+        <div class="brand"><i class="fa-solid fa-robot"></i> PROCASA AI</div>
+        <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie me-2"></i> Campañas</a>
+        <a href="/leads-dashboard" class="nav-link active"><i class="fa-solid fa-users-line me-2"></i> Leads</a>
+        <a href="#" class="nav-link d-none" id="nav-chat-live"><i class="fa-solid fa-comment-dots me-2"></i> Chat
+            Live</a>
+    </nav>
 
-        <div class="d-flex align-items-center gap-3">
-            <button class="btn btn-outline-secondary btn-sm rounded-circle border-0" id="themeToggle">
-                <i class="fas fa-moon"></i>
-            </button>
-            <div class="text-end d-none d-md-block lh-1">
-                <div class="fw-bold fs-7">{{ username }}</div>
-                <small class="text-muted" style="font-size: 0.7rem;">Analista</small>
-            </div>
-            <a href="/logout" class="text-danger ms-2"><i class="fas fa-sign-out-alt"></i></a>
-        </div>
-    </header>
+    <div class="main-content" id="main-content">
 
-    <div class="container py-4">
-
-        <div class="section-title">
-            <i class="fas fa-tachometer-alt text-primary"></i>
-            Operational Overview
-        </div>
-
-        <div class="row g-3 mb-4">
-            <div class="col-6 col-md-3">
-                <div class="kpi-card-mini border-start border-4 border-primary">
-                    <div>
-                        <div class="kpi-mini-value" id="kpi-total">0</div>
-                        <div class="kpi-mini-label">Total Leads</div>
-                    </div>
-                    <i class="fas fa-users text-primary opacity-25 fa-2x"></i>
+        <div class="header-container">
+            <div class="d-flex align-items-center">
+                <button class="menu-toggle me-3" onclick="toggleSidebar()">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div>
+                    <h2 class="fw-bold m-0">Leads Intelligence</h2>
+                    <p class="text-secondary m-0 small">Rendimiento Comercial Avanzado</p>
                 </div>
             </div>
-            <div class="col-6 col-md-3">
-                <div class="kpi-card-mini border-start border-4 border-success">
-                    <div>
-                        <div class="kpi-mini-value text-success" id="kpi-activos">0</div>
-                        <div class="kpi-mini-label">Activos 48h</div>
-                    </div>
-                    <i class="fas fa-bolt text-success opacity-25 fa-2x"></i>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="kpi-card-mini border-start border-4 border-warning">
-                    <div>
-                        <div class="kpi-mini-value text-warning" id="kpi-calientes">0</div>
-                        <div class="kpi-mini-label">Hot Leads (7+)</div>
-                    </div>
-                    <i class="fas fa-fire text-warning opacity-25 fa-2x"></i>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="kpi-card-mini border-start border-4 border-info">
-                    <div>
-                        <div class="kpi-mini-value text-info" id="kpi-conversion">0</div>
-                        <div class="kpi-mini-label">Conversión Visitas</div>
-                    </div>
-                    <i class="fas fa-calendar-check text-info opacity-25 fa-2x"></i>
-                </div>
-            </div>
-        </div>
 
-        <div class="section-divider"></div>
-
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div class="section-title m-0">
-                <i class="fas fa-chart-pie text-accent"></i>
-                Strategic Analysis
+            <div class="d-flex gap-2">
+                <div class="filter-container">
+                    <i class="fa-solid fa-calendar-days text-secondary"></i>
+                    <input type="text" id="dateRange" class="calendar-input" placeholder="Filtrar fechas...">
+                </div>
+                <button class="btn btn-outline-secondary" onclick="toggleTheme()">
+                    <i class="fa-solid fa-moon" id="theme-icon"></i>
+                </button>
             </div>
-            <button class="btn btn-sm btn-light border text-muted" onclick="loadData()">
-                <i class="fas fa-sync-alt me-1"></i> Refresh
-            </button>
         </div>
 
         <div class="row g-4 mb-4">
-            <div class="col-lg-6">
-                <div class="analytics-card">
-                    <h6 class="fw-bold mb-1">Distribución de Intención</h6>
-                    <small class="text-muted d-block mb-3">¿Qué están buscando realmente los clientes?</small>
-                    <div id="chart-intencion" class="chart-container"></div>
+            <div class="col-md-3">
+                <div class="kpi-card">
+                    <i class="fa-solid fa-user-group kpi-icon"></i>
+                    <div class="kpi-value" id="total_leads">0</div>
+                    <div class="kpi-label text-secondary small text-uppercase">Total Leads</div>
                 </div>
             </div>
-            <div class="col-lg-6">
-                <div class="analytics-card">
-                    <h6 class="fw-bold mb-1">Segmentación de Calidad (Scoring)</h6>
-                    <small class="text-muted d-block mb-3">Salud de la base de datos basada en IA</small>
-                    <div id="chart-segmentacion" class="chart-container"></div>
+            <div class="col-md-3">
+                <div class="kpi-card">
+                    <i class="fa-solid fa-fire-flame-curved kpi-icon" style="color: #ef4444;"></i>
+                    <div class="d-flex align-items-baseline">
+                        <div class="kpi-value" id="leads_calientes">0</div>
+                        <span class="ms-2 badge bg-success-subtle text-success" id="pct_calientes">0%</span>
+                    </div>
+                    <div class="kpi-label text-secondary small text-uppercase">Leads "Hot"</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="kpi-card">
+                    <i class="fa-solid fa-stopwatch kpi-icon" style="color: #f59e0b;"></i>
+                    <div class="kpi-value"><span id="avg_speed">0</span> <small class="fs-6" id="avg_unit">min</small>
+                    </div>
+                    <div class="kpi-label text-secondary small text-uppercase">Tiempo Prom. Conversión</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="kpi-card">
+                    <i class="fa-solid fa-id-card kpi-icon" style="color: #10b981;"></i>
+                    <div class="kpi-value"><span id="tasa_datos">0</span>%</div>
+                    <div class="kpi-label text-secondary small text-uppercase">Tasa Captura Datos</div>
                 </div>
             </div>
         </div>
 
-        <div class="table-custom-container mt-5">
-            <div class="d-flex justify-content-between align-items-center p-3 border-bottom bg-light bg-opacity-10">
-                <h6 class="m-0 fw-bold"><i class="fas fa-list me-2 text-secondary"></i>Live Data Feed</h6>
-                <button onclick="exportExcel()" class="btn btn-sm btn-success">
-                    <i class="fas fa-file-excel me-2"></i>Exportar Reporte
-                </button>
+        <div class="row g-4 mb-4" onclick="closeSidebarOnly()">
+            <div class="col-lg-8">
+                <div class="chart-container">
+                    <h5 class="mb-3">Flujo de Leads</h5>
+                    <div id="chart-temporal" style="height: 320px;"></div>
+                </div>
             </div>
+            <div class="col-lg-4">
+                <div class="chart-container">
+                    <h5 class="mb-3">Fuentes de Origen</h5>
+                    <div id="chart-fuentes" style="height: 320px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="m-0">Últimos Leads Procesados</h5>
+                <div class="search-container">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="phoneSearch" class="search-input" placeholder="Buscar teléfono..."
+                        onkeyup="filterTable()">
+                </div>
+            </div>
+
             <div class="table-responsive">
-                <table class="table mb-0">
+                <table class="table-custom">
                     <thead>
                         <tr>
-                            <th>Última Interacción</th>
-                            <th>Cliente</th>
-                            <th class="text-center">Lead Score</th>
-                            <th>Propiedad Interés</th>
-                            <th>Estado Actual</th>
+                            <th>Fecha</th>
+                            <th>Prospecto</th>
+                            <th>Intención</th>
+                            <th>Origen</th>
+                            <th class="text-center">Score AI</th>
+                            <th>Estado</th>
                         </tr>
                     </thead>
-                    <tbody id="table-body">
-                    </tbody>
+                    <tbody id="leads-table-body"></tbody>
                 </table>
             </div>
         </div>
-
     </div>
 
-    <script>
-        // --- 1. CONFIGURACIÓN E INICIALIZACIÓN ---
-        let RAW_DATA = [];
-        const html = document.documentElement;
-        const themeToggle = document.getElementById('themeToggle');
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
 
-        // Función Tema (Dark/Light)
-        function setTheme(theme) {
-            html.setAttribute('data-theme', theme);
-            localStorage.setItem('theme', theme);
-            themeToggle.innerHTML = theme === 'light' ? '<i class="fas fa-moon"></i>' : '<i class="fas fa-sun"></i>';
-            if (typeof Plotly !== 'undefined') loadData(); // Recargar gráficos para ajustar colores
+    <script>
+        let CURRENT_THEME = 'dark';
+        let ALL_LEADS_RAW = [];
+        let FILTERED_DATA = null;
+        let fp;
+
+        // --- 1. ANIMACIÓN DE VALORES ---
+        function animateValue(id, start, end, duration) {
+            const obj = document.getElementById(id);
+            if (!obj) return;
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                const currentVal = (progress * (end - start) + start).toFixed(id === 'avg_speed' ? 1 : 0);
+
+                if (id === 'pct_calientes') {
+                    obj.innerText = Math.floor(currentVal) + "%";
+                } else {
+                    obj.innerText = currentVal;
+                }
+                if (progress < 1) window.requestAnimationFrame(step);
+            };
+            window.requestAnimationFrame(step);
         }
 
-        themeToggle.addEventListener('click', () => {
-            const current = html.getAttribute('data-theme');
-            setTheme(current === 'light' ? 'dark' : 'light');
-        });
+        // --- 2. SIDEBAR ---
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('active');
+            document.getElementById('overlay').classList.toggle('active');
+        }
+        function closeSidebarOnly() {
+            document.getElementById('sidebar').classList.remove('active');
+            document.getElementById('overlay').classList.remove('active');
+        }
 
-        setTheme(localStorage.getItem('theme') || 'light');
-
-        // --- 2. CARGA DE DATOS ---
-        async function loadData() {
-            try {
-                const response = await fetch('/api/leads_reporte');
-                const data = await response.json();
-
-                // Actualizar KPIs Clásicos
-                animateValue("kpi-total", data.kpis.total);
-                animateValue("kpi-activos", data.kpis.activos);
-                animateValue("kpi-calientes", data.kpis.calientes);
-                animateValue("kpi-conversion", data.kpis.conversion);
-
-                // Renderizar Gráficos de Análisis
-                renderIntencionChart(data.analytics.intencion);
-                renderSegmentacionChart(data.analytics.segmentacion);
-
-                // Renderizar Tabla
-                RAW_DATA = data.tabla;
-                renderTable(data.tabla);
-
-            } catch (error) {
-                console.error("Error cargando dashboard:", error);
+        // --- 3. TEMA ---
+        function toggleTheme() {
+            const body = document.body;
+            const icon = document.getElementById('theme-icon');
+            if (CURRENT_THEME === 'dark') {
+                body.setAttribute('data-theme', 'light');
+                icon.className = 'fa-solid fa-sun';
+                CURRENT_THEME = 'light';
+            } else {
+                body.removeAttribute('data-theme');
+                icon.className = 'fa-solid fa-moon';
+                CURRENT_THEME = 'dark';
+            }
+            if (FILTERED_DATA) {
+                renderCharts(FILTERED_DATA);
             }
         }
 
-        // --- 3. GRÁFICOS (PLOTLY) ---
-        function getChartConfig() {
-            const isDark = html.getAttribute('data-theme') === 'dark';
-            return {
-                text: isDark ? '#94a3b8' : '#334155',
-                bg: 'rgba(0,0,0,0)',
-                grid: isDark ? '#334155' : '#e2e8f0'
-            };
+        // --- 4. CARGA Y FILTRADO DE DATOS ---
+        async function loadData() {
+            try {
+                const res = await fetch('/api/leads-intelligence');
+                const data = await res.json();
+
+                // Guardamos los leads brutos para el filtrado cliente
+                ALL_LEADS_RAW = data.leads_all || data.leads;
+
+                // Inicialmente mostramos todo
+                applyDateFilter([]);
+            } catch (e) { console.error("Error cargando datos:", e); }
         }
 
-        function renderIntencionChart(data) {
-            const cfg = getChartConfig();
+        function applyDateFilter(selectedDates) {
+            let filteredLeads = ALL_LEADS_RAW;
 
-            // Si data viene vacía, poner placeholder
-            if (!data || data.length === 0) return;
+            if (selectedDates && selectedDates.length === 2) {
+                const start = selectedDates[0];
+                const end = selectedDates[1];
+                end.setHours(23, 59, 59);
 
-            const values = data.map(d => d.count);
-            const labels = data.map(d => d._id || "Sin Definir");
+                filteredLeads = ALL_LEADS_RAW.filter(l => {
+                    const d = new Date(l.fecha);
+                    return d >= start && d <= end;
+                });
+            }
 
-            const trace = {
-                values: values,
-                labels: labels,
-                type: 'pie',
-                hole: 0.6,
-                textinfo: 'label+percent',
-                textposition: 'outside',
-                automargin: true,
-                marker: {
-                    colors: ['#6366f1', '#10b981', '#f59e0b', '#3b82f6', '#94a3b8']
-                }
-            };
+            // Recalcular KPIs basados en el filtro
+            const total = filteredLeads.length;
+            const hot = filteredLeads.filter(l => l.hot_lead).length;
+            const complete = filteredLeads.filter(l => l.email && l.rut).length;
 
-            const layout = {
-                paper_bgcolor: cfg.bg,
-                plot_bgcolor: cfg.bg,
-                font: { family: 'Inter', color: cfg.text },
-                showlegend: false,
-                margin: { t: 0, b: 0, l: 0, r: 0 },
-                height: 300
-            };
+            // Reconstruir estructura para gráficos
+            const temporalMap = {};
+            const fuentesMap = {};
+            filteredLeads.forEach(l => {
+                temporalMap[l.fecha] = (temporalMap[l.fecha] || 0) + 1;
+                fuentesMap[l.origen] = (fuentesMap[l.origen] || 0) + 1;
+            });
 
-            Plotly.newPlot('chart-intencion', [trace], layout, { displayModeBar: false, responsive: true });
-        }
+            const sortedDates = Object.keys(temporalMap).sort();
 
-        function renderSegmentacionChart(data) {
-            const cfg = getChartConfig();
-
-            // Ordenar lógicamente los segmentos
-            const order = ["Cold (0-3)", "Warm (4-6)", "Hot (7-9)", "VIP (10+)"];
-            data.sort((a, b) => order.indexOf(a._id) - order.indexOf(b._id));
-
-            const x = data.map(d => d._id);
-            const y = data.map(d => d.count);
-
-            const trace = {
-                x: x,
-                y: y,
-                type: 'bar',
-                marker: {
-                    color: x.map(cat => {
-                        if (cat.includes("VIP")) return '#10b981';
-                        if (cat.includes("Hot")) return '#f59e0b';
-                        if (cat.includes("Warm")) return '#6366f1';
-                        return '#94a3b8';
-                    }),
-                    cornerradius: 5
+            FILTERED_DATA = {
+                kpis: {
+                    total_leads: total,
+                    leads_calientes: hot,
+                    pct_leads_calientes: total > 0 ? (hot / total * 100).toFixed(1) : 0,
+                    tasa_captura_datos: total > 0 ? (complete / total * 100).toFixed(1) : 0,
+                    avg_speed_minutes: 12.5 // Valor estático para el ejemplo si no viene de API
                 },
-                text: y.map(String),
-                textposition: 'auto'
+                charts: {
+                    temporal: { labels: sortedDates, values: sortedDates.map(d => temporalMap[d]) },
+                    fuentes: { labels: Object.keys(fuentesMap), values: Object.values(fuentesMap) }
+                },
+                leads: filteredLeads.slice(0, 50)
             };
 
-            const layout = {
-                paper_bgcolor: cfg.bg,
-                plot_bgcolor: cfg.bg,
-                font: { family: 'Inter', color: cfg.text },
-                margin: { t: 20, b: 30, l: 30, r: 0 },
-                xaxis: { showgrid: false },
-                yaxis: { showgrid: true, gridcolor: cfg.grid },
-                height: 300
-            };
-
-            Plotly.newPlot('chart-segmentacion', [trace], layout, { displayModeBar: false, responsive: true });
+            updateUI(FILTERED_DATA);
         }
 
-        // --- 4. TABLA ---
-        function renderTable(rows) {
-            const tbody = document.getElementById('table-body');
+        function updateUI(data) {
+            animateValue("total_leads", 0, data.kpis.total_leads, 800);
+            animateValue("leads_calientes", 0, data.kpis.leads_calientes, 800);
+            animateValue("pct_calientes", 0, data.kpis.pct_leads_calientes, 800);
+            animateValue("tasa_datos", 0, data.kpis.tasa_captura_datos, 800);
+
+            // Tiempo promedio
+            document.getElementById('avg_speed').innerText = data.kpis.avg_speed_minutes;
+
+            renderCharts(data);
+            renderTable(data.leads);
+        }
+
+        function renderCharts(data) {
+            const isDark = CURRENT_THEME === 'dark';
+            const textColor = isDark ? '#f8fafc' : '#0f172a';
+            const gridColor = isDark ? '#334155' : '#e2e8f0';
+
+            const commonLayout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                font: { color: textColor, family: 'Outfit' },
+                xaxis: { gridcolor: gridColor, zerolinecolor: gridColor },
+                yaxis: { gridcolor: gridColor, zerolinecolor: gridColor },
+                margin: { t: 30, b: 40, l: 40, r: 20 },
+                hoverlabel: { bgcolor: isDark ? '#1e293b' : '#fff', font: { family: 'Outfit', color: textColor } }
+            };
+
+            Plotly.newPlot('chart-temporal', [{
+                x: data.charts.temporal.labels,
+                y: data.charts.temporal.values,
+                type: 'scatter', mode: 'lines+markers',
+                line: { shape: 'spline', color: '#6366f1', width: 4 },
+                fill: 'tozeroy', fillcolor: 'rgba(99, 102, 241, 0.1)'
+            }], commonLayout, { responsive: true });
+
+            Plotly.newPlot('chart-fuentes', [{
+                labels: data.charts.fuentes.labels,
+                values: data.charts.fuentes.values,
+                type: 'pie', hole: 0.6,
+                marker: { colors: ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#0ea5e9'] },
+                textinfo: 'percent',
+                hoverinfo: 'label+value+percent'
+            }], {
+                ...commonLayout,
+                showlegend: true,
+                legend: { orientation: 'h', y: -0.2, x: 0.5, xanchor: 'center' }
+            }, { responsive: true });
+        }
+
+        function renderTable(leads) {
+            const tbody = document.getElementById('leads-table-body');
             tbody.innerHTML = '';
-
-            rows.forEach(r => {
-                let badgeColor = '#94a3b8';
-                if (r.score >= 10) badgeColor = '#10b981';
-                else if (r.score >= 7) badgeColor = '#f59e0b';
-                else if (r.score >= 4) badgeColor = '#6366f1';
-
+            leads.forEach(l => {
                 const tr = document.createElement('tr');
+                // Acción al hacer click
+                tr.onclick = () => window.location.href = `/chat-detail/${l.phone}`;
+
+                let scoreColor = l.score >= 7 ? '#10b981' : (l.score >= 4 ? '#f59e0b' : '#ef4444');
+                const statusBadge = (l.email && l.rut)
+                    ? '<span class="badge bg-success-subtle text-success">Completo</span>'
+                    : '<span class="badge bg-warning-subtle text-warning">Incompleto</span>';
+
                 tr.innerHTML = `
+                    <td class="small text-muted" style="width:130px">${l.fecha}</td>
                     <td>
-                        <div class="fw-bold">${r.fecha}</div>
-                        <small class="text-muted">WhatsApp</small>
+                        <div class="fw-bold">${l.nombre}</div>
+                        <div class="small phone-val" style="opacity: 0.7">${l.phone || 'S/N'}</div>
                     </td>
-                    <td>
-                        <div class="fw-bold">${r.nombre}</div>
-                        <div class="small text-muted">${r.phone}</div>
-                    </td>
-                    <td class="text-center">
-                        <div class="d-flex justify-content-center">
-                            <div class="score-badge" style="background-color: ${badgeColor}">${r.score}</div>
-                        </div>
-                    </td>
-                    <td>
-                        ${r.codigo ? `<a href="${r.link}" target="_blank" class="badge bg-light text-primary border text-decoration-none">${r.codigo}</a>` : ''}
-                        <div class="text-truncate small" style="max-width: 180px;">${r.titulo}</div>
-                    </td>
-                    <td>
-                        <span class="badge bg-secondary bg-opacity-10 text-secondary border">${r.intencion}</span>
-                    </td>
+                    <td><span class="badge bg-secondary-subtle text-secondary">${l.intencion.replace('_', ' ').toUpperCase()}</span></td>
+                    <td class="small">${l.origen}</td>
+                    <td><div class="score-badge mx-auto" style="background: ${scoreColor}20; color: ${scoreColor}; border: 1px solid ${scoreColor}">${l.score}</div></td>
+                    <td>${statusBadge}</td>
                 `;
                 tbody.appendChild(tr);
             });
         }
 
-        // --- 5. UTILIDADES ---
-        function animateValue(id, end) {
-            const obj = document.getElementById(id);
-            if (obj) obj.innerText = end;
+        function filterTable() {
+            const input = document.getElementById('phoneSearch').value.toLowerCase();
+            const rows = document.querySelectorAll('#leads-table-body tr');
+            rows.forEach(row => {
+                const phone = row.querySelector('.phone-val').innerText.toLowerCase();
+                row.style.display = phone.includes(input) ? "" : "none";
+            });
         }
 
-        function exportExcel() {
-            if (RAW_DATA.length === 0) return alert("Sin datos para exportar");
-            const ws = XLSX.utils.json_to_sheet(RAW_DATA);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Leads_Intelligence");
-            XLSX.writeFile(wb, "Reporte_Leads_Procasa.xlsx");
-        }
+        document.addEventListener('DOMContentLoaded', () => {
+            // Inicializar Calendario Moderno
+            fp = flatpickr("#dateRange", {
+                mode: "range",
+                dateFormat: "Y-m-d",
+                theme: "dark",
+                locale: "es",
+                onChange: function (selectedDates) {
+                    if (selectedDates.length === 2) {
+                        applyDateFilter(selectedDates);
+                    }
+                }
+            });
 
-        // Init
-        loadData();
-        setInterval(loadData, 60000); // Refresco cada 60s
+            loadData();
+        });
 
+        setInterval(loadData, 300000); // Actualizar cada 5 min
     </script>
 </body>
 

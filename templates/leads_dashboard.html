@@ -464,10 +464,11 @@
                 });
             }
 
-            // Recalcular KPIs basados en el filtro
             const total = filteredLeads.length;
-            const hot = filteredLeads.filter(l => l.hot_lead).length;
-            const complete = filteredLeads.filter(l => l.email && l.rut).length;
+            const hotLeads = filteredLeads.filter(l => l.hot_lead);
+            const hot = hotLeads.length;
+            const completeHot = hotLeads.filter(l => l.email && l.rut).length;
+
 
             // Reconstruir estructura para gráficos
             const temporalMap = {};
@@ -484,7 +485,7 @@
                     total_leads: total,
                     leads_calientes: hot,
                     pct_leads_calientes: total > 0 ? (hot / total * 100).toFixed(1) : 0,
-                    tasa_captura_datos: total > 0 ? (complete / total * 100).toFixed(1) : 0,
+                    tasa_captura_datos: hot > 0 ? (completeHot / hot * 100).toFixed(1) : 0,
                     avg_speed_minutes: 12.5 // Valor estático para el ejemplo si no viene de API
                 },
                 charts: {

@@ -174,9 +174,9 @@ if __name__ == "__main__":
     # LISTA DE PRUEBA
     LISTA_PROSPECTOS = [
         {
-            "telefono": "+56951441330", 
-            "nombre": "Fabiola Ignacia Milan López", 
-            "link": "https://casa.mercadolibre.cl/MLC-3265470740-casa-general-bulnessanto-domingo-_JM"
+            "telefono": "+56989216063", 
+            "nombre": "Paola", 
+            "link": "https://casa.mercadolibre.cl/MLC-3084165696-casa-los-maquislos-boldos-_JM"
         }
     ]
     

@@ -2,6 +2,7 @@
 import json
 from openai import OpenAI
 from config import Config
+from .prompts import PROMPT_CLASIFICACION_BI
 
 client = OpenAI(
     api_key=Config.XAI_API_KEY,
@@ -93,19 +94,30 @@ Ejemplo recomendado: "¡Hola! Bienvenido/a a Procasa. 😊 Si ya tienes una prop
     # =========================================================================
     # 2. INSTRUCCIONES TÉCNICAS DE EXTRACCIÓN (AGREGADO AL FINAL)
     # =========================================================================
+# PEGAR ESTO DENTRO DE generar_respuesta_estructurada
+    # Asegúrate que esta primera línea tenga 4 espacios de margen a la izquierda
     system_prompt_extraction = f"""
-    [TAREA SECUNDARIA DE EXTRACCIÓN DE DATOS]
-    Además de responder, analiza el mensaje del usuario.
-    Si menciona datos nuevos que NO están en: {json.dumps(datos_conocidos, ensure_ascii=False)}, extráelos en el JSON.
-    CAMPOS VALIDOS A EXTRAER: 'operacion' (Venta/Arriendo), 'tipo', 'comuna', 'presupuesto' (solo números), 'dormitorios', 'email', 'nombre', 'rut'.
+    {PROMPT_CLASIFICACION_BI}
 
-    SALIDA OBLIGATORIA (JSON):
+    [INSTRUCCIONES DE EXTRACCIÓN Y SALIDA - FORMATO JSON]
+    1. Analiza el mensaje del usuario. 
+    2. Si menciona datos nuevos que NO están aquí: {json.dumps(datos_conocidos, ensure_ascii=False)}, extráelos.
+    3. Clasifica la operación según el módulo de Business Intelligence arriba detallado.
+    
+    Responde EXCLUSIVAMENTE con este JSON válido (sin etiquetas markdown):
     {{
-        "intencion": "una_sola_palabra",
+        "intencion": "agendar_visita | contacto_directo | escalado_urgente | consulta_general", 
+        "respuesta_bot": "Tu respuesta conversacional aquí (según las reglas de negocio)",
         "datos_extraidos": {{ "campo": "valor" }}, 
-        "respuesta_bot": "Texto completo natural y genuino siguiendo las reglas de arriba"
+        "bi_analytics": {{
+            "escenario_chat": "VALOR_DE_LISTA",
+            "tipo_contacto": "VALOR_DE_LISTA",
+            "intencion_cliente": "VALOR_DE_LISTA",
+            "desempeno_chat": "VALOR_DE_LISTA",
+            "motivo_no_visita": "VALOR_DE_LISTA",
+            "recuperabilidad": "VALOR_DE_LISTA"
+        }}
     }}
-    Responde SOLO con JSON válido.
     """
 
     full_system_prompt = system_prompt_base + "\n\n" + system_prompt_extraction
@@ -116,18 +128,19 @@ Ejemplo recomendado: "¡Hola! Bienvenido/a a Procasa. 😊 Si ya tienes una prop
     ]
 
     try:
-        print(f"[GROK_STRUCT] Procesando conversación ({len(structured_messages)} msgs)...")
+        print(f"[GROK_BI] Analizando Inteligencia Comercial ({len(structured_messages)} msgs)...")
         
         response = client.chat.completions.create(
             model=Config.GROK_MODEL or "grok-4-1-fast-non-reasoning",
             messages=structured_messages,
-            temperature=0.2, # Un poco más bajo para asegurar JSON correcto
-            max_tokens=700,
+            temperature=0.1, 
+            max_tokens=1000, 
             timeout=45
         )
         
         contenido_json_str = response.choices[0].message.content.strip()
 
+        # Limpieza de formato si la IA responde con bloques de código
         if contenido_json_str.startswith("```json"):
             contenido_json_str = contenido_json_str[7:-3].strip()
         elif contenido_json_str.startswith("```"):
@@ -135,20 +148,18 @@ Ejemplo recomendado: "¡Hola! Bienvenido/a a Procasa. 😊 Si ya tienes una prop
 
         datos = json.loads(contenido_json_str)
 
-        intencion = datos.get("intencion", "consulta_general").lower().strip()
-        respuesta_bot = datos.get("respuesta_bot", "").strip()
-        datos_extraidos = datos.get("datos_extraidos", {})
-
         return {
-            "intencion": intencion,
-            "datos_extraidos": datos_extraidos,
-            "respuesta_bot": respuesta_bot or "Gracias por tu consulta. Estoy aquí para ayudarte."
+            "intencion": datos.get("intencion", "consulta_general").lower().strip(),
+            "datos_extraidos": datos.get("datos_extraidos", {}),
+            "respuesta_bot": datos.get("respuesta_bot", "Gracias por tu consulta."),
+            "bi_analytics": datos.get("bi_analytics", {}) 
         }
 
     except Exception as e:
-        print(f"[ERROR GROK_STRUCT] {e}")
+        print(f"[ERROR GROK_BI] {e}")
         return {
             "intencion": "consulta_general",
             "datos_extraidos": {},
-            "respuesta_bot": "Disculpa, tengo un problema técnico. ¿Me puedes repetir tu consulta?"
+            "respuesta_bot": "Disculpa, tengo un problema técnico momentáneo. ¿Me puedes repetir tu consulta?",
+            "bi_analytics": {"error": str(e)}
         }

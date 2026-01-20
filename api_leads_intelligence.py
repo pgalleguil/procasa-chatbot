@@ -1,11 +1,19 @@
 from pymongo import MongoClient
 from config import Config
 from datetime import datetime
-from collections import Counter
-
+from collections import Counter, defaultdict
 
 # --------------------------------------------------
-# FECHA REAL DE CREACIÓN DEL LEAD
+# Helper para conversión segura de int
+# --------------------------------------------------
+def safe_int_conversion(value):
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+# --------------------------------------------------
+# 1. FECHA REAL DE CREACIÓN DEL LEAD
 # --------------------------------------------------
 def get_creation_date(doc):
     try:
@@ -21,34 +29,52 @@ def get_creation_date(doc):
                     pass
         return datetime.now()
 
-
 # --------------------------------------------------
-# SCORE DE CALIDAD (0–10)
+# 2. SCORE DE CALIDAD (0–10) - LÓGICA HÍBRIDA
 # --------------------------------------------------
-def calculate_score(prospecto, intencion):
+def calculate_score(prospecto, intencion_legacy=None, bi_data=None):
+    """
+    Cálculo de Score Robusto: 
+    Soporta la llamada antigua (3 args) y la nueva lógica de negocio.
+    """
     score = 0
+    
+    # 1. PRIORIDAD MÁXIMA: ALERTA DE RECLAMO
+    if bi_data and bi_data.get("ALERTA_CRITICA") == "RECLAMO_CONTACTO":
+        return 10
 
-    if prospecto.get("email"):
-        score += 2
-    if prospecto.get("rut"):
-        score += 2
-    if prospecto.get("nombre"):
-        score += 1
+    # 2. LOGICA DE NEGOCIO (Comportamiento)
+    if bi_data:
+        # Si es corredor, score mínimo
+        if bi_data.get("TIPO_CONTACTO") == "CORREDOR_EXTERNO":
+            return 1
+            
+        # Visita Solicitada o Agendada
+        if bi_data.get("RESULTADO_CHAT") in ["VISITA_AGENDADA", "VISITA_SOLICITADA"]:
+            score += 5
+        
+        # Urgencia
+        if bi_data.get("URGENCIA") == "ALTA_URGENCIA":
+            score += 3
+            
+        # Recuperabilidad (Tu criterio de diálogo activo)
+        if bi_data.get("RECUPERABILIDAD") == "ALTA":
+            score += 2
+        elif bi_data.get("RECUPERABILIDAD") == "BAJA":
+            return 1 # Abandono inicial o ghosting
 
-    if intencion == "escalado_urgente":
-        score += 5
-    elif intencion == "agendar_visita":
+    # 3. DATOS FÍSICOS (Si no hay BI o para sumar puntos extra)
+    if prospecto.get("rut"): score += 1
+    if prospecto.get("email"): score += 1
+
+    # Si venía de la lógica antigua sin BI data
+    if not bi_data and intencion_legacy == "agendar_visita":
         score += 4
-    elif intencion == "contacto_directo":
-        score += 3
-    elif intencion == "consultar_precio":
-        score += 1
 
     return min(score, 10)
 
-
 # --------------------------------------------------
-# INTENCIÓN MÁS FUERTE DEL HISTORIAL
+# 3. INTENCIÓN MÁS FUERTE (LEGACY)
 # --------------------------------------------------
 def determine_strongest_intent(messages):
     prioridades = [
@@ -57,28 +83,25 @@ def determine_strongest_intent(messages):
         "contacto_directo",
         "consultar_precio"
     ]
-
-    intenciones = {
-        m.get("intencion")
-        for m in messages
-        if m.get("role") == "assistant" and m.get("intencion")
-    }
+    intenciones = set()
+    for m in messages:
+        if m.get("intencion"):
+            intenciones.add(m.get("intencion"))
 
     for p in prioridades:
         if p in intenciones:
             return p
-
     return "consulta_general"
 
-
 # --------------------------------------------------
-# REPORTE EJECUTIVO
+# 4. REPORTE EJECUTIVO (API PRINCIPAL)
 # --------------------------------------------------
 def get_leads_executive_report():
     try:
         client = MongoClient(Config.MONGO_URI)
         db = client[Config.DB_NAME]
 
+        # Traemos leads ordenados por fecha descendente
         documentos = list(
             db["conversaciones_whatsapp"]
             .find({})
@@ -87,11 +110,25 @@ def get_leads_executive_report():
         )
 
         if not documentos:
-            return {"kpis": {}, "charts": {}, "leads": []}
+            return {"kpis": {}, "charts": {}, "aggs": {}, "leads": []}
 
+        # --- Inicializar Contadores ---
         temporal_diario = {}
-        comunas = Counter()
         fuentes = Counter()
+        bi_intenciones = Counter()
+        bi_resultados = Counter()
+        bi_recuperabilidad = Counter()
+
+        # Contadores para propiedades (operacion: venta/arriendo, tipo: casa/depto, etc.)
+        operaciones = Counter()
+        tipos = Counter()
+        comunas = Counter()
+
+        # Para insights más profundos: precios por categoría, tiempos por operacion, etc.
+        precios_por_operacion = defaultdict(list)
+        precios_por_tipo = defaultdict(list)
+        tiempos_por_operacion = defaultdict(list)
+        hot_leads_por_tipo = defaultdict(int)
 
         total_leads = len(documentos)
         leads_calientes = 0
@@ -100,9 +137,12 @@ def get_leads_executive_report():
 
         leads_table = []
 
+        hot_intents = ["agendar_visita", "escalado_urgente", "contacto_directo"]
+
         for doc in documentos:
             p = doc.get("prospecto", {})
             messages = doc.get("messages", [])
+            bi_data = doc.get("bi_analytics_global", {}) # Data de IA
 
             phone = doc.get("phone")
             nombre = p.get("nombre", "")
@@ -115,62 +155,97 @@ def get_leads_executive_report():
             comunas[comuna] += 1
             fuentes[origen] += 1
 
+            # --- Propiedades: operacion (venta/arriendo), tipo (casa/depto) ---
+            operacion = p.get("operacion") or "Venta"  # Ej: Venta, Arriendo
+            tipo = p.get("tipo") or "Departamento"     # Ej: Casa, Departamento, Oficina
+
+            operaciones[operacion] += 1
+            tipos[tipo] += 1
+
+            # Precio
+            precio_uf_val = safe_int_conversion(p.get("precio_uf"))
+            precio_uf = precio_uf_val if precio_uf_val is not None else 0
+            if precio_uf > 0:
+                precios_por_operacion[operacion].append(precio_uf)
+                precios_por_tipo[tipo].append(precio_uf)
+
+            # --- LÓGICA DE HOT LEADS ---
+            intencion_legacy = determine_strongest_intent(messages)
+            
+            is_hot = False
+            
+            if bi_data:
+                recup = bi_data.get("RECUPERABILIDAD", "")
+                resultado = bi_data.get("RESULTADO_CHAT", "")
+                
+                if recup == "ALTA_PRIORIDAD" or resultado in ["VISITA_AGENDADA", "VISITA_SOLICITADA"]:
+                    is_hot = True
+            else:
+                is_hot = intencion_legacy in hot_intents
+
+            if is_hot:
+                leads_calientes += 1
+                hot_leads_por_tipo[tipo] += 1
+                if email and rut:
+                    leads_calientes_con_datos += 1
+                
+                # Tiempo de conversión
+                try:
+                    if messages:
+                        t1 = datetime.fromisoformat(messages[0]["timestamp"].replace("Z", ""))
+                        t2 = None
+                        for m in messages:
+                            if m.get("role") == "assistant" and m.get("intencion") in hot_intents:
+                                t2 = datetime.fromisoformat(m["timestamp"].replace("Z", ""))
+                                break
+                        if t2 is None and len(messages) > 1:
+                            t2 = datetime.fromisoformat(messages[-1]["timestamp"].replace("Z", ""))
+                        if t2:
+                            delta = (t2 - t1).total_seconds() / 60
+                            if 0 < delta < 43200:
+                                tiempos_conversion.append(delta)
+                                tiempos_por_operacion[operacion].append(delta)
+                except Exception:
+                    pass
+
+            # --- DATOS PARA GRÁFICOS BI ---
+            if bi_data:
+                intent_bi = bi_data.get("INTENCION_CLIENTE", "SIN_CLASIFICAR")
+                res_bi = bi_data.get("RESULTADO_CHAT", "SIN_CLASIFICAR")
+                recup_bi = bi_data.get("RECUPERABILIDAD", "N/A")
+
+                bi_intenciones[intent_bi] += 1
+                bi_resultados[res_bi] += 1
+                bi_recuperabilidad[recup_bi] += 1
+            
+            # --- FECHAS ---
             fecha_obj = get_creation_date(doc)
             fecha_str = fecha_obj.strftime("%Y-%m-%d")
 
             if fecha_obj.year >= datetime.now().year - 1:
                 temporal_diario[fecha_str] = temporal_diario.get(fecha_str, 0) + 1
 
-            intencion = determine_strongest_intent(messages)
-            is_hot = intencion in [
-                "agendar_visita",
-                "escalado_urgente",
-                "contacto_directo"
-            ]
-
-            if is_hot:
-                leads_calientes += 1
-
-                if email and rut:
-                    leads_calientes_con_datos += 1
-
-                try:
-                    start_msg = messages[0] if messages else None
-                    end_msg = next(
-                        (
-                            m for m in messages
-                            if m.get("intencion") in [
-                                "agendar_visita",
-                                "escalado_urgente",
-                                "contacto_directo"
-                            ]
-                        ),
-                        None
-                    )
-
-                    if start_msg and end_msg:
-                        t1 = datetime.fromisoformat(start_msg["timestamp"].replace("Z", ""))
-                        t2 = datetime.fromisoformat(end_msg["timestamp"].replace("Z", ""))
-                        delta = (t2 - t1).total_seconds() / 60
-                        if 0 < delta < 43200:
-                            tiempos_conversion.append(delta)
-                except Exception:
-                    pass
-
-            score = calculate_score(p, intencion)
+            # Calcular Score
+            score = calculate_score(p, intencion_legacy, bi_data)
 
             leads_table.append({
                 "nombre": nombre,
                 "phone": phone,
                 "email": email,
                 "rut": rut,
-                "intencion": intencion,
+                "intencion_legacy": intencion_legacy,
+                "bi_data": bi_data,
                 "score": score,
                 "origen": origen,
                 "fecha": fecha_str,
-                "hot_lead": is_hot
+                "hot_lead": is_hot,
+                "operacion": operacion,  # Nuevo para table
+                "tipo": tipo,            # Nuevo para table
+                "comuna": comuna,
+                "precio_uf": precio_uf
             })
 
+        # --- CÁLCULO DE PROMEDIOS KPI ---
         avg_speed = (
             sum(tiempos_conversion) / len(tiempos_conversion)
             if tiempos_conversion else 0
@@ -181,7 +256,6 @@ def get_leads_executive_report():
             if total_leads > 0 else 0
         )
 
-        # ✅ KPIs CORRECTOS
         tasa_captura_datos_hot = (
             leads_calientes_con_datos / leads_calientes * 100
             if leads_calientes > 0 else 0
@@ -191,6 +265,26 @@ def get_leads_executive_report():
             leads_calientes_con_datos / total_leads * 100
             if total_leads > 0 else 0
         )
+
+        # --- Agregados mejorados para insights (tops, avgs por categoría) ---
+        top_operacion = operaciones.most_common(1)[0][0] if operaciones else "N/A"
+        pct_top_operacion = round((operaciones[top_operacion] / total_leads * 100) if total_leads > 0 else 0, 1)
+        
+        top_tipo = tipos.most_common(1)[0][0] if tipos else "N/A"
+        pct_top_tipo = round((tipos[top_tipo] / total_leads * 100) if total_leads > 0 else 0, 1)
+        
+        top_comuna = comunas.most_common(1)[0][0] if comunas else "N/A"
+        pct_top_comuna = round((comunas[top_comuna] / total_leads * 100) if total_leads > 0 else 0, 1)
+        
+        avg_precio_uf = round(sum(precios_por_operacion[top_operacion] + precios_por_tipo[top_tipo]) / (len(precios_por_operacion[top_operacion]) + len(precios_por_tipo[top_tipo])) if (precios_por_operacion[top_operacion] or precios_por_tipo[top_tipo]) else 0, 1)
+
+        # Avgs por categoría
+        avgs_por_operacion = {op: round(sum(precios) / len(precios) if precios else 0, 1) for op, precios in precios_por_operacion.items()}
+        avgs_por_tipo = {tp: round(sum(precios) / len(precios) if precios else 0, 1) for tp, precios in precios_por_tipo.items()}
+        
+        avg_tiempos_por_operacion = {op: round(sum(tiempos) / len(tiempos) if tiempos else 0, 1) for op, tiempos in tiempos_por_operacion.items()}
+        
+        pct_hot_por_tipo = {tp: round(hot / tipos[tp] * 100 if tipos[tp] > 0 else 0, 1) for tp, hot in hot_leads_por_tipo.items()}
 
         return {
             "kpis": {
@@ -209,34 +303,65 @@ def get_leads_executive_report():
                 "fuentes": {
                     "labels": list(fuentes.keys()),
                     "values": list(fuentes.values())
+                },
+                "operaciones": {  # Nuevo chart para operaciones (venta/arriendo)
+                    "labels": list(operaciones.keys()),
+                    "values": list(operaciones.values())
+                },
+                "tipos": {  # Nuevo chart para tipos (casa/depto)
+                    "labels": list(tipos.keys()),
+                    "values": list(tipos.values())
+                },
+                "comunas": {  # Nuevo chart para comunas
+                    "labels": list(comunas.keys()),
+                    "values": list(comunas.values())
+                },
+                "bi_intencion": {
+                    "labels": list(bi_intenciones.keys()),
+                    "values": list(bi_intenciones.values())
+                },
+                "bi_resultado": {
+                    "labels": list(bi_resultados.keys()),
+                    "values": list(bi_resultados.values())
+                },
+                "bi_recuperabilidad": {
+                    "labels": list(bi_recuperabilidad.keys()),
+                    "values": list(bi_recuperabilidad.values())
                 }
+            },
+            "aggs": {
+                "top_operacion": top_operacion,
+                "pct_top_operacion": pct_top_operacion,
+                "top_tipo": top_tipo,
+                "pct_top_tipo": pct_top_tipo,
+                "top_comuna": top_comuna,
+                "pct_top_comuna": pct_top_comuna,
+                "avg_precio_uf": avg_precio_uf,
+                # Nuevos aggs para insights ricos
+                "avgs_precio_por_operacion": avgs_por_operacion,
+                "avgs_precio_por_tipo": avgs_por_tipo,
+                "avg_tiempos_por_operacion": avg_tiempos_por_operacion,
+                "pct_hot_por_tipo": pct_hot_por_tipo
             },
             "leads": leads_table
         }
 
     except Exception as e:
         print("❌ Error en reporte intelligence:", e)
-        return {"kpis": {}, "charts": {}, "leads": []}
+        return {"kpis": {}, "charts": {}, "aggs": {}, "leads": []}
 
-
-# --------------------------------------------------
-# CHAT DE LEAD ESPECÍFICO
-# --------------------------------------------------
 def get_specific_lead_chat(phone):
     try:
         client = MongoClient(Config.MONGO_URI)
         db = client[Config.DB_NAME]
         doc = db["conversaciones_whatsapp"].find_one({"phone": phone})
-
-        if not doc:
-            return None
-
+        if not doc: return None
         return {
             "phone": doc.get("phone"),
             "prospecto": doc.get("prospecto", {}),
-            "messages": doc.get("messages", [])
+            "messages": doc.get("messages", []),
+            "bi_analytics_global": doc.get("bi_analytics_global", {})
         }
-
     except Exception as e:
         print(f"❌ Error obteniendo chat {phone}:", e)
         return None

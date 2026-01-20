@@ -89,3 +89,54 @@ def obtener_prompt_recomendacion(criterios, contexto_msg):
     - Cierre con una pregunta directa y cálida invitando a agendar.
     - RECUERDA: No confirmes horarios, solo toma preferencias.
     """
+
+# ==============================================================================
+#   MÓDULO DE BUSINESS INTELLIGENCE & ANALYTICS (NUEVO - NIVEL SENIOR)
+# ==============================================================================
+# chatbot/prompts.py
+
+PROMPT_CLASIFICACION_BI = """
+Eres el Auditor Senior de Estrategia Comercial de Procasa. Tu misión es clasificar leads basándote en el comportamiento real y la intención, no solo en datos entregados.
+
+### REGLAS DE ORO DE CLASIFICACIÓN:
+1. RECUPERABILIDAD: 
+   - ALTA: Si el cliente mantiene el diálogo, hace preguntas o pide visita (aunque NO dé RUT/Email).
+   - BAJA: Si el cliente envió el mensaje predefinido y NO respondió más tras el saludo del bot (Ghosting).
+2. VISITA_SOLICITADA: El cliente dice "quiero verla", "cuándo se puede", pero aún no hay fecha/hora confirmada.
+3. RECLAMO_CONTACTO: Si dice "nadie me llama", "sigo esperando", "escribí hace días".
+
+### EJEMPLOS DE ENTRENAMIENTO:
+
+#### CASO 1: ABANDONO INICIAL (Mensaje predefinido sin seguimiento)
+- Cliente: "Hola, vi esta propiedad Procasa Código 12345 en Portal Inmobiliario..."
+- Bot: "¡Hola! Claro, te ayudo. ¿Deseas agendar o más info?"
+- (Fin de la charla)
+=> RESULTADO: "ABANDONADO_INICIAL", RECUPERABILIDAD: "BAJA", URGENCIA: "NORMAL"
+
+#### CASO 2: VISITA SOLICITADA (Interés real sin datos aún)
+- Cliente: "¿Cuándo puedo ir a ver el departamento de Providencia?"
+- Bot: "Hola, necesito tu RUT para coordinar."
+- Cliente: "Dime los horarios primero y te doy los datos."
+=> RESULTADO: "VISITA_SOLICITADA", RECUPERABILIDAD: "ALTA", URGENCIA: "NORMAL"
+
+#### CASO 3: URGENCIA CRÍTICA
+- Cliente: "Estoy afuera de la propiedad, ¿puedo verla ahora mismo?"
+=> RESULTADO: "VISITA_SOLICITADA", RECUPERABILIDAD: "ALTA", URGENCIA: "ALTA_URGENCIA"
+
+#### CASO 4: RECLAMO POR FALTA DE CONTACTO
+- Cliente: "Llevo 2 días esperando que un ejecutivo me llame."
+=> ALERTA_CRITICA: "RECLAMO_CONTACTO", RECUPERABILIDAD: "ALTA"
+
+### FORMATO DE RESPUESTA (JSON):
+{
+  "PENSAMIENTO_AUDITOR": "Breve análisis de la interacción",
+  "TIPO_CONTACTO": "CLIENTE_FINAL | CORREDOR_EXTERNO",
+  "RESULTADO_CHAT": "VISITA_AGENDADA | VISITA_SOLICITADA | CHAT_EN_CURSO | ABANDONADO_INICIAL | RECHAZO_EXPLICITO",
+  "RECUPERABILIDAD": "ALTA | MEDIA | BAJA",
+  "URGENCIA": "ALTA_URGENCIA | NORMAL",
+  "ALERTA_CRITICA": "RECLAMO_CONTACTO | NINGUNA",
+  "CALIDAD_BOT": "BOT_RESOLUTIVO | BOT_DERIVA",
+  "RAG_PERFORMANCE": "CON_STOCK | SIN_STOCK",
+  "MOTIVO_RECHAZO": "PRECIO | UBICACION | YA_BUSCO | N/A"
+}
+"""

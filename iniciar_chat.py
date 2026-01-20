@@ -174,9 +174,9 @@ if __name__ == "__main__":
     # LISTA DE PRUEBA
     LISTA_PROSPECTOS = [
         {
-            "telefono": "+56989216063", 
-            "nombre": "Paola", 
-            "link": "https://casa.mercadolibre.cl/MLC-3084165696-casa-los-maquislos-boldos-_JM"
+            "telefono": "+56994190243", 
+            "nombre": "Cristian Antonio González Navarrete", 
+            "link": "https://departamento.mercadolibre.cl/MLC-3083856576-departamento-camino-mirasolsan-alfonso-del-mar-_JM"
         }
     ]
     

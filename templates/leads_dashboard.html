@@ -381,39 +381,50 @@
         <div class="row g-4 mb-4">
             <div class="col-md-3">
                 <div class="kpi-card" data-bs-toggle="tooltip" data-bs-placement="top"
-                    title="Número total de leads en el período filtrado.">
+                    title="Número total de leads en el día actual.">
                     <i class="fa-solid fa-user-group kpi-icon"></i>
+                    <div class="kpi-label text-secondary small text-uppercase">Leads Hoy</div>
                     <div class="kpi-value" id="total_leads">0</div>
-                    <div id="today_delta" class="small"></div>
-                    <div class="kpi-label text-secondary small text-uppercase">Total Leads</div>
+                    <div id="total_delta_7d" class="small"></div>
+                    <div id="total_delta_week" class="small"></div>
+                    <div id="insight_total" class="insight-text mt-2 small"></div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="kpi-card" data-bs-toggle="tooltip" data-bs-placement="top"
                     title="Número de leads 'hot' (alta prioridad o visita agendada/solicitada). Porcentaje del total de leads. Nota: VISITA_AGENDADA es visita confirmada, VISITA_SOLICITADA es interés expresado sin confirmación.">
                     <i class="fa-solid fa-fire-flame-curved kpi-icon" style="color: #ef4444;"></i>
+                    <div class="kpi-label text-secondary small text-uppercase">Leads "Hot"</div>
                     <div class="d-flex align-items-baseline">
                         <div class="kpi-value" id="leads_calientes">0</div>
                         <span class="ms-2 badge bg-success-subtle text-success" id="pct_calientes">0%</span>
                     </div>
-                    <div class="kpi-label text-secondary small text-uppercase">Leads "Hot"</div>
+                    <div id="hot_delta_7d" class="small"></div>
+                    <div id="hot_delta_week" class="small"></div>
+                    <div id="insight_hot" class="insight-text mt-2 small"></div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="kpi-card" data-bs-toggle="tooltip" data-bs-placement="top"
                     title="Tiempo promedio en minutos desde la entrada del lead hasta la identificación de intención de visita (basado en BI classification).">
                     <i class="fa-solid fa-stopwatch kpi-icon" style="color: #f59e0b;"></i>
+                    <div class="kpi-label text-secondary small text-uppercase">Tiempo Prom. Conversión</div>
                     <div class="kpi-value"><span id="avg_speed">0</span> <small class="fs-6" id="avg_unit">min</small>
                     </div>
-                    <div class="kpi-label text-secondary small text-uppercase">Tiempo Prom. Conversión</div>
+                    <div id="sla_avg_speed" class="small mt-2"></div>
+                    <div id="insight_avg_speed" class="insight-text mt-2 small"></div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="kpi-card" data-bs-toggle="tooltip" data-bs-placement="top"
                     title="Porcentaje de leads 'hot' con datos completos (nombre, email y RUT capturados).">
                     <i class="fa-solid fa-id-card kpi-icon" style="color: #10b981;"></i>
+                    <div class="kpi-label text-secondary small text-uppercase">Leads con Datos Completos</div>
+                    <div class="small text-secondary mb-1">Datos necesario para generar la orden de visita</div>
                     <div class="kpi-value"><span id="tasa_datos">0</span>%</div>
-                    <div class="kpi-label text-secondary small text-uppercase">Tasa Captura Datos</div>
+                    <div id="datos_delta_7d" class="small"></div>
+                    <div id="datos_delta_week" class="small"></div>
+                    <div id="insight_datos" class="insight-text mt-2 small"></div>
                 </div>
             </div>
         </div>
@@ -568,6 +579,7 @@
                 ALL_LEADS_RAW = data.leads_all || data.leads || [];
                 window.FULL_API_DATA = data;
                 executeFilters();
+                updateGlobalKPIs(data); // KPIs globales sin filtros
             } catch (e) { console.error("Error cargando datos:", e); }
         }
 
@@ -651,29 +663,13 @@
 
             const sortedDates = Object.keys(temporalMap).sort();
 
-            // Cálculos para KPI total con comparaciones
-            const today = new Date();
-            const todayStr = today.toISOString().slice(0, 10);
-            const yesterday = new Date(today);
-            yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayStr = yesterday.toISOString().slice(0, 10);
-
-            const leadsToday = filtered.filter(l => l.fecha === todayStr).length;
-            const leadsYesterday = filtered.filter(l => l.fecha === yesterdayStr).length;
-            const delta = leadsToday - leadsYesterday;
-            const pct = leadsYesterday > 0 ? (delta / leadsYesterday * 100).toFixed(1) : 0;
-            const sign = delta > 0 ? '+' : '';
-            const color = delta > 0 ? 'text-success' : (delta < 0 ? 'text-danger' : 'text-secondary');
-
             FILTERED_DATA = {
                 "kpis": {
                     "total_leads": total,
                     "leads_calientes": hot,
                     "pct_leads_calientes": total > 0 ? (hot / total * 100).toFixed(1) : 0,
                     "tasa_captura_datos": hot > 0 ? (completeHot / hot * 100).toFixed(1) : 0,
-                    "avg_speed_minutes": window.FULL_API_DATA?.kpis?.avg_speed_minutes || 0,
-                    "leads_today": leadsToday,
-                    "leads_yesterday": leadsYesterday
+                    "avg_speed_minutes": window.FULL_API_DATA?.kpis?.avg_speed_minutes || 0
                 },
                 "charts": {
                     "temporal": { "labels": sortedDates, "values": sortedDates.map(d => temporalMap[d]) },
@@ -686,25 +682,68 @@
                 "leads": filtered.slice(0, 50)
             };
 
-            updateUI(FILTERED_DATA);
+            renderCharts(FILTERED_DATA);
+            renderTable(FILTERED_DATA.leads);
+            generateInsights(FILTERED_DATA);
         }
 
-        function updateUI(data) {
-            animateValue("total_leads", 0, data.kpis.total_leads, 500);
-            animateValue("leads_calientes", 0, data.kpis.leads_calientes, 500);
-            animateValue("pct_calientes", 0, data.kpis.pct_leads_calientes, 500);
-            animateValue("tasa_datos", 0, data.kpis.tasa_captura_datos, 500);
-            document.getElementById('avg_speed').innerText = data.kpis.avg_speed_minutes;
+        function updateGlobalKPIs(data) {
+            const kpis = data.kpis;
 
-            const delta = data.kpis.leads_today - data.kpis.leads_yesterday;
-            const pct = data.kpis.leads_yesterday > 0 ? (delta / data.kpis.leads_yesterday * 100).toFixed(1) : 0;
-            const sign = delta > 0 ? '+' : '';
-            const color = delta > 0 ? 'text-success' : (delta < 0 ? 'text-danger' : 'text-secondary');
-            document.getElementById('today_delta').innerHTML = `<span class="${color}">Hoy: ${data.kpis.leads_today} (${sign}${pct}% vs ayer)</span>`;
+            animateValue("total_leads", 0, kpis.leads_hoy, 500);
+            renderDelta('total_delta_7d', kpis.pct_delta_total_7d, 'vs prom. 7d');
+            renderDelta('total_delta_week', kpis.pct_delta_total_week, 'vs mismo día sem. pasada');
 
-            renderCharts(data);
-            renderTable(data.leads);
-            generateInsights(data);
+            animateValue("leads_calientes", 0, kpis.hot_hoy, 500);
+            animateValue("pct_calientes", 0, kpis.hot_rate_hoy, 500);
+            renderDelta('hot_delta_7d', kpis.pct_delta_hot_7d, 'vs prom. 7d');
+            renderDelta('hot_delta_week', kpis.pct_delta_hot_week, 'vs mismo día sem. pasada');
+
+            document.getElementById('avg_speed').innerText = kpis.avg_speed_hoy;
+            renderSLA('sla_avg_speed', kpis.avg_speed_hoy);
+
+            animateValue("tasa_datos", 0, kpis.tasa_datos_hoy, 500);
+            renderDelta('datos_delta_7d', kpis.pct_delta_datos_7d, 'vs prom. 7d');
+            renderDelta('datos_delta_week', kpis.pct_delta_datos_week, 'vs mismo día sem. pasada');
+
+            // Insights para KPIs
+            generateKPIInsights(data);
+        }
+
+        function renderDelta(id, pct, label) {
+            const elem = document.getElementById(id);
+            const sign = pct > 0 ? '+' : '';
+            const color = pct > 0 ? 'text-success' : (pct < 0 ? 'text-danger' : 'text-secondary');
+            const icon = pct > 0 ? '<i class="fa-solid fa-caret-up ms-1"></i>' : (pct < 0 ? '<i class="fa-solid fa-caret-down ms-1"></i>' : '');
+            const dotColor = pct > 10 ? 'bg-success' : (pct < -10 ? 'bg-danger' : 'bg-warning');
+            elem.innerHTML = `<span class="${color}">${label}: ${sign}${pct}% ${icon}</span> <span class="badge rounded-pill ${dotColor}">&nbsp;</span>`;
+        }
+
+        function renderSLA(id, value) {
+            const elem = document.getElementById(id);
+            const color = value < 120 ? 'bg-success' : (value > 360 ? 'bg-danger' : 'bg-warning');
+            elem.innerHTML = `<span class="badge rounded-pill ${color}">&nbsp;</span>`;
+        }
+
+        function generateKPIInsights(data) {
+            const kpis = data.kpis;
+
+            // Insight Total Leads
+            const totalInsight = kpis.pct_delta_total_7d > 0 ? 'Aumento de volumen sin mejora proporcional en leads hot → posible deterioro de calidad del tráfico.' : 'La proporción de leads hot se mantiene estable pese al aumento de volumen, indicando calidad consistente.';
+            document.getElementById('insight_total').innerText = totalInsight;
+
+            // Insight Hot Leads
+            const hotRateDelta = kpis.hot_rate_hoy - kpis.hot_rate_week; // Ejemplo de delta en pp
+            const hotInsight = hotRateDelta > 0 ? `Hoy crece +${kpis.pct_delta_hot_7d}% vs semana pasada, pero el hot rate crece +${hotRateDelta.toFixed(1)}pp.` : `Hoy crece +${kpis.pct_delta_hot_7d}% vs semana pasada, pero el hot rate cae -${Math.abs(hotRateDelta).toFixed(1)}pp.`;
+            document.getElementById('insight_hot').innerText = hotInsight;
+
+            // Insight Avg Speed
+            const avgInsight = kpis.avg_speed_hoy < kpis.avg_speed_7d ? 'El tiempo de respuesta mejora respecto al promedio semanal, lo que puede aumentar la probabilidad de conversión.' : 'Pese al aumento de leads hot, el tiempo de respuesta se deteriora → riesgo operativo.';
+            document.getElementById('insight_avg_speed').innerText = avgInsight;
+
+            // Insight Datos
+            const datosInsight = kpis.tasa_datos_hoy > kpis.tasa_datos_7d ? 'El aumento en la completitud sugiere una mejora en el flujo proactivo del chatbot.' : 'Alta completitud pero baja tasa de leads hot → revisar criterios de clasificación.';
+            document.getElementById('insight_datos').innerText = datosInsight;
         }
 
         function generateInsights(data) {
@@ -838,10 +877,9 @@
                 'Parcela': '#6b7280'
             };
 
-            // 1. Flujo de Leads (Líneas) con línea de promedio sólida, sin leyenda, transparente
+            // 1. Flujo de Leads (Líneas) con media móvil de 7 periodos, amarilla suavizada
             const tempValues = data.charts.temporal.values;
-            const avg = tempValues.length > 0 ? (tempValues.reduce((a, b) => a + b, 0) / tempValues.length) : 0;
-            const avgArray = Array(tempValues.length).fill(avg);
+            const movingAvg = calculateMovingAverage(tempValues, 7);
             Plotly.newPlot('chart-temporal', [{
                 x: data.charts.temporal.labels,
                 y: tempValues,
@@ -849,10 +887,10 @@
                 line: { shape: 'spline', color: '#6366f1', width: 4 },
                 fill: 'tozeroy', fillcolor: 'rgba(99, 102, 241, 0.1)'
             }, {
-                x: data.charts.temporal.labels,
-                y: avgArray,
+                x: data.charts.temporal.labels.slice(6),
+                y: movingAvg,
                 type: 'scatter', mode: 'lines',
-                line: { color: 'rgba(239, 68, 68, 0.6)', width: 2 }
+                line: { color: '#f59e0b', width: 2, shape: 'spline' }
             }], { ...commonLayout, showlegend: false }, { responsive: true });
 
             // 2. Fuentes (Pie)
@@ -910,6 +948,18 @@
                 marker: { color: '#6366f1' }
             }], { ...commonLayout, showlegend: false, yaxis: { automargin: true } }, { responsive: true });
             cmDiv.on('plotly_click', d => toggleChartFilter('comuna', d.points[0].label));
+        }
+
+        function calculateMovingAverage(values, windowSize) {
+            let movingAverages = [];
+            for (let i = windowSize - 1; i < values.length; i++) {
+                let sum = 0;
+                for (let j = 0; j < windowSize; j++) {
+                    sum += values[i - j];
+                }
+                movingAverages.push(sum / windowSize);
+            }
+            return movingAverages;
         }
 
         function renderTable(leads) {

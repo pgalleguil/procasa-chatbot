@@ -1,6 +1,6 @@
 from pymongo import MongoClient
 from config import Config
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import Counter, defaultdict
 
 # --------------------------------------------------
@@ -139,6 +139,16 @@ def get_leads_executive_report():
 
         hot_intents = ["agendar_visita", "escalado_urgente", "contacto_directo"]
 
+        # Contadores diarios para KPIs específicos
+        daily_totals = defaultdict(int)
+        daily_hots = defaultdict(int)
+        daily_completes = defaultdict(int)
+        daily_tiempos = defaultdict(list)
+
+        hoy = datetime.now().date()
+        week_ago = hoy - timedelta(days=7)
+        same_day_last_week = hoy - timedelta(days=7)
+
         for doc in documentos:
             p = doc.get("prospecto", {})
             messages = doc.get("messages", [])
@@ -183,11 +193,23 @@ def get_leads_executive_report():
             else:
                 is_hot = intencion_legacy in hot_intents
 
+            # --- FECHAS ---
+            fecha_obj = get_creation_date(doc)
+            fecha_date = fecha_obj.date()
+            fecha_str = fecha_obj.strftime("%Y-%m-%d")
+
+            if fecha_obj.year >= datetime.now().year - 1:
+                temporal_diario[fecha_str] = temporal_diario.get(fecha_str, 0) + 1
+
+            daily_totals[fecha_date] += 1
+
             if is_hot:
                 leads_calientes += 1
                 hot_leads_por_tipo[tipo] += 1
+                daily_hots[fecha_date] += 1
                 if email and rut:
                     leads_calientes_con_datos += 1
+                    daily_completes[fecha_date] += 1
                 
                 # Tiempo de conversión
                 try:
@@ -205,6 +227,7 @@ def get_leads_executive_report():
                             if 0 < delta < 43200:
                                 tiempos_conversion.append(delta)
                                 tiempos_por_operacion[operacion].append(delta)
+                                daily_tiempos[fecha_date].append(delta)
                 except Exception:
                     pass
 
@@ -218,13 +241,6 @@ def get_leads_executive_report():
                 bi_resultados[res_bi] += 1
                 bi_recuperabilidad[recup_bi] += 1
             
-            # --- FECHAS ---
-            fecha_obj = get_creation_date(doc)
-            fecha_str = fecha_obj.strftime("%Y-%m-%d")
-
-            if fecha_obj.year >= datetime.now().year - 1:
-                temporal_diario[fecha_str] = temporal_diario.get(fecha_str, 0) + 1
-
             # Calcular Score
             score = calculate_score(p, intencion_legacy, bi_data)
 
@@ -266,6 +282,39 @@ def get_leads_executive_report():
             if total_leads > 0 else 0
         )
 
+        # --- KPIs diarios y comparaciones ---
+        leads_hoy = daily_totals[hoy]
+        hot_hoy = daily_hots[hoy]
+        completes_hoy = daily_completes[hoy]
+        avg_speed_hoy = sum(daily_tiempos[hoy]) / len(daily_tiempos[hoy]) if daily_tiempos[hoy] else 0
+        hot_rate_hoy = (hot_hoy / leads_hoy * 100) if leads_hoy > 0 else 0
+        tasa_datos_hoy = (completes_hoy / hot_hoy * 100) if hot_hoy > 0 else 0
+
+        # Promedio 7d (últimos 7 días excluyendo hoy)
+        last_7_days = [hoy - timedelta(days=i) for i in range(1, 8)]
+        avg_total_7d = sum(daily_totals[d] for d in last_7_days) / 7 if last_7_days else 0
+        avg_hot_7d = sum(daily_hots[d] for d in last_7_days) / 7 if last_7_days else 0
+        avg_completes_7d = sum(daily_completes[d] for d in last_7_days) / 7 if last_7_days else 0
+        avg_speed_7d = sum(sum(daily_tiempos[d]) / len(daily_tiempos[d]) if daily_tiempos[d] else 0 for d in last_7_days) / 7 if last_7_days else 0
+        hot_rate_7d = (avg_hot_7d / avg_total_7d * 100) if avg_total_7d > 0 else 0
+        tasa_datos_7d = (avg_completes_7d / avg_hot_7d * 100) if avg_hot_7d > 0 else 0
+
+        pct_delta_total_7d = ((leads_hoy - avg_total_7d) / avg_total_7d * 100) if avg_total_7d > 0 else 0
+        pct_delta_hot_7d = ((hot_hoy - avg_hot_7d) / avg_hot_7d * 100) if avg_hot_7d > 0 else 0
+        pct_delta_datos_7d = ((tasa_datos_hoy - tasa_datos_7d) / tasa_datos_7d * 100) if tasa_datos_7d > 0 else 0
+
+        # Vs mismo día semana pasada
+        total_week = daily_totals[same_day_last_week]
+        hot_week = daily_hots[same_day_last_week]
+        completes_week = daily_completes[same_day_last_week]
+        avg_speed_week = sum(daily_tiempos[same_day_last_week]) / len(daily_tiempos[same_day_last_week]) if daily_tiempos[same_day_last_week] else 0
+        hot_rate_week = (hot_week / total_week * 100) if total_week > 0 else 0
+        tasa_datos_week = (completes_week / hot_week * 100) if hot_week > 0 else 0
+
+        pct_delta_total_week = ((leads_hoy - total_week) / total_week * 100) if total_week > 0 else 0
+        pct_delta_hot_week = ((hot_hoy - hot_week) / hot_week * 100) if hot_week > 0 else 0
+        pct_delta_datos_week = ((tasa_datos_hoy - tasa_datos_week) / tasa_datos_week * 100) if tasa_datos_week > 0 else 0
+
         # --- Agregados mejorados para insights (tops, avgs por categoría) ---
         top_operacion = operaciones.most_common(1)[0][0] if operaciones else "N/A"
         pct_top_operacion = round((operaciones[top_operacion] / total_leads * 100) if total_leads > 0 else 0, 1)
@@ -293,7 +342,23 @@ def get_leads_executive_report():
                 "pct_leads_calientes": round(pct_hot_leads, 1),
                 "tasa_captura_datos_hot": round(tasa_captura_datos_hot, 1),
                 "penetracion_datos_total": round(penetracion_datos_total, 1),
-                "avg_speed_minutes": round(avg_speed, 1)
+                "avg_speed_minutes": round(avg_speed, 1),
+                # Nuevos KPIs diarios
+                "leads_hoy": leads_hoy,
+                "hot_hoy": hot_hoy,
+                "hot_rate_hoy": round(hot_rate_hoy, 1),
+                "tasa_datos_hoy": round(tasa_datos_hoy, 1),
+                "avg_speed_hoy": round(avg_speed_hoy, 1),
+                "pct_delta_total_7d": round(pct_delta_total_7d, 1),
+                "pct_delta_hot_7d": round(pct_delta_hot_7d, 1),
+                "pct_delta_datos_7d": round(pct_delta_datos_7d, 1),
+                "pct_delta_total_week": round(pct_delta_total_week, 1),
+                "pct_delta_hot_week": round(pct_delta_hot_week, 1),
+                "pct_delta_datos_week": round(pct_delta_datos_week, 1),
+                "hot_rate_7d": round(hot_rate_7d, 1),
+                "hot_rate_week": round(hot_rate_week, 1),
+                "tasa_datos_7d": round(tasa_datos_7d, 1),
+                "avg_speed_7d": round(avg_speed_7d, 1)
             },
             "charts": {
                 "temporal": {

@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Procasa AI | Detalle Lead</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        :root {
+            --bg-body: #0f172a;
+            --bg-card: #1e293b;
+            --bg-sidebar: #020617;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #6366f1;
+            --border-color: #334155;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .sidebar {
+            width: 260px;
+            background: var(--bg-sidebar);
+            height: 100vh;
+            position: fixed;
+            padding: 20px;
+            border-right: 1px solid var(--border-color);
+        }
+
+        .main-content {
+            margin-left: 260px;
+            padding: 30px;
+        }
+
+        .nav-link {
+            color: var(--text-secondary);
+            padding: 12px 15px;
+            display: block;
+            text-decoration: none;
+            border-radius: 8px;
+            margin-bottom: 5px;
+        }
+
+        .brand {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .info-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            height: 100%;
+        }
+
+        .card-header-custom {
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 0;
+        }
+
+        .timeline {
+            position: relative;
+            padding-left: 20px;
+            border-left: 2px solid var(--border-color);
+            margin-top: 10px;
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 25px;
+        }
+
+        .timeline-dot {
+            position: absolute;
+            left: -26px;
+            top: 0;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 2px solid var(--accent);
+        }
+
+        .chat-bubble {
+            padding: 10px 15px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+            display: inline-block;
+            max-width: 90%;
+        }
+
+        .chat-user {
+            background: #334155;
+            color: white;
+            border-top-left-radius: 0;
+        }
+
+        .chat-bot {
+            background: rgba(99, 102, 241, 0.2);
+            color: #cbd5e1;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-top-right-radius: 0;
+            float: right;
+        }
+
+        .chat-row::after {
+            content: "";
+            clear: both;
+            display: table;
+        }
+
+        .form-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 5px;
+        }
+
+        .form-control,
+        .form-select {
+            background: var(--bg-body);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 0.9rem;
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            background: var(--bg-body);
+            color: var(--text-primary);
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        }
+
+        .btn-action {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: 500;
+            border: none;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-whatsapp {
+            background: #25D366;
+            color: white;
+        }
+
+        .btn-whatsapp:hover {
+            background: #1da851;
+        }
+
+        .btn-save {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-save:hover {
+            background: #4f46e5;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav class="sidebar">
+        <div class="brand"><i class="fa-solid fa-robot"></i> PROCASA AI</div>
+        <a href="/crm" class="nav-link"><i class="fa-solid fa-arrow-left me-2"></i> Volver a Bandeja</a>
+    </nav>
+
+    <div class="main-content">
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <div class="d-flex align-items-center gap-3">
+                    <h2 class="fw-bold m-0">{{ lead.nombre }}</h2>
+                    <span class="badge bg-danger">{{ lead.crm_estado|upper }}</span>
+                    <span class="badge bg-success-subtle text-success border border-success-subtle">Score: {{ lead.score
+                        }}</span>
+                </div>
+                <p class="text-secondary m-0 mt-1"><i class="fa-solid fa-location-dot me-1"></i> Interés: {{
+                    lead.propiedad_texto }} (COD: {{ lead.propiedad_cod }})</p>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary"><i class="fa-solid fa-envelope me-2"></i>Email</button>
+                <a href="https://wa.me/{{ lead.phone }}" target="_blank" class="btn btn-outline-success"><i
+                        class="fa-brands fa-whatsapp me-2"></i>WhatsApp</a>
+            </div>
+        </div>
+
+        <div class="row g-4 mb-4">
+            <div class="col-md-4">
+                <div class="info-card">
+                    <div class="card-header-custom">
+                        <h5 class="card-title"><i class="fa-solid fa-user me-2"></i>Datos Cliente</h5>
+                    </div>
+                    <div class="mb-2"><small class="text-secondary">Teléfono:</small><br>{{ lead.phone }}</div>
+                    <div class="mb-2"><small class="text-secondary">Email:</small><br>{{ lead.email }}</div>
+                    <div class="mb-2"><small class="text-secondary">RUT:</small><br>{{ lead.rut }}</div>
+                    <div class="mb-0"><small class="text-secondary">Fuente:</small><br><span
+                            class="badge bg-dark border border-secondary">{{ lead.origen }}</span></div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="info-card">
+                    <div class="card-header-custom">
+                        <h5 class="card-title"><i class="fa-solid fa-robot me-2"></i>Análisis IA</h5>
+                    </div>
+                    <div class="mb-2">
+                        <small class="text-secondary">Intención Detectada:</small><br>
+                        <span class="text-warning fw-bold">{{ lead.intencion }}</span>
+                    </div>
+                    <div class="mb-2">
+                        <small class="text-secondary">Estado Datos:</small><br>
+                        <span class="text-success">{{ lead.datos_completos }}</span>
+                    </div>
+                    <div class="mb-0">
+                        <small class="text-secondary">Resumen:</small>
+                        <p class="small text-muted fst-italic mb-0">"{{ lead.resumen }}"</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="info-card d-flex flex-column justify-content-center gap-3">
+                    <a href="https://wa.me/{{ lead.phone }}" target="_blank" class="btn-action btn-whatsapp">
+                        <i class="fa-brands fa-whatsapp"></i> Iniciar Chat WhatsApp
+                    </a>
+                    <button class="btn-action btn-outline-primary"
+                        style="background:transparent; border:1px solid var(--accent); color: white;"
+                        onclick="setEstado('visita')">
+                        <i class="fa-solid fa-calendar-plus"></i> Agendar Visita
+                    </button>
+                    <button class="btn-action btn-outline-danger"
+                        style="background:transparent; border:1px solid #ef4444; color: #ef4444;"
+                        onclick="setEstado('perdido')">
+                        <i class="fa-solid fa-ban"></i> Descartar Lead
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-7">
+                <div class="info-card">
+                    <div class="card-header-custom">
+                        <h5 class="card-title">Línea de Tiempo & Chat</h5>
+                    </div>
+
+                    <div class="timeline">
+                        {% for msg in lead.timeline %}
+                        <div class="timeline-item">
+                            <div class="timeline-dot"></div>
+                            <div class="chat-row mb-2">
+                                <div class="chat-bubble {{ msg.role }}">{{ msg.content }}</div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <p class="text-secondary">No hay historial de chat disponible.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-5">
+                <div class="info-card" style="border-top: 4px solid var(--accent);">
+                    <div class="card-header-custom">
+                        <h5 class="card-title">Gestión Comercial</h5>
+                    </div>
+
+                    <form id="crmForm" onsubmit="saveGestion(event)">
+                        <div class="mb-3">
+                            <label class="form-label">Asignar Ejecutivo</label>
+                            <select class="form-select" id="ejecutivo">
+                                <option value="">-- Seleccionar --</option>
+                                <option value="Juan Pérez" {% if lead.crm_ejecutivo=='Juan Pérez' %}selected{% endif %}>
+                                    Juan Pérez</option>
+                                <option value="Maria Cortes" {% if lead.crm_ejecutivo=='Maria Cortes' %}selected{% endif
+                                    %}>Maria Cortes</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Estado del Lead</label>
+                            <select class="form-select" id="estado">
+                                <option value="nuevo" {% if lead.crm_estado=='nuevo' %}selected{% endif %}>Nuevo (Sin
+                                    gestión)</option>
+                                <option value="gestion" {% if lead.crm_estado=='gestion' %}selected{% endif %}>En
+                                    Gestión</option>
+                                <option value="visita" {% if lead.crm_estado=='visita' %}selected{% endif %}>Visita
+                                    Coordinada</option>
+                                <option value="perdido" {% if lead.crm_estado=='perdido' %}selected{% endif %}>Perdido /
+                                    Descartado</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label">Bitácora / Comentarios Internos</label>
+                            <textarea class="form-control" id="notas" rows="4"
+                                placeholder="Escribe aquí...">{{ lead.crm_notas }}</textarea>
+                        </div>
+
+                        <button type="submit" class="btn-action btn-save">
+                            <i class="fa-solid fa-floppy-disk"></i> Guardar Gestión
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const PHONE = "{{ lead.phone }}";
+
+        function setEstado(est) {
+            document.getElementById('estado').value = est;
+            saveGestion(new Event('submit'));
+        }
+
+        async function saveGestion(e) {
+            e.preventDefault();
+            const btn = document.querySelector('.btn-save');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+
+            const data = {
+                phone: PHONE,
+                ejecutivo: document.getElementById('ejecutivo').value,
+                estado: document.getElementById('estado').value,
+                notas: document.getElementById('notas').value
+            };
+
+            try {
+                const res = await fetch('/api/crm/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.ok) {
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i> Guardado';
+                    setTimeout(() => {
+                        btn.innerHTML = originalText;
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    alert("Error al guardar");
+                    btn.innerHTML = originalText;
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Error de conexión");
+                btn.innerHTML = originalText;
+            }
+        }
+    </script>
+</body>
+
+</html>

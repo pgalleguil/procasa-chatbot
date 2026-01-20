@@ -343,8 +343,10 @@
 
     <nav class="sidebar" id="sidebar">
         <div class="brand"><i class="fa-solid fa-robot"></i> PROCASA AI</div>
-        <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie me-2"></i> Campañas</a>
-        <a href="/leads-dashboard" class="nav-link active"><i class="fa-solid fa-users-line me-2"></i> Leads</a>
+        <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie me-2"></i> Dashboard</a>
+        <a href="/leads-dashboard" class="nav-link active"><i class="fa-solid fa-chart-pie me-2"></i> Leads</a>
+        <a href="/crm" class="nav-link"><i class="fa-solid fa-inbox me-2"></i> Bandeja CRM</a>
+        <a href="#" class="nav-link"><i class="fa-solid fa-calendar-check me-2"></i> Visitas</a>
         <a href="#" class="nav-link d-none" id="nav-chat-live"><i class="fa-solid fa-comment-dots me-2"></i> Chat
             Live</a>
     </nav>
@@ -683,8 +685,8 @@
 
             // Actualizar acumulados
             document.getElementById('total_acum').innerText = `Acumulado periodo: ${FILTERED_DATA.kpis.total_leads}`;
-            document.getElementById('hot_acum').innerText = `Acumulado periodo: ${FILTERED_DATA.kpis.leads_calientes} (${FILTERED_DATA.kpis.pct_leads_calientes}%)`;
-            document.getElementById('avg_acum').innerText = `Acumulado periodo: ${FILTERED_DATA.kpis.avg_speed_minutes} min`;
+            document.getElementById('hot_acum').innerText = `Hot rate período: ${FILTERED_DATA.kpis.leads_calientes} (${FILTERED_DATA.kpis.pct_leads_calientes}%)`;
+            document.getElementById('avg_acum').innerText = `Prom. periodo: ${FILTERED_DATA.kpis.avg_speed_minutes} min`;
             document.getElementById('datos_acum').innerText = `Acumulado periodo: ${FILTERED_DATA.kpis.tasa_captura_datos}%`;
 
             renderCharts(FILTERED_DATA);

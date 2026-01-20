@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Procasa AI | Bandeja de Gestión</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        :root {
+            --bg-body: #0f172a;
+            --bg-card: #1e293b;
+            --bg-sidebar: #020617;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #6366f1;
+            --border-color: #334155;
+            --led-red: #ef4444;
+            --led-yellow: #f59e0b;
+            --led-green: #10b981;
+            --led-gray: #64748b;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .sidebar {
+            width: 260px;
+            background: var(--bg-sidebar);
+            height: 100vh;
+            position: fixed;
+            padding: 20px;
+            border-right: 1px solid var(--border-color);
+            z-index: 1000;
+        }
+
+        .main-content {
+            margin-left: 260px;
+            padding: 30px;
+        }
+
+        .nav-link {
+            color: var(--text-secondary);
+            padding: 12px 15px;
+            display: block;
+            text-decoration: none;
+            border-radius: 8px;
+            margin-bottom: 5px;
+            transition: 0.2s;
+        }
+
+        .nav-link.active,
+        .nav-link:hover {
+            background: var(--accent);
+            color: white;
+        }
+
+        .brand {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .summary-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .summary-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+        }
+
+        .summary-label {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+
+        .toolbar {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 25px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .search-box {
+            position: relative;
+            flex-grow: 1;
+            max-width: 400px;
+        }
+
+        .search-box input {
+            background: var(--bg-body);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 10px 10px 10px 40px;
+            border-radius: 8px;
+            width: 100%;
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+        }
+
+        .form-select-custom {
+            background-color: var(--bg-body);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 10px 35px 10px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .crm-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 8px;
+        }
+
+        .crm-table th {
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            padding: 12px 15px;
+        }
+
+        .crm-table tbody tr {
+            transition: transform 0.2s;
+        }
+
+        .crm-table tbody tr:hover {
+            transform: translateY(-2px);
+        }
+
+        .crm-table td {
+            background: var(--bg-card);
+            padding: 15px;
+            vertical-align: middle;
+            border-top: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .crm-table td:first-child {
+            border-left: 1px solid var(--border-color);
+            border-radius: 10px 0 0 10px;
+        }
+
+        .crm-table td:last-child {
+            border-right: 1px solid var(--border-color);
+            border-radius: 0 10px 10px 0;
+        }
+
+        .led-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        .led-red {
+            background: var(--led-red);
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+            animation: pulse-red 2s infinite;
+        }
+
+        .led-yellow {
+            background: var(--led-yellow);
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+        }
+
+        .led-green {
+            background: var(--led-green);
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+        }
+
+        .led-gray {
+            background: var(--led-gray);
+            opacity: 0.5;
+        }
+
+        @keyframes pulse-red {
+            0% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+
+            70% {
+                box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: white;
+            margin-right: 10px;
+        }
+
+        .score-badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 0.8rem;
+        }
+
+        .score-high {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--led-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .score-med {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--led-yellow);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .action-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-secondary);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s;
+            margin-right: 5px;
+        }
+
+        .action-btn:hover {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        .btn-whatsapp:hover {
+            background: #25D366;
+            border-color: #25D366;
+            color: white;
+        }
+
+        .clickable-row {
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav class="sidebar">
+        <div class="brand"><i class="fa-solid fa-robot"></i> PROCASA AI</div>
+        <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie me-2"></i> Dashboard</a>
+        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-pie me-2"></i> Leads</a>
+        <a href="/crm" class="nav-link active"><i class="fa-solid fa-inbox me-2"></i> Bandeja CRM</a>
+    </nav>
+
+    <div class="main-content">
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="fw-bold m-0">Gestión de Leads</h2>
+                <p class="text-secondary m-0 small">Bandeja operativa de seguimiento comercial</p>
+            </div>
+            <button class="btn btn-primary"><i class="fa-solid fa-plus me-2"></i>Nuevo Lead Manual</button>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="summary-card" style="border-bottom: 3px solid var(--led-red);">
+                    <div>
+                        <div class="summary-value text-danger">12</div>
+                        <div class="summary-label">Sin Atender (>2h)</div>
+                    </div>
+                    <i class="fa-solid fa-bell fa-2x text-danger opacity-25"></i>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="summary-card" style="border-bottom: 3px solid var(--led-yellow);">
+                    <div>
+                        <div class="summary-value text-warning">45</div>
+                        <div class="summary-label">En Gestión</div>
+                    </div>
+                    <i class="fa-solid fa-comments fa-2x text-warning opacity-25"></i>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="summary-card" style="border-bottom: 3px solid var(--led-green);">
+                    <div>
+                        <div class="summary-value text-success">8</div>
+                        <div class="summary-label">Visitas Agendadas</div>
+                    </div>
+                    <i class="fa-solid fa-calendar-check fa-2x text-success opacity-25"></i>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="summary-card">
+                    <div>
+                        <div class="summary-value">85%</div>
+                        <div class="summary-label">SLA Cumplido</div>
+                    </div>
+                    <i class="fa-solid fa-stopwatch fa-2x text-secondary opacity-25"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="toolbar">
+            <div class="search-box">
+                <i class="fa-solid fa-search"></i>
+                <input type="text" placeholder="Buscar por nombre, teléfono o código...">
+            </div>
+            <select class="form-select-custom">
+                <option value="">Todos los Estados</option>
+                <option value="nuevo">🔴 Sin Atender</option>
+                <option value="gestion">🟡 En Gestión</option>
+                <option value="visita">🟢 Visita Agendada</option>
+            </select>
+            <select class="form-select-custom">
+                <option value="">Ejecutivo: Todos</option>
+                <option value="jp">Juan Pérez</option>
+                <option value="mc">Maria Cortes</option>
+            </select>
+            <select class="form-select-custom ms-auto">
+                <option value="prioridad">Ordenar: Prioridad AI</option>
+                <option value="fecha">Ordenar: Más recientes</option>
+            </select>
+        </div>
+
+        <div class="table-responsive">
+            <table class="crm-table">
+                <thead>
+                    <tr>
+                        <th class="text-center" width="50">SLA</th>
+                        <th>Cliente</th>
+                        <th>Propiedad / Interés</th>
+                        <th>Score AI</th>
+                        <th>Ejecutivo</th>
+                        <th>Estado</th>
+                        <th>Última Acción</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for lead in leads %}
+                    <tr class="clickable-row" onclick="window.location.href='/crm/lead/{{ lead.phone }}'">
+                        <td class="text-center">
+                            <div class="led-indicator {{ lead.led_class }}" title="{{ lead.sla_title }}"></div>
+                        </td>
+                        <td>
+                            <div class="fw-bold">{{ lead.nombre }}</div>
+                            <div class="small text-secondary"><i class="fa-brands fa-whatsapp text-success me-1"></i>
+                                {{ lead.whatsapp_display }}</div>
+                        </td>
+                        <td>
+                            <div class="badge bg-primary-subtle text-primary border border-primary-subtle mb-1">Venta
+                            </div>
+                            <div class="small text-white">{{ lead.propiedad }}</div>
+                        </td>
+                        <td><span class="score-badge {{ lead.score_class }}">{{ lead.score }} {{ lead.score_label
+                                }}</span></td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div
+                                    class="user-avatar {% if lead.ejecutivo == 'Sin asignar' %}bg-secondary{% endif %} small">
+                                    {{ lead.avatar_text }}
+                                </div>
+                                <span
+                                    class="ms-2 small {% if lead.ejecutivo == 'Sin asignar' %}text-secondary fst-italic{% endif %}">
+                                    {{ lead.ejecutivo }}
+                                </span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge 
+                                {% if lead.estado == 'nuevo' %}bg-danger-subtle text-danger border border-danger-subtle
+                                {% elif lead.estado == 'gestion' %}bg-warning-subtle text-warning border border-warning-subtle
+                                {% elif lead.estado == 'visita' %}bg-success-subtle text-success border border-success-subtle
+                                {% else %}bg-secondary text-light{% endif %}">
+                                {{ lead.estado_badge }}
+                            </span>
+                        </td>
+                        <td class="small text-secondary">{{ lead.fecha }}<br>({{ lead.ultima_accion }})</td>
+                        <td class="text-end">
+                            <button class="action-btn btn-whatsapp" title="WhatsApp Web"
+                                onclick="window.open('https://wa.me/{{ lead.phone }}'); event.stopPropagation();">
+                                <i class="fa-brands fa-whatsapp"></i>
+                            </button>
+                            <button class="action-btn" title="Ver Detalle"><i
+                                    class="fa-solid fa-chevron-right"></i></button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-secondary py-4">No hay leads registrados.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+
+</html>

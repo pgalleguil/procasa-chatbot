@@ -26,6 +26,8 @@ from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 #from api_leads_intelligence import get_leads_intelligence_data
 from api_leads_intelligence import get_leads_executive_report
 from fastapi import Cookie
+from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data
+
 
 # ========================= USAMOS TU config.py REAL =========================
 from config import Config
@@ -223,6 +225,28 @@ async def forgot_password(request: Request):
 @app.get("/reset-password/{token}")
 async def reset_password(request: Request, token: str):
     return templates.TemplateResponse("reset_password.html", {"request": request, "token": token})
+
+# ==========================================
+# RUTAS CRM
+# ==========================================
+@app.get("/crm", response_class=HTMLResponse)
+async def view_crm_list(request: Request):
+    leads = get_crm_leads_list()
+    return templates.TemplateResponse("crm_leads_list.html", {"request": request, "leads": leads})
+
+@app.get("/crm/lead/{phone}", response_class=HTMLResponse)
+async def view_crm_detail(request: Request, phone: str):
+    data = get_lead_detail_data(phone)
+    if not data: return HTMLResponse("Lead no encontrado")
+    return templates.TemplateResponse("crm_lead_detail.html", {"request": request, "lead": data})
+
+@app.post("/api/crm/update")
+async def api_update_crm(request: Request):
+    data = await request.json()
+    phone = data.get("phone")
+    if update_lead_crm_data(phone, data):
+        return {"status": "ok"}
+    return {"status": "error"}  
 
 # ========================= WHATSAPP DEBOUNCE (100% ORIGINAL) =========================
 pending_tasks: Dict[str, Any] = {}

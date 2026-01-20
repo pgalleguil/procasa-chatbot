@@ -395,10 +395,7 @@
                     title="Número de leads 'hot' (alta prioridad o visita agendada/solicitada). Porcentaje del total de leads. Nota: VISITA_AGENDADA es visita confirmada, VISITA_SOLICITADA es interés expresado sin confirmación.">
                     <i class="fa-solid fa-fire-flame-curved kpi-icon" style="color: #ef4444;"></i>
                     <div class="kpi-label text-secondary small text-uppercase">Leads "Hot"</div>
-                    <div class="d-flex align-items-baseline">
-                        <div class="kpi-value" id="leads_calientes">0</div>
-                        <span class="ms-2 badge bg-success-subtle text-success" id="pct_calientes">0%</span>
-                    </div>
+                    <div class="kpi-value" id="leads_calientes">0 (0%)</div>
                     <div id="hot_delta_7d" class="small"></div>
                     <div id="hot_delta_week" class="small"></div>
                     <div id="insight_hot" class="insight-text mt-2 small"></div>
@@ -542,7 +539,7 @@
                 if (!startTimestamp) startTimestamp = timestamp;
                 const progress = Math.min((timestamp - startTimestamp) / duration, 1);
                 const currentVal = (progress * (end - start) + start).toFixed(id === 'avg_speed' ? 1 : 0);
-                obj.innerText = id === 'pct_calientes' ? Math.floor(currentVal) + "%" : currentVal;
+                obj.innerText = currentVal;
                 if (progress < 1) window.requestAnimationFrame(step);
             };
             window.requestAnimationFrame(step);
@@ -559,7 +556,7 @@
 
         function toggleTheme() {
             const body = document.body;
-            const icon = document.getElementById('theme-icon');
+            let icon = document.getElementById('theme-icon');
             CURRENT_THEME = (CURRENT_THEME === 'dark') ? 'light' : 'dark';
             if (CURRENT_THEME === 'light') {
                 body.setAttribute('data-theme', 'light');
@@ -694,8 +691,7 @@
             renderDelta('total_delta_7d', kpis.pct_delta_total_7d, 'vs prom. 7d');
             renderDelta('total_delta_week', kpis.pct_delta_total_week, 'vs mismo día sem. pasada');
 
-            animateValue("leads_calientes", 0, kpis.hot_hoy, 500);
-            animateValue("pct_calientes", 0, kpis.hot_rate_hoy, 500);
+            document.getElementById('leads_calientes').innerText = `${kpis.hot_hoy} (${kpis.hot_rate_hoy}%)`;
             renderDelta('hot_delta_7d', kpis.pct_delta_hot_7d, 'vs prom. 7d');
             renderDelta('hot_delta_week', kpis.pct_delta_hot_week, 'vs mismo día sem. pasada');
 
@@ -712,11 +708,12 @@
 
         function renderDelta(id, pct, label) {
             const elem = document.getElementById(id);
+            if (isNaN(pct) || pct === Infinity || pct === -Infinity) pct = 0;
             const sign = pct > 0 ? '+' : '';
-            const color = pct > 0 ? 'text-success' : (pct < 0 ? 'text-danger' : 'text-secondary');
+            const color = pct > 0 ? 'text-success' : (pct < 0 ? 'text-warning' : 'text-secondary'); // Cambiado text-danger a text-warning para negativos
             const icon = pct > 0 ? '<i class="fa-solid fa-caret-up ms-1"></i>' : (pct < 0 ? '<i class="fa-solid fa-caret-down ms-1"></i>' : '');
-            const dotColor = pct > 10 ? 'bg-success' : (pct < -10 ? 'bg-danger' : 'bg-warning');
-            elem.innerHTML = `<span class="${color}">${label}: ${sign}${pct}% ${icon}</span> <span class="badge rounded-pill ${dotColor}">&nbsp;</span>`;
+            const dotColor = pct > 10 ? 'bg-success' : (pct < -10 ? 'bg-warning' : 'bg-secondary'); // Cambiado bg-danger a bg-warning
+            elem.innerHTML = `<span class="${color}">${label}: ${sign}${pct.toFixed(1)}% ${icon}</span> <span class="badge rounded-pill ${dotColor}">&nbsp;</span>`;
         }
 
         function renderSLA(id, value) {
@@ -729,20 +726,40 @@
             const kpis = data.kpis;
 
             // Insight Total Leads
-            const totalInsight = kpis.pct_delta_total_7d > 0 ? 'Aumento de volumen sin mejora proporcional en leads hot → posible deterioro de calidad del tráfico.' : 'La proporción de leads hot se mantiene estable pese al aumento de volumen, indicando calidad consistente.';
+            let totalInsight;
+            if (kpis.leads_hoy === 0) {
+                totalInsight = 'No hay leads registrados hoy.';
+            } else {
+                totalInsight = kpis.pct_delta_total_7d > 0 ? 'Aumento de volumen sin mejora proporcional en leads hot → posible deterioro de calidad del tráfico.' : 'La proporción de leads hot se mantiene estable pese al aumento de volumen, indicando calidad consistente.';
+            }
             document.getElementById('insight_total').innerText = totalInsight;
 
             // Insight Hot Leads
-            const hotRateDelta = kpis.hot_rate_hoy - kpis.hot_rate_week; // Ejemplo de delta en pp
-            const hotInsight = hotRateDelta > 0 ? `Hoy crece +${kpis.pct_delta_hot_7d}% vs semana pasada, pero el hot rate crece +${hotRateDelta.toFixed(1)}pp.` : `Hoy crece +${kpis.pct_delta_hot_7d}% vs semana pasada, pero el hot rate cae -${Math.abs(hotRateDelta).toFixed(1)}pp.`;
+            let hotInsight;
+            if (kpis.hot_hoy === 0) {
+                hotInsight = 'No hay leads hot hoy.';
+            } else {
+                const hotRateDelta = kpis.hot_rate_hoy - kpis.hot_rate_week; // Ejemplo de delta en pp
+                hotInsight = hotRateDelta > 0 ? `Hoy crece +${kpis.pct_delta_hot_7d}% vs semana pasada, pero el hot rate crece +${hotRateDelta.toFixed(1)}pp.` : `Hoy crece +${kpis.pct_delta_hot_7d}% vs semana pasada, pero el hot rate cae -${Math.abs(hotRateDelta).toFixed(1)}pp.`;
+            }
             document.getElementById('insight_hot').innerText = hotInsight;
 
             // Insight Avg Speed
-            const avgInsight = kpis.avg_speed_hoy < kpis.avg_speed_7d ? 'El tiempo de respuesta mejora respecto al promedio semanal, lo que puede aumentar la probabilidad de conversión.' : 'Pese al aumento de leads hot, el tiempo de respuesta se deteriora → riesgo operativo.';
+            let avgInsight;
+            if (kpis.avg_speed_hoy === 0) {
+                avgInsight = 'No hay datos de conversión hoy.';
+            } else {
+                avgInsight = kpis.avg_speed_hoy < kpis.avg_speed_7d ? 'El tiempo de respuesta mejora respecto al promedio semanal, lo que puede aumentar la probabilidad de conversión.' : 'Pese al aumento de leads hot, el tiempo de respuesta se deteriora → riesgo operativo.';
+            }
             document.getElementById('insight_avg_speed').innerText = avgInsight;
 
             // Insight Datos
-            const datosInsight = kpis.tasa_datos_hoy > kpis.tasa_datos_7d ? 'El aumento en la completitud sugiere una mejora en el flujo proactivo del chatbot.' : 'Alta completitud pero baja tasa de leads hot → revisar criterios de clasificación.';
+            let datosInsight;
+            if (kpis.tasa_datos_hoy === 0) {
+                datosInsight = 'No hay datos completos capturados hoy.';
+            } else {
+                datosInsight = kpis.tasa_datos_hoy > kpis.tasa_datos_7d ? 'El aumento en la completitud sugiere una mejora en el flujo proactivo del chatbot.' : 'Alta completitud pero baja tasa de leads hot → revisar criterios de clasificación.';
+            }
             document.getElementById('insight_datos').innerText = datosInsight;
         }
 
@@ -750,8 +767,9 @@
             // Insight for Temporal - Improved with variance and growth rate
             const tempLabels = data.charts.temporal.labels;
             const tempValues = data.charts.temporal.values;
-            if (tempValues.length > 0) {
-                const avg = (tempValues.reduce((a, b) => a + b, 0) / tempValues.length).toFixed(1);
+            const totalLeads = tempValues.reduce((a, b) => a + b, 0);
+            if (tempValues.length > 0 && totalLeads > 0) {
+                const avg = (totalLeads / tempValues.length).toFixed(1);
                 const maxIdx = tempValues.indexOf(Math.max(...tempValues));
                 const maxDate = tempLabels[maxIdx];
                 const maxValue = tempValues[maxIdx];
@@ -759,15 +777,15 @@
                 const growthRate = tempValues.length > 1 ? ((tempValues[tempValues.length - 1] - tempValues[0]) / tempValues[0] * 100).toFixed(1) : 0;
                 const variance = tempValues.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / tempValues.length;
                 const stdDev = Math.sqrt(variance).toFixed(1);
-                document.getElementById('insight-temporal').innerText = `Promedio diario: ${avg} leads (desviación estándar: ${stdDev}). Pico máximo el ${maxDate} con ${maxValue} leads. Crecimiento total: ${growthRate}%. Tendencia general: ${trend}. Recomendación: Analizar factores en picos para replicar éxito.`;
+                document.getElementById('insight-temporal').innerText = `Promedio diario: ${avg} leads (desviación estándar: ${stdDev}). Pico máximo el ${maxDate} con ${maxValue} leads. Crecimiento total: ${growthRate}%. Tendencia general: ${trend}. Total leads acumulados: ${totalLeads}. Recomendación: Analizar factores en picos para replicar éxito.`;
             } else {
-                document.getElementById('insight-temporal').innerText = 'No hay datos suficientes para insights.';
+                document.getElementById('insight-temporal').innerText = 'No hay leads registrados.';
             }
 
             // Insight for Fuentes
             const fuLabels = data.charts.fuentes.labels;
             const fuValues = data.charts.fuentes.values;
-            if (fuValues.length > 0) {
+            if (fuValues.length > 0 && fuValues.some(v => v > 0)) {
                 const totalFu = fuValues.reduce((a, b) => a + b, 0);
                 const maxFuIdx = fuValues.indexOf(Math.max(...fuValues));
                 const topFuente = fuLabels[maxFuIdx];
@@ -780,7 +798,7 @@
             // Insight for BI Resultado
             const biLabels = data.charts.bi_resultado.labels;
             const biValues = data.charts.bi_resultado.values;
-            if (biValues.length > 0) {
+            if (biValues.length > 0 && biValues.some(v => v > 0)) {
                 const totalBi = biValues.reduce((a, b) => a + b, 0);
                 const visitSolicitadaIdx = biLabels.indexOf('VISITA_SOLICITADA');
                 const visitAgendadaIdx = biLabels.indexOf('VISITA_AGENDADA');
@@ -795,7 +813,7 @@
             // Insight for Operaciones
             const opLabels = data.charts.operaciones.labels;
             const opValues = data.charts.operaciones.values;
-            if (opValues.length > 0) {
+            if (opValues.length > 0 && opValues.some(v => v > 0)) {
                 const totalOp = opValues.reduce((a, b) => a + b, 0);
                 const maxOpIdx = opValues.indexOf(Math.max(...opValues));
                 const topOperacion = opLabels[maxOpIdx];
@@ -808,7 +826,7 @@
             // Insight for Tipos
             const tpLabels = data.charts.tipos.labels;
             const tpValues = data.charts.tipos.values;
-            if (tpValues.length > 0) {
+            if (tpValues.length > 0 && tpValues.some(v => v > 0)) {
                 const totalTp = tpValues.reduce((a, b) => a + b, 0);
                 const maxTpIdx = tpValues.indexOf(Math.max(...tpValues));
                 const topTipo = tpLabels[maxTpIdx];
@@ -821,7 +839,7 @@
             // Insight for Comunas
             const cmLabels = data.charts.comunas.labels;
             const cmValues = data.charts.comunas.values;
-            if (cmValues.length > 0) {
+            if (cmValues.length > 0 && cmValues.some(v => v > 0)) {
                 const totalCm = cmValues.reduce((a, b) => a + b, 0);
                 const maxCmIdx = cmValues.indexOf(Math.max(...cmValues));
                 const topComuna = cmLabels[maxCmIdx];

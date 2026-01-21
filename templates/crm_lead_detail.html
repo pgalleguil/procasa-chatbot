@@ -18,35 +18,78 @@
             --text-secondary: #94a3b8;
             --accent: #6366f1;
             --border-color: #334155;
+            --sidebar-width: 260px;
+            --sidebar-width-collapsed: 70px;
+            --transition-speed: 0.3s;
         }
 
         body {
             background-color: var(--bg-body);
             color: var(--text-primary);
             font-family: 'Outfit', sans-serif;
+            overflow-x: hidden;
         }
 
+        /* --- SIDEBAR --- */
         .sidebar {
-            width: 260px;
+            width: var(--sidebar-width);
             background: var(--bg-sidebar);
             height: 100vh;
             position: fixed;
             padding: 20px;
             border-right: 1px solid var(--border-color);
+            z-index: 1000;
+            transition: width var(--transition-speed);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar.collapsed {
+            width: var(--sidebar-width-collapsed);
+            padding: 20px 10px;
+        }
+
+        .sidebar.collapsed .brand span,
+        .sidebar.collapsed .nav-link span {
+            display: none;
+        }
+
+        .sidebar.collapsed .brand {
+            justify-content: center;
+        }
+
+        .sidebar.collapsed .nav-link {
+            text-align: center;
+            padding: 12px 0;
+        }
+
+        .sidebar.collapsed .nav-link i {
+            margin-right: 0 !important;
+            font-size: 1.2rem;
         }
 
         .main-content {
-            margin-left: 260px;
+            margin-left: var(--sidebar-width);
             padding: 30px;
+            transition: margin-left var(--transition-speed);
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
         }
 
-        .nav-link {
-            color: var(--text-secondary);
-            padding: 12px 15px;
-            display: block;
-            text-decoration: none;
-            border-radius: 8px;
-            margin-bottom: 5px;
+        .main-content.expanded {
+            margin-left: var(--sidebar-width-collapsed);
+        }
+
+        @media (max-width: 992px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+
+            .right-column {
+                order: -1;
+            }
         }
 
         .brand {
@@ -57,310 +100,299 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            white-space: nowrap;
         }
 
-        .info-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 20px;
-            height: 100%;
-        }
-
-        .card-header-custom {
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 15px;
-            margin-bottom: 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .card-title {
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--accent);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin: 0;
-        }
-
-        .timeline {
-            position: relative;
-            padding-left: 20px;
-            border-left: 2px solid var(--border-color);
-            margin-top: 10px;
-        }
-
-        .timeline-item {
-            position: relative;
-            margin-bottom: 25px;
-        }
-
-        .timeline-dot {
-            position: absolute;
-            left: -26px;
-            top: 0;
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            background: var(--bg-card);
-            border: 2px solid var(--accent);
-        }
-
-        .chat-bubble {
-            padding: 10px 15px;
-            border-radius: 12px;
-            font-size: 0.9rem;
-            margin-bottom: 5px;
-            display: inline-block;
-            max-width: 90%;
-        }
-
-        .chat-user {
-            background: #334155;
-            color: white;
-            border-top-left-radius: 0;
-        }
-
-        .chat-bot {
-            background: rgba(99, 102, 241, 0.2);
-            color: #cbd5e1;
-            border: 1px solid rgba(99, 102, 241, 0.3);
-            border-top-right-radius: 0;
-            float: right;
-        }
-
-        .chat-row::after {
-            content: "";
-            clear: both;
-            display: table;
-        }
-
-        .form-label {
-            font-size: 0.85rem;
+        .nav-link {
             color: var(--text-secondary);
+            padding: 12px 15px;
+            display: block;
+            text-decoration: none;
+            border-radius: 8px;
             margin-bottom: 5px;
-        }
-
-        .form-control,
-        .form-select {
-            background: var(--bg-body);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            border-radius: 8px;
-            padding: 10px;
-            font-size: 0.9rem;
-        }
-
-        .form-control:focus,
-        .form-select:focus {
-            background: var(--bg-body);
-            color: var(--text-primary);
-            border-color: var(--accent);
-            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
-        }
-
-        .btn-action {
-            width: 100%;
-            padding: 10px;
-            border-radius: 8px;
-            font-weight: 500;
-            border: none;
             transition: 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
+            white-space: nowrap;
         }
 
-        .btn-whatsapp {
-            background: #25D366;
-            color: white;
-        }
-
-        .btn-whatsapp:hover {
-            background: #1da851;
-        }
-
-        .btn-save {
+        .nav-link:hover {
             background: var(--accent);
             color: white;
         }
 
-        .btn-save:hover {
-            background: #4f46e5;
+        .card-custom {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: 0.3s ease;
+        }
+
+        /* EFECTO HOVER EN TARJETAS CLIENTE/PROPIETARIO */
+        .card-hover:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.15);
+        }
+
+        .card-owner-hover:hover {
+            border-color: #f59e0b;
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.15);
+        }
+
+        .section-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        /* ACTIONS */
+        .action-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+        }
+
+        .btn-action-big {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: 0.2s;
+            font-size: 0.8rem;
+        }
+
+        .btn-action-big:hover {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        /* DATA ROW */
+        .data-row {
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .data-label {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            display: block;
+        }
+
+        .data-value {
+            color: white;
+            font-weight: 500;
+        }
+
+        .toggler-link {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+
+        .toggler-link:hover {
+            color: white;
+        }
+
+        /* TIMELINE */
+        .chat-bubble {
+            background: #334155;
+            padding: 10px 15px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            display: inline-block;
+            max-width: 90%;
+            font-size: 0.9rem;
+        }
+
+        .chat-bot {
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            float: right;
+            text-align: right;
+        }
+
+        #sidebarToggle {
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.5rem;
+            cursor: pointer;
         }
     </style>
 </head>
 
 <body>
 
-    <nav class="sidebar">
-        <div class="brand"><i class="fa-solid fa-robot"></i> PROCASA AI</div>
-        <a href="/crm" class="nav-link"><i class="fa-solid fa-arrow-left me-2"></i> Volver a Bandeja</a>
+    <nav class="sidebar" id="sidebar">
+        <div class="brand">
+            <i class="fa-solid fa-robot"></i> <span>PROCASA AI</span>
+        </div>
+        <a href="/crm" class="nav-link"><i class="fa-solid fa-arrow-left me-2"></i> <span>Volver</span></a>
     </nav>
 
-    <div class="main-content">
+    <div class="main-content" id="mainContent">
 
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <div class="d-flex align-items-center gap-3">
-                    <h2 class="fw-bold m-0">{{ lead.nombre }}</h2>
-                    <span class="badge bg-danger">{{ lead.crm_estado|upper }}</span>
-                    <span class="badge bg-success-subtle text-success border border-success-subtle">Score: {{ lead.score
-                        }}</span>
-                </div>
-                <p class="text-secondary m-0 mt-1"><i class="fa-solid fa-location-dot me-1"></i> Interés: {{
-                    lead.propiedad_texto }} (COD: {{ lead.propiedad_cod }})</p>
-            </div>
-            <div class="d-flex gap-2">
-                <button class="btn btn-outline-secondary"><i class="fa-solid fa-envelope me-2"></i>Email</button>
-                <a href="https://wa.me/{{ lead.phone }}" target="_blank" class="btn btn-outline-success"><i
-                        class="fa-brands fa-whatsapp me-2"></i>WhatsApp</a>
-            </div>
-        </div>
-
-        <div class="row g-4 mb-4">
-            <div class="col-md-4">
-                <div class="info-card">
-                    <div class="card-header-custom">
-                        <h5 class="card-title"><i class="fa-solid fa-user me-2"></i>Datos Cliente</h5>
-                    </div>
-                    <div class="mb-2"><small class="text-secondary">Teléfono:</small><br>{{ lead.phone }}</div>
-                    <div class="mb-2"><small class="text-secondary">Email:</small><br>{{ lead.email }}</div>
-                    <div class="mb-2"><small class="text-secondary">RUT:</small><br>{{ lead.rut }}</div>
-                    <div class="mb-0"><small class="text-secondary">Fuente:</small><br><span
-                            class="badge bg-dark border border-secondary">{{ lead.origen }}</span></div>
-                </div>
+        <div class="left-column">
+            <div class="d-flex align-items-center mb-3">
+                <button id="sidebarToggle" class="me-3"><i class="fa-solid fa-bars"></i></button>
+                <h4 class="m-0 fw-bold">Gestión del Lead</h4>
             </div>
 
-            <div class="col-md-4">
-                <div class="info-card">
-                    <div class="card-header-custom">
-                        <h5 class="card-title"><i class="fa-solid fa-robot me-2"></i>Análisis IA</h5>
+            <div class="card-custom" style="border-top: 3px solid var(--accent);">
+                <div class="section-title">Registro de Actividad</div>
+                <form id="crmForm" onsubmit="saveGestion(event)">
+                    <div class="mb-3">
+                        <label class="data-label mb-1">Nota Rápida</label>
+                        <textarea class="form-control bg-dark text-light border-secondary" id="notas"
+                            rows="3">{{ lead.crm_notas }}</textarea>
                     </div>
-                    <div class="mb-2">
-                        <small class="text-secondary">Intención Detectada:</small><br>
-                        <span class="text-warning fw-bold">{{ lead.intencion }}</span>
-                    </div>
-                    <div class="mb-2">
-                        <small class="text-secondary">Estado Datos:</small><br>
-                        <span class="text-success">{{ lead.datos_completos }}</span>
-                    </div>
-                    <div class="mb-0">
-                        <small class="text-secondary">Resumen:</small>
-                        <p class="small text-muted fst-italic mb-0">"{{ lead.resumen }}"</p>
-                    </div>
-                </div>
+                    <button type="submit" class="btn btn-primary w-100 btn-save">Guardar Gestión</button>
+                    <input type="hidden" id="estado" value="{{ lead.crm_estado }}">
+                </form>
             </div>
 
-            <div class="col-md-4">
-                <div class="info-card d-flex flex-column justify-content-center gap-3">
-                    <a href="https://wa.me/{{ lead.phone }}" target="_blank" class="btn-action btn-whatsapp">
-                        <i class="fa-brands fa-whatsapp"></i> Iniciar Chat WhatsApp
-                    </a>
-                    <button class="btn-action btn-outline-primary"
-                        style="background:transparent; border:1px solid var(--accent); color: white;"
-                        onclick="setEstado('visita')">
-                        <i class="fa-solid fa-calendar-plus"></i> Agendar Visita
-                    </button>
-                    <button class="btn-action btn-outline-danger"
-                        style="background:transparent; border:1px solid #ef4444; color: #ef4444;"
-                        onclick="setEstado('perdido')">
-                        <i class="fa-solid fa-ban"></i> Descartar Lead
-                    </button>
+            <div class="card-custom">
+                <div class="section-title">Historial Chat</div>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    {% for msg in lead.timeline %}
+                    <div style="clear:both">
+                        <div class="chat-bubble {{ msg.role }}">{{ msg.content }}</div>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
         </div>
 
-        <div class="row g-4">
-            <div class="col-lg-7">
-                <div class="info-card">
-                    <div class="card-header-custom">
-                        <h5 class="card-title">Línea de Tiempo & Chat</h5>
-                    </div>
+        <div class="right-column">
 
-                    <div class="timeline">
-                        {% for msg in lead.timeline %}
-                        <div class="timeline-item">
-                            <div class="timeline-dot"></div>
-                            <div class="chat-row mb-2">
-                                <div class="chat-bubble {{ msg.role }}">{{ msg.content }}</div>
-                            </div>
-                        </div>
-                        {% else %}
-                        <p class="text-secondary">No hay historial de chat disponible.</p>
-                        {% endfor %}
+            <div class="card-custom card-hover">
+                <div class="section-title"><i class="fa-solid fa-user me-2"></i> Lead</div>
+                <h3 class="fw-bold mb-1">{{ lead.nombre }}</h3>
+                <div class="action-grid mb-3">
+                    <a href="tel:{{ lead.phone }}" class="btn-action-big"><i class="fa-solid fa-phone mb-1"></i>
+                        Llamar</a>
+                    <a href="https://wa.me/{{ lead.phone }}" target="_blank" class="btn-action-big"><i
+                            class="fa-brands fa-whatsapp mb-1"></i> WhatsApp</a>
+                    <a href="mailto:{{ lead.email }}" class="btn-action-big"><i class="fa-solid fa-envelope mb-1"></i>
+                        Email</a>
+                </div>
+
+                <div class="data-row">
+                    <span class="data-label">Teléfono</span>
+                    <span class="data-value">{{ lead.phone }}</span>
+                </div>
+
+                <a class="toggler-link" data-bs-toggle="collapse" href="#clientDetails" role="button"
+                    aria-expanded="false">
+                    <span>Ver más detalles</span> <i class="fa-solid fa-chevron-down"></i>
+                </a>
+                <div class="collapse mt-3 border-top border-secondary pt-2" id="clientDetails">
+                    <div class="data-row">
+                        <span class="data-label">Email</span>
+                        <span class="data-value">{{ lead.email }}</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-label">RUT</span>
+                        <span class="data-value">{{ lead.rut }}</span>
                     </div>
                 </div>
             </div>
 
-            <div class="col-lg-5">
-                <div class="info-card" style="border-top: 4px solid var(--accent);">
-                    <div class="card-header-custom">
-                        <h5 class="card-title">Gestión Comercial</h5>
+            <div class="card-custom card-owner-hover" style="border: 1px solid rgba(245, 158, 11, 0.3);">
+                <div class="section-title text-warning"><i class="fa-solid fa-house-user me-2"></i> Propietario</div>
+
+                <div class="mb-3">
+                    <h5 class="fw-bold text-white">{{ lead.datos_propiedad.nombre_propietario }}</h5>
+                </div>
+
+                <div class="action-grid mb-3">
+                    <a href="tel:{{ lead.datos_propiedad.movil_propietario }}" class="btn-action-big"><i
+                            class="fa-solid fa-phone mb-1"></i> Llamar</a>
+                    <a href="https://wa.me/{{ lead.datos_propiedad.movil_propietario }}" target="_blank"
+                        class="btn-action-big"><i class="fa-brands fa-whatsapp mb-1"></i> WhatsApp</a>
+                    <a href="mailto:{{ lead.datos_propiedad.email_propietario }}" class="btn-action-big"><i
+                            class="fa-solid fa-envelope mb-1"></i> Email</a>
+                </div>
+
+                <div class="data-row">
+                    <span class="data-label">Móvil</span>
+                    <span class="data-value">{{ lead.datos_propiedad.movil_propietario }}</span>
+                </div>
+
+                <a class="toggler-link text-warning" data-bs-toggle="collapse" href="#propDetails" role="button"
+                    aria-expanded="false">
+                    <span>Ver datos Propiedad</span> <i class="fa-solid fa-chevron-down"></i>
+                </a>
+
+                <div class="collapse mt-3 border-top border-secondary pt-2" id="propDetails">
+                    <div class="data-row">
+                        <span class="data-label">Código</span>
+                        <a href="{{ lead.datos_propiedad.url }}" target="_blank"
+                            class="fw-bold text-accent text-decoration-none">
+                            {{ lead.datos_propiedad.codigo }} <i class="fa-solid fa-external-link-alt small ms-1"></i>
+                        </a>
                     </div>
+                    <div class="data-row"><span class="data-label">Tipo</span><span class="data-value">{{
+                            lead.datos_propiedad.tipo }}</span></div>
+                    <div class="data-row"><span class="data-label">Precio</span><span
+                            class="data-value fw-bold text-success">{{ lead.datos_propiedad.precio_uf }} UF</span></div>
+                    <div class="data-row"><span class="data-label">Región</span><span class="data-value">{{
+                            lead.datos_propiedad.region }}</span></div>
+                    <div class="data-row"><span class="data-label">Comuna</span><span class="data-value">{{
+                            lead.datos_propiedad.comuna }}</span></div>
+                    <div class="data-row"><span class="data-label">Sector</span><span class="data-value">{{
+                            lead.datos_propiedad.sector }}</span></div>
 
-                    <form id="crmForm" onsubmit="saveGestion(event)">
-                        <div class="mb-3">
-                            <label class="form-label">Asignar Ejecutivo</label>
-                            <select class="form-select" id="ejecutivo">
-                                <option value="">-- Seleccionar --</option>
-                                <option value="Juan Pérez" {% if lead.crm_ejecutivo=='Juan Pérez' %}selected{% endif %}>
-                                    Juan Pérez</option>
-                                <option value="Maria Cortes" {% if lead.crm_ejecutivo=='Maria Cortes' %}selected{% endif
-                                    %}>Maria Cortes</option>
-                            </select>
+                    <div class="bg-dark p-2 rounded mt-2 border border-secondary border-opacity-25">
+                        <span class="data-label mb-1">Dirección Exacta:</span>
+                        <div class="small text-white">
+                            {{ lead.datos_propiedad.calle }} #{{ lead.datos_propiedad.numeracion }}<br>
+                            Depto/Casa: {{ lead.datos_propiedad.depto }}
                         </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Estado del Lead</label>
-                            <select class="form-select" id="estado">
-                                <option value="nuevo" {% if lead.crm_estado=='nuevo' %}selected{% endif %}>Nuevo (Sin
-                                    gestión)</option>
-                                <option value="gestion" {% if lead.crm_estado=='gestion' %}selected{% endif %}>En
-                                    Gestión</option>
-                                <option value="visita" {% if lead.crm_estado=='visita' %}selected{% endif %}>Visita
-                                    Coordinada</option>
-                                <option value="perdido" {% if lead.crm_estado=='perdido' %}selected{% endif %}>Perdido /
-                                    Descartado</option>
-                            </select>
+                        <span class="data-label mt-2 mb-1">Referencias:</span>
+                        <div class="small text-secondary fst-italic">
+                            {{ lead.datos_propiedad.ref1 }} / {{ lead.datos_propiedad.ref2 }}
                         </div>
-
-                        <div class="mb-4">
-                            <label class="form-label">Bitácora / Comentarios Internos</label>
-                            <textarea class="form-control" id="notas" rows="4"
-                                placeholder="Escribe aquí...">{{ lead.crm_notas }}</textarea>
-                        </div>
-
-                        <button type="submit" class="btn-action btn-save">
-                            <i class="fa-solid fa-floppy-disk"></i> Guardar Gestión
-                        </button>
-                    </form>
+                    </div>
                 </div>
             </div>
+
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        const PHONE = "{{ lead.phone }}";
+        // Toggle Sidebar Logic
+        document.getElementById('sidebarToggle').addEventListener('click', function () {
+            document.getElementById('sidebar').classList.toggle('collapsed');
+            document.getElementById('mainContent').classList.toggle('expanded');
+        });
 
-        function setEstado(est) {
-            document.getElementById('estado').value = est;
-            saveGestion(new Event('submit'));
-        }
-
+        // Save Function
         async function saveGestion(e) {
             e.preventDefault();
             const btn = document.querySelector('.btn-save');
             const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+            btn.innerHTML = 'Guardando...';
 
             const data = {
-                phone: PHONE,
-                ejecutivo: document.getElementById('ejecutivo').value,
+                phone: "{{ lead.phone }}",
                 estado: document.getElementById('estado').value,
                 notas: document.getElementById('notas').value
             };
@@ -371,22 +403,14 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
-
                 if (res.ok) {
-                    btn.innerHTML = '<i class="fa-solid fa-check"></i> Guardado';
-                    setTimeout(() => {
-                        btn.innerHTML = originalText;
-                        window.location.reload();
-                    }, 1000);
+                    btn.innerHTML = 'Guardado!';
+                    setTimeout(() => btn.innerHTML = originalText, 1000);
                 } else {
-                    alert("Error al guardar");
+                    alert('Error');
                     btn.innerHTML = originalText;
                 }
-            } catch (err) {
-                console.error(err);
-                alert("Error de conexión");
-                btn.innerHTML = originalText;
-            }
+            } catch (err) { console.error(err); btn.innerHTML = originalText; }
         }
     </script>
 </body>

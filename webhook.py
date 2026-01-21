@@ -229,10 +229,18 @@ async def reset_password(request: Request, token: str):
 # ==========================================
 # RUTAS CRM
 # ==========================================
+
 @app.get("/crm", response_class=HTMLResponse)
-async def view_crm_list(request: Request):
-    leads = get_crm_leads_list()
-    return templates.TemplateResponse("crm_leads_list.html", {"request": request, "leads": leads})
+async def view_crm_list(request: Request, estado: str = None, busqueda: str = None, orden: str = "prioridad"):
+    # IMPORTANTE: Ahora recibimos dos variables: leads y kpis
+    leads, kpis = get_crm_leads_list(filtro_estado=estado, busqueda=busqueda, ordenar_por=orden)
+    
+    # Pasamos AMBAS al template
+    return templates.TemplateResponse("crm_leads_list.html", {
+        "request": request, 
+        "leads": leads, 
+        "kpis": kpis
+    })
 
 @app.get("/crm/lead/{phone}", response_class=HTMLResponse)
 async def view_crm_detail(request: Request, phone: str):

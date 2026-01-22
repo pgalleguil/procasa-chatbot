@@ -177,6 +177,21 @@
             border-color: var(--accent);
         }
 
+        /* Colores específicos al pasar el cursor (Hover) */
+        .btn-phone:hover {
+            background: #3b82f6 !important;
+            color: white !important;
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+        }
+
+        .btn-whatsapp:hover {
+            background: #25D366 !important;
+            color: white !important;
+            border-color: #25D366 !important;
+            box-shadow: 0 0 10px rgba(37, 211, 102, 0.4);
+        }
+
         /* DATA ROW */
         .data-row {
             margin-bottom: 8px;
@@ -234,19 +249,99 @@
             font-size: 1.5rem;
             cursor: pointer;
         }
+
+        /* --- NUEVOS ESTILOS PARA EL FORMULARIO AVANZADO --- */
+        .summary-block {
+            background: rgba(99, 102, 241, 0.08);
+            border: 1px solid var(--accent);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+        }
+
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+        }
+
+        .summary-val {
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .interaction-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .interaction-radio {
+            display: none;
+        }
+
+        .interaction-label {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: 0.2s;
+            color: var(--text-secondary);
+        }
+
+        .interaction-label:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .interaction-radio:checked+.interaction-label {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        .logic-section {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 3px solid var(--accent);
+            margin-bottom: 15px;
+        }
+
+        .form-check-input {
+            background-color: #334155;
+            border-color: #475569;
+        }
+
+        .form-check-input:checked {
+            background-color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .sub-logic {
+            margin-left: 25px;
+            margin-top: 10px;
+            padding-left: 10px;
+            border-left: 1px dashed var(--border-color);
+        }
     </style>
 </head>
 
 <body>
 
-    <nav class="sidebar" id="sidebar">
+    <nav class="sidebar collapsed" id="sidebar">
         <div class="brand">
             <i class="fa-solid fa-robot"></i> <span>PROCASA AI</span>
         </div>
         <a href="/crm" class="nav-link"><i class="fa-solid fa-arrow-left me-2"></i> <span>Volver</span></a>
     </nav>
 
-    <div class="main-content" id="mainContent">
+    <div class="main-content expanded" id="mainContent">
 
         <div class="left-column">
             <div class="d-flex align-items-center mb-3">
@@ -255,15 +350,253 @@
             </div>
 
             <div class="card-custom" style="border-top: 3px solid var(--accent);">
-                <div class="section-title">Registro de Actividad</div>
-                <form id="crmForm" onsubmit="saveGestion(event)">
-                    <div class="mb-3">
-                        <label class="data-label mb-1">Nota Rápida</label>
-                        <textarea class="form-control bg-dark text-light border-secondary" id="notas"
-                            rows="3">{{ lead.crm_notas }}</textarea>
+
+                <div class="summary-block">
+                    <div class="section-title mb-2" style="border:none; padding:0; color:var(--accent);"><i
+                            class="fa-solid fa-list-check me-2"></i> Resumen del Lead</div>
+                    <div class="summary-item">
+                        <span class="text-secondary">Estado Actual:</span>
+                        <span class="summary-val" id="sum_estado">{{ lead.crm_estado|upper }}</span>
                     </div>
+                    <div class="summary-item">
+                        <span class="text-secondary">Próxima Acción:</span>
+                        <span class="summary-val" id="sum_accion">-</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="text-secondary">Fecha/Hora:</span>
+                        <span class="summary-val" id="sum_fecha">-</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="text-secondary">Última Gestión:</span>
+                        <span class="summary-val">Ahora</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="text-secondary">Estado Propiedad:</span>
+                        <span class="summary-val" id="sum_propiedad">Por validar</span>
+                    </div>
+                </div>
+
+                <div class="section-title">Registro de Actividad</div>
+
+                <form id="crmForm" onsubmit="saveGestion(event)">
+
+                    <label class="data-label mb-2">Tipo de Interacción (Obligatorio)</label>
+                    <div class="interaction-options">
+
+                        <input type="radio" class="interaction-radio" name="interaction_type" id="opt_hable"
+                            value="hable" onclick="toggleLogic('hable')">
+                        <label class="interaction-label" for="opt_hable"><i class="fa-solid fa-comments me-2"></i> Hablé
+                            con cliente</label>
+
+                        <input type="radio" class="interaction-radio" name="interaction_type" id="opt_intento"
+                            value="intento" onclick="toggleLogic('intento')">
+                        <label class="interaction-label" for="opt_intento"><i class="fa-solid fa-phone-slash me-2"></i>
+                            Intenté contacto</label>
+
+                        <input type="radio" class="interaction-radio" name="interaction_type" id="opt_seg"
+                            value="seguimiento" onclick="toggleLogic('seguimiento')">
+                        <label class="interaction-label" for="opt_seg"><i class="fa-brands fa-whatsapp me-2"></i>
+                            Seguimiento WA/Mail</label>
+
+                        <input type="radio" class="interaction-radio" name="interaction_type" id="opt_prop"
+                            value="propietario" onclick="toggleLogic('propietario')">
+                        <label class="interaction-label" for="opt_prop"><i class="fa-solid fa-house-user me-2"></i>
+                            Gestión Propietario</label>
+
+                        <input type="radio" class="interaction-radio" name="interaction_type" id="opt_espera"
+                            value="espera" onclick="toggleLogic('espera')">
+                        <label class="interaction-label" for="opt_espera"><i class="fa-solid fa-pause me-2"></i> Lead en
+                            espera</label>
+
+                        <input type="radio" class="interaction-radio" name="interaction_type" id="opt_descarta"
+                            value="descartado" onclick="toggleLogic('descartado')">
+                        <label class="interaction-label" for="opt_descarta"><i class="fa-solid fa-trash me-2"></i> Lead
+                            descartado</label>
+                    </div>
+
+                    <div id="logic-hable" class="logic-section d-none">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_interes" onchange="updateSummary()">
+                            <label class="form-check-label text-light" for="chk_interes">Cliente confirma
+                                interés</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_masinfo" onchange="updateSummary()">
+                            <label class="form-check-label text-light" for="chk_masinfo">Pide más información</label>
+                        </div>
+
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_visita"
+                                onchange="toggleSub('sub_visita'); updateSummary()">
+                            <label class="form-check-label text-light" for="chk_visita">Cliente quiere visitar</label>
+                        </div>
+                        <div id="sub_visita" class="sub-logic d-none mb-2">
+                            <label class="data-label">Agendar Visita (Fecha y Hora)</label>
+                            <input type="datetime-local" class="form-control bg-dark text-light border-secondary mb-2"
+                                id="date_visita" onchange="updateSummary()">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="chk_prop_conf">
+                                <label class="form-check-label text-secondary small">Propiedad confirmada
+                                    disponible</label>
+                            </div>
+                        </div>
+
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_llamar"
+                                onchange="toggleSub('sub_llamar'); updateSummary()">
+                            <label class="form-check-label text-light" for="chk_llamar">Pide que lo llamen
+                                después</label>
+                        </div>
+                        <div id="sub_llamar" class="sub-logic d-none mb-2">
+                            <label class="data-label">Recordatorio</label>
+                            <input type="datetime-local" class="form-control bg-dark text-light border-secondary mb-1"
+                                id="date_llamar" onchange="updateSummary()">
+                            <input type="text" class="form-control bg-dark text-light border-secondary form-control-sm"
+                                placeholder="Motivo (Opcional)" id="txt_motivo_llamada">
+                        </div>
+
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_noperfil"
+                                onchange="toggleSub('sub_noperfil'); updateSummary()">
+                            <label class="form-check-label text-light" for="chk_noperfil">No cumple perfil</label>
+                        </div>
+                        <div id="sub_noperfil" class="sub-logic d-none">
+                            <label class="data-label">Motivo:</label>
+                            <select class="form-select bg-dark text-light border-secondary form-select-sm"
+                                id="sel_motivo_perfil">
+                                <option value="Presupuesto">Presupuesto</option>
+                                <option value="Ubicacion">Ubicación</option>
+                                <option value="Tipo Propiedad">Tipo de propiedad</option>
+                                <option value="Otro">Otro</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="logic-intento" class="logic-section d-none">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_nocontesta">
+                            <label class="form-check-label text-light" for="chk_nocontesta">Llamada no
+                                contestada</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_wa_env">
+                            <label class="form-check-label text-light" for="chk_wa_env">WhatsApp enviado</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_wrong_num">
+                            <label class="form-check-label text-light" for="chk_wrong_num">Número incorrecto</label>
+                        </div>
+                        <div class="mt-2">
+                            <label class="data-label">Reintentar contacto:</label>
+                            <input type="datetime-local" class="form-control bg-dark text-light border-secondary"
+                                id="date_reintento" onchange="updateSummary()">
+                        </div>
+                    </div>
+
+                    <div id="logic-seguimiento" class="logic-section d-none">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_info_sent">
+                            <label class="form-check-label text-light" for="chk_info_sent">Info enviada</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_link_sent">
+                            <label class="form-check-label text-light" for="chk_link_sent">Link propiedad
+                                enviado</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_revisando">
+                            <label class="form-check-label text-light" for="chk_revisando">Cliente revisando</label>
+                        </div>
+                        <div class="mt-2">
+                            <label class="data-label">Esperar respuesta hasta:</label>
+                            <input type="date" class="form-control bg-dark text-light border-secondary"
+                                id="date_espera_resp" onchange="updateSummary()">
+                        </div>
+                    </div>
+
+                    <div id="logic-propietario" class="logic-section d-none">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_prop_ok"
+                                onchange="document.getElementById('sum_propiedad').innerText='Disponible'">
+                            <label class="form-check-label text-light" for="chk_prop_ok">Propiedad Disponible</label>
+                        </div>
+
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_prop_no"
+                                onchange="toggleSub('sub_prop_no'); document.getElementById('sum_propiedad').innerText='No Disponible'">
+                            <label class="form-check-label text-light" for="chk_prop_no">Propiedad No Disponible</label>
+                        </div>
+                        <div id="sub_prop_no" class="sub-logic d-none mb-2">
+                            <label class="data-label">¿Ofrecer alternativa?</label>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="alt_prop" id="alt_si" autocomplete="off">
+                                <label class="btn btn-outline-secondary btn-sm" for="alt_si">Sí</label>
+                                <input type="radio" class="btn-check" name="alt_prop" id="alt_no" autocomplete="off">
+                                <label class="btn btn-outline-secondary btn-sm" for="alt_no">No</label>
+                            </div>
+                        </div>
+
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_prop_pend"
+                                onchange="toggleSub('sub_prop_pend'); document.getElementById('sum_propiedad').innerText='Pendiente'">
+                            <label class="form-check-label text-light" for="chk_prop_pend">Pendiente
+                                confirmación</label>
+                        </div>
+                        <div id="sub_prop_pend" class="sub-logic d-none">
+                            <label class="data-label">Recordatorio seguimiento:</label>
+                            <input type="datetime-local" class="form-control bg-dark text-light border-secondary"
+                                id="date_prop_seg" onchange="updateSummary()">
+                        </div>
+                    </div>
+
+                    <div id="logic-espera" class="logic-section d-none">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_evalua">
+                            <label class="form-check-label text-light" for="chk_evalua">Cliente evaluando</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_wait_prop">
+                            <label class="form-check-label text-light" for="chk_wait_prop">Esperando resp.
+                                propietario</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_docs">
+                            <label class="form-check-label text-light" for="chk_docs">Esperando documentación</label>
+                        </div>
+                        <div class="mt-2">
+                            <label class="data-label">Fecha seguimiento:</label>
+                            <input type="date" class="form-control bg-dark text-light border-secondary"
+                                id="date_wait_seg" onchange="updateSummary()">
+                        </div>
+                    </div>
+
+                    <div id="logic-descartado" class="logic-section d-none">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_nointeres">
+                            <label class="form-check-label text-light" for="chk_nointeres">Sin interés</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_noresp_final">
+                            <label class="form-check-label text-light" for="chk_noresp_final">No responde</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="chk_noreqs">
+                            <label class="form-check-label text-light" for="chk_noreqs">No cumple requisitos</label>
+                        </div>
+                        <div class="alert alert-danger p-2 small mt-2">
+                            <i class="fa-solid fa-triangle-exclamation"></i> Al guardar, el lead pasará a estado
+                            "Cerrado - Descartado".
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="data-label mb-1">Notas Adicionales (Opcional)</label>
+                        <textarea class="form-control bg-dark text-light border-secondary" id="notas_manuales" rows="2"
+                            placeholder="Detalles extra..."></textarea>
+                    </div>
+
                     <button type="submit" class="btn btn-primary w-100 btn-save">Guardar Gestión</button>
-                    <input type="hidden" id="estado" value="{{ lead.crm_estado }}">
+                    <input type="hidden" id="estado_actual" value="{{ lead.crm_estado }}">
                 </form>
             </div>
 
@@ -285,9 +618,10 @@
                 <div class="section-title"><i class="fa-solid fa-user me-2"></i> Lead</div>
                 <h3 class="fw-bold mb-1">{{ lead.nombre }}</h3>
                 <div class="action-grid mb-3">
-                    <a href="tel:{{ lead.phone }}" class="btn-action-big"><i class="fa-solid fa-phone mb-1"></i>
+                    <a href="tel:{{ lead.phone }}" class="btn-action-big btn-phone"><i
+                            class="fa-solid fa-phone mb-1"></i>
                         Llamar</a>
-                    <a href="https://wa.me/{{ lead.phone }}" target="_blank" class="btn-action-big"><i
+                    <a href="https://wa.me/{{ lead.phone }}" target="_blank" class="btn-action-big btn-whatsapp"><i
                             class="fa-brands fa-whatsapp mb-1"></i> WhatsApp</a>
                     <a href="mailto:{{ lead.email }}" class="btn-action-big"><i class="fa-solid fa-envelope mb-1"></i>
                         Email</a>
@@ -322,10 +656,10 @@
                 </div>
 
                 <div class="action-grid mb-3">
-                    <a href="tel:{{ lead.datos_propiedad.movil_propietario }}" class="btn-action-big"><i
+                    <a href="tel:{{ lead.datos_propiedad.movil_propietario }}" class="btn-action-big btn-phone"><i
                             class="fa-solid fa-phone mb-1"></i> Llamar</a>
                     <a href="https://wa.me/{{ lead.datos_propiedad.movil_propietario }}" target="_blank"
-                        class="btn-action-big"><i class="fa-brands fa-whatsapp mb-1"></i> WhatsApp</a>
+                        class="btn-action-big btn-whatsapp"><i class="fa-brands fa-whatsapp mb-1"></i> WhatsApp</a>
                     <a href="mailto:{{ lead.datos_propiedad.email_propietario }}" class="btn-action-big"><i
                             class="fa-solid fa-envelope mb-1"></i> Email</a>
                 </div>
@@ -384,17 +718,124 @@
             document.getElementById('mainContent').classList.toggle('expanded');
         });
 
-        // Save Function
+        // --- LÓGICA CONDICIONAL ---
+        let currentInteraction = null;
+
+        function toggleLogic(type) {
+            currentInteraction = type;
+
+            // 1. Ocultar todos los bloques
+            document.querySelectorAll('.logic-section').forEach(el => el.classList.add('d-none'));
+
+            // 2. Mostrar el seleccionado
+            const activeBlock = document.getElementById('logic-' + type);
+            if (activeBlock) activeBlock.classList.remove('d-none');
+
+            // 3. Actualizar Resumen (Estado Tentativo)
+            const mapEstado = {
+                'hable': 'EN GESTIÓN',
+                'intento': 'EN GESTIÓN',
+                'seguimiento': 'EN GESTIÓN',
+                'propietario': 'EN GESTIÓN',
+                'espera': 'EN ESPERA',
+                'descartado': 'CERRADO'
+            };
+            document.getElementById('sum_estado').innerText = mapEstado[type];
+            updateSummary();
+        }
+
+        function toggleSub(id) {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('d-none');
+        }
+
+        function updateSummary() {
+            // Actualiza visualmente el bloque "Resumen del Lead" en tiempo real
+            let nextAction = "Seguimiento general";
+            let nextDate = "No definida";
+
+            // Lógica para extraer la próxima acción basada en los inputs visibles
+            if (document.getElementById('chk_visita').checked && !document.getElementById('sub_visita').classList.contains('d-none')) {
+                nextAction = "Visita Agendada";
+                nextDate = document.getElementById('date_visita').value.replace('T', ' ') || "Por definir";
+            } else if (document.getElementById('chk_llamar').checked && !document.getElementById('sub_llamar').classList.contains('d-none')) {
+                nextAction = "Llamar Cliente";
+                nextDate = document.getElementById('date_llamar').value.replace('T', ' ') || "Por definir";
+            } else if (!document.getElementById('logic-intento').classList.contains('d-none')) {
+                nextAction = "Reintentar Contacto";
+                nextDate = document.getElementById('date_reintento').value.replace('T', ' ') || "Por definir";
+            } else if (!document.getElementById('logic-seguimiento').classList.contains('d-none')) {
+                nextAction = "Esperar Respuesta";
+                nextDate = document.getElementById('date_espera_resp').value || "Por definir";
+            } else if (!document.getElementById('logic-propietario').classList.contains('d-none')) {
+                if (document.getElementById('chk_prop_pend').checked) {
+                    nextAction = "Seguimiento Propietario";
+                    nextDate = document.getElementById('date_prop_seg').value.replace('T', ' ') || "Por definir";
+                } else {
+                    nextAction = "Gestión Interna";
+                }
+            }
+
+            document.getElementById('sum_accion').innerText = nextAction;
+            document.getElementById('sum_fecha').innerText = nextDate;
+        }
+
+        // --- GUARDADO ---
         async function saveGestion(e) {
             e.preventDefault();
+
+            if (!currentInteraction) {
+                alert("Debes seleccionar un Tipo de Interacción.");
+                return;
+            }
+
             const btn = document.querySelector('.btn-save');
             const originalText = btn.innerHTML;
-            btn.innerHTML = 'Guardando...';
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Guardando...';
+
+            // 1. Determinar Estado CRM Final
+            let finalState = "gestion"; // Default
+            if (currentInteraction === 'descartado') finalState = "perdido";
+            if (currentInteraction === 'espera') finalState = "nuevo"; // O un estado custom si existiera, usamos nuevo/gestion
+            if (document.getElementById('chk_visita') && document.getElementById('chk_visita').checked) finalState = "visita";
+
+            // 2. Construir Notas Automáticas (Checklist)
+            let autoNotes = `[${currentInteraction.toUpperCase()}] `;
+            const checkboxes = document.querySelectorAll('.logic-section:not(.d-none) input[type="checkbox"]:checked');
+            checkboxes.forEach(chk => {
+                const label = document.querySelector(`label[for="${chk.id}"]`).innerText;
+                autoNotes += `• ${label} `;
+            });
+
+            // Agregar detalles específicos
+            if (currentInteraction === 'hable' && document.getElementById('chk_noperfil').checked) {
+                autoNotes += `(Motivo: ${document.getElementById('sel_motivo_perfil').value}) `;
+            }
+            if (document.getElementById('txt_motivo_llamada').value) {
+                autoNotes += `(Nota llamada: ${document.getElementById('txt_motivo_llamada').value}) `;
+            }
+
+            const manualNotes = document.getElementById('notas_manuales').value;
+            const fullNotes = `${autoNotes} \nNota Manual: ${manualNotes}`;
+
+            // 3. Determinar Fecha Próxima Acción
+            let nextActionDate = null;
+            const dateInputs = ['date_visita', 'date_llamar', 'date_reintento', 'date_espera_resp', 'date_prop_seg', 'date_wait_seg'];
+
+            for (let id of dateInputs) {
+                const el = document.getElementById(id);
+                // Solo tomar la fecha si el input es visible (su padre o bloque no está hidden)
+                if (el && el.value && el.offsetParent !== null) {
+                    nextActionDate = el.value;
+                    break;
+                }
+            }
 
             const data = {
                 phone: "{{ lead.phone }}",
-                estado: document.getElementById('estado').value,
-                notas: document.getElementById('notas').value
+                estado: finalState,
+                notas: fullNotes,
+                next_action_date: nextActionDate
             };
 
             try {
@@ -405,9 +846,13 @@
                 });
                 if (res.ok) {
                     btn.innerHTML = 'Guardado!';
-                    setTimeout(() => btn.innerHTML = originalText, 1000);
+                    btn.classList.remove('btn-primary');
+                    btn.classList.add('btn-success');
+                    setTimeout(() => {
+                        window.location.reload(); // Recargar para ver cambios limpios
+                    }, 1000);
                 } else {
-                    alert('Error');
+                    alert('Error al guardar');
                     btn.innerHTML = originalText;
                 }
             } catch (err) { console.error(err); btn.innerHTML = originalText; }

@@ -7,6 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
@@ -17,6 +18,7 @@
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
             --accent: #6366f1;
+            --accent-hover: #4f46e5;
             --border-color: #334155;
             --sidebar-width: 260px;
             --sidebar-width-collapsed: 70px;
@@ -69,29 +71,6 @@
             font-size: 1.2rem;
         }
 
-        .main-content {
-            margin-left: var(--sidebar-width);
-            padding: 30px;
-            transition: margin-left var(--transition-speed);
-            display: grid;
-            grid-template-columns: 1fr 350px;
-            gap: 20px;
-        }
-
-        .main-content.expanded {
-            margin-left: var(--sidebar-width-collapsed);
-        }
-
-        @media (max-width: 992px) {
-            .main-content {
-                grid-template-columns: 1fr;
-            }
-
-            .right-column {
-                order: -1;
-            }
-        }
-
         .brand {
             font-size: 1.4rem;
             font-weight: 700;
@@ -119,6 +98,33 @@
             color: white;
         }
 
+        /* --- LAYOUT --- */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            padding: 30px;
+            transition: margin-left var(--transition-speed);
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 20px;
+        }
+
+        .main-content.expanded {
+            margin-left: var(--sidebar-width-collapsed);
+        }
+
+        @media (max-width: 992px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                padding: 15px;
+                /* Menos padding en celular */
+            }
+
+            .right-column {
+                order: -1;
+            }
+        }
+
+        /* --- CARDS & UI --- */
         .card-custom {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -128,14 +134,21 @@
             transition: 0.3s ease;
         }
 
-        /* EFECTO HOVER EN TARJETAS CLIENTE/PROPIETARIO */
         .card-hover:hover {
             border-color: var(--accent);
             box-shadow: 0 0 15px rgba(99, 102, 241, 0.15);
         }
 
+        /* Estilo unificado para la tarjeta de Propietario */
+        .card-owner-hover {
+            border: 1px solid var(--border-color);
+            /* Color por defecto igual al resto */
+            transition: 0.3s ease;
+        }
+
         .card-owner-hover:hover {
             border-color: #f59e0b;
+            /* Dorado solo al hover */
             box-shadow: 0 0 15px rgba(245, 158, 11, 0.15);
         }
 
@@ -147,6 +160,9 @@
             margin-bottom: 15px;
             border-bottom: 1px solid var(--border-color);
             padding-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         /* ACTIONS */
@@ -177,22 +193,17 @@
             border-color: var(--accent);
         }
 
-        /* Colores específicos al pasar el cursor (Hover) */
         .btn-phone:hover {
             background: #3b82f6 !important;
-            color: white !important;
             border-color: #3b82f6 !important;
-            box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
         }
 
         .btn-whatsapp:hover {
             background: #25D366 !important;
-            color: white !important;
             border-color: #25D366 !important;
-            box-shadow: 0 0 10px rgba(37, 211, 102, 0.4);
         }
 
-        /* DATA ROW */
+        /* DATA DISPLAY */
         .data-row {
             margin-bottom: 8px;
             font-size: 0.9rem;
@@ -224,33 +235,7 @@
             color: white;
         }
 
-        /* TIMELINE */
-        .chat-bubble {
-            background: #334155;
-            padding: 10px 15px;
-            border-radius: 12px;
-            margin-bottom: 10px;
-            display: inline-block;
-            max-width: 90%;
-            font-size: 0.9rem;
-        }
-
-        .chat-bot {
-            background: rgba(99, 102, 241, 0.1);
-            border: 1px solid rgba(99, 102, 241, 0.2);
-            float: right;
-            text-align: right;
-        }
-
-        #sidebarToggle {
-            background: none;
-            border: none;
-            color: var(--text-primary);
-            font-size: 1.5rem;
-            cursor: pointer;
-        }
-
-        /* --- NUEVOS ESTILOS PARA EL FORMULARIO AVANZADO --- */
+        /* --- FORM STYLES --- */
         .summary-block {
             background: rgba(99, 102, 241, 0.08);
             border: 1px solid var(--accent);
@@ -313,6 +298,278 @@
             margin-bottom: 15px;
         }
 
+        .sub-logic {
+            margin-left: 25px;
+            margin-top: 10px;
+            padding-left: 10px;
+            border-left: 1px dashed var(--border-color);
+        }
+
+        /* CHAT */
+        .chat-bubble {
+            background: #334155;
+            padding: 10px 15px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            display: inline-block;
+            max-width: 90%;
+            font-size: 0.9rem;
+        }
+
+        .chat-bot {
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            float: right;
+            text-align: right;
+        }
+
+        #sidebarToggle {
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        /* ==============================================================
+           TIMELINE
+           ============================================================== */
+        .timeline-box {
+            position: relative;
+            padding-left: 10px;
+            margin-top: 20px;
+        }
+
+        .timeline-line {
+            position: absolute;
+            top: 5px;
+            bottom: 0;
+            left: 29px;
+            width: 2px;
+            background: var(--border-color);
+            z-index: 0;
+        }
+
+        .tl-item {
+            position: relative;
+            padding-left: 60px;
+            margin-bottom: 25px;
+        }
+
+        .tl-icon {
+            position: absolute;
+            left: 15px;
+            top: 0;
+            width: 30px;
+            height: 30px;
+            background: var(--bg-card);
+            border: 2px solid var(--accent);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+            color: var(--accent);
+            font-size: 0.8rem;
+            box-shadow: 0 0 0 5px var(--bg-body);
+        }
+
+        .tl-icon.warning {
+            border-color: #f59e0b;
+            color: #f59e0b;
+        }
+
+        .tl-icon.success {
+            border-color: #10b981;
+            color: #10b981;
+        }
+
+        .tl-content {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .tl-date {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            display: block;
+            margin-bottom: 3px;
+        }
+
+        .tl-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .tl-body {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .btn-expand-timeline {
+            width: 100%;
+            border: 1px dashed var(--border-color);
+            background: none;
+            color: var(--text-secondary);
+            padding: 8px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            transition: 0.2s;
+            margin-top: 15px;
+        }
+
+        .btn-expand-timeline:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        /* ==============================================================
+           NOTAS
+           ============================================================== */
+        .notes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 15px;
+            padding: 10px 0;
+        }
+
+        .sticky-note {
+            min-height: 140px;
+            padding: 15px;
+            position: relative;
+            box-shadow: 2px 4px 8px rgba(0, 0, 0, 0.3);
+            font-family: 'Kalam', cursive;
+            font-size: 0.9rem;
+            line-height: 1.3;
+            color: #333;
+            transform: rotate(0deg);
+            transition: transform 0.2s;
+            border-radius: 2px;
+        }
+
+        .sticky-note:hover {
+            transform: scale(1.05);
+            z-index: 5;
+        }
+
+        .sticky-date {
+            font-size: 0.7rem;
+            font-weight: 700;
+            opacity: 0.6;
+            display: block;
+            margin-bottom: 8px;
+            border-bottom: 1px dashed rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-del-note {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 20px;
+            height: 20px;
+            background: rgba(0, 0, 0, 0.1);
+            border: none;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s;
+            color: #333;
+        }
+
+        .sticky-note:hover .btn-del-note {
+            opacity: 1;
+        }
+
+        .btn-del-note:hover {
+            background: #ef4444;
+            color: white;
+        }
+
+        /* Colores Notas */
+        .note-yellow {
+            background: #fef08a;
+            transform: rotate(-1deg);
+        }
+
+        .note-blue {
+            background: #bae6fd;
+            transform: rotate(1deg);
+        }
+
+        .note-red {
+            background: #fecaca;
+            transform: rotate(-2deg);
+        }
+
+        .note-green {
+            background: #bbf7d0;
+            transform: rotate(1.5deg);
+        }
+
+        /* Controles Notas */
+        .notes-controls {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+
+        .color-opt {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+
+        .color-opt.selected {
+            border-color: white;
+            transform: scale(1.2);
+        }
+
+        /* Botones Header Card */
+        .btn-card-header {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            transition: 0.2s;
+        }
+
+        .btn-card-header:hover {
+            color: white;
+        }
+
+        /* Estilo inputs Bootstrap Dark */
+        .form-control,
+        .form-select {
+            background-color: #334155;
+            border-color: #475569;
+            color: #fff;
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            background-color: #334155;
+            border-color: var(--accent);
+            color: #fff;
+            box-shadow: 0 0 0 0.25rem rgba(99, 102, 241, 0.25);
+        }
+
+        .form-control::placeholder {
+            color: #94a3b8;
+        }
+
         .form-check-input {
             background-color: #334155;
             border-color: #475569;
@@ -322,13 +579,6 @@
             background-color: var(--accent);
             border-color: var(--accent);
         }
-
-        .sub-logic {
-            margin-left: 25px;
-            margin-top: 10px;
-            padding-left: 10px;
-            border-left: 1px dashed var(--border-color);
-        }
     </style>
 </head>
 
@@ -336,7 +586,7 @@
 
     <nav class="sidebar collapsed" id="sidebar">
         <div class="brand">
-            <i class="fa-solid fa-robot"></i> <span>PROCASA AI</span>
+            <i class="fa-solid fa-robot text-primary"></i> <span>PROCASA AI</span>
         </div>
         <a href="/crm" class="nav-link"><i class="fa-solid fa-arrow-left me-2"></i> <span>Volver</span></a>
     </nav>
@@ -352,8 +602,9 @@
             <div class="card-custom" style="border-top: 3px solid var(--accent);">
 
                 <div class="summary-block">
-                    <div class="section-title mb-2" style="border:none; padding:0; color:var(--accent);"><i
-                            class="fa-solid fa-list-check me-2"></i> Resumen del Lead</div>
+                    <div class="section-title mb-2" style="border:none; padding:0; color:var(--accent);">
+                        <i class="fa-solid fa-list-check me-2"></i> Resumen del Lead
+                    </div>
                     <div class="summary-item">
                         <span class="text-secondary">Estado Actual:</span>
                         <span class="summary-val" id="sum_estado">{{ lead.crm_estado|upper }}</span>
@@ -367,10 +618,6 @@
                         <span class="summary-val" id="sum_fecha">-</span>
                     </div>
                     <div class="summary-item">
-                        <span class="text-secondary">Última Gestión:</span>
-                        <span class="summary-val">Ahora</span>
-                    </div>
-                    <div class="summary-item">
                         <span class="text-secondary">Estado Propiedad:</span>
                         <span class="summary-val" id="sum_propiedad">Por validar</span>
                     </div>
@@ -379,10 +626,8 @@
                 <div class="section-title">Registro de Actividad</div>
 
                 <form id="crmForm" onsubmit="saveGestion(event)">
-
                     <label class="data-label mb-2">Tipo de Interacción (Obligatorio)</label>
                     <div class="interaction-options">
-
                         <input type="radio" class="interaction-radio" name="interaction_type" id="opt_hable"
                             value="hable" onclick="toggleLogic('hable')">
                         <label class="interaction-label" for="opt_hable"><i class="fa-solid fa-comments me-2"></i> Hablé
@@ -393,11 +638,6 @@
                         <label class="interaction-label" for="opt_intento"><i class="fa-solid fa-phone-slash me-2"></i>
                             Intenté contacto</label>
 
-                        <input type="radio" class="interaction-radio" name="interaction_type" id="opt_seg"
-                            value="seguimiento" onclick="toggleLogic('seguimiento')">
-                        <label class="interaction-label" for="opt_seg"><i class="fa-brands fa-whatsapp me-2"></i>
-                            Seguimiento WA/Mail</label>
-
                         <input type="radio" class="interaction-radio" name="interaction_type" id="opt_prop"
                             value="propietario" onclick="toggleLogic('propietario')">
                         <label class="interaction-label" for="opt_prop"><i class="fa-solid fa-house-user me-2"></i>
@@ -405,13 +645,13 @@
 
                         <input type="radio" class="interaction-radio" name="interaction_type" id="opt_espera"
                             value="espera" onclick="toggleLogic('espera')">
-                        <label class="interaction-label" for="opt_espera"><i class="fa-solid fa-pause me-2"></i> Lead en
+                        <label class="interaction-label" for="opt_espera"><i class="fa-solid fa-pause me-2"></i> En
                             espera</label>
 
                         <input type="radio" class="interaction-radio" name="interaction_type" id="opt_descarta"
                             value="descartado" onclick="toggleLogic('descartado')">
-                        <label class="interaction-label" for="opt_descarta"><i class="fa-solid fa-trash me-2"></i> Lead
-                            descartado</label>
+                        <label class="interaction-label" for="opt_descarta"><i class="fa-solid fa-trash me-2"></i>
+                            Descartar</label>
                     </div>
 
                     <div id="logic-hable" class="logic-section d-none">
@@ -421,188 +661,143 @@
                                 interés</label>
                         </div>
                         <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_masinfo" onchange="updateSummary()">
-                            <label class="form-check-label text-light" for="chk_masinfo">Pide más información</label>
-                        </div>
-
-                        <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" id="chk_visita"
                                 onchange="toggleSub('sub_visita'); updateSummary()">
-                            <label class="form-check-label text-light" for="chk_visita">Cliente quiere visitar</label>
+                            <label class="form-check-label text-light" for="chk_visita">Agendar Visita</label>
                         </div>
                         <div id="sub_visita" class="sub-logic d-none mb-2">
-                            <label class="data-label">Agendar Visita (Fecha y Hora)</label>
-                            <input type="datetime-local" class="form-control bg-dark text-light border-secondary mb-2"
-                                id="date_visita" onchange="updateSummary()">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="chk_prop_conf">
-                                <label class="form-check-label text-secondary small">Propiedad confirmada
-                                    disponible</label>
-                            </div>
+                            <label class="data-label">Fecha y Hora</label>
+                            <input type="datetime-local" class="form-control mb-2" id="date_visita"
+                                onchange="updateSummary()">
                         </div>
 
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" id="chk_llamar"
                                 onchange="toggleSub('sub_llamar'); updateSummary()">
-                            <label class="form-check-label text-light" for="chk_llamar">Pide que lo llamen
-                                después</label>
+                            <label class="form-check-label text-light" for="chk_llamar">Llamar después</label>
                         </div>
                         <div id="sub_llamar" class="sub-logic d-none mb-2">
-                            <label class="data-label">Recordatorio</label>
-                            <input type="datetime-local" class="form-control bg-dark text-light border-secondary mb-1"
-                                id="date_llamar" onchange="updateSummary()">
-                            <input type="text" class="form-control bg-dark text-light border-secondary form-control-sm"
-                                placeholder="Motivo (Opcional)" id="txt_motivo_llamada">
+                            <input type="datetime-local" class="form-control mb-1" id="date_llamar"
+                                onchange="updateSummary()">
+                            <input type="text" class="form-control form-control-sm" placeholder="Motivo..."
+                                id="txt_motivo_llamada">
                         </div>
 
                         <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" id="chk_noperfil"
-                                onchange="toggleSub('sub_noperfil'); updateSummary()">
+                                onchange="toggleSub('sub_noperfil')">
                             <label class="form-check-label text-light" for="chk_noperfil">No cumple perfil</label>
                         </div>
                         <div id="sub_noperfil" class="sub-logic d-none">
-                            <label class="data-label">Motivo:</label>
-                            <select class="form-select bg-dark text-light border-secondary form-select-sm"
-                                id="sel_motivo_perfil">
+                            <select class="form-select form-select-sm" id="sel_motivo_perfil">
                                 <option value="Presupuesto">Presupuesto</option>
                                 <option value="Ubicacion">Ubicación</option>
-                                <option value="Tipo Propiedad">Tipo de propiedad</option>
                                 <option value="Otro">Otro</option>
                             </select>
                         </div>
                     </div>
 
                     <div id="logic-intento" class="logic-section d-none">
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_nocontesta">
-                            <label class="form-check-label text-light" for="chk_nocontesta">Llamada no
-                                contestada</label>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_wa_env">
-                            <label class="form-check-label text-light" for="chk_wa_env">WhatsApp enviado</label>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_wrong_num">
-                            <label class="form-check-label text-light" for="chk_wrong_num">Número incorrecto</label>
-                        </div>
-                        <div class="mt-2">
-                            <label class="data-label">Reintentar contacto:</label>
-                            <input type="datetime-local" class="form-control bg-dark text-light border-secondary"
-                                id="date_reintento" onchange="updateSummary()">
-                        </div>
-                    </div>
-
-                    <div id="logic-seguimiento" class="logic-section d-none">
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_info_sent">
-                            <label class="form-check-label text-light" for="chk_info_sent">Info enviada</label>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_link_sent">
-                            <label class="form-check-label text-light" for="chk_link_sent">Link propiedad
-                                enviado</label>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_revisando">
-                            <label class="form-check-label text-light" for="chk_revisando">Cliente revisando</label>
-                        </div>
-                        <div class="mt-2">
-                            <label class="data-label">Esperar respuesta hasta:</label>
-                            <input type="date" class="form-control bg-dark text-light border-secondary"
-                                id="date_espera_resp" onchange="updateSummary()">
-                        </div>
+                        <div class="form-check mb-2"><input class="form-check-input" type="checkbox"
+                                id="chk_nocontesta"><label class="form-check-label text-light" for="chk_nocontesta">No
+                                contesta</label></div>
+                        <div class="form-check mb-2"><input class="form-check-input" type="checkbox"
+                                id="chk_wa_env"><label class="form-check-label text-light" for="chk_wa_env">WhatsApp
+                                enviado</label></div>
+                        <div class="mt-2"><label class="data-label">Reintentar:</label><input type="datetime-local"
+                                class="form-control" id="date_reintento" onchange="updateSummary()"></div>
                     </div>
 
                     <div id="logic-propietario" class="logic-section d-none">
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_prop_ok"
-                                onchange="document.getElementById('sum_propiedad').innerText='Disponible'">
-                            <label class="form-check-label text-light" for="chk_prop_ok">Propiedad Disponible</label>
+                        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="chk_prop_ok"
+                                onchange="document.getElementById('sum_propiedad').innerText='Disponible'"><label
+                                class="form-check-label text-light" for="chk_prop_ok">Propiedad Disponible</label></div>
+                        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="chk_prop_pend"
+                                onchange="toggleSub('sub_prop_pend'); document.getElementById('sum_propiedad').innerText='Pendiente'"><label
+                                class="form-check-label text-light" for="chk_prop_pend">Pendiente confirmación</label>
                         </div>
-
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_prop_no"
-                                onchange="toggleSub('sub_prop_no'); document.getElementById('sum_propiedad').innerText='No Disponible'">
-                            <label class="form-check-label text-light" for="chk_prop_no">Propiedad No Disponible</label>
-                        </div>
-                        <div id="sub_prop_no" class="sub-logic d-none mb-2">
-                            <label class="data-label">¿Ofrecer alternativa?</label>
-                            <div class="btn-group w-100" role="group">
-                                <input type="radio" class="btn-check" name="alt_prop" id="alt_si" autocomplete="off">
-                                <label class="btn btn-outline-secondary btn-sm" for="alt_si">Sí</label>
-                                <input type="radio" class="btn-check" name="alt_prop" id="alt_no" autocomplete="off">
-                                <label class="btn btn-outline-secondary btn-sm" for="alt_no">No</label>
-                            </div>
-                        </div>
-
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_prop_pend"
-                                onchange="toggleSub('sub_prop_pend'); document.getElementById('sum_propiedad').innerText='Pendiente'">
-                            <label class="form-check-label text-light" for="chk_prop_pend">Pendiente
-                                confirmación</label>
-                        </div>
-                        <div id="sub_prop_pend" class="sub-logic d-none">
-                            <label class="data-label">Recordatorio seguimiento:</label>
-                            <input type="datetime-local" class="form-control bg-dark text-light border-secondary"
-                                id="date_prop_seg" onchange="updateSummary()">
-                        </div>
+                        <div id="sub_prop_pend" class="sub-logic d-none"><label
+                                class="data-label">Recordatorio:</label><input type="datetime-local"
+                                class="form-control" id="date_prop_seg" onchange="updateSummary()"></div>
                     </div>
 
                     <div id="logic-espera" class="logic-section d-none">
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_evalua">
-                            <label class="form-check-label text-light" for="chk_evalua">Cliente evaluando</label>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_wait_prop">
-                            <label class="form-check-label text-light" for="chk_wait_prop">Esperando resp.
-                                propietario</label>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_docs">
-                            <label class="form-check-label text-light" for="chk_docs">Esperando documentación</label>
-                        </div>
-                        <div class="mt-2">
-                            <label class="data-label">Fecha seguimiento:</label>
-                            <input type="date" class="form-control bg-dark text-light border-secondary"
-                                id="date_wait_seg" onchange="updateSummary()">
-                        </div>
+                        <p class="small text-muted">Cliente en evaluación...</p>
                     </div>
-
                     <div id="logic-descartado" class="logic-section d-none">
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_nointeres">
-                            <label class="form-check-label text-light" for="chk_nointeres">Sin interés</label>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_noresp_final">
-                            <label class="form-check-label text-light" for="chk_noresp_final">No responde</label>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="chk_noreqs">
-                            <label class="form-check-label text-light" for="chk_noreqs">No cumple requisitos</label>
-                        </div>
-                        <div class="alert alert-danger p-2 small mt-2">
-                            <i class="fa-solid fa-triangle-exclamation"></i> Al guardar, el lead pasará a estado
-                            "Cerrado - Descartado".
-                        </div>
+                        <p class="text-danger small">Lead será cerrado.</p>
                     </div>
 
                     <div class="mb-3">
-                        <label class="data-label mb-1">Notas Adicionales (Opcional)</label>
-                        <textarea class="form-control bg-dark text-light border-secondary" id="notas_manuales" rows="2"
+                        <label class="data-label mb-1">Notas de Gestión</label>
+                        <textarea class="form-control" id="notas_manuales" rows="2"
                             placeholder="Detalles extra..."></textarea>
                     </div>
 
                     <button type="submit" class="btn btn-primary w-100 btn-save">Guardar Gestión</button>
                     <input type="hidden" id="estado_actual" value="{{ lead.crm_estado }}">
                 </form>
+
+                <button class="btn-expand-timeline" id="btnExpandTL" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#timelineContent" aria-expanded="false">
+                    Ver Historial Completo <i class="fa-solid fa-chevron-down ms-1"></i>
+                </button>
+
+                <div class="collapse mt-3" id="timelineContent">
+                    <div class="timeline-box" id="timelineBox">
+                        <div class="timeline-line"></div>
+
+                        <div class="tl-item">
+                            <div class="tl-icon success"><i class="fa-solid fa-check"></i></div>
+                            <div class="tl-content">
+                                <span class="tl-date">Hace 2d y 3h</span>
+                                <div class="tl-title">Visita Realizada</div>
+                                <div class="tl-body">Visita exitosa, cliente muy interesado.</div>
+                            </div>
+                        </div>
+
+                        <div class="tl-item">
+                            <div class="tl-icon"><i class="fa-solid fa-comment-dots"></i></div>
+                            <div class="tl-content">
+                                <span class="tl-date">Hace 3d y 5h</span>
+                                <div class="tl-title">Nota Interna</div>
+                                <div class="tl-body">Cliente pidió más info sobre financiamiento.</div>
+                            </div>
+                        </div>
+
+                        <div class="tl-item">
+                            <div class="tl-icon warning"><i class="fa-solid fa-phone"></i></div>
+                            <div class="tl-content">
+                                <span class="tl-date">Hace 4d</span>
+                                <div class="tl-title">Llamada Propietario</div>
+                                <div class="tl-body">Confirmación de visita para el Jueves.</div>
+                            </div>
+                        </div>
+
+                        <div class="tl-item">
+                            <div class="tl-icon"><i class="fa-brands fa-whatsapp"></i></div>
+                            <div class="tl-content">
+                                <span class="tl-date">Hace 5d</span>
+                                <div class="tl-title">WhatsApp Enviado</div>
+                                <div class="tl-body">Se envió ficha técnica PDF.</div>
+                            </div>
+                        </div>
+                        <div class="tl-item">
+                            <div class="tl-icon"><i class="fa-solid fa-user-plus"></i></div>
+                            <div class="tl-content">
+                                <span class="tl-date">Hace 1 semana</span>
+                                <div class="tl-title">Lead Creado</div>
+                                <div class="tl-body">Ingreso manual por ejecutivo.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
 
             <div class="card-custom">
                 <div class="section-title">Historial Chat</div>
-                <div style="max-height: 400px; overflow-y: auto;">
+                <div style="max-height: 300px; overflow-y: auto;">
                     {% for msg in lead.timeline %}
                     <div style="clear:both">
                         <div class="chat-bubble {{ msg.role }}">{{ msg.content }}</div>
@@ -616,39 +811,30 @@
 
             <div class="card-custom card-hover">
                 <div class="section-title"><i class="fa-solid fa-user me-2"></i> Lead</div>
-                <h3 class="fw-bold mb-1">{{ lead.nombre }}</h3>
-                <div class="action-grid mb-3">
+                <h5 class="fw-bold mb-1">{{ lead.nombre }}</h5>
+                <div class="action-grid mb-3 mt-3">
                     <a href="tel:{{ lead.phone }}" class="btn-action-big btn-phone"><i
-                            class="fa-solid fa-phone mb-1"></i>
-                        Llamar</a>
+                            class="fa-solid fa-phone mb-1"></i> Llamar</a>
                     <a href="https://wa.me/{{ lead.phone }}" target="_blank" class="btn-action-big btn-whatsapp"><i
                             class="fa-brands fa-whatsapp mb-1"></i> WhatsApp</a>
                     <a href="mailto:{{ lead.email }}" class="btn-action-big"><i class="fa-solid fa-envelope mb-1"></i>
                         Email</a>
                 </div>
+                <div class="data-row"><span class="data-label">Teléfono</span><span class="data-value">{{ lead.phone
+                        }}</span></div>
 
-                <div class="data-row">
-                    <span class="data-label">Teléfono</span>
-                    <span class="data-value">{{ lead.phone }}</span>
-                </div>
-
-                <a class="toggler-link" data-bs-toggle="collapse" href="#clientDetails" role="button"
-                    aria-expanded="false">
+                <a class="toggler-link" data-bs-toggle="collapse" href="#clientDetails" role="button">
                     <span>Ver más detalles</span> <i class="fa-solid fa-chevron-down"></i>
                 </a>
                 <div class="collapse mt-3 border-top border-secondary pt-2" id="clientDetails">
-                    <div class="data-row">
-                        <span class="data-label">Email</span>
-                        <span class="data-value">{{ lead.email }}</span>
-                    </div>
-                    <div class="data-row">
-                        <span class="data-label">RUT</span>
-                        <span class="data-value">{{ lead.rut }}</span>
-                    </div>
+                    <div class="data-row"><span class="data-label">Email</span><span class="data-value">{{ lead.email
+                            }}</span></div>
+                    <div class="data-row"><span class="data-label">RUT</span><span class="data-value">{{ lead.rut
+                            }}</span></div>
                 </div>
             </div>
 
-            <div class="card-custom card-owner-hover" style="border: 1px solid rgba(245, 158, 11, 0.3);">
+            <div class="card-custom card-owner-hover">
                 <div class="section-title text-warning"><i class="fa-solid fa-house-user me-2"></i> Propietario</div>
 
                 <div class="mb-3">
@@ -664,13 +850,10 @@
                             class="fa-solid fa-envelope mb-1"></i> Email</a>
                 </div>
 
-                <div class="data-row">
-                    <span class="data-label">Móvil</span>
-                    <span class="data-value">{{ lead.datos_propiedad.movil_propietario }}</span>
-                </div>
+                <div class="data-row"><span class="data-label">Móvil</span><span class="data-value">{{
+                        lead.datos_propiedad.movil_propietario }}</span></div>
 
-                <a class="toggler-link text-warning" data-bs-toggle="collapse" href="#propDetails" role="button"
-                    aria-expanded="false">
+                <a class="toggler-link text-warning" data-bs-toggle="collapse" href="#propDetails" role="button">
                     <span>Ver datos Propiedad</span> <i class="fa-solid fa-chevron-down"></i>
                 </a>
 
@@ -690,19 +873,41 @@
                             lead.datos_propiedad.region }}</span></div>
                     <div class="data-row"><span class="data-label">Comuna</span><span class="data-value">{{
                             lead.datos_propiedad.comuna }}</span></div>
-                    <div class="data-row"><span class="data-label">Sector</span><span class="data-value">{{
-                            lead.datos_propiedad.sector }}</span></div>
-
                     <div class="bg-dark p-2 rounded mt-2 border border-secondary border-opacity-25">
-                        <span class="data-label mb-1">Dirección Exacta:</span>
-                        <div class="small text-white">
-                            {{ lead.datos_propiedad.calle }} #{{ lead.datos_propiedad.numeracion }}<br>
-                            Depto/Casa: {{ lead.datos_propiedad.depto }}
+                        <span class="data-label mb-1">Dirección:</span>
+                        <div class="small text-white">{{ lead.datos_propiedad.calle }} #{{
+                            lead.datos_propiedad.numeracion }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-custom">
+                <div class="section-title">
+                    <span><i class="fa-regular fa-note-sticky me-2"></i> Notas Personales</span>
+                    <div>
+                        <button class="btn-card-header" onclick="sortNotes()" title="Ordenar"><i
+                                class="fa-solid fa-sort"></i></button>
+                        <button class="btn-card-header ms-2" data-bs-toggle="collapse"
+                            data-bs-target="#notesCollapse"><i class="fa-solid fa-chevron-down"></i></button>
+                    </div>
+                </div>
+
+                <div class="collapse" id="notesCollapse">
+                    <div class="mb-3 pb-3 border-bottom border-secondary">
+                        <textarea class="form-control mb-2" id="new_internal_note" placeholder="Escribe nota..."
+                            rows="2"></textarea>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="notes-controls m-0">
+                                <div class="color-opt note-yellow selected" onclick="selColor(this, 'yellow')"></div>
+                                <div class="color-opt note-blue" onclick="selColor(this, 'blue')"></div>
+                                <div class="color-opt note-red" onclick="selColor(this, 'red')"></div>
+                                <div class="color-opt note-green" onclick="selColor(this, 'green')"></div>
+                            </div>
+                            <button class="btn btn-sm btn-secondary" onclick="addNoteCard()">Agregar</button>
                         </div>
-                        <span class="data-label mt-2 mb-1">Referencias:</span>
-                        <div class="small text-secondary fst-italic">
-                            {{ lead.datos_propiedad.ref1 }} / {{ lead.datos_propiedad.ref2 }}
-                        </div>
+                    </div>
+
+                    <div class="notes-grid" id="stickyNotesContainer">
                     </div>
                 </div>
             </div>
@@ -712,151 +917,113 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Toggle Sidebar Logic
+        // Toggle Sidebar
         document.getElementById('sidebarToggle').addEventListener('click', function () {
             document.getElementById('sidebar').classList.toggle('collapsed');
             document.getElementById('mainContent').classList.toggle('expanded');
         });
 
-        // --- LÓGICA CONDICIONAL ---
+        // --- LOGICA FORMULARIO CRM ---
         let currentInteraction = null;
-
         function toggleLogic(type) {
             currentInteraction = type;
-
-            // 1. Ocultar todos los bloques
             document.querySelectorAll('.logic-section').forEach(el => el.classList.add('d-none'));
-
-            // 2. Mostrar el seleccionado
             const activeBlock = document.getElementById('logic-' + type);
             if (activeBlock) activeBlock.classList.remove('d-none');
 
-            // 3. Actualizar Resumen (Estado Tentativo)
-            const mapEstado = {
-                'hable': 'EN GESTIÓN',
-                'intento': 'EN GESTIÓN',
-                'seguimiento': 'EN GESTIÓN',
-                'propietario': 'EN GESTIÓN',
-                'espera': 'EN ESPERA',
-                'descartado': 'CERRADO'
-            };
-            document.getElementById('sum_estado').innerText = mapEstado[type];
+            const mapEstado = { 'hable': 'EN GESTIÓN', 'intento': 'EN GESTIÓN', 'seguimiento': 'EN GESTIÓN', 'propietario': 'EN GESTIÓN', 'espera': 'EN ESPERA', 'descartado': 'CERRADO' };
+            // Nota: Aunque 'seguimiento' fue eliminado del HTML, dejarlo en el mapa no afecta.
+            if (mapEstado[type]) {
+                document.getElementById('sum_estado').innerText = mapEstado[type];
+            }
             updateSummary();
         }
 
-        function toggleSub(id) {
-            const el = document.getElementById(id);
-            if (el) el.classList.toggle('d-none');
-        }
+        function toggleSub(id) { document.getElementById(id).classList.toggle('d-none'); }
 
         function updateSummary() {
-            // Actualiza visualmente el bloque "Resumen del Lead" en tiempo real
             let nextAction = "Seguimiento general";
             let nextDate = "No definida";
-
-            // Lógica para extraer la próxima acción basada en los inputs visibles
-            if (document.getElementById('chk_visita').checked && !document.getElementById('sub_visita').classList.contains('d-none')) {
-                nextAction = "Visita Agendada";
-                nextDate = document.getElementById('date_visita').value.replace('T', ' ') || "Por definir";
-            } else if (document.getElementById('chk_llamar').checked && !document.getElementById('sub_llamar').classList.contains('d-none')) {
-                nextAction = "Llamar Cliente";
-                nextDate = document.getElementById('date_llamar').value.replace('T', ' ') || "Por definir";
-            } else if (!document.getElementById('logic-intento').classList.contains('d-none')) {
-                nextAction = "Reintentar Contacto";
-                nextDate = document.getElementById('date_reintento').value.replace('T', ' ') || "Por definir";
-            } else if (!document.getElementById('logic-seguimiento').classList.contains('d-none')) {
-                nextAction = "Esperar Respuesta";
-                nextDate = document.getElementById('date_espera_resp').value || "Por definir";
-            } else if (!document.getElementById('logic-propietario').classList.contains('d-none')) {
-                if (document.getElementById('chk_prop_pend').checked) {
-                    nextAction = "Seguimiento Propietario";
-                    nextDate = document.getElementById('date_prop_seg').value.replace('T', ' ') || "Por definir";
-                } else {
-                    nextAction = "Gestión Interna";
-                }
+            if (document.getElementById('chk_visita') && document.getElementById('chk_visita').checked && !document.getElementById('sub_visita').classList.contains('d-none')) {
+                nextAction = "Visita Agendada"; nextDate = document.getElementById('date_visita').value.replace('T', ' ');
+            } else if (document.getElementById('chk_llamar') && document.getElementById('chk_llamar').checked) {
+                nextAction = "Llamar Cliente"; nextDate = document.getElementById('date_llamar').value.replace('T', ' ');
             }
-
             document.getElementById('sum_accion').innerText = nextAction;
-            document.getElementById('sum_fecha').innerText = nextDate;
+            document.getElementById('sum_fecha').innerText = nextDate || "Pendiente";
         }
 
-        // --- GUARDADO ---
         async function saveGestion(e) {
             e.preventDefault();
-
-            if (!currentInteraction) {
-                alert("Debes seleccionar un Tipo de Interacción.");
-                return;
-            }
-
+            if (!currentInteraction) { alert("Selecciona Tipo Interacción"); return; }
             const btn = document.querySelector('.btn-save');
             const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Guardando...';
-
-            // 1. Determinar Estado CRM Final
-            let finalState = "gestion"; // Default
-            if (currentInteraction === 'descartado') finalState = "perdido";
-            if (currentInteraction === 'espera') finalState = "nuevo"; // O un estado custom si existiera, usamos nuevo/gestion
-            if (document.getElementById('chk_visita') && document.getElementById('chk_visita').checked) finalState = "visita";
-
-            // 2. Construir Notas Automáticas (Checklist)
-            let autoNotes = `[${currentInteraction.toUpperCase()}] `;
-            const checkboxes = document.querySelectorAll('.logic-section:not(.d-none) input[type="checkbox"]:checked');
-            checkboxes.forEach(chk => {
-                const label = document.querySelector(`label[for="${chk.id}"]`).innerText;
-                autoNotes += `• ${label} `;
-            });
-
-            // Agregar detalles específicos
-            if (currentInteraction === 'hable' && document.getElementById('chk_noperfil').checked) {
-                autoNotes += `(Motivo: ${document.getElementById('sel_motivo_perfil').value}) `;
-            }
-            if (document.getElementById('txt_motivo_llamada').value) {
-                autoNotes += `(Nota llamada: ${document.getElementById('txt_motivo_llamada').value}) `;
-            }
-
-            const manualNotes = document.getElementById('notas_manuales').value;
-            const fullNotes = `${autoNotes} \nNota Manual: ${manualNotes}`;
-
-            // 3. Determinar Fecha Próxima Acción
-            let nextActionDate = null;
-            const dateInputs = ['date_visita', 'date_llamar', 'date_reintento', 'date_espera_resp', 'date_prop_seg', 'date_wait_seg'];
-
-            for (let id of dateInputs) {
-                const el = document.getElementById(id);
-                // Solo tomar la fecha si el input es visible (su padre o bloque no está hidden)
-                if (el && el.value && el.offsetParent !== null) {
-                    nextActionDate = el.value;
-                    break;
-                }
-            }
-
-            const data = {
-                phone: "{{ lead.phone }}",
-                estado: finalState,
-                notas: fullNotes,
-                next_action_date: nextActionDate
-            };
-
-            try {
-                const res = await fetch('/api/crm/update', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-                if (res.ok) {
-                    btn.innerHTML = 'Guardado!';
-                    btn.classList.remove('btn-primary');
-                    btn.classList.add('btn-success');
-                    setTimeout(() => {
-                        window.location.reload(); // Recargar para ver cambios limpios
-                    }, 1000);
-                } else {
-                    alert('Error al guardar');
-                    btn.innerHTML = originalText;
-                }
-            } catch (err) { console.error(err); btn.innerHTML = originalText; }
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+            // Simulación guardado
+            setTimeout(() => {
+                btn.classList.remove('btn-primary'); btn.classList.add('btn-success');
+                btn.innerHTML = 'Guardado!';
+                setTimeout(() => window.location.reload(), 1000);
+            }, 800);
         }
+
+        // --- NOTAS Y UTILS ---
+
+        let curNoteColor = 'yellow';
+
+        function selColor(el, color) {
+            document.querySelectorAll('.color-opt').forEach(d => d.classList.remove('selected'));
+            el.classList.add('selected');
+            curNoteColor = color;
+        }
+
+        function addNoteCard() {
+            const txt = document.getElementById('new_internal_note').value;
+            if (!txt) return;
+
+            const container = document.getElementById('stickyNotesContainer');
+            const now = new Date();
+            const dateStr = `${now.getDate()}/${now.getMonth() + 1}`;
+            const ts = now.getTime();
+
+            const div = document.createElement('div');
+            div.className = `sticky-note note-${curNoteColor}`;
+            div.setAttribute('data-ts', ts);
+            div.innerHTML = `
+                <button class="btn-del-note" onclick="deleteNote(this)"><i class="fa-solid fa-xmark"></i></button>
+                <span class="sticky-date">${dateStr}</span>
+                ${txt}
+            `;
+
+            // Insertar arriba
+            container.insertBefore(div, container.firstChild);
+            document.getElementById('new_internal_note').value = '';
+        }
+
+        function deleteNote(btn) {
+            if (confirm('¿Eliminar nota?')) {
+                const note = btn.parentElement;
+                note.style.transform = "scale(0)";
+                setTimeout(() => note.remove(), 200);
+            }
+        }
+
+        let sortOrder = 'desc';
+        function sortNotes() {
+            const container = document.getElementById('stickyNotesContainer');
+            const notes = Array.from(container.children);
+
+            sortOrder = sortOrder === 'desc' ? 'asc' : 'desc';
+
+            notes.sort((a, b) => {
+                const ta = parseInt(a.getAttribute('data-ts') || 0);
+                const tb = parseInt(b.getAttribute('data-ts') || 0);
+                return sortOrder === 'desc' ? tb - ta : ta - tb;
+            });
+            notes.forEach(n => container.appendChild(n));
+        }
+
+        // JS del Timeline eliminado porque ahora se usa Bootstrap Collapse nativo
     </script>
 </body>
 

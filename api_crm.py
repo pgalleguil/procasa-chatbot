@@ -223,7 +223,7 @@ def get_lead_detail_data(phone):
         "score": lead.get("score", 0),
         "resumen": bi_data.get("PENSAMIENTO_AUDITOR", "Sin resumen disponible"),
         "crm_estado": lead.get("crm_estado", "nuevo"),
-        "crm_notas": lead.get("crm_notas", ""),
+        "crm_history": lead.get("crm_history", []),
         "timeline": timeline,
         "datos_propiedad": datos_propiedad
     }
@@ -234,17 +234,22 @@ def update_lead_crm_data(phone, data):
     phone_clean = phone.replace(" ", "").replace("+", "").strip()
     
     update_fields = {
-        "crm_ejecutivo": data.get("ejecutivo"),
         "crm_estado": data.get("estado"),
-        "crm_notas": data.get("notas"),
         "last_crm_update": datetime.now(),
         "crm_propietario_estado": data.get("propietario_res"),
         "crm_next_action_date": data.get("next_action_date"),
         "crm_client_avail": data.get("client_avail")
     }
     
+    history_entry = {
+        "timestamp": datetime.now(),
+        "interaction_type": data.get("interaction_type"),
+        "notes": data.get("notas"),
+        "internal_notes": data.get("internal_notes")
+    }
+    
     result = db["conversaciones_whatsapp"].update_one(
         {"phone": {"$regex": phone_clean}},
-        {"$set": update_fields}
+        {"$set": update_fields, "$push": {"crm_history": history_entry}}
     )
     return result.modified_count > 0 or result.matched_count > 0

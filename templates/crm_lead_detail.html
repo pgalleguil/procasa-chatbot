@@ -592,112 +592,127 @@
             margin-top: 15px;
         }
 
-        /* --- STYLES FOR NEW COMMUNICATION SYSTEM (FIXED) --- */
+        /* --- NUEVO DISEÑO SISTEMA DE COMUNICACIÓN --- */
         #commModal .modal-content {
             background-color: var(--bg-card);
             border: 1px solid var(--border-color);
             color: var(--text-primary);
         }
 
-        /* Dynamic Header Colors */
         .modal-header.theme-wa {
-            background: linear-gradient(90deg, #0f5132, #198754);
-            border-bottom-color: #157347;
+            background: #1e293b;
+            border-bottom: 3px solid #25D366;
+        }
+
+        .modal-header.theme-wa .modal-title {
+            color: #25D366;
         }
 
         .modal-header.theme-email {
-            background: linear-gradient(90deg, #0c4a6e, #0369a1);
-            border-bottom-color: #075985;
+            background: #1e293b;
+            border-bottom: 3px solid #3b82f6;
+        }
+
+        .modal-header.theme-email .modal-title {
+            color: #3b82f6;
         }
 
         #commModal .modal-footer {
             border-top: 1px solid var(--border-color);
+            background: rgba(0, 0, 0, 0.1);
         }
 
-        /* Custom Tabs in Modal */
-        .nav-tabs-custom {
-            border-bottom: 1px solid var(--border-color);
-            margin-bottom: 15px;
-        }
-
-        .nav-tabs-custom .nav-link {
-            color: var(--text-secondary);
-            border: none;
-            background: transparent;
-            font-size: 0.85rem;
-            padding: 8px 12px;
-        }
-
-        .nav-tabs-custom .nav-link:hover {
-            color: #fff;
-            border: none;
-        }
-
-        .nav-tabs-custom .nav-link.active {
-            color: #fff;
-            background: transparent;
-            border-bottom: 3px solid;
-            /* Color definido por JS */
-            font-weight: 600;
-        }
-
-        /* Template Chips */
-        .templates-container {
+        /* New Tabs Design */
+        .comm-stage-tabs {
             display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
+            gap: 10px;
             margin-bottom: 15px;
-            max-height: 150px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+            overflow-x: auto;
+        }
+
+        .stage-tab {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid transparent;
+            padding: 6px 14px;
+            border-radius: 20px;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .stage-tab:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .stage-tab.active {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        /* Template Cards List */
+        .templates-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 200px;
             overflow-y: auto;
+            margin-bottom: 15px;
             padding-right: 5px;
         }
 
-        .templates-container::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .templates-container::-webkit-scrollbar-thumb {
-            background-color: var(--border-color);
-            border-radius: 4px;
-        }
-
-        .template-chip {
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 0.75rem;
+        .template-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            padding: 10px 15px;
+            border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s;
-            border: 1px solid transparent;
-            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .template-card:hover {
             background: rgba(255, 255, 255, 0.05);
-            color: #cbd5e1;
+            border-color: rgba(255, 255, 255, 0.2);
         }
 
-        .template-chip:hover {
-            transform: translateY(-1px);
-            filter: brightness(1.1);
+        .template-card.selected {
+            border-color: var(--accent);
+            background: rgba(99, 102, 241, 0.1);
         }
 
-        .chip-wa {
-            background: rgba(37, 211, 102, 0.15);
-            color: #86efac;
-            border-color: rgba(37, 211, 102, 0.3);
+        .tpl-info {
+            display: flex;
+            flex-direction: column;
         }
 
-        .chip-wa:hover {
-            background: rgba(37, 211, 102, 0.25);
-            box-shadow: 0 0 10px rgba(37, 211, 102, 0.1);
+        .tpl-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #e2e8f0;
         }
 
-        .chip-email {
-            background: rgba(59, 130, 246, 0.15);
-            color: #93c5fd;
-            border-color: rgba(59, 130, 246, 0.3);
+        .tpl-preview {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 250px;
         }
 
-        .chip-email:hover {
-            background: rgba(59, 130, 246, 0.25);
-            box-shadow: 0 0 10px rgba(59, 130, 246, 0.1);
+        .theme-wa .template-card:hover {
+            border-left: 3px solid #25D366;
+        }
+
+        .theme-email .template-card:hover {
+            border-left: 3px solid #3b82f6;
         }
 
         /* Notes Styles */
@@ -1128,6 +1143,7 @@
                     <div id="logic-descartado" class="logic-section danger-border d-none">
                         <label class="data-label mb-2 text-danger">Motivo Cierre Definitivo:</label>
                         <select class="form-select form-select-sm mb-2" id="close_reason" onchange="updateSummary()">
+                            <option>Corredor</option>
                             <option>Compró otra</option>
                             <option>Sin presupuesto</option>
                             <option>No respondió nunca</option>
@@ -1303,6 +1319,7 @@
         </div>
     </div>
 
+    <!-- MODAL DE COMUNICACIÓN (REDISEÑADO) -->
     <div class="modal fade" id="commModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -1312,24 +1329,29 @@
                         aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <ul class="nav nav-tabs nav-tabs-custom" id="commTabs" role="tablist">
-                    </ul>
+                    <!-- Nuevas Pestañas de Etapa -->
+                    <div class="comm-stage-tabs" id="commTabs">
+                        <!-- JS generará esto -->
+                    </div>
 
-                    <div id="templateChips" class="templates-container">
+                    <!-- Lista de Tarjetas de Plantilla -->
+                    <div id="templateList" class="templates-list">
+                        <!-- JS generará esto -->
                     </div>
 
                     <div id="emailSubjectContainer" class="mb-2 d-none">
-                        <input type="text" class="form-control" id="emailSubject" placeholder="Asunto del correo...">
+                        <input type="text" class="form-control form-control-sm" id="emailSubject"
+                            placeholder="Asunto del correo...">
                     </div>
 
-                    <textarea class="form-control" id="commMessage" rows="6"
-                        placeholder="Selecciona una plantilla o escribe tu mensaje..."></textarea>
+                    <textarea class="form-control" id="commMessage" rows="5"
+                        placeholder="El mensaje aparecerá aquí para editar..."></textarea>
                 </div>
                 <div class="modal-footer d-flex justify-content-between">
                     <small class="text-secondary"><i class="fa-solid fa-pen-fancy me-1"></i> Personaliza antes de
                         enviar</small>
                     <a href="#" id="btnSendComm" target="_blank" class="btn btn-sm btn-light fw-bold">
-                        <i class="fa-regular fa-paper-plane me-1"></i> Enviar
+                        Enviar
                     </a>
                 </div>
             </div>
@@ -1338,7 +1360,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // --- DATOS DEL CONTEXTO (SIMULADO) ---
+        // --- DATOS DEL CONTEXTO ---
         const leadData = {
             nombre: "{{ lead.nombre }}",
             telefono: "{{ lead.phone }}",
@@ -1351,76 +1373,79 @@
             ownerName: "{{ lead.datos_propiedad.nombre_propietario }}"
         };
 
-        // --- SISTEMA DE PLANTILLAS CORREGIDO Y EXPANDIDO ---
-        // Se separan estrictamente por "wa" y "email"
+        // --- SISTEMA DE COMUNICACIÓN MEJORADO (ESTRICTAMENTE LEAD MANAGEMENT) ---
         const commTemplates = {
             lead: {
                 tabs: [
-                    { id: 'contact', label: 'Contacto' },
-                    { id: 'visit', label: 'Visita' },
-                    { id: 'closing', label: 'Cierre' }
+                    { id: 'start', label: '1. Contacto Inicial' },
+                    { id: 'follow', label: '2. Seguimiento' },
+                    { id: 'visit', label: '3. Visita' },
+                    { id: 'closing', label: '4. Cierre' }
                 ],
                 data: {
-                    contact: [
+                    start: [
                         // WhatsApp
-                        { label: "👋 Saludo Rápido", channel: "wa", text: "Hola [[nombre]], vi tu interés en [[propiedad]]. ¿Te acomoda que te envíe info por aquí?" },
-                        { label: "📹 Video Tour", channel: "wa", text: "[[nombre]], tengo un video del recorrido de la propiedad en [[comuna]]. Dura 1 min. ¿Te lo envío?" },
-                        { label: "🏦 Pregunta Crédito", channel: "wa", text: "Para avanzar rápido [[nombre]], ¿cuentas con crédito hipotecario pre-aprobado?" },
+                        { label: "👋 Saludo Nuevo Lead", channel: "wa", text: "Hola [[nombre]], soy de Procasa. Recibí tu consulta por la propiedad en [[comuna]]. ¿Tienes un minuto para conversar?" },
+                        { label: "📞 No Contestó", channel: "wa", text: "Hola [[nombre]], intenté llamarte recién. Te escribo para coordinar una llamada breve sobre la propiedad [[propiedad]]. Quedo atento." },
                         // Email
-                        { label: "Ficha Técnica", channel: "email", subject: "Ficha Propiedad: [[propiedad]]", text: "Estimado/a [[nombre]],\n\nAdjunto la ficha técnica completa de la propiedad ubicada en [[direccion]].\n\nQuedo atento a sus dudas.\nSaludos." },
-                        { label: "Presentación Formal", channel: "email", subject: "Oportunidad en [[comuna]]", text: "Hola [[nombre]],\n\nGracias por su interés. Somos Procasa y queremos invitarlo a conocer esta oportunidad única en [[comuna]].\n\n¿Tiene disponibilidad esta semana?" }
+                        { label: "Contacto Inicial", channel: "email", subject: "Contacto Procasa: Propiedad [[propiedad]]", text: "Estimado/a [[nombre]],\n\nGracias por su interés en la propiedad ubicada en [[direccion]].\n\nMe gustaría contactarlo brevemente para entender mejor sus necesidades y coordinar una visita.\n\nAtentamente," }
+                    ],
+                    follow: [
+                        // WhatsApp
+                        { label: "👀 ¿Sigues buscando?", channel: "wa", text: "Hola [[nombre]], ¿lograste revisar la información que te envié? Avísame para ver si avanzamos." },
+                        { label: "📅 Coordinar Llamada", channel: "wa", text: "[[nombre]], ¿te acomoda que te llame hoy tipo 18:00 para resolver dudas?" },
+                        // Email
+                        { label: "Seguimiento Información", channel: "email", subject: "Seguimiento: [[propiedad]]", text: "Hola [[nombre]],\n\nLe escribo para saber si tuvo oportunidad de revisar la ficha enviada. Quedo atento a cualquier consulta adicional.\n\nSaludos." }
                     ],
                     visit: [
                         // WhatsApp
-                        { label: "📍 Ubicación", channel: "wa", text: "[[nombre]], te envío la ubicación exacta para hoy: [MAPS_LINK]. Nos vemos a las 10:00." },
-                        { label: "⚠️ Confirmar 1h antes", channel: "wa", text: "Hola [[nombre]], voy saliendo a la propiedad. ¿Me confirmas que sigues en pie para la visita?" },
-                        { label: "❓ Feedback", channel: "wa", text: "[[nombre]], ¿qué te pareció la casa? ¿Del 1 al 10 qué nota le pones?" },
+                        { label: "📍 Ubicación Visita", channel: "wa", text: "Hola [[nombre]], te comparto la ubicación para la visita de hoy: [PEGAR_MAPS]. Nos vemos a las 10:00." },
+                        { label: "⚠️ Confirmar Visita", channel: "wa", text: "Estimado [[nombre]], voy saliendo a la propiedad. ¿Me confirmas que mantenemos la visita a la hora acordada?" },
                         // Email
-                        { label: "Confirmación Cita", channel: "email", subject: "Confirmación Visita: [[propiedad]]", text: "Estimado [[nombre]],\n\nPor medio del presente confirmo nuestra visita agendada para la propiedad en [[direccion]].\n\nFavor confirmar recepción." },
-                        { label: "Agradecimiento", channel: "email", subject: "Gracias por su visita", text: "Hola [[nombre]],\n\nFue un gusto mostrarle la propiedad hoy. Quedo atento a sus comentarios o si desea agendar una segunda visita con su familia." }
+                        { label: "Confirmación Visita", channel: "email", subject: "Agenda Visita: [[propiedad]]", text: "Estimado [[nombre]],\n\nConfirmo nuestra visita agendada para el día [DIA] a las [HORA].\nDirección: [[direccion]], [[comuna]].\n\nNos vemos allí." }
                     ],
                     closing: [
                         // WhatsApp
-                        { label: "📉 Bajó Precio", channel: "wa", text: "¡Ojo [[nombre]]! La propiedad bajó a [[precio]] UF. Avísame si quieres ofertar ahora." },
-                        { label: "🔥 Urgencia", channel: "wa", text: "[[nombre]], entró otra oferta hoy. Si te interesa de verdad, necesitamos movernos ya." },
+                        { label: "📝 Solicitar Documentos", channel: "wa", text: "[[nombre]], para formalizar la oferta necesito que me envíes tu pre-aprobación bancaria por aquí o al correo." },
+                        { label: "🤝 Cierre", channel: "wa", text: "Hola [[nombre]], el propietario aceptó la propuesta. Te llamo en 5 minutos para explicarte los pasos a seguir." },
                         // Email
-                        { label: "Instrucciones Oferta", channel: "email", subject: "Proceso de Oferta Formal", text: "Estimado [[nombre]],\n\nPara formalizar su interés en la propiedad [[propiedad]], necesitamos que complete el formulario adjunto y nos envíe su pre-aprobación bancaria.\n\nAtentamente," },
-                        { label: "Borrador Promesa", channel: "email", subject: "Borrador Promesa Compraventa", text: "Estimado/a,\n\nAdjunto borrador de la promesa para su revisión legal. Los puntos clave están destacados en amarillo.\n\nSaludos." }
+                        { label: "Solicitud Antecedentes", channel: "email", subject: "Documentación Requerida para Oferta", text: "Estimado [[nombre]],\n\nPara proceder con la oferta formal por la propiedad [[propiedad]], necesitamos los siguientes documentos:\n\n1. Pre-aprobación\n2. Cédula Identidad\n\nQuedo atento." }
                     ]
                 }
             },
             owner: {
                 tabs: [
-                    { id: 'active', label: 'Gestión' },
-                    { id: 'report', label: 'Reportes' }
+                    { id: 'coord', label: 'Coordinación' },
+                    { id: 'feedback', label: 'Feedback' }
                 ],
                 data: {
-                    active: [
+                    coord: [
                         // WhatsApp
-                        { label: "📅 Coordinar", channel: "wa", text: "Hola [[owner_name]], tengo interesado para mañana a las 11AM. ¿Podemos ir?" },
-                        { label: "🔑 Llaves", channel: "wa", text: "Don [[owner_name]], necesito pasar a buscar las llaves para la tasación del banco." },
+                        { label: "🗓️ Solicitud Visita", channel: "wa", text: "Hola Don [[owner_name]], tengo un cliente muy interesado. ¿Podemos mostrar la propiedad mañana a las 16:00?" },
+                        { label: "✅ Confirmación", channel: "wa", text: "Perfecto, visita confirmada con el cliente para el jueves a las 11:00. Nos vemos allá." },
                         // Email
-                        { label: "Solicitud Documentos", channel: "email", subject: "Documentación Pendiente", text: "Estimado [[owner_name]],\n\nPara el estudio de títulos requerimos: Certificado de Hipotecas, Escritura y Recepción Final.\n\nFavor enviar a la brevedad." }
+                        { label: "Solicitud de Visita", channel: "email", subject: "Solicitud Visita: [[propiedad]]", text: "Estimado [[owner_name]],\n\nTenemos un cliente calificado interesado en visitar su propiedad. ¿Tiene disponibilidad este martes por la tarde?\n\nAtentamente." }
                     ],
-                    report: [
+                    feedback: [
                         // WhatsApp
-                        { label: "📉 Sugerir Baja", channel: "wa", text: "[[owner_name]], llevamos 3 semanas sin visitas. El mercado está en [[precio]] UF. ¿Evaluamos un ajuste?" },
+                        { label: "👍 Resultado Visita", channel: "wa", text: "Hola, terminamos la visita. Al cliente le gustó mucho la distribución, pero debe evaluar el tema del crédito. Le aviso apenas tenga novedades." },
+                        { label: "📉 Comentario Precio", channel: "wa", text: "Don [[owner_name]], el cliente de hoy comentó que el precio está un poco por sobre otras opciones del sector. Se lo comento para tenerlo en cuenta." },
                         // Email
-                        { label: "Informe Mensual", channel: "email", subject: "Informe de Gestión: [[propiedad]]", text: "Estimado [[owner_name]],\n\nAdjunto el informe de gestión del mes. Tuvimos 150 visitas web y 3 visitas físicas. El feedback principal es el precio.\n\nSaludos." }
+                        { label: "Reporte de Visita", channel: "email", subject: "Feedback Visita: [[propiedad]]", text: "Estimado [[owner_name]],\n\nLe informo que la visita de hoy se realizó sin problemas. El cliente se mostró interesado pero indicó que comparará con otra opción en la misma calle.\n\nLe mantendré informado." }
                     ]
                 }
             }
         };
 
         let currentCommTarget = 'lead';
-        let currentCommChannel = 'wa'; // 'wa' or 'email'
+        let currentCommChannel = 'wa';
 
         document.getElementById('sidebarToggle').addEventListener('click', function () {
             document.getElementById('sidebar').classList.toggle('collapsed');
             document.getElementById('mainContent').classList.toggle('expanded');
         });
 
-        // --- LÓGICA CRM (Sin cambios mayores, solo integración) ---
+        // --- LÓGICA CRM (Sin cambios) ---
         let currentInteraction = null;
         let currentActionLabel = "";
         let currentResultLabel = "";
@@ -1573,46 +1598,49 @@
             }, 800);
         }
 
-        // --- SISTEMA DE COMUNICACIÓN CORREGIDO ---
+        // --- FUNCIONES SISTEMA DE COMUNICACIÓN (NUEVAS) ---
 
         function openCommPanel(target, defaultChannel = 'wa') {
             currentCommTarget = target;
-            currentCommChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel; // Normalize
+            currentCommChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel;
 
-            // 1. Si es llamada, directo
+            // Llamada directa
             if (currentCommChannel === 'phone') {
                 window.location.href = `tel:${target === 'lead' ? leadData.telefono : leadData.ownerPhone}`;
                 return;
             }
 
-            // 2. Configurar Diseño según Canal (Verde WA / Azul Email)
+            // Configurar Estilo del Modal (Theme)
             const header = document.getElementById('modalHeader');
             const title = document.getElementById('commTitle');
             const targetName = target === 'lead' ? leadData.nombre : leadData.ownerName;
 
-            header.className = `modal-header text-white theme-${currentCommChannel}`; // Clases CSS dinámicas
+            // Limpiar clases anteriores
+            header.classList.remove('theme-wa', 'theme-email');
+            document.getElementById('commModal').classList.remove('theme-wa', 'theme-email');
+
+            // Añadir clase correcta
+            header.classList.add(`theme-${currentCommChannel}`);
+            document.getElementById('commModal').classList.add(`theme-${currentCommChannel}`);
 
             const icon = currentCommChannel === 'wa' ? '<i class="fa-brands fa-whatsapp me-2"></i>' : '<i class="fa-solid fa-envelope me-2"></i>';
-            const actionText = currentCommChannel === 'wa' ? 'WhatsApp a' : 'Email para';
-            title.innerHTML = `${icon} ${actionText}: ${targetName}`;
+            const actionText = currentCommChannel === 'wa' ? 'WhatsApp a' : 'Email a';
+            title.innerHTML = `${icon} ${actionText} <b>${targetName.split(' ')[0]}</b>`;
 
-            // 3. Manejar campo Asunto (Subject)
+            // Campo Asunto
             const subjectContainer = document.getElementById('emailSubjectContainer');
             if (currentCommChannel === 'email') {
                 subjectContainer.classList.remove('d-none');
             } else {
                 subjectContainer.classList.add('d-none');
             }
-            document.getElementById('emailSubject').value = ""; // Limpiar siempre
+            document.getElementById('emailSubject').value = "";
 
-            // 4. Renderizar Tabs
+            // Cargar Tabs y Plantillas
             renderCommTabs(target);
-
-            // 5. Cargar Templates (filtrados por canal)
             const firstTabId = commTemplates[target].tabs[0].id;
             loadTemplates(target, firstTabId);
 
-            // 6. Limpiar y Mostrar
             document.getElementById('commMessage').value = "";
             new bootstrap.Modal(document.getElementById('commModal')).show();
             updateSendLink(target);
@@ -1621,61 +1649,59 @@
         function renderCommTabs(target) {
             const tabsContainer = document.getElementById('commTabs');
             tabsContainer.innerHTML = "";
-            const activeColor = currentCommChannel === 'wa' ? '#25D366' : '#3b82f6'; // Color borde activo
 
             commTemplates[target].tabs.forEach((tab, index) => {
-                const li = document.createElement('li');
-                li.className = 'nav-item';
-                // El estilo inline del border-color se aplica dinámicamente
-                const activeStyle = index === 0 ? `style="border-bottom-color: ${activeColor} !important"` : '';
-
-                li.innerHTML = `<button class="nav-link ${index === 0 ? 'active' : ''}" ${activeStyle} onclick="loadTemplates('${target}', '${tab.id}', this)">${tab.label}</button>`;
-                tabsContainer.appendChild(li);
+                const btn = document.createElement('button');
+                btn.className = `stage-tab ${index === 0 ? 'active' : ''}`;
+                btn.innerText = tab.label;
+                btn.onclick = (e) => loadTemplates(target, tab.id, e.target);
+                tabsContainer.appendChild(btn);
             });
         }
 
         function loadTemplates(target, category, btnElement = null) {
-            // UI Update Tabs
+            // Actualizar Tabs UI
             if (btnElement) {
-                document.querySelectorAll('.nav-tabs-custom .nav-link').forEach(el => {
-                    el.classList.remove('active');
-                    el.style.borderBottomColor = 'transparent';
-                });
+                document.querySelectorAll('.stage-tab').forEach(el => el.classList.remove('active'));
                 btnElement.classList.add('active');
-                // Aplicar color de borde al activo
-                const activeColor = currentCommChannel === 'wa' ? '#25D366' : '#3b82f6';
-                btnElement.style.borderBottomColor = activeColor;
             }
 
-            const container = document.getElementById('templateChips');
+            const container = document.getElementById('templateList');
             container.innerHTML = "";
 
             const allTemplates = commTemplates[target].data[category] || [];
 
-            // --- FILTRO CRÍTICO ---
-            // Solo mostrar templates que coincidan con el canal actual
+            // Filtrar por canal (wa vs email)
             const filteredTemplates = allTemplates.filter(t => t.channel === currentCommChannel);
 
             if (filteredTemplates.length === 0) {
-                container.innerHTML = `<span class="text-secondary small ms-2">No hay plantillas predefinidas para este canal en esta etapa.</span>`;
+                container.innerHTML = `<div class="text-center p-3 text-secondary small">No hay plantillas disponibles para este canal en esta etapa.</div>`;
                 return;
             }
 
             filteredTemplates.forEach(tpl => {
-                const chip = document.createElement('div');
-                const colorClass = currentCommChannel === 'wa' ? 'chip-wa' : 'chip-email';
-                const icon = currentCommChannel === 'wa' ? '<i class="fa-brands fa-whatsapp"></i>' : '<i class="fa-regular fa-envelope"></i>';
+                const card = document.createElement('div');
+                card.className = 'template-card';
+                card.onclick = () => {
+                    document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+                    card.classList.add('selected');
+                    selectTemplate(tpl.text, tpl.subject || "");
+                };
 
-                chip.className = `template-chip ${colorClass}`;
-                chip.innerHTML = `${icon} ${tpl.label}`;
-                // Pasamos el subject si existe
-                chip.onclick = () => selectTemplate(tpl.text, tpl.subject || "");
-                container.appendChild(chip);
+                const icon = currentCommChannel === 'wa' ? '<i class="fa-brands fa-whatsapp text-success"></i>' : '<i class="fa-regular fa-envelope text-primary"></i>';
+
+                card.innerHTML = `
+                    <div class="tpl-info">
+                        <span class="tpl-title">${tpl.label}</span>
+                        <span class="tpl-preview">${tpl.text.substring(0, 40)}...</span>
+                    </div>
+                    ${icon}
+                `;
+                container.appendChild(card);
             });
         }
 
         function selectTemplate(text, subject = "") {
-            // Inyectar variables
             let processedText = text
                 .replace(/\[\[nombre\]\]/g, leadData.nombre.split(' ')[0])
                 .replace(/\[\[owner_name\]\]/g, leadData.ownerName.split(' ')[0])
@@ -1686,7 +1712,6 @@
 
             document.getElementById('commMessage').value = processedText;
 
-            // Si es email y tiene asunto predefinido
             if (currentCommChannel === 'email' && subject) {
                 let processedSubject = subject
                     .replace(/\[\[propiedad\]\]/g, leadData.propiedad)
@@ -1701,15 +1726,12 @@
             const phone = target === 'lead' ? leadData.telefono : leadData.ownerPhone;
             const email = target === 'lead' ? leadData.email : "propietario@email.com";
 
-            // Cambiar icono botón
             if (currentCommChannel === 'wa') {
                 btn.innerHTML = '<i class="fa-brands fa-whatsapp me-1"></i> Abrir WhatsApp';
-                btn.classList.remove('text-primary');
-                btn.classList.add('text-success'); // Texto verde
+                btn.className = 'btn btn-sm fw-bold btn-success';
             } else {
                 btn.innerHTML = '<i class="fa-solid fa-envelope me-1"></i> Abrir Correo';
-                btn.classList.remove('text-success');
-                btn.classList.add('text-primary'); // Texto azul
+                btn.className = 'btn btn-sm fw-bold btn-primary';
             }
 
             btn.onclick = function (e) {
@@ -1726,9 +1748,6 @@
                     const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(finalMsg)}`;
                     window.open(url, '_blank');
                 }
-
-                // Opcional: Cerrar modal
-                // bootstrap.Modal.getInstance(document.getElementById('commModal')).hide();
             };
         }
 

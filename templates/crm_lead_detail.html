@@ -27,6 +27,10 @@
             --sidebar-width: 260px;
             --sidebar-width-collapsed: 70px;
             --transition-speed: 0.3s;
+
+            /* Channel Specific Colors */
+            --wa-color: #25D366;
+            --email-color: #3b82f6;
         }
 
         body {
@@ -140,17 +144,20 @@
 
         .card-hover:hover {
             border-color: var(--accent);
-            box-shadow: 0 0 15px rgba(99, 102, 241, 0.15);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.2);
+            transform: translateY(-2px);
         }
 
         .card-owner-hover:hover {
             border-color: var(--owner-color);
-            box-shadow: 0 0 15px rgba(245, 158, 11, 0.15);
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.2);
+            transform: translateY(-2px);
         }
 
         .card-notes-hover:hover {
             border-color: var(--notes-color);
-            box-shadow: 0 0 15px rgba(45, 212, 191, 0.15);
+            box-shadow: 0 0 20px rgba(45, 212, 191, 0.2);
+            transform: translateY(-2px);
         }
 
         .section-title {
@@ -166,126 +173,177 @@
             align-items: center;
         }
 
-        /* --- UX IMPROVEMENTS: SHORTCUTS --- */
-        .shortcut-grid {
+        /* --- ACTION GRID (STEP 1) --- */
+        .action-mode-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
-            margin-bottom: 25px;
+            gap: 12px;
+            margin-bottom: 20px;
         }
 
-        .btn-shortcut {
+        .action-btn {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            font-size: 0.8rem;
-            padding: 12px 5px;
-            border-radius: 8px;
-            transition: 0.2s;
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            cursor: pointer;
-        }
-
-        .btn-shortcut i {
-            font-size: 1.1rem;
-            margin-bottom: 6px;
-        }
-
-        .btn-shortcut:hover {
-            background: rgba(255, 255, 255, 0.08);
-            transform: translateY(-2px);
-        }
-
-        /* Shortcut variants */
-        .shortcut-visit {
-            border-color: rgba(34, 197, 94, 0.3);
-        }
-
-        .shortcut-visit:hover {
-            background: rgba(34, 197, 94, 0.1);
-            border-color: var(--success-color);
-            color: var(--success-color);
-        }
-
-        .shortcut-close {
-            border-color: rgba(239, 68, 68, 0.3);
-        }
-
-        .shortcut-close:hover {
-            background: rgba(239, 68, 68, 0.1);
-            border-color: var(--danger-color);
-            color: var(--danger-color);
-        }
-
-        .active-mode-header {
-            background: var(--accent);
-            color: white;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 0.8rem;
-            font-weight: 700;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            animation: fadeIn 0.3s ease;
-        }
-
-        .active-mode-header.danger {
-            background: var(--danger-color);
-        }
-
-        .active-mode-header.success {
-            background: var(--success-color);
-        }
-
-        /* Scenarios Radio Style */
-        .interaction-options {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-
-        .interaction-radio {
-            display: none;
-        }
-
-        .interaction-label {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 10px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            font-size: 0.8rem;
-            cursor: pointer;
-            transition: 0.2s;
             color: var(--text-secondary);
+            font-size: 0.85rem;
+            padding: 15px 10px;
+            border-radius: 10px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
             height: 100%;
+            position: relative;
+            overflow: hidden;
         }
 
-        .interaction-label i {
-            font-size: 1rem;
-            margin-bottom: 4px;
+        .action-btn i {
+            font-size: 1.4rem;
+            margin-bottom: 8px;
+            transition: transform 0.2s;
         }
 
-        .interaction-label:hover {
+        .action-btn:hover {
+            background: rgba(255, 255, 255, 0.06);
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-3px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .action-btn:hover i {
+            transform: scale(1.1);
+        }
+
+        .action-btn.active {
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent);
+            border-color: var(--accent);
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.25);
+        }
+
+        .action-btn.active-prop {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--owner-color);
+            border-color: var(--owner-color);
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.25);
+        }
+
+        .action-btn.active-wait {
+            background: rgba(45, 212, 191, 0.15);
+            color: var(--notes-color);
+            border-color: var(--notes-color);
+            box-shadow: 0 0 15px rgba(45, 212, 191, 0.25);
+        }
+
+        .action-btn.active-close {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--danger-color);
+            border-color: var(--danger-color);
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.25);
+        }
+
+        /* --- CONTEXT BUTTONS (STEP 2) --- */
+        .context-btn {
+            border: 1px solid var(--border-color);
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-secondary);
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .context-btn:hover {
             background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
         }
 
-        .interaction-radio:checked+.interaction-label {
+        .context-btn.active {
             background: var(--accent);
             color: white;
             border-color: var(--accent);
+            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
+        }
+
+        /* --- LEAD SCORING (EXPERT FEATURE) --- */
+        .scoring-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .score-radio {
+            display: none;
+        }
+
+        .score-label {
+            flex: 1;
+            text-align: center;
+            padding: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            border: 1px solid transparent;
+            color: var(--text-secondary);
+            transition: 0.2s;
+            opacity: 0.7;
+        }
+
+        .score-label:hover {
+            opacity: 1;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Scoring Colors */
+        .score-radio[value="A"]:checked+.score-label {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            border-color: #ef4444;
+            opacity: 1;
+        }
+
+        .score-radio[value="B"]:checked+.score-label {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
+            border-color: #f59e0b;
+            opacity: 1;
+        }
+
+        .score-radio[value="C"]:checked+.score-label {
+            background: rgba(59, 130, 246, 0.2);
+            color: #93c5fd;
+            border-color: #3b82f6;
+            opacity: 1;
+        }
+
+        /* --- VISUAL SUMMARY BOX --- */
+        .summary-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px dashed var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .summary-item strong {
+            color: #fff;
         }
 
         /* Logic Section */
@@ -295,13 +353,17 @@
             border-radius: 8px;
             border-left: 3px solid var(--accent);
             margin-bottom: 15px;
+            animation: fadeIn 0.3s ease;
         }
 
         .logic-section.danger-border {
             border-left-color: var(--danger-color);
         }
 
-        /* Category Header for Focus Mode */
+        .logic-section.owner-border {
+            border-left-color: var(--owner-color);
+        }
+
         .category-header {
             font-size: 0.8rem;
             text-transform: uppercase;
@@ -340,6 +402,7 @@
             font-size: 0.85rem;
             cursor: pointer;
             width: 100%;
+            transition: color 0.2s;
         }
 
         .label-high-value {
@@ -357,86 +420,6 @@
 
         .label-low-value {
             color: #94a3b8;
-        }
-
-        /* --- COMMON STYLES (Timeline, etc) --- */
-        .timeline-box {
-            position: relative;
-            padding-left: 10px;
-            margin-top: 20px;
-        }
-
-        .timeline-line {
-            position: absolute;
-            top: 5px;
-            bottom: 0;
-            left: 29px;
-            width: 2px;
-            background: var(--border-color);
-            z-index: 0;
-        }
-
-        .tl-item {
-            position: relative;
-            padding-left: 60px;
-            margin-bottom: 25px;
-        }
-
-        .tl-icon {
-            position: absolute;
-            left: 15px;
-            top: 0;
-            width: 30px;
-            height: 30px;
-            background: var(--bg-card);
-            border: 2px solid var(--accent);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1;
-            color: var(--accent);
-            font-size: 0.8rem;
-            box-shadow: 0 0 0 5px var(--bg-body);
-        }
-
-        .tl-content {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 12px;
-        }
-
-        .tl-date {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            display: block;
-            margin-bottom: 3px;
-        }
-
-        .tl-title {
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: #fff;
-            margin-bottom: 4px;
-        }
-
-        .tl-body {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            line-height: 1.4;
-        }
-
-        .btn-expand-timeline {
-            width: 100%;
-            border: 1px dashed var(--border-color);
-            background: none;
-            color: var(--text-secondary);
-            padding: 8px;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            transition: 0.2s;
-            margin-top: 15px;
         }
 
         /* Actions Right Column */
@@ -549,54 +532,175 @@
             text-align: right;
         }
 
-        #sidebarToggle {
-            background: none;
-            border: none;
-            color: var(--text-primary);
-            font-size: 1.5rem;
-            cursor: pointer;
+        /* Timeline & Notes Styles (Preserved) */
+        .timeline-box {
+            position: relative;
+            padding-left: 10px;
+            margin-top: 20px;
         }
 
-        /* Modal & Notes */
+        .timeline-line {
+            position: absolute;
+            top: 5px;
+            bottom: 0;
+            left: 29px;
+            width: 2px;
+            background: var(--border-color);
+            z-index: 0;
+        }
+
+        .tl-item {
+            position: relative;
+            padding-left: 60px;
+            margin-bottom: 25px;
+        }
+
+        .tl-icon {
+            position: absolute;
+            left: 15px;
+            top: 0;
+            width: 30px;
+            height: 30px;
+            background: var(--bg-card);
+            border: 2px solid var(--accent);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+            color: var(--accent);
+            font-size: 0.8rem;
+            box-shadow: 0 0 0 5px var(--bg-body);
+        }
+
+        .tl-content {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .btn-expand-timeline {
+            width: 100%;
+            border: 1px dashed var(--border-color);
+            background: none;
+            color: var(--text-secondary);
+            padding: 8px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            transition: 0.2s;
+            margin-top: 15px;
+        }
+
+        /* --- STYLES FOR NEW COMMUNICATION SYSTEM (FIXED) --- */
         #commModal .modal-content {
             background-color: var(--bg-card);
             border: 1px solid var(--border-color);
             color: var(--text-primary);
         }
 
-        #commModal .modal-header {
-            border-bottom: 1px solid var(--border-color);
+        /* Dynamic Header Colors */
+        .modal-header.theme-wa {
+            background: linear-gradient(90deg, #0f5132, #198754);
+            border-bottom-color: #157347;
+        }
+
+        .modal-header.theme-email {
+            background: linear-gradient(90deg, #0c4a6e, #0369a1);
+            border-bottom-color: #075985;
         }
 
         #commModal .modal-footer {
             border-top: 1px solid var(--border-color);
         }
 
-        .reason-chip {
-            display: inline-block;
-            padding: 6px 12px;
-            border: 1px solid var(--border-color);
-            border-radius: 20px;
-            margin-right: 5px;
-            margin-bottom: 8px;
-            font-size: 0.8rem;
-            cursor: pointer;
-            transition: 0.2s;
-            background: rgba(255, 255, 255, 0.05);
+        /* Custom Tabs in Modal */
+        .nav-tabs-custom {
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 15px;
+        }
+
+        .nav-tabs-custom .nav-link {
             color: var(--text-secondary);
+            border: none;
+            background: transparent;
+            font-size: 0.85rem;
+            padding: 8px 12px;
         }
 
-        .reason-chip:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
+        .nav-tabs-custom .nav-link:hover {
+            color: #fff;
+            border: none;
         }
 
-        .reason-chip.active {
-            background: var(--accent);
-            border-color: var(--accent);
-            color: white;
+        .nav-tabs-custom .nav-link.active {
+            color: #fff;
+            background: transparent;
+            border-bottom: 3px solid;
+            /* Color definido por JS */
+            font-weight: 600;
         }
 
+        /* Template Chips */
+        .templates-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 15px;
+            max-height: 150px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        .templates-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .templates-container::-webkit-scrollbar-thumb {
+            background-color: var(--border-color);
+            border-radius: 4px;
+        }
+
+        .template-chip {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+            white-space: nowrap;
+            background: rgba(255, 255, 255, 0.05);
+            color: #cbd5e1;
+        }
+
+        .template-chip:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.1);
+        }
+
+        .chip-wa {
+            background: rgba(37, 211, 102, 0.15);
+            color: #86efac;
+            border-color: rgba(37, 211, 102, 0.3);
+        }
+
+        .chip-wa:hover {
+            background: rgba(37, 211, 102, 0.25);
+            box-shadow: 0 0 10px rgba(37, 211, 102, 0.1);
+        }
+
+        .chip-email {
+            background: rgba(59, 130, 246, 0.15);
+            color: #93c5fd;
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+
+        .chip-email:hover {
+            background: rgba(59, 130, 246, 0.25);
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.1);
+        }
+
+        /* Notes Styles */
         .notes-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -722,61 +826,76 @@
 
             <div class="card-custom" style="border-top: 3px solid var(--accent);">
 
-                <div class="shortcut-grid">
-                    <button class="btn-shortcut shortcut-visit" onclick="quickAction('visita')">
-                        <i class="fa-solid fa-calendar-check"></i> Agendar Visita
+                <div class="action-mode-grid">
+                    <button class="action-btn" id="mode_contact" onclick="setActionMode('contact')">
+                        <i class="fa-solid fa-phone"></i>
+                        <span>Contactar</span>
                     </button>
-                    <button class="btn-shortcut" onclick="quickAction('nocontesto')">
-                        <i class="fa-solid fa-phone-slash"></i> No Contestó
+                    <button class="action-btn" id="mode_prop" onclick="setActionMode('prop')">
+                        <i class="fa-solid fa-house-user"></i>
+                        <span>Propiedad</span>
                     </button>
-                    <button class="btn-shortcut" onclick="quickAction('info')">
-                        <i class="fa-solid fa-paper-plane"></i> Enviar Info
+                    <button class="action-btn" id="mode_wait" onclick="setActionMode('wait')">
+                        <i class="fa-solid fa-clock"></i>
+                        <span>Seguimiento</span>
                     </button>
-                    <button class="btn-shortcut shortcut-close" onclick="quickAction('cerrar')">
-                        <i class="fa-solid fa-ban"></i> Cerrar Lead
+                    <button class="action-btn" id="mode_close" onclick="setActionMode('close')">
+                        <i class="fa-solid fa-ban"></i>
+                        <span>Cerrar</span>
                     </button>
                 </div>
 
-                <div class="section-title">Registrar Actividad</div>
+                <div id="contact-context" class="mb-3 d-none animate__animated animate__fadeIn">
+                    <div class="section-title small border-0 mb-2 p-0">¿Resultado del Contacto?</div>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <button class="btn btn-sm w-100 context-btn" id="ctx_hable" onclick="toggleLogic('hable')">
+                                <i class="fa-solid fa-comments me-1"></i> Hablé con Lead
+                            </button>
+                        </div>
+                        <div class="col-6">
+                            <button class="btn btn-sm w-100 context-btn" id="ctx_intento"
+                                onclick="toggleLogic('intento')">
+                                <i class="fa-solid fa-phone-slash me-1"></i> No Contestó
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
-                <div id="modeHeader" class="d-none"></div>
+                <div class="section-title mt-3">Detalle de Gestión</div>
 
                 <form id="crmForm" onsubmit="saveGestion(event)">
 
                     <input type="hidden" id="resultado_gestion" name="resultado_gestion">
-
-                    <div class="interaction-options">
-                        <input type="radio" class="interaction-radio" name="interaction_type" id="opt_hable"
-                            value="hable" onclick="toggleLogic('hable')">
-                        <label class="interaction-label" for="opt_hable">
-                            <i class="fa-solid fa-comments"></i> Hablé
-                        </label>
-
-                        <input type="radio" class="interaction-radio" name="interaction_type" id="opt_prop"
-                            value="propietario" onclick="toggleLogic('propietario')">
-                        <label class="interaction-label" for="opt_prop">
-                            <i class="fa-solid fa-house-user"></i> Propietario
-                        </label>
-
-                        <input type="radio" class="interaction-radio" name="interaction_type" id="opt_espera"
-                            value="espera" onclick="toggleLogic('espera')">
-                        <label class="interaction-label" for="opt_espera">
-                            <i class="fa-solid fa-pause"></i> Espera
-                        </label>
-
-                        <input type="radio" class="interaction-radio d-none" name="interaction_type" id="opt_intento"
-                            value="intento">
-                        <input type="radio" class="interaction-radio d-none" name="interaction_type" id="opt_descarta"
-                            value="descartado">
-                    </div>
+                    <input type="radio" class="d-none" name="interaction_type" value="hable">
+                    <input type="radio" class="d-none" name="interaction_type" value="intento">
+                    <input type="radio" class="d-none" name="interaction_type" value="propietario">
+                    <input type="radio" class="d-none" name="interaction_type" value="espera">
+                    <input type="radio" class="d-none" name="interaction_type" value="descartado">
 
                     <div id="logic-hable" class="logic-section d-none">
+
+                        <label class="data-label mb-2 text-white">Calificación del Lead (Obligatorio)</label>
+                        <div class="scoring-group">
+                            <input type="radio" name="lead_score" value="A" id="score_a" class="score-radio"
+                                onclick="updateSummary()">
+                            <label for="score_a" class="score-label">🔥 A: Compra YA</label>
+
+                            <input type="radio" name="lead_score" value="B" id="score_b" class="score-radio"
+                                onclick="updateSummary()">
+                            <label for="score_b" class="score-label">🌤️ B: Interesado</label>
+
+                            <input type="radio" name="lead_score" value="C" id="score_c" class="score-radio"
+                                onclick="updateSummary()">
+                            <label for="score_c" class="score-label">❄️ C: Frío/Largo Plazo</label>
+                        </div>
+
                         <div class="category-group">
-                            <div class="category-header">1.1 Interés Activo</div>
+                            <div class="category-header">Interés Activo</div>
 
                             <div class="form-check mb-1">
                                 <input class="form-check-input" type="radio" name="hable_result" id="rd_visita"
-                                    onclick="toggleSubOption('sub_visita', 'Confirmar Visita', 'visita_agendada')">
+                                    onclick="toggleSubOption('sub_visita', 'Confirmar y Agendar Visita', 'visita_agendada', 'success', 0)">
                                 <label class="form-check-label label-high-value" for="rd_visita">Agendar Visita /
                                     Reunión</label>
                             </div>
@@ -791,12 +910,12 @@
 
                             <div class="form-check mb-1">
                                 <input class="form-check-input" type="radio" name="hable_result" id="rd_compara"
-                                    onclick="toggleSubOption('sub_compara', 'Guardar Seguimiento', 'requiere_seguimiento')">
+                                    onclick="toggleSubOption('sub_compara', 'Guardar Seguimiento', 'requiere_seguimiento', 'primary', 3)">
                                 <label class="form-check-label label-normal" for="rd_compara">Comparando</label>
                             </div>
                             <div id="sub_compara" class="sub-logic d-none">
                                 <label class="data-label">Plazo/Motivo:</label>
-                                <select class="form-select form-select-sm mb-2">
+                                <select class="form-select form-select-sm mb-2" onchange="updateSummary()">
                                     <option>Comparando precios</option>
                                     <option>Comparando sectores</option>
                                     <option>Sin urgencia</option>
@@ -805,13 +924,13 @@
 
                             <div class="form-check mb-1">
                                 <input class="form-check-input" type="radio" name="hable_result" id="rd_objecion"
-                                    onclick="toggleSubOption('sub_objecion', 'Registrar Objeción', 'requiere_seguimiento')">
+                                    onclick="toggleSubOption('sub_objecion', 'Registrar Objeción', 'requiere_seguimiento', 'primary', 7)">
                                 <label class="form-check-label label-normal" for="rd_objecion">Objeción
                                     Económica</label>
                             </div>
                             <div id="sub_objecion" class="sub-logic d-none">
                                 <label class="data-label">Motivo:</label>
-                                <select class="form-select form-select-sm mb-2">
+                                <select class="form-select form-select-sm mb-2" onchange="updateSummary()">
                                     <option>Pie insuficiente</option>
                                     <option>Dividendo alto</option>
                                     <option>Precio alto</option>
@@ -820,12 +939,12 @@
 
                             <div class="form-check mb-1">
                                 <input class="form-check-input" type="radio" name="hable_result" id="rd_finan"
-                                    onclick="toggleSubOption('sub_finan', 'Guardar Evaluación', 'requiere_seguimiento')">
+                                    onclick="toggleSubOption('sub_finan', 'Guardar Evaluación', 'requiere_seguimiento', 'primary', 5)">
                                 <label class="form-check-label label-normal" for="rd_finan">Evaluando
                                     Financiamiento</label>
                             </div>
                             <div id="sub_finan" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2">
+                                <select class="form-select form-select-sm mb-2" onchange="updateSummary()">
                                     <option>En evaluación</option>
                                     <option>Preaprobado</option>
                                 </select>
@@ -833,11 +952,11 @@
                         </div>
 
                         <div class="category-group">
-                            <div class="category-header mt-3">1.2 Gestión Comercial</div>
+                            <div class="category-header mt-3">Gestión Comercial</div>
 
                             <div class="form-check mb-1">
                                 <input class="form-check-input" type="radio" name="hable_result" id="rd_consulta"
-                                    onclick="toggleSubOption('sub_consulta', 'Registrar Envío Info', 'requiere_seguimiento')">
+                                    onclick="toggleSubOption('sub_consulta', 'Registrar Envío Info', 'requiere_seguimiento', 'primary', 2)">
                                 <label class="form-check-label label-normal" for="rd_consulta">Envío Info /
                                     Ficha</label>
                             </div>
@@ -852,13 +971,14 @@
 
                             <div class="form-check mb-1">
                                 <input class="form-check-input" type="radio" name="hable_result" id="rd_oferta"
-                                    onclick="toggleSubOption('sub_oferta', 'Registrar Oferta', 'requiere_seguimiento')">
+                                    onclick="toggleSubOption('sub_oferta', 'Registrar Oferta Formal', 'requiere_seguimiento', 'success', 1)">
                                 <label class="form-check-label label-high-value text-warning" for="rd_oferta">¡PRESENTAR
                                     OFERTA!</label>
                             </div>
                             <div id="sub_oferta" class="sub-logic d-none">
                                 <label class="data-label">Monto:</label>
-                                <input type="number" class="form-control form-control-sm mb-2" placeholder="Monto">
+                                <input type="number" class="form-control form-control-sm mb-2" placeholder="Monto"
+                                    onchange="updateSummary()">
                                 <div class="form-check mb-2"><input class="form-check-input" type="checkbox"
                                         id="chk_garantia"><label class="form-check-label"
                                         for="chk_garantia">Garantía/Reserva</label></div>
@@ -866,41 +986,29 @@
                         </div>
 
                         <div class="category-group">
-                            <div class="category-header mt-3">1.3 Indecisión / Negociación</div>
+                            <div class="category-header mt-3">Indecisión / Negociación</div>
                             <div class="form-check mb-1">
                                 <input class="form-check-input" type="radio" name="hable_result" id="rd_indeciso"
-                                    onclick="toggleSubOption('sub_indeciso', 'Guardar Seguimiento', 'requiere_seguimiento')">
+                                    onclick="toggleSubOption('sub_indeciso', 'Guardar Seguimiento', 'requiere_seguimiento', 'primary', 5)">
                                 <label class="form-check-label label-low-value" for="rd_indeciso">Indeciso</label>
                             </div>
                             <div id="sub_indeciso" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2">
+                                <select class="form-select form-select-sm mb-2" onchange="updateSummary()">
                                     <option>Espera tercero</option>
                                     <option>Miedo error</option>
-                                </select>
-                            </div>
-
-                            <div class="form-check mb-1">
-                                <input class="form-check-input" type="radio" name="hable_result" id="rd_negoc"
-                                    onclick="toggleSubOption('sub_negoc', 'Guardar Negociación', 'requiere_seguimiento')">
-                                <label class="form-check-label label-normal" for="rd_negoc">Negociador Fuerte</label>
-                            </div>
-                            <div id="sub_negoc" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2">
-                                    <option>Oferta baja</option>
-                                    <option>Espera baja precio</option>
                                 </select>
                             </div>
                         </div>
 
                         <div class="category-group">
-                            <div class="category-header mt-3">1.4 No Avanza</div>
+                            <div class="category-header mt-3">No Avanza</div>
                             <div class="form-check mb-1">
                                 <input class="form-check-input" type="radio" name="hable_result" id="rd_nogusta"
-                                    onclick="toggleSubOption('sub_nogusta', 'Guardar Feedback', 'requiere_seguimiento')">
+                                    onclick="toggleSubOption('sub_nogusta', 'Guardar Feedback', 'requiere_seguimiento', 'primary', 15)">
                                 <label class="form-check-label label-low-value" for="rd_nogusta">No le gustó</label>
                             </div>
                             <div id="sub_nogusta" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2">
+                                <select class="form-select form-select-sm mb-2" onchange="updateSummary()">
                                     <option>Precio</option>
                                     <option>Ubicación</option>
                                     <option>Estado</option>
@@ -912,12 +1020,12 @@
 
                             <div class="form-check mb-1">
                                 <input class="form-check-input" type="radio" name="hable_result" id="rd_desiste"
-                                    onclick="toggleSubOption('sub_desiste', 'Guardar Pausa', 'lead_pausado')">
+                                    onclick="toggleSubOption('sub_desiste', 'Guardar Pausa', 'lead_pausado', 'info', 30)">
                                 <label class="form-check-label label-low-value" for="rd_desiste">Desiste
                                     Temporalmente</label>
                             </div>
                             <div id="sub_desiste" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2">
+                                <select class="form-select form-select-sm mb-2" onchange="updateSummary()">
                                     <option>Cambio planes</option>
                                     <option>Problema $</option>
                                 </select>
@@ -929,20 +1037,24 @@
                         <label class="data-label mb-2 text-white">Resultado del intento:</label>
 
                         <div class="form-check mb-1">
-                            <input class="form-check-input" type="radio" name="intento_res" id="rd_buzon" checked>
+                            <input class="form-check-input" type="radio" name="intento_res" id="rd_buzon" checked
+                                onclick="autoSetDate(1)">
                             <label class="form-check-label text-light" for="rd_buzon">Buzón de voz</label>
                         </div>
                         <div class="form-check mb-1">
-                            <input class="form-check-input" type="radio" name="intento_res" id="rd_corta">
+                            <input class="form-check-input" type="radio" name="intento_res" id="rd_corta"
+                                onclick="autoSetDate(1)">
                             <label class="form-check-label text-light" for="rd_corta">Cortó llamada</label>
                         </div>
                         <div class="form-check mb-1">
-                            <input class="form-check-input" type="radio" name="intento_res" id="rd_noshow">
+                            <input class="form-check-input" type="radio" name="intento_res" id="rd_noshow"
+                                onclick="autoSetDate(1)">
                             <label class="form-check-label text-warning" for="rd_noshow">No Show (Faltó a
                                 visita)</label>
                         </div>
                         <div class="form-check mb-1">
-                            <input class="form-check-input" type="radio" name="intento_res" id="rd_wrong">
+                            <input class="form-check-input" type="radio" name="intento_res" id="rd_wrong"
+                                onclick="autoSetDate(0)">
                             <label class="form-check-label text-secondary" for="rd_wrong">Número equivocado</label>
                         </div>
 
@@ -966,10 +1078,10 @@
                         </div>
                     </div>
 
-                    <div id="logic-propietario" class="logic-section d-none">
+                    <div id="logic-propietario" class="logic-section owner-border d-none">
                         <div class="form-check mb-1">
                             <input class="form-check-input" type="radio" name="prop_status" id="rd_prop_coord" checked
-                                onclick="toggleSubOption('sub_prop_coord', 'Guardar Coordinación', 'requiere_seguimiento')">
+                                onclick="toggleSubOption('sub_prop_coord', 'Guardar Coordinación', 'requiere_seguimiento', 'warning', 1)">
                             <label class="form-check-label text-white" for="rd_prop_coord">Coordinación Visita</label>
                         </div>
                         <div id="sub_prop_coord" class="sub-logic">
@@ -981,7 +1093,7 @@
 
                         <div class="form-check mb-1">
                             <input class="form-check-input" type="radio" name="prop_status" id="rd_prop_obj"
-                                onclick="toggleSubOption('sub_prop_obj', 'Registrar Objeción', 'requiere_seguimiento')">
+                                onclick="toggleSubOption('sub_prop_obj', 'Registrar Objeción Propietario', 'requiere_seguimiento', 'warning', 7)">
                             <label class="form-check-label text-white" for="rd_prop_obj">Objeciones / Precio</label>
                         </div>
                         <div id="sub_prop_obj" class="sub-logic d-none">
@@ -993,7 +1105,7 @@
 
                         <div class="form-check mb-1">
                             <input class="form-check-input" type="radio" name="prop_status" id="rd_prop_nd"
-                                onclick="toggleSubOption('sub_prop_nd', 'Marcar No Disponible', 'lead_pausado')">
+                                onclick="toggleSubOption('sub_prop_nd', 'Marcar No Disponible', 'lead_pausado', 'info', 15)">
                             <label class="form-check-label text-secondary" for="rd_prop_nd">No Disponible</label>
                         </div>
                         <div id="sub_prop_nd" class="sub-logic d-none">
@@ -1005,8 +1117,8 @@
                     </div>
 
                     <div id="logic-espera" class="logic-section d-none">
-                        <label class="data-label mb-2 text-white">Motivo:</label>
-                        <select class="form-select form-select-sm mb-3">
+                        <label class="data-label mb-2 text-white">Motivo de Pausa/Espera:</label>
+                        <select class="form-select form-select-sm mb-3" onchange="autoSetDate(15)">
                             <option>Cliente de viaje</option>
                             <option>Cliente enfermo</option>
                             <option>Esperando pie / dinero</option>
@@ -1015,7 +1127,7 @@
 
                     <div id="logic-descartado" class="logic-section danger-border d-none">
                         <label class="data-label mb-2 text-danger">Motivo Cierre Definitivo:</label>
-                        <select class="form-select form-select-sm mb-2">
+                        <select class="form-select form-select-sm mb-2" id="close_reason" onchange="updateSummary()">
                             <option>Compró otra</option>
                             <option>Sin presupuesto</option>
                             <option>No respondió nunca</option>
@@ -1026,13 +1138,22 @@
                     </div>
 
                     <div id="global-date-container" class="mt-3 mb-3 d-none">
-                        <label class="data-label text-warning">Fecha/Hora Próxima Acción</label>
-                        <input type="datetime-local" id="fecha_global" class="form-control form-control-sm">
+                        <label class="data-label text-warning">Próxima Acción (Sugerida)</label>
+                        <input type="datetime-local" id="fecha_global" class="form-control form-control-sm"
+                            onchange="updateSummary()">
                     </div>
 
                     <div class="mb-3">
                         <label class="data-label mb-1">Notas Rápidas</label>
-                        <textarea class="form-control" id="notas_manuales" rows="2" placeholder="Detalle..."></textarea>
+                        <textarea class="form-control" id="notas_manuales" rows="2" placeholder="Detalle importante..."
+                            oninput="updateSummary()"></textarea>
+                    </div>
+
+                    <div id="action-summary" class="summary-box d-none">
+                        <div class="summary-item"><span>Acción:</span> <strong id="sum_action">-</strong></div>
+                        <div class="summary-item"><span>Resultado:</span> <strong id="sum_result">-</strong></div>
+                        <div class="summary-item"><span>Seguimiento:</span> <strong id="sum_date"
+                                class="text-warning">-</strong></div>
                     </div>
 
                     <button type="submit" class="btn btn-primary w-100 btn-save" id="btnMainAction">Guardar
@@ -1185,17 +1306,31 @@
     <div class="modal fade" id="commModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header">
+                <div class="modal-header text-white" id="modalHeader">
                     <h6 class="modal-title fw-bold" id="commTitle">Contactar</h6>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
                         aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div id="commReasons" class="mb-3"></div>
-                    <textarea class="form-control" id="commMessage" rows="6"></textarea>
+                    <ul class="nav nav-tabs nav-tabs-custom" id="commTabs" role="tablist">
+                    </ul>
+
+                    <div id="templateChips" class="templates-container">
+                    </div>
+
+                    <div id="emailSubjectContainer" class="mb-2 d-none">
+                        <input type="text" class="form-control" id="emailSubject" placeholder="Asunto del correo...">
+                    </div>
+
+                    <textarea class="form-control" id="commMessage" rows="6"
+                        placeholder="Selecciona una plantilla o escribe tu mensaje..."></textarea>
                 </div>
-                <div class="modal-footer">
-                    <a href="#" id="btnSendComm" target="_blank" class="btn btn-sm btn-primary">Enviar</a>
+                <div class="modal-footer d-flex justify-content-between">
+                    <small class="text-secondary"><i class="fa-solid fa-pen-fancy me-1"></i> Personaliza antes de
+                        enviar</small>
+                    <a href="#" id="btnSendComm" target="_blank" class="btn btn-sm btn-light fw-bold">
+                        <i class="fa-regular fa-paper-plane me-1"></i> Enviar
+                    </a>
                 </div>
             </div>
         </div>
@@ -1203,100 +1338,195 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // --- DATOS DEL CONTEXTO (SIMULADO) ---
         const leadData = {
             nombre: "{{ lead.nombre }}",
             telefono: "{{ lead.phone }}",
+            email: "{{ lead.email }}",
             propiedad: "{{ lead.datos_propiedad.codigo }}",
             direccion: "{{ lead.datos_propiedad.calle }}",
-            ownerPhone: "{{ lead.datos_propiedad.movil_propietario }}"
+            comuna: "{{ lead.datos_propiedad.comuna }}",
+            precio: "{{ lead.datos_propiedad.precio_uf }}",
+            ownerPhone: "{{ lead.datos_propiedad.movil_propietario }}",
+            ownerName: "{{ lead.datos_propiedad.nombre_propietario }}"
         };
-        const agentName = "Asesor Procasa";
+
+        // --- SISTEMA DE PLANTILLAS CORREGIDO Y EXPANDIDO ---
+        // Se separan estrictamente por "wa" y "email"
+        const commTemplates = {
+            lead: {
+                tabs: [
+                    { id: 'contact', label: 'Contacto' },
+                    { id: 'visit', label: 'Visita' },
+                    { id: 'closing', label: 'Cierre' }
+                ],
+                data: {
+                    contact: [
+                        // WhatsApp
+                        { label: "👋 Saludo Rápido", channel: "wa", text: "Hola [[nombre]], vi tu interés en [[propiedad]]. ¿Te acomoda que te envíe info por aquí?" },
+                        { label: "📹 Video Tour", channel: "wa", text: "[[nombre]], tengo un video del recorrido de la propiedad en [[comuna]]. Dura 1 min. ¿Te lo envío?" },
+                        { label: "🏦 Pregunta Crédito", channel: "wa", text: "Para avanzar rápido [[nombre]], ¿cuentas con crédito hipotecario pre-aprobado?" },
+                        // Email
+                        { label: "Ficha Técnica", channel: "email", subject: "Ficha Propiedad: [[propiedad]]", text: "Estimado/a [[nombre]],\n\nAdjunto la ficha técnica completa de la propiedad ubicada en [[direccion]].\n\nQuedo atento a sus dudas.\nSaludos." },
+                        { label: "Presentación Formal", channel: "email", subject: "Oportunidad en [[comuna]]", text: "Hola [[nombre]],\n\nGracias por su interés. Somos Procasa y queremos invitarlo a conocer esta oportunidad única en [[comuna]].\n\n¿Tiene disponibilidad esta semana?" }
+                    ],
+                    visit: [
+                        // WhatsApp
+                        { label: "📍 Ubicación", channel: "wa", text: "[[nombre]], te envío la ubicación exacta para hoy: [MAPS_LINK]. Nos vemos a las 10:00." },
+                        { label: "⚠️ Confirmar 1h antes", channel: "wa", text: "Hola [[nombre]], voy saliendo a la propiedad. ¿Me confirmas que sigues en pie para la visita?" },
+                        { label: "❓ Feedback", channel: "wa", text: "[[nombre]], ¿qué te pareció la casa? ¿Del 1 al 10 qué nota le pones?" },
+                        // Email
+                        { label: "Confirmación Cita", channel: "email", subject: "Confirmación Visita: [[propiedad]]", text: "Estimado [[nombre]],\n\nPor medio del presente confirmo nuestra visita agendada para la propiedad en [[direccion]].\n\nFavor confirmar recepción." },
+                        { label: "Agradecimiento", channel: "email", subject: "Gracias por su visita", text: "Hola [[nombre]],\n\nFue un gusto mostrarle la propiedad hoy. Quedo atento a sus comentarios o si desea agendar una segunda visita con su familia." }
+                    ],
+                    closing: [
+                        // WhatsApp
+                        { label: "📉 Bajó Precio", channel: "wa", text: "¡Ojo [[nombre]]! La propiedad bajó a [[precio]] UF. Avísame si quieres ofertar ahora." },
+                        { label: "🔥 Urgencia", channel: "wa", text: "[[nombre]], entró otra oferta hoy. Si te interesa de verdad, necesitamos movernos ya." },
+                        // Email
+                        { label: "Instrucciones Oferta", channel: "email", subject: "Proceso de Oferta Formal", text: "Estimado [[nombre]],\n\nPara formalizar su interés en la propiedad [[propiedad]], necesitamos que complete el formulario adjunto y nos envíe su pre-aprobación bancaria.\n\nAtentamente," },
+                        { label: "Borrador Promesa", channel: "email", subject: "Borrador Promesa Compraventa", text: "Estimado/a,\n\nAdjunto borrador de la promesa para su revisión legal. Los puntos clave están destacados en amarillo.\n\nSaludos." }
+                    ]
+                }
+            },
+            owner: {
+                tabs: [
+                    { id: 'active', label: 'Gestión' },
+                    { id: 'report', label: 'Reportes' }
+                ],
+                data: {
+                    active: [
+                        // WhatsApp
+                        { label: "📅 Coordinar", channel: "wa", text: "Hola [[owner_name]], tengo interesado para mañana a las 11AM. ¿Podemos ir?" },
+                        { label: "🔑 Llaves", channel: "wa", text: "Don [[owner_name]], necesito pasar a buscar las llaves para la tasación del banco." },
+                        // Email
+                        { label: "Solicitud Documentos", channel: "email", subject: "Documentación Pendiente", text: "Estimado [[owner_name]],\n\nPara el estudio de títulos requerimos: Certificado de Hipotecas, Escritura y Recepción Final.\n\nFavor enviar a la brevedad." }
+                    ],
+                    report: [
+                        // WhatsApp
+                        { label: "📉 Sugerir Baja", channel: "wa", text: "[[owner_name]], llevamos 3 semanas sin visitas. El mercado está en [[precio]] UF. ¿Evaluamos un ajuste?" },
+                        // Email
+                        { label: "Informe Mensual", channel: "email", subject: "Informe de Gestión: [[propiedad]]", text: "Estimado [[owner_name]],\n\nAdjunto el informe de gestión del mes. Tuvimos 150 visitas web y 3 visitas físicas. El feedback principal es el precio.\n\nSaludos." }
+                    ]
+                }
+            }
+        };
+
+        let currentCommTarget = 'lead';
+        let currentCommChannel = 'wa'; // 'wa' or 'email'
 
         document.getElementById('sidebarToggle').addEventListener('click', function () {
             document.getElementById('sidebar').classList.toggle('collapsed');
             document.getElementById('mainContent').classList.toggle('expanded');
         });
 
-        // --- LÓGICA CRM QUIRÚRGICA ---
+        // --- LÓGICA CRM (Sin cambios mayores, solo integración) ---
         let currentInteraction = null;
+        let currentActionLabel = "";
+        let currentResultLabel = "";
 
-        function setResult(val) {
-            document.getElementById('resultado_gestion').value = val;
+        function updateMainButton(text, type = 'primary') {
             const btn = document.getElementById('btnMainAction');
-            const dateContainer = document.getElementById('global-date-container');
-
-            // Lógica Visual Botón y Fecha Global
-            if (val === 'lead_cerrado') {
-                btn.className = 'btn btn-danger w-100 btn-save';
-                btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Cerrar Definitivamente';
-                dateContainer.classList.add('d-none');
-            } else {
-                btn.className = 'btn btn-primary w-100 btn-save';
-                if (btn.innerText.includes('Cerrar')) btn.innerText = 'Guardar Gestión';
-                dateContainer.classList.remove('d-none');
-            }
+            btn.className = `btn w-100 btn-save btn-${type}`;
+            btn.innerHTML = text;
         }
 
-        function updateModeHeader(text, type = 'normal') {
-            const h = document.getElementById('modeHeader');
-            h.innerHTML = `<span>${text}</span> <i class="fa-solid fa-pen-to-square"></i>`;
-            h.className = `active-mode-header ${type === 'danger' ? 'danger' : (type === 'success' ? 'success' : '')}`;
-            h.classList.remove('d-none');
+        function autoSetDate(daysToAdd) {
+            if (daysToAdd === 0) return;
+            const date = new Date();
+            date.setDate(date.getDate() + daysToAdd);
+            date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+            const dateString = date.toISOString().slice(0, 11) + "10:00";
+            document.getElementById('fecha_global').value = dateString;
+            updateSummary();
+        }
+
+        function setResult(val, btnText = null, btnType = 'primary') {
+            document.getElementById('resultado_gestion').value = val;
+            const dateContainer = document.getElementById('global-date-container');
+            const summaryBox = document.getElementById('action-summary');
+
+            if (val === 'lead_cerrado') {
+                dateContainer.classList.add('d-none');
+                summaryBox.classList.remove('d-none');
+                updateMainButton('<i class="fa-solid fa-archive"></i> Cerrar Definitivamente', 'danger');
+            } else {
+                dateContainer.classList.remove('d-none');
+                if (btnText) updateMainButton(btnText, btnType);
+                if (currentInteraction) summaryBox.classList.remove('d-none');
+            }
+            updateSummary();
+        }
+
+        function setActionMode(mode) {
+            document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active', 'active-prop', 'active-close', 'active-wait'));
+            document.querySelectorAll('.logic-section').forEach(el => el.classList.add('d-none'));
+            document.getElementById('contact-context').classList.add('d-none');
+            document.querySelectorAll('.context-btn').forEach(b => b.classList.remove('active'));
+
+            const btn = document.getElementById('mode_' + mode);
+            if (mode === 'prop') btn.classList.add('active-prop');
+            else if (mode === 'close') btn.classList.add('active-close');
+            else if (mode === 'wait') btn.classList.add('active-wait');
+            else btn.classList.add('active');
+
+            if (mode === 'contact') {
+                document.getElementById('contact-context').classList.remove('d-none');
+                updateMainButton("Seleccione resultado...", "secondary");
+                currentActionLabel = "Contactar Lead";
+            } else if (mode === 'prop') {
+                toggleLogic('propietario');
+                currentActionLabel = "Gestión Propietario";
+            } else if (mode === 'wait') {
+                toggleLogic('espera');
+                currentActionLabel = "Pausar/Espera";
+            } else if (mode === 'close') {
+                toggleLogic('descartado');
+                currentActionLabel = "Cerrar Lead";
+            }
+            updateSummary();
         }
 
         function toggleLogic(type) {
             currentInteraction = type;
+            if (type === 'hable' || type === 'intento') {
+                document.querySelectorAll('.context-btn').forEach(b => b.classList.remove('active'));
+                document.getElementById('ctx_' + type).classList.add('active');
+            }
             document.querySelectorAll('.logic-section').forEach(el => el.classList.add('d-none'));
-
             const radio = document.querySelector(`input[name="interaction_type"][value="${type}"]`);
             if (radio) radio.checked = true;
 
             const activeBlock = document.getElementById('logic-' + type);
             if (activeBlock) activeBlock.classList.remove('d-none');
 
-            // Resetear vista de categorías si volvemos a Hablé
             if (type === 'hable') {
                 document.querySelectorAll('.category-group').forEach(el => el.classList.remove('d-none'));
                 document.querySelectorAll('.sub-logic').forEach(el => el.classList.add('d-none'));
-            }
-
-            // Valores por defecto y header
-            let defaultResult = 'requiere_seguimiento';
-            if (type === 'intento') {
-                defaultResult = 'intento_fallido';
-                updateModeHeader("INTENTO FALLIDO");
+                currentActionLabel = "Hablé con Lead";
+                updateMainButton("Seleccione detalle...", "secondary");
+            } else if (type === 'intento') {
+                setResult('intento_fallido', "Registrar Intento", "primary");
+                autoSetDate(1);
+                currentActionLabel = "Intento Fallido";
             } else if (type === 'espera') {
-                defaultResult = 'lead_pausado';
-                updateModeHeader("LEAD EN ESPERA");
-                document.getElementById('btnMainAction').innerText = "Pausar Lead";
+                setResult('lead_pausado', "Pausar Lead", "info");
+                autoSetDate(7);
             } else if (type === 'descartado') {
-                defaultResult = 'lead_cerrado';
-                updateModeHeader("CERRAR LEAD", 'danger');
+                setResult('lead_cerrado');
             } else if (type === 'propietario') {
-                updateModeHeader("GESTIÓN CON PROPIETARIO");
-                document.getElementById('btnMainAction').innerText = "Guardar Gestión Propietario";
-            } else if (type === 'hable') {
-                defaultResult = '';
-                updateModeHeader("REGISTRANDO CONVERSACIÓN", 'success');
-                document.getElementById('btnMainAction').innerText = "Guardar Gestión";
+                updateMainButton("Guardar Gestión Propietario", "warning");
             }
-
-            setResult(defaultResult);
+            updateSummary();
         }
 
-        function toggleSubOption(targetId, btnText, resultValue) {
-            setResult(resultValue);
-
-            // CAMBIO 1: OCULTAR OTRAS CATEGORÍAS (FOCUS MODE)
-            // Primero ocultamos todas las sub-opciones
+        function toggleSubOption(targetId, btnText, resultValue, btnType = 'primary', daysToAdd = 0) {
+            setResult(resultValue, btnText, btnType);
+            if (daysToAdd > 0) autoSetDate(daysToAdd);
             document.querySelectorAll('.sub-logic').forEach(el => el.classList.add('d-none'));
-
-            // Mostramos la sub-opción seleccionada
             const target = document.getElementById(targetId);
             if (target) {
                 target.classList.remove('d-none');
-
-                // Encontramos el grupo padre y ocultamos los hermanos
                 const myGroup = target.closest('.category-group');
                 if (myGroup) {
                     document.querySelectorAll('.category-group').forEach(group => {
@@ -1305,79 +1535,204 @@
                     });
                 }
             }
-
-            if (btnText) document.getElementById('btnMainAction').innerText = btnText;
+            const radioLabel = document.querySelector(`label[for="${event.target.id}"]`).innerText;
+            currentResultLabel = radioLabel;
+            updateSummary();
         }
 
-        function quickAction(action) {
-            if (action === 'visita') {
-                toggleLogic('hable');
-                document.getElementById('rd_visita').checked = true;
-                toggleSubOption('sub_visita', 'Confirmar Visita', 'visita_agendada');
-                updateModeHeader("AGENDAR VISITA", 'success');
-            } else if (action === 'nocontesto') {
-                toggleLogic('intento');
-                document.getElementById('rd_buzon').checked = true;
-            } else if (action === 'info') {
-                toggleLogic('hable');
-                document.getElementById('rd_consulta').checked = true;
-                toggleSubOption('sub_consulta', 'Registrar Envío Info', 'requiere_seguimiento');
-                updateModeHeader("ENVIAR INFORMACIÓN", 'success');
-                document.getElementById('notas_manuales').value = "Se envió ficha técnica.";
-            } else if (action === 'cerrar') {
-                toggleLogic('descartado');
+        function updateSummary() {
+            document.getElementById('sum_action').innerText = currentActionLabel || '-';
+            let resText = currentResultLabel;
+            if (currentInteraction === 'descartado') {
+                const reason = document.getElementById('close_reason').value;
+                resText = "Cierre: " + reason;
+            } else if (currentInteraction === 'intento') {
+                const checked = document.querySelector('input[name="intento_res"]:checked');
+                if (checked) resText = document.querySelector(`label[for="${checked.id}"]`).innerText;
+            }
+            document.getElementById('sum_result').innerText = resText || '-';
+            const dateVal = document.getElementById('fecha_global').value;
+            if (dateVal) {
+                const dateObj = new Date(dateVal);
+                document.getElementById('sum_date').innerText = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } else {
+                document.getElementById('sum_date').innerText = 'Pendiente';
             }
         }
 
         async function saveGestion(e) {
             e.preventDefault();
-            const resultVal = document.getElementById('resultado_gestion').value;
-
-            // Validación básica
-            if (!currentInteraction) { alert("Selecciona una acción"); return; }
-            if (currentInteraction === 'hable' && resultVal === '') { alert("Selecciona el resultado de la conversación."); return; }
-
-            // CAMBIO 3: VALIDACIÓN FECHA GLOBAL
-            const fechaGlobal = document.getElementById('fecha_global');
-            if (resultVal !== 'lead_cerrado') {
-                if (!fechaGlobal.value) {
-                    alert("Debes definir la próxima acción (Fecha/Hora)");
-                    fechaGlobal.focus();
-                    return;
-                }
-            }
-
-            // CAMBIO 4: NOTAS OBLIGATORIAS AL CERRAR
-            const notas = document.getElementById('notas_manuales').value.trim();
-            if (resultVal === 'lead_cerrado' && !notas) {
-                alert("Debes dejar una nota explicativa para cerrar el lead.");
-                document.getElementById('notas_manuales').focus();
-                return;
-            }
-
             const btn = document.querySelector('.btn-save');
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...';
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+            btn.disabled = true;
             setTimeout(() => {
-                btn.classList.remove('btn-primary', 'btn-danger');
+                btn.classList.remove('btn-primary', 'btn-danger', 'btn-warning');
                 btn.classList.add('btn-success');
-                btn.innerHTML = '¡Guardado!';
+                btn.innerHTML = '¡Gestión Exitosa!';
                 setTimeout(() => window.location.reload(), 800);
             }, 800);
         }
 
-        // --- COMM SYSTEM (Sin cambios) ---
-        const commTemplates = {
-            lead: { whatsapp: [{ label: "Primer Contacto", text: "Hola..." }], email: [{ label: "Ficha", text: "Adjunto..." }] },
-            owner: { whatsapp: [{ label: "Visita", text: "Hola..." }] }
-        };
-        // ... Resto de funciones openCommPanel, updateLink, Notes igual que antes ...
-        function openCommPanel(target, type) {
-            if (type === 'phone') { window.location.href = `tel:${target === 'lead' ? leadData.telefono : leadData.ownerPhone}`; return; }
-            const modal = new bootstrap.Modal(document.getElementById('commModal'));
-            document.getElementById('commReasons').innerHTML = ""; // Simplificado para demo
-            modal.show();
+        // --- SISTEMA DE COMUNICACIÓN CORREGIDO ---
+
+        function openCommPanel(target, defaultChannel = 'wa') {
+            currentCommTarget = target;
+            currentCommChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel; // Normalize
+
+            // 1. Si es llamada, directo
+            if (currentCommChannel === 'phone') {
+                window.location.href = `tel:${target === 'lead' ? leadData.telefono : leadData.ownerPhone}`;
+                return;
+            }
+
+            // 2. Configurar Diseño según Canal (Verde WA / Azul Email)
+            const header = document.getElementById('modalHeader');
+            const title = document.getElementById('commTitle');
+            const targetName = target === 'lead' ? leadData.nombre : leadData.ownerName;
+
+            header.className = `modal-header text-white theme-${currentCommChannel}`; // Clases CSS dinámicas
+
+            const icon = currentCommChannel === 'wa' ? '<i class="fa-brands fa-whatsapp me-2"></i>' : '<i class="fa-solid fa-envelope me-2"></i>';
+            const actionText = currentCommChannel === 'wa' ? 'WhatsApp a' : 'Email para';
+            title.innerHTML = `${icon} ${actionText}: ${targetName}`;
+
+            // 3. Manejar campo Asunto (Subject)
+            const subjectContainer = document.getElementById('emailSubjectContainer');
+            if (currentCommChannel === 'email') {
+                subjectContainer.classList.remove('d-none');
+            } else {
+                subjectContainer.classList.add('d-none');
+            }
+            document.getElementById('emailSubject').value = ""; // Limpiar siempre
+
+            // 4. Renderizar Tabs
+            renderCommTabs(target);
+
+            // 5. Cargar Templates (filtrados por canal)
+            const firstTabId = commTemplates[target].tabs[0].id;
+            loadTemplates(target, firstTabId);
+
+            // 6. Limpiar y Mostrar
+            document.getElementById('commMessage').value = "";
+            new bootstrap.Modal(document.getElementById('commModal')).show();
+            updateSendLink(target);
         }
 
+        function renderCommTabs(target) {
+            const tabsContainer = document.getElementById('commTabs');
+            tabsContainer.innerHTML = "";
+            const activeColor = currentCommChannel === 'wa' ? '#25D366' : '#3b82f6'; // Color borde activo
+
+            commTemplates[target].tabs.forEach((tab, index) => {
+                const li = document.createElement('li');
+                li.className = 'nav-item';
+                // El estilo inline del border-color se aplica dinámicamente
+                const activeStyle = index === 0 ? `style="border-bottom-color: ${activeColor} !important"` : '';
+
+                li.innerHTML = `<button class="nav-link ${index === 0 ? 'active' : ''}" ${activeStyle} onclick="loadTemplates('${target}', '${tab.id}', this)">${tab.label}</button>`;
+                tabsContainer.appendChild(li);
+            });
+        }
+
+        function loadTemplates(target, category, btnElement = null) {
+            // UI Update Tabs
+            if (btnElement) {
+                document.querySelectorAll('.nav-tabs-custom .nav-link').forEach(el => {
+                    el.classList.remove('active');
+                    el.style.borderBottomColor = 'transparent';
+                });
+                btnElement.classList.add('active');
+                // Aplicar color de borde al activo
+                const activeColor = currentCommChannel === 'wa' ? '#25D366' : '#3b82f6';
+                btnElement.style.borderBottomColor = activeColor;
+            }
+
+            const container = document.getElementById('templateChips');
+            container.innerHTML = "";
+
+            const allTemplates = commTemplates[target].data[category] || [];
+
+            // --- FILTRO CRÍTICO ---
+            // Solo mostrar templates que coincidan con el canal actual
+            const filteredTemplates = allTemplates.filter(t => t.channel === currentCommChannel);
+
+            if (filteredTemplates.length === 0) {
+                container.innerHTML = `<span class="text-secondary small ms-2">No hay plantillas predefinidas para este canal en esta etapa.</span>`;
+                return;
+            }
+
+            filteredTemplates.forEach(tpl => {
+                const chip = document.createElement('div');
+                const colorClass = currentCommChannel === 'wa' ? 'chip-wa' : 'chip-email';
+                const icon = currentCommChannel === 'wa' ? '<i class="fa-brands fa-whatsapp"></i>' : '<i class="fa-regular fa-envelope"></i>';
+
+                chip.className = `template-chip ${colorClass}`;
+                chip.innerHTML = `${icon} ${tpl.label}`;
+                // Pasamos el subject si existe
+                chip.onclick = () => selectTemplate(tpl.text, tpl.subject || "");
+                container.appendChild(chip);
+            });
+        }
+
+        function selectTemplate(text, subject = "") {
+            // Inyectar variables
+            let processedText = text
+                .replace(/\[\[nombre\]\]/g, leadData.nombre.split(' ')[0])
+                .replace(/\[\[owner_name\]\]/g, leadData.ownerName.split(' ')[0])
+                .replace(/\[\[propiedad\]\]/g, leadData.propiedad)
+                .replace(/\[\[direccion\]\]/g, leadData.direccion)
+                .replace(/\[\[comuna\]\]/g, leadData.comuna)
+                .replace(/\[\[precio\]\]/g, leadData.precio);
+
+            document.getElementById('commMessage').value = processedText;
+
+            // Si es email y tiene asunto predefinido
+            if (currentCommChannel === 'email' && subject) {
+                let processedSubject = subject
+                    .replace(/\[\[propiedad\]\]/g, leadData.propiedad)
+                    .replace(/\[\[comuna\]\]/g, leadData.comuna);
+                document.getElementById('emailSubject').value = processedSubject;
+            }
+        }
+
+        function updateSendLink(target) {
+            const btn = document.getElementById('btnSendComm');
+            const msgBody = document.getElementById('commMessage');
+            const phone = target === 'lead' ? leadData.telefono : leadData.ownerPhone;
+            const email = target === 'lead' ? leadData.email : "propietario@email.com";
+
+            // Cambiar icono botón
+            if (currentCommChannel === 'wa') {
+                btn.innerHTML = '<i class="fa-brands fa-whatsapp me-1"></i> Abrir WhatsApp';
+                btn.classList.remove('text-primary');
+                btn.classList.add('text-success'); // Texto verde
+            } else {
+                btn.innerHTML = '<i class="fa-solid fa-envelope me-1"></i> Abrir Correo';
+                btn.classList.remove('text-success');
+                btn.classList.add('text-primary'); // Texto azul
+            }
+
+            btn.onclick = function (e) {
+                e.preventDefault();
+                const finalMsg = msgBody.value;
+                if (!finalMsg) return;
+
+                if (currentCommChannel === 'wa') {
+                    const cleanPhone = phone.replace(/\D/g, '');
+                    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}`;
+                    window.open(url, '_blank');
+                } else {
+                    const subject = document.getElementById('emailSubject').value || "Información Propiedad";
+                    const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(finalMsg)}`;
+                    window.open(url, '_blank');
+                }
+
+                // Opcional: Cerrar modal
+                // bootstrap.Modal.getInstance(document.getElementById('commModal')).hide();
+            };
+        }
+
+        // --- NOTES SYSTEM ---
         let curNoteColor = 'yellow';
         function selColor(el, color) {
             document.querySelectorAll('.color-opt').forEach(d => d.classList.remove('selected'));

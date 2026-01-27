@@ -149,7 +149,7 @@ async def login_post(request: Request, username: str = Form(...), password: str 
             token = create_access_token({"sub": username})
             
             # REDIRECCIÓN: Asegúrate de que apunte a donde quieres ir por defecto
-            response = RedirectResponse("/leads-dashboard", status_code=303) 
+            response = RedirectResponse("/crm", status_code=303) 
             
             # COOKIE: secure=False para que funcione en localhost (sin HTTPS)
             response.set_cookie(

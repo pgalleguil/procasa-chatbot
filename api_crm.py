@@ -91,9 +91,6 @@ def process_chat_timeline(messages):
     
     for msg in messages:
         role = msg.get("role", "user")
-        # CLASES CSS PARA DIFERENCIAR
-        # 'chat-bot' = Izquierda/Gris (o estilo bot)
-        # 'user-message' = Derecha/Azul (o estilo usuario)
         css_class = "chat-bot" if role in ["assistant", "system"] else "user-message"
         
         processed.append({
@@ -129,22 +126,24 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
 # --- 1. LISTA DE LEADS ---
 def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad"):
     db = get_db()
-    query = {}
+    query_parts = []
     
-    if filtro_estado: query["crm_estado"] = filtro_estado
+    if filtro_estado: 
+        query_parts.append({"crm_estado": filtro_estado})
 
     if busqueda and busqueda.strip():
         term = busqueda.strip()
         regex_term = re.escape(term)
-        clean_phone = re.sub(r'\D', '', term) # Solo números
-        query["$and"] = [
-            query,
-            {"$or": [
-                {"prospecto.codigo": {"$regex": regex_term, "$options": "i"}},
-                {"prospecto.nombre": {"$regex": regex_term, "$options": "i"}},
-                {"phone": {"$regex": clean_phone}}
-            ]}
-        ]
+        clean_phone = re.sub(r'\D', '', term)
+        
+        query_parts.append({"$or": [
+            {"prospecto.codigo": {"$regex": regex_term, "$options": "i"}},
+            {"prospecto.nombre": {"$regex": regex_term, "$options": "i"}},
+            {"phone": {"$regex": clean_phone}}
+        ]})
+    
+    # Corregido: Construimos la query sin autorreferencia circular
+    query = {"$and": query_parts} if query_parts else {}
     
     leads_cursor = db["leads"].find(query).limit(100)
     
@@ -157,16 +156,10 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         kpi_counts["total"] += 1
         if estado in kpi_counts: kpi_counts[estado] += 1
         
-        # Datos básicos
         prospecto = lead.get("prospecto", {})
-        
-        # 1. Detectar código
         codigo = detect_property_code(lead)
-        
-        # 2. Url simple (sin consulta pesada a obelix para la lista, solo código)
         url_prop = f"https://www.procasa.cl/propiedad/{codigo}" if codigo else "#"
         
-        # 3. Tiempo real
         last_ts = datetime.min
         msgs = lead.get("messages", [])
         last_msg_txt = "Sin mensajes"
@@ -177,12 +170,11 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             txt = last_msg.get("content", "")
             last_msg_txt = (txt[:45] + '...') if len(txt) > 45 else txt
 
-        # 4. Formato teléfono (Evitar doble +)
         raw_phone = lead.get("phone", "").replace("+", "").strip()
         
         leads_procesados.append({
-            "phone": raw_phone, # ID limpio
-            "whatsapp_display": f"+{raw_phone}", # Visual
+            "phone": raw_phone,
+            "whatsapp_display": f"+{raw_phone}",
             "nombre": prospecto.get("nombre") or "Desconocido",
             "estado": estado,
             "estado_badge": estado_labels.get(estado, estado.capitalize()),
@@ -195,28 +187,20 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             "ultima_accion": last_msg_txt
         })
         
-    # Ordenar por fecha reciente (timestamp real)
     leads_procesados.sort(key=lambda x: x['real_timestamp'], reverse=True)
-
     return leads_procesados, kpi_counts
 
-# --- 2. DETALLE DEL LEAD (CON IMPORTACIÓN DE UNIVERSO_OBELIX) ---
+# --- 2. DETALLE DEL LEAD ---
 def get_lead_detail_data(phone):
     db = get_db()
     phone_clean = phone.replace(" ", "").replace("+", "").strip()
     
-    # A. Buscar Lead
     lead = db["leads"].find_one({"phone": {"$regex": phone_clean}})
     if not lead: return None
     
-    # B. Buscar Código de Propiedad
     codigo = detect_property_code(lead)
-    
-    # C. IMPORTAR DATOS REALES DE UNIVERSO_OBELIX
-    # Aquí es donde ocurre la magia que faltaba
     datos_propiedad = get_real_property_data(db, codigo)
     
-    # Si no hay datos en Obelix, usar fallback (relleno visual)
     if not datos_propiedad:
         p = lead.get("prospecto", {})
         datos_propiedad = {
@@ -229,7 +213,6 @@ def get_lead_detail_data(phone):
             "url": "#"
         }
 
-    # D. Historial CRM
     new_events_cursor = db["crm_events"].find({
         "phone": phone_clean, 
         "type": {"$in": ["GESTION_LOG", "STATUS_CHANGE", "CALL_OUT", "WHATSAPP_OUT"]}
@@ -245,14 +228,12 @@ def get_lead_detail_data(phone):
             "notes": meta.get("notes", "")
         })
         
-    # E. Chat Timeline con Clases CSS correctas
     timeline = process_chat_timeline(lead.get("messages", []))
-
     prospecto = lead.get("prospecto", {})
 
     return {
         "phone": lead.get("phone"),
-        "timeline": timeline, # <--- Ahora tiene clases chat-bot / user-message
+        "timeline": timeline,
         "nombre": prospecto.get("nombre", "Desconocido"),
         "email": prospecto.get("email", "No registrado"),
         "rut": prospecto.get("rut", "No registrado"),
@@ -261,7 +242,7 @@ def get_lead_detail_data(phone):
         "crm_estado": lead.get("crm_estado", "nuevo"),
         "crm_history": formatted_new_history, 
         "sticky_notes": lead.get("sticky_notes", []),
-        "datos_propiedad": datos_propiedad # <--- Datos reales de Obelix
+        "datos_propiedad": datos_propiedad
     }
 
 # --- 3. ACTUALIZAR LEAD ---

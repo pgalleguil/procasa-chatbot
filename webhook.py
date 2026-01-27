@@ -26,7 +26,7 @@ from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 #from api_leads_intelligence import get_leads_intelligence_data
 from api_leads_intelligence import get_leads_executive_report
 from fastapi import Cookie
-from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data
+from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes
 
 
 # ========================= USAMOS TU config.py REAL =========================
@@ -255,6 +255,64 @@ async def api_update_crm(request: Request):
     if update_lead_crm_data(phone, data):
         return {"status": "ok"}
     return {"status": "error"}  
+
+@app.post("/api/crm/log_action")
+async def api_crm_log_action(request: Request):
+    """
+    Endpoint para registrar interacciones menores (clics en llamar, ver detalles)
+    directamente en la colección de analítica 'crm_events'.
+    """
+    try:
+        data = await request.json()
+        phone = data.get("phone")
+        payload = data.get("data", {})
+        
+        # Guardar en Colección de Eventos
+        log_crm_event(
+            phone=phone, 
+            event_type=payload.get("type"), # Ej: CLICK_CALL, VIEW_LEAD
+            meta_data=payload.get("meta")
+        )
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Error logging CRM action: {e}")
+        return {"status": "error"}
+
+@app.post("/api/crm/update")
+async def api_crm_update_lead(request: Request):
+    """
+    Endpoint principal del formulario de gestión.
+    Distribuye los datos a Leads, Eventos y Tareas.
+    """
+    try:
+        data = await request.json()
+        phone = data.get("phone")
+        if not phone:
+            raise HTTPException(status_code=400, detail="Falta teléfono")
+
+        success = update_lead_crm_data(phone, data)
+        if success:
+            return {"status": "ok"}
+        else:
+            raise HTTPException(status_code=500, detail="No se pudo actualizar")
+    except Exception as e:
+        logger.error(f"CRM Update Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/crm/notes")
+async def api_crm_notes(request: Request):
+    try:
+        data = await request.json()
+        action = data.get("action", "add")
+        phone = data.get("phone")
+        note_data = data.get("note", {})
+        
+        result = manage_crm_notes(phone, note_data, action)
+        if result:
+            return {"status": "ok", "note": result}
+        return {"status": "error"}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 
 # ========================= WHATSAPP DEBOUNCE (100% ORIGINAL) =========================
 pending_tasks: Dict[str, Any] = {}

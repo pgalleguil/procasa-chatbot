@@ -269,7 +269,7 @@
             box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
         }
 
-        /* --- LEAD SCORING (EXPERT FEATURE) --- */
+        /* --- LEAD SCORING --- */
         .scoring-group {
             display: flex;
             gap: 10px;
@@ -303,7 +303,6 @@
             background: rgba(255, 255, 255, 0.05);
         }
 
-        /* Scoring Colors */
         .score-radio[value="A"]:checked+.score-label {
             background: rgba(239, 68, 68, 0.2);
             color: #fca5a5;
@@ -397,7 +396,6 @@
             }
         }
 
-        /* Labels Styles */
         .form-check-label {
             font-size: 0.85rem;
             cursor: pointer;
@@ -532,7 +530,7 @@
             text-align: right;
         }
 
-        /* Timeline & Notes Styles (Preserved) */
+        /* Timeline & Notes Styles */
         .timeline-box {
             position: relative;
             padding-left: 10px;
@@ -592,7 +590,7 @@
             margin-top: 15px;
         }
 
-        /* --- NUEVO DISEÑO SISTEMA DE COMUNICACIÓN --- */
+        /* --- MODAL COMUNICACIÓN --- */
         #commModal .modal-content {
             background-color: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -622,7 +620,6 @@
             background: rgba(0, 0, 0, 0.1);
         }
 
-        /* New Tabs Design */
         .comm-stage-tabs {
             display: flex;
             gap: 10px;
@@ -654,7 +651,6 @@
             color: #fff;
         }
 
-        /* Template Cards List */
         .templates-list {
             display: flex;
             flex-direction: column;
@@ -930,7 +926,8 @@
                             </div>
                             <div id="sub_compara" class="sub-logic d-none">
                                 <label class="data-label">Plazo/Motivo:</label>
-                                <select class="form-select form-select-sm mb-2" onchange="updateSummary()">
+                                <select class="form-select form-select-sm mb-2" id="sel_compara"
+                                    onchange="updateSummary()">
                                     <option>Comparando precios</option>
                                     <option>Comparando sectores</option>
                                     <option>Sin urgencia</option>
@@ -945,7 +942,8 @@
                             </div>
                             <div id="sub_objecion" class="sub-logic d-none">
                                 <label class="data-label">Motivo:</label>
-                                <select class="form-select form-select-sm mb-2" onchange="updateSummary()">
+                                <select class="form-select form-select-sm mb-2" id="sel_objecion"
+                                    onchange="updateSummary()">
                                     <option>Pie insuficiente</option>
                                     <option>Dividendo alto</option>
                                     <option>Precio alto</option>
@@ -959,7 +957,8 @@
                                     Financiamiento</label>
                             </div>
                             <div id="sub_finan" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2" onchange="updateSummary()">
+                                <select class="form-select form-select-sm mb-2" id="sel_finan"
+                                    onchange="updateSummary()">
                                     <option>En evaluación</option>
                                     <option>Preaprobado</option>
                                 </select>
@@ -993,7 +992,7 @@
                             <div id="sub_oferta" class="sub-logic d-none">
                                 <label class="data-label">Monto:</label>
                                 <input type="number" class="form-control form-control-sm mb-2" placeholder="Monto"
-                                    onchange="updateSummary()">
+                                    id="input_monto_oferta" onchange="updateSummary()">
                                 <div class="form-check mb-2"><input class="form-check-input" type="checkbox"
                                         id="chk_garantia"><label class="form-check-label"
                                         for="chk_garantia">Garantía/Reserva</label></div>
@@ -1008,7 +1007,8 @@
                                 <label class="form-check-label label-low-value" for="rd_indeciso">Indeciso</label>
                             </div>
                             <div id="sub_indeciso" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2" onchange="updateSummary()">
+                                <select class="form-select form-select-sm mb-2" id="sel_indeciso"
+                                    onchange="updateSummary()">
                                     <option>Espera tercero</option>
                                     <option>Miedo error</option>
                                 </select>
@@ -1023,7 +1023,8 @@
                                 <label class="form-check-label label-low-value" for="rd_nogusta">No le gustó</label>
                             </div>
                             <div id="sub_nogusta" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2" onchange="updateSummary()">
+                                <select class="form-select form-select-sm mb-2" id="sel_nogusta"
+                                    onchange="updateSummary()">
                                     <option>Precio</option>
                                     <option>Ubicación</option>
                                     <option>Estado</option>
@@ -1040,7 +1041,8 @@
                                     Temporalmente</label>
                             </div>
                             <div id="sub_desiste" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2" onchange="updateSummary()">
+                                <select class="form-select form-select-sm mb-2" id="sel_desiste"
+                                    onchange="updateSummary()">
                                     <option>Cambio planes</option>
                                     <option>Problema $</option>
                                 </select>
@@ -1077,14 +1079,14 @@
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
                                     <label class="data-label">Canal:</label>
-                                    <select class="form-select form-select-sm">
+                                    <select class="form-select form-select-sm" id="intento_canal">
                                         <option>Llamada</option>
                                         <option>WhatsApp</option>
                                     </select>
                                 </div>
                                 <div class="col-6">
                                     <label class="data-label">Intento #:</label>
-                                    <select class="form-select form-select-sm">
+                                    <select class="form-select form-select-sm" id="intento_num">
                                         <option>1</option>
                                         <option>2</option>
                                     </select>
@@ -1112,7 +1114,7 @@
                             <label class="form-check-label text-white" for="rd_prop_obj">Objeciones / Precio</label>
                         </div>
                         <div id="sub_prop_obj" class="sub-logic d-none">
-                            <select class="form-select form-select-sm mb-2">
+                            <select class="form-select form-select-sm mb-2" id="sel_prop_obj">
                                 <option>No baja precio</option>
                                 <option>Desconfía</option>
                             </select>
@@ -1124,7 +1126,7 @@
                             <label class="form-check-label text-secondary" for="rd_prop_nd">No Disponible</label>
                         </div>
                         <div id="sub_prop_nd" class="sub-logic d-none">
-                            <select class="form-select form-select-sm mb-2">
+                            <select class="form-select form-select-sm mb-2" id="sel_prop_nd">
                                 <option>Vendida/Arrendada</option>
                                 <option>Suspendida</option>
                             </select>
@@ -1133,7 +1135,7 @@
 
                     <div id="logic-espera" class="logic-section d-none">
                         <label class="data-label mb-2 text-white">Motivo de Pausa/Espera:</label>
-                        <select class="form-select form-select-sm mb-3" onchange="autoSetDate(15)">
+                        <select class="form-select form-select-sm mb-3" id="sel_espera" onchange="autoSetDate(15)">
                             <option>Cliente de viaje</option>
                             <option>Cliente enfermo</option>
                             <option>Esperando pie / dinero</option>
@@ -1178,21 +1180,23 @@
                 </form>
 
                 <button class="btn-expand-timeline" id="btnExpandTL" type="button" data-bs-toggle="collapse"
-                    data-bs-target="#timelineContent" aria-expanded="false">
+                    data-bs-target="#timelineContent" aria-expanded="false" onclick="logAction('TOGGLE_TIMELINE')">
                     Ver Historial <i class="fa-solid fa-chevron-down ms-1"></i>
                 </button>
 
                 <div class="collapse mt-3" id="timelineContent">
                     <div class="timeline-box" id="timelineBox">
                         <div class="timeline-line"></div>
+                        {% for h in lead.crm_history|reverse %}
                         <div class="tl-item">
                             <div class="tl-icon success"><i class="fa-solid fa-check"></i></div>
                             <div class="tl-content">
-                                <span class="tl-date">Hace 2d</span>
-                                <div class="tl-title">Visita Realizada</div>
-                                <div class="tl-body">Cliente asistió. Le gustó la cocina.</div>
+                                <span class="tl-date">{{ h.timestamp.strftime('%d/%m %H:%M') }}</span>
+                                <div class="tl-title">{{ h.user_action or 'Acción CRM' }}</div>
+                                <div class="tl-body">{{ h.notes or '' }} ({{ h.result }})</div>
                             </div>
                         </div>
+                        {% endfor %}
                     </div>
                 </div>
 
@@ -1229,7 +1233,8 @@
 
                 <div class="data-row"><span class="data-label">Teléfono</span><span class="data-value">{{ lead.phone
                         }}</span></div>
-                <a class="toggler-link" data-bs-toggle="collapse" href="#clientDetails" role="button">
+                <a class="toggler-link" data-bs-toggle="collapse" href="#clientDetails" role="button"
+                    onclick="logAction('TOGGLE_LEAD_DETAILS')">
                     <span>Ver más detalles</span> <i class="fa-solid fa-chevron-down"></i>
                 </a>
                 <div class="collapse mt-3 border-top border-secondary pt-2" id="clientDetails">
@@ -1262,7 +1267,8 @@
                 <div class="data-row"><span class="data-label">Móvil</span><span class="data-value">{{
                         lead.datos_propiedad.movil_propietario }}</span></div>
 
-                <a class="toggler-link text-warning" data-bs-toggle="collapse" href="#propDetails" role="button">
+                <a class="toggler-link text-warning" data-bs-toggle="collapse" href="#propDetails" role="button"
+                    onclick="logAction('TOGGLE_PROP_DETAILS')">
                     <span>Ver datos Propiedad</span> <i class="fa-solid fa-chevron-down"></i>
                 </a>
 
@@ -1313,13 +1319,21 @@
                             <button class="btn btn-sm btn-secondary" onclick="addNoteCard()">Agregar</button>
                         </div>
                     </div>
-                    <div class="notes-grid" id="stickyNotesContainer"></div>
+                    <div class="notes-grid" id="stickyNotesContainer">
+                        {% for note in lead.sticky_notes %}
+                        <div class="sticky-note note-{{ note.color }}" data-id="{{ note.id }}" data-ts="">
+                            <button class="btn-del-note" onclick="deleteNote(this, '{{ note.id }}')"><i
+                                    class="fa-solid fa-xmark"></i></button>
+                            <span class="sticky-date">{{ note.created_at_str }}</span>
+                            {{ note.content }}
+                        </div>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- MODAL DE COMUNICACIÓN (REDISEÑADO) -->
     <div class="modal fade" id="commModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -1329,21 +1343,14 @@
                         aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <!-- Nuevas Pestañas de Etapa -->
                     <div class="comm-stage-tabs" id="commTabs">
-                        <!-- JS generará esto -->
                     </div>
-
-                    <!-- Lista de Tarjetas de Plantilla -->
                     <div id="templateList" class="templates-list">
-                        <!-- JS generará esto -->
                     </div>
-
                     <div id="emailSubjectContainer" class="mb-2 d-none">
                         <input type="text" class="form-control form-control-sm" id="emailSubject"
                             placeholder="Asunto del correo...">
                     </div>
-
                     <textarea class="form-control" id="commMessage" rows="5"
                         placeholder="El mensaje aparecerá aquí para editar..."></textarea>
                 </div>
@@ -1360,6 +1367,39 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // --- LOGGING & ANALYTICS ---
+        const startTime = Date.now();
+        const currentPhone = "{{ lead.phone }}";
+
+        // Función centralizada para enviar logs al backend
+        async function logAction(type, meta = {}, target = 'system') {
+            try {
+                const payload = {
+                    phone: currentPhone,
+                    data: {
+                        type: type,
+                        target: target,
+                        meta: meta
+                    }
+                };
+                // Fire and forget (no esperamos respuesta para no bloquear UI)
+                fetch('/api/crm/log_action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            } catch (e) { console.error("Error logging", e); }
+        }
+
+        // Registrar salida de página con duración
+        window.addEventListener('beforeunload', function () {
+            const duration = (Date.now() - startTime) / 1000;
+            logAction('PAGE_EXIT', { duration_seconds: duration });
+        });
+
+        // Registrar entrada
+        logAction('PAGE_VIEW', { timestamp: new Date().toISOString() });
+
         // --- DATOS DEL CONTEXTO ---
         const leadData = {
             nombre: "{{ lead.nombre }}",
@@ -1373,7 +1413,7 @@
             ownerName: "{{ lead.datos_propiedad.nombre_propietario }}"
         };
 
-        // --- SISTEMA DE COMUNICACIÓN MEJORADO (ESTRICTAMENTE LEAD MANAGEMENT) ---
+        // --- SISTEMA DE COMUNICACIÓN MEJORADO ---
         const commTemplates = {
             lead: {
                 tabs: [
@@ -1384,31 +1424,23 @@
                 ],
                 data: {
                     start: [
-                        // WhatsApp
                         { label: "👋 Saludo Nuevo Lead", channel: "wa", text: "Hola [[nombre]], soy de Procasa. Recibí tu consulta por la propiedad en [[comuna]]. ¿Tienes un minuto para conversar?" },
                         { label: "📞 No Contestó", channel: "wa", text: "Hola [[nombre]], intenté llamarte recién. Te escribo para coordinar una llamada breve sobre la propiedad [[propiedad]]. Quedo atento." },
-                        // Email
                         { label: "Contacto Inicial", channel: "email", subject: "Contacto Procasa: Propiedad [[propiedad]]", text: "Estimado/a [[nombre]],\n\nGracias por su interés en la propiedad ubicada en [[direccion]].\n\nMe gustaría contactarlo brevemente para entender mejor sus necesidades y coordinar una visita.\n\nAtentamente," }
                     ],
                     follow: [
-                        // WhatsApp
                         { label: "👀 ¿Sigues buscando?", channel: "wa", text: "Hola [[nombre]], ¿lograste revisar la información que te envié? Avísame para ver si avanzamos." },
                         { label: "📅 Coordinar Llamada", channel: "wa", text: "[[nombre]], ¿te acomoda que te llame hoy tipo 18:00 para resolver dudas?" },
-                        // Email
                         { label: "Seguimiento Información", channel: "email", subject: "Seguimiento: [[propiedad]]", text: "Hola [[nombre]],\n\nLe escribo para saber si tuvo oportunidad de revisar la ficha enviada. Quedo atento a cualquier consulta adicional.\n\nSaludos." }
                     ],
                     visit: [
-                        // WhatsApp
                         { label: "📍 Ubicación Visita", channel: "wa", text: "Hola [[nombre]], te comparto la ubicación para la visita de hoy: [PEGAR_MAPS]. Nos vemos a las 10:00." },
                         { label: "⚠️ Confirmar Visita", channel: "wa", text: "Estimado [[nombre]], voy saliendo a la propiedad. ¿Me confirmas que mantenemos la visita a la hora acordada?" },
-                        // Email
                         { label: "Confirmación Visita", channel: "email", subject: "Agenda Visita: [[propiedad]]", text: "Estimado [[nombre]],\n\nConfirmo nuestra visita agendada para el día [DIA] a las [HORA].\nDirección: [[direccion]], [[comuna]].\n\nNos vemos allí." }
                     ],
                     closing: [
-                        // WhatsApp
                         { label: "📝 Solicitar Documentos", channel: "wa", text: "[[nombre]], para formalizar la oferta necesito que me envíes tu pre-aprobación bancaria por aquí o al correo." },
                         { label: "🤝 Cierre", channel: "wa", text: "Hola [[nombre]], el propietario aceptó la propuesta. Te llamo en 5 minutos para explicarte los pasos a seguir." },
-                        // Email
                         { label: "Solicitud Antecedentes", channel: "email", subject: "Documentación Requerida para Oferta", text: "Estimado [[nombre]],\n\nPara proceder con la oferta formal por la propiedad [[propiedad]], necesitamos los siguientes documentos:\n\n1. Pre-aprobación\n2. Cédula Identidad\n\nQuedo atento." }
                     ]
                 }
@@ -1420,17 +1452,13 @@
                 ],
                 data: {
                     coord: [
-                        // WhatsApp
                         { label: "🗓️ Solicitud Visita", channel: "wa", text: "Hola Don [[owner_name]], tengo un cliente muy interesado. ¿Podemos mostrar la propiedad mañana a las 16:00?" },
                         { label: "✅ Confirmación", channel: "wa", text: "Perfecto, visita confirmada con el cliente para el jueves a las 11:00. Nos vemos allá." },
-                        // Email
                         { label: "Solicitud de Visita", channel: "email", subject: "Solicitud Visita: [[propiedad]]", text: "Estimado [[owner_name]],\n\nTenemos un cliente calificado interesado en visitar su propiedad. ¿Tiene disponibilidad este martes por la tarde?\n\nAtentamente." }
                     ],
                     feedback: [
-                        // WhatsApp
                         { label: "👍 Resultado Visita", channel: "wa", text: "Hola, terminamos la visita. Al cliente le gustó mucho la distribución, pero debe evaluar el tema del crédito. Le aviso apenas tenga novedades." },
                         { label: "📉 Comentario Precio", channel: "wa", text: "Don [[owner_name]], el cliente de hoy comentó que el precio está un poco por sobre otras opciones del sector. Se lo comento para tenerlo en cuenta." },
-                        // Email
                         { label: "Reporte de Visita", channel: "email", subject: "Feedback Visita: [[propiedad]]", text: "Estimado [[owner_name]],\n\nLe informo que la visita de hoy se realizó sin problemas. El cliente se mostró interesado pero indicó que comparará con otra opción en la misma calle.\n\nLe mantendré informado." }
                     ]
                 }
@@ -1439,13 +1467,14 @@
 
         let currentCommTarget = 'lead';
         let currentCommChannel = 'wa';
+        let currentTemplateLabel = "Mensaje Manual";
 
         document.getElementById('sidebarToggle').addEventListener('click', function () {
             document.getElementById('sidebar').classList.toggle('collapsed');
             document.getElementById('mainContent').classList.toggle('expanded');
         });
 
-        // --- LÓGICA CRM (Sin cambios) ---
+        // --- LÓGICA CRM (CAPTURA DE DATOS COMPLETA) ---
         let currentInteraction = null;
         let currentActionLabel = "";
         let currentResultLabel = "";
@@ -1484,6 +1513,8 @@
         }
 
         function setActionMode(mode) {
+            logAction('CHANGE_MODE', { mode: mode }); // LOG
+
             document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active', 'active-prop', 'active-close', 'active-wait'));
             document.querySelectorAll('.logic-section').forEach(el => el.classList.add('d-none'));
             document.getElementById('contact-context').classList.add('d-none');
@@ -1587,15 +1618,58 @@
 
         async function saveGestion(e) {
             e.preventDefault();
+
+            // --- RECOPILACIÓN PROFUNDA DE DATOS DEL FORMULARIO ---
+            // Esto asegura que se guarden los sub-checks y selects seleccionados
+            const detailsJSON = {};
+            const elements = document.getElementById('crmForm').elements;
+
+            for (let i = 0; i < elements.length; i++) {
+                const el = elements[i];
+                if ((el.tagName === 'INPUT' || el.tagName === 'SELECT') && el.type !== 'hidden') {
+                    if (el.type === 'checkbox' || el.type === 'radio') {
+                        if (el.checked) detailsJSON[el.id || el.name] = el.value || true;
+                    } else if (el.value) {
+                        detailsJSON[el.id || el.name] = el.value;
+                    }
+                }
+            }
+
+            const payload = {
+                phone: leadData.telefono,
+                estado: document.getElementById('estado_actual').value, // El backend lo recalculará si es necesario
+                resultado_gestion: document.getElementById('resultado_gestion').value,
+                interaction_type: document.querySelector('input[name="interaction_type"]:checked')?.value,
+                notas: document.getElementById('notas_manuales').value,
+                action_label: currentActionLabel + " / " + currentResultLabel,
+                next_action_date: document.getElementById('fecha_global').value,
+                details_json: detailsJSON
+            };
+
             const btn = document.querySelector('.btn-save');
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
             btn.disabled = true;
-            setTimeout(() => {
-                btn.classList.remove('btn-primary', 'btn-danger', 'btn-warning');
-                btn.classList.add('btn-success');
-                btn.innerHTML = '¡Gestión Exitosa!';
-                setTimeout(() => window.location.reload(), 800);
-            }, 800);
+
+            try {
+                const response = await fetch('/api/crm/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    btn.classList.remove('btn-primary', 'btn-danger', 'btn-warning');
+                    btn.classList.add('btn-success');
+                    btn.innerHTML = '¡Gestión Exitosa!';
+                    setTimeout(() => window.location.reload(), 800);
+                } else {
+                    alert("Error al guardar gestión");
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                console.error(err);
+                btn.disabled = false;
+            }
         }
 
         // --- FUNCIONES SISTEMA DE COMUNICACIÓN (NUEVAS) ---
@@ -1603,23 +1677,24 @@
         function openCommPanel(target, defaultChannel = 'wa') {
             currentCommTarget = target;
             currentCommChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel;
+            currentTemplateLabel = "Directo / Manual"; // Reset
 
-            // Llamada directa
+            // LOG
+            logAction(`CLICK_${defaultChannel.toUpperCase()}`, { target: target }, target);
+
+            // Llamada directa (no abre modal, registra y ejecuta)
             if (currentCommChannel === 'phone') {
                 window.location.href = `tel:${target === 'lead' ? leadData.telefono : leadData.ownerPhone}`;
                 return;
             }
 
-            // Configurar Estilo del Modal (Theme)
+            // Configurar Modal
             const header = document.getElementById('modalHeader');
             const title = document.getElementById('commTitle');
             const targetName = target === 'lead' ? leadData.nombre : leadData.ownerName;
 
-            // Limpiar clases anteriores
             header.classList.remove('theme-wa', 'theme-email');
             document.getElementById('commModal').classList.remove('theme-wa', 'theme-email');
-
-            // Añadir clase correcta
             header.classList.add(`theme-${currentCommChannel}`);
             document.getElementById('commModal').classList.add(`theme-${currentCommChannel}`);
 
@@ -1627,7 +1702,6 @@
             const actionText = currentCommChannel === 'wa' ? 'WhatsApp a' : 'Email a';
             title.innerHTML = `${icon} ${actionText} <b>${targetName.split(' ')[0]}</b>`;
 
-            // Campo Asunto
             const subjectContainer = document.getElementById('emailSubjectContainer');
             if (currentCommChannel === 'email') {
                 subjectContainer.classList.remove('d-none');
@@ -1636,7 +1710,6 @@
             }
             document.getElementById('emailSubject').value = "";
 
-            // Cargar Tabs y Plantillas
             renderCommTabs(target);
             const firstTabId = commTemplates[target].tabs[0].id;
             loadTemplates(target, firstTabId);
@@ -1649,7 +1722,6 @@
         function renderCommTabs(target) {
             const tabsContainer = document.getElementById('commTabs');
             tabsContainer.innerHTML = "";
-
             commTemplates[target].tabs.forEach((tab, index) => {
                 const btn = document.createElement('button');
                 btn.className = `stage-tab ${index === 0 ? 'active' : ''}`;
@@ -1660,18 +1732,13 @@
         }
 
         function loadTemplates(target, category, btnElement = null) {
-            // Actualizar Tabs UI
             if (btnElement) {
                 document.querySelectorAll('.stage-tab').forEach(el => el.classList.remove('active'));
                 btnElement.classList.add('active');
             }
-
             const container = document.getElementById('templateList');
             container.innerHTML = "";
-
             const allTemplates = commTemplates[target].data[category] || [];
-
-            // Filtrar por canal (wa vs email)
             const filteredTemplates = allTemplates.filter(t => t.channel === currentCommChannel);
 
             if (filteredTemplates.length === 0) {
@@ -1685,18 +1752,11 @@
                 card.onclick = () => {
                     document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
                     card.classList.add('selected');
+                    currentTemplateLabel = tpl.label; // Capturamos nombre plantilla para el log
                     selectTemplate(tpl.text, tpl.subject || "");
                 };
-
                 const icon = currentCommChannel === 'wa' ? '<i class="fa-brands fa-whatsapp text-success"></i>' : '<i class="fa-regular fa-envelope text-primary"></i>';
-
-                card.innerHTML = `
-                    <div class="tpl-info">
-                        <span class="tpl-title">${tpl.label}</span>
-                        <span class="tpl-preview">${tpl.text.substring(0, 40)}...</span>
-                    </div>
-                    ${icon}
-                `;
+                card.innerHTML = `<div class="tpl-info"><span class="tpl-title">${tpl.label}</span><span class="tpl-preview">${tpl.text.substring(0, 40)}...</span></div>${icon}`;
                 container.appendChild(card);
             });
         }
@@ -1711,11 +1771,8 @@
                 .replace(/\[\[precio\]\]/g, leadData.precio);
 
             document.getElementById('commMessage').value = processedText;
-
             if (currentCommChannel === 'email' && subject) {
-                let processedSubject = subject
-                    .replace(/\[\[propiedad\]\]/g, leadData.propiedad)
-                    .replace(/\[\[comuna\]\]/g, leadData.comuna);
+                let processedSubject = subject.replace(/\[\[propiedad\]\]/g, leadData.propiedad).replace(/\[\[comuna\]\]/g, leadData.comuna);
                 document.getElementById('emailSubject').value = processedSubject;
             }
         }
@@ -1739,6 +1796,14 @@
                 const finalMsg = msgBody.value;
                 if (!finalMsg) return;
 
+                // REGISTRAR ENVÍO ANTES DE ABRIR
+                logAction(`SEND_${currentCommChannel.toUpperCase()}`, {
+                    target: target,
+                    template: currentTemplateLabel,
+                    content_preview: finalMsg.substring(0, 50),
+                    full_content: finalMsg // Guardamos mensaje editado
+                }, target);
+
                 if (currentCommChannel === 'wa') {
                     const cleanPhone = phone.replace(/\D/g, '');
                     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}`;
@@ -1748,30 +1813,78 @@
                     const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(finalMsg)}`;
                     window.open(url, '_blank');
                 }
+
+                // Cerrar modal tras 1 seg
+                setTimeout(() => {
+                    const modalEl = document.getElementById('commModal');
+                    const modal = bootstrap.Modal.getInstance(modalEl);
+                    modal.hide();
+                }, 1000);
             };
         }
 
-        // --- NOTES SYSTEM ---
+        // --- NOTES SYSTEM (CON PERSISTENCIA) ---
         let curNoteColor = 'yellow';
+
         function selColor(el, color) {
             document.querySelectorAll('.color-opt').forEach(d => d.classList.remove('selected'));
             el.classList.add('selected'); curNoteColor = color;
         }
-        function addNoteCard() {
+
+        async function addNoteCard() {
             const txt = document.getElementById('new_internal_note').value;
             if (!txt) return;
-            const container = document.getElementById('stickyNotesContainer');
-            const div = document.createElement('div');
-            div.className = `sticky-note note-${curNoteColor}`;
-            div.setAttribute('data-ts', Date.now());
-            div.innerHTML = `<button class="btn-del-note" onclick="deleteNote(this)"><i class="fa-solid fa-xmark"></i></button><span class="sticky-date">${new Date().toLocaleDateString()}</span>${txt}`;
-            container.insertBefore(div, container.firstChild);
-            document.getElementById('new_internal_note').value = '';
+
+            // 1. Enviar al Backend
+            const payload = {
+                phone: currentPhone,
+                action: 'add',
+                note: { content: txt, color: curNoteColor }
+            };
+
+            try {
+                const res = await fetch('/api/crm/notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+
+                if (data.status === 'ok') {
+                    // 2. Renderizar en UI
+                    const container = document.getElementById('stickyNotesContainer');
+                    const div = document.createElement('div');
+                    div.className = `sticky-note note-${curNoteColor}`;
+                    const noteId = data.note.id; // ID generado por el server
+
+                    div.innerHTML = `
+                        <button class="btn-del-note" onclick="deleteNote(this, '${noteId}')"><i class="fa-solid fa-xmark"></i></button>
+                        <span class="sticky-date">${data.note.created_at_str}</span>
+                        ${txt}
+                    `;
+                    container.insertBefore(div, container.firstChild);
+                    document.getElementById('new_internal_note').value = '';
+                }
+            } catch (e) { console.error("Error saving note", e); }
         }
-        function deleteNote(btn) { if (confirm('¿Eliminar?')) btn.parentElement.remove(); }
+
+        async function deleteNote(btn, noteId) {
+            if (!confirm('¿Eliminar nota?')) return;
+
+            try {
+                await fetch('/api/crm/notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone: currentPhone, action: 'delete', note: { id: noteId } })
+                });
+                btn.parentElement.remove();
+            } catch (e) { console.error("Error deleting note", e); }
+        }
+
         function sortNotes() {
             const container = document.getElementById('stickyNotesContainer');
-            Array.from(container.children).sort((a, b) => b.getAttribute('data-ts') - a.getAttribute('data-ts')).forEach(n => container.appendChild(n));
+            // Ordenamiento visual simple (si tuvieras timestamps en el DOM, mejor)
+            // Como ya vienen ordenadas del server, esto es solo visual si agregas muchas dinámicas
         }
     </script>
 </body>

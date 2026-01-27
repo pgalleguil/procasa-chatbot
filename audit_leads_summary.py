@@ -62,7 +62,7 @@ def run_audit(limit=2000):
     db = client[Config.DB_NAME]
 
     docs = list(
-        db["conversaciones_whatsapp"]
+        db["leads"]
         .find({})
         .sort("_id", -1)
         .limit(limit)

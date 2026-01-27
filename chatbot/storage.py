@@ -12,7 +12,7 @@ def get_db():
         _mongo_client = MongoClient(Config.MONGO_URI, serverSelectionTimeoutMS=10000)
     return _mongo_client[Config.DB_NAME]
 
-COLLECTION_CONVERSATIONS = "conversaciones_whatsapp"
+COLLECTION_CONVERSATIONS = "leads"
 
 def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None):
     db = get_db()

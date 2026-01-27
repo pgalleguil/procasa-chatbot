@@ -103,7 +103,7 @@ def get_leads_executive_report():
 
         # Traemos leads ordenados por fecha descendente
         documentos = list(
-            db["conversaciones_whatsapp"]
+            db["leads"]
             .find({})
             .sort("_id", -1)
             .limit(2000)
@@ -419,7 +419,7 @@ def get_specific_lead_chat(phone):
     try:
         client = MongoClient(Config.MONGO_URI)
         db = client[Config.DB_NAME]
-        doc = db["conversaciones_whatsapp"].find_one({"phone": phone})
+        doc = db["leads"].find_one({"phone": phone})
         if not doc: return None
         return {
             "phone": doc.get("phone"),

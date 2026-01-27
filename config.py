@@ -54,7 +54,7 @@ class Config:
     # === Chatbot / colección ===
     HISTORIAL_MAX = 8
     COLLECTION_NAME = "universo_obelix"
-    COLLECTION_CONVERSATIONS = "conversaciones_whatsapp"
+    COLLECTION_CONVERSATIONS = "leads"
 
     # === Logs y claves ===
     LOG_LEVEL = "INFO"

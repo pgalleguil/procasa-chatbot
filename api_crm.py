@@ -10,110 +10,226 @@ def get_db():
 
 def format_relative_time(dt_obj):
     if not dt_obj: return "S/I"
+    if isinstance(dt_obj, str):
+        try: dt_obj = datetime.fromisoformat(dt_obj.replace('Z', ''))
+        except: return "S/I"
+            
     now = datetime.now()
     diff = now - dt_obj
     seconds = diff.total_seconds()
+    
     days = int(seconds // 86400)
     hours = int((seconds % 86400) // 3600)
     minutes = int((seconds % 3600) // 60)
+    
     if days > 0: return f"Hace {days}d {hours}h"
     elif hours > 0: return f"Hace {hours}h {minutes}m"
     elif minutes > 0: return f"Hace {minutes}m"
     else: return "Ahora"
 
-# --- NUEVO: REGISTRO DE EVENTOS (SLA & REPORTING) ---
+# --- HELPER: Obtener datos reales de 'universo_obelix' ---
+def get_real_property_data(db, codigo_propiedad):
+    """
+    Busca la información completa en la colección universo_obelix
+    usando el código de propiedad.
+    """
+    if not codigo_propiedad or codigo_propiedad == "S/N":
+        return None
+
+    # Buscamos exacto o por texto
+    prop = db["universo_obelix"].find_one({"codigo": str(codigo_propiedad)})
+    
+    if not prop:
+        return None
+
+    # Mapeamos los campos de universo_obelix a lo que espera el Frontend
+    return {
+        "codigo": prop.get("codigo"),
+        "tipo": prop.get("tipo", "Propiedad"),
+        "operacion": prop.get("operacion", "Venta"),
+        "precio_uf": prop.get("precio_uf") or prop.get("precio", 0),
+        "comuna": prop.get("comuna", ""),
+        "region": prop.get("region", ""),
+        "calle": prop.get("calle", ""),
+        "numeracion": prop.get("numeracion", ""),
+        "direccion_completa": f"{prop.get('calle', '')} #{prop.get('numeracion', '')}",
+        
+        # Datos Propietario (CRUCIALES)
+        "nombre_propietario": prop.get("nombre_propietario", "No registrado"),
+        "movil_propietario": prop.get("movil_propietario") or prop.get("fono_propietario", "S/I"),
+        "email_propietario": prop.get("email_propietario", "S/I"),
+        
+        # Link para verla (opcional)
+        "url": f"https://www.procasa.cl/propiedad/{prop.get('codigo')}"
+    }
+
+# --- HELPER: Detectar Código en Chat ---
+def detect_property_code(lead):
+    # 1. Mirar en prospecto (más fiable)
+    code = lead.get("prospecto", {}).get("codigo")
+    if code: return code
+
+    # 2. Mirar en datos_propiedad antiguos
+    code = lead.get("datos_propiedad", {}).get("codigo")
+    if code: return code
+
+    # 3. Escanear chat (último recurso)
+    messages = lead.get("messages", [])
+    for msg in reversed(messages):
+        if msg.get("role") == "assistant":
+            content = msg.get("content", "")
+            # Buscar patrones como "Código 55268" o "código Procasa 55268"
+            match = re.search(r'(?:código|cod|propiedad)\s*(?:procasa)?\s*[:#]?\s*(\d{4,6})', content, re.IGNORECASE)
+            if match:
+                return match.group(1)
+    return None
+
+# --- HELPER: Procesar Chat (Bot vs User) ---
+def process_chat_timeline(messages):
+    processed = []
+    if not messages: return []
+    
+    for msg in messages:
+        role = msg.get("role", "user")
+        # CLASES CSS PARA DIFERENCIAR
+        # 'chat-bot' = Izquierda/Gris (o estilo bot)
+        # 'user-message' = Derecha/Azul (o estilo usuario)
+        css_class = "chat-bot" if role in ["assistant", "system"] else "user-message"
+        
+        processed.append({
+            "role": css_class, 
+            "content": msg.get("content", ""),
+            "timestamp": msg.get("timestamp")
+        })
+    return processed
+
+# --- REGISTRO DE EVENTOS ---
 def log_crm_event(phone, event_type, agent="Sistema", meta_data=None):
-    """
-    Guarda eventos en 'crm_events' para reportes de SLA y conversión.
-    Estructura plana y rápida de consultar.
-    """
     db = get_db()
     event = {
         "phone": phone.replace(" ", "").replace("+", "").strip(),
         "timestamp": datetime.now(),
-        "type": event_type,       # Ej: 'CALL_OUT', 'WHATSAPP_SENT', 'STATUS_CHANGE', 'NOTE_ADDED'
-        "agent": agent,
-        "meta": meta_data or {}   # Aquí guardamos el detalle técnico (duración, notas, resultado)
+        "type": event_type, "agent": agent, "meta": meta_data or {}
     }
     db["crm_events"].insert_one(event)
 
-# --- NUEVO: REGISTRO DE TAREAS (AUTOMATIZACIÓN) ---
 def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
-    """
-    Guarda recordatorios en 'crm_tasks' para que el Bot los procese automáticamente.
-    """
     if not execute_at_str: return
     db = get_db()
-    try:
-        # Intenta parsear ISO format, asume que viene limpio del frontend
-        execute_at = datetime.fromisoformat(execute_at_str.replace("Z", ""))
-    except:
-        return
-
+    try: execute_at = datetime.fromisoformat(execute_at_str.replace("Z", ""))
+    except: return
     task = {
         "task_id": str(uuid.uuid4()),
         "phone": phone.replace(" ", "").replace("+", "").strip(),
         "type": "REMINDER_WHATSAPP",
-        "status": "pending",  # pending -> processing -> sent
-        "execute_at": execute_at,
-        "created_at": datetime.now(),
-        "note": note,
-        "agent": agent
+        "status": "pending", "execute_at": execute_at, "created_at": datetime.now(), "note": note, "agent": agent
     }
     db["crm_tasks"].insert_one(task)
 
-# --- 1. LISTA DE LEADS (Solo lectura optimizada) ---
+# --- 1. LISTA DE LEADS ---
 def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad"):
     db = get_db()
-    query = {"messages.intencion": "agendar_visita"}
+    query = {}
+    
     if filtro_estado: query["crm_estado"] = filtro_estado
 
     if busqueda and busqueda.strip():
         term = busqueda.strip()
         regex_term = re.escape(term)
+        clean_phone = re.sub(r'\D', '', term) # Solo números
         query["$and"] = [
-            {"messages.intencion": "agendar_visita"},
+            query,
             {"$or": [
                 {"prospecto.codigo": {"$regex": regex_term, "$options": "i"}},
                 {"prospecto.nombre": {"$regex": regex_term, "$options": "i"}},
-                {"phone": {"$regex": re.sub(r'\D', '', term)}}
+                {"phone": {"$regex": clean_phone}}
             ]}
         ]
-
-    # Ordenamiento básico
-    sort_criteria = [("last_message_time", -1)]
     
-    leads_cursor = db["conversaciones_whatsapp"].find(query).sort(sort_criteria).limit(100)
+    leads_cursor = db["leads"].find(query).limit(100)
     
     leads_procesados = []
     kpi_counts = {"nuevo": 0, "gestion": 0, "visita": 0, "total": 0}
-    
+    estado_labels = {"nuevo": "Sin Atender", "gestion": "En Gestión", "visita": "Visita Agendada", "cerrado": "Cerrado"}
+
     for lead in leads_cursor:
         estado = lead.get("crm_estado", "nuevo")
         kpi_counts["total"] += 1
         if estado in kpi_counts: kpi_counts[estado] += 1
         
+        # Datos básicos
+        prospecto = lead.get("prospecto", {})
+        
+        # 1. Detectar código
+        codigo = detect_property_code(lead)
+        
+        # 2. Url simple (sin consulta pesada a obelix para la lista, solo código)
+        url_prop = f"https://www.procasa.cl/propiedad/{codigo}" if codigo else "#"
+        
+        # 3. Tiempo real
+        last_ts = datetime.min
+        msgs = lead.get("messages", [])
+        last_msg_txt = "Sin mensajes"
+        
+        if msgs:
+            last_msg = msgs[-1]
+            last_ts = last_msg.get("timestamp") or last_msg.get("created_at") or datetime.min
+            txt = last_msg.get("content", "")
+            last_msg_txt = (txt[:45] + '...') if len(txt) > 45 else txt
+
+        # 4. Formato teléfono (Evitar doble +)
+        raw_phone = lead.get("phone", "").replace("+", "").strip()
+        
         leads_procesados.append({
-            "phone": lead.get("phone"),
-            "nombre": lead.get("prospecto", {}).get("nombre") or "Desconocido",
+            "phone": raw_phone, # ID limpio
+            "whatsapp_display": f"+{raw_phone}", # Visual
+            "nombre": prospecto.get("nombre") or "Desconocido",
             "estado": estado,
-            "tiempo_relativo": format_relative_time(lead.get("last_message_time")),
-            "led_class": "led-red" if estado == "nuevo" else "led-green"
+            "estado_badge": estado_labels.get(estado, estado.capitalize()),
+            "tiempo_relativo": format_relative_time(last_ts),
+            "real_timestamp": last_ts,
+            "led_class": "led-red" if estado == "nuevo" else ("led-yellow" if estado == "gestion" else "led-green"),
+            "sla_title": "Prioridad",
+            "codigo_propiedad": codigo or "S/N",
+            "url_propiedad": url_prop,
+            "ultima_accion": last_msg_txt
         })
         
+    # Ordenar por fecha reciente (timestamp real)
+    leads_procesados.sort(key=lambda x: x['real_timestamp'], reverse=True)
+
     return leads_procesados, kpi_counts
 
-# --- 2. DETALLE DEL LEAD (Fusión de Datos) ---
+# --- 2. DETALLE DEL LEAD (CON IMPORTACIÓN DE UNIVERSO_OBELIX) ---
 def get_lead_detail_data(phone):
     db = get_db()
     phone_clean = phone.replace(" ", "").replace("+", "").strip()
     
-    # 1. Buscar Lead Base
-    lead = db["conversaciones_whatsapp"].find_one({"phone": {"$regex": phone_clean}})
+    # A. Buscar Lead
+    lead = db["leads"].find_one({"phone": {"$regex": phone_clean}})
     if not lead: return None
     
-    # 2. Buscar Historial Nuevo (En crm_events)
-    # Buscamos eventos que sean de gestión para mostrar en el timeline visual
+    # B. Buscar Código de Propiedad
+    codigo = detect_property_code(lead)
+    
+    # C. IMPORTAR DATOS REALES DE UNIVERSO_OBELIX
+    # Aquí es donde ocurre la magia que faltaba
+    datos_propiedad = get_real_property_data(db, codigo)
+    
+    # Si no hay datos en Obelix, usar fallback (relleno visual)
+    if not datos_propiedad:
+        p = lead.get("prospecto", {})
+        datos_propiedad = {
+            "codigo": codigo or "S/N",
+            "nombre_propietario": p.get("owner_name", "Propietario No Asignado"),
+            "movil_propietario": p.get("owner_phone", "S/I"),
+            "precio_uf": p.get("precio", "0"),
+            "comuna": p.get("comuna", ""),
+            "calle": p.get("direccion", ""),
+            "url": "#"
+        }
+
+    # D. Historial CRM
     new_events_cursor = db["crm_events"].find({
         "phone": phone_clean, 
         "type": {"$in": ["GESTION_LOG", "STATUS_CHANGE", "CALL_OUT", "WHATSAPP_OUT"]}
@@ -124,113 +240,75 @@ def get_lead_detail_data(phone):
         meta = evt.get("meta", {})
         formatted_new_history.append({
             "timestamp": evt["timestamp"],
-            "interaction_type": meta.get("interaction_type", "log"),
+            "user_action": meta.get("action_label", evt["type"]),
             "result": meta.get("result", ""),
-            "notes": meta.get("notes", ""),
-            "user_action": meta.get("action_label", evt["type"])
+            "notes": meta.get("notes", "")
         })
-
-    # 3. Fusionar con historial antiguo (Legacy) si existe dentro del documento
-    legacy_history = lead.get("crm_history", [])
-    if isinstance(legacy_history, list):
-        # Unimos ambas listas
-        full_history = formatted_new_history + legacy_history
-    else:
-        full_history = formatted_new_history
         
-    # Ordenar historial combinado por fecha descendente
-    try:
-        full_history.sort(key=lambda x: x.get('timestamp') or datetime.min, reverse=True)
-    except:
-        pass # Si falla ordenamiento por algún formato raro, lo dejamos como está
+    # E. Chat Timeline con Clases CSS correctas
+    timeline = process_chat_timeline(lead.get("messages", []))
 
-    # Datos básicos
     prospecto = lead.get("prospecto", {})
-    
+
     return {
         "phone": lead.get("phone"),
+        "timeline": timeline, # <--- Ahora tiene clases chat-bot / user-message
         "nombre": prospecto.get("nombre", "Desconocido"),
         "email": prospecto.get("email", "No registrado"),
         "rut": prospecto.get("rut", "No registrado"),
         "origen": prospecto.get("origen", "Desconocido"), 
-        "propiedad_texto": f"{prospecto.get('operacion', '')} {prospecto.get('comuna', '')}",
+        "propiedad_texto": f"{datos_propiedad.get('operacion','')} {datos_propiedad.get('comuna','')}",
         "crm_estado": lead.get("crm_estado", "nuevo"),
-        "crm_history": full_history, # Enviamos la fusión para que el frontend no cambie
+        "crm_history": formatted_new_history, 
         "sticky_notes": lead.get("sticky_notes", []),
-        "datos_propiedad": lead.get("datos_propiedad", {})
+        "datos_propiedad": datos_propiedad # <--- Datos reales de Obelix
     }
 
-# --- 3. ACTUALIZAR LEAD (Escritura Distribuida) ---
+# --- 3. ACTUALIZAR LEAD ---
 def update_lead_crm_data(phone, data):
     db = get_db()
     phone_clean = phone.replace(" ", "").replace("+", "").strip()
     
-    # A. Detectar cambio de estado para Log de Auditoría
-    current_lead = db["conversaciones_whatsapp"].find_one({"phone": {"$regex": phone_clean}})
-    old_state = current_lead.get("crm_estado", "nuevo")
+    current_lead = db["leads"].find_one({"phone": {"$regex": phone_clean}})
+    if not current_lead: return False
+    
     new_state = data.get("estado")
+    old_state = current_lead.get("crm_estado", "nuevo")
     
     if old_state != new_state:
-        log_crm_event(phone_clean, "STATUS_CHANGE", meta_data={
-            "from": old_state, "to": new_state, "action_label": "Cambio de Estado"
-        })
+        log_crm_event(phone_clean, "STATUS_CHANGE", meta_data={"from": old_state, "to": new_state})
 
-    # B. Guardar Recordatorio (Si existe) en Colección Tareas
     if data.get("next_action_date"):
-        schedule_crm_task(
-            phone=phone_clean,
-            execute_at_str=data.get("next_action_date"),
-            note=data.get("notas") or "Seguimiento agendado"
-        )
+        schedule_crm_task(phone_clean, data.get("next_action_date"), data.get("notas"))
 
-    # C. Registrar el Evento de Gestión en Colección Eventos
     log_crm_event(phone_clean, "GESTION_LOG", meta_data={
         "interaction_type": data.get("interaction_type"),
         "result": data.get("resultado_gestion"),
         "notes": data.get("notas"),
         "action_label": data.get("action_label"),
-        "details_json": data # Guardamos todo el payload técnico por si acaso
+        "details_json": data
     })
 
-    # D. Actualizar Estado Actual en Lead (Documento Ligero)
-    # Ya NO hacemos $push a crm_history aquí. Solo estado actual.
-    update_fields = {
-        "crm_estado": new_state,
-        "last_crm_update": datetime.now(),
-        "crm_propietario_estado": data.get("propietario_res"),
-        # "crm_next_action_date": ... (Ya no es necesario aquí, está en tasks, pero puedes dejarlo si quieres referencia rapida)
-    }
-    
-    db["conversaciones_whatsapp"].update_one(
+    db["leads"].update_one(
         {"phone": {"$regex": phone_clean}},
-        {"$set": update_fields}
+        {"$set": {
+            "crm_estado": new_state,
+            "last_crm_update": datetime.now(),
+            "crm_propietario_estado": data.get("propietario_res")
+        }}
     )
     return True
 
-# --- 4. GESTIONAR NOTAS ADHESIVAS ---
 def manage_crm_notes(phone, note_data, action="add"):
     db = get_db()
     phone_clean = phone.replace(" ", "").replace("+", "").strip()
     
     if action == "add":
         note_id = str(uuid.uuid4())[:8]
-        note = {
-            "id": note_id,
-            "content": note_data.get("content"),
-            "color": note_data.get("color"),
-            "created_at": datetime.now(),
-            "created_at_str": datetime.now().strftime("%d/%m/%Y")
-        }
-        # Notas rápidas SÍ se quedan en el lead porque son de UI
-        db["conversaciones_whatsapp"].update_one(
-            {"phone": {"$regex": phone_clean}},
-            {"$push": {"sticky_notes": note}}
-        )
-        # Logueamos la acción
-        log_crm_event(phone_clean, "NOTE_ADDED", meta_data={"note_id": note_id})
+        note = {"id": note_id, "content": note_data.get("content"), "color": note_data.get("color"), "created_at_str": datetime.now().strftime("%d/%m/%Y")}
+        db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$push": {"sticky_notes": note}})
         return note
-        
     elif action == "delete":
-        # Lógica de borrado (opcional, si la necesitas)
-        pass
+        db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$pull": {"sticky_notes": {"id": note_data.get("id")}}})
+        return True
     return False

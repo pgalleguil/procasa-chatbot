@@ -10,7 +10,7 @@ from api_leads_intelligence import calculate_score # Importamos tu nueva lógica
 client = OpenAI(api_key=Config.XAI_API_KEY, base_url=Config.GROK_BASE_URL)
 mongo_client = MongoClient(Config.MONGO_URI)
 db = mongo_client[Config.DB_NAME]
-coleccion = db["conversaciones_whatsapp"]
+coleccion = db["leads"]
 
 def ejecutar_todo():
     # ---- PASO 1: LIMPIEZA TOTAL ----

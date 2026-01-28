@@ -62,8 +62,9 @@ class Config:
     FEATURE_KEYS = ["precio_clp","precio_uf","dormitorios", "banos", "estacionamientos"]
 
     # === GOOGLE OAUTH (opcional) ===
-    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "TU_CLIENT_ID_AQUI")
+    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "TU_CLIENT_SECRET_AQUI")
+    GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 
     # === CLAVE SECRETA PARA SESIONES (OBLIGATORIA) ===
     SECRET_KEY = os.getenv("SECRET_KEY")

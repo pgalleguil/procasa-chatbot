@@ -4,43 +4,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Iniciar Sesión - PROCASA</title>
+    <title>Iniciar Sesión - PROCASA CRM</title>
+    <!-- Bootstrap 5 & Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
     <style>
+        :root {
+            --primary-color: #0d6efd;
+            --glass-bg: rgba(255, 255, 255, 0.85);
+            --glass-border: rgba(255, 255, 255, 0.5);
+            --blur: 12px;
+        }
+
         body {
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            font-family: 'Inter', sans-serif;
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-family: 'Segoe UI', sans-serif;
-            position: relative;
             overflow: hidden;
+            background-color: #1a1a1a;
         }
 
-        .login-container {
-            background: white;
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
-            max-width: 400px;
-            width: 100%;
-            z-index: 10;
-            position: relative;
-        }
-
-        .logo {
-            max-width: 150px;
-            margin-bottom: 1.5rem;
-        }
-
+        /* --- Background Slider con Overlay --- */
         .background-slider {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: 1;
+            z-index: 0;
         }
 
         .slide {
@@ -50,7 +46,7 @@
             width: 100%;
             height: 100%;
             opacity: 0;
-            transition: opacity 1s ease-in-out;
+            transition: opacity 1.5s ease-in-out;
         }
 
         .slide.active {
@@ -58,36 +54,148 @@
         }
 
         .slide img {
-            object-fit: cover;
             width: 100%;
-            height: 100vh;
-            filter: brightness(0.5);
+            height: 100%;
+            object-fit: cover;
+            /* Oscurecer imagen para resaltar el login */
+            filter: brightness(0.4) saturate(1.1);
+            animation: kenburns 20s infinite alternate;
         }
 
         @keyframes kenburns {
-            0% {
+            from {
                 transform: scale(1);
             }
 
-            50% {
-                transform: scale(1.1);
-            }
-
-            100% {
-                transform: scale(1);
+            to {
+                transform: scale(1.15);
             }
         }
 
-        @media (min-width: 769px) {
-            .slide img {
-                animation: kenburns 12s infinite;
-            }
+        /* --- Glass Card Login --- */
+        .login-wrapper {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 420px;
+            padding: 20px;
         }
 
+        .login-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--blur));
+            -webkit-backdrop-filter: blur(var(--blur));
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 3rem 2rem;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .logo {
+            max-height: 60px;
+            margin-bottom: 1.5rem;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+        }
+
+        h2 {
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 0.5rem;
+            font-size: 1.75rem;
+        }
+
+        p.subtitle {
+            color: #666;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+        }
+
+        /* --- Inputs Modernos --- */
+        .form-floating>.form-control {
+            border-radius: 12px;
+            border: 1px solid #e0e0e0;
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .form-floating>.form-control:focus {
+            box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.15);
+            border-color: var(--primary-color);
+        }
+
+        /* --- Botones --- */
+        .btn-primary {
+            border-radius: 12px;
+            padding: 12px;
+            font-weight: 600;
+            background: linear-gradient(135deg, #0d6efd 0%, #0056b3 100%);
+            border: none;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(13, 110, 253, 0.3);
+        }
+
+        .btn-google {
+            background: white;
+            color: #333;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            padding: 10px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            text-decoration: none;
+            transition: all 0.2s;
+            margin-top: 1rem;
+        }
+
+        .btn-google:hover {
+            background: #f8f9fa;
+            border-color: #ccc;
+            color: #333;
+            transform: translateY(-1px);
+        }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 1.5rem 0;
+            color: #888;
+            font-size: 0.85rem;
+        }
+
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .divider::before {
+            margin-right: .5em;
+        }
+
+        .divider::after {
+            margin-left: .5em;
+        }
+
+        /* --- Mobile Tweaks --- */
         @media (max-width: 576px) {
-            .login-container {
-                margin: 1rem;
-                padding: 1.5rem;
+            .login-card {
+                padding: 2rem 1.5rem;
+                border-radius: 20px;
+            }
+
+            .slide img {
+                animation: none;
+                /* Mejor rendimiento en móviles viejos */
             }
         }
     </style>
@@ -95,57 +203,82 @@
 
 <body>
 
-    <!-- CARRUSEL DE FONDO -->
+    <!-- FONDO ANIMADO -->
     <div class="background-slider">
+        {% if images %}
         {% for image in images %}
         <div class="slide {% if loop.first %}active{% endif %}">
-            <img src="/static/{{ image }}" alt="Propiedad" loading="lazy">
+            <img src="/static/{{ image }}" alt="Background" loading="lazy">
         </div>
         {% endfor %}
-    </div>
-
-    <!-- LOGIN -->
-    <div class="login-container">
-        <div class="text-center">
-            <img src="/static/logo.png" alt="PROCASA" class="logo" loading="lazy">
-        </div>
-        <h2 class="text-center mb-4">Iniciar Sesión</h2>
-
-        <!-- Mensaje de error (FastAPI pasa "error" en el contexto) -->
-        {% if error %}
-        <div class="alert alert-danger alert-dismissible fade show">
-            {{ error }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        {% else %}
+        <div class="slide active">
+            <img src="https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=1973&auto=format&fit=crop"
+                alt="Default">
         </div>
         {% endif %}
+    </div>
 
-        <form method="POST" action="/login">
-            <div class="mb-3">
-                <label class="form-label">Usuario</label>
-                <input type="text" class="form-control" name="username" required placeholder="Tu usuario">
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Contraseña</label>
-                <input type="password" class="form-control" name="password" required placeholder="Tu contraseña">
-            </div>
-            <button type="submit" class="btn btn-primary w-100">Iniciar Sesión</button>
-        </form>
+    <!-- CONTENEDOR LOGIN -->
+    <div class="login-wrapper">
+        <div class="login-card text-center">
 
-        <div class="text-center mt-3">
-            <a href="/forgot-password" class="text-muted small">¿Olvidaste tu contraseña?</a>
+            <img src="/static/logo.png" alt="PROCASA" class="logo" loading="lazy" onerror="this.style.display='none'">
+
+            <h2>Bienvenido</h2>
+            <p class="subtitle">Ingresa a tu panel de gestión</p>
+
+            <!-- Alertas -->
+            {% if error %}
+            <div class="alert alert-danger alert-dismissible fade show text-start p-2 small" role="alert">
+                <i class="fas fa-exclamation-circle me-1"></i> {{ error }}
+                <button type="button" class="btn-close small p-2" data-bs-dismiss="alert"></button>
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/login">
+                <div class="form-floating mb-3 text-start">
+                    <input type="text" class="form-control" id="username" name="username" placeholder="Usuario"
+                        required>
+                    <label for="username">Usuario</label>
+                </div>
+                <div class="form-floating mb-4 text-start">
+                    <input type="password" class="form-control" id="password" name="password" placeholder="Contraseña"
+                        required>
+                    <label for="password">Contraseña</label>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100">
+                    Ingresar <i class="fas fa-arrow-right ms-2"></i>
+                </button>
+            </form>
+
+            <div class="divider">O ingresa con</div>
+
+            <a href="/login/google" class="btn-google">
+                <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" width="20" height="20">
+                <span>Continuar con Google</span>
+            </a>
+
+            <div class="mt-4">
+                <a href="/forgot-password" class="text-muted small text-decoration-none">
+                    ¿Olvidaste tu contraseña?
+                </a>
+            </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Lógica del Slider
         const slides = document.querySelectorAll('.slide');
-        if (slides.length > 1 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        if (slides.length > 1) {
             let i = 0;
             setInterval(() => {
                 slides[i].classList.remove('active');
                 i = (i + 1) % slides.length;
                 slides[i].classList.add('active');
-            }, 5500);
+            }, 6000);
         }
     </script>
 </body>

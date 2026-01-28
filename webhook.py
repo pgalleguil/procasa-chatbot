@@ -14,22 +14,25 @@ from pathlib import Path
 import uvicorn
 import json
 
+# === NUEVAS IMPORTACIONES PARA GOOGLE ===
+import httpx 
+from urllib.parse import urlencode
+
 import requests
 from fastapi import FastAPI, Request, HTTPException, Header, Query, Form, Depends, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Cookie
 
+# === TUS MÓDULOS PROPIOS ===
 from campanas.handler import handle_campana_respuesta
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
-#from api_leads_intelligence import get_leads_intelligence_data
-from api_leads_intelligence import get_leads_executive_report
-from fastapi import Cookie
+from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
 from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes
 
-
-# ========================= USAMOS TU config.py REAL =========================
+# ========================= CONFIGURACIÓN =========================
 from config import Config
 
 logging.basicConfig(
@@ -39,7 +42,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger("procasa-full")
 
-# ========================= JWT + AUTH (LOGIN REAL) =========================
+# ========================= 1. INICIALIZACIÓN DE APP (MOVIDO AL INICIO) =========================
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+TEMPLATES_DIR = BASE_DIR / "templates"
+
+app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+# Función auxiliar para imágenes (necesaria globalmente)
+def get_images():
+    prop_dir = STATIC_DIR / "propiedades"
+    if not prop_dir.exists() or not prop_dir.is_dir():
+        return ["propiedades/default.jpg"]
+    images = [f"propiedades/{f.name}" for f in prop_dir.iterdir() if f.is_file() and f.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".gif"}]
+    return images or ["propiedades/default.jpg"]
+
+# ========================= 2. SEGURIDAD Y JWT =========================
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
@@ -48,8 +68,7 @@ security = HTTPBearer()
 
 if not hasattr(Config, "SECRET_KEY") or not Config.SECRET_KEY:
     Config.SECRET_KEY = secrets.token_hex(32)
-    logger.warning(f"SECRET_KEY generada automáticamente (guárdala en .env):")
-    logger.warning(f"SECRET_KEY={Config.SECRET_KEY}")
+    logger.warning(f"SECRET_KEY generada automáticamente: {Config.SECRET_KEY}")
 
 def get_password_hash(password: str):
     return pwd_context.hash(password)
@@ -64,10 +83,7 @@ def create_access_token(data: dict):
     return jwt.encode(to_encode, Config.SECRET_KEY, algorithm="HS256")
 
 async def get_current_user(request: Request):
-    # Intentar obtener el token de la cookie primero (para el navegador)
     token = request.cookies.get("access_token")
-    
-    # Si no hay cookie, intentar desde el header (para la API)
     if not token:
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
@@ -108,24 +124,108 @@ def crear_admin_si_no_existe():
 
 crear_admin_si_no_existe()
 
-# ========================= APP & RUTAS =========================
-BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "static"
-TEMPLATES_DIR = BASE_DIR / "templates"
+# ========================= 3. LOGIN CON GOOGLE (NUEVO) =========================
 
-app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-templates = Jinja2Templates(directory=TEMPLATES_DIR)
+@app.get("/login/google")
+async def login_google():
+    """Inicia el flujo de OAuth2 con Google"""
+    params = {
+        "client_id": Config.GOOGLE_CLIENT_ID,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "redirect_uri": Config.GOOGLE_REDIRECT_URI,
+        "state": secrets.token_hex(16),
+        "access_type": "offline",
+        "prompt": "select_account"
+    }
+    url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+    return RedirectResponse(url)
 
-def get_images():
-    prop_dir = STATIC_DIR / "propiedades"
-    if not prop_dir.exists() or not prop_dir.is_dir():
-        return ["propiedades/default.jpg"]
-    images = [f"propiedades/{f.name}" for f in prop_dir.iterdir() if f.is_file() and f.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".gif"}]
-    logger.info(f"Imágenes cargadas ({len(images)}): {images}")
-    return images or ["propiedades/default.jpg"]
+@app.get("/auth/google/callback")
+async def auth_google_callback(request: Request, code: str):
+    """Recibe el código de Google y obtiene el token y datos del usuario"""
+    try:
+        # 1. Canjear código por token
+        token_url = "https://oauth2.googleapis.com/token"
+        async with httpx.AsyncClient() as client:
+            token_resp = await client.post(token_url, data={
+                "client_id": Config.GOOGLE_CLIENT_ID,
+                "client_secret": Config.GOOGLE_CLIENT_SECRET,
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": Config.GOOGLE_REDIRECT_URI,
+            })
+            token_data = token_resp.json()
+        
+        if "error" in token_data:
+            logger.error(f"Error Token Google: {token_data}")
+            return templates.TemplateResponse("login.html", {
+                "request": request, "images": get_images(), 
+                "error": "Error al conectar con Google (Token)"
+            })
 
-# === LOGIN Y DASHBOARD ===
+        id_token = token_data.get("id_token")
+        access_token = token_data.get("access_token")
+
+        # 2. Obtener datos del usuario
+        user_info_url = "https://www.googleapis.com/oauth2/v1/userinfo"
+        async with httpx.AsyncClient() as client:
+            user_resp = await client.get(user_info_url, headers={
+                "Authorization": f"Bearer {access_token}"
+            })
+            user_info = user_resp.json()
+
+        email = user_info.get("email")
+        
+        # 3. Guardar o Buscar en MongoDB
+        client = MongoClient(Config.MONGO_URI)
+        db = client[Config.DB_NAME]
+        usuarios = db["usuarios"]
+        
+        # Buscamos si el email ya existe en TU base de datos
+        user = usuarios.find_one({
+            "$or": [
+                {"email": email}, 
+                {"username": email}
+            ]
+        })
+
+        if not user:
+            # === CAMBIO DE SEGURIDAD ===
+            # Antes: Creaba el usuario automáticamente.
+            # Ahora: RECHAZA el acceso si no está registrado previamente por ti.
+            logger.warning(f"Intento de acceso denegado: {email}")
+            return templates.TemplateResponse("login.html", {
+                "request": request, 
+                "images": get_images(), 
+                "error": f"Acceso Denegado: El correo {email} no tiene permisos para acceder al sistema."
+            })
+        else:
+            user_sub = user["username"]
+
+        # 4. Crear sesión
+        access_token_jwt = create_access_token({"sub": user_sub})
+        
+        response = RedirectResponse("/crm", status_code=303)
+        response.set_cookie(
+            "access_token", 
+            access_token_jwt,
+            httponly=True, 
+            secure=False, # Pon True en producción con HTTPS
+            samesite="lax", 
+            max_age=28800
+        )
+        return response
+
+    except Exception as e:
+        logger.error(f"Error Google Auth Critical: {e}")
+        return templates.TemplateResponse("login.html", {
+            "request": request, "images": get_images(), 
+            "error": f"Error interno: {str(e)}"
+        })
+
+# ========================= 4. RUTAS DE LOGIN TRADICIONAL =========================
+
 @app.get("/")
 async def login_get(request: Request):
     return templates.TemplateResponse(
@@ -133,7 +233,7 @@ async def login_get(request: Request):
         {
             "request": request,
             "images": get_images(),
-            "error": None  # Puedes usar esto si quieres mostrar errores
+            "error": None
         }
     )
 
@@ -145,18 +245,15 @@ async def login_post(request: Request, username: str = Form(...), password: str 
         usuarios = db["usuarios"]
         user = usuarios.find_one({"username": username})
         
-        if user and verify_password(password, user["hashed_password"]):
+        if user and verify_password(password, user.get("hashed_password", "")):
             token = create_access_token({"sub": username})
             
-            # REDIRECCIÓN: Asegúrate de que apunte a donde quieres ir por defecto
             response = RedirectResponse("/crm", status_code=303) 
-            
-            # COOKIE: secure=False para que funcione en localhost (sin HTTPS)
             response.set_cookie(
                 "access_token", 
                 token,
                 httponly=True, 
-                secure=False, # CAMBIADO A FALSE para pruebas locales
+                secure=False, 
                 samesite="lax", 
                 max_age=28800
             )
@@ -166,51 +263,10 @@ async def login_post(request: Request, username: str = Form(...), password: str 
             "request": request, "images": get_images(), "error": "Usuario o contraseña incorrectos"
         })
     except Exception as e:
-        logger.error(f"Error en login: {e}")
+        logger.error(f"Error en login tradicional: {e}")
         return templates.TemplateResponse("login.html", {
             "request": request, "images": get_images(), "error": "Error del servidor"
         })
-
-@app.get("/dashboard", response_class=HTMLResponse)
-async def ver_campanas(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
-
-@app.get("/api/leads_reporte")
-async def api_leads_reporte(request: Request):
-    # Verificamos si el usuario está logueado mediante la cookie
-    token = request.cookies.get("access_token")
-    if not token:
-        # Si no hay token, lanzamos 401 para que el JS del front nos mande al login
-        raise HTTPException(status_code=401, detail="No autorizado")
-    
-    # Importamos y ejecutamos la lógica de extracción
-    from api_leads_intelligence import get_leads_executive_report
-    return get_leads_executive_report()
-
-@app.get("/api/leads-intelligence")
-async def leads_intelligence_endpoint():
-    return get_leads_executive_report()
-
-@app.get("/leads-dashboard", response_class=HTMLResponse)
-async def ver_leads(request: Request):
-    return templates.TemplateResponse("leads_dashboard.html", {"request": request})
-
-@app.get("/chat-detail/{phone}", response_class=HTMLResponse)
-async def ver_detalle_chat(request: Request, phone: str):
-    from api_leads_intelligence import get_specific_lead_chat
-    # Limpiamos el teléfono por si viene con el '+' del enlace
-    phone_clean = phone.replace(" ", "").replace("+", "")
-    chat_data = get_specific_lead_chat(phone_clean)
-    
-    if not chat_data:
-        # Si no lo encuentra con el formato, intentamos buscarlo tal cual viene
-        chat_data = get_specific_lead_chat(phone)
-        
-    return templates.TemplateResponse("chat_detail.html", {
-        "request": request, 
-        "chat": chat_data,
-        "phone": phone
-    })
 
 @app.get("/logout")
 async def logout():
@@ -226,16 +282,46 @@ async def forgot_password(request: Request):
 async def reset_password(request: Request, token: str):
     return templates.TemplateResponse("reset_password.html", {"request": request, "token": token})
 
-# ==========================================
-# RUTAS CRM
-# ==========================================
+# ========================= 5. DASHBOARD & REPORTES =========================
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def ver_campanas(request: Request):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
+@app.get("/api/leads_reporte")
+async def api_leads_reporte(request: Request):
+    token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="No autorizado")
+    return get_leads_executive_report()
+
+@app.get("/api/leads-intelligence")
+async def leads_intelligence_endpoint():
+    return get_leads_executive_report()
+
+@app.get("/leads-dashboard", response_class=HTMLResponse)
+async def ver_leads(request: Request):
+    return templates.TemplateResponse("leads_dashboard.html", {"request": request})
+
+@app.get("/chat-detail/{phone}", response_class=HTMLResponse)
+async def ver_detalle_chat(request: Request, phone: str):
+    phone_clean = phone.replace(" ", "").replace("+", "")
+    chat_data = get_specific_lead_chat(phone_clean)
+    
+    if not chat_data:
+        chat_data = get_specific_lead_chat(phone)
+        
+    return templates.TemplateResponse("chat_detail.html", {
+        "request": request, 
+        "chat": chat_data,
+        "phone": phone
+    })
+
+# ========================= 6. RUTAS CRM =========================
 
 @app.get("/crm", response_class=HTMLResponse)
 async def view_crm_list(request: Request, estado: str = None, busqueda: str = None, orden: str = "prioridad"):
-    # IMPORTANTE: Ahora recibimos dos variables: leads y kpis
     leads, kpis = get_crm_leads_list(filtro_estado=estado, busqueda=busqueda, ordenar_por=orden)
-    
-    # Pasamos AMBAS al template
     return templates.TemplateResponse("crm_leads_list.html", {
         "request": request, 
         "leads": leads, 
@@ -248,29 +334,15 @@ async def view_crm_detail(request: Request, phone: str):
     if not data: return HTMLResponse("Lead no encontrado")
     return templates.TemplateResponse("crm_lead_detail.html", {"request": request, "lead": data})
 
-@app.post("/api/crm/update")
-async def api_update_crm(request: Request):
-    data = await request.json()
-    phone = data.get("phone")
-    if update_lead_crm_data(phone, data):
-        return {"status": "ok"}
-    return {"status": "error"}  
-
 @app.post("/api/crm/log_action")
 async def api_crm_log_action(request: Request):
-    """
-    Endpoint para registrar interacciones menores (clics en llamar, ver detalles)
-    directamente en la colección de analítica 'crm_events'.
-    """
     try:
         data = await request.json()
         phone = data.get("phone")
         payload = data.get("data", {})
-        
-        # Guardar en Colección de Eventos
         log_crm_event(
             phone=phone, 
-            event_type=payload.get("type"), # Ej: CLICK_CALL, VIEW_LEAD
+            event_type=payload.get("type"), 
             meta_data=payload.get("meta")
         )
         return {"status": "ok"}
@@ -280,10 +352,6 @@ async def api_crm_log_action(request: Request):
 
 @app.post("/api/crm/update")
 async def api_crm_update_lead(request: Request):
-    """
-    Endpoint principal del formulario de gestión.
-    Distribuye los datos a Leads, Eventos y Tareas.
-    """
     try:
         data = await request.json()
         phone = data.get("phone")
@@ -306,7 +374,6 @@ async def api_crm_notes(request: Request):
         action = data.get("action", "add")
         phone = data.get("phone")
         note_data = data.get("note", {})
-        
         result = manage_crm_notes(phone, note_data, action)
         if result:
             return {"status": "ok", "note": result}
@@ -314,7 +381,7 @@ async def api_crm_notes(request: Request):
     except Exception as e:
         return {"status": "error", "detail": str(e)}
 
-# ========================= WHATSAPP DEBOUNCE (100% ORIGINAL) =========================
+# ========================= 7. WHATSAPP LOGIC (CORE) =========================
 pending_tasks: Dict[str, Any] = {}
 last_message_time: Dict[str, float] = {}
 accumulated_messages: Dict[str, str] = {}
@@ -326,99 +393,22 @@ except ImportError:
     def process_user_message(phone, message):
         return f"Respuesta de prueba para {phone}: {message[:50]}..."
 
-async def process_with_debounce(phone: str, full_text: str):
-    # 1. Si ya había una tarea pendiente para este número, la cancelamos (reinicio del reloj)
-    if phone in pending_tasks and not pending_tasks[phone].done():
-        pending_tasks[phone].cancel()
-        logger.info(f"[DEBOUNCE] Tarea anterior cancelada para {phone} (Usuario sigue escribiendo)")
-    
-    # 2. Acumulamos el texto nuevo al anterior
-    current_text = accumulated_messages.get(phone, "")
-    # Agregamos espacio si ya había texto
-    if current_text:
-        accumulated_messages[phone] = current_text + " " + full_text.strip()
-    else:
-        accumulated_messages[phone] = full_text.strip()
-        
-    last_message_time[phone] = time.time()
-
-    # 3. Definimos la tarea diferida
-    async def delayed_process():
-        try:
-            # Esperamos los segundos definidos (ej. 5s)
-            await asyncio.sleep(DEBOUNCE_SECONDS)
-            
-            # Verificación final: Si el tiempo pasó y no hay mensajes nuevos recientes
-            if time.time() - last_message_time.get(phone, 0) < DEBOUNCE_SECONDS - 0.1:
-                return
-
-            # Extraemos el mensaje final completo y limpiamos memoria
-            final_message = accumulated_messages.pop(phone, "").strip()
-            if not final_message:
-                return
-                
-            logger.info(f"[PROCESS] Procesando mensaje AGRUPADO de {phone}: {final_message[:80]}...")
-            
-            # --- AQUÍ LLAMAMOS AL CEREBRO (CORE) UNA SOLA VEZ ---
-            # Esto genera 1 sola respuesta y 1 solo correo de alerta
-            bot_response = process_user_message(phone, final_message)
-            
-            if bot_response and bot_response.strip():
-                await send_whatsapp_message(phone, bot_response)
-                
-        except asyncio.CancelledError:
-            # Normal si el usuario escribió de nuevo rápido
-            pass
-        except Exception as e:
-            logger.error(f"Error procesando {phone}: {e}", exc_info=True)
-        finally:
-            # Limpieza final de la tarea en el diccionario
-            if phone in pending_tasks:
-                pending_tasks.pop(phone, None)
-
-    # 4. Lanzamos la tarea y la guardamos
-    task = asyncio.create_task(delayed_process())
-    pending_tasks[phone] = task
-
-import requests
-import logging
-from config import Config
-
-logger = logging.getLogger(__name__)
-
-# ========================= FUNCIONES CORREGIDAS =========================
-
 async def send_whatsapp_message(number: str, text: str) -> bool:
-    """
-    Función auxiliar (El Mensajero): Solo se encarga de enviar.
-    Usa la ruta correcta '/send-message' que ya comprobaste que funciona.
-    """
     if not text:
         return False
-
-    # 1. Limpieza de número (Mantenemos tu lógica actual)
     clean = "".join(filter(str.isdigit, number))
     if len(clean) == 9 and clean.startswith("9"):
         clean = "569" + clean
-    elif len(clean) == 11 and clean.startswith("56"):
-        pass # ya está bien
     elif len(clean) == 12 and clean.startswith("569"):
-        clean = clean[1:] # quita el + si está pegado raro
-    # Aseguramos formato internacional sin el + para la API si así lo requiere, 
-    # o con +, depende de tu proveedor, pero tu código original usaba esto:
-    
-    # IMPORTANTE: La ruta correcta según tu configuración y pruebas
-    url = f"{Config.WASENDER_BASE_URL}/send-message"
+        clean = clean[1:] 
 
+    url = f"{Config.WASENDER_BASE_URL}/send-message"
     payload = {"to": clean, "text": text}
-    
-    # Autenticación correcta por Header (Bearer)
     headers = {
         "Authorization": f"Bearer {Config.WASENDER_TOKEN}",
         "Content-Type": "application/json"
     }
 
-    # Intento 1
     try:
         resp = requests.post(url, json=payload, headers=headers, timeout=15)
         if resp.status_code == 200 and resp.json().get("success"):
@@ -429,7 +419,6 @@ async def send_whatsapp_message(number: str, text: str) -> bool:
     except Exception as e:
         logger.error(f"Excepción envío 1: {e}")
 
-    # Reintento (Intento 2)
     await asyncio.sleep(2)
     try:
         resp = requests.post(url, json=payload, headers=headers, timeout=15)
@@ -438,8 +427,45 @@ async def send_whatsapp_message(number: str, text: str) -> bool:
             return True
     except Exception as e:
         logger.error(f"Excepción reintento: {e}")
-
     return False
+
+async def process_with_debounce(phone: str, full_text: str):
+    if phone in pending_tasks and not pending_tasks[phone].done():
+        pending_tasks[phone].cancel()
+        logger.info(f"[DEBOUNCE] Tarea anterior cancelada para {phone}")
+    
+    current_text = accumulated_messages.get(phone, "")
+    if current_text:
+        accumulated_messages[phone] = current_text + " " + full_text.strip()
+    else:
+        accumulated_messages[phone] = full_text.strip()
+        
+    last_message_time[phone] = time.time()
+
+    async def delayed_process():
+        try:
+            await asyncio.sleep(DEBOUNCE_SECONDS)
+            if time.time() - last_message_time.get(phone, 0) < DEBOUNCE_SECONDS - 0.1:
+                return
+            final_message = accumulated_messages.pop(phone, "").strip()
+            if not final_message:
+                return
+            logger.info(f"[PROCESS] Procesando mensaje AGRUPADO de {phone}: {final_message[:80]}...")
+            bot_response = process_user_message(phone, final_message)
+            if bot_response and bot_response.strip():
+                await send_whatsapp_message(phone, bot_response)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Error procesando {phone}: {e}", exc_info=True)
+        finally:
+            if phone in pending_tasks:
+                pending_tasks.pop(phone, None)
+
+    task = asyncio.create_task(delayed_process())
+    pending_tasks[phone] = task
+
+# ========================= 8. WEBHOOK & API ENDPOINTS =========================
 
 @app.post("/webhook")
 async def webhook(
@@ -447,8 +473,6 @@ async def webhook(
     x_webhook_signature: str = Header(None, alias="X-Webhook-Signature")
 ):
     raw_body = await request.body()
-
-    # === 1. Verificación de firma ===
     if Config.WASENDER_WEBHOOK_SECRET:
         expected = hmac.new(
             Config.WASENDER_WEBHOOK_SECRET.encode("utf-8"),
@@ -465,29 +489,21 @@ async def webhook(
         logger.error(f"JSON inválido: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    # === 2. Test del webhook ===
     if data.get("event") == "webhook.test":
         logger.info("TEST WEBHOOK EXITOSO")
         return JSONResponse({"ok": True}, status_code=200)
 
-    # === 3. Extraer datos ===
     messages_data = data.get("data", {}).get("messages", {}) or {}
-
     if not messages_data:
-        # logger.debug("[WHATSAPP] Webhook recibido sin mensaje") 
         return JSONResponse({"status": "no messages"}, status_code=200)
 
     msg_obj = messages_data if isinstance(messages_data, dict) else messages_data[0]
-
-    # Extraer teléfono
     phone = (
         msg_obj.get("key", {}).get("cleanedSenderPn") or
         msg_obj.get("key", {}).get("senderPn", "").split("@")[0] or
         msg_obj.get("from", "").split("@")[0] or
         ""
     ).strip()
-
-    # Extraer texto
     text = (
         msg_obj.get("messageBody") or
         msg_obj.get("message", {}).get("conversation") or
@@ -498,7 +514,6 @@ async def webhook(
     if not phone or not text:
         return JSONResponse({"status": "ignored"}, status_code=200)
 
-    # === 4. Normalizar teléfono ===
     phone = phone.replace("@c.us", "").replace("@s.whatsapp.net", "")
     if phone.startswith("56") and len(phone) == 11:
         phone = "+" + phone
@@ -506,13 +521,7 @@ async def webhook(
         phone = "+56" + phone.lstrip("0")
 
     logger.info(f"[WHATSAPP] Mensaje recibido de {phone}: {text}")
-
-    # === 5. PROCESAR CON DEBOUNCE (CORREGIDO) ===
-    # En lugar de responder inmediato, lo pasamos al gestor de espera.
-    # Esto acumula mensajes si escribe varios seguidos.
     await process_with_debounce(phone, text)
-
-    # Retornamos OK inmediatamente a WhatsApp para que no reintente el envío
     return JSONResponse({"ok": True}, status_code=200)
 
 @app.get("/health")
@@ -521,7 +530,7 @@ async def health_check():
 
 @app.get("/campana/respuesta")
 async def campana_respuesta(
-    request: Request,  # ← AÑADIDO
+    request: Request,
     email: str = Query(...),
     accion: str = Query(...),
     codigos: str = Query("N/A"),
@@ -540,27 +549,20 @@ async def marcar_gestionado(request: Request):
     data = await request.json()
     email = data.get("email")
     gestionado = data.get("gestionado", False)
-
     if not email:
         return {"error": "Falta email"}
-
     client = MongoClient(Config.MONGO_URI)
     db = client[Config.DB_NAME]
     col = db[Config.COLLECTION_CONTACTOS]
-
-    # Actualiza por email (exacto o case-insensitive)
     result = col.update_one(
         {"email_propietario": email.lower()},
         {"$set": {"gestionado": gestionado}}
     )
-
     if result.matched_count == 0:
-        # Intento case-insensitive
         col.update_one(
             {"email_propietario": {"$regex": f"^{re.escape(email.lower())}$", "$options": "i"}},
             {"$set": {"gestionado": gestionado}}
         )
-
     return {"status": "ok", "gestionado": gestionado}
 
 @app.get("/retiro/confirmar")
@@ -573,12 +575,9 @@ async def retiro_contactar(request: Request, email: str = Query(...), codigo: st
     ip = request.client.host if request.client else "0.0.0.0"
     return await handle_solicitud_contacto(email, codigo, ip)
 
-    
-# ====================== ARRANQUE CORRECTO ======================
 if __name__ == "__main__":
     import pathlib
     module_name = pathlib.Path(__file__).stem
     port = int(os.getenv("PORT", 8000))
     logger.info(f"Bot PRO iniciado → http://localhost:{port}")
-    logger.info("Usuario: admin | Contraseña: procasa2025")
     uvicorn.run(f"{module_name}:app", host="0.0.0.0", port=port, reload=True, log_level="info")

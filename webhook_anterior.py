@@ -164,6 +164,7 @@ async def auth_google_callback(request: Request, code: str):
                 "error": "Error al conectar con Google (Token)"
             })
 
+        id_token = token_data.get("id_token")
         access_token = token_data.get("access_token")
 
         # 2. Obtener datos del usuario
@@ -181,6 +182,7 @@ async def auth_google_callback(request: Request, code: str):
         db = client[Config.DB_NAME]
         usuarios = db["usuarios"]
         
+        # Buscamos si el email ya existe en TU base de datos
         user = usuarios.find_one({
             "$or": [
                 {"email": email}, 
@@ -189,36 +191,30 @@ async def auth_google_callback(request: Request, code: str):
         })
 
         if not user:
+            # === CAMBIO DE SEGURIDAD ===
+            # Antes: Creaba el usuario automáticamente.
+            # Ahora: RECHAZA el acceso si no está registrado previamente por ti.
             logger.warning(f"Intento de acceso denegado: {email}")
             return templates.TemplateResponse("login.html", {
                 "request": request, 
                 "images": get_images(), 
-                "error": f"Acceso Denegado: El correo {email} no tiene permisos."
+                "error": f"Acceso Denegado: El correo {email} no tiene permisos para acceder al sistema."
             })
-        
-        user_sub = user["username"]
-        user_rol = user.get("rol", "agente")
-        target_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
+        else:
+            user_sub = user["username"]
 
-        # 4. Crear sesión con BUENAS PRÁCTICAS
-        # Definimos el tiempo de sesión (1800 seg = 30 min)
-        SESSION_TIME = 1800 
-        
+        # 4. Crear sesión
         access_token_jwt = create_access_token({"sub": user_sub})
         
-        response = RedirectResponse(target_url, status_code=303)
-        
-        # Seteamos la cookie inicial
+        response = RedirectResponse("/crm", status_code=303)
         response.set_cookie(
-            key="access_token", 
-            value=access_token_jwt,
+            "access_token", 
+            access_token_jwt,
             httponly=True, 
-            secure=True,    # Siempre True para producción/HTTPS
+            secure=False, # Pon True en producción con HTTPS
             samesite="lax", 
-            max_age=SESSION_TIME # Tiempo inicial
+            max_age=28800
         )
-        
-        logger.info(f"Sesión iniciada para {email} (Rol: {user_rol})")
         return response
 
     except Exception as e:
@@ -250,20 +246,16 @@ async def login_post(request: Request, username: str = Form(...), password: str 
         user = usuarios.find_one({"username": username})
         
         if user and verify_password(password, user.get("hashed_password", "")):
-            # === NUEVA LÓGICA DE REDIRECCIÓN POR ROL ===
-            user_rol = user.get("rol", "agente")
-            target_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
-
             token = create_access_token({"sub": username})
             
-            response = RedirectResponse(target_url, status_code=303) 
+            response = RedirectResponse("/crm", status_code=303) 
             response.set_cookie(
                 "access_token", 
                 token,
                 httponly=True, 
-                secure=True,  # Cambiado a True para Render (HTTPS)
+                secure=False, 
                 samesite="lax", 
-                max_age=1800
+                max_age=28800
             )
             return response
         
@@ -309,15 +301,6 @@ async def leads_intelligence_endpoint():
 
 @app.get("/leads-dashboard", response_class=HTMLResponse)
 async def ver_leads(request: Request):
-    # === PROTECCIÓN: SOLO SUPERVISORES ===
-    username = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user = db["usuarios"].find_one({"username": username})
-    
-    if not user or user.get("rol") != "supervisor":
-        return RedirectResponse(url="/crm?error=acceso_denegado")
-    
     return templates.TemplateResponse("leads_dashboard.html", {"request": request})
 
 @app.get("/chat-detail/{phone}", response_class=HTMLResponse)
@@ -347,21 +330,8 @@ async def view_crm_list(request: Request, estado: str = None, busqueda: str = No
 
 @app.get("/crm/lead/{phone}", response_class=HTMLResponse)
 async def view_crm_detail(request: Request, phone: str):
-    # === PROTECCIÓN: VERIFICAR AUTENTICACIÓN Y ROL ===
-    username = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user = db["usuarios"].find_one({"username": username})
-    
     data = get_lead_detail_data(phone)
-    if not data: 
-        return HTMLResponse("Lead no encontrado")
-    
-    # === RESTRICCIÓN PARA AGENTES: SOLO SUS LEADS ===
-    if user.get("rol") == "agente":
-        if data.get("agente_asignado") != username:
-            return RedirectResponse(url="/crm?error=no_es_tu_lead")
-    
+    if not data: return HTMLResponse("Lead no encontrado")
     return templates.TemplateResponse("crm_lead_detail.html", {"request": request, "lead": data})
 
 @app.post("/api/crm/log_action")
@@ -604,13 +574,6 @@ async def retiro_confirmar(request: Request, email: str = Query(...), codigo: st
 async def retiro_contactar(request: Request, email: str = Query(...), codigo: str = Query(...)):
     ip = request.client.host if request.client else "0.0.0.0"
     return await handle_solicitud_contacto(email, codigo, ip)
-
-@app.exception_handler(401)
-async def unauthorized_exception_handler(request: Request, exc: HTTPException):
-    # Si el usuario intenta acceder a una ruta de la interfaz (HTML), lo mandamos al login
-    # Si es una petición de API pura (JSON), podrías decidir si quieres error o redirección
-    logger.warning(f"Redirigiendo a login por sesión expirada en: {request.url.path}")
-    return RedirectResponse(url="/?error=sesion_expirada")
 
 if __name__ == "__main__":
     import pathlib

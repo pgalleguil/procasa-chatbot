@@ -10,13 +10,20 @@ def obtener_aceptados_2026():
 
         # 1. Definimos las campañas de este mes (Enero 2026)
         campanas_2026 = [
-            "ajuste_precio_202601",
-            "ajuste_precio_regiones_202601",
-            "ajuste_precio_202601_REPASO",
-            "ajuste_precio_regiones_202601_REPASO",
-            "ajuste_precio_202601_TERCER",
-            "ajuste_precio_regiones_202601_TERCER",
-            "ajuste_precio_202601_REPASO_TERCER"
+            #"ajuste_precio_202601",
+            #"ajuste_precio_regiones_202601",
+            #"ajuste_precio_202601_REPASO",
+            #"ajuste_precio_regiones_202601_REPASO",
+            #"ajuste_precio_202601_REPASO_TERCER",
+            "ajuste_precio_202512", #PRIMER ENVIO
+            "ajuste_precio_regiones_202512", #PRIMER ENVIO
+
+            "ajuste_precio_202512_REPASO", #SEGUNDO ENVIO
+            "ajuste_precio_regiones_202512_REPASO", #SEGUNDO ENVIO
+
+            "ajuste_precio_202601_TERCER", #TERCER ENVIO
+            "ajuste_precio_regiones_202601_TERCER", #TERCER ENVIO
+            
         ]
 
         # 2. La consulta corregida según el diagnóstico

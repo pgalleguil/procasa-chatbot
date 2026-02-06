@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
@@ -12,6 +12,7 @@
 
     <style>
         :root {
+            /* TEMA DARK (Por defecto, tus colores originales) */
             --bg-body: #0f172a;
             --bg-card: #1e293b;
             --bg-sidebar: #020617;
@@ -20,17 +21,34 @@
             --accent: #6366f1;
             --accent-hover: #4f46e5;
             --owner-color: #f59e0b;
+            --owner-color-hover: #d97706;
             --notes-color: #2dd4bf;
             --danger-color: #ef4444;
             --success-color: #22c55e;
             --border-color: #334155;
-            --sidebar-width: 260px;
+            --sidebar-width: 200px;
             --sidebar-width-collapsed: 70px;
             --transition-speed: 0.3s;
-
-            /* Channel Specific Colors */
             --wa-color: #25D366;
             --email-color: #3b82f6;
+            /* Nuevas variables para inputs */
+            --input-bg: #334155;
+            --input-border: #475569;
+            --input-text: #fff;
+        }
+
+        /* TEMA LIGHT (Nuevo) */
+        [data-theme="light"] {
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --bg-sidebar: #0f172a;
+            /* Sidebar oscura para anclaje visual */
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --border-color: #cbd5e1;
+            --input-bg: #ffffff;
+            --input-border: #cbd5e1;
+            --input-text: #0f172a;
         }
 
         body {
@@ -38,86 +56,142 @@
             color: var(--text-primary);
             font-family: 'Outfit', sans-serif;
             overflow-x: hidden;
+            transition: background-color 0.3s, color 0.3s;
         }
 
-        /* --- SIDEBAR --- */
+        /* SIDEBAR */
+        /* SIDEBAR */
         .sidebar {
-            width: var(--sidebar-width);
+            width: var(--sidebar-width-collapsed);
             background: var(--bg-sidebar);
             height: 100vh;
             position: fixed;
-            padding: 20px;
+            left: 0;
+            top: 0;
+            padding: 20px 0;
             border-right: 1px solid var(--border-color);
-            z-index: 1000;
-            transition: width var(--transition-speed);
+            z-index: 1100;
+            transition: width var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            white-space: nowrap;
         }
 
-        .sidebar.collapsed {
-            width: var(--sidebar-width-collapsed);
-            padding: 20px 10px;
-        }
-
-        .sidebar.collapsed .brand span,
-        .sidebar.collapsed .nav-link span {
-            display: none;
-        }
-
-        .sidebar.collapsed .brand {
-            justify-content: center;
-        }
-
-        .sidebar.collapsed .nav-link {
-            text-align: center;
-            padding: 12px 0;
-        }
-
-        .sidebar.collapsed .nav-link i {
-            margin-right: 0 !important;
-            font-size: 1.2rem;
+        .sidebar:hover {
+            width: var(--sidebar-width);
+            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
         }
 
         .brand {
-            font-size: 1.4rem;
+            font-size: 1.3rem;
             font-weight: 700;
             color: #fff;
             margin-bottom: 2rem;
             display: flex;
             align-items: center;
-            gap: 10px;
-            white-space: nowrap;
+            height: 50px;
+            padding: 0;
+            /* Quitamos padding lateral para alinear desde el borde */
+            overflow: hidden;
+        }
+
+        .brand i {
+            min-width: var(--sidebar-width-collapsed);
+            /* Mantenemos el ancho del colapsado para centrar el icono */
+            text-align: center;
+            font-size: 1.8rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .brand span {
+            margin-left: -10px;
+            /* Alineación forzada para compensar el centro del icono */
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .sidebar:hover .brand span {
+            opacity: 1;
         }
 
         .nav-link {
-            color: var(--text-secondary);
-            padding: 12px 15px;
-            display: block;
+            color: #cbd5e1;
+            padding: 12px 0;
+            display: flex;
+            align-items: center;
             text-decoration: none;
-            border-radius: 8px;
             margin-bottom: 5px;
-            transition: 0.2s;
-            white-space: nowrap;
+            transition: all 0.2s;
+            height: 48px;
+            overflow: hidden;
+            width: 100%;
+            border-radius: 0;
+            /* Unificamos a sin bordes redondeados para alineación total */
+        }
+
+        .nav-link i {
+            min-width: var(--sidebar-width-collapsed);
+            /* Ancho exacto del sidebar colapsado */
+            text-align: center;
+            font-size: 1.25rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .nav-link span {
+            margin-left: -10px;
+            /* Alineación forzada para compensar el centro del icono */
+            opacity: 0;
+            transform: translateX(-10px);
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .sidebar:hover .nav-link span {
+            opacity: 1;
+            transform: translateX(0);
         }
 
         .nav-link:hover {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent);
+        }
+
+        .nav-link.active {
             background: var(--accent);
             color: white;
         }
 
-        /* --- LAYOUT --- */
+        /* Botones Especiales (Alineación Forzada) */
+        .nav-link.theme-toggle {
+            margin-top: auto;
+            /* Empuja hacia abajo */
+            background: transparent;
+        }
+
+        .nav-link.logout {
+            margin-top: 5px;
+            color: var(--text-secondary);
+        }
+
+        .nav-link.logout:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+        }
+
+        /* LAYOUT PRINCIPAL */
         .main-content {
-            margin-left: var(--sidebar-width);
+            margin-left: var(--sidebar-width-collapsed);
             padding: 30px;
             transition: margin-left var(--transition-speed);
             display: grid;
-            grid-template-columns: 1fr 400px;
+            grid-template-columns: 2fr 1fr;
+            /* Más espacio a la izquierda para la gestión unificada */
             gap: 20px;
-        }
-
-        .main-content.expanded {
-            margin-left: var(--sidebar-width-collapsed);
         }
 
         @media (max-width: 992px) {
@@ -127,11 +201,10 @@
             }
 
             .right-column {
-                order: -1;
+                order: 1;
             }
         }
 
-        /* --- CARDS & UI --- */
         .card-custom {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -140,24 +213,6 @@
             margin-bottom: 20px;
             transition: 0.3s ease;
             position: relative;
-        }
-
-        .card-hover:hover {
-            border-color: var(--accent);
-            box-shadow: 0 0 20px rgba(99, 102, 241, 0.2);
-            transform: translateY(-2px);
-        }
-
-        .card-owner-hover:hover {
-            border-color: var(--owner-color);
-            box-shadow: 0 0 20px rgba(245, 158, 11, 0.2);
-            transform: translateY(-2px);
-        }
-
-        .card-notes-hover:hover {
-            border-color: var(--notes-color);
-            box-shadow: 0 0 20px rgba(45, 212, 191, 0.2);
-            transform: translateY(-2px);
         }
 
         .section-title {
@@ -173,16 +228,17 @@
             align-items: center;
         }
 
-        /* --- ACTION GRID (STEP 1) --- */
+        /* BOTONES DE MODO (TABS) */
         .action-mode-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 12px;
             margin-bottom: 20px;
         }
 
         .action-btn {
-            background: rgba(255, 255, 255, 0.03);
+            background: rgba(125, 125, 125, 0.05);
+            /* Adaptable */
             border: 1px solid var(--border-color);
             color: var(--text-secondary);
             font-size: 0.85rem;
@@ -207,11 +263,11 @@
         }
 
         .action-btn:hover {
-            background: rgba(255, 255, 255, 0.06);
-            color: #fff;
-            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(125, 125, 125, 0.1);
+            color: var(--text-primary);
+            border-color: rgba(125, 125, 125, 0.2);
             transform: translateY(-3px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
 
         .action-btn:hover i {
@@ -246,19 +302,199 @@
             box-shadow: 0 0 15px rgba(239, 68, 68, 0.25);
         }
 
-        /* --- CONTEXT BUTTONS (STEP 2) --- */
+        /* --- EMPTY STATE (NUEVO) --- */
+        .empty-state {
+            text-align: center;
+            padding: 50px 20px;
+            color: var(--text-secondary);
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            background: rgba(125, 125, 125, 0.03);
+            animation: fadeIn 0.5s ease;
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        /* --- NUEVO: IDENTITY BOX (Ficha Contextual Integrada) --- */
+        .identity-box {
+            background: rgba(99, 102, 241, 0.05);
+            border: 1px solid var(--border-color);
+            border-left-width: 4px;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .identity-box.lead-theme {
+            border-left-color: var(--accent);
+        }
+
+        .identity-box.owner-theme {
+            border-left-color: var(--owner-color);
+            background: rgba(245, 158, 11, 0.05);
+        }
+
+        .identity-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+
+        /* Nuevo Grid de Datos del Lead - Lógica de Filas Alineadas */
+        .lead-info-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 15px;
+            padding: 5px 0;
+        }
+
+        .info-row {
+            display: grid;
+            grid-template-columns: 1fr 1.8fr 1fr;
+            gap: 15px;
+            padding-bottom: 5px;
+        }
+
+        .info-row.property-data {
+            border-top: 1px solid var(--border-color);
+            padding-top: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .info-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        .info-value {
+            font-size: 0.95rem;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        /* Link del código de propiedad */
+        .prop-link {
+            color: var(--accent);
+            text-decoration: underline;
+            cursor: pointer;
+            font-weight: 600;
+            transition: color 0.2s;
+        }
+
+        .prop-link:hover {
+            color: var(--accent-hover);
+        }
+
+        .prop-link-owner {
+            color: var(--owner-color);
+            text-decoration: underline;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .prop-link-owner:hover {
+            color: var(--owner-color-hover);
+        }
+
+        /* Grid de botones de comunicación */
+        .comm-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+            border-top: 1px dashed var(--border-color);
+            padding-top: 15px;
+        }
+
+        .btn-comm {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 8px;
+            background: rgba(125, 125, 125, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            text-decoration: none;
+            transition: 0.2s;
+            cursor: pointer;
+        }
+
+        .btn-comm:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-comm.wa:hover {
+            background: #25D366;
+            border-color: #25D366;
+            color: white;
+        }
+
+        .btn-comm.ph:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .btn-comm.em:hover {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: white;
+        }
+
+        /* Botón toggle Chatbot */
+        .btn-chat-toggle {
+            width: 100%;
+            background: none;
+            border: 1px dashed var(--border-color);
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            padding: 6px;
+            border-radius: 6px;
+            margin-top: 10px;
+            transition: 0.2s;
+            cursor: pointer;
+        }
+
+        .btn-chat-toggle:hover {
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }
+
+        /* --- BOTONES DE RESULTADOS (Contexto) --- */
         .context-btn {
             border: 1px solid var(--border-color);
-            background: rgba(255, 255, 255, 0.02);
+            background: rgba(125, 125, 125, 0.05);
             color: var(--text-secondary);
             transition: all 0.2s;
             font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            height: 100%;
         }
 
         .context-btn:hover {
-            background: rgba(255, 255, 255, 0.08);
-            color: #fff;
-            border-color: rgba(255, 255, 255, 0.3);
+            background: rgba(125, 125, 125, 0.1);
+            color: var(--text-primary);
+            border-color: rgba(125, 125, 125, 0.3);
             transform: translateY(-1px);
         }
 
@@ -266,15 +502,50 @@
             background: var(--accent);
             color: white;
             border-color: var(--accent);
-            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
         }
 
-        /* --- LEAD SCORING --- */
+        /* Colores Específicos Contexto */
+        .ctx-card.effective:hover,
+        .context-btn.active.effective {
+            border-color: var(--success-color);
+            color: var(--success-color);
+            background: rgba(34, 197, 94, 0.1);
+            color: white;
+            background: var(--success-color);
+        }
+
+        .ctx-card.partial:hover,
+        .context-btn.active.partial {
+            border-color: var(--owner-color);
+            color: var(--owner-color);
+            background: rgba(245, 158, 11, 0.1);
+            color: white;
+            background: var(--owner-color);
+        }
+
+        .ctx-card.failed:hover,
+        .context-btn.active.failed {
+            border-color: var(--email-color);
+            color: var(--email-color);
+            background: rgba(59, 130, 246, 0.1);
+            color: white;
+            background: var(--email-color);
+        }
+
+        .ctx-card.invalid:hover,
+        .context-btn.active.invalid {
+            border-color: var(--danger-color);
+            color: var(--danger-color);
+            background: rgba(239, 68, 68, 0.1);
+            color: white;
+            background: var(--danger-color);
+        }
+
         .scoring-group {
             display: flex;
             gap: 10px;
             margin-bottom: 15px;
-            background: rgba(255, 255, 255, 0.03);
+            background: rgba(125, 125, 125, 0.05);
             padding: 10px;
             border-radius: 8px;
             border: 1px solid var(--border-color);
@@ -300,7 +571,7 @@
 
         .score-label:hover {
             opacity: 1;
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(125, 125, 125, 0.1);
         }
 
         .score-radio[value="A"]:checked+.score-label {
@@ -324,7 +595,6 @@
             opacity: 1;
         }
 
-        /* --- VISUAL SUMMARY BOX --- */
         .summary-box {
             background: rgba(15, 23, 42, 0.6);
             border: 1px dashed var(--border-color);
@@ -345,9 +615,8 @@
             color: #fff;
         }
 
-        /* Logic Section */
         .logic-section {
-            background: rgba(0, 0, 0, 0.2);
+            background: rgba(125, 125, 125, 0.03);
             padding: 15px;
             border-radius: 8px;
             border-left: 3px solid var(--accent);
@@ -363,6 +632,30 @@
             border-left-color: var(--owner-color);
         }
 
+        .logic-section.wait-border {
+            border-left-color: var(--notes-color);
+        }
+
+        /* RESPONSIVE DESIGN */
+        @media (max-width: 768px) {
+            .info-row {
+                grid-template-columns: 1fr !important;
+                gap: 8px;
+            }
+
+            .info-row.property-data {
+                padding-top: 10px;
+            }
+
+            .info-item[style*="grid-column: span 2"] {
+                grid-column: span 1 !important;
+            }
+
+            .comm-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
         .category-header {
             font-size: 0.8rem;
             text-transform: uppercase;
@@ -370,14 +663,14 @@
             color: var(--text-secondary);
             margin-top: 10px;
             margin-bottom: 8px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid var(--border-color);
             padding-bottom: 4px;
         }
 
         .sub-logic {
             margin-top: 8px;
             padding: 10px;
-            background: rgba(255, 255, 255, 0.04);
+            background: rgba(125, 125, 125, 0.05);
             border-radius: 6px;
             border-left: 2px solid var(--border-color);
             margin-bottom: 10px;
@@ -401,116 +694,250 @@
             cursor: pointer;
             width: 100%;
             transition: color 0.2s;
+            color: var(--text-primary);
         }
 
-        .label-high-value {
-            color: #fff;
-            font-weight: 600;
-        }
-
-        .label-high-value:hover {
+        .form-check-label:hover {
             color: var(--accent);
         }
 
-        .label-normal {
-            color: #e2e8f0;
-        }
-
-        .label-low-value {
-            color: #94a3b8;
-        }
-
-        /* Actions Right Column */
-        .action-grid {
+        .visual-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
             gap: 10px;
+            margin-bottom: 15px;
         }
 
-        .btn-action-big {
+        .grid-3-col {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .grid-2-col {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .grid-4-col {
+            grid-template-columns: repeat(4, 1fr);
+        }
+
+        .visual-card {
+            background: rgba(125, 125, 125, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px 5px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s ease;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 10px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            color: var(--text-secondary);
-            text-decoration: none;
-            transition: 0.2s;
-            font-size: 0.8rem;
-            cursor: pointer;
+            min-height: 85px;
+            position: relative;
+            overflow: hidden;
+            height: 100%;
         }
 
-        .btn-action-big:hover {
-            background: var(--accent);
-            color: white;
-            border-color: var(--accent);
-        }
-
-        .btn-phone:hover {
-            background: #3b82f6 !important;
-            border-color: #3b82f6 !important;
-        }
-
-        .btn-whatsapp:hover {
-            background: #25D366 !important;
-            border-color: #25D366 !important;
-        }
-
-        .data-row {
+        .visual-card i {
+            font-size: 1.5rem;
             margin-bottom: 8px;
-            font-size: 0.9rem;
-        }
-
-        .data-label {
             color: var(--text-secondary);
-            font-size: 0.8rem;
-            display: block;
+            transition: 0.2s;
         }
 
-        .data-value {
-            color: white;
-            font-weight: 500;
-        }
-
-        .toggler-link {
+        .visual-card span {
+            font-size: 0.75rem;
+            font-weight: 600;
+            line-height: 1.2;
             color: var(--text-secondary);
-            font-size: 0.8rem;
-            cursor: pointer;
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-top: 10px;
+        }
+
+        .visual-card:hover {
+            background: rgba(125, 125, 125, 0.08);
+            transform: translateY(-2px);
+        }
+
+        /* Colores Visual Cards */
+        input[value="ganado"]:checked+.visual-card,
+        input[value="prop_autoriza"]:checked+.visual-card {
+            border-color: var(--success-color);
+            background: rgba(34, 197, 94, 0.15);
+        }
+
+        input[value="ganado"]:checked+.visual-card i,
+        input[value="ganado"]:checked+.visual-card span {
+            color: var(--success-color);
+        }
+
+        input[value="prop_autoriza"]:checked+.visual-card i {
+            color: var(--success-color);
+        }
+
+        input[value="precio"]:checked+.visual-card,
+        input[value="competencia"]:checked+.visual-card {
+            border-color: var(--danger-color);
+            background: rgba(239, 68, 68, 0.15);
+        }
+
+        input[value="precio"]:checked+.visual-card i,
+        input[value="competencia"]:checked+.visual-card i {
+            color: var(--danger-color);
+        }
+
+        input[value="cliente"]:checked+.visual-card,
+        input[value="producto"]:checked+.visual-card {
+            border-color: var(--owner-color);
+            background: rgba(245, 158, 11, 0.15);
+        }
+
+        input[value="cliente"]:checked+.visual-card i,
+        input[value="producto"]:checked+.visual-card i {
+            color: var(--owner-color);
+        }
+
+        input[value="tecnico"]:checked+.visual-card {
+            border-color: #94a3b8;
+            background: rgba(148, 163, 184, 0.15);
+        }
+
+        input[value="tecnico"]:checked+.visual-card i {
+            color: #e2e8f0;
+        }
+
+        input[value="respuesta"]:checked+.visual-card {
+            border-color: var(--email-color);
+            background: rgba(59, 130, 246, 0.15);
+        }
+
+        input[value="respuesta"]:checked+.visual-card i {
+            color: var(--email-color);
+        }
+
+        input[value="decision"]:checked+.visual-card {
+            border-color: var(--owner-color);
+            background: rgba(245, 158, 11, 0.15);
+        }
+
+        input[value="decision"]:checked+.visual-card i {
+            color: var(--owner-color);
+        }
+
+        input[value="admin"]:checked+.visual-card {
+            border-color: #94a3b8;
+            background: rgba(148, 163, 184, 0.15);
+        }
+
+        input[value="externo"]:checked+.visual-card {
+            border-color: var(--notes-color);
+            background: rgba(45, 212, 191, 0.15);
+        }
+
+        input[value="externo"]:checked+.visual-card i {
+            color: var(--notes-color);
+        }
+
+        input[value="prop_restricciones"]:checked+.visual-card {
+            border-color: var(--owner-color);
+            background: rgba(245, 158, 11, 0.15);
+        }
+
+        input[value="prop_restricciones"]:checked+.visual-card i {
+            color: var(--owner-color);
+        }
+
+        input[value="prop_no_responde"]:checked+.visual-card {
+            border-color: var(--email-color);
+            background: rgba(59, 130, 246, 0.15);
+        }
+
+        input[value="prop_no_responde"]:checked+.visual-card i {
+            color: var(--email-color);
+        }
+
+        input[value="prop_no_autoriza"]:checked+.visual-card {
+            border-color: #f97316;
+            background: rgba(249, 115, 22, 0.15);
+        }
+
+        input[value="prop_no_autoriza"]:checked+.visual-card i {
+            color: #f97316;
+        }
+
+        input[value="prop_tecnico"]:checked+.visual-card {
+            border-color: var(--danger-color);
+            background: rgba(239, 68, 68, 0.15);
+        }
+
+        input[value="prop_tecnico"]:checked+.visual-card i {
+            color: var(--danger-color);
+        }
+
+        input[value="prop_no_disponible"]:checked+.visual-card {
+            border-color: #64748b;
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .fade-in-down {
+            animation: fadeInDown 0.3s ease-out forwards;
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* SESSION MODAL */
+        #sessionModal .modal-content {
+            background-color: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        #sessionModal .modal-header {
+            border-bottom: 3px solid var(--owner-color);
+        }
+
+        #sessionModal .modal-title {
+            color: var(--owner-color);
+            font-weight: 700;
+        }
+
+        .timer-display {
+            font-size: 2rem;
+            font-weight: 700;
+            text-align: center;
+            color: var(--text-primary);
+            margin: 10px 0;
+            font-family: monospace;
         }
 
         .form-control,
         .form-select {
-            background-color: #334155;
-            border-color: #475569;
-            color: #fff;
+            background-color: var(--input-bg);
+            border-color: var(--input-border);
+            color: var(--input-text);
             font-size: 0.85rem;
+        }
+
+        .form-control:disabled,
+        .form-select:disabled {
+            background-color: var(--input-bg) !important;
+            border-color: var(--input-border) !important;
+            color: var(--text-secondary) !important;
+            opacity: 0.7;
         }
 
         .form-control:focus,
         .form-select:focus {
-            background-color: #334155;
+            background-color: var(--input-bg);
             border-color: var(--accent);
-            color: #fff;
+            color: var(--input-text);
             box-shadow: 0 0 0 0.25rem rgba(99, 102, 241, 0.25);
-        }
-
-        .form-check-input {
-            background-color: #334155;
-            border-color: #475569;
-            cursor: pointer;
-        }
-
-        .form-check-input:checked {
-            background-color: var(--accent);
-            border-color: var(--accent);
         }
 
         .chat-bubble {
@@ -530,7 +957,6 @@
             text-align: right;
         }
 
-        /* Timeline & Notes Styles */
         .timeline-box {
             position: relative;
             padding-left: 10px;
@@ -560,37 +986,33 @@
             width: 30px;
             height: 30px;
             background: var(--bg-card);
-            border: 2px solid var(--accent);
+            border: 2px solid var(--border-color);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 1;
-            color: var(--accent);
             font-size: 0.8rem;
             box-shadow: 0 0 0 5px var(--bg-body);
         }
 
+        .tl-icon.user {
+            border-color: var(--success-color);
+            color: var(--success-color);
+        }
+
+        .tl-icon.system {
+            border-color: var(--text-secondary);
+            color: var(--text-secondary);
+        }
+
         .tl-content {
-            background: rgba(255, 255, 255, 0.02);
+            background: rgba(125, 125, 125, 0.03);
             border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 12px;
         }
 
-        .btn-expand-timeline {
-            width: 100%;
-            border: 1px dashed var(--border-color);
-            background: none;
-            color: var(--text-secondary);
-            padding: 8px;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            transition: 0.2s;
-            margin-top: 15px;
-        }
-
-        /* --- MODAL COMUNICACIÓN --- */
         #commModal .modal-content {
             background-color: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -598,7 +1020,7 @@
         }
 
         .modal-header.theme-wa {
-            background: #1e293b;
+            background: var(--bg-card);
             border-bottom: 3px solid #25D366;
         }
 
@@ -607,7 +1029,7 @@
         }
 
         .modal-header.theme-email {
-            background: #1e293b;
+            background: var(--bg-card);
             border-bottom: 3px solid #3b82f6;
         }
 
@@ -630,7 +1052,7 @@
         }
 
         .stage-tab {
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(125, 125, 125, 0.05);
             border: 1px solid transparent;
             padding: 6px 14px;
             border-radius: 20px;
@@ -642,8 +1064,8 @@
         }
 
         .stage-tab:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: #fff;
+            background: rgba(125, 125, 125, 0.1);
+            color: var(--text-primary);
         }
 
         .stage-tab.active {
@@ -662,7 +1084,7 @@
         }
 
         .template-card {
-            background: rgba(255, 255, 255, 0.02);
+            background: rgba(125, 125, 125, 0.02);
             border: 1px solid var(--border-color);
             padding: 10px 15px;
             border-radius: 8px;
@@ -674,8 +1096,8 @@
         }
 
         .template-card:hover {
-            background: rgba(255, 255, 255, 0.05);
-            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(125, 125, 125, 0.05);
+            border-color: rgba(125, 125, 125, 0.2);
         }
 
         .template-card.selected {
@@ -691,7 +1113,7 @@
         .tpl-title {
             font-size: 0.85rem;
             font-weight: 600;
-            color: #e2e8f0;
+            color: var(--text-primary);
         }
 
         .tpl-preview {
@@ -711,7 +1133,6 @@
             border-left: 3px solid #3b82f6;
         }
 
-        /* Notes Styles */
         .notes-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -813,491 +1234,856 @@
         }
 
         .btn-card-header:hover {
+            color: var(--text-primary);
+        }
+
+        .btn-disabled-strict {
+            background-color: var(--input-bg) !important;
+            border-color: var(--border-color) !important;
+            color: var(--text-secondary) !important;
+            cursor: not-allowed !important;
+            opacity: 0.7;
+        }
+
+        .suggestion-badge {
+            font-size: 0.8rem;
+            color: var(--notes-color);
+            background: rgba(45, 212, 191, 0.1);
+            padding: 4px 10px;
+            border-radius: 4px;
+            border: 1px dashed var(--notes-color);
+            margin-top: 5px;
+            display: inline-block;
+        }
+
+        .alert-danger-custom {
+            background: #7f1d1d;
+            border: 2px solid #ef4444;
+            color: #ffffff;
+            font-weight: 600;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            margin-top: 15px;
+            box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .alert-danger-custom i {
+            font-size: 1.2rem;
+            color: #fca5a5;
+        }
+
+        /* --- NUEVO: CANONICAL STATUS BANNER (ENTERPRISE) --- */
+        .canonical-banner {
+            grid-column: 1 / -1;
+            background: linear-gradient(90deg, var(--bg-card), var(--bg-body));
+            border: 1px solid var(--border-color);
+            border-left: 5px solid var(--accent);
+            border-radius: 12px;
+            padding: 15px 25px;
+            margin-bottom: 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            position: sticky;
+            top: 10px;
+            z-index: 900;
+            backdrop-filter: blur(10px);
+            animation: slideDown 0.4s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .banner-stat {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .banner-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            font-weight: 700;
+            color: var(--text-secondary);
+            letter-spacing: 1px;
+            margin-bottom: 2px;
+        }
+
+        .banner-value {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .banner-value.st-nuevo {
+            color: var(--danger-color);
+        }
+
+        .banner-value.st-gestion {
+            color: var(--owner-color);
+        }
+
+        .banner-value.st-visita {
+            color: var(--success-color);
+        }
+
+        .banner-value.st-cerrado {
+            color: var(--text-secondary);
+        }
+
+        /* --- TOAST ENTERPRISE --- */
+        #toast-container {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .toast-enterprise {
+            background: rgba(30, 41, 59, 0.95);
+            border-left: 5px solid var(--success-color);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
             color: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            min-width: 350px;
+            backdrop-filter: blur(8px);
+            animation: toastIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes toastIn {
+            from {
+                transform: translateX(100px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .toast-header-custom {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 8px;
+        }
+
+        .toast-title {
+            font-weight: 700;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toast-body-custom {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .toast-footer-custom {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
         }
     </style>
 </head>
 
 <body>
 
-    <nav class="sidebar collapsed" id="sidebar">
+    <nav class="sidebar" id="sidebar">
         <div class="brand">
             <i class="fa-solid fa-robot text-primary"></i> <span>PROCASA AI</span>
         </div>
-        <a href="/crm" class="nav-link"><i class="fa-solid fa-arrow-left me-2"></i> <span>Volver</span></a>
+        <a href="/crm" class="nav-link"><i class="fa-solid fa-arrow-left"></i> <span>Volver</span></a>
+
+        <!-- BOTÓN DE TEMA AGREGADO -->
+        <a href="#" class="nav-link theme-toggle" onclick="toggleTheme()">
+            <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
+        </a>
+
+        <a href="/logout" class="nav-link logout">
+            <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
+        </a>
     </nav>
 
-    <div class="main-content expanded" id="mainContent">
+    <div class="main-content" id="mainContent">
+
+        <!-- Cabecera compartida para alinear columnas -->
+        <div class="d-flex align-items-center mb-3" style="grid-column: 1 / -1;">
+            <h4 class="m-0 fw-bold">Gestión del Lead</h4>
+        </div>
+
+        <!-- 🚩 BANNER CANÓNICO DE ESTADO (ENTERPRISE) -->
+        <div class="canonical-banner" id="canonicalBanner">
+            <div class="banner-stat">
+                <span class="banner-label">Estado Actual</span>
+                <span class="banner-value" id="canonical_status_label">Cargando...</span>
+            </div>
+
+            <div class="banner-stat d-none d-md-flex" style="max-width: 320px;">
+                <span class="banner-label">Última Gestión</span>
+                <div class="d-flex align-items-baseline gap-1" style="max-width: 100%;">
+                    <span class="banner-value text-truncate" style="font-size: 0.85rem;"
+                        id="canonical_last_action">-</span>
+                    <span class="text-secondary small fw-normal" style="white-space: nowrap;"
+                        id="canonical_last_time"></span>
+                </div>
+            </div>
+
+            <div class="banner-stat">
+                <span class="banner-label">Próximo Contacto</span>
+                <span class="banner-value" id="canonical_next_date">
+                    <span class="text-muted">No programado</span>
+                </span>
+            </div>
+
+            <div class="banner-actions">
+                <button class="btn btn-sm btn-outline-light" onclick="window.location.reload()">
+                    <i class="fa-solid fa-rotate"></i>
+                </button>
+            </div>
+        </div>
 
         <div class="left-column">
-            <div class="d-flex align-items-center mb-3">
-                <button id="sidebarToggle" class="me-3"><i class="fa-solid fa-bars"></i></button>
-                <h4 class="m-0 fw-bold">Gestión del Lead</h4>
-            </div>
 
             <div class="card-custom" style="border-top: 3px solid var(--accent);">
 
+                <!-- 1. SELECTOR DE MODO (TABS) -->
                 <div class="action-mode-grid">
                     <button class="action-btn" id="mode_contact" onclick="setActionMode('contact')">
-                        <i class="fa-solid fa-phone"></i>
-                        <span>Contactar</span>
+                        <i class="fa-solid fa-user-check"></i> <span>Lead</span>
                     </button>
                     <button class="action-btn" id="mode_prop" onclick="setActionMode('prop')">
-                        <i class="fa-solid fa-house-user"></i>
-                        <span>Propiedad</span>
+                        <i class="fa-solid fa-house-user"></i> <span>Propietario</span>
                     </button>
-                    <button class="action-btn" id="mode_wait" onclick="setActionMode('wait')">
-                        <i class="fa-solid fa-clock"></i>
-                        <span>Seguimiento</span>
-                    </button>
+
                     <button class="action-btn" id="mode_close" onclick="setActionMode('close')">
-                        <i class="fa-solid fa-ban"></i>
-                        <span>Cerrar</span>
+                        <i class="fa-solid fa-ban"></i> <span>Cerrar</span>
                     </button>
                 </div>
 
-                <div id="contact-context" class="mb-3 d-none animate__animated animate__fadeIn">
-                    <div class="section-title small border-0 mb-2 p-0">¿Resultado del Contacto?</div>
-                    <div class="row g-2">
-                        <div class="col-6">
-                            <button class="btn btn-sm w-100 context-btn" id="ctx_hable" onclick="toggleLogic('hable')">
-                                <i class="fa-solid fa-comments me-1"></i> Hablé con Lead
-                            </button>
-                        </div>
-                        <div class="col-6">
-                            <button class="btn btn-sm w-100 context-btn" id="ctx_intento"
-                                onclick="toggleLogic('intento')">
-                                <i class="fa-solid fa-phone-slash me-1"></i> No Contestó
-                            </button>
-                        </div>
-                    </div>
+                <!-- 2. EMPTY STATE (NUEVO - MENSAJE INICIAL) -->
+                <div id="empty-state" class="empty-state">
+                    <i class="fa-solid fa-hand-pointer"></i>
+                    <p class="m-0">Selecciona una acción arriba para cargar los detalles.</p>
                 </div>
 
-                <div class="section-title mt-3">Detalle de Gestión</div>
+                <!-- 3. CONTENEDOR DE TRABAJO (OCULTO INICIALMENTE) -->
+                <div id="crm-work-area" class="d-none">
 
-                <form id="crmForm" onsubmit="saveGestion(event)">
-
-                    <input type="hidden" id="resultado_gestion" name="resultado_gestion">
-                    <input type="radio" class="d-none" name="interaction_type" value="hable">
-                    <input type="radio" class="d-none" name="interaction_type" value="intento">
-                    <input type="radio" class="d-none" name="interaction_type" value="propietario">
-                    <input type="radio" class="d-none" name="interaction_type" value="espera">
-                    <input type="radio" class="d-none" name="interaction_type" value="descartado">
-
-                    <div id="logic-hable" class="logic-section d-none">
-
-                        <label class="data-label mb-2 text-white">Calificación del Lead (Obligatorio)</label>
-                        <div class="scoring-group">
-                            <input type="radio" name="lead_score" value="A" id="score_a" class="score-radio"
-                                onclick="updateSummary()">
-                            <label for="score_a" class="score-label">🔥 A: Compra YA</label>
-
-                            <input type="radio" name="lead_score" value="B" id="score_b" class="score-radio"
-                                onclick="updateSummary()">
-                            <label for="score_b" class="score-label">🌤️ B: Interesado</label>
-
-                            <input type="radio" name="lead_score" value="C" id="score_c" class="score-radio"
-                                onclick="updateSummary()">
-                            <label for="score_c" class="score-label">❄️ C: Frío/Largo Plazo</label>
-                        </div>
-
-                        <div class="category-group">
-                            <div class="category-header">Interés Activo</div>
-
-                            <div class="form-check mb-1">
-                                <input class="form-check-input" type="radio" name="hable_result" id="rd_visita"
-                                    onclick="toggleSubOption('sub_visita', 'Confirmar y Agendar Visita', 'visita_agendada', 'success', 0)">
-                                <label class="form-check-label label-high-value" for="rd_visita">Agendar Visita /
-                                    Reunión</label>
-                            </div>
-                            <div id="sub_visita" class="sub-logic d-none">
-                                <div class="form-check"><input class="form-check-input" type="checkbox"
-                                        id="chk_conf_prop"><label class="form-check-label" for="chk_conf_prop">Falta
-                                        confirmar prop.</label></div>
-                                <div class="form-check"><input class="form-check-input" type="checkbox"
-                                        id="chk_conf_cli"><label class="form-check-label" for="chk_conf_cli">Cliente
-                                        confirma</label></div>
-                            </div>
-
-                            <div class="form-check mb-1">
-                                <input class="form-check-input" type="radio" name="hable_result" id="rd_compara"
-                                    onclick="toggleSubOption('sub_compara', 'Guardar Seguimiento', 'requiere_seguimiento', 'primary', 3)">
-                                <label class="form-check-label label-normal" for="rd_compara">Comparando</label>
-                            </div>
-                            <div id="sub_compara" class="sub-logic d-none">
-                                <label class="data-label">Plazo/Motivo:</label>
-                                <select class="form-select form-select-sm mb-2" id="sel_compara"
-                                    onchange="updateSummary()">
-                                    <option>Comparando precios</option>
-                                    <option>Comparando sectores</option>
-                                    <option>Sin urgencia</option>
-                                </select>
-                            </div>
-
-                            <div class="form-check mb-1">
-                                <input class="form-check-input" type="radio" name="hable_result" id="rd_objecion"
-                                    onclick="toggleSubOption('sub_objecion', 'Registrar Objeción', 'requiere_seguimiento', 'primary', 7)">
-                                <label class="form-check-label label-normal" for="rd_objecion">Objeción
-                                    Económica</label>
-                            </div>
-                            <div id="sub_objecion" class="sub-logic d-none">
-                                <label class="data-label">Motivo:</label>
-                                <select class="form-select form-select-sm mb-2" id="sel_objecion"
-                                    onchange="updateSummary()">
-                                    <option>Pie insuficiente</option>
-                                    <option>Dividendo alto</option>
-                                    <option>Precio alto</option>
-                                </select>
-                            </div>
-
-                            <div class="form-check mb-1">
-                                <input class="form-check-input" type="radio" name="hable_result" id="rd_finan"
-                                    onclick="toggleSubOption('sub_finan', 'Guardar Evaluación', 'requiere_seguimiento', 'primary', 5)">
-                                <label class="form-check-label label-normal" for="rd_finan">Evaluando
-                                    Financiamiento</label>
-                            </div>
-                            <div id="sub_finan" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2" id="sel_finan"
-                                    onchange="updateSummary()">
-                                    <option>En evaluación</option>
-                                    <option>Preaprobado</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="category-group">
-                            <div class="category-header mt-3">Gestión Comercial</div>
-
-                            <div class="form-check mb-1">
-                                <input class="form-check-input" type="radio" name="hable_result" id="rd_consulta"
-                                    onclick="toggleSubOption('sub_consulta', 'Registrar Envío Info', 'requiere_seguimiento', 'primary', 2)">
-                                <label class="form-check-label label-normal" for="rd_consulta">Envío Info /
-                                    Ficha</label>
-                            </div>
-                            <div id="sub_consulta" class="sub-logic d-none">
-                                <div class="form-check"><input class="form-check-input" type="checkbox"
-                                        id="chk_wa_ficha"><label class="form-check-label"
-                                        for="chk_wa_ficha">WhatsApp</label></div>
-                                <div class="form-check"><input class="form-check-input" type="checkbox"
-                                        id="chk_mail_ficha"><label class="form-check-label"
-                                        for="chk_mail_ficha">Email</label></div>
-                            </div>
-
-                            <div class="form-check mb-1">
-                                <input class="form-check-input" type="radio" name="hable_result" id="rd_oferta"
-                                    onclick="toggleSubOption('sub_oferta', 'Registrar Oferta Formal', 'requiere_seguimiento', 'success', 1)">
-                                <label class="form-check-label label-high-value text-warning" for="rd_oferta">¡PRESENTAR
-                                    OFERTA!</label>
-                            </div>
-                            <div id="sub_oferta" class="sub-logic d-none">
-                                <label class="data-label">Monto:</label>
-                                <input type="number" class="form-control form-control-sm mb-2" placeholder="Monto"
-                                    id="input_monto_oferta" onchange="updateSummary()">
-                                <div class="form-check mb-2"><input class="form-check-input" type="checkbox"
-                                        id="chk_garantia"><label class="form-check-label"
-                                        for="chk_garantia">Garantía/Reserva</label></div>
-                            </div>
-                        </div>
-
-                        <div class="category-group">
-                            <div class="category-header mt-3">Indecisión / Negociación</div>
-                            <div class="form-check mb-1">
-                                <input class="form-check-input" type="radio" name="hable_result" id="rd_indeciso"
-                                    onclick="toggleSubOption('sub_indeciso', 'Guardar Seguimiento', 'requiere_seguimiento', 'primary', 5)">
-                                <label class="form-check-label label-low-value" for="rd_indeciso">Indeciso</label>
-                            </div>
-                            <div id="sub_indeciso" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2" id="sel_indeciso"
-                                    onchange="updateSummary()">
-                                    <option>Espera tercero</option>
-                                    <option>Miedo error</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="category-group">
-                            <div class="category-header mt-3">No Avanza</div>
-                            <div class="form-check mb-1">
-                                <input class="form-check-input" type="radio" name="hable_result" id="rd_nogusta"
-                                    onclick="toggleSubOption('sub_nogusta', 'Guardar Feedback', 'requiere_seguimiento', 'primary', 15)">
-                                <label class="form-check-label label-low-value" for="rd_nogusta">No le gustó</label>
-                            </div>
-                            <div id="sub_nogusta" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2" id="sel_nogusta"
-                                    onchange="updateSummary()">
-                                    <option>Precio</option>
-                                    <option>Ubicación</option>
-                                    <option>Estado</option>
-                                </select>
-                                <div class="form-check mb-2"><input class="form-check-input" type="checkbox"
-                                        id="chk_cross"><label class="form-check-label" for="chk_cross">Buscar
-                                        opciones</label></div>
-                            </div>
-
-                            <div class="form-check mb-1">
-                                <input class="form-check-input" type="radio" name="hable_result" id="rd_desiste"
-                                    onclick="toggleSubOption('sub_desiste', 'Guardar Pausa', 'lead_pausado', 'info', 30)">
-                                <label class="form-check-label label-low-value" for="rd_desiste">Desiste
-                                    Temporalmente</label>
-                            </div>
-                            <div id="sub_desiste" class="sub-logic d-none">
-                                <select class="form-select form-select-sm mb-2" id="sel_desiste"
-                                    onchange="updateSummary()">
-                                    <option>Cambio planes</option>
-                                    <option>Problema $</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="logic-intento" class="logic-section d-none">
-                        <label class="data-label mb-2 text-white">Resultado del intento:</label>
-
-                        <div class="form-check mb-1">
-                            <input class="form-check-input" type="radio" name="intento_res" id="rd_buzon" checked
-                                onclick="autoSetDate(1)">
-                            <label class="form-check-label text-light" for="rd_buzon">Buzón de voz</label>
-                        </div>
-                        <div class="form-check mb-1">
-                            <input class="form-check-input" type="radio" name="intento_res" id="rd_corta"
-                                onclick="autoSetDate(1)">
-                            <label class="form-check-label text-light" for="rd_corta">Cortó llamada</label>
-                        </div>
-                        <div class="form-check mb-1">
-                            <input class="form-check-input" type="radio" name="intento_res" id="rd_noshow"
-                                onclick="autoSetDate(1)">
-                            <label class="form-check-label text-warning" for="rd_noshow">Faltó a la visita</label>
-                        </div>
-                        <div class="form-check mb-1">
-                            <input class="form-check-input" type="radio" name="intento_res" id="rd_wrong"
-                                onclick="autoSetDate(0)">
-                            <label class="form-check-label text-secondary" for="rd_wrong">Número equivocado</label>
-                        </div>
-
-                        <div class="mt-3 pt-2 border-top border-secondary">
-                            <div class="row g-2 mb-2">
-                                <div class="col-6">
-                                    <label class="data-label">Canal:</label>
-                                    <select class="form-select form-select-sm" id="intento_canal">
-                                        <option>Llamada</option>
-                                        <option>WhatsApp</option>
-                                    </select>
+                    <!-- IDENTIDAD LEAD (MODIFICADO: Sin precio, con RUT, Grid limpio) -->
+                    <!-- Solo visible en Contactar, se ocultará en Wait/Close -->
+                    <div id="identity-lead" class="identity-box lead-theme">
+                        <div class="identity-header">
+                            <div>
+                                <h5 class="fw-bold m-0" style="color: var(--text-primary);">{{ lead.nombre }}</h5>
+                                <div class="small text-secondary mt-1">
+                                    <i class="fa-solid fa-location-dot me-1"></i> {{ lead.datos_propiedad.comuna }}
                                 </div>
-                                <div class="col-6">
-                                    <label class="data-label">Intento #:</label>
-                                    <select class="form-select form-select-sm" id="intento_num">
-                                        <option>1</option>
-                                        <option>2</option>
-                                    </select>
+                            </div>
+                            <!-- <div class="text-end">
+                                <span
+                                    class="badge bg-primary bg-opacity-25 text-primary border border-primary">Lead</span>
+                            </div> -->
+                        </div>
+
+                        <!-- Grid de Datos Mejorado (Filas Alineadas) -->
+                        <div class="lead-info-grid">
+                            <!-- Fila 1: Datos Personales (3 Columnas) -->
+                            <div class="info-row">
+                                <div class="info-item">
+                                    <span class="info-label">Teléfono</span>
+                                    <span class="info-value">{{ lead.phone }}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Email</span>
+                                    <span class="info-value">{{ lead.email or '---' }}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">RUT</span>
+                                    <span class="info-value">{{ lead.rut or '---' }}</span>
+                                </div>
+                            </div>
+                            <!-- Fila 2: Datos de Propiedad (Código + Ubicación bajo Email) -->
+                            <div class="info-row property-data">
+                                <div class="info-item">
+                                    <span class="info-label">Código Propiedad</span>
+                                    <a href="{{ lead.datos_propiedad.url }}" target="_blank"
+                                        class="prop-link info-value">
+                                        <i class="fa-solid fa-arrow-up-right-from-square me-1"
+                                            style="font-size: 0.7rem;"></i>{{ lead.datos_propiedad.codigo }}
+                                    </a>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Ubicación Interés</span>
+                                    <span class="info-value">{{ lead.datos_propiedad.comuna or '---' }}</span>
+                                </div>
+                                <div class="info-item">
+                                    <!-- Celda vacía para mantener alineación -->
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <div id="logic-propietario" class="logic-section owner-border d-none">
-                        <div class="form-check mb-1">
-                            <input class="form-check-input" type="radio" name="prop_status" id="rd_prop_coord" checked
-                                onclick="toggleSubOption('sub_prop_coord', 'Guardar Coordinación', 'requiere_seguimiento', 'warning', 1)">
-                            <label class="form-check-label text-white" for="rd_prop_coord">Coordinación Visita</label>
-                        </div>
-                        <div id="sub_prop_coord" class="sub-logic">
-                            <div class="form-check"><input class="form-check-input" type="radio" name="sub_prop_c"
-                                    id="spc_1"><label class="form-check-label" for="spc_1">Autoriza</label></div>
-                            <div class="form-check"><input class="form-check-input" type="radio" name="sub_prop_c"
-                                    id="spc_2"><label class="form-check-label" for="spc_2">Rechaza horario</label></div>
-                        </div>
-
-                        <div class="form-check mb-1">
-                            <input class="form-check-input" type="radio" name="prop_status" id="rd_prop_obj"
-                                onclick="toggleSubOption('sub_prop_obj', 'Registrar Objeción Propietario', 'requiere_seguimiento', 'warning', 7)">
-                            <label class="form-check-label text-white" for="rd_prop_obj">Objeciones / Precio</label>
-                        </div>
-                        <div id="sub_prop_obj" class="sub-logic d-none">
-                            <select class="form-select form-select-sm mb-2" id="sel_prop_obj">
-                                <option>No baja precio</option>
-                                <option>Desconfía</option>
-                            </select>
+                        <!-- Botones de Acción Directa -->
+                        <div class="comm-grid">
+                            <button onclick="openCommPanel('lead', 'phone')" class="btn-comm ph">
+                                <i class="fa-solid fa-phone"></i> Llamar
+                            </button>
+                            <button onclick="openCommPanel('lead', 'whatsapp')" class="btn-comm wa">
+                                <i class="fa-brands fa-whatsapp"></i> WhatsApp
+                            </button>
+                            <button onclick="openCommPanel('lead', 'email')" class="btn-comm em">
+                                <i class="fa-solid fa-envelope"></i> Email
+                            </button>
                         </div>
 
-                        <div class="form-check mb-1">
-                            <input class="form-check-input" type="radio" name="prop_status" id="rd_prop_nd"
-                                onclick="toggleSubOption('sub_prop_nd', 'Marcar No Disponible', 'lead_pausado', 'info', 15)">
-                            <label class="form-check-label text-secondary" for="rd_prop_nd">No Disponible</label>
-                        </div>
-                        <div id="sub_prop_nd" class="sub-logic d-none">
-                            <select class="form-select form-select-sm mb-2" id="sel_prop_nd">
-                                <option>Vendida/Arrendada</option>
-                                <option>Suspendida</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div id="logic-espera" class="logic-section d-none">
-                        <label class="data-label mb-2 text-white">Motivo de Pausa/Espera:</label>
-                        <select class="form-select form-select-sm mb-3" id="sel_espera" onchange="autoSetDate(15)">
-                            <option>Cliente de viaje</option>
-                            <option>Cliente enfermo</option>
-                            <option>Esperando pie / dinero</option>
-                        </select>
-                    </div>
-
-                    <div id="logic-descartado" class="logic-section danger-border d-none">
-                        <label class="data-label mb-2 text-danger">Motivo Cierre Definitivo:</label>
-                        <select class="form-select form-select-sm mb-2" id="close_reason" onchange="updateSummary()">
-                            <option>Corredor</option>
-                            <option>Compró otra</option>
-                            <option>Sin presupuesto</option>
-                            <option>No respondió nunca</option>
-                            <option>Competencia</option>
-                        </select>
-                        <div class="text-danger small mt-2"><i class="fa-solid fa-triangle-exclamation"></i> Lead pasa a
-                            histórico y no será editable.</div>
-                    </div>
-
-                    <div id="global-date-container" class="mt-3 mb-3 d-none">
-                        <label class="data-label text-warning">Próxima Acción (Sugerida)</label>
-                        <input type="datetime-local" id="fecha_global" class="form-control form-control-sm"
-                            onchange="updateSummary()">
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="data-label mb-1">Notas Rápidas</label>
-                        <textarea class="form-control" id="notas_manuales" rows="2" placeholder="Detalle importante..."
-                            oninput="updateSummary()"></textarea>
-                    </div>
-
-                    <div id="action-summary" class="summary-box d-none">
-                        <div class="summary-item"><span>Acción:</span> <strong id="sum_action">-</strong></div>
-                        <div class="summary-item"><span>Resultado:</span> <strong id="sum_result">-</strong></div>
-                        <div class="summary-item"><span>Seguimiento:</span> <strong id="sum_date"
-                                class="text-warning">-</strong></div>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary w-100 btn-save" id="btnMainAction">Guardar
-                        Gestión</button>
-                    <input type="hidden" id="estado_actual" value="{{ lead.crm_estado }}">
-                </form>
-
-                <button class="btn-expand-timeline" id="btnExpandTL" type="button" data-bs-toggle="collapse"
-                    data-bs-target="#timelineContent" aria-expanded="false" onclick="logAction('TOGGLE_TIMELINE')">
-                    Ver Historial <i class="fa-solid fa-chevron-down ms-1"></i>
-                </button>
-
-                <div class="collapse mt-3" id="timelineContent">
-                    <div class="timeline-box" id="timelineBox">
-                        <div class="timeline-line"></div>
-                        {% for h in lead.crm_history|reverse %}
-                        <div class="tl-item">
-                            <div class="tl-icon success"><i class="fa-solid fa-check"></i></div>
-                            <div class="tl-content">
-                                <span class="tl-date">{{ h.timestamp.strftime('%d/%m %H:%M') }}</span>
-                                <div class="tl-title">{{ h.user_action or 'Acción CRM' }}</div>
-                                <div class="tl-body">{{ h.notes or '' }} ({{ h.result }})</div>
+                        <!-- Historial Chatbot Comprimido -->
+                        <button class="btn-chat-toggle" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#chatHistoryCollapse">
+                            <i class="fa-solid fa-comments me-2"></i> Ver conversación previa con IA
+                        </button>
+                        <div class="collapse mt-2" id="chatHistoryCollapse">
+                            <div class="bg-dark p-2 rounded border border-secondary"
+                                style="max-height: 200px; overflow-y: auto;">
+                                {% for msg in lead.timeline %}
+                                <div style="clear:both">
+                                    <div class="chat-bubble {{ msg.role }}">{{ msg.content }}</div>
+                                </div>
+                                {% endfor %}
                             </div>
                         </div>
-                        {% endfor %}
                     </div>
-                </div>
 
-            </div>
+                    <!-- Identidad PROPIETARIO (Estructura Unificada con Lead) -->
+                    <div id="identity-owner" class="identity-box owner-theme d-none">
+                        <div class="identity-header">
+                            <h5 class="fw-bold m-0" style="color: var(--owner-color) !important;">
+                                <i class="fa-solid fa-user-tie me-2"></i>{{ lead.datos_propiedad.nombre_propietario }}
+                            </h5>
+                        </div>
 
-            <div class="card-custom">
-                <div class="section-title">Historial Chat</div>
-                <div style="max-height: 300px; overflow-y: auto;">
-                    {% for msg in lead.timeline %}
-                    <div style="clear:both">
-                        <div class="chat-bubble {{ msg.role }}">{{ msg.content }}</div>
+                        <!-- Grid de Datos Mejorado (Filas Alineadas con Lead) -->
+                        <div class="lead-info-grid">
+                            <!-- Fila 1: Datos Personales (3 Columnas) -->
+                            <div class="info-row">
+                                <div class="info-item">
+                                    <span class="info-label">Móvil</span>
+                                    <span class="info-value text-accent">{{ lead.datos_propiedad.movil_propietario or
+                                        '---' }}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Email Personal</span>
+                                    <span class="info-value">{{ lead.datos_propiedad.email_propietario or '---'
+                                        }}</span>
+                                </div>
+                                <div class="info-item">
+                                    <!-- Celda vacía (Sin RUT) para mantener alineación con Lead -->
+                                </div>
+                            </div>
+                            <!-- Fila 2: Datos de Propiedad (Código + Dirección alineada) -->
+                            <div class="info-row property-data">
+                                <div class="info-item">
+                                    <span class="info-label">Código Propiedad</span>
+                                    <a href="{{ lead.datos_propiedad.url }}" target="_blank"
+                                        class="prop-link-owner info-value">
+                                        <i class="fa-solid fa-arrow-up-right-from-square me-1"
+                                            style="font-size: 0.7rem;"></i>{{ lead.datos_propiedad.codigo }}
+                                    </a>
+                                </div>
+                                <div class="info-item" style="grid-column: span 2;">
+                                    <span class="info-label">Dirección Propiedad</span>
+                                    <span class="info-value"><i class="fa-solid fa-map-pin me-1 text-danger small"></i>
+                                        {{ lead.datos_propiedad.calle }} #{{ lead.datos_propiedad.numeracion }}, {{
+                                        lead.datos_propiedad.comuna }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="comm-grid mt-2">
+                            <button onclick="openCommPanel('owner', 'phone')" class="btn-comm ph">
+                                <i class="fa-solid fa-phone"></i> Llamar
+                            </button>
+                            <button onclick="openCommPanel('owner', 'whatsapp')" class="btn-comm wa">
+                                <i class="fa-brands fa-whatsapp"></i> WhatsApp
+                            </button>
+                            <button onclick="openCommPanel('owner', 'email')" class="btn-comm em">
+                                <i class="fa-solid fa-envelope"></i> Email
+                            </button>
+                        </div>
                     </div>
-                    {% endfor %}
+
+                    <!-- SECCIÓN DE CONTACTO MEJORADA (2x2 GRID) -->
+                    <div id="contact-context" class="mb-3 d-none animate__animated animate__fadeIn">
+                        <div class="section-title small border-0 mb-2 p-0">¿Resultado del Contacto?</div>
+
+                        <div class="visual-grid grid-2-col">
+                            <!-- Efectivo -->
+                            <button class="context-btn effective p-2" id="ctx_effective"
+                                onclick="toggleLogic('effective')">
+                                <i class="fa-solid fa-comments"></i>
+                                <div class="d-flex flex-column text-start ms-2">
+                                    <span style="font-size:0.85rem; font-weight:700;">Contacto Efectivo</span>
+                                    <span style="font-size:0.7rem; opacity:0.8;">Hablé con el lead</span>
+                                </div>
+                            </button>
+
+                            <!-- Parcial -->
+                            <button class="context-btn partial p-2" id="ctx_partial" onclick="toggleLogic('partial')">
+                                <i class="fa-solid fa-hourglass-start"></i>
+                                <div class="d-flex flex-column text-start ms-2">
+                                    <span style="font-size:0.85rem; font-weight:700;">Contacto Parcial</span>
+                                    <span style="font-size:0.7rem; opacity:0.8;">Pide llamar después</span>
+                                </div>
+                            </button>
+
+                            <!-- No Contacto -->
+                            <button class="context-btn failed p-2" id="ctx_failed" onclick="toggleLogic('failed')">
+                                <i class="fa-solid fa-phone-slash"></i>
+                                <div class="d-flex flex-column text-start ms-2">
+                                    <span style="font-size:0.85rem; font-weight:700;">Sin Contacto</span>
+                                    <span style="font-size:0.7rem; opacity:0.8;">Buzón / No contesta</span>
+                                </div>
+                            </button>
+
+                            <!-- Invalido -->
+                            <button class="context-btn invalid p-2" id="ctx_invalid" onclick="toggleLogic('invalid')">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                <div class="d-flex flex-column text-start ms-2">
+                                    <span style="font-size:0.85rem; font-weight:700;">Inválido</span>
+                                    <span style="font-size:0.7rem; opacity:0.8;">Número erróneo</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="section-title mt-3">Detalle de Gestión</div>
+
+                    <form id="crmForm" onsubmit="saveGestion(event)">
+
+                        <input type="hidden" id="resultado_gestion" name="resultado_gestion">
+                        <input type="radio" class="d-none" name="interaction_type" value="effective">
+                        <input type="radio" class="d-none" name="interaction_type" value="partial">
+                        <input type="radio" class="d-none" name="interaction_type" value="failed">
+                        <input type="radio" class="d-none" name="interaction_type" value="invalid">
+                        <input type="radio" class="d-none" name="interaction_type" value="propietario">
+                        <input type="radio" class="d-none" name="interaction_type" value="espera">
+                        <input type="radio" class="d-none" name="interaction_type" value="descartado">
+
+                        <!-- LÓGICA DE CONTACTO EFECTIVO (TEXTOS LIMPIOS) -->
+                        <div id="logic-effective" class="logic-section d-none">
+
+                            <!-- Scoring -->
+                            <label class="data-label mb-2 text-white">Calificación (Prioridad)</label>
+                            <div class="scoring-group">
+                                <input type="radio" name="lead_score" value="A" id="score_a" class="score-radio"
+                                    onclick="updateSummary()">
+                                <label for="score_a" class="score-label">🔥 A: Alta</label>
+
+                                <input type="radio" name="lead_score" value="B" id="score_b" class="score-radio"
+                                    onclick="updateSummary()">
+                                <label for="score_b" class="score-label">🌤️ B: Media</label>
+
+                                <input type="radio" name="lead_score" value="C" id="score_c" class="score-radio"
+                                    onclick="updateSummary()">
+                                <label for="score_c" class="score-label">❄️ C: Baja</label>
+                            </div>
+
+                            <label
+                                class="data-label mb-2 text-white text-uppercase border-bottom border-secondary pb-1 w-100 d-block mt-3">¿Qué
+                                manifestó el Lead?</label>
+
+                            <!-- GRUPO 1: INTENCIÓN OPERATIVA (ACCION) -->
+                            <div class="category-group">
+                                <!-- Header con icono de color sutil, pero texto gris/blanco -->
+                                <div class="category-header"><i class="fa-solid fa-bolt me-1 text-success"></i> Interés
+                                    Activo (Acción)</div>
+
+                                <!-- Visita -->
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="effective_result" id="rd_visita"
+                                        onclick="toggleSubOption('sub_visita', 'Agendar Visita', 'visita_agendada', 'success', 0)">
+                                    <label class="form-check-label" for="rd_visita">Solicita Visita / Coordinar</label>
+                                </div>
+                                <div id="sub_visita" class="sub-logic d-none">
+                                    <div class="form-check"><input class="form-check-input" type="checkbox"
+                                            id="chk_aviso_owner"><label class="form-check-label"
+                                            for="chk_aviso_owner">Falta
+                                            avisar a propietario</label></div>
+                                </div>
+
+                                <!-- Oferta -->
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="effective_result" id="rd_oferta"
+                                        onclick="toggleSubOption('sub_oferta', 'Registrar Oferta', 'requiere_seguimiento', 'success', 1)">
+                                    <label class="form-check-label" for="rd_oferta">Quiere Presentar Oferta</label>
+                                </div>
+                                <div id="sub_oferta" class="sub-logic d-none">
+                                    <label class="data-label">Monto Tentativo:</label>
+                                    <input type="number" class="form-control form-control-sm" placeholder="UF / $"
+                                        id="monto_oferta">
+                                </div>
+
+                                <!-- Reunión -->
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="effective_result" id="rd_reunion"
+                                        onclick="toggleSubOption('sub_reunion', 'Agendar Reunión', 'requiere_seguimiento', 'primary', 2)">
+                                    <label class="form-check-label" for="rd_reunion">Solicita Reunión
+                                        (Oficina/Zoom)</label>
+                                </div>
+                            </div>
+
+                            <!-- GRUPO 2: INTENCIÓN EXPLORATORIA (NUTRICION) -->
+                            <div class="category-group mt-3">
+                                <div class="category-header"><i
+                                        class="fa-solid fa-magnifying-glass me-1 text-primary"></i>
+                                    Interés Exploratorio (Nutrición)</div>
+
+                                <!-- Pide Info -->
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="effective_result" id="rd_info"
+                                        onclick="toggleSubOption('sub_info', 'Enviar Información', 'requiere_seguimiento', 'primary', 2)">
+                                    <label class="form-check-label" for="rd_info">Pide más información / Docs</label>
+                                </div>
+                                <div id="sub_info" class="sub-logic d-none">
+                                    <div class="form-check"><input class="form-check-input" type="checkbox"
+                                            id="chk_cip"><label class="form-check-label" for="chk_cip">CIP /
+                                            Planos</label>
+                                    </div>
+                                    <div class="form-check"><input class="form-check-input" type="checkbox"
+                                            id="chk_ggcc"><label class="form-check-label" for="chk_ggcc">Gastos Comunes
+                                            /
+                                            Contrib.</label></div>
+                                </div>
+
+                                <!-- Busca Similares -->
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="effective_result"
+                                        id="rd_similares"
+                                        onclick="toggleSubOption('sub_similares', 'Buscar Opciones', 'requiere_seguimiento', 'primary', 3)">
+                                    <label class="form-check-label" for="rd_similares">Busca opciones similares</label>
+                                </div>
+                                <div id="sub_similares" class="sub-logic d-none">
+                                    <label class="data-label">Requerimiento:</label>
+                                    <input type="text" class="form-control form-control-sm"
+                                        placeholder="Ej: Misma zona, más barato" id="req_similares">
+                                </div>
+
+                                <!-- Comparando -->
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="effective_result"
+                                        id="rd_comparando"
+                                        onclick="toggleSubOption('sub_comparando', 'Guardar Seguimiento', 'requiere_seguimiento', 'info', 5)">
+                                    <label class="form-check-label" for="rd_comparando">Está comparando /
+                                        Evaluando</label>
+                                </div>
+                            </div>
+
+                            <!-- GRUPO 3: OBJECIONES / ENFRIAMIENTO -->
+                            <div class="category-group mt-3">
+                                <div class="category-header"><i class="fa-regular fa-snowflake me-1 text-secondary"></i>
+                                    Objeciones / Pausa</div>
+
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="effective_result"
+                                        id="rd_objecion"
+                                        onclick="toggleSubOption('sub_objecion', 'Registrar Objeción', 'requiere_seguimiento', 'secondary', 15)">
+                                    <label class="form-check-label" for="rd_objecion">No le interesa (Esta
+                                        propiedad)</label>
+                                </div>
+                                <div id="sub_objecion" class="sub-logic d-none">
+                                    <select class="form-select form-select-sm" id="sel_motivo_objecion">
+                                        <option>Precio muy alto</option>
+                                        <option>Ubicación no gusta</option>
+                                        <option>Estado propiedad</option>
+                                        <option>Sin urgencia real</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- LÓGICA DE CONTACTO PARCIAL -->
+                        <div id="logic-partial" class="logic-section d-none">
+                            <label class="data-label mb-2 text-warning">Situación:</label>
+
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="partial_res" id="rd_llamar_luego"
+                                    onclick="setResult('intento_fallido', 'Agendar Reintento', 'warning'); autoSetDate(0);">
+                                <label class="form-check-label" for="rd_llamar_luego">Contestó: Pide llamar más
+                                    tarde</label>
+                            </div>
+
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="partial_res" id="rd_ocupado"
+                                    onclick="setResult('intento_fallido', 'Agendar Reintento', 'warning'); autoSetDate(1);">
+                                <label class="form-check-label" for="rd_ocupado">Contestó: "Estoy ocupado"</label>
+                            </div>
+
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="partial_res" id="rd_visto"
+                                    onclick="setResult('intento_fallido', 'Agendar Seguimiento', 'primary'); autoSetDate(2);">
+                                <label class="form-check-label" for="rd_visto">WhatsApp: Visto sin respuesta</label>
+                            </div>
+                        </div>
+
+                        <!-- LÓGICA SIN CONTACTO (SIMPLIFICADA: Sin contador manual) -->
+                        <div id="logic-failed" class="logic-section d-none">
+                            <label class="data-label mb-2 text-secondary">Resultado:</label>
+
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="failed_res" id="rd_buzon"
+                                    onclick="autoSetDate(1)">
+                                <label class="form-check-label" for="rd_buzon">Buzón de voz</label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="failed_res" id="rd_corta"
+                                    onclick="autoSetDate(1)">
+                                <label class="form-check-label" for="rd_corta">Timbra y corta</label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="failed_res" id="rd_apagado"
+                                    onclick="autoSetDate(1)">
+                                <label class="form-check-label" for="rd_apagado">Teléfono apagado</label>
+                            </div>
+
+                            <div class="mt-3 pt-2 border-top border-secondary">
+                                <label class="data-label">Canal:</label>
+                                <select class="form-select form-select-sm" id="failed_canal">
+                                    <option>Llamada</option>
+                                    <option>WhatsApp</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- LÓGICA INVALIDO (SIN FECHA) -->
+                        <div id="logic-invalid" class="logic-section danger-border d-none">
+                            <label class="data-label mb-2 text-danger">Motivo de Invalidez:</label>
+
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="invalid_res" id="rd_wrong_num"
+                                    onclick="setResult('lead_cerrado', 'Cerrar por Inválido', 'danger'); document.getElementById('close_reason').value='contacto_invalido';">
+                                <label class="form-check-label" for="rd_wrong_num">Número equivocado</label>
+                            </div>
+
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="invalid_res" id="rd_disconnected"
+                                    onclick="setResult('lead_cerrado', 'Cerrar por Inválido', 'danger'); document.getElementById('close_reason').value='contacto_invalido';">
+                                <label class="form-check-label" for="rd_disconnected">Número no existe /
+                                    desconectado</label>
+                            </div>
+
+                            <div class="alert-danger-custom p-2 mt-2" style="font-size:0.75rem;">
+                                <i class="fa-solid fa-triangle-exclamation"></i> Se marcará para cierre automático.
+                            </div>
+                        </div>
+
+                        <!-- SECCIÓN DE PROPIETARIO MEJORADA (GRID 3x2) -->
+                        <div id="logic-propietario" class="logic-section owner-border d-none">
+                            <label class="data-label mb-2 text-warning text-uppercase fw-bold"
+                                style="letter-spacing: 0.5px;">
+                                1. Estado con Propietario
+                            </label>
+
+                            <div class="visual-grid grid-3-col">
+
+                                <!-- 1. Autoriza (Green) -->
+                                <input type="radio" name="owner_cat_radio" value="prop_autoriza" id="oc_autoriza"
+                                    class="d-none" onchange="renderOwnerReasons()">
+                                <label for="oc_autoriza" class="visual-card">
+                                    <i class="fa-solid fa-check-circle"></i>
+                                    <span>Autoriza</span>
+                                </label>
+
+                                <!-- 2. Restricciones (Yellow) -->
+                                <input type="radio" name="owner_cat_radio" value="prop_restricciones"
+                                    id="oc_restricciones" class="d-none" onchange="renderOwnerReasons()">
+                                <label for="oc_restricciones" class="visual-card">
+                                    <i class="fa-solid fa-exclamation-circle"></i>
+                                    <span>Restricciones</span>
+                                </label>
+
+                                <!-- 3. No Responde (Blue/Gray) -->
+                                <input type="radio" name="owner_cat_radio" value="prop_no_responde" id="oc_no_responde"
+                                    class="d-none" onchange="renderOwnerReasons()">
+                                <label for="oc_no_responde" class="visual-card">
+                                    <i class="fa-solid fa-phone-slash"></i>
+                                    <span>No Responde</span>
+                                </label>
+
+                                <!-- 4. No Autoriza (Orange) -->
+                                <input type="radio" name="owner_cat_radio" value="prop_no_autoriza" id="oc_no_autoriza"
+                                    class="d-none" onchange="renderOwnerReasons()">
+                                <label for="oc_no_autoriza" class="visual-card">
+                                    <i class="fa-solid fa-ban"></i>
+                                    <span>No Autoriza</span>
+                                </label>
+
+                                <!-- 5. Técnico/Legal (Red) -->
+                                <input type="radio" name="owner_cat_radio" value="prop_tecnico" id="oc_tecnico"
+                                    class="d-none" onchange="renderOwnerReasons()">
+                                <label for="oc_tecnico" class="visual-card">
+                                    <i class="fa-solid fa-gavel"></i>
+                                    <span>Legal / Tec</span>
+                                </label>
+
+                                <!-- 6. No Disponible (Black) -->
+                                <input type="radio" name="owner_cat_radio" value="prop_no_disponible"
+                                    id="oc_no_disponible" class="d-none" onchange="renderOwnerReasons()">
+                                <label for="oc_no_disponible" class="visual-card">
+                                    <i class="fa-solid fa-shop-slash"></i>
+                                    <span>No Disponible</span>
+                                </label>
+
+                            </div>
+
+                            <!-- Selector Específico Oculto -->
+                            <div id="owner_reason_container" class="mb-2 d-none">
+                                <label class="data-label mb-1 text-white">2. Detalle Específico</label>
+                                <select class="form-select form-select-sm" id="sel_prop_detalle"
+                                    onchange="setResult(this.value, 'Guardar Gestión Propietario', 'warning')">
+                                    <option value="" selected disabled>Seleccione detalle...</option>
+                                </select>
+                            </div>
+                        </div>
+
+
+
+                        <!-- NUEVA SECCIÓN DE CIERRE PROFESIONAL (GRID VISUAL 3x2) -->
+                        <div id="logic-descartado" class="logic-section danger-border d-none">
+
+                            <label class="data-label mb-2 text-danger text-uppercase fw-bold"
+                                style="letter-spacing: 0.5px;">
+                                1. Diagnóstico de Cierre
+                            </label>
+
+                            <!-- Grid Visual 3 columnas -->
+                            <div class="visual-grid grid-3-col">
+
+                                <!-- Ganado -->
+                                <input type="radio" name="close_cat_radio" value="ganado" id="cc_ganado" class="d-none"
+                                    onchange="renderClosingReasons()">
+                                <label for="cc_ganado" class="visual-card">
+                                    <i class="fa-solid fa-trophy"></i>
+                                    <span>Ganado</span>
+                                </label>
+
+                                <!-- Precio -->
+                                <input type="radio" name="close_cat_radio" value="precio" id="cc_precio" class="d-none"
+                                    onchange="renderClosingReasons()">
+                                <label for="cc_precio" class="visual-card">
+                                    <i class="fa-solid fa-sack-dollar"></i>
+                                    <span>Precio / $</span>
+                                </label>
+
+                                <!-- Producto -->
+                                <input type="radio" name="close_cat_radio" value="producto" id="cc_producto"
+                                    class="d-none" onchange="renderClosingReasons()">
+                                <label for="cc_producto" class="visual-card">
+                                    <i class="fa-solid fa-house-chimney-crack"></i>
+                                    <span>Producto</span>
+                                </label>
+
+                                <!-- Cliente -->
+                                <input type="radio" name="close_cat_radio" value="cliente" id="cc_cliente"
+                                    class="d-none" onchange="renderClosingReasons()">
+                                <label for="cc_cliente" class="visual-card">
+                                    <i class="fa-solid fa-user-xmark"></i>
+                                    <span>Cliente</span>
+                                </label>
+
+                                <!-- Competencia -->
+                                <input type="radio" name="close_cat_radio" value="competencia" id="cc_competencia"
+                                    class="d-none" onchange="renderClosingReasons()">
+                                <label for="cc_competencia" class="visual-card">
+                                    <i class="fa-solid fa-flag-checkered"></i>
+                                    <span>Competencia</span>
+                                </label>
+
+                                <!-- Técnico -->
+                                <input type="radio" name="close_cat_radio" value="tecnico" id="cc_tecnico"
+                                    class="d-none" onchange="renderClosingReasons()">
+                                <label for="cc_tecnico" class="visual-card">
+                                    <i class="fa-solid fa-filter-circle-xmark"></i>
+                                    <span>Técnico</span>
+                                </label>
+                            </div>
+
+                            <!-- Selector Específico Oculto -->
+                            <div id="close_reason_container" class="mb-2 d-none">
+                                <label class="data-label mb-1 text-white">2. Motivo Específico</label>
+                                <select class="form-select form-select-sm" id="close_reason"
+                                    onchange="setResult('lead_cerrado')">
+                                    <option value="" selected disabled>Seleccione detalle...</option>
+                                </select>
+                            </div>
+
+                            <!-- ALERTA VISUAL (MEJORADA) -->
+                            <div class="alert-danger-custom mt-3">
+                                <i class="fa-solid fa-lock"></i>
+                                <div>
+                                    <strong>ATENCIÓN:</strong> Esta acción congela el lead, detiene recordatorios y
+                                    cierra
+                                    el SLA.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="global-date-container" class="mt-3 mb-3 d-none">
+                            <label class="data-label text-warning">Próxima Acción (solo si aplica)</label>
+                            <input type="datetime-local" id="fecha_global" class="form-control form-control-sm"
+                                onchange="updateSummary()">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="data-label mb-1">Comentarios</label>
+                            <textarea class="form-control" id="notas_manuales" rows="2"
+                                placeholder="Detalle importante..." oninput="updateSummary()"></textarea>
+                        </div>
+
+                        <div id="action-summary" class="summary-box d-none">
+                            <div class="summary-item"><span>Acción:</span> <strong id="sum_action">-</strong></div>
+                            <div class="summary-item"><span>Resultado:</span> <strong id="sum_result">-</strong></div>
+                            <div class="summary-item"><span>Seguimiento:</span> <strong id="sum_date"
+                                    class="text-warning">-</strong></div>
+                        </div>
+
+                        <button type="submit" class="btn btn-disabled-strict w-100 btn-save" id="btnMainAction"
+                            disabled>
+                            <i class="fa-solid fa-lock me-2"></i> Complete la gestión
+                        </button>
+                        <input type="hidden" id="estado_actual" value="{{ lead.crm_estado }}">
+                    </form>
+
                 </div>
             </div>
         </div>
 
         <div class="right-column">
-            <div class="card-custom card-hover">
-                <div class="section-title"><i class="fa-solid fa-user me-2"></i> Lead</div>
-                <h5 class="fw-bold mb-1">{{ lead.nombre }}</h5>
-
-                <div class="action-grid mb-3 mt-3">
-                    <button onclick="openCommPanel('lead', 'phone')" class="btn-action-big btn-phone">
-                        <i class="fa-solid fa-phone mb-1"></i> Llamar
-                    </button>
-                    <button onclick="openCommPanel('lead', 'whatsapp')" class="btn-action-big btn-whatsapp">
-                        <i class="fa-brands fa-whatsapp mb-1"></i> WhatsApp
-                    </button>
-                    <button onclick="openCommPanel('lead', 'email')" class="btn-action-big">
-                        <i class="fa-solid fa-envelope mb-1"></i> Email
-                    </button>
-                </div>
-
-                <div class="data-row"><span class="data-label">Teléfono</span><span class="data-value">{{ lead.phone
-                        }}</span></div>
-                <a class="toggler-link" data-bs-toggle="collapse" href="#clientDetails" role="button"
-                    onclick="logAction('TOGGLE_LEAD_DETAILS')">
-                    <span>Ver más detalles</span> <i class="fa-solid fa-chevron-down"></i>
-                </a>
-                <div class="collapse mt-3 border-top border-secondary pt-2" id="clientDetails">
-                    <div class="data-row"><span class="data-label">Email</span><span class="data-value">{{ lead.email
-                            }}</span></div>
-                    <div class="data-row"><span class="data-label">RUT</span><span class="data-value">{{ lead.rut
-                            }}</span></div>
-                </div>
-            </div>
-
-            <div class="card-custom card-owner-hover">
-                <div class="section-title text-warning"><i class="fa-solid fa-house-user me-2"></i> Propietario</div>
-
-                <div class="mb-3">
-                    <h5 class="fw-bold text-white">{{ lead.datos_propiedad.nombre_propietario }}</h5>
-                </div>
-
-                <div class="action-grid mb-3">
-                    <button onclick="openCommPanel('owner', 'phone')" class="btn-action-big btn-phone">
-                        <i class="fa-solid fa-phone mb-1"></i> Llamar
-                    </button>
-                    <button onclick="openCommPanel('owner', 'whatsapp')" class="btn-action-big btn-whatsapp">
-                        <i class="fa-brands fa-whatsapp mb-1"></i> WhatsApp
-                    </button>
-                    <button onclick="openCommPanel('owner', 'email')" class="btn-action-big">
-                        <i class="fa-solid fa-envelope mb-1"></i> Email
-                    </button>
-                </div>
-
-                <div class="data-row"><span class="data-label">Móvil</span><span class="data-value">{{
-                        lead.datos_propiedad.movil_propietario }}</span></div>
-
-                <a class="toggler-link text-warning" data-bs-toggle="collapse" href="#propDetails" role="button"
-                    onclick="logAction('TOGGLE_PROP_DETAILS')">
-                    <span>Ver datos Propiedad</span> <i class="fa-solid fa-chevron-down"></i>
-                </a>
-
-                <div class="collapse mt-3 border-top border-secondary pt-2" id="propDetails">
-                    <div class="data-row">
-                        <span class="data-label">Código</span>
-                        <a href="{{ lead.datos_propiedad.url }}" target="_blank"
-                            class="fw-bold text-accent text-decoration-none">
-                            {{ lead.datos_propiedad.codigo }} <i class="fa-solid fa-external-link-alt small ms-1"></i>
-                        </a>
-                    </div>
-                    <div class="data-row"><span class="data-label">Tipo</span><span class="data-value">{{
-                            lead.datos_propiedad.tipo }}</span></div>
-                    <div class="data-row"><span class="data-label">Precio</span><span
-                            class="data-value fw-bold text-success">{{ lead.datos_propiedad.precio_uf }} UF</span></div>
-                    <div class="data-row"><span class="data-label">Región</span><span class="data-value">{{
-                            lead.datos_propiedad.region }}</span></div>
-                    <div class="data-row"><span class="data-label">Comuna</span><span class="data-value">{{
-                            lead.datos_propiedad.comuna }}</span></div>
-                    <div class="bg-dark p-2 rounded mt-2 border border-secondary border-opacity-25">
-                        <span class="data-label mb-1">Dirección:</span>
-                        <div class="small text-white">{{ lead.datos_propiedad.calle }} #{{
-                            lead.datos_propiedad.numeracion }}</div>
-                    </div>
-                </div>
-            </div>
-
+            <!-- NOTAS ADHESIVAS (Lo único en la derecha ahora) -->
             <div class="card-custom card-notes-hover">
                 <div class="section-title" style="color: var(--notes-color) !important;">
-                    <span><i class="fa-regular fa-note-sticky me-2"></i> Notas</span>
+                    <span><i class="fa-regular fa-note-sticky me-2"></i> Notas Rápidas</span>
                     <div>
                         <button class="btn-card-header" onclick="sortNotes()"><i class="fa-solid fa-sort"></i></button>
                         <button class="btn-card-header ms-2" data-bs-toggle="collapse"
@@ -1330,35 +2116,102 @@
                     </div>
                 </div>
             </div>
+
+            <!-- TIMELINE HISTÓRICO (Moved to Right Column bottom) -->
+            <div class="card-custom">
+                <div class="section-title">
+                    <span><i class="fa-solid fa-clock-rotate-left me-2"></i> Historial</span>
+                </div>
+                <div class="timeline-box" id="timelineBox" style="max-height: 500px; overflow-y: auto;">
+                    <div class="timeline-line"></div>
+                    {% for h in lead.crm_history %}
+                    <div class="tl-item">
+                        <!-- Distinción Visual: Auditoría vs Acción -->
+                        {% if h.raw_type == 'STATUS_CHANGE' %}
+                        <div class="tl-icon system" style="background: rgba(99, 102, 241, 0.2); color: var(--accent);">
+                            <i class="fa-solid fa-right-left"></i>
+                        </div>
+                        {% elif h.channel == 'wa' %}
+                        <div class="tl-icon user" style="background: rgba(37, 211, 102, 0.2); color: #25D366;">
+                            <i class="fa-brands fa-whatsapp"></i>
+                        </div>
+                        {% elif h.channel == 'phone' %}
+                        <div class="tl-icon user" style="background: rgba(52, 152, 219, 0.2); color: #3498db;">
+                            <i class="fa-solid fa-phone"></i>
+                        </div>
+                        {% elif h.channel == 'email' %}
+                        <div class="tl-icon user" style="background: rgba(231, 76, 60, 0.2); color: #e74c3c;">
+                            <i class="fa-solid fa-envelope"></i>
+                        </div>
+                        {% elif h.type_class == 'system' %}
+                        <div class="tl-icon system"><i class="fa-solid fa-gear"></i></div>
+                        {% else %}
+                        <div class="tl-icon user"><i class="fa-solid fa-check"></i></div>
+                        {% endif %}
+
+                        <div class="tl-content">
+                            <span class="tl-date text-secondary small">{{ h.timestamp.strftime('%d/%m %H:%M') }}</span>
+                            <div class="tl-title fw-bold text-white" style="color: var(--text-primary) !important;">{{
+                                h.user_action or 'Acción CRM' }}</div>
+                            <div class="tl-body small text-secondary">{{ h.notes or '' }} ({{ h.result }})</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
         </div>
     </div>
 
+    <!-- MODAL DE EXPIRACIÓN DE SESIÓN (ORIGINAL) -->
+    <div class="modal fade" id="sessionModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fa-solid fa-hourglass-half me-2"></i> Sesión por Expirar</h5>
+                </div>
+                <div class="modal-body text-center">
+                    <p class="text-secondary">Por seguridad, su sesión expirará pronto debido a inactividad.</p>
+                    <div class="timer-display" id="sessionTimerDisplay">02:00</div>
+                    <p class="small text-muted">Si no extiende la sesión, será redirigido al login y podría perder los
+                        datos no guardados.</p>
+                </div>
+                <div class="modal-footer justify-content-center">
+                    <a href="/logout" class="btn btn-outline-danger btn-sm">Cerrar Sesión</a>
+                    <button type="button" class="btn btn-warning fw-bold" onclick="sessionManager.extendSession()">
+                        <i class="fa-solid fa-rotate-right me-2"></i> Extender Sesión
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- COMMUNICATION MODAL -->
     <div class="modal fade" id="commModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header text-white" id="modalHeader">
-                    <h6 class="modal-title fw-bold" id="commTitle">Contactar</h6>
+                <div class="modal-header" id="modalHeader">
+                    <h5 class="modal-title" id="commTitle">Comunicación</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
                         aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="comm-stage-tabs" id="commTabs">
-                    </div>
-                    <div id="templateList" class="templates-list">
-                    </div>
-                    <div id="emailSubjectContainer" class="mb-2 d-none">
+                    <div class="comm-stage-tabs" id="commTabs"></div>
+
+                    <div id="emailSubjectContainer" class="mb-3 d-none">
+                        <label class="data-label mb-1">Asunto:</label>
                         <input type="text" class="form-control form-control-sm" id="emailSubject"
                             placeholder="Asunto del correo...">
                     </div>
-                    <textarea class="form-control" id="commMessage" rows="5"
-                        placeholder="El mensaje aparecerá aquí para editar..."></textarea>
+
+                    <div class="templates-list" id="templateList"></div>
+
+                    <label class="data-label mb-1">Mensaje:</label>
+                    <textarea class="form-control" id="commMessage" rows="5"></textarea>
                 </div>
-                <div class="modal-footer d-flex justify-content-between">
-                    <small class="text-secondary"><i class="fa-solid fa-pen-fancy me-1"></i> Personaliza antes de
-                        enviar</small>
-                    <a href="#" id="btnSendComm" target="_blank" class="btn btn-sm btn-light fw-bold">
-                        Enviar
-                    </a>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                    <a href="#" id="btnSendComm" class="btn btn-primary btn-sm" target="_blank">Enviar</a>
                 </div>
             </div>
         </div>
@@ -1366,13 +2219,187 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // --- LOGGING & ANALYTICS ---
+        // --- 1. GESTOR DE SESIÓN (ORIGINAL) ---
+        // --- 1. GESTOR DE SESIÓN (MEJORADO: PASIVO) ---
+        const sessionManager = {
+            timeoutSeconds: 1800, // 30 mins
+            warningSeconds: 120,
+            lastActivity: Date.now(),
+            checkInterval: null,
+            modalInstance: null,
+            warningActive: false,
+
+            init: function () {
+                this.modalInstance = new bootstrap.Modal(document.getElementById('sessionModal'));
+
+                // Listeners Pasivos (Teclado, Clic)
+                ['click', 'keydown', 'mousemove'].forEach(evt => {
+                    document.addEventListener(evt, () => this.recordActivity());
+                });
+
+                // Chequeo periódico (cada 1 min)
+                this.checkInterval = setInterval(() => this.checkSession(), 60000);
+                console.log("Monitor de sesión pasivo iniciado.");
+            },
+
+            recordActivity: function () {
+                this.lastActivity = Date.now();
+                if (this.warningActive) {
+                    this.extendSession(true); // Auto-extender si estaba en warning
+                }
+            },
+
+            checkSession: function () {
+                const now = Date.now();
+                const idleTimeSeconds = (now - this.lastActivity) / 1000;
+
+                // Si ha pasado mucho tiempo sin actividad en el backend (> 5 min), hacemos ping silencioso
+                // para mantener la cookie viva mientras el usuario trabaja
+                if (idleTimeSeconds < 300 && idleTimeSeconds > 10) {
+                    // Si hay actividad reciente, pero no hemos hecho ping hace rato, lo hacemos
+                    // (Logica simplificada: cada vez que hay actividad real, el backend recibe requests si navega, 
+                    // pero si solo está escribiendo un email largo, necesitamos el ping)
+                }
+
+                if (idleTimeSeconds > (this.timeoutSeconds - this.warningSeconds)) {
+                    this.showWarning(Math.max(0, this.timeoutSeconds - idleTimeSeconds));
+                }
+            },
+
+            showWarning: function (timeLeft) {
+                if (this.warningActive) return;
+                this.warningActive = true;
+
+                let secondsLeft = Math.floor(timeLeft);
+                const display = document.getElementById('sessionTimerDisplay');
+                this.modalInstance.show();
+
+                this.countdownInterval = setInterval(() => {
+                    secondsLeft--;
+                    const min = Math.floor(secondsLeft / 60);
+                    const sec = secondsLeft % 60;
+                    display.innerText = `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+
+                    if (secondsLeft <= 0) {
+                        window.location.href = '/logout?reason=timeout';
+                    }
+                }, 1000);
+            },
+
+            extendSession: function (silent = false) {
+                this.lastActivity = Date.now();
+                this.warningActive = false;
+                if (this.countdownInterval) clearInterval(this.countdownInterval);
+                if (!silent) this.modalInstance.hide();
+
+                // Usar el nuevo endpoint POST para evitar 405
+                fetch('/api/keep-alive', { method: 'POST' })
+                    .then(r => console.log("Sesión extendida (Keep-Alive)"))
+                    .catch(e => console.error("Error keeping alive", e));
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // 1. Iniciar Session Manager
+            sessionManager.init();
+
+            // 2. Inicializar Banner Canónico
+            updateCanonicalBanner(leadData.crm_estado, leadData.next_action_date, leadData.last_action_label, leadData.last_action_relative);
+
+            // 3. AUTO-ARRAQUE LOGICA
+            setActionMode('contact');
+        });
+
+        // --- GESTIÓN DE BANNER Y TOASTS ---
+        function updateCanonicalBanner(estado, fechaProx, ultimaAccion = null, tiempoRelativo = null) {
+            const label = document.getElementById('canonical_status_label');
+            const nextDateEl = document.getElementById('canonical_next_date');
+            const lastActionEl = document.getElementById('canonical_last_action');
+            const lastTimeEl = document.getElementById('canonical_last_time');
+
+            if (ultimaAccion) {
+                lastActionEl.innerText = ultimaAccion;
+                lastActionEl.title = ultimaAccion; // Tooltip for full text
+
+                if (tiempoRelativo && tiempoRelativo !== 'None' && tiempoRelativo !== '') {
+                    lastTimeEl.innerText = `· ${tiempoRelativo}`;
+                } else {
+                    lastTimeEl.innerText = '';
+                }
+            }
+
+            // Mapeo de estilos/labels (Consistencia total con Lista)
+            const states = {
+                'nuevo': { text: 'SIN ATENDER', class: 'st-nuevo' },
+                'gestion': { text: 'EN GESTIÓN', class: 'st-gestion' },
+                'visita': { text: 'VISITA AGENDADA', class: 'st-visita' },
+                'cerrado': { text: 'CERRADO', class: 'st-cerrado' }
+            };
+
+            const cfg = states[estado] || states['gestion'];
+            label.innerText = cfg.text;
+            label.className = 'banner-value ' + cfg.class;
+
+            if (fechaProx && fechaProx !== 'None' && fechaProx !== '') {
+                const d = new Date(fechaProx);
+                const isOverdue = d < new Date();
+                const overdueClass = isOverdue ? 'text-danger fw-bold' : 'text-accent';
+                const warningIcon = isOverdue ? '<i class="fa-solid fa-triangle-exclamation me-1 text-warning"></i> <span class="text-warning small me-2">VENCIDO</span>' : '<i class="fa-solid fa-calendar-day me-1 text-accent"></i>';
+
+                nextDateEl.innerHTML = `${warningIcon} <span class="${overdueClass}">${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>`;
+            } else {
+                nextDateEl.innerHTML = '<span class="text-muted">No programado</span>';
+            }
+
+            // Actualizar Badge Lateral también (Sincronización in-place)
+            const badge = document.getElementById('estado_badge');
+            if (badge) {
+                badge.innerText = cfg.text;
+                badge.className = 'badge-status ' + (estado === 'nuevo' ? 'bg-danger' : (estado === 'visita' ? 'bg-success' : (estado === 'cerrado' ? 'bg-secondary' : 'bg-warning')));
+            }
+        }
+
+        function showStrongToast(title, body, type = 'success', nextDate = null) {
+            const container = document.getElementById('toast-container') || createToastContainer();
+            const toast = document.createElement('div');
+            toast.className = 'toast-enterprise';
+            if (type === 'danger') toast.style.borderLeftColor = 'var(--danger-color)';
+
+            let footerHtml = `
+                <div class="toast-footer-custom">
+                    <button class="btn btn-sm btn-light py-0 px-2" onclick="window.location.reload()" style="font-size:0.75rem;">Actualizar Vista</button>
+                    <button class="btn btn-sm btn-outline-light py-0 px-2" onclick="this.parentElement.parentElement.remove()" style="font-size:0.75rem;">Cerrar</button>
+                </div>
+            `;
+
+            toast.innerHTML = `
+                <div class="toast-header-custom">
+                    <div class="toast-title text-success"><i class="fa-solid fa-circle-check"></i> ${title}</div>
+                </div>
+                <div class="toast-body-custom">${body}</div>
+                ${footerHtml}
+            `;
+            container.appendChild(toast);
+            setTimeout(() => { if (toast.parentElement) toast.remove(); }, 8000);
+        }
+
+        function createToastContainer() {
+            const div = document.createElement('div');
+            div.id = 'toast-container';
+            document.body.appendChild(div);
+            return div;
+        }
+
+
+        // --- LOGGING & ANALYTICS (ORIGINAL) ---
         const startTime = Date.now();
         const currentPhone = "{{ lead.phone }}";
 
-        // Función centralizada para enviar logs al backend
         async function logAction(type, meta = {}, target = 'system') {
             try {
+                const localTime = new Date().toLocaleString('es-CL', { timeZone: 'America/Santiago' });
+                meta.client_local_time = localTime;
+
                 const payload = {
                     phone: currentPhone,
                     data: {
@@ -1381,7 +2408,6 @@
                         meta: meta
                     }
                 };
-                // Fire and forget (no esperamos respuesta para no bloquear UI)
                 fetch('/api/crm/log_action', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1390,13 +2416,11 @@
             } catch (e) { console.error("Error logging", e); }
         }
 
-        // Registrar salida de página con duración
         window.addEventListener('beforeunload', function () {
             const duration = (Date.now() - startTime) / 1000;
             logAction('PAGE_EXIT', { duration_seconds: duration });
         });
 
-        // Registrar entrada
         logAction('PAGE_VIEW', { timestamp: new Date().toISOString() });
 
         // --- DATOS DEL CONTEXTO ---
@@ -1409,7 +2433,108 @@
             comuna: "{{ lead.datos_propiedad.comuna }}",
             precio: "{{ lead.datos_propiedad.precio_uf }}",
             ownerPhone: "{{ lead.datos_propiedad.movil_propietario }}",
-            ownerName: "{{ lead.datos_propiedad.nombre_propietario }}"
+            ownerName: "{{ lead.datos_propiedad.nombre_propietario }}",
+            crm_estado: "{{ lead.crm_estado }}",
+            next_action_date: "{{ lead.next_action_date or '' }}",
+            last_crm_update: "{{ lead.last_crm_update or '' }}",
+            last_action_label: "{{ lead.last_action_label or 'Sin gestión aún' }}",
+            last_action_relative: "{{ lead.last_action_relative or '' }}",
+            param_auth_user: "{{ user_email }}"
+        };
+
+        // --- FUNCION TOGGLE TEMA (NUEVA) ---
+        function toggleTheme() {
+            const html = document.documentElement;
+            const icon = document.getElementById('themeIcon');
+            if (html.getAttribute('data-theme') === 'dark' || !html.hasAttribute('data-theme')) {
+                html.setAttribute('data-theme', 'light');
+                icon.classList.remove('fa-sun');
+                icon.classList.add('fa-moon');
+            } else {
+                html.setAttribute('data-theme', 'dark');
+                icon.classList.remove('fa-moon');
+                icon.classList.add('fa-sun');
+            }
+        }
+
+        // --- DATA ESTRUCTURADA PARA SELECTORES DE ESPERA (EXISTENTE) ---
+
+
+        // --- DATA ESTRUCTURADA PARA SELECTORES DE PROPIETARIO (EXISTENTE) ---
+        const ownerReasons = {
+            'prop_autoriza': [
+                { val: 'autoriza_visita', text: 'Autoriza Visita' },
+                { val: 'acepta_mostrar', text: 'Acepta mostrar' },
+                { val: 'confirma_disponibilidad', text: 'Confirma disponibilidad' }
+            ],
+            'prop_restricciones': [
+                { val: 'solo_mananas', text: 'Solo mañanas' },
+                { val: 'desde_marzo', text: 'Desde marzo' },
+                { val: 'con_24h_aviso', text: 'Con 24h de aviso' },
+                { val: 'solo_fines_semana', text: 'Solo fines de semana' },
+                { val: 'no_acepta_visitas_aun', text: 'No acepta visitas aún' }
+            ],
+            'prop_no_responde': [
+                { val: 'intento_contacto', text: 'Ejecutivo intenta contactar' },
+                { val: 'no_logra_contacto', text: 'No logra contacto' }
+            ],
+            'prop_no_autoriza': [
+                { val: 'no_quiere_mostrar', text: 'No quiere mostrar' },
+                { val: 'no_quiere_visitas', text: 'No quiere visitas' },
+                { val: 'no_baja_precio', text: 'No quiere bajar precio' },
+                { val: 'rechaza_visita', text: 'Rechaza visita' }
+            ],
+            'prop_tecnico': [
+                { val: 'no_regularizada', text: 'No regularizada' },
+                { val: 'doc_incompleta', text: 'Documentación incompleta' },
+                { val: 'rol_incorrecto', text: 'Rol incorrecto' }
+            ],
+            'prop_no_disponible': [
+                { val: 'propietario_retiro', text: 'Propietario la retiró' },
+                { val: 'vendio_fuera', text: 'Vendió por fuera' },
+                { val: 'no_autoriza_gestion', text: 'Ya no autoriza gestión' }
+            ]
+        };
+
+        // --- NUEVA DATA ESTRUCTURADA PARA CIERRE (TAXONOMÍA DIAGNÓSTICA) ---
+        const closingReasons = {
+            'ganado': [
+                { val: 'venta_concretada', text: 'Venta Concretada' },
+                { val: 'derivado', text: 'Derivado a otra propiedad (Ganado)' }
+            ],
+            'precio': [
+                { val: 'rechazo_bancario', text: 'Crédito Rechazado / Sin Capacidad' },
+                { val: 'fuera_presupuesto', text: 'Precio fuera de presupuesto' },
+                { val: 'espera_baja', text: 'Cliente espera baja de precio' },
+                { val: 'condiciones', text: 'Condiciones comerciales no aceptadas' },
+                { val: 'gastos_altos', text: 'Gastos comunes/asociados altos' }
+            ],
+            'producto': [
+                { val: 'prop_no_disponible', text: 'Propiedad No Disponible (No quiere otras)' },
+                { val: 'propietario_inubicable', text: 'Propietario Inubicable / No vende' },
+                { val: 'ubicacion', text: 'Ubicación no cumple' },
+                { val: 'distribucion', text: 'Distribución/Tamaño no adecuado' },
+                { val: 'estado_propiedad', text: 'Estado de conservación' },
+                { val: 'diferencia_ficha', text: 'Propiedad no cumple con ficha' }
+            ],
+            'cliente': [
+                { val: 'arrepentimiento', text: 'Cliente se arrepiente' },
+                { val: 'dejo_responder', text: 'Dejó de responder (Ghosting)' },
+                { val: 'sin_urgencia_real', text: 'Sin urgencia real de compra' },
+                { val: 'cancelada_personal', text: 'Compra cancelada (Decisión personal)' }
+            ],
+            'competencia': [
+                { val: 'otra_propiedad', text: 'Compró otra propiedad' },
+                { val: 'otra_corredora', text: 'Gestionó con otra corredora' },
+                { val: 'trato_directo', text: 'Trato directo con dueño' }
+            ],
+            'tecnico': [
+                { val: 'es_corredor', text: 'Es Corredor / Canje' },
+                { val: 'duplicado', text: 'Lead Duplicado' },
+                { val: 'basura', text: 'Datos falsos / Basura' },
+                { val: 'error_carga', text: 'Error de carga / Sistema' },
+                { val: 'contacto_invalido', text: 'Teléfono/Email inválido' }
+            ]
         };
 
         // --- SISTEMA DE COMUNICACIÓN MEJORADO ---
@@ -1417,20 +2542,14 @@
             lead: {
                 tabs: [
                     { id: 'start', label: '1. Contacto Inicial' },
-                    { id: 'follow', label: '2. Seguimiento' },
-                    { id: 'visit', label: '3. Visita' },
-                    { id: 'closing', label: '4. Cierre' }
+                    { id: 'visit', label: '2. Visita' },
+                    { id: 'closing', label: '3. Cierre' }
                 ],
                 data: {
                     start: [
                         { label: "👋 Saludo Nuevo Lead", channel: "wa", text: "Hola [[nombre]], soy de Procasa. Recibí tu consulta por la propiedad en [[comuna]]. ¿Tienes un minuto para conversar?" },
                         { label: "📞 No Contestó", channel: "wa", text: "Hola [[nombre]], intenté llamarte recién. Te escribo para coordinar una llamada breve sobre la propiedad [[propiedad]]. Quedo atento." },
                         { label: "Contacto Inicial", channel: "email", subject: "Contacto Procasa: Propiedad [[propiedad]]", text: "Estimado/a [[nombre]],\n\nGracias por su interés en la propiedad ubicada en [[direccion]].\n\nMe gustaría contactarlo brevemente para entender mejor sus necesidades y coordinar una visita.\n\nAtentamente," }
-                    ],
-                    follow: [
-                        { label: "👀 ¿Sigues buscando?", channel: "wa", text: "Hola [[nombre]], ¿lograste revisar la información que te envié? Avísame para ver si avanzamos." },
-                        { label: "📅 Coordinar Llamada", channel: "wa", text: "[[nombre]], ¿te acomoda que te llame hoy tipo 18:00 para resolver dudas?" },
-                        { label: "Seguimiento Información", channel: "email", subject: "Seguimiento: [[propiedad]]", text: "Hola [[nombre]],\n\nLe escribo para saber si tuvo oportunidad de revisar la ficha enviada. Quedo atento a cualquier consulta adicional.\n\nSaludos." }
                     ],
                     visit: [
                         { label: "📍 Ubicación Visita", channel: "wa", text: "Hola [[nombre]], te comparto la ubicación para la visita de hoy: [PEGAR_MAPS]. Nos vemos a las 10:00." },
@@ -1457,8 +2576,7 @@
                     ],
                     feedback: [
                         { label: "👍 Resultado Visita", channel: "wa", text: "Hola, terminamos la visita. Al cliente le gustó mucho la distribución, pero debe evaluar el tema del crédito. Le aviso apenas tenga novedades." },
-                        { label: "📉 Comentario Precio", channel: "wa", text: "Don [[owner_name]], el cliente de hoy comentó que el precio está un poco por sobre otras opciones del sector. Se lo comento para tenerlo en cuenta." },
-                        { label: "Reporte de Visita", channel: "email", subject: "Feedback Visita: [[propiedad]]", text: "Estimado [[owner_name]],\n\nLe informo que la visita de hoy se realizó sin problemas. El cliente se mostró interesado pero indicó que comparará con otra opción en la misma calle.\n\nLe mantendré informado." }
+                        { label: "📉 Comentario Precio", channel: "wa", text: "Don [[owner_name]], el cliente de hoy comentó que el precio está un poco por sobre otras opciones del sector. Se lo comento para tenerlo en cuenta." }, { label: "Reporte de Visita", channel: "email", subject: "Feedback Visita: [[propiedad]]", text: "Estimado [[owner_name]],\n\nLe informo que la visita de hoy se realizó sin problemas. El cliente se mostró interesado pero indicó que comparará con otra opción en la misma calle.\n\nLe mantendré informado." }
                     ]
                 }
             }
@@ -1467,54 +2585,190 @@
         let currentCommTarget = 'lead';
         let currentCommChannel = 'wa';
         let currentTemplateLabel = "Mensaje Manual";
+        let originalTemplateText = "";
 
-        document.getElementById('sidebarToggle').addEventListener('click', function () {
-            document.getElementById('sidebar').classList.toggle('collapsed');
-            document.getElementById('mainContent').classList.toggle('expanded');
-        });
 
         // --- LÓGICA CRM (CAPTURA DE DATOS COMPLETA) ---
         let currentInteraction = null;
         let currentActionLabel = "";
         let currentResultLabel = "";
+        let nextBtnText = "Guardar Gestión";
+        let nextBtnClass = "primary";
 
-        function updateMainButton(text, type = 'primary') {
+        function updateMainButtonState(isValid, missingReason = "") {
             const btn = document.getElementById('btnMainAction');
-            btn.className = `btn w-100 btn-save btn-${type}`;
-            btn.innerHTML = text;
+            if (isValid) {
+                btn.disabled = false;
+                btn.classList.remove('btn-disabled-strict');
+                btn.className = `btn w-100 btn-save btn-${nextBtnClass}`;
+                btn.innerHTML = nextBtnText;
+                btn.removeAttribute('title'); // Quitar tooltip
+            } else {
+                btn.disabled = true; // Mantener disabled técnico para evitar submit
+                btn.classList.add('btn-disabled-strict');
+                // Mostrar razón en el texto (Feedback UX)
+                const reasonText = missingReason ? ` (Falta: ${missingReason})` : "";
+                btn.innerHTML = `<i class="fa-solid fa-lock me-2"></i> Complete la gestión${reasonText}`;
+            }
         }
 
+        function validateState() {
+            let isValid = false;
+            let missing = "";
+
+            if (currentInteraction === 'effective') {
+                const score = document.querySelector('input[name="lead_score"]:checked');
+                const subRes = document.getElementById('resultado_gestion').value;
+                const date = document.getElementById('fecha_global').value;
+
+                if (!score) missing = "Calificación (A/B/C)";
+                else if (!subRes) missing = "Resultado";
+                else if ((subRes === 'visita_agendada' || subRes === 'requiere_seguimiento') && !date) missing = "Fecha Seguimiento";
+                else isValid = true;
+
+            } else if (currentInteraction === 'partial') {
+                const res = document.querySelector('input[name="partial_res"]:checked');
+                if (!res) missing = "Resultado Parcial";
+                else isValid = true;
+
+            } else if (currentInteraction === 'failed') {
+                const res = document.querySelector('input[name="failed_res"]:checked');
+                if (!res) missing = "Tipo intento";
+                else isValid = true;
+
+            } else if (currentInteraction === 'invalid') {
+                const res = document.querySelector('input[name="invalid_res"]:checked');
+                if (!res) missing = "Motivo invalidez";
+                else isValid = true;
+
+            } else if (currentInteraction === 'descartado') {
+                const closeReason = document.getElementById('close_reason').value;
+                if (!closeReason) missing = "Motivo de cierre";
+                else isValid = true;
+
+            } else if (currentInteraction === 'propietario') {
+                const propReason = document.getElementById('sel_prop_detalle').value;
+                if (!propReason) missing = "Detalle propietario";
+                else isValid = true;
+            }
+            updateMainButtonState(isValid, missing);
+        }
+
+
+
+        function renderOwnerReasons() {
+            const selectedRadio = document.querySelector('input[name="owner_cat_radio"]:checked');
+            const reasonContainer = document.getElementById('owner_reason_container');
+            const reasonSelect = document.getElementById('sel_prop_detalle');
+            if (!selectedRadio) return;
+            const category = selectedRadio.value;
+            reasonSelect.innerHTML = '<option value="" selected disabled>Seleccione detalle específico...</option>';
+            if (category && ownerReasons[category]) {
+                const options = ownerReasons[category];
+                options.forEach(opt => {
+                    const el = document.createElement('option');
+                    el.value = opt.val;
+                    el.text = opt.text;
+                    reasonSelect.appendChild(el);
+                });
+                reasonContainer.classList.remove('d-none');
+                reasonContainer.classList.add('fade-in-down');
+                reasonSelect.disabled = false;
+            }
+            validateState();
+        }
+
+        function renderClosingReasons() {
+            const selectedRadio = document.querySelector('input[name="close_cat_radio"]:checked');
+            const reasonContainer = document.getElementById('close_reason_container');
+            const reasonSelect = document.getElementById('close_reason');
+            if (!selectedRadio) return;
+            const category = selectedRadio.value;
+            reasonSelect.innerHTML = '<option value="" selected disabled>Seleccione detalle específico...</option>';
+            if (category && closingReasons[category]) {
+                const options = closingReasons[category];
+                options.forEach(opt => {
+                    const el = document.createElement('option');
+                    el.value = opt.val;
+                    el.text = opt.text;
+                    reasonSelect.appendChild(el);
+                });
+                reasonContainer.classList.remove('d-none');
+                reasonContainer.classList.add('fade-in-down');
+                reasonSelect.disabled = false;
+            }
+            validateState();
+        }
+
+
+
         function autoSetDate(daysToAdd) {
-            if (daysToAdd === 0) return;
+            if (daysToAdd === 0) return; // Si es 0, no hacer nada (o limpiar)
+
             const date = new Date();
             date.setDate(date.getDate() + daysToAdd);
-            date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-            const dateString = date.toISOString().slice(0, 11) + "10:00";
+
+            // Smart UX: Si es visita (1 dia), poner a las 10:00 AM para sugerir mañana
+            if (daysToAdd === 1) {
+                date.setHours(10, 0, 0, 0);
+            } else {
+                // Si es llamar luego (0 dias o algo asi), mantener hora o +2h
+                date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+            }
+
+            // Formato datetime-local: YYYY-MM-DDTHH:mm
+            // Ajuste manual simple para Chile/ISO
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+
+            const dateString = `${year}-${month}-${day}T${hours}:${minutes}`;
+
             document.getElementById('fecha_global').value = dateString;
             updateSummary();
         }
 
         function setResult(val, btnText = null, btnType = 'primary') {
-            document.getElementById('resultado_gestion').value = val;
             const dateContainer = document.getElementById('global-date-container');
             const summaryBox = document.getElementById('action-summary');
+            document.getElementById('resultado_gestion').value = val;
 
             if (val === 'lead_cerrado') {
                 dateContainer.classList.add('d-none');
                 summaryBox.classList.remove('d-none');
-                updateMainButton('<i class="fa-solid fa-archive"></i> Cerrar Definitivamente', 'danger');
+                nextBtnText = '<i class="fa-solid fa-archive"></i> Cerrar Definitivamente';
+                nextBtnClass = 'danger';
+                const reasonSelect = document.getElementById('close_reason');
+                if (reasonSelect && reasonSelect.selectedIndex > 0) {
+                    currentResultLabel = "Cierre: " + reasonSelect.options[reasonSelect.selectedIndex].text;
+                }
             } else {
                 dateContainer.classList.remove('d-none');
-                if (btnText) updateMainButton(btnText, btnType);
+                if (btnText) {
+                    nextBtnText = btnText;
+                    nextBtnClass = btnType;
+                }
+                if (currentInteraction === 'propietario') {
+                    const ownerSelect = document.getElementById('sel_prop_detalle');
+                    if (ownerSelect.selectedIndex > 0) {
+                        currentResultLabel = ownerSelect.options[ownerSelect.selectedIndex].text;
+                    }
+                }
                 if (currentInteraction) summaryBox.classList.remove('d-none');
             }
             updateSummary();
         }
 
         function setActionMode(mode) {
-            logAction('CHANGE_MODE', { mode: mode }); // LOG
+            logAction('CHANGE_MODE', { mode: mode });
 
-            document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active', 'active-prop', 'active-close', 'active-wait'));
+            // 1. Ocultar Empty State y Mostrar Trabajo
+            document.getElementById('empty-state').classList.add('d-none');
+            document.getElementById('crm-work-area').classList.remove('d-none');
+
+            document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active', 'active-prop', 'active-close'));
             document.querySelectorAll('.logic-section').forEach(el => el.classList.add('d-none'));
             document.getElementById('contact-context').classList.add('d-none');
             document.querySelectorAll('.context-btn').forEach(b => b.classList.remove('active'));
@@ -1522,29 +2776,39 @@
             const btn = document.getElementById('mode_' + mode);
             if (mode === 'prop') btn.classList.add('active-prop');
             else if (mode === 'close') btn.classList.add('active-close');
-            else if (mode === 'wait') btn.classList.add('active-wait');
+
             else btn.classList.add('active');
 
-            if (mode === 'contact') {
-                document.getElementById('contact-context').classList.remove('d-none');
-                updateMainButton("Seleccione resultado...", "secondary");
-                currentActionLabel = "Contactar Lead";
-            } else if (mode === 'prop') {
+            // --- LÓGICA DE TOGGLE DE IDENTIDAD (Lead vs Owner) ---
+            const idLead = document.getElementById('identity-lead');
+            const idOwner = document.getElementById('identity-owner');
+
+            // Resetear visibilidad por defecto
+            idLead.classList.add('d-none');
+            idOwner.classList.add('d-none');
+
+            if (mode === 'prop') {
+                idOwner.classList.remove('d-none'); // Mostrar Propietario
                 toggleLogic('propietario');
                 currentActionLabel = "Gestión Propietario";
-            } else if (mode === 'wait') {
-                toggleLogic('espera');
-                currentActionLabel = "Pausar/Espera";
-            } else if (mode === 'close') {
-                toggleLogic('descartado');
-                currentActionLabel = "Cerrar Lead";
+            } else {
+                if (mode === 'contact') {
+                    idLead.classList.remove('d-none'); // Mostrar Lead
+                    document.getElementById('contact-context').classList.remove('d-none');
+                    currentActionLabel = "Contactar Lead";
+
+                } else if (mode === 'close') {
+                    // Ocultar Lead en Cerrar (según tu pedido)
+                    toggleLogic('descartado');
+                    currentActionLabel = "Cerrar Lead";
+                }
             }
             updateSummary();
         }
 
         function toggleLogic(type) {
             currentInteraction = type;
-            if (type === 'hable' || type === 'intento') {
+            if (['effective', 'partial', 'failed', 'invalid'].includes(type)) {
                 document.querySelectorAll('.context-btn').forEach(b => b.classList.remove('active'));
                 document.getElementById('ctx_' + type).classList.add('active');
             }
@@ -1555,22 +2819,42 @@
             const activeBlock = document.getElementById('logic-' + type);
             if (activeBlock) activeBlock.classList.remove('d-none');
 
-            if (type === 'hable') {
-                document.querySelectorAll('.category-group').forEach(el => el.classList.remove('d-none'));
+            if (type === 'effective') {
                 document.querySelectorAll('.sub-logic').forEach(el => el.classList.add('d-none'));
-                currentActionLabel = "Hablé con Lead";
-                updateMainButton("Seleccione detalle...", "secondary");
-            } else if (type === 'intento') {
+                currentActionLabel = "Contacto Efectivo";
+                nextBtnText = "Seleccione detalle...";
+                nextBtnClass = "secondary";
+                document.getElementById('global-date-container').classList.remove('d-none');
+            } else if (type === 'partial') {
+                currentActionLabel = "Contacto Parcial";
+                nextBtnText = "Agendar Reintento";
+                nextBtnClass = "warning";
+                document.getElementById('global-date-container').classList.remove('d-none');
+            } else if (type === 'failed') {
+                currentActionLabel = "Intento Fallido";
                 setResult('intento_fallido', "Registrar Intento", "primary");
                 autoSetDate(1);
-                currentActionLabel = "Intento Fallido";
-            } else if (type === 'espera') {
-                setResult('lead_pausado', "Pausar Lead", "info");
-                autoSetDate(7);
+            } else if (type === 'invalid') {
+                currentActionLabel = "Contacto Inválido";
+                nextBtnText = "Cerrar Lead";
+                nextBtnClass = "danger";
+                document.getElementById('global-date-container').classList.add('d-none');
+
             } else if (type === 'descartado') {
                 setResult('lead_cerrado');
+                const radiosClose = document.getElementsByName('close_cat_radio');
+                radiosClose.forEach(r => r.checked = false);
+                document.getElementById('close_reason_container').classList.add('d-none');
+                document.getElementById('close_reason').value = "";
             } else if (type === 'propietario') {
-                updateMainButton("Guardar Gestión Propietario", "warning");
+                nextBtnText = "Guardar Gestión Propietario";
+                nextBtnClass = "warning";
+                const radiosOwner = document.getElementsByName('owner_cat_radio');
+                radiosOwner.forEach(r => r.checked = false);
+                document.getElementById('owner_reason_container').classList.add('d-none');
+                const propSelect = document.getElementById('sel_prop_detalle');
+                propSelect.innerHTML = '<option value="" selected disabled>Seleccione detalle específico...</option>';
+                propSelect.value = "";
             }
             updateSummary();
         }
@@ -1582,13 +2866,6 @@
             const target = document.getElementById(targetId);
             if (target) {
                 target.classList.remove('d-none');
-                const myGroup = target.closest('.category-group');
-                if (myGroup) {
-                    document.querySelectorAll('.category-group').forEach(group => {
-                        if (group !== myGroup) group.classList.add('d-none');
-                        else group.classList.remove('d-none');
-                    });
-                }
             }
             const radioLabel = document.querySelector(`label[for="${event.target.id}"]`).innerText;
             currentResultLabel = radioLabel;
@@ -1598,37 +2875,44 @@
         function updateSummary() {
             document.getElementById('sum_action').innerText = currentActionLabel || '-';
             let resText = currentResultLabel;
-            if (currentInteraction === 'descartado') {
-                const reason = document.getElementById('close_reason').value;
-                resText = "Cierre: " + reason;
-            } else if (currentInteraction === 'intento') {
-                const checked = document.querySelector('input[name="intento_res"]:checked');
+            if (currentInteraction === 'failed') {
+                const checked = document.querySelector('input[name="failed_res"]:checked');
+                if (checked) resText = document.querySelector(`label[for="${checked.id}"]`).innerText;
+            } else if (currentInteraction === 'partial') {
+                const checked = document.querySelector('input[name="partial_res"]:checked');
+                if (checked) resText = document.querySelector(`label[for="${checked.id}"]`).innerText;
+            } else if (currentInteraction === 'invalid') {
+                const checked = document.querySelector('input[name="invalid_res"]:checked');
                 if (checked) resText = document.querySelector(`label[for="${checked.id}"]`).innerText;
             }
             document.getElementById('sum_result').innerText = resText || '-';
+
+            // LOGICA CORREGIDA PARA SEGUIMIENTO
             const dateVal = document.getElementById('fecha_global').value;
-            if (dateVal) {
+
+            if (currentInteraction === 'descartado' || currentInteraction === 'invalid') {
+                document.getElementById('sum_date').innerHTML = '<span class="text-muted">No aplica (Cierre Definitivo)</span>';
+            } else if (dateVal) {
                 const dateObj = new Date(dateVal);
                 document.getElementById('sum_date').innerText = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             } else {
                 document.getElementById('sum_date').innerText = 'Pendiente';
             }
+            validateState();
         }
 
         async function saveGestion(e) {
             e.preventDefault();
-
-            // --- RECOPILACIÓN PROFUNDA DE DATOS DEL FORMULARIO ---
-            // Esto asegura que se guarden los sub-checks y selects seleccionados
             const detailsJSON = {};
             const elements = document.getElementById('crmForm').elements;
+            const excludeFields = ['resultado_gestion', 'interaction_type', 'notas_manuales', 'fecha_global', 'estado_actual'];
 
             for (let i = 0; i < elements.length; i++) {
                 const el = elements[i];
                 if ((el.tagName === 'INPUT' || el.tagName === 'SELECT') && el.type !== 'hidden') {
-                    if (el.type === 'checkbox' || el.type === 'radio') {
-                        if (el.checked) detailsJSON[el.id || el.name] = el.value || true;
-                    } else if (el.value) {
+                    if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) continue;
+                    if (!el.value) continue;
+                    if (!excludeFields.includes(el.id) && !excludeFields.includes(el.name)) {
                         detailsJSON[el.id || el.name] = el.value;
                     }
                 }
@@ -1636,58 +2920,113 @@
 
             const payload = {
                 phone: leadData.telefono,
-                estado: document.getElementById('estado_actual').value, // El backend lo recalculará si es necesario
+                estado: document.getElementById('estado_actual').value,
                 resultado_gestion: document.getElementById('resultado_gestion').value,
                 interaction_type: document.querySelector('input[name="interaction_type"]:checked')?.value,
                 notas: document.getElementById('notas_manuales').value,
-                action_label: currentActionLabel + " / " + currentResultLabel,
+                action_label: currentActionLabel + (currentResultLabel ? " / " + currentResultLabel : ""),
                 next_action_date: document.getElementById('fecha_global').value,
                 details_json: detailsJSON
             };
 
             const btn = document.querySelector('.btn-save');
+            const originalText = btn.innerHTML;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
             btn.disabled = true;
 
             try {
                 const response = await fetch('/api/crm/update', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
                     body: JSON.stringify(payload)
                 });
 
+                if (response.status === 401 || response.status === 403 || response.redirected) {
+                    throw new Error("SESSION_EXPIRED");
+                }
+
                 if (response.ok) {
+                    const resData = await response.json();
+
                     btn.classList.remove('btn-primary', 'btn-danger', 'btn-warning');
                     btn.classList.add('btn-success');
-                    btn.innerHTML = '¡Gestión Exitosa!';
-                    setTimeout(() => window.location.reload(), 800);
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i> ¡Guardado!';
+
+                    // 1. ACTUALIZACIÓN IN-PLACE (EVIDENCIA INMEDIATA)
+                    const actionLabel = currentActionLabel + (currentResultLabel ? " / " + currentResultLabel : "");
+                    updateCanonicalBanner(resData.new_state, resData.next_action_date, actionLabel, "Recién");
+
+                    // 2. FEEDBACK FUERTE (TOAST)
+                    const statusText = {
+                        'nuevo': 'Sin Atender', 'gestion': 'En Gestión', 'visita': 'Visita Agendada', 'cerrado': 'Cerrado'
+                    }[resData.new_state] || 'Actualizado';
+
+                    const nextDateStr = resData.next_action_date ? new Date(resData.next_action_date).toLocaleDateString() : 'No programada';
+
+                    showStrongToast(
+                        "Gestión Registrada Exitosamente",
+                        `<b>Estado:</b> ${statusText}<br><b>Próximo contacto:</b> ${nextDateStr}<br><small class="text-muted">ID Evento: #${resData.event_id || 'N/A'}</small>`
+                    );
+
+                    // 3. RETORNO A ESTADO INICIAL (Cleanup UI post-save)
+                    setTimeout(() => {
+                        // Ocultar área de trabajo y mostrar empty state
+                        document.getElementById('crm-work-area').classList.add('d-none');
+                        document.getElementById('empty-state').classList.remove('d-none');
+
+                        // Quitar estados activos de botones superiores
+                        document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active'));
+
+                        // Resetear form y variables globales
+                        document.getElementById('crmForm').reset();
+                        currentInteraction = null;
+                        currentActionLabel = null;
+                        currentResultLabel = null;
+
+                        // Restaurar botón (por si acaso se vuelve a abrir)
+                        btn.disabled = false;
+                        btn.innerHTML = originalText;
+                        btn.classList.remove('btn-success');
+                        btn.classList.add('btn-primary');
+
+                        validateState();
+                    }, 2000);
+
                 } else {
-                    alert("Error al guardar gestión");
+                    alert("Error al guardar gestión. Verifique que todos los campos requeridos estén completos.");
                     btn.disabled = false;
+                    btn.innerHTML = originalText;
+                    validateState();
                 }
             } catch (err) {
-                console.error(err);
                 btn.disabled = false;
+                btn.innerHTML = originalText;
+                if (err.message === "SESSION_EXPIRED") {
+                    alert("⚠️ SU SESIÓN HA EXPIRADO\n\nNo se pudieron guardar los datos.");
+                } else {
+                    console.error(err);
+                }
             }
         }
 
-        // --- FUNCIONES SISTEMA DE COMUNICACIÓN (NUEVAS) ---
-
+        // --- FUNCIONES SISTEMA DE COMUNICACIÓN (LOGGING CORREGIDO) ---
         function openCommPanel(target, defaultChannel = 'wa') {
             currentCommTarget = target;
             currentCommChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel;
-            currentTemplateLabel = "Directo / Manual"; // Reset
+            currentTemplateLabel = "Directo / Manual";
+            originalTemplateText = "";
 
-            // LOG
-            logAction(`CLICK_${defaultChannel.toUpperCase()}`, { target: target }, target);
+            const logType = `CLICK_${defaultChannel.toUpperCase()}_${target.toUpperCase()}`;
+            logAction(logType, { target: target, channel: defaultChannel }, target);
 
-            // Llamada directa (no abre modal, registra y ejecuta)
             if (currentCommChannel === 'phone') {
                 window.location.href = `tel:${target === 'lead' ? leadData.telefono : leadData.ownerPhone}`;
                 return;
             }
 
-            // Configurar Modal
             const header = document.getElementById('modalHeader');
             const title = document.getElementById('commTitle');
             const targetName = target === 'lead' ? leadData.nombre : leadData.ownerName;
@@ -1704,10 +3043,11 @@
             const subjectContainer = document.getElementById('emailSubjectContainer');
             if (currentCommChannel === 'email') {
                 subjectContainer.classList.remove('d-none');
+                document.getElementById('emailSubject').value = "Consulta Propiedad " + leadData.propiedad;
             } else {
                 subjectContainer.classList.add('d-none');
+                document.getElementById('emailSubject').value = "";
             }
-            document.getElementById('emailSubject').value = "";
 
             renderCommTabs(target);
             const firstTabId = commTemplates[target].tabs[0].id;
@@ -1751,7 +3091,7 @@
                 card.onclick = () => {
                     document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
                     card.classList.add('selected');
-                    currentTemplateLabel = tpl.label; // Capturamos nombre plantilla para el log
+                    currentTemplateLabel = tpl.label;
                     selectTemplate(tpl.text, tpl.subject || "");
                 };
                 const icon = currentCommChannel === 'wa' ? '<i class="fa-brands fa-whatsapp text-success"></i>' : '<i class="fa-regular fa-envelope text-primary"></i>';
@@ -1769,7 +3109,9 @@
                 .replace(/\[\[comuna\]\]/g, leadData.comuna)
                 .replace(/\[\[precio\]\]/g, leadData.precio);
 
+            originalTemplateText = processedText;
             document.getElementById('commMessage').value = processedText;
+
             if (currentCommChannel === 'email' && subject) {
                 let processedSubject = subject.replace(/\[\[propiedad\]\]/g, leadData.propiedad).replace(/\[\[comuna\]\]/g, leadData.comuna);
                 document.getElementById('emailSubject').value = processedSubject;
@@ -1792,37 +3134,64 @@
 
             btn.onclick = function (e) {
                 e.preventDefault();
-                const finalMsg = msgBody.value;
-                if (!finalMsg) return;
 
-                // REGISTRAR ENVÍO ANTES DE ABRIR
-                logAction(`SEND_${currentCommChannel.toUpperCase()}`, {
-                    target: target,
-                    template: currentTemplateLabel,
-                    content_preview: finalMsg.substring(0, 50),
-                    full_content: finalMsg // Guardamos mensaje editado
+                // 1. Obtener mensaje
+                const finalMsg = msgBody.value;
+
+                if (!finalMsg) {
+                    alert("⚠️ Por favor escribe un mensaje antes de enviar.");
+                    return;
+                }
+
+                const wasModified = originalTemplateText && (finalMsg !== originalTemplateText);
+                logAction(`SEND_${currentCommChannel.toUpperCase()}_${target.toUpperCase()}`, {
+                    target_person: target,
+                    template_used: currentTemplateLabel,
+                    is_modified: wasModified,
+                    content_preview: finalMsg.substring(0, 50)
                 }, target);
 
                 if (currentCommChannel === 'wa') {
+                    // --- LÓGICA WHATSAPP ---
                     const cleanPhone = phone.replace(/\D/g, '');
                     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}`;
                     window.open(url, '_blank');
+                    hideModal();
                 } else {
+                    // --- LÓGICA GMAIL FINAL (SIMPLE) ---
                     const subject = document.getElementById('emailSubject').value || "Información Propiedad";
-                    const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(finalMsg)}`;
-                    window.open(url, '_blank');
-                }
+                    const targetEmail = email; // Variable global 'email' (del lead)
 
-                // Cerrar modal tras 1 seg
-                setTimeout(() => {
-                    const modalEl = document.getElementById('commModal');
-                    const modal = bootstrap.Modal.getInstance(modalEl);
-                    modal.hide();
-                }, 1000);
+                    // CAPTURA DEL USUARIO DIRECTA
+                    const myEmail = "{{ user_email }}";
+
+                    console.log("DEBUG: Usando email de usuario:", myEmail);
+
+                    if (!targetEmail || targetEmail === "None" || targetEmail.includes("None")) {
+                        alert("⚠️ Error: No hay email válido de destinatario.");
+                        return;
+                    }
+
+                    // GENERACIÓN DEL LINK DIRECTA (Sin lógica condicional compleja, solo reemplazo)
+                    // Formato: https://mail.google.com/mail/u/[TU_EMAIL]/?view=cm...
+                    const gmailLink = `https://mail.google.com/mail/u/${myEmail}/?view=cm&fs=1&to=${targetEmail.trim()}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(finalMsg)}&authuser=${myEmail}`;
+
+                    window.open(gmailLink, '_blank');
+
+                    hideModal();
+                }
             };
+
+            function hideModal() {
+                setTimeout(() => {
+                    const modalEl = document.getElementById('commModal'); // ID Correcto del archivo
+                    const modal = bootstrap.Modal.getInstance(modalEl);
+                    if (modal) modal.hide();
+                }, 800);
+            }
         }
 
-        // --- NOTES SYSTEM (CON PERSISTENCIA) ---
+        // --- NOTES SYSTEM ---
         let curNoteColor = 'yellow';
 
         function selColor(el, color) {
@@ -1834,7 +3203,6 @@
             const txt = document.getElementById('new_internal_note').value;
             if (!txt) return;
 
-            // 1. Enviar al Backend
             const payload = {
                 phone: currentPhone,
                 action: 'add',
@@ -1850,11 +3218,10 @@
                 const data = await res.json();
 
                 if (data.status === 'ok') {
-                    // 2. Renderizar en UI
                     const container = document.getElementById('stickyNotesContainer');
                     const div = document.createElement('div');
                     div.className = `sticky-note note-${curNoteColor}`;
-                    const noteId = data.note.id; // ID generado por el server
+                    const noteId = data.note.id;
 
                     div.innerHTML = `
                         <button class="btn-del-note" onclick="deleteNote(this, '${noteId}')"><i class="fa-solid fa-xmark"></i></button>
@@ -1881,9 +3248,7 @@
         }
 
         function sortNotes() {
-            const container = document.getElementById('stickyNotesContainer');
-            // Ordenamiento visual simple (si tuvieras timestamps en el DOM, mejor)
-            // Como ya vienen ordenadas del server, esto es solo visual si agregas muchas dinámicas
+            // Placeholder para ordenamiento si se desea
         }
     </script>
 </body>

@@ -1,3 +1,5 @@
+# --- START OF FILE webhook.py ---
+
 # webhook.py → BOT PRO 2025 CON LOGIN REAL + DASHBOARD + CAMPAÑAS 100% ORIGINALES
 import asyncio
 import logging
@@ -13,6 +15,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import uvicorn
 import json
+import pytz # Importante para la hora local
 
 # === NUEVAS IMPORTACIONES PARA GOOGLE ===
 import httpx 
@@ -42,6 +45,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("procasa-full")
 
+# CONFIGURACIÓN ZONA HORARIA CHILE
+CHILE_TZ = pytz.timezone('Chile/Continental')
+
 # ========================= 1. INICIALIZACIÓN DE APP (MOVIDO AL INICIO) =========================
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -59,7 +65,7 @@ def get_images():
     images = [f"propiedades/{f.name}" for f in prop_dir.iterdir() if f.is_file() and f.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".gif"}]
     return images or ["propiedades/default.jpg"]
 
-# ========================= 2. SEGURIDAD Y JWT =========================
+# ========================= 2. SEGURIDAD, JWT Y MIDDLEWARE DE SESIÓN =========================
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
@@ -78,9 +84,33 @@ def verify_password(plain_password: str, hashed_password: str):
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(hours=8)
+    # Expiración inicial (luego se renueva en el middleware)
+    expire = datetime.utcnow() + timedelta(minutes=30)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, Config.SECRET_KEY, algorithm="HS256")
+
+# --- MIDDLEWARE DE SESIÓN SLIDING (SOLUCIÓN TIMEOUT) ---
+@app.middleware("http")
+async def slide_session_middleware(request: Request, call_next):
+    response = await call_next(request)
+    
+    # Rutas exentas
+    if request.url.path.startswith("/static") or request.url.path in ["/", "/login", "/webhook", "/logout", "/auth/google/callback"]:
+        return response
+
+    token = request.cookies.get("access_token")
+    if token:
+        # Renovación SIMPLE y PERMISIVA para Localhost
+        response.set_cookie(
+            key="access_token",
+            value=token,
+            httponly=True,
+            secure=False,       # <--- IMPORTANTE: Falso para que funcione en tu PC
+            samesite="lax",     # <--- Lax permite la navegación normal
+            max_age=1800,      
+            path="/"            # <--- Asegura que funcione en todo el sitio
+        )
+    return response
 
 async def get_current_user(request: Request):
     token = request.cookies.get("access_token")
@@ -124,7 +154,7 @@ def crear_admin_si_no_existe():
 
 crear_admin_si_no_existe()
 
-# ========================= 3. LOGIN CON GOOGLE (NUEVO) =========================
+# ========================= 3. LOGIN CON GOOGLE =========================
 
 @app.get("/login/google")
 async def login_google():
@@ -200,22 +230,19 @@ async def auth_google_callback(request: Request, code: str):
         user_rol = user.get("rol", "agente")
         target_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
 
-        # 4. Crear sesión con BUENAS PRÁCTICAS
-        # Definimos el tiempo de sesión (1800 seg = 30 min)
         SESSION_TIME = 1800 
         
         access_token_jwt = create_access_token({"sub": user_sub})
         
         response = RedirectResponse(target_url, status_code=303)
         
-        # Seteamos la cookie inicial
         response.set_cookie(
             key="access_token", 
             value=access_token_jwt,
             httponly=True, 
-            secure=True,    # Siempre True para producción/HTTPS
+            secure=False,    
             samesite="lax", 
-            max_age=SESSION_TIME # Tiempo inicial
+            max_age=SESSION_TIME 
         )
         
         logger.info(f"Sesión iniciada para {email} (Rol: {user_rol})")
@@ -250,7 +277,6 @@ async def login_post(request: Request, username: str = Form(...), password: str 
         user = usuarios.find_one({"username": username})
         
         if user and verify_password(password, user.get("hashed_password", "")):
-            # === NUEVA LÓGICA DE REDIRECCIÓN POR ROL ===
             user_rol = user.get("rol", "agente")
             target_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
 
@@ -261,7 +287,7 @@ async def login_post(request: Request, username: str = Form(...), password: str 
                 "access_token", 
                 token,
                 httponly=True, 
-                secure=True,  # Cambiado a True para Render (HTTPS)
+                secure=False,
                 samesite="lax", 
                 max_age=1800
             )
@@ -309,7 +335,6 @@ async def leads_intelligence_endpoint():
 
 @app.get("/leads-dashboard", response_class=HTMLResponse)
 async def ver_leads(request: Request):
-    # === PROTECCIÓN: SOLO SUPERVISORES ===
     username = await get_current_user(request)
     client = MongoClient(Config.MONGO_URI)
     db = client[Config.DB_NAME]
@@ -334,7 +359,7 @@ async def ver_detalle_chat(request: Request, phone: str):
         "phone": phone
     })
 
-# ========================= 6. RUTAS CRM =========================
+# ========================= 6. RUTAS CRM (MODIFICADAS PARA HORA LOCAL) =========================
 
 @app.get("/crm", response_class=HTMLResponse)
 async def view_crm_list(request: Request, estado: str = None, busqueda: str = None, orden: str = "prioridad"):
@@ -347,7 +372,6 @@ async def view_crm_list(request: Request, estado: str = None, busqueda: str = No
 
 @app.get("/crm/lead/{phone}", response_class=HTMLResponse)
 async def view_crm_detail(request: Request, phone: str):
-    # === PROTECCIÓN: VERIFICAR AUTENTICACIÓN Y ROL ===
     username = await get_current_user(request)
     client = MongoClient(Config.MONGO_URI)
     db = client[Config.DB_NAME]
@@ -357,12 +381,23 @@ async def view_crm_detail(request: Request, phone: str):
     if not data: 
         return HTMLResponse("Lead no encontrado")
     
-    # === RESTRICCIÓN PARA AGENTES: SOLO SUS LEADS ===
     if user.get("rol") == "agente":
         if data.get("agente_asignado") != username:
             return RedirectResponse(url="/crm?error=no_es_tu_lead")
     
-    return templates.TemplateResponse("crm_lead_detail.html", {"request": request, "lead": data})
+    # LÓGICA FINAL SIMPLE (Solicitada por usuario): 
+    # Usar estrictamente el correo/usuario con el que se identificó.
+    email = user.get("email") or user.get("username")
+    
+    # Limpieza básica por si viene sucio
+    if email: 
+        email = email.strip()
+
+    return templates.TemplateResponse("crm_lead_detail.html", {
+        "request": request, 
+        "lead": data,
+        "user_email": email
+    })
 
 @app.post("/api/crm/log_action")
 async def api_crm_log_action(request: Request):
@@ -370,6 +405,13 @@ async def api_crm_log_action(request: Request):
         data = await request.json()
         phone = data.get("phone")
         payload = data.get("data", {})
+        
+        # INYECTAR HORA DE CHILE EN EL METADATA
+        now_cl = datetime.now(CHILE_TZ)
+        if "meta" not in payload:
+            payload["meta"] = {}
+        payload["meta"]["server_time_cl"] = now_cl.strftime("%Y-%m-%d %H:%M:%S")
+
         log_crm_event(
             phone=phone, 
             event_type=payload.get("type"), 
@@ -388,8 +430,13 @@ async def api_crm_update_lead(request: Request):
         if not phone:
             raise HTTPException(status_code=400, detail="Falta teléfono")
 
-        success = update_lead_crm_data(phone, data)
-        if success:
+        # Aseguramos que se guarde la hora de actualización en CL
+        data["updated_at_cl"] = datetime.now(CHILE_TZ).isoformat()
+
+        result = update_lead_crm_data(phone, data)
+        if result and isinstance(result, dict) and result.get("status") == "ok":
+            return result
+        elif result is True: # Fallback just in case
             return {"status": "ok"}
         else:
             raise HTTPException(status_code=500, detail="No se pudo actualizar")
@@ -404,6 +451,15 @@ async def api_crm_notes(request: Request):
         action = data.get("action", "add")
         phone = data.get("phone")
         note_data = data.get("note", {})
+
+        # SOLUCIÓN HORA NOTAS: Forzar la hora de Chile en la creación
+        if action == "add":
+            now_cl = datetime.now(CHILE_TZ)
+            # Sobreescribimos/Agregamos fecha formateada con HORA
+            note_data["created_at_str"] = now_cl.strftime("%d/%m/%Y %H:%M")
+            # Añadimos timestamp ISO para ordenamiento backend
+            note_data["timestamp_iso"] = now_cl.isoformat()
+
         result = manage_crm_notes(phone, note_data, action)
         if result:
             return {"status": "ok", "note": result}
@@ -558,6 +614,11 @@ async def webhook(
 async def health_check():
     return {"status": "healthy", "active_conversations": len(pending_tasks), "uptime": time.strftime("%Y-%m-%d %H:%M:%S")}
 
+@app.post("/api/keep-alive")
+async def api_keep_alive(request: Request):
+    """Endpoint ligero para renovar la cookie de sesión sin recargar"""
+    return {"status": "ok", "timestamp": time.time()}
+
 @app.get("/campana/respuesta")
 async def campana_respuesta(
     request: Request,
@@ -608,7 +669,6 @@ async def retiro_contactar(request: Request, email: str = Query(...), codigo: st
 @app.exception_handler(401)
 async def unauthorized_exception_handler(request: Request, exc: HTTPException):
     # Si el usuario intenta acceder a una ruta de la interfaz (HTML), lo mandamos al login
-    # Si es una petición de API pura (JSON), podrías decidir si quieres error o redirección
     logger.warning(f"Redirigiendo a login por sesión expirada en: {request.url.path}")
     return RedirectResponse(url="/?error=sesion_expirada")
 

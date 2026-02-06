@@ -9,10 +9,11 @@ def get_db():
     return client[Config.DB_NAME]
 
 def format_relative_time(dt_obj):
-    if not dt_obj: return "S/I"
     if isinstance(dt_obj, str):
         try: dt_obj = datetime.fromisoformat(dt_obj.replace('Z', ''))
         except: return "S/I"
+    
+    if not dt_obj or dt_obj == datetime.min: return "S/I"
             
     now = datetime.now()
     diff = now - dt_obj
@@ -27,22 +28,12 @@ def format_relative_time(dt_obj):
     elif minutes > 0: return f"Hace {minutes}m"
     else: return "Ahora"
 
-# --- HELPER: Obtener datos reales de 'universo_obelix' ---
+# --- HELPER: Datos de Propiedad ---
 def get_real_property_data(db, codigo_propiedad):
-    """
-    Busca la información completa en la colección universo_obelix
-    usando el código de propiedad.
-    """
     if not codigo_propiedad or codigo_propiedad == "S/N":
         return None
-
-    # Buscamos exacto o por texto
     prop = db["universo_obelix"].find_one({"codigo": str(codigo_propiedad)})
-    
-    if not prop:
-        return None
-
-    # Mapeamos los campos de universo_obelix a lo que espera el Frontend
+    if not prop: return None
     return {
         "codigo": prop.get("codigo"),
         "tipo": prop.get("tipo", "Propiedad"),
@@ -53,46 +44,25 @@ def get_real_property_data(db, codigo_propiedad):
         "calle": prop.get("calle", ""),
         "numeracion": prop.get("numeracion", ""),
         "direccion_completa": f"{prop.get('calle', '')} #{prop.get('numeracion', '')}",
-        
-        # Datos Propietario (CRUCIALES)
         "nombre_propietario": prop.get("nombre_propietario", "No registrado"),
         "movil_propietario": prop.get("movil_propietario") or prop.get("fono_propietario", "S/I"),
         "email_propietario": prop.get("email_propietario", "S/I"),
-        
-        # Link para verla (opcional)
         "url": f"https://www.procasa.cl/propiedad/{prop.get('codigo')}"
     }
 
-# --- HELPER: Detectar Código en Chat ---
 def detect_property_code(lead):
-    # 1. Mirar en prospecto (más fiable)
     code = lead.get("prospecto", {}).get("codigo")
     if code: return code
-
-    # 2. Mirar en datos_propiedad antiguos
     code = lead.get("datos_propiedad", {}).get("codigo")
     if code: return code
-
-    # 3. Escanear chat (último recurso)
-    messages = lead.get("messages", [])
-    for msg in reversed(messages):
-        if msg.get("role") == "assistant":
-            content = msg.get("content", "")
-            # Buscar patrones como "Código 55268" o "código Procasa 55268"
-            match = re.search(r'(?:código|cod|propiedad)\s*(?:procasa)?\s*[:#]?\s*(\d{4,6})', content, re.IGNORECASE)
-            if match:
-                return match.group(1)
     return None
 
-# --- HELPER: Procesar Chat (Bot vs User) ---
 def process_chat_timeline(messages):
     processed = []
     if not messages: return []
-    
     for msg in messages:
         role = msg.get("role", "user")
         css_class = "chat-bot" if role in ["assistant", "system"] else "user-message"
-        
         processed.append({
             "role": css_class, 
             "content": msg.get("content", ""),
@@ -108,11 +78,19 @@ def log_crm_event(phone, event_type, agent="Sistema", meta_data=None):
         "timestamp": datetime.now(),
         "type": event_type, "agent": agent, "meta": meta_data or {}
     }
-    db["crm_events"].insert_one(event)
+    return db["crm_events"].insert_one(event)
 
 def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
     if not execute_at_str: return
     db = get_db()
+    phone_clean = phone.replace(" ", "").replace("+", "").strip()
+    
+    # Resolver tareas previas (Audit consistency)
+    db["crm_tasks"].update_many(
+        {"phone": phone_clean, "status": "pending"},
+        {"$set": {"status": "completed", "resolved_at": datetime.now(), "resolution": "superseded"}}
+    )
+    
     try: execute_at = datetime.fromisoformat(execute_at_str.replace("Z", ""))
     except: return
     task = {
@@ -123,71 +101,144 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
     }
     db["crm_tasks"].insert_one(task)
 
-# --- 1. LISTA DE LEADS ---
+# --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
 def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad"):
     db = get_db()
     query_parts = []
     
-    if filtro_estado: 
-        query_parts.append({"crm_estado": filtro_estado})
-
     if busqueda and busqueda.strip():
         term = busqueda.strip()
         regex_term = re.escape(term)
         clean_phone = re.sub(r'\D', '', term)
-        
         query_parts.append({"$or": [
             {"prospecto.codigo": {"$regex": regex_term, "$options": "i"}},
             {"prospecto.nombre": {"$regex": regex_term, "$options": "i"}},
             {"phone": {"$regex": clean_phone}}
         ]})
     
-    # Corregido: Construimos la query sin autorreferencia circular
     query = {"$and": query_parts} if query_parts else {}
     
-    leads_cursor = db["leads"].find(query).limit(100)
+    # 1. TRAER LEADS (Ejecutar query inmediata)
+    leads_list = list(db["leads"].find(query).limit(200))
     
+    # 2. OPTIMIZACIÓN: Obtener lista de teléfonos para hacer UNA SOLA consulta de eventos
+    phones_in_page = [l.get("phone", "").replace("+","").strip() for l in leads_list if l.get("phone")]
+    
+    # 3. BULK QUERY DE EVENTOS (Agregación para obtener el último por teléfono)
+    events_map = {}
+    if phones_in_page:
+        pipeline = [
+            {"$match": {
+                "phone": {"$in": phones_in_page}, 
+                "type": "GESTION_LOG"
+            }},
+            {"$sort": {"timestamp": -1}},
+            {"$group": {
+                "_id": "$phone",
+                "last_event": {"$first": "$$ROOT"}
+            }}
+        ]
+        # Ejecutamos la agregación rápida
+        agg_results = list(db["crm_events"].aggregate(pipeline))
+        # Mapeamos para acceso O(1)
+        events_map = {r["_id"]: r["last_event"] for r in agg_results}
+
     leads_procesados = []
-    kpi_counts = {"nuevo": 0, "gestion": 0, "visita": 0, "total": 0}
-    estado_labels = {"nuevo": "Sin Atender", "gestion": "En Gestión", "visita": "Visita Agendada", "cerrado": "Cerrado"}
+    kpi_counts = {"nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0, "total": 0}
+    
+    state_map = {
+        "nuevo":   {"label": "Sin Atender", "led": "led-red",    "priority": 1},
+        "visita":  {"label": "Visita Agendada", "led": "led-green",  "priority": 2},
+        "gestion": {"label": "En Gestión",  "led": "led-yellow", "priority": 3},
+        "cerrado": {"label": "Cerrado",     "led": "led-gray",   "priority": 4}
+    }
 
-    for lead in leads_cursor:
-        estado = lead.get("crm_estado", "nuevo")
-        kpi_counts["total"] += 1
-        if estado in kpi_counts: kpi_counts[estado] += 1
-        
-        prospecto = lead.get("prospecto", {})
-        codigo = detect_property_code(lead)
-        url_prop = f"https://www.procasa.cl/propiedad/{codigo}" if codigo else "#"
-        
-        last_ts = datetime.min
-        msgs = lead.get("messages", [])
-        last_msg_txt = "Sin mensajes"
-        
-        if msgs:
-            last_msg = msgs[-1]
-            last_ts = last_msg.get("timestamp") or last_msg.get("created_at") or datetime.min
-            txt = last_msg.get("content", "")
-            last_msg_txt = (txt[:45] + '...') if len(txt) > 45 else txt
-
+    # 4. PROCESAR LEADS EN MEMORIA
+    for lead in leads_list:
         raw_phone = lead.get("phone", "").replace("+", "").strip()
+        estado_db = lead.get("crm_estado", "nuevo")
         
+        # Recuperar evento desde el mapa en memoria (sin ir a la DB)
+        last_action_event = events_map.get(raw_phone)
+        
+        last_action_text = "Sin gestión aún"
+        last_action_note = ""
+        last_ts = lead.get("created_at")
+        
+        estado_final = estado_db 
+
+        if last_action_event:
+            last_ts = last_action_event["timestamp"]
+            meta = last_action_event.get("meta", {})
+            last_action_text = meta.get("action_label", "Gestión CRM")
+            
+            if meta.get("notes"):
+                last_action_note = meta.get("notes")[:50] + "..."
+
+            # Corrección Visual de Estado
+            result_code = meta.get("result", "")
+            if result_code == "visita_agendada":
+                estado_final = "visita"
+            elif result_code == "lead_cerrado":
+                estado_final = "cerrado"
+            elif result_code in ["lead_pausado", "requiere_seguimiento", "intento_fallido"]:
+                estado_final = "gestion"
+            elif estado_db == "nuevo": 
+                estado_final = "gestion"
+        else:
+             msgs = lead.get("messages", [])
+             if msgs:
+                 last_msg = msgs[-1]
+                 # Validación segura de timestamp
+                 ts = last_msg.get("timestamp")
+                 if ts: last_ts = ts
+
+        # KPIS
+        kpi_counts["total"] += 1
+        if estado_final in kpi_counts:
+            kpi_counts[estado_final] += 1
+        else:
+            kpi_counts["gestion"] += 1 
+
+        if filtro_estado and estado_final != filtro_estado:
+            continue
+
+        # Formateo de fecha seguro
+        if isinstance(last_ts, str):
+            try: last_ts_obj = datetime.fromisoformat(last_ts.replace('Z', ''))
+            except: last_ts_obj = datetime.min
+        elif isinstance(last_ts, datetime):
+            last_ts_obj = last_ts
+        else:
+            last_ts_obj = datetime.min
+
+        config_estado = state_map.get(estado_final, state_map["gestion"])
+
         leads_procesados.append({
             "phone": raw_phone,
             "whatsapp_display": f"+{raw_phone}",
-            "nombre": prospecto.get("nombre") or "Desconocido",
-            "estado": estado,
-            "estado_badge": estado_labels.get(estado, estado.capitalize()),
-            "tiempo_relativo": format_relative_time(last_ts),
-            "real_timestamp": last_ts,
-            "led_class": "led-red" if estado == "nuevo" else ("led-yellow" if estado == "gestion" else "led-green"),
-            "sla_title": "Prioridad",
-            "codigo_propiedad": codigo or "S/N",
-            "url_propiedad": url_prop,
-            "ultima_accion": last_msg_txt
+            "nombre": lead.get("prospecto", {}).get("nombre") or "Desconocido",
+            "estado": estado_final,
+            "estado_badge": config_estado["label"],
+            "led_class": config_estado["led"],
+            "tiempo_relativo": format_relative_time(last_ts_obj),
+            "real_timestamp": last_ts_obj,
+            "priority_score": config_estado["priority"],
+            "codigo_propiedad": detect_property_code(lead) or "S/N",
+            "url_propiedad": f"https://www.procasa.cl/propiedad/{detect_property_code(lead)}" if detect_property_code(lead) else "#",
+            "ultima_accion_titulo": last_action_text,
+            "ultima_accion_nota": last_action_note
         })
-        
-    leads_procesados.sort(key=lambda x: x['real_timestamp'], reverse=True)
+    
+    def safe_timestamp(dt):
+        try: return dt.timestamp()
+        except: return 0.0
+
+    if ordenar_por == "prioridad":
+        leads_procesados.sort(key=lambda x: (x['priority_score'], -safe_timestamp(x['real_timestamp'])))
+    else:
+        leads_procesados.sort(key=lambda x: safe_timestamp(x['real_timestamp']), reverse=True)
+
     return leads_procesados, kpi_counts
 
 # --- 2. DETALLE DEL LEAD ---
@@ -213,23 +264,37 @@ def get_lead_detail_data(phone):
             "url": "#"
         }
 
+    # Se incluyen logs de sistema y gestión para auditoría completa
     new_events_cursor = db["crm_events"].find({
-        "phone": phone_clean, 
-        "type": {"$in": ["GESTION_LOG", "STATUS_CHANGE", "CALL_OUT", "WHATSAPP_OUT"]}
+        "phone": phone_clean,
+        "type": {"$in": ["GESTION_LOG", "STATUS_CHANGE", "SYSTEM_LOG"]} 
     }).sort("timestamp", -1)
     
     formatted_new_history = []
     for evt in new_events_cursor:
         meta = evt.get("meta", {})
+        # Distinción de tipo para UI
+        evt_type = evt.get("type")
+        display_type = "system" if evt_type == "STATUS_CHANGE" else "user"
+        
         formatted_new_history.append({
             "timestamp": evt["timestamp"],
-            "user_action": meta.get("action_label", evt["type"]),
+            "user_action": meta.get("action_label", "Evento Sistema") if evt_type != "STATUS_CHANGE" else "Cambio de Estado",
             "result": meta.get("result", ""),
-            "notes": meta.get("notes", "")
+            "notes": meta.get("notes", "") or meta.get("to", ""), 
+            "type_class": display_type,
+            "raw_type": evt_type,
+            "channel": meta.get("interaction_type") # p.ej. 'wa', 'phone', 'email'
         })
         
     timeline = process_chat_timeline(lead.get("messages", []))
     prospecto = lead.get("prospecto", {})
+
+    # Buscar próxima tarea pendiente (Auditoría Canónica)
+    next_task = db["crm_tasks"].find_one({
+        "phone": phone_clean,
+        "status": "pending"
+    }, sort=[("execute_at", 1)])
 
     return {
         "phone": lead.get("phone"),
@@ -237,15 +302,17 @@ def get_lead_detail_data(phone):
         "nombre": prospecto.get("nombre", "Desconocido"),
         "email": prospecto.get("email", "No registrado"),
         "rut": prospecto.get("rut", "No registrado"),
-        "origen": prospecto.get("origen", "Desconocido"), 
-        "propiedad_texto": f"{datos_propiedad.get('operacion','')} {datos_propiedad.get('comuna','')}",
         "crm_estado": lead.get("crm_estado", "nuevo"),
+        "next_action_date": next_task["execute_at"].isoformat() if next_task else None,
+        "last_action_label": formatted_new_history[0]["user_action"] if formatted_new_history else "Sin gestión aún",
+        "last_action_relative": format_relative_time(formatted_new_history[0]["timestamp"]) if formatted_new_history else None,
+        "last_crm_update": lead.get("last_crm_update").isoformat() if lead.get("last_crm_update") else None,
         "crm_history": formatted_new_history, 
         "sticky_notes": lead.get("sticky_notes", []),
         "datos_propiedad": datos_propiedad
     }
 
-# --- 3. ACTUALIZAR LEAD ---
+# --- 3. ACTUALIZAR LEAD (CON VALIDACIÓN ESTRICTA) ---
 def update_lead_crm_data(phone, data):
     db = get_db()
     phone_clean = phone.replace(" ", "").replace("+", "").strip()
@@ -253,32 +320,65 @@ def update_lead_crm_data(phone, data):
     current_lead = db["leads"].find_one({"phone": {"$regex": phone_clean}})
     if not current_lead: return False
     
-    new_state = data.get("estado")
+    # --- VALIDACIÓN DEL TRIÁNGULO DE CONTROL (CRITICA 1 & 3) ---
+    interaction_type = data.get("interaction_type")
+    result = data.get("resultado_gestion")
+    next_date = data.get("next_action_date")
+    
+    # Regla: Si hablé, OBLIGATORIO definir siguiente paso o cerrar
+    if interaction_type == "hable" and result != "lead_cerrado":
+        if not next_date:
+            # Rechazar gestión incompleta (Backend Enforcement)
+            print(f"⚠️ RECHAZADO: Intento de guardar 'Hablé' sin próxima fecha. Lead: {phone_clean}")
+            return False 
+
+    new_state = data.get("estado_calculado")
+    if not new_state:
+        res = data.get("resultado_gestion")
+        if res == "visita_agendada": new_state = "visita"
+        elif res == "lead_cerrado": new_state = "cerrado"
+        elif res in ["lead_pausado", "requiere_seguimiento", "intento_fallido"]: new_state = "gestion"
+        else: new_state = "gestion"
+
     old_state = current_lead.get("crm_estado", "nuevo")
     
+    # Log de cambio de estado (Auditoría)
     if old_state != new_state:
         log_crm_event(phone_clean, "STATUS_CHANGE", meta_data={"from": old_state, "to": new_state})
 
-    if data.get("next_action_date"):
-        schedule_crm_task(phone_clean, data.get("next_action_date"), data.get("notas"))
+    # Agendar tarea solo si hay fecha válida
+    if next_date:
+        schedule_crm_task(phone_clean, next_date, data.get("notas"))
+    elif new_state == "cerrado":
+        # Cleanup: Si se cierra el lead, resolver tareas pendientes
+        db["crm_tasks"].update_many(
+            {"phone": phone_clean, "status": "pending"},
+            {"$set": {"status": "completed", "resolved_at": datetime.now(), "resolution": "lead_closed"}}
+        )
 
-    log_crm_event(phone_clean, "GESTION_LOG", meta_data={
-        "interaction_type": data.get("interaction_type"),
-        "result": data.get("resultado_gestion"),
+    # Log de gestión comercial (Acción User)
+    event_result = log_crm_event(phone_clean, "GESTION_LOG", meta_data={
+        "interaction_type": interaction_type,
+        "result": result,
         "notes": data.get("notas"),
         "action_label": data.get("action_label"),
-        "details_json": data
+        "details_json": data.get("details_json", {})
     })
 
     db["leads"].update_one(
         {"phone": {"$regex": phone_clean}},
         {"$set": {
             "crm_estado": new_state,
-            "last_crm_update": datetime.now(),
-            "crm_propietario_estado": data.get("propietario_res")
+            "last_crm_update": datetime.now()
         }}
     )
-    return True
+
+    return {
+        "status": "ok",
+        "new_state": new_state,
+        "next_action_date": next_date,
+        "event_id": str(event_result.inserted_id) if event_result else None
+    }
 
 def manage_crm_notes(phone, note_data, action="add"):
     db = get_db()
@@ -286,7 +386,13 @@ def manage_crm_notes(phone, note_data, action="add"):
     
     if action == "add":
         note_id = str(uuid.uuid4())[:8]
-        note = {"id": note_id, "content": note_data.get("content"), "color": note_data.get("color"), "created_at_str": datetime.now().strftime("%d/%m/%Y")}
+        note = {
+            "id": note_id, 
+            "content": note_data.get("content"), 
+            "color": note_data.get("color"), 
+            "created_at_str": datetime.now().strftime("%d/%m/%Y"),
+            "timestamp_iso": datetime.now().isoformat()
+        }
         db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$push": {"sticky_notes": note}})
         return note
     elif action == "delete":

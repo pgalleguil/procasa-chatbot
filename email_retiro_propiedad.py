@@ -230,7 +230,7 @@ def enviar_por_codigo(codigo: str):
 # ==============================================================================
 if __name__ == "__main__":
     print("=" * 70)
-    print("        ENVÍO DE CARTA DE RETIRO - PROCASA 2025")
+    print("        ENVÍO DE CARTA DE RETIRO - PROCASA 2026")
     print("        + COPIA A EJECUTIVO + REGISTRO EN MONGODB")
     print("=" * 70)
     print(f"Modo prueba: {'SÍ' if MODO_PRUEBA else 'NO'}")

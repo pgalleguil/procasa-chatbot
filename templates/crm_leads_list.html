@@ -25,6 +25,7 @@
             --led-yellow: #f59e0b;
             --led-green: #10b981;
             --led-gray: #64748b;
+            /* NUEVO COLOR PLOMO PARA CERRADO */
         }
 
         body {
@@ -227,6 +228,7 @@
             border-radius: 0 10px 10px 0;
         }
 
+        /* LED INDICATORS */
         .led-indicator {
             width: 10px;
             height: 10px;
@@ -249,7 +251,11 @@
         }
 
         .led-gray {
+            /* Estilo para Cerrado */
             background: var(--led-gray);
+            border: 1px solid #475569;
+            /* Un borde sutil */
+            box-shadow: 0 0 3px rgba(100, 116, 139, 0.5);
         }
 
         .prop-code-link {
@@ -297,6 +303,7 @@
 
         /* Default hover */
         .btn-detail:hover {
+            /* Este es el botón "Ver detalle" */
             background: var(--accent);
             color: white;
             border-color: var(--accent);
@@ -331,10 +338,11 @@
     <div class="main-content expanded" id="mainContent">
 
         <div class="d-flex align-items-center mb-4">
-            <button id="sidebarToggle"><i class="fa-solid fa-bars"></i></button>
+            <button id="sidebarToggle" class="me-3 btn btn-sm btn-dark"><i class="fa-solid fa-bars"></i></button>
             <h2 class="fw-bold m-0 fs-4">Gestión de Leads</h2>
         </div>
 
+        <!-- KPIs: -->
         <div class="row g-3 mb-4">
             <div class="col-md-3">
                 <div class="summary-card" style="border-bottom: 3px solid var(--led-red);">
@@ -364,20 +372,22 @@
                 </div>
             </div>
             <div class="col-md-3">
-                <div class="summary-card">
+                <div class="summary-card" style="border-bottom: 3px solid var(--led-gray);">
+                    <!-- Estilo Gris para Total -->
                     <div>
-                        <div class="summary-value">{{ kpis.total }}</div>
-                        <div class="summary-label">Total Bandeja</div>
+                        <div class="summary-value text-secondary">{{ kpis.cerrado }}</div>
+                        <div class="summary-label">Cerrados</div>
                     </div>
-                    <i class="fa-solid fa-inbox fa-2x text-secondary opacity-25"></i>
+                    <i class="fa-solid fa-archive fa-2x text-secondary opacity-25"></i>
                 </div>
             </div>
         </div>
 
+        <!-- TOOLBAR DE FILTROS -->
         <form action="/crm" method="GET" class="toolbar">
             <div class="search-box">
                 <i class="fa-solid fa-search"></i>
-                <input type="text" name="busqueda" placeholder="Teléfono..."
+                <input type="text" name="busqueda" placeholder="Teléfono o Nombre..."
                     value="{{ request.query_params.get('busqueda', '') }}">
             </div>
 
@@ -390,24 +400,27 @@
                     Gestión</option>
                 <option value="visita" {% if request.query_params.get('estado')=='visita' %}selected{% endif %}>🟢
                     Visita Agendada</option>
+                <option value="cerrado" {% if request.query_params.get('estado')=='cerrado' %}selected{% endif %}>⚪
+                    Cerrados</option>
             </select>
 
             <select class="form-select-custom ms-auto" name="orden" onchange="this.form.submit()">
                 <option value="prioridad" {% if request.query_params.get('orden')=='prioridad' %}selected{% endif %}>
-                    Prioridad</option>
-                <option value="fecha" {% if request.query_params.get('orden')=='fecha' %}selected{% endif %}>Recientes
-                </option>
+                    Prioridad (Semáforo)</option>
+                <option value="fecha" {% if request.query_params.get('orden')=='fecha' %}selected{% endif %}>Más
+                    Recientes</option>
             </select>
         </form>
 
+        <!-- TABLA -->
         <div class="table-responsive">
             <table class="crm-table">
                 <thead>
                     <tr>
                         <th width="15%">Estado</th>
-                        <th width="25%">Cliente</th>
-                        <th width="15%">Código</th>
-                        <th width="25%">Última Acción</th>
+                        <th width="20%">Cliente</th>
+                        <th width="15%">Propiedad</th>
+                        <th width="30%">Última Acción CRM</th> <!-- CAMBIADO TÍTULO -->
                         <th width="20%" class="text-end">Acciones</th>
                     </tr>
                 </thead>
@@ -416,7 +429,7 @@
                     <tr class="clickable-row" onclick="window.location.href='/crm/lead/{{ lead.phone }}'">
                         <td>
                             <div class="d-flex align-items-center">
-                                <div class="led-indicator {{ lead.led_class }}" title="{{ lead.sla_title }}"></div>
+                                <div class="led-indicator {{ lead.led_class }}"></div>
                                 <span class="small text-white">{{ lead.estado_badge }}</span>
                             </div>
                         </td>
@@ -435,10 +448,19 @@
                             {% endif %}
                         </td>
                         <td>
-                            <div class="small fw-bold">{{ lead.tiempo_relativo }}</div>
-                            <div class="small text-secondary fst-italic">{{ lead.ultima_accion }}</div>
+                            <!-- AQUÍ SE MUESTRA LA ACCIÓN REAL DEL USUARIO -->
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fw-bold text-accent" style="font-size: 0.9rem;">{{
+                                    lead.ultima_accion_titulo }}</span>
+                                <span class="badge bg-dark text-secondary border border-secondary"
+                                    style="font-size: 0.7rem;">{{ lead.tiempo_relativo }}</span>
+                            </div>
+                            <div class="small text-secondary fst-italic mt-1 text-truncate" style="max-width: 250px;">
+                                {{ lead.ultima_accion_nota }}
+                            </div>
                         </td>
                         <td class="text-end">
+                            <!-- Agregamos event.stopPropagation() a todos los botones de acción -->
                             <a href="tel:{{ lead.phone }}" class="action-btn btn-phone"
                                 onclick="event.stopPropagation();" title="Llamar">
                                 <i class="fa-solid fa-phone"></i>
@@ -448,8 +470,11 @@
                                 title="WhatsApp">
                                 <i class="fa-brands fa-whatsapp"></i>
                             </button>
-                            <button class="action-btn btn-detail" title="Ver Detalle"><i
-                                    class="fa-solid fa-chevron-right"></i></button>
+                            <button class="action-btn btn-detail"
+                                onclick="window.location.href='/crm/lead/{{ lead.phone }}'; event.stopPropagation();"
+                                title="Ver Detalle">
+                                <i class="fa-solid fa-chevron-right"></i>
+                            </button>
                         </td>
                     </tr>
                     {% else %}
@@ -468,6 +493,14 @@
         document.getElementById('sidebarToggle').addEventListener('click', function () {
             document.getElementById('sidebar').classList.toggle('collapsed');
             document.getElementById('mainContent').classList.toggle('expanded');
+        });
+
+        // Script para manejar el botón "Ver Detalle" que ahora es el mismo click en la fila
+        document.querySelectorAll('.btn-detail').forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                // El click en la fila ya maneja la navegación, solo detenemos la propagación si es necesario
+                e.stopPropagation();
+            });
         });
     </script>
 </body>

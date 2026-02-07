@@ -197,6 +197,74 @@
             transition: all 0.4s ease;
         }
 
+        /* Media Query para Móviles */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 0;
+                left: -260px;
+                transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+
+            .sidebar.mobile-open {
+                width: 260px;
+                left: 0 !important;
+                box-shadow: 10px 0 30px rgba(0, 0, 0, 0.8);
+                z-index: 1200;
+            }
+
+            .main-content {
+                margin-left: 0 !important;
+                padding: 15px;
+            }
+
+            .sidebar:hover {
+                width: 0;
+                /* Desactivar hover expand en móvil */
+                box-shadow: none;
+            }
+
+            .sidebar.mobile-open:hover {
+                width: 260px;
+            }
+
+            .nav-link span,
+            .brand span {
+                opacity: 1 !important;
+                transform: translateX(0) !important;
+            }
+
+            .nav-link:hover {
+                transform: none !important;
+                background: rgba(99, 102, 241, 0.1);
+            }
+
+            .nav-link:hover i {
+                transform: none !important;
+            }
+
+            .hamburger-mobile {
+                display: flex !important;
+            }
+        }
+
+        .hamburger-mobile {
+            display: none;
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 1100;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            width: 45px;
+            height: 45px;
+            border-radius: 10px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
         /* --- CONTROLES SUPERIORES --- */
         .header-container {
             display: flex;
@@ -430,6 +498,10 @@
 
 <body>
 
+    <div class="hamburger-mobile" onclick="toggleMobileMenu()">
+        <i class="fa-solid fa-bars"></i>
+    </div>
+
     <nav class="sidebar" id="sidebar">
         <div class="brand">
             <i class="fa-solid fa-robot text-primary"></i> <span>PROCASA AI</span>
@@ -652,6 +724,22 @@
             }
             if (FILTERED_DATA) renderCharts(FILTERED_DATA);
         }
+
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.toggle('mobile-open');
+            overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
+        }
+
+        // Cerrar al hacer clic en un link (en móvil)
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth <= 768) {
+                    toggleMobileMenu();
+                }
+            });
+        });
 
         // Aplicar tema guardado al cargar
         (function () {
@@ -1110,6 +1198,9 @@
         });
         setInterval(loadData, 300000);
     </script>
+    <div id="sidebarOverlay"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1150;"
+        onclick="toggleMobileMenu()"></div>
 </body>
 
 </html>

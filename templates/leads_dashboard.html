@@ -249,20 +249,18 @@
 
         .hamburger-mobile {
             display: none;
-            position: fixed;
-            top: 15px;
-            left: 15px;
-            z-index: 1100;
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             color: var(--text-primary);
-            width: 45px;
-            height: 45px;
+            width: 40px;
+            height: 40px;
             border-radius: 10px;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-right: 15px;
+            /* Espacio con el título */
         }
 
         /* --- CONTROLES SUPERIORES --- */
@@ -498,709 +496,712 @@
 
 <body>
 
-    <div class="hamburger-mobile" onclick="toggleMobileMenu()">
-        <i class="fa-solid fa-bars"></i>
-    </div>
+    <body>
 
-    <nav class="sidebar" id="sidebar">
-        <div class="brand">
-            <i class="fa-solid fa-robot text-primary"></i> <span>PROCASA AI</span>
-        </div>
-        <!-- Dashboard oculto temporalmente -->
-        <!-- <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i> <span>Dashboard</span></a> -->
-        <a href="/leads-dashboard" class="nav-link active"><i class="fa-solid fa-chart-line"></i>
-            <span>Dashboard</span></a>
-        <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
-
-        <!-- Tema Toggle -->
-        <a href="#" class="nav-link theme-toggle" onclick="toggleTheme(); return false;">
-            <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
-        </a>
-
-        <!-- Logout -->
-        <a href="/logout" class="nav-link logout">
-            <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
-        </a>
-    </nav>
-
-    <div class="main-content" id="main-content">
-
-        <div class="header-container">
-            <div class="d-flex align-items-center">
-                <div>
-                    <h2 class="fw-bold m-0">Leads Intelligence</h2>
-                    <p class="text-secondary m-0 small">Rendimiento Comercial & Analytics AI</p>
-                </div>
+        <nav class="sidebar" id="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-robot text-primary"></i> <span>PROCASA AI</span>
             </div>
+            <!-- Dashboard oculto temporalmente -->
+            <!-- <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i> <span>Dashboard</span></a> -->
+            <a href="/leads-dashboard" class="nav-link active"><i class="fa-solid fa-chart-line"></i>
+                <span>Dashboard</span></a>
+            <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
 
-            <div class="d-flex gap-2 align-items-center">
-                <button id="btn-clear-all" class="btn-clear" onclick="clearAllFilters()">
-                    <i class="fa-solid fa-filter-circle-xmark me-2"></i>Limpiar Filtros
-                </button>
-                <div class="filter-container">
-                    <i class="fa-solid fa-calendar-days text-secondary"></i>
-                    <input type="text" id="dateRange" class="calendar-input" placeholder="Filtrar fechas...">
-                    <i class="fa-solid fa-times text-secondary ms-auto cursor-pointer" id="clear_date"
-                        style="display:none;" onclick="clearDateFilter()"></i>
-                </div>
-            </div>
-        </div>
+            <!-- Tema Toggle -->
+            <a href="#" class="nav-link theme-toggle" onclick="toggleTheme(); return false;">
+                <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
+            </a>
 
-        <div class="row g-4 mb-4">
-            <div class="col-md-3">
-                <div class="kpi-card" data-bs-toggle="tooltip" data-bs-placement="top"
-                    title="Número total de leads en el día actual.">
-                    <i class="fa-solid fa-user-group kpi-icon"></i>
-                    <div class="kpi-label text-secondary small text-uppercase">Leads Hoy</div>
-                    <div class="kpi-value" id="total_leads">0</div>
-                    <div id="total_delta_7d" class="small"></div>
-                    <div id="total_delta_week" class="small"></div>
-                    <div id="total_acum" class="small text-secondary"></div>
-                    <div id="insight_total" class="insight-text mt-2 small"></div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="kpi-card" data-bs-toggle="tooltip" data-bs-placement="top"
-                    title="Número de leads 'hot' (alta prioridad o visita agendada/solicitada). Porcentaje del total de leads. Nota: VISITA_AGENDADA es visita confirmada, VISITA_SOLICITADA es interés expresado sin confirmación.">
-                    <i class="fa-solid fa-fire-flame-curved kpi-icon" style="color: #ef4444;"></i>
-                    <div class="kpi-label text-secondary small text-uppercase">Leads "Hot"</div>
-                    <div class="kpi-value" id="leads_calientes">0 (0%)</div>
-                    <div id="hot_delta_7d" class="small"></div>
-                    <div id="hot_delta_week" class="small"></div>
-                    <div id="hot_acum" class="small text-secondary"></div>
-                    <div id="insight_hot" class="insight-text mt-2 small"></div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="kpi-card" data-bs-toggle="tooltip" data-bs-placement="top"
-                    title="Tiempo promedio en minutos desde la entrada del lead hasta la identificación de intención de visita (basado en BI classification).">
-                    <i class="fa-solid fa-stopwatch kpi-icon" style="color: #f59e0b;"></i>
-                    <div class="kpi-label text-secondary small text-uppercase">Tiempo Prom. Conversión</div>
-                    <div class="kpi-value"><span id="avg_speed">0</span> <small class="fs-6" id="avg_unit">min</small>
+            <!-- Logout -->
+            <a href="/logout" class="nav-link logout">
+                <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
+            </a>
+        </nav>
+
+        <div class="main-content" id="main-content">
+
+            <div class="header-container">
+                <div class="d-flex align-items-center">
+                    <div class="hamburger-mobile" onclick="toggleMobileMenu()">
+                        <i class="fa-solid fa-bars"></i>
                     </div>
-                    <div id="sla_avg_speed" class="small mt-2"></div>
-                    <div id="avg_acum" class="small text-secondary"></div>
-                    <div id="insight_avg_speed" class="insight-text mt-2 small"></div>
+                    <div>
+                        <h2 class="fw-bold m-0">Leads Intelligence</h2>
+                        <p class="text-secondary m-0 small">Rendimiento Comercial & Analytics AI</p>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2 align-items-center">
+                    <button id="btn-clear-all" class="btn-clear" onclick="clearAllFilters()">
+                        <i class="fa-solid fa-filter-circle-xmark me-2"></i>Limpiar Filtros
+                    </button>
+                    <div class="filter-container">
+                        <i class="fa-solid fa-calendar-days text-secondary"></i>
+                        <input type="text" id="dateRange" class="calendar-input" placeholder="Filtrar fechas...">
+                        <i class="fa-solid fa-times text-secondary ms-auto cursor-pointer" id="clear_date"
+                            style="display:none;" onclick="clearDateFilter()"></i>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="kpi-card" data-bs-toggle="tooltip" data-bs-placement="top"
-                    title="Porcentaje de leads 'hot' con datos completos (nombre, email y RUT capturados).">
-                    <i class="fa-solid fa-id-card kpi-icon" style="color: #10b981;"></i>
-                    <div class="kpi-label text-secondary small text-uppercase">Leads con Datos Completos</div>
-                    <div class="small text-secondary mb-1">Datos necesario para generar la orden de visita</div>
-                    <div class="kpi-value"><span id="tasa_datos">0</span>%</div>
-                    <div id="datos_delta_7d" class="small"></div>
-                    <div id="datos_delta_week" class="small"></div>
-                    <div id="datos_acum" class="small text-secondary"></div>
-                    <div id="insight_datos" class="insight-text mt-2 small"></div>
+
+            <div class="row g-4 mb-4">
+                <div class="col-md-3">
+                    <div class="kpi-card" data-bs-toggle="tooltip" data-bs-placement="top"
+                        title="Número total de leads en el día actual.">
+                        <i class="fa-solid fa-user-group kpi-icon"></i>
+                        <div class="kpi-label text-secondary small text-uppercase">Leads Hoy</div>
+                        <div class="kpi-value" id="total_leads">0</div>
+                        <div id="total_delta_7d" class="small"></div>
+                        <div id="total_delta_week" class="small"></div>
+                        <div id="total_acum" class="small text-secondary"></div>
+                        <div id="insight_total" class="insight-text mt-2 small"></div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="kpi-card" data-bs-toggle="tooltip" data-bs-placement="top"
+                        title="Número de leads 'hot' (alta prioridad o visita agendada/solicitada). Porcentaje del total de leads. Nota: VISITA_AGENDADA es visita confirmada, VISITA_SOLICITADA es interés expresado sin confirmación.">
+                        <i class="fa-solid fa-fire-flame-curved kpi-icon" style="color: #ef4444;"></i>
+                        <div class="kpi-label text-secondary small text-uppercase">Leads "Hot"</div>
+                        <div class="kpi-value" id="leads_calientes">0 (0%)</div>
+                        <div id="hot_delta_7d" class="small"></div>
+                        <div id="hot_delta_week" class="small"></div>
+                        <div id="hot_acum" class="small text-secondary"></div>
+                        <div id="insight_hot" class="insight-text mt-2 small"></div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="kpi-card" data-bs-toggle="tooltip" data-bs-placement="top"
+                        title="Tiempo promedio en minutos desde la entrada del lead hasta la identificación de intención de visita (basado en BI classification).">
+                        <i class="fa-solid fa-stopwatch kpi-icon" style="color: #f59e0b;"></i>
+                        <div class="kpi-label text-secondary small text-uppercase">Tiempo Prom. Conversión</div>
+                        <div class="kpi-value"><span id="avg_speed">0</span> <small class="fs-6"
+                                id="avg_unit">min</small>
+                        </div>
+                        <div id="sla_avg_speed" class="small mt-2"></div>
+                        <div id="avg_acum" class="small text-secondary"></div>
+                        <div id="insight_avg_speed" class="insight-text mt-2 small"></div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="kpi-card" data-bs-toggle="tooltip" data-bs-placement="top"
+                        title="Porcentaje de leads 'hot' con datos completos (nombre, email y RUT capturados).">
+                        <i class="fa-solid fa-id-card kpi-icon" style="color: #10b981;"></i>
+                        <div class="kpi-label text-secondary small text-uppercase">Leads con Datos Completos</div>
+                        <div class="small text-secondary mb-1">Datos necesario para generar la orden de visita</div>
+                        <div class="kpi-value"><span id="tasa_datos">0</span>%</div>
+                        <div id="datos_delta_7d" class="small"></div>
+                        <div id="datos_delta_week" class="small"></div>
+                        <div id="datos_acum" class="small text-secondary"></div>
+                        <div id="insight_datos" class="insight-text mt-2 small"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section-title">Análisis General</div>
+            <div class="row g-4 mb-4" onclick="closeSidebarOnly()">
+                <div class="col-12">
+                    <div class="chart-container">
+                        <h5 class="mb-3">Flujo de Leads</h5>
+                        <div id="chart-temporal" style="height: 320px;"></div>
+                        <div id="insight-temporal" class="insight-text"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-4 mb-4">
+                <div class="col-lg-6">
+                    <div class="chart-container">
+                        <h5 class="mb-3">Fuentes de Origen <small class="text-muted" style="font-size: 10px;">(Clic para
+                                filtrar)</small></h5>
+                        <div id="chart-fuentes" style="height: 320px;"></div>
+                        <div id="insight-fuentes" class="insight-text"></div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="chart-container">
+                        <h5 class="mb-3"><i class="fa-solid fa-comments me-2 text-primary"></i>Resultado Chat <small
+                                class="text-muted" style="font-size: 10px;">(Clic para filtrar)</small></h5>
+                        <div id="chart-bi-resultado" style="height: 320px;"></div>
+                        <div id="insight-bi-resultado" class="insight-text"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section-title">Análisis de Propiedades</div>
+            <div class="row g-4 mb-4">
+                <div class="col-lg-6">
+                    <div class="chart-container">
+                        <h5 class="mb-3">Operaciones <small class="text-muted" style="font-size: 10px;">(Clic para
+                                filtrar)</small></h5>
+                        <div id="chart-operaciones" style="height: 320px;"></div>
+                        <div id="insight-operaciones" class="insight-text"></div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="chart-container">
+                        <h5 class="mb-3">Tipos de Propiedad <small class="text-muted" style="font-size: 10px;">(Clic
+                                para
+                                filtrar)</small></h5>
+                        <div id="chart-tipos" style="height: 320px;"></div>
+                        <div id="insight-tipos" class="insight-text"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="m-0">Últimos Leads Procesados</h5>
+                    <div class="search-container">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="phoneSearch" class="search-input" placeholder="Buscar teléfono..."
+                            onkeyup="filterTable()">
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table-custom">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Prospecto</th>
+                                <th class="text-center">Score AI</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leads-table-body"></tbody>
+                    </table>
                 </div>
             </div>
         </div>
 
-        <div class="section-title">Análisis General</div>
-        <div class="row g-4 mb-4" onclick="closeSidebarOnly()">
-            <div class="col-12">
-                <div class="chart-container">
-                    <h5 class="mb-3">Flujo de Leads</h5>
-                    <div id="chart-temporal" style="height: 320px;"></div>
-                    <div id="insight-temporal" class="insight-text"></div>
-                </div>
-            </div>
-        </div>
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
-        <div class="row g-4 mb-4">
-            <div class="col-lg-6">
-                <div class="chart-container">
-                    <h5 class="mb-3">Fuentes de Origen <small class="text-muted" style="font-size: 10px;">(Clic para
-                            filtrar)</small></h5>
-                    <div id="chart-fuentes" style="height: 320px;"></div>
-                    <div id="insight-fuentes" class="insight-text"></div>
-                </div>
-            </div>
-            <div class="col-lg-6">
-                <div class="chart-container">
-                    <h5 class="mb-3"><i class="fa-solid fa-comments me-2 text-primary"></i>Resultado Chat <small
-                            class="text-muted" style="font-size: 10px;">(Clic para filtrar)</small></h5>
-                    <div id="chart-bi-resultado" style="height: 320px;"></div>
-                    <div id="insight-bi-resultado" class="insight-text"></div>
-                </div>
-            </div>
-        </div>
+        <script>
+            let CURRENT_THEME = 'dark';
+            let ALL_LEADS_RAW = [];
+            let FILTERED_DATA = null;
+            let fp;
 
-        <div class="section-title">Análisis de Propiedades</div>
-        <div class="row g-4 mb-4">
-            <div class="col-lg-6">
-                <div class="chart-container">
-                    <h5 class="mb-3">Operaciones <small class="text-muted" style="font-size: 10px;">(Clic para
-                            filtrar)</small></h5>
-                    <div id="chart-operaciones" style="height: 320px;"></div>
-                    <div id="insight-operaciones" class="insight-text"></div>
-                </div>
-            </div>
-            <div class="col-lg-6">
-                <div class="chart-container">
-                    <h5 class="mb-3">Tipos de Propiedad <small class="text-muted" style="font-size: 10px;">(Clic para
-                            filtrar)</small></h5>
-                    <div id="chart-tipos" style="height: 320px;"></div>
-                    <div id="insight-tipos" class="insight-text"></div>
-                </div>
-            </div>
-        </div>
-
-        <div class="chart-container">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="m-0">Últimos Leads Procesados</h5>
-                <div class="search-container">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                    <input type="text" id="phoneSearch" class="search-input" placeholder="Buscar teléfono..."
-                        onkeyup="filterTable()">
-                </div>
-            </div>
-
-            <div class="table-responsive">
-                <table class="table-custom">
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            <th>Prospecto</th>
-                            <th class="text-center">Score AI</th>
-                            <th>Estado</th>
-                        </tr>
-                    </thead>
-                    <tbody id="leads-table-body"></tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-    <script>
-        let CURRENT_THEME = 'dark';
-        let ALL_LEADS_RAW = [];
-        let FILTERED_DATA = null;
-        let fp;
-
-        // Estado de filtros dinámicos
-        let ACTIVE_FILTERS = {
-            dateRange: [],
-            origen: null,
-            resultado: null,
-            operacion: null,
-            tipo: null,
-            comuna: null
-        };
-
-        // --- 1. ANIMACIÓN DE VALORES ---
-        function animateValue(id, start, end, duration) {
-            const obj = document.getElementById(id);
-            if (!obj) return;
-            let startTimestamp = null;
-            const step = (timestamp) => {
-                if (!startTimestamp) startTimestamp = timestamp;
-                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-                const currentVal = (progress * (end - start) + start).toFixed(id === 'avg_speed' ? 1 : 0);
-                obj.innerText = currentVal;
-                if (progress < 1) window.requestAnimationFrame(step);
+            // Estado de filtros dinámicos
+            let ACTIVE_FILTERS = {
+                dateRange: [],
+                origen: null,
+                resultado: null,
+                operacion: null,
+                tipo: null,
+                comuna: null
             };
-            window.requestAnimationFrame(step);
-        }
 
-        function toggleTheme() {
-            const html = document.documentElement;
-            const icon = document.getElementById('themeIcon');
-            CURRENT_THEME = (CURRENT_THEME === 'dark') ? 'light' : 'dark';
-            localStorage.setItem('theme', CURRENT_THEME);
-
-            if (CURRENT_THEME === 'light') {
-                html.setAttribute('data-theme', 'light');
-                icon.className = 'fa-solid fa-moon';
-            } else {
-                html.setAttribute('data-theme', 'dark');
-                icon.className = 'fa-solid fa-sun';
+            // --- 1. ANIMACIÓN DE VALORES ---
+            function animateValue(id, start, end, duration) {
+                const obj = document.getElementById(id);
+                if (!obj) return;
+                let startTimestamp = null;
+                const step = (timestamp) => {
+                    if (!startTimestamp) startTimestamp = timestamp;
+                    const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                    const currentVal = (progress * (end - start) + start).toFixed(id === 'avg_speed' ? 1 : 0);
+                    obj.innerText = currentVal;
+                    if (progress < 1) window.requestAnimationFrame(step);
+                };
+                window.requestAnimationFrame(step);
             }
-            if (FILTERED_DATA) renderCharts(FILTERED_DATA);
-        }
 
-        function toggleMobileMenu() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            sidebar.classList.toggle('mobile-open');
-            overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
-        }
+            function toggleTheme() {
+                const html = document.documentElement;
+                const icon = document.getElementById('themeIcon');
+                CURRENT_THEME = (CURRENT_THEME === 'dark') ? 'light' : 'dark';
+                localStorage.setItem('theme', CURRENT_THEME);
 
-        // Cerrar al hacer clic en un link (en móvil)
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.addEventListener('click', () => {
-                if (window.innerWidth <= 768) {
-                    toggleMobileMenu();
+                if (CURRENT_THEME === 'light') {
+                    html.setAttribute('data-theme', 'light');
+                    icon.className = 'fa-solid fa-moon';
+                } else {
+                    html.setAttribute('data-theme', 'dark');
+                    icon.className = 'fa-solid fa-sun';
                 }
-            });
-        });
-
-        // Aplicar tema guardado al cargar
-        (function () {
-            const savedTheme = localStorage.getItem('theme') || 'dark';
-            CURRENT_THEME = savedTheme;
-            document.documentElement.setAttribute('data-theme', savedTheme);
-            const icon = document.getElementById('themeIcon');
-            if (icon) {
-                icon.className = savedTheme === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+                if (FILTERED_DATA) renderCharts(FILTERED_DATA);
             }
-        })();
 
-        // --- 4. CARGA Y FILTRADO DE DATOS ---
-        async function loadData() {
-            try {
-                const res = await fetch('/api/leads-intelligence');
-                const data = await res.json();
-                ALL_LEADS_RAW = data.leads_all || data.leads || [];
-                window.FULL_API_DATA = data;
-                executeFilters();
-                updateGlobalKPIs(data); // KPIs globales sin filtros
-            } catch (e) { console.error("Error cargando datos:", e); }
-        }
+            function toggleMobileMenu() {
+                const sidebar = document.getElementById('sidebar');
+                const overlay = document.getElementById('sidebarOverlay');
+                sidebar.classList.toggle('mobile-open');
+                overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
+            }
 
-        function toggleChartFilter(category, value) {
-            ACTIVE_FILTERS[category] = (ACTIVE_FILTERS[category] === value) ? null : value;
-            document.getElementById('btn-clear-all').style.display =
-                (ACTIVE_FILTERS.origen || ACTIVE_FILTERS.resultado || ACTIVE_FILTERS.operacion || ACTIVE_FILTERS.tipo || ACTIVE_FILTERS.comuna) ? 'block' : 'none';
-            executeFilters();
-        }
-
-        function clearAllFilters() {
-            ACTIVE_FILTERS.origen = null;
-            ACTIVE_FILTERS.resultado = null;
-            ACTIVE_FILTERS.dateRange = [];
-            ACTIVE_FILTERS.operacion = null;
-            ACTIVE_FILTERS.tipo = null;
-            ACTIVE_FILTERS.comuna = null;
-            fp.clear();
-            document.getElementById('clear_date').style.display = 'none';
-            document.getElementById('btn-clear-all').style.display = 'none';
-            executeFilters();
-        }
-
-        function clearDateFilter() {
-            fp.clear();
-            ACTIVE_FILTERS.dateRange = [];
-            document.getElementById('clear_date').style.display = 'none';
-            executeFilters();
-        }
-
-        function executeFilters() {
-            let filtered = ALL_LEADS_RAW;
-
-            // Filtro de Fecha
-            if (ACTIVE_FILTERS.dateRange.length === 2) {
-                const start = ACTIVE_FILTERS.dateRange[0];
-                const end = new Date(ACTIVE_FILTERS.dateRange[1]);
-                end.setHours(23, 59, 59);
-                filtered = filtered.filter(l => {
-                    const d = new Date(l.fecha);
-                    return d >= start && d <= end;
+            // Cerrar al hacer clic en un link (en móvil)
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', () => {
+                    if (window.innerWidth <= 768) {
+                        toggleMobileMenu();
+                    }
                 });
-            }
-
-            // Filtros de Gráficos (IA y Origen)
-            if (ACTIVE_FILTERS.origen) filtered = filtered.filter(l => l.origen === ACTIVE_FILTERS.origen);
-            if (ACTIVE_FILTERS.resultado) filtered = filtered.filter(l => (l.bi_data?.RESULTADO_CHAT || "SIN_CLASIFICAR") === ACTIVE_FILTERS.resultado);
-            if (ACTIVE_FILTERS.operacion) filtered = filtered.filter(l => l.operacion === ACTIVE_FILTERS.operacion);
-            if (ACTIVE_FILTERS.tipo) filtered = filtered.filter(l => l.tipo === ACTIVE_FILTERS.tipo);
-            if (ACTIVE_FILTERS.comuna) filtered = filtered.filter(l => l.comuna === ACTIVE_FILTERS.comuna);
-
-            const total = filtered.length;
-
-            // Redefinir hot leads basados en intención de visita
-            const visitLeads = filtered.filter(l => {
-                const res = l.bi_data?.RESULTADO_CHAT || "";
-                return res === "VISITA_AGENDADA" || res === "VISITA_SOLICITADA";
             });
-            const hot = visitLeads.length;
-            const completeHot = visitLeads.filter(l => l.email && l.rut).length;
 
-            const tiempos_conversion_filtrados = []; // Recalcular avg speed en rango
-            filtered.forEach(l => {
-                if (l.hot_lead) {
-                    // Asumir que tiempos están en FULL_API_DATA, pero para simplicidad, usar global si no se puede recalcular fácilmente
-                    // Para precisión, necesitaríamos recalcular deltas aquí, pero como no tenemos messages, usamos aproximación o global
+            // Aplicar tema guardado al cargar
+            (function () {
+                const savedTheme = localStorage.getItem('theme') || 'dark';
+                CURRENT_THEME = savedTheme;
+                document.documentElement.setAttribute('data-theme', savedTheme);
+                const icon = document.getElementById('themeIcon');
+                if (icon) {
+                    icon.className = savedTheme === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
                 }
-            });
-            const avg_speed_filtrado = window.FULL_API_DATA.kpis.avg_speed_minutes; // Placeholder, recalcular si posible
+            })();
 
-            const temporalMap = {};
-            const fuentesMap = {};
-            const biResultMap = {};
-            const operacionesMap = {};
-            const tiposMap = {};
-
-            filtered.forEach(l => {
-                temporalMap[l.fecha] = (temporalMap[l.fecha] || 0) + 1;
-                fuentesMap[l.origen] = (fuentesMap[l.origen] || 0) + 1;
-                operacionesMap[l.operacion || "Sin Operación"] = (operacionesMap[l.operacion || "Sin Operación"] || 0) + 1;
-                tiposMap[l.tipo || "Sin Tipo"] = (tiposMap[l.tipo || "Sin Tipo"] || 0) + 1;
-
-                const bi = l.bi_data || {};
-                const result = bi.RESULTADO_CHAT || "SIN_CLASIFICAR";
-
-                biResultMap[result] = (biResultMap[result] || 0) + 1;
-            });
-
-            const sortedDates = Object.keys(temporalMap).sort();
-
-            FILTERED_DATA = {
-                "kpis": {
-                    "total_leads": total,
-                    "leads_calientes": hot,
-                    "pct_leads_calientes": total > 0 ? (hot / total * 100).toFixed(1) : 0,
-                    "tasa_captura_datos": hot > 0 ? (completeHot / hot * 100).toFixed(1) : 0,
-                    "avg_speed_minutes": avg_speed_filtrado
-                },
-                "charts": {
-                    "temporal": { "labels": sortedDates, "values": sortedDates.map(d => temporalMap[d]) },
-                    "fuentes": { "labels": Object.keys(fuentesMap), "values": Object.values(fuentesMap) },
-                    "bi_resultado": { "labels": Object.keys(biResultMap), "values": Object.values(biResultMap) },
-                    "operaciones": { "labels": Object.keys(operacionesMap), "values": Object.values(operacionesMap) },
-                    "tipos": { "labels": Object.keys(tiposMap), "values": Object.values(tiposMap) }
-                },
-                "leads": filtered.slice(0, 50)
-            };
-
-            // Actualizar acumulados
-            document.getElementById('total_acum').innerText = `Acumulado periodo: ${FILTERED_DATA.kpis.total_leads}`;
-            document.getElementById('hot_acum').innerText = `Hot rate período: ${FILTERED_DATA.kpis.leads_calientes} (${FILTERED_DATA.kpis.pct_leads_calientes}%)`;
-            document.getElementById('avg_acum').innerText = `Prom. periodo: ${FILTERED_DATA.kpis.avg_speed_minutes} min`;
-            document.getElementById('datos_acum').innerText = `Acumulado periodo: ${FILTERED_DATA.kpis.tasa_captura_datos}%`;
-
-            renderCharts(FILTERED_DATA);
-            renderTable(FILTERED_DATA.leads);
-            generateInsights(FILTERED_DATA);
-        }
-
-        function updateGlobalKPIs(data) {
-            const kpis = data.kpis;
-
-            animateValue("total_leads", 0, kpis.leads_hoy, 500);
-            renderDelta('total_delta_7d', kpis.pct_delta_total_7d, 'vs prom. 7d');
-            renderDelta('total_delta_week', kpis.pct_delta_total_week, 'vs mismo día sem. pasada');
-
-            document.getElementById('leads_calientes').innerText = `${kpis.hot_hoy} (${kpis.hot_rate_hoy}%)`;
-            renderDelta('hot_delta_7d', kpis.pct_delta_hot_7d, 'vs prom. 7d');
-            renderDelta('hot_delta_week', kpis.pct_delta_hot_week, 'vs mismo día sem. pasada');
-
-            document.getElementById('avg_speed').innerText = kpis.avg_speed_hoy;
-            renderSLA('sla_avg_speed', kpis.avg_speed_hoy);
-
-            animateValue("tasa_datos", 0, kpis.tasa_datos_hoy, 500);
-            renderDelta('datos_delta_7d', kpis.pct_delta_datos_7d, 'vs prom. 7d');
-            renderDelta('datos_delta_week', kpis.pct_delta_datos_week, 'vs mismo día sem. pasada');
-
-            // Insights para KPIs
-            generateKPIInsights(data);
-        }
-
-        function renderDelta(id, pct, label) {
-            const elem = document.getElementById(id);
-            if (isNaN(pct) || pct === Infinity || pct === -Infinity) pct = 0;
-            const sign = pct > 0 ? '+' : '';
-            const color = pct > 0 ? 'text-success' : (pct < 0 ? 'text-warning' : 'text-secondary');
-            const icon = pct > 0 ? '<i class="fa-solid fa-caret-up ms-1"></i>' : (pct < 0 ? '<i class="fa-solid fa-caret-down ms-1"></i>' : '');
-            const dotColor = pct > 10 ? 'bg-success' : (pct < -10 ? 'bg-warning' : 'bg-secondary');
-            elem.innerHTML = `<span class="${color}">${label}: ${sign}${pct.toFixed(1)}% ${icon}</span> <span class="badge rounded-pill ${dotColor}">&nbsp;</span>`;
-        }
-
-        function renderSLA(id, value) {
-            const elem = document.getElementById(id);
-            let color;
-            if (value === 0) {
-                color = 'bg-secondary'; // Neutral si no hay datos
-            } else if (value < 120) {
-                color = 'bg-success';
-            } else if (value <= 360) {
-                color = 'bg-warning';
-            } else {
-                color = 'bg-danger';
-            }
-            elem.innerHTML = `<span class="badge rounded-pill ${color}">&nbsp;</span>`;
-        }
-
-        function generateKPIInsights(data) {
-            const kpis = data.kpis;
-
-            // Insight Total Leads
-            let totalInsight;
-            if (kpis.leads_hoy === 0) {
-                totalInsight = 'No hay leads registrados hoy.';
-            } else {
-                totalInsight = kpis.pct_delta_total_7d > 0 ? 'Aumento de volumen sin mejora proporcional en leads hot → posible deterioro de calidad del tráfico.' : 'La proporción de leads hot se mantiene estable pese al aumento de volumen, indicando calidad consistente.';
-            }
-            document.getElementById('insight_total').innerText = totalInsight;
-
-            // Insight Hot Leads
-            let hotInsight;
-            if (kpis.hot_hoy === 0) {
-                hotInsight = 'No hay leads hot hoy.';
-            } else {
-                const hotRateDelta = kpis.hot_rate_hoy - kpis.hot_rate_week; // Ejemplo de delta en pp
-                hotInsight = hotRateDelta > 0 ? `Hoy crece +${kpis.pct_delta_hot_7d}% vs semana pasada, pero el hot rate crece +${hotRateDelta.toFixed(1)}pp.` : `Hoy crece +${kpis.pct_delta_hot_7d}% vs semana pasada, pero el hot rate cae -${Math.abs(hotRateDelta).toFixed(1)}pp.`;
-            }
-            document.getElementById('insight_hot').innerText = hotInsight;
-
-            // Insight Avg Speed
-            let avgInsight;
-            if (kpis.avg_speed_hoy === 0) {
-                avgInsight = 'No hay datos de conversión hoy.';
-            } else {
-                avgInsight = kpis.avg_speed_hoy < kpis.avg_speed_7d ? 'El tiempo de respuesta mejora respecto al promedio semanal, lo que puede aumentar la probabilidad de conversión.' : 'Pese al aumento de leads hot, el tiempo de respuesta se deteriora → riesgo operativo.';
-            }
-            document.getElementById('insight_avg_speed').innerText = avgInsight;
-
-            // Insight Datos
-            let datosInsight;
-            if (kpis.tasa_datos_hoy === 0) {
-                datosInsight = 'No hay datos completos capturados hoy.';
-            } else {
-                datosInsight = kpis.tasa_datos_hoy > kpis.tasa_datos_7d ? 'El aumento en la completitud sugiere una mejora en el flujo proactivo del chatbot.' : 'Alta completitud pero baja tasa de leads hot → revisar criterios de clasificación.';
-            }
-            document.getElementById('insight_datos').innerText = datosInsight;
-        }
-
-        function generateInsights(data) {
-            // Insight for Temporal - Improved with variance and growth rate
-            const tempLabels = data.charts.temporal.labels;
-            const tempValues = data.charts.temporal.values;
-            const totalLeads = tempValues.reduce((a, b) => a + b, 0);
-            if (tempValues.length > 0 && totalLeads > 0) {
-                const avg = (totalLeads / tempValues.length).toFixed(1);
-                const maxIdx = tempValues.indexOf(Math.max(...tempValues));
-                const maxDate = tempLabels[maxIdx];
-                const maxValue = tempValues[maxIdx];
-                const trend = tempValues[tempValues.length - 1] > tempValues[0] ? 'creciente' : 'decreciente';
-                const growthRate = tempValues.length > 1 ? ((tempValues[tempValues.length - 1] - tempValues[0]) / tempValues[0] * 100).toFixed(1) : 0;
-                const variance = tempValues.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / tempValues.length;
-                const stdDev = Math.sqrt(variance).toFixed(1);
-                document.getElementById('insight-temporal').innerText = `Promedio diario: ${avg} leads (desviación estándar: ${stdDev}). Pico máximo el ${maxDate} con ${maxValue} leads. Crecimiento total: ${growthRate}%. Tendencia general: ${trend}. Total leads acumulados: ${totalLeads}. Recomendación: Analizar factores en picos para replicar éxito.`;
-            } else {
-                document.getElementById('insight-temporal').innerText = 'No hay leads registrados.';
+            // --- 4. CARGA Y FILTRADO DE DATOS ---
+            async function loadData() {
+                try {
+                    const res = await fetch('/api/leads-intelligence');
+                    const data = await res.json();
+                    ALL_LEADS_RAW = data.leads_all || data.leads || [];
+                    window.FULL_API_DATA = data;
+                    executeFilters();
+                    updateGlobalKPIs(data); // KPIs globales sin filtros
+                } catch (e) { console.error("Error cargando datos:", e); }
             }
 
-            // Insight for Fuentes
-            const fuLabels = data.charts.fuentes.labels;
-            const fuValues = data.charts.fuentes.values;
-            if (fuValues.length > 0 && fuValues.some(v => v > 0)) {
-                const totalFu = fuValues.reduce((a, b) => a + b, 0);
-                const maxFuIdx = fuValues.indexOf(Math.max(...fuValues));
-                const topFuente = fuLabels[maxFuIdx];
-                const pctFu = ((fuValues[maxFuIdx] / totalFu) * 100).toFixed(1);
-                document.getElementById('insight-fuentes').innerText = `Fuente dominante: ${topFuente} (${pctFu}% de leads). Recomendación: Optimizar canales de bajo rendimiento para equilibrar distribución.`;
-            } else {
-                document.getElementById('insight-fuentes').innerText = 'No hay datos suficientes para insights.';
+            function toggleChartFilter(category, value) {
+                ACTIVE_FILTERS[category] = (ACTIVE_FILTERS[category] === value) ? null : value;
+                document.getElementById('btn-clear-all').style.display =
+                    (ACTIVE_FILTERS.origen || ACTIVE_FILTERS.resultado || ACTIVE_FILTERS.operacion || ACTIVE_FILTERS.tipo || ACTIVE_FILTERS.comuna) ? 'block' : 'none';
+                executeFilters();
             }
 
-            // Insight for BI Resultado
-            const biLabels = data.charts.bi_resultado.labels;
-            const biValues = data.charts.bi_resultado.values;
-            if (biValues.length > 0 && biValues.some(v => v > 0)) {
-                const totalBi = biValues.reduce((a, b) => a + b, 0);
-                const visitSolicitadaIdx = biLabels.indexOf('VISITA_SOLICITADA');
-                const visitAgendadaIdx = biLabels.indexOf('VISITA_AGENDADA');
-                const visitPct = (((visitSolicitadaIdx !== -1 ? biValues[visitSolicitadaIdx] : 0) + (visitAgendadaIdx !== -1 ? biValues[visitAgendadaIdx] : 0)) / totalBi * 100).toFixed(1);
-                const abandonoIdx = biLabels.indexOf('ABANDONADO_INICIAL');
-                const abandonoPct = abandonoIdx !== -1 ? (biValues[abandonoIdx] / totalBi * 100).toFixed(1) : 0;
-                document.getElementById('insight-bi-resultado').innerText = `${visitPct}% de chats llevan a visitas (solicitadas: interés expresado; agendadas: confirmadas). Abandono inicial en ${abandonoPct}% indica oportunidades de re-engagement. Recomendación: Mejorar prompts iniciales para reducir abandonos.`;
-            } else {
-                document.getElementById('insight-bi-resultado').innerText = 'No hay datos suficientes para insights.';
+            function clearAllFilters() {
+                ACTIVE_FILTERS.origen = null;
+                ACTIVE_FILTERS.resultado = null;
+                ACTIVE_FILTERS.dateRange = [];
+                ACTIVE_FILTERS.operacion = null;
+                ACTIVE_FILTERS.tipo = null;
+                ACTIVE_FILTERS.comuna = null;
+                fp.clear();
+                document.getElementById('clear_date').style.display = 'none';
+                document.getElementById('btn-clear-all').style.display = 'none';
+                executeFilters();
             }
 
-            // Insight for Operaciones
-            const opLabels = data.charts.operaciones.labels;
-            const opValues = data.charts.operaciones.values;
-            if (opValues.length > 0 && opValues.some(v => v > 0)) {
-                const totalOp = opValues.reduce((a, b) => a + b, 0);
-                const maxOpIdx = opValues.indexOf(Math.max(...opValues));
-                const topOperacion = opLabels[maxOpIdx];
-                const pctOp = ((opValues[maxOpIdx] / totalOp) * 100).toFixed(1);
-                document.getElementById('insight-operaciones').innerText = `Operación dominante: ${topOperacion} (${pctOp}% de leads). Recomendación: Ajustar estrategias según demanda predominante.`;
-            } else {
-                document.getElementById('insight-operaciones').innerText = 'No hay datos suficientes para insights.';
+            function clearDateFilter() {
+                fp.clear();
+                ACTIVE_FILTERS.dateRange = [];
+                document.getElementById('clear_date').style.display = 'none';
+                executeFilters();
             }
 
-            // Insight for Tipos
-            const tpLabels = data.charts.tipos.labels;
-            const tpValues = data.charts.tipos.values;
-            if (tpValues.length > 0 && tpValues.some(v => v > 0)) {
-                const totalTp = tpValues.reduce((a, b) => a + b, 0);
-                const maxTpIdx = tpValues.indexOf(Math.max(...tpValues));
-                const topTipo = tpLabels[maxTpIdx];
-                const pctTp = ((tpValues[maxTpIdx] / totalTp) * 100).toFixed(1);
-                document.getElementById('insight-tipos').innerText = `Tipo dominante: ${topTipo} (${pctTp}% de leads). Recomendación: Enfocar inventario en tipos más consultados.`;
-            } else {
-                document.getElementById('insight-tipos').innerText = 'No hay datos suficientes para insights.';
-            }
-        }
+            function executeFilters() {
+                let filtered = ALL_LEADS_RAW;
 
-        function renderCharts(data) {
-            const isDark = CURRENT_THEME === 'dark';
-            const textColor = isDark ? '#f8fafc' : '#0f172a';
-            const gridColor = isDark ? '#334155' : '#e2e8f0';
-
-            const commonLayout = {
-                paper_bgcolor: 'rgba(0,0,0,0)',
-                plot_bgcolor: 'rgba(0,0,0,0)',
-                font: { color: textColor, family: 'Outfit' },
-                xaxis: { gridcolor: gridColor, zerolinecolor: gridColor },
-                yaxis: { gridcolor: gridColor, zerolinecolor: gridColor },
-                margin: { t: 30, b: 40, l: 40, r: 20 },
-                clickmode: 'event'
-            };
-
-            // Mapas de colores consistentes
-            const fuentesColorMap = {
-                'PortalInmobiliario': '#f59e0b',
-                'MercadoLibre': '#10b981',
-                'Yapo': '#ec4899',
-                'Directo': '#6366f1',
-                'Whatsapp': '#25D366'
-            };
-
-            const resultadoColorMap = {
-                'VISITA_SOLICITADA': '#f59e0b',
-                'ABANDONO_INICIAL': '#ef4444',
-                'CHAT_EN_CURSO': '#10b981',
-                'VISITA_AGENDADA': '#3b82f6',
-                'RECHAZO_EXPLICITO': '#ec4899',
-                'SIN_CLASIFICAR': '#6b7280'
-            };
-
-            const operacionesColorMap = {
-                'Venta': '#3b82f6',
-                'Arriendo': '#10b981'
-            };
-
-            const tiposColorMap = {
-                'Departamento': '#f59e0b',
-                'Casa': '#ef4444',
-                'Oficina': '#ec4899',
-                'Parcela': '#6b7280'
-            };
-
-            // 1. Flujo de Leads (Líneas) con media móvil de 7 periodos, amarilla suavizada
-            const tempValues = data.charts.temporal.values;
-            const movingAvg = calculateMovingAverage(tempValues, 7);
-            Plotly.newPlot('chart-temporal', [{
-                x: data.charts.temporal.labels,
-                y: tempValues,
-                type: 'scatter', mode: 'lines+markers',
-                line: { shape: 'spline', color: '#6366f1', width: 4 },
-                fill: 'tozeroy', fillcolor: 'rgba(99, 102, 241, 0.1)'
-            }, {
-                x: data.charts.temporal.labels.slice(6),
-                y: movingAvg,
-                type: 'scatter', mode: 'lines',
-                line: { color: '#f59e0b', width: 2, shape: 'spline' }
-            }], { ...commonLayout, showlegend: false }, { responsive: true });
-
-            // 2. Fuentes (Pie)
-            const fDiv = document.getElementById('chart-fuentes');
-            Plotly.newPlot(fDiv, [{
-                labels: data.charts.fuentes.labels,
-                values: data.charts.fuentes.values,
-                type: 'pie', hole: 0.6,
-                marker: { colors: data.charts.fuentes.labels.map(l => fuentesColorMap[l] || '#6366f1') }
-            }], { ...commonLayout, showlegend: true, legend: { orientation: 'h', y: -0.2 } }, { responsive: true });
-            fDiv.on('plotly_click', d => toggleChartFilter('origen', d.points[0].label));
-
-            // 3. Resultado Chat (Donut)
-            const rDiv = document.getElementById('chart-bi-resultado');
-            Plotly.newPlot(rDiv, [{
-                labels: data.charts.bi_resultado.labels.map(l => l.replace(/_/g, ' ')),
-                values: data.charts.bi_resultado.values,
-                type: 'pie', hole: 0.5,
-                marker: { colors: data.charts.bi_resultado.labels.map(l => resultadoColorMap[l] || '#6366f1') }
-            }], { ...commonLayout, showlegend: true, legend: { orientation: 'h', font: { size: 9 } } }, { responsive: true });
-            rDiv.on('plotly_click', d => toggleChartFilter('resultado', data.charts.bi_resultado.labels[d.points[0].pointIndex]));
-
-            // 4. Operaciones (Pie)
-            const opDiv = document.getElementById('chart-operaciones');
-            Plotly.newPlot(opDiv, [{
-                labels: data.charts.operaciones.labels,
-                values: data.charts.operaciones.values,
-                type: 'pie', hole: 0.6,
-                marker: { colors: data.charts.operaciones.labels.map(l => operacionesColorMap[l] || '#6366f1') }
-            }], { ...commonLayout, showlegend: true, legend: { orientation: 'h', y: -0.2 } }, { responsive: true });
-            opDiv.on('plotly_click', d => toggleChartFilter('operacion', d.points[0].label));
-
-            // 5. Tipos (Pie)
-            const tpDiv = document.getElementById('chart-tipos');
-            Plotly.newPlot(tpDiv, [{
-                labels: data.charts.tipos.labels,
-                values: data.charts.tipos.values,
-                type: 'pie', hole: 0.6,
-                marker: { colors: data.charts.tipos.labels.map(l => tiposColorMap[l] || '#6366f1') }
-            }], { ...commonLayout, showlegend: true, legend: { orientation: 'h', y: -0.2 } }, { responsive: true });
-            tpDiv.on('plotly_click', d => toggleChartFilter('tipo', d.points[0].label));
-        }
-
-        function calculateMovingAverage(values, windowSize) {
-            let movingAverages = [];
-            for (let i = windowSize - 1; i < values.length; i++) {
-                let sum = 0;
-                for (let j = 0; j < windowSize; j++) {
-                    sum += values[i - j];
+                // Filtro de Fecha
+                if (ACTIVE_FILTERS.dateRange.length === 2) {
+                    const start = ACTIVE_FILTERS.dateRange[0];
+                    const end = new Date(ACTIVE_FILTERS.dateRange[1]);
+                    end.setHours(23, 59, 59);
+                    filtered = filtered.filter(l => {
+                        const d = new Date(l.fecha);
+                        return d >= start && d <= end;
+                    });
                 }
-                movingAverages.push(sum / windowSize);
+
+                // Filtros de Gráficos (IA y Origen)
+                if (ACTIVE_FILTERS.origen) filtered = filtered.filter(l => l.origen === ACTIVE_FILTERS.origen);
+                if (ACTIVE_FILTERS.resultado) filtered = filtered.filter(l => (l.bi_data?.RESULTADO_CHAT || "SIN_CLASIFICAR") === ACTIVE_FILTERS.resultado);
+                if (ACTIVE_FILTERS.operacion) filtered = filtered.filter(l => l.operacion === ACTIVE_FILTERS.operacion);
+                if (ACTIVE_FILTERS.tipo) filtered = filtered.filter(l => l.tipo === ACTIVE_FILTERS.tipo);
+                if (ACTIVE_FILTERS.comuna) filtered = filtered.filter(l => l.comuna === ACTIVE_FILTERS.comuna);
+
+                const total = filtered.length;
+
+                // Redefinir hot leads basados en intención de visita
+                const visitLeads = filtered.filter(l => {
+                    const res = l.bi_data?.RESULTADO_CHAT || "";
+                    return res === "VISITA_AGENDADA" || res === "VISITA_SOLICITADA";
+                });
+                const hot = visitLeads.length;
+                const completeHot = visitLeads.filter(l => l.email && l.rut).length;
+
+                const tiempos_conversion_filtrados = []; // Recalcular avg speed en rango
+                filtered.forEach(l => {
+                    if (l.hot_lead) {
+                        // Asumir que tiempos están en FULL_API_DATA, pero para simplicidad, usar global si no se puede recalcular fácilmente
+                        // Para precisión, necesitaríamos recalcular deltas aquí, pero como no tenemos messages, usamos aproximación o global
+                    }
+                });
+                const avg_speed_filtrado = window.FULL_API_DATA.kpis.avg_speed_minutes; // Placeholder, recalcular si posible
+
+                const temporalMap = {};
+                const fuentesMap = {};
+                const biResultMap = {};
+                const operacionesMap = {};
+                const tiposMap = {};
+
+                filtered.forEach(l => {
+                    temporalMap[l.fecha] = (temporalMap[l.fecha] || 0) + 1;
+                    fuentesMap[l.origen] = (fuentesMap[l.origen] || 0) + 1;
+                    operacionesMap[l.operacion || "Sin Operación"] = (operacionesMap[l.operacion || "Sin Operación"] || 0) + 1;
+                    tiposMap[l.tipo || "Sin Tipo"] = (tiposMap[l.tipo || "Sin Tipo"] || 0) + 1;
+
+                    const bi = l.bi_data || {};
+                    const result = bi.RESULTADO_CHAT || "SIN_CLASIFICAR";
+
+                    biResultMap[result] = (biResultMap[result] || 0) + 1;
+                });
+
+                const sortedDates = Object.keys(temporalMap).sort();
+
+                FILTERED_DATA = {
+                    "kpis": {
+                        "total_leads": total,
+                        "leads_calientes": hot,
+                        "pct_leads_calientes": total > 0 ? (hot / total * 100).toFixed(1) : 0,
+                        "tasa_captura_datos": hot > 0 ? (completeHot / hot * 100).toFixed(1) : 0,
+                        "avg_speed_minutes": avg_speed_filtrado
+                    },
+                    "charts": {
+                        "temporal": { "labels": sortedDates, "values": sortedDates.map(d => temporalMap[d]) },
+                        "fuentes": { "labels": Object.keys(fuentesMap), "values": Object.values(fuentesMap) },
+                        "bi_resultado": { "labels": Object.keys(biResultMap), "values": Object.values(biResultMap) },
+                        "operaciones": { "labels": Object.keys(operacionesMap), "values": Object.values(operacionesMap) },
+                        "tipos": { "labels": Object.keys(tiposMap), "values": Object.values(tiposMap) }
+                    },
+                    "leads": filtered.slice(0, 50)
+                };
+
+                // Actualizar acumulados
+                document.getElementById('total_acum').innerText = `Acumulado periodo: ${FILTERED_DATA.kpis.total_leads}`;
+                document.getElementById('hot_acum').innerText = `Hot rate período: ${FILTERED_DATA.kpis.leads_calientes} (${FILTERED_DATA.kpis.pct_leads_calientes}%)`;
+                document.getElementById('avg_acum').innerText = `Prom. periodo: ${FILTERED_DATA.kpis.avg_speed_minutes} min`;
+                document.getElementById('datos_acum').innerText = `Acumulado periodo: ${FILTERED_DATA.kpis.tasa_captura_datos}%`;
+
+                renderCharts(FILTERED_DATA);
+                renderTable(FILTERED_DATA.leads);
+                generateInsights(FILTERED_DATA);
             }
-            return movingAverages;
-        }
 
-        function renderTable(leads) {
-            const tbody = document.getElementById('leads-table-body');
-            tbody.innerHTML = '';
-            leads.forEach(l => {
-                const tr = document.createElement('tr');
-                tr.onclick = () => window.location.href = `/chat-detail/${l.phone}`;
-                const bi = l.bi_data || {};
+            function updateGlobalKPIs(data) {
+                const kpis = data.kpis;
 
-                tr.innerHTML = `
+                animateValue("total_leads", 0, kpis.leads_hoy, 500);
+                renderDelta('total_delta_7d', kpis.pct_delta_total_7d, 'vs prom. 7d');
+                renderDelta('total_delta_week', kpis.pct_delta_total_week, 'vs mismo día sem. pasada');
+
+                document.getElementById('leads_calientes').innerText = `${kpis.hot_hoy} (${kpis.hot_rate_hoy}%)`;
+                renderDelta('hot_delta_7d', kpis.pct_delta_hot_7d, 'vs prom. 7d');
+                renderDelta('hot_delta_week', kpis.pct_delta_hot_week, 'vs mismo día sem. pasada');
+
+                document.getElementById('avg_speed').innerText = kpis.avg_speed_hoy;
+                renderSLA('sla_avg_speed', kpis.avg_speed_hoy);
+
+                animateValue("tasa_datos", 0, kpis.tasa_datos_hoy, 500);
+                renderDelta('datos_delta_7d', kpis.pct_delta_datos_7d, 'vs prom. 7d');
+                renderDelta('datos_delta_week', kpis.pct_delta_datos_week, 'vs mismo día sem. pasada');
+
+                // Insights para KPIs
+                generateKPIInsights(data);
+            }
+
+            function renderDelta(id, pct, label) {
+                const elem = document.getElementById(id);
+                if (isNaN(pct) || pct === Infinity || pct === -Infinity) pct = 0;
+                const sign = pct > 0 ? '+' : '';
+                const color = pct > 0 ? 'text-success' : (pct < 0 ? 'text-warning' : 'text-secondary');
+                const icon = pct > 0 ? '<i class="fa-solid fa-caret-up ms-1"></i>' : (pct < 0 ? '<i class="fa-solid fa-caret-down ms-1"></i>' : '');
+                const dotColor = pct > 10 ? 'bg-success' : (pct < -10 ? 'bg-warning' : 'bg-secondary');
+                elem.innerHTML = `<span class="${color}">${label}: ${sign}${pct.toFixed(1)}% ${icon}</span> <span class="badge rounded-pill ${dotColor}">&nbsp;</span>`;
+            }
+
+            function renderSLA(id, value) {
+                const elem = document.getElementById(id);
+                let color;
+                if (value === 0) {
+                    color = 'bg-secondary'; // Neutral si no hay datos
+                } else if (value < 120) {
+                    color = 'bg-success';
+                } else if (value <= 360) {
+                    color = 'bg-warning';
+                } else {
+                    color = 'bg-danger';
+                }
+                elem.innerHTML = `<span class="badge rounded-pill ${color}">&nbsp;</span>`;
+            }
+
+            function generateKPIInsights(data) {
+                const kpis = data.kpis;
+
+                // Insight Total Leads
+                let totalInsight;
+                if (kpis.leads_hoy === 0) {
+                    totalInsight = 'No hay leads registrados hoy.';
+                } else {
+                    totalInsight = kpis.pct_delta_total_7d > 0 ? 'Aumento de volumen sin mejora proporcional en leads hot → posible deterioro de calidad del tráfico.' : 'La proporción de leads hot se mantiene estable pese al aumento de volumen, indicando calidad consistente.';
+                }
+                document.getElementById('insight_total').innerText = totalInsight;
+
+                // Insight Hot Leads
+                let hotInsight;
+                if (kpis.hot_hoy === 0) {
+                    hotInsight = 'No hay leads hot hoy.';
+                } else {
+                    const hotRateDelta = kpis.hot_rate_hoy - kpis.hot_rate_week; // Ejemplo de delta en pp
+                    hotInsight = hotRateDelta > 0 ? `Hoy crece +${kpis.pct_delta_hot_7d}% vs semana pasada, pero el hot rate crece +${hotRateDelta.toFixed(1)}pp.` : `Hoy crece +${kpis.pct_delta_hot_7d}% vs semana pasada, pero el hot rate cae -${Math.abs(hotRateDelta).toFixed(1)}pp.`;
+                }
+                document.getElementById('insight_hot').innerText = hotInsight;
+
+                // Insight Avg Speed
+                let avgInsight;
+                if (kpis.avg_speed_hoy === 0) {
+                    avgInsight = 'No hay datos de conversión hoy.';
+                } else {
+                    avgInsight = kpis.avg_speed_hoy < kpis.avg_speed_7d ? 'El tiempo de respuesta mejora respecto al promedio semanal, lo que puede aumentar la probabilidad de conversión.' : 'Pese al aumento de leads hot, el tiempo de respuesta se deteriora → riesgo operativo.';
+                }
+                document.getElementById('insight_avg_speed').innerText = avgInsight;
+
+                // Insight Datos
+                let datosInsight;
+                if (kpis.tasa_datos_hoy === 0) {
+                    datosInsight = 'No hay datos completos capturados hoy.';
+                } else {
+                    datosInsight = kpis.tasa_datos_hoy > kpis.tasa_datos_7d ? 'El aumento en la completitud sugiere una mejora en el flujo proactivo del chatbot.' : 'Alta completitud pero baja tasa de leads hot → revisar criterios de clasificación.';
+                }
+                document.getElementById('insight_datos').innerText = datosInsight;
+            }
+
+            function generateInsights(data) {
+                // Insight for Temporal - Improved with variance and growth rate
+                const tempLabels = data.charts.temporal.labels;
+                const tempValues = data.charts.temporal.values;
+                const totalLeads = tempValues.reduce((a, b) => a + b, 0);
+                if (tempValues.length > 0 && totalLeads > 0) {
+                    const avg = (totalLeads / tempValues.length).toFixed(1);
+                    const maxIdx = tempValues.indexOf(Math.max(...tempValues));
+                    const maxDate = tempLabels[maxIdx];
+                    const maxValue = tempValues[maxIdx];
+                    const trend = tempValues[tempValues.length - 1] > tempValues[0] ? 'creciente' : 'decreciente';
+                    const growthRate = tempValues.length > 1 ? ((tempValues[tempValues.length - 1] - tempValues[0]) / tempValues[0] * 100).toFixed(1) : 0;
+                    const variance = tempValues.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / tempValues.length;
+                    const stdDev = Math.sqrt(variance).toFixed(1);
+                    document.getElementById('insight-temporal').innerText = `Promedio diario: ${avg} leads (desviación estándar: ${stdDev}). Pico máximo el ${maxDate} con ${maxValue} leads. Crecimiento total: ${growthRate}%. Tendencia general: ${trend}. Total leads acumulados: ${totalLeads}. Recomendación: Analizar factores en picos para replicar éxito.`;
+                } else {
+                    document.getElementById('insight-temporal').innerText = 'No hay leads registrados.';
+                }
+
+                // Insight for Fuentes
+                const fuLabels = data.charts.fuentes.labels;
+                const fuValues = data.charts.fuentes.values;
+                if (fuValues.length > 0 && fuValues.some(v => v > 0)) {
+                    const totalFu = fuValues.reduce((a, b) => a + b, 0);
+                    const maxFuIdx = fuValues.indexOf(Math.max(...fuValues));
+                    const topFuente = fuLabels[maxFuIdx];
+                    const pctFu = ((fuValues[maxFuIdx] / totalFu) * 100).toFixed(1);
+                    document.getElementById('insight-fuentes').innerText = `Fuente dominante: ${topFuente} (${pctFu}% de leads). Recomendación: Optimizar canales de bajo rendimiento para equilibrar distribución.`;
+                } else {
+                    document.getElementById('insight-fuentes').innerText = 'No hay datos suficientes para insights.';
+                }
+
+                // Insight for BI Resultado
+                const biLabels = data.charts.bi_resultado.labels;
+                const biValues = data.charts.bi_resultado.values;
+                if (biValues.length > 0 && biValues.some(v => v > 0)) {
+                    const totalBi = biValues.reduce((a, b) => a + b, 0);
+                    const visitSolicitadaIdx = biLabels.indexOf('VISITA_SOLICITADA');
+                    const visitAgendadaIdx = biLabels.indexOf('VISITA_AGENDADA');
+                    const visitPct = (((visitSolicitadaIdx !== -1 ? biValues[visitSolicitadaIdx] : 0) + (visitAgendadaIdx !== -1 ? biValues[visitAgendadaIdx] : 0)) / totalBi * 100).toFixed(1);
+                    const abandonoIdx = biLabels.indexOf('ABANDONADO_INICIAL');
+                    const abandonoPct = abandonoIdx !== -1 ? (biValues[abandonoIdx] / totalBi * 100).toFixed(1) : 0;
+                    document.getElementById('insight-bi-resultado').innerText = `${visitPct}% de chats llevan a visitas (solicitadas: interés expresado; agendadas: confirmadas). Abandono inicial en ${abandonoPct}% indica oportunidades de re-engagement. Recomendación: Mejorar prompts iniciales para reducir abandonos.`;
+                } else {
+                    document.getElementById('insight-bi-resultado').innerText = 'No hay datos suficientes para insights.';
+                }
+
+                // Insight for Operaciones
+                const opLabels = data.charts.operaciones.labels;
+                const opValues = data.charts.operaciones.values;
+                if (opValues.length > 0 && opValues.some(v => v > 0)) {
+                    const totalOp = opValues.reduce((a, b) => a + b, 0);
+                    const maxOpIdx = opValues.indexOf(Math.max(...opValues));
+                    const topOperacion = opLabels[maxOpIdx];
+                    const pctOp = ((opValues[maxOpIdx] / totalOp) * 100).toFixed(1);
+                    document.getElementById('insight-operaciones').innerText = `Operación dominante: ${topOperacion} (${pctOp}% de leads). Recomendación: Ajustar estrategias según demanda predominante.`;
+                } else {
+                    document.getElementById('insight-operaciones').innerText = 'No hay datos suficientes para insights.';
+                }
+
+                // Insight for Tipos
+                const tpLabels = data.charts.tipos.labels;
+                const tpValues = data.charts.tipos.values;
+                if (tpValues.length > 0 && tpValues.some(v => v > 0)) {
+                    const totalTp = tpValues.reduce((a, b) => a + b, 0);
+                    const maxTpIdx = tpValues.indexOf(Math.max(...tpValues));
+                    const topTipo = tpLabels[maxTpIdx];
+                    const pctTp = ((tpValues[maxTpIdx] / totalTp) * 100).toFixed(1);
+                    document.getElementById('insight-tipos').innerText = `Tipo dominante: ${topTipo} (${pctTp}% de leads). Recomendación: Enfocar inventario en tipos más consultados.`;
+                } else {
+                    document.getElementById('insight-tipos').innerText = 'No hay datos suficientes para insights.';
+                }
+            }
+
+            function renderCharts(data) {
+                const isDark = CURRENT_THEME === 'dark';
+                const textColor = isDark ? '#f8fafc' : '#0f172a';
+                const gridColor = isDark ? '#334155' : '#e2e8f0';
+
+                const commonLayout = {
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    font: { color: textColor, family: 'Outfit' },
+                    xaxis: { gridcolor: gridColor, zerolinecolor: gridColor },
+                    yaxis: { gridcolor: gridColor, zerolinecolor: gridColor },
+                    margin: { t: 30, b: 40, l: 40, r: 20 },
+                    clickmode: 'event'
+                };
+
+                // Mapas de colores consistentes
+                const fuentesColorMap = {
+                    'PortalInmobiliario': '#f59e0b',
+                    'MercadoLibre': '#10b981',
+                    'Yapo': '#ec4899',
+                    'Directo': '#6366f1',
+                    'Whatsapp': '#25D366'
+                };
+
+                const resultadoColorMap = {
+                    'VISITA_SOLICITADA': '#f59e0b',
+                    'ABANDONO_INICIAL': '#ef4444',
+                    'CHAT_EN_CURSO': '#10b981',
+                    'VISITA_AGENDADA': '#3b82f6',
+                    'RECHAZO_EXPLICITO': '#ec4899',
+                    'SIN_CLASIFICAR': '#6b7280'
+                };
+
+                const operacionesColorMap = {
+                    'Venta': '#3b82f6',
+                    'Arriendo': '#10b981'
+                };
+
+                const tiposColorMap = {
+                    'Departamento': '#f59e0b',
+                    'Casa': '#ef4444',
+                    'Oficina': '#ec4899',
+                    'Parcela': '#6b7280'
+                };
+
+                // 1. Flujo de Leads (Líneas) con media móvil de 7 periodos, amarilla suavizada
+                const tempValues = data.charts.temporal.values;
+                const movingAvg = calculateMovingAverage(tempValues, 7);
+                Plotly.newPlot('chart-temporal', [{
+                    x: data.charts.temporal.labels,
+                    y: tempValues,
+                    type: 'scatter', mode: 'lines+markers',
+                    line: { shape: 'spline', color: '#6366f1', width: 4 },
+                    fill: 'tozeroy', fillcolor: 'rgba(99, 102, 241, 0.1)'
+                }, {
+                    x: data.charts.temporal.labels.slice(6),
+                    y: movingAvg,
+                    type: 'scatter', mode: 'lines',
+                    line: { color: '#f59e0b', width: 2, shape: 'spline' }
+                }], { ...commonLayout, showlegend: false }, { responsive: true });
+
+                // 2. Fuentes (Pie)
+                const fDiv = document.getElementById('chart-fuentes');
+                Plotly.newPlot(fDiv, [{
+                    labels: data.charts.fuentes.labels,
+                    values: data.charts.fuentes.values,
+                    type: 'pie', hole: 0.6,
+                    marker: { colors: data.charts.fuentes.labels.map(l => fuentesColorMap[l] || '#6366f1') }
+                }], { ...commonLayout, showlegend: true, legend: { orientation: 'h', y: -0.2 } }, { responsive: true });
+                fDiv.on('plotly_click', d => toggleChartFilter('origen', d.points[0].label));
+
+                // 3. Resultado Chat (Donut)
+                const rDiv = document.getElementById('chart-bi-resultado');
+                Plotly.newPlot(rDiv, [{
+                    labels: data.charts.bi_resultado.labels.map(l => l.replace(/_/g, ' ')),
+                    values: data.charts.bi_resultado.values,
+                    type: 'pie', hole: 0.5,
+                    marker: { colors: data.charts.bi_resultado.labels.map(l => resultadoColorMap[l] || '#6366f1') }
+                }], { ...commonLayout, showlegend: true, legend: { orientation: 'h', font: { size: 9 } } }, { responsive: true });
+                rDiv.on('plotly_click', d => toggleChartFilter('resultado', data.charts.bi_resultado.labels[d.points[0].pointIndex]));
+
+                // 4. Operaciones (Pie)
+                const opDiv = document.getElementById('chart-operaciones');
+                Plotly.newPlot(opDiv, [{
+                    labels: data.charts.operaciones.labels,
+                    values: data.charts.operaciones.values,
+                    type: 'pie', hole: 0.6,
+                    marker: { colors: data.charts.operaciones.labels.map(l => operacionesColorMap[l] || '#6366f1') }
+                }], { ...commonLayout, showlegend: true, legend: { orientation: 'h', y: -0.2 } }, { responsive: true });
+                opDiv.on('plotly_click', d => toggleChartFilter('operacion', d.points[0].label));
+
+                // 5. Tipos (Pie)
+                const tpDiv = document.getElementById('chart-tipos');
+                Plotly.newPlot(tpDiv, [{
+                    labels: data.charts.tipos.labels,
+                    values: data.charts.tipos.values,
+                    type: 'pie', hole: 0.6,
+                    marker: { colors: data.charts.tipos.labels.map(l => tiposColorMap[l] || '#6366f1') }
+                }], { ...commonLayout, showlegend: true, legend: { orientation: 'h', y: -0.2 } }, { responsive: true });
+                tpDiv.on('plotly_click', d => toggleChartFilter('tipo', d.points[0].label));
+            }
+
+            function calculateMovingAverage(values, windowSize) {
+                let movingAverages = [];
+                for (let i = windowSize - 1; i < values.length; i++) {
+                    let sum = 0;
+                    for (let j = 0; j < windowSize; j++) {
+                        sum += values[i - j];
+                    }
+                    movingAverages.push(sum / windowSize);
+                }
+                return movingAverages;
+            }
+
+            function renderTable(leads) {
+                const tbody = document.getElementById('leads-table-body');
+                tbody.innerHTML = '';
+                leads.forEach(l => {
+                    const tr = document.createElement('tr');
+                    tr.onclick = () => window.location.href = `/chat-detail/${l.phone}`;
+                    const bi = l.bi_data || {};
+
+                    tr.innerHTML = `
                     <td class="small text-muted">${l.fecha}</td>
                     <td><div class="fw-bold">${l.nombre || 'Sin Nombre'}</div><div class="small phone-val" style="opacity:0.7">${l.phone || 'S/N'}</div></td>
                     <td><div class="score-badge mx-auto" style="background:${l.score >= 7 ? '#10b98120' : '#ef444420'};color:${l.score >= 7 ? '#10b981' : '#ef4444'}">${l.score}</div></td>
                     <td>${l.email && l.rut ? '<span class="badge bg-success-subtle text-success">Completo</span>' : '<span class="badge bg-warning-subtle text-warning">Incompleto</span>'}</td>
                 `;
-                tbody.appendChild(tr);
-            });
-        }
+                    tbody.appendChild(tr);
+                });
+            }
 
-        function filterTable() {
-            const val = document.getElementById('phoneSearch').value.toLowerCase();
-            document.querySelectorAll('#leads-table-body tr').forEach(row => {
-                row.style.display = row.querySelector('.phone-val').innerText.toLowerCase().includes(val) ? "" : "none";
-            });
-        }
+            function filterTable() {
+                const val = document.getElementById('phoneSearch').value.toLowerCase();
+                document.querySelectorAll('#leads-table-body tr').forEach(row => {
+                    row.style.display = row.querySelector('.phone-val').innerText.toLowerCase().includes(val) ? "" : "none";
+                });
+            }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            fp = flatpickr("#dateRange", {
-                mode: "range", dateFormat: "Y-m-d", theme: "dark", locale: "es",
-                onChange: (dates) => {
-                    if (dates.length === 2) {
-                        ACTIVE_FILTERS.dateRange = dates;
-                        executeFilters();
-                        document.getElementById('clear_date').style.display = 'block';
+            document.addEventListener('DOMContentLoaded', () => {
+                fp = flatpickr("#dateRange", {
+                    mode: "range", dateFormat: "Y-m-d", theme: "dark", locale: "es",
+                    onChange: (dates) => {
+                        if (dates.length === 2) {
+                            ACTIVE_FILTERS.dateRange = dates;
+                            executeFilters();
+                            document.getElementById('clear_date').style.display = 'block';
+                        }
                     }
-                }
+                });
+                loadData();
+                const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+                const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
             });
-            loadData();
-            const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-            const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
-        });
-        setInterval(loadData, 300000);
-    </script>
-    <div id="sidebarOverlay"
-        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1150;"
-        onclick="toggleMobileMenu()"></div>
-</body>
+            setInterval(loadData, 300000);
+        </script>
+        <div id="sidebarOverlay"
+            style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1150;"
+            onclick="toggleMobileMenu()"></div>
+    </body>
 
 </html>

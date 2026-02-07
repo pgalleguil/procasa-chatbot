@@ -217,20 +217,17 @@
 
         .hamburger-mobile {
             display: none;
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            z-index: 1100;
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             color: var(--text-primary);
-            width: 45px;
-            height: 45px;
+            width: 40px;
+            height: 40px;
             border-radius: 10px;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-right: 15px;
         }
 
         .nav-link.active {
@@ -534,240 +531,246 @@
 
 <body>
 
-    <div class="hamburger-mobile" onclick="toggleMobileMenu()">
-        <i class="fa-solid fa-bars"></i>
-    </div>
+    <body>
 
-    <nav class="sidebar" id="sidebar">
-        <div class="brand">
-            <i class="fa-solid fa-robot text-primary"></i> <span>PROCASA AI</span>
-        </div>
-        <!-- Dashboard oculto temporalmente -->
-        <!-- <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i> <span>Dashboard</span></a> -->
-        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
-        <a href="/crm" class="nav-link active"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+        <nav class="sidebar" id="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-robot text-primary"></i> <span>PROCASA AI</span>
+            </div>
+            <!-- Dashboard oculto temporalmente -->
+            <!-- <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i> <span>Dashboard</span></a> -->
+            <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i>
+                <span>Dashboard</span></a>
+            <a href="/crm" class="nav-link active"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
 
-        <!-- Tema Toggle -->
-        <a href="#" class="nav-link theme-toggle" onclick="toggleTheme()">
-            <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
-        </a>
+            <!-- Tema Toggle -->
+            <a href="#" class="nav-link theme-toggle" onclick="toggleTheme()">
+                <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
+            </a>
 
-        <!-- Logout -->
-        <a href="/logout" class="nav-link logout">
-            <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
-        </a>
-    </nav>
+            <!-- Logout -->
+            <a href="/logout" class="nav-link logout">
+                <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
+            </a>
+        </nav>
 
-    <div class="main-content" id="mainContent">
+        <div class="main-content" id="mainContent">
 
-        <div class="d-flex align-items-center mb-4">
-            <h2 class="fw-bold m-0 fs-4">Gestión de Leads</h2>
-        </div>
+            <div class="d-flex align-items-center mb-4">
+                <div class="hamburger-mobile" onclick="toggleMobileMenu()">
+                    <i class="fa-solid fa-bars"></i>
+                </div>
+                <h2 class="fw-bold m-0 fs-4">Gestión de Leads</h2>
+            </div>
 
-        <!-- KPIs: -->
-        <div class="row g-3 mb-4">
-            <div class="col-md-3">
-                <div class="summary-card" style="border-bottom: 3px solid var(--led-red);">
-                    <div>
-                        <div class="summary-value text-danger">{{ kpis.nuevo }}</div>
-                        <div class="summary-label">Sin Atender</div>
+            <!-- KPIs: -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-3">
+                    <div class="summary-card" style="border-bottom: 3px solid var(--led-red);">
+                        <div>
+                            <div class="summary-value text-danger">{{ kpis.nuevo }}</div>
+                            <div class="summary-label">Sin Atender</div>
+                        </div>
+                        <i class="fa-solid fa-bell fa-2x text-danger opacity-25"></i>
                     </div>
-                    <i class="fa-solid fa-bell fa-2x text-danger opacity-25"></i>
+                </div>
+                <div class="col-md-3">
+                    <div class="summary-card" style="border-bottom: 3px solid var(--led-yellow);">
+                        <div>
+                            <div class="summary-value text-warning">{{ kpis.gestion }}</div>
+                            <div class="summary-label">En Gestión</div>
+                        </div>
+                        <i class="fa-solid fa-comments fa-2x text-warning opacity-25"></i>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="summary-card" style="border-bottom: 3px solid var(--led-green);">
+                        <div>
+                            <div class="summary-value text-success">{{ kpis.visita }}</div>
+                            <div class="summary-label">Visitas</div>
+                        </div>
+                        <i class="fa-solid fa-calendar-check fa-2x text-success opacity-25"></i>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="summary-card" style="border-bottom: 3px solid var(--led-gray);">
+                        <!-- Estilo Gris para Total -->
+                        <div>
+                            <div class="summary-value text-secondary">{{ kpis.cerrado }}</div>
+                            <div class="summary-label">Cerrados</div>
+                        </div>
+                        <i class="fa-solid fa-archive fa-2x text-secondary opacity-25"></i>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="summary-card" style="border-bottom: 3px solid var(--led-yellow);">
-                    <div>
-                        <div class="summary-value text-warning">{{ kpis.gestion }}</div>
-                        <div class="summary-label">En Gestión</div>
-                    </div>
-                    <i class="fa-solid fa-comments fa-2x text-warning opacity-25"></i>
+
+            <!-- TOOLBAR DE FILTROS -->
+            <form action="/crm" method="GET" class="toolbar">
+                <div class="search-box">
+                    <i class="fa-solid fa-search"></i>
+                    <input type="text" name="busqueda" placeholder="Teléfono o Nombre..."
+                        value="{{ request.query_params.get('busqueda', '') }}">
                 </div>
-            </div>
-            <div class="col-md-3">
-                <div class="summary-card" style="border-bottom: 3px solid var(--led-green);">
-                    <div>
-                        <div class="summary-value text-success">{{ kpis.visita }}</div>
-                        <div class="summary-label">Visitas</div>
-                    </div>
-                    <i class="fa-solid fa-calendar-check fa-2x text-success opacity-25"></i>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="summary-card" style="border-bottom: 3px solid var(--led-gray);">
-                    <!-- Estilo Gris para Total -->
-                    <div>
-                        <div class="summary-value text-secondary">{{ kpis.cerrado }}</div>
-                        <div class="summary-label">Cerrados</div>
-                    </div>
-                    <i class="fa-solid fa-archive fa-2x text-secondary opacity-25"></i>
-                </div>
+
+                <select class="form-select-custom" name="estado" onchange="this.form.submit()">
+                    <option value="" {% if not request.query_params.get('estado') %}selected{% endif %}>Todos los
+                        Estados
+                    </option>
+                    <option value="nuevo" {% if request.query_params.get('estado')=='nuevo' %}selected{% endif %}>🔴 Sin
+                        Atender</option>
+                    <option value="gestion" {% if request.query_params.get('estado')=='gestion' %}selected{% endif %}>🟡
+                        En
+                        Gestión</option>
+                    <option value="visita" {% if request.query_params.get('estado')=='visita' %}selected{% endif %}>🟢
+                        Visita Agendada</option>
+                    <option value="cerrado" {% if request.query_params.get('estado')=='cerrado' %}selected{% endif %}>⚪
+                        Cerrados</option>
+                </select>
+
+                <select class="form-select-custom ms-auto" name="orden" onchange="this.form.submit()">
+                    <option value="prioridad" {% if request.query_params.get('orden')=='prioridad' %}selected{% endif
+                        %}>
+                        Prioridad (Semáforo)</option>
+                    <option value="fecha" {% if request.query_params.get('orden')=='fecha' %}selected{% endif %}>Más
+                        Recientes</option>
+                </select>
+            </form>
+
+            <!-- TABLA -->
+            <div class="table-responsive">
+                <table class="crm-table">
+                    <thead>
+                        <tr>
+                            <th width="15%">Estado</th>
+                            <th width="20%">Cliente</th>
+                            <th width="15%">Propiedad</th>
+                            <th width="30%">Última Acción CRM</th> <!-- CAMBIADO TÍTULO -->
+                            <th width="20%" class="text-end">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for lead in leads %}
+                        <tr class="clickable-row" onclick="window.location.href='/crm/lead/{{ lead.phone }}'">
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="led-indicator {{ lead.led_class }}"></div>
+                                    <span class="small text-white">{{ lead.estado_badge }}</span>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="fw-bold">{{ lead.nombre }}</div>
+                                <div class="small text-secondary">{{ lead.whatsapp_display }}</div>
+                            </td>
+                            <td>
+                                {% if lead.codigo_propiedad != "S/N" %}
+                                <a href="{{ lead.url_propiedad }}" target="_blank" class="prop-code-link"
+                                    onclick="event.stopPropagation();">
+                                    {{ lead.codigo_propiedad }}
+                                </a>
+                                {% else %}
+                                <span class="text-secondary small">S/N</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <!-- AQUÍ SE MUESTRA LA ACCIÓN REAL DEL USUARIO -->
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="fw-bold text-accent" style="font-size: 0.9rem;">{{
+                                        lead.ultima_accion_titulo }}</span>
+                                    <span class="badge bg-dark text-secondary border border-secondary"
+                                        style="font-size: 0.7rem;">{{ lead.tiempo_relativo }}</span>
+                                </div>
+                                <div class="small text-secondary fst-italic mt-1 text-truncate"
+                                    style="max-width: 250px;">
+                                    {{ lead.ultima_accion_nota }}
+                                </div>
+                            </td>
+                            <td class="text-end">
+                                <!-- Agregamos event.stopPropagation() a todos los botones de acción -->
+                                <a href="tel:{{ lead.phone }}" class="action-btn btn-phone"
+                                    onclick="event.stopPropagation();" title="Llamar">
+                                    <i class="fa-solid fa-phone"></i>
+                                </a>
+                                <button class="action-btn btn-whatsapp"
+                                    onclick="window.open('https://wa.me/{{ lead.phone }}'); event.stopPropagation();"
+                                    title="WhatsApp">
+                                    <i class="fa-brands fa-whatsapp"></i>
+                                </button>
+                                <button class="action-btn btn-detail"
+                                    onclick="window.location.href='/crm/lead/{{ lead.phone }}'; event.stopPropagation();"
+                                    title="Ver Detalle">
+                                    <i class="fa-solid fa-chevron-right"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center text-secondary py-4">
+                                No hay leads que coincidan con la búsqueda.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <!-- TOOLBAR DE FILTROS -->
-        <form action="/crm" method="GET" class="toolbar">
-            <div class="search-box">
-                <i class="fa-solid fa-search"></i>
-                <input type="text" name="busqueda" placeholder="Teléfono o Nombre..."
-                    value="{{ request.query_params.get('busqueda', '') }}">
-            </div>
+        <!-- Overlay para cerrar menú móvil -->
+        <div id="sidebarOverlay"
+            style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"
+            onclick="toggleMobileMenu()"></div>
 
-            <select class="form-select-custom" name="estado" onchange="this.form.submit()">
-                <option value="" {% if not request.query_params.get('estado') %}selected{% endif %}>Todos los Estados
-                </option>
-                <option value="nuevo" {% if request.query_params.get('estado')=='nuevo' %}selected{% endif %}>🔴 Sin
-                    Atender</option>
-                <option value="gestion" {% if request.query_params.get('estado')=='gestion' %}selected{% endif %}>🟡 En
-                    Gestión</option>
-                <option value="visita" {% if request.query_params.get('estado')=='visita' %}selected{% endif %}>🟢
-                    Visita Agendada</option>
-                <option value="cerrado" {% if request.query_params.get('estado')=='cerrado' %}selected{% endif %}>⚪
-                    Cerrados</option>
-            </select>
+        <script>
+            function toggleMobileMenu() {
+                const sidebar = document.getElementById('sidebar');
+                const overlay = document.getElementById('sidebarOverlay');
+                sidebar.classList.toggle('mobile-open');
+                overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
+            }
 
-            <select class="form-select-custom ms-auto" name="orden" onchange="this.form.submit()">
-                <option value="prioridad" {% if request.query_params.get('orden')=='prioridad' %}selected{% endif %}>
-                    Prioridad (Semáforo)</option>
-                <option value="fecha" {% if request.query_params.get('orden')=='fecha' %}selected{% endif %}>Más
-                    Recientes</option>
-            </select>
-        </form>
+            // Cerrar al hacer clic en un link (en móvil)
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', () => {
+                    if (window.innerWidth <= 768) {
+                        toggleMobileMenu();
+                    }
+                });
+            });
 
-        <!-- TABLA -->
-        <div class="table-responsive">
-            <table class="crm-table">
-                <thead>
-                    <tr>
-                        <th width="15%">Estado</th>
-                        <th width="20%">Cliente</th>
-                        <th width="15%">Propiedad</th>
-                        <th width="30%">Última Acción CRM</th> <!-- CAMBIADO TÍTULO -->
-                        <th width="20%" class="text-end">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for lead in leads %}
-                    <tr class="clickable-row" onclick="window.location.href='/crm/lead/{{ lead.phone }}'">
-                        <td>
-                            <div class="d-flex align-items-center">
-                                <div class="led-indicator {{ lead.led_class }}"></div>
-                                <span class="small text-white">{{ lead.estado_badge }}</span>
-                            </div>
-                        </td>
-                        <td>
-                            <div class="fw-bold">{{ lead.nombre }}</div>
-                            <div class="small text-secondary">{{ lead.whatsapp_display }}</div>
-                        </td>
-                        <td>
-                            {% if lead.codigo_propiedad != "S/N" %}
-                            <a href="{{ lead.url_propiedad }}" target="_blank" class="prop-code-link"
-                                onclick="event.stopPropagation();">
-                                {{ lead.codigo_propiedad }}
-                            </a>
-                            {% else %}
-                            <span class="text-secondary small">S/N</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <!-- AQUÍ SE MUESTRA LA ACCIÓN REAL DEL USUARIO -->
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="fw-bold text-accent" style="font-size: 0.9rem;">{{
-                                    lead.ultima_accion_titulo }}</span>
-                                <span class="badge bg-dark text-secondary border border-secondary"
-                                    style="font-size: 0.7rem;">{{ lead.tiempo_relativo }}</span>
-                            </div>
-                            <div class="small text-secondary fst-italic mt-1 text-truncate" style="max-width: 250px;">
-                                {{ lead.ultima_accion_nota }}
-                            </div>
-                        </td>
-                        <td class="text-end">
-                            <!-- Agregamos event.stopPropagation() a todos los botones de acción -->
-                            <a href="tel:{{ lead.phone }}" class="action-btn btn-phone"
-                                onclick="event.stopPropagation();" title="Llamar">
-                                <i class="fa-solid fa-phone"></i>
-                            </a>
-                            <button class="action-btn btn-whatsapp"
-                                onclick="window.open('https://wa.me/{{ lead.phone }}'); event.stopPropagation();"
-                                title="WhatsApp">
-                                <i class="fa-brands fa-whatsapp"></i>
-                            </button>
-                            <button class="action-btn btn-detail"
-                                onclick="window.location.href='/crm/lead/{{ lead.phone }}'; event.stopPropagation();"
-                                title="Ver Detalle">
-                                <i class="fa-solid fa-chevron-right"></i>
-                            </button>
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="5" class="text-center text-secondary py-4">
-                            No hay leads que coincidan con la búsqueda.
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- Overlay para cerrar menú móvil -->
-    <div id="sidebarOverlay"
-        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"
-        onclick="toggleMobileMenu()"></div>
-
-    <script>
-        function toggleMobileMenu() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            sidebar.classList.toggle('mobile-open');
-            overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
-        }
-
-        // Cerrar al hacer clic en un link (en móvil)
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.addEventListener('click', () => {
-                if (window.innerWidth <= 768) {
-                    toggleMobileMenu();
+            // Toggle Theme (Light/Dark)
+            function toggleTheme() {
+                const html = document.documentElement;
+                const icon = document.getElementById('themeIcon');
+                if (html.getAttribute('data-theme') === 'light') {
+                    html.setAttribute('data-theme', 'dark');
+                    icon.classList.remove('fa-moon');
+                    icon.classList.add('fa-sun');
+                    localStorage.setItem('theme', 'dark');
+                } else {
+                    html.setAttribute('data-theme', 'light');
+                    icon.classList.remove('fa-sun');
+                    icon.classList.add('fa-moon');
+                    localStorage.setItem('theme', 'light');
                 }
-            });
-        });
-
-        // Toggle Theme (Light/Dark)
-        function toggleTheme() {
-            const html = document.documentElement;
-            const icon = document.getElementById('themeIcon');
-            if (html.getAttribute('data-theme') === 'light') {
-                html.setAttribute('data-theme', 'dark');
-                icon.classList.remove('fa-moon');
-                icon.classList.add('fa-sun');
-                localStorage.setItem('theme', 'dark');
-            } else {
-                html.setAttribute('data-theme', 'light');
-                icon.classList.remove('fa-sun');
-                icon.classList.add('fa-moon');
-                localStorage.setItem('theme', 'light');
             }
-        }
 
-        // Apply saved theme on load
-        (function () {
-            const savedTheme = localStorage.getItem('theme') || 'dark';
-            document.documentElement.setAttribute('data-theme', savedTheme);
-            const icon = document.getElementById('themeIcon');
-            if (icon) {
-                icon.classList.remove('fa-sun', 'fa-moon');
-                icon.classList.add(savedTheme === 'light' ? 'fa-moon' : 'fa-sun');
-            }
-        })();
+            // Apply saved theme on load
+            (function () {
+                const savedTheme = localStorage.getItem('theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', savedTheme);
+                const icon = document.getElementById('themeIcon');
+                if (icon) {
+                    icon.classList.remove('fa-sun', 'fa-moon');
+                    icon.classList.add(savedTheme === 'light' ? 'fa-moon' : 'fa-sun');
+                }
+            })();
 
-        // Row click handlers
-        document.querySelectorAll('.btn-detail').forEach(btn => {
-            btn.addEventListener('click', function (e) {
-                e.stopPropagation();
+            // Row click handlers
+            document.querySelectorAll('.btn-detail').forEach(btn => {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                });
             });
-        });
-    </script>
-</body>
+        </script>
+    </body>
 
 </html>

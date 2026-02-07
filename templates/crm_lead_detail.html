@@ -37,18 +37,26 @@
             --input-text: #fff;
         }
 
-        /* TEMA LIGHT (Nuevo) */
+        /* TEMA LIGHT - Colores optimizados para legibilidad */
         [data-theme="light"] {
             --bg-body: #f1f5f9;
             --bg-card: #ffffff;
             --bg-sidebar: #0f172a;
             /* Sidebar oscura para anclaje visual */
             --text-primary: #1e293b;
-            --text-secondary: #64748b;
-            --border-color: #cbd5e1;
+            --text-secondary: #475569;
+            --border-color: #e2e8f0;
             --input-bg: #ffffff;
             --input-border: #cbd5e1;
-            --input-text: #0f172a;
+            --input-text: #1e293b;
+            /* Colores de acento con más contraste */
+            --accent: #4f46e5;
+            --accent-hover: #4338ca;
+            --owner-color: #d97706;
+            --owner-color-hover: #b45309;
+            --notes-color: #0d9488;
+            --danger-color: #dc2626;
+            --success-color: #059669;
         }
 
         body {
@@ -140,6 +148,30 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            transition: all 0.25s ease-out;
+        }
+
+        /* Efecto base hover para iconos normales (escala sutil) */
+        .nav-link:hover i {
+            transform: scale(1.1);
+        }
+
+        /* Flecha Volver: se desplaza a la izquierda */
+        .nav-link[href="/crm"]:hover i {
+            transform: translateX(-4px);
+            color: var(--accent);
+        }
+
+        /* Toggle Tema: rotación suave de 180° */
+        .nav-link.theme-toggle:hover i {
+            transform: rotate(180deg) scale(1.1);
+            color: var(--owner-color);
+        }
+
+        /* Logout: pulse sutil en rojo */
+        .nav-link.logout:hover i {
+            transform: scale(1.15);
+            color: var(--danger-color);
         }
 
         .nav-link span {
@@ -171,6 +203,11 @@
             margin-top: auto;
             /* Empuja hacia abajo */
             background: transparent;
+        }
+
+        .nav-link.theme-toggle:hover {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--owner-color);
         }
 
         .nav-link.logout {
@@ -372,11 +409,13 @@
             flex-direction: column;
         }
 
-        .info-label {
+        .info-label,
+        .data-label {
             font-size: 0.7rem;
             color: var(--text-secondary);
             text-transform: uppercase;
             font-weight: 700;
+            display: block;
         }
 
         .info-value {
@@ -416,7 +455,7 @@
             grid-template-columns: 1fr 1fr 1fr;
             gap: 10px;
             margin-bottom: 10px;
-            border-top: 1px dashed var(--border-color);
+            border-top: 1px solid var(--border-color);
             padding-top: 15px;
         }
 
@@ -458,23 +497,36 @@
             color: white;
         }
 
-        /* Botón toggle Chatbot */
+        /* Botón toggle Chatbot - Discrete Style */
         .btn-chat-toggle {
             width: 100%;
-            background: none;
-            border: 1px dashed var(--border-color);
+            background: rgba(125, 125, 125, 0.03);
+            border: none;
+            border-top: 1px solid var(--border-color);
             color: var(--text-secondary);
-            font-size: 0.8rem;
-            padding: 6px;
-            border-radius: 6px;
-            margin-top: 10px;
-            transition: 0.2s;
+            padding: 10px 15px;
+            font-size: 0.75rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.2s;
+            border-radius: 0 0 8px 8px;
             cursor: pointer;
         }
 
         .btn-chat-toggle:hover {
-            border-color: var(--accent);
+            background: rgba(125, 125, 125, 0.08);
             color: var(--text-primary);
+        }
+
+        /* Rotation for chevron */
+        [data-bs-toggle="collapse"][aria-expanded="true"] .fa-chevron-down {
+            transform: rotate(180deg);
+        }
+
+        .transition-transform {
+            transition: transform 0.3s ease;
         }
 
         /* --- BOTONES DE RESULTADOS (Contexto) --- */
@@ -619,6 +671,7 @@
             background: rgba(125, 125, 125, 0.03);
             padding: 15px;
             border-radius: 8px;
+            border: 1px solid var(--border-color);
             border-left: 3px solid var(--accent);
             margin-bottom: 15px;
             animation: fadeIn 0.3s ease;
@@ -922,6 +975,7 @@
             border-color: var(--input-border);
             color: var(--input-text);
             font-size: 0.85rem;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2) !important;
         }
 
         .form-control:disabled,
@@ -941,25 +995,124 @@
         }
 
         .chat-bubble {
-            background: #334155;
-            padding: 10px 15px;
-            border-radius: 12px;
-            margin-bottom: 10px;
-            display: inline-block;
-            max-width: 90%;
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-bottom: 4px;
+            max-width: 80%;
             font-size: 0.9rem;
+            line-height: 1.4;
+            position: relative;
+            box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
+            word-wrap: break-word;
         }
 
-        .chat-bot {
-            background: rgba(99, 102, 241, 0.1);
+        /* WhatsApp Dark Mode Official Palette - REFINED */
+        :root {
+            --wa-bg-incoming: #202c33;
+            --wa-bg-outgoing: #111b21;
+            /* Blue/Black deeper tone from Procasa */
+            --wa-text: #e9edef;
+            --wa-blue: #53bdeb;
+            --wa-green: #00a884;
+            --wa-doodle-bg: #0b141a;
+            --wa-bubble-radius: 12px;
+        }
+
+        /* Flex wrappers con ALINEACIÓN FORZADA */
+        .chat-msg-user,
+        .chat-msg-assistant {
+            display: flex !important;
+            width: 100% !important;
+            margin-bottom: 12px !important;
+            padding: 0 10px !important;
+            clear: both;
+        }
+
+        /* --- IZQUIERDA: LEAD / CLIENTE --- */
+        .chat-msg-user {
+            justify-content: flex-start !important;
+        }
+
+        .chat-msg-user .chat-bubble {
+            background: var(--wa-bg-incoming);
+            color: var(--wa-text);
+            border-radius: var(--wa-bubble-radius);
+            margin-left: 0;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Removiendo Tail Izquierdo */
+        .chat-msg-user .chat-bubble::before {
+            display: none;
+        }
+
+        /* --- DERECHA: IA PROCASA --- */
+        .chat-msg-assistant {
+            justify-content: flex-end !important;
+        }
+
+        .chat-msg-assistant .chat-bubble {
+            background: var(--wa-bg-outgoing);
+            color: var(--wa-text);
+            border-radius: var(--wa-bubble-radius);
+            margin-right: 0;
             border: 1px solid rgba(99, 102, 241, 0.2);
-            float: right;
-            text-align: right;
+        }
+
+        /* Removiendo Tail Derecho */
+        .chat-msg-assistant .chat-bubble::after {
+            display: none;
+        }
+
+        /* Nombres Sutiles Estilo WA */
+        .chat-name-tag {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 700;
+            margin-bottom: 3px;
+            letter-spacing: 0.2px;
+        }
+
+        .chat-msg-user .chat-name-tag {
+            color: var(--wa-blue);
+        }
+
+        .chat-msg-assistant .chat-name-tag {
+            color: var(--wa-green);
+        }
+
+        /* Contenedor con Fondo Doodle Auténtico */
+        .chat-scroll-custom {
+            background-color: var(--wa-doodle-bg);
+            background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+            background-repeat: repeat;
+            background-size: 400px;
+            background-blend-mode: soft-light;
+            opacity: 0.95;
+        }
+
+        /* Scrollbar WA Dark (Consistent across app) */
+        .chat-scroll-custom::-webkit-scrollbar,
+        .timeline-box::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-scroll-custom::-webkit-scrollbar-thumb,
+        .timeline-box::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 10px;
+        }
+
+        .chat-scroll-custom::-webkit-scrollbar-track,
+        .timeline-box::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
         }
 
         .timeline-box {
             position: relative;
             padding-left: 10px;
+            padding-right: 12px;
+            padding-bottom: 10px;
             margin-top: 20px;
         }
 
@@ -1344,6 +1497,30 @@
             color: var(--text-secondary);
         }
 
+        /* --- BOTÓN REFRESH MODERNO --- */
+        .btn-refresh-modern {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            padding: 8px;
+            font-size: 1.1rem;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+
+        .btn-refresh-modern:hover {
+            color: var(--accent);
+            transform: rotate(360deg) scale(1.1);
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .btn-refresh-modern:active {
+            transform: scale(0.95);
+        }
+
         /* --- TOAST ENTERPRISE --- */
         #toast-container {
             position: fixed;
@@ -1407,6 +1584,60 @@
             display: flex;
             gap: 10px;
         }
+
+        /* ========== LIGHT THEME OVERRIDES ========== */
+        [data-theme="light"] .card-custom {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        [data-theme="light"] .identity-box {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        }
+
+        [data-theme="light"] .canonical-banner {
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        [data-theme="light"] .action-btn {
+            background: rgba(0, 0, 0, 0.02);
+        }
+
+        [data-theme="light"] .action-btn:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        [data-theme="light"] .logic-section {
+            background: rgba(0, 0, 0, 0.02);
+        }
+
+        [data-theme="light"] .summary-box {
+            background: rgba(0, 0, 0, 0.03);
+        }
+
+        [data-theme="light"] .summary-item strong {
+            color: var(--text-primary);
+        }
+
+        [data-theme="light"] .text-white {
+            color: var(--text-primary) !important;
+        }
+
+        [data-theme="light"] .fw-bold {
+            color: var(--text-primary);
+        }
+
+        [data-theme="light"] .tl-icon {
+            box-shadow: 0 0 0 5px var(--bg-body);
+        }
+
+        [data-theme="light"] .toast-enterprise {
+            background: rgba(255, 255, 255, 0.95);
+            color: var(--text-primary);
+        }
+
+        [data-theme="light"] .toast-header-custom {
+            border-bottom-color: rgba(0, 0, 0, 0.1);
+        }
     </style>
 </head>
 
@@ -1460,7 +1691,7 @@
             </div>
 
             <div class="banner-actions">
-                <button class="btn btn-sm btn-outline-light" onclick="window.location.reload()">
+                <button class="btn-refresh-modern" onclick="window.location.reload()" title="Sincronizar Datos">
                     <i class="fa-solid fa-rotate"></i>
                 </button>
             </div>
@@ -1560,16 +1791,23 @@
                         </div>
 
                         <!-- Historial Chatbot Comprimido -->
-                        <button class="btn-chat-toggle" type="button" data-bs-toggle="collapse"
-                            data-bs-target="#chatHistoryCollapse">
-                            <i class="fa-solid fa-comments me-2"></i> Ver conversación previa con IA
-                        </button>
+                        <div class="chat-toggle-header" data-bs-toggle="collapse" data-bs-target="#chatHistoryCollapse"
+                            style="cursor:pointer;">
+                            <button class="btn-chat-toggle" type="button">
+                                <i class="fa-solid fa-comments me-2"></i> Ver conversación previa con IA
+                                <i class="fa-solid fa-chevron-down transition-transform ms-2"></i>
+                            </button>
+                        </div>
                         <div class="collapse mt-2" id="chatHistoryCollapse">
-                            <div class="bg-dark p-2 rounded border border-secondary"
+                            <div class="bg-dark p-2 rounded border border-secondary chat-scroll-custom"
                                 style="max-height: 200px; overflow-y: auto;">
                                 {% for msg in lead.timeline %}
-                                <div style="clear:both">
-                                    <div class="chat-bubble {{ msg.role }}">{{ msg.content }}</div>
+                                {% set is_ia = msg.role == 'chat-bot' %}
+                                <div class="chat-msg-{{ 'assistant' if is_ia else 'user' }}">
+                                    <div class="chat-bubble">
+                                        <span class="chat-name-tag">{{ 'IA Procasa' if is_ia else 'Lead' }}</span>
+                                        {{ msg.content }}
+                                    </div>
                                 </div>
                                 {% endfor %}
                             </div>
@@ -1678,7 +1916,6 @@
                         </div>
                     </div>
 
-                    <div class="section-title mt-3">Detalle de Gestión</div>
 
                     <form id="crmForm" onsubmit="saveGestion(event)">
 
@@ -1695,7 +1932,7 @@
                         <div id="logic-effective" class="logic-section d-none">
 
                             <!-- Scoring -->
-                            <label class="data-label mb-2 text-white">Calificación (Prioridad)</label>
+                            <label class="data-label mb-2">Calificación</label>
                             <div class="scoring-group">
                                 <input type="radio" name="lead_score" value="A" id="score_a" class="score-radio"
                                     onclick="updateSummary()">
@@ -1710,9 +1947,8 @@
                                 <label for="score_c" class="score-label">❄️ C: Baja</label>
                             </div>
 
-                            <label
-                                class="data-label mb-2 text-white text-uppercase border-bottom border-secondary pb-1 w-100 d-block mt-3">¿Qué
-                                manifestó el Lead?</label>
+                            <label class="data-label mb-2 mt-3 border-bottom border-secondary pb-1 w-100">¿Qué manifestó
+                                el Lead?</label>
 
                             <!-- GRUPO 1: INTENCIÓN OPERATIVA (ACCION) -->
                             <div class="category-group">
@@ -1740,7 +1976,7 @@
                                     <label class="form-check-label" for="rd_oferta">Quiere Presentar Oferta</label>
                                 </div>
                                 <div id="sub_oferta" class="sub-logic d-none">
-                                    <label class="data-label">Monto Tentativo:</label>
+                                    <label class="data-label mb-1">Monto Tentativo:</label>
                                     <input type="number" class="form-control form-control-sm" placeholder="UF / $"
                                         id="monto_oferta">
                                 </div>
@@ -1785,7 +2021,7 @@
                                     <label class="form-check-label" for="rd_similares">Busca opciones similares</label>
                                 </div>
                                 <div id="sub_similares" class="sub-logic d-none">
-                                    <label class="data-label">Requerimiento:</label>
+                                    <label class="data-label mb-1">Requerimiento:</label>
                                     <input type="text" class="form-control form-control-sm"
                                         placeholder="Ej: Misma zona, más barato" id="req_similares">
                                 </div>
@@ -1813,7 +2049,8 @@
                                         propiedad)</label>
                                 </div>
                                 <div id="sub_objecion" class="sub-logic d-none">
-                                    <select class="form-select form-select-sm" id="sel_motivo_objecion">
+                                    <select class="form-select form-select-sm" id="sel_motivo_objecion"
+                                        style="box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
                                         <option>Precio muy alto</option>
                                         <option>Ubicación no gusta</option>
                                         <option>Estado propiedad</option>
@@ -1825,7 +2062,7 @@
 
                         <!-- LÓGICA DE CONTACTO PARCIAL -->
                         <div id="logic-partial" class="logic-section d-none">
-                            <label class="data-label mb-2 text-warning">Situación:</label>
+                            <label class="data-label mb-2">Situación:</label>
 
                             <div class="form-check mb-2">
                                 <input class="form-check-input" type="radio" name="partial_res" id="rd_llamar_luego"
@@ -1849,7 +2086,7 @@
 
                         <!-- LÓGICA SIN CONTACTO (SIMPLIFICADA: Sin contador manual) -->
                         <div id="logic-failed" class="logic-section d-none">
-                            <label class="data-label mb-2 text-secondary">Resultado:</label>
+                            <label class="data-label mb-2">Resultado:</label>
 
                             <div class="form-check mb-2">
                                 <input class="form-check-input" type="radio" name="failed_res" id="rd_buzon"
@@ -1868,8 +2105,9 @@
                             </div>
 
                             <div class="mt-3 pt-2 border-top border-secondary">
-                                <label class="data-label">Canal:</label>
-                                <select class="form-select form-select-sm" id="failed_canal">
+                                <label class="data-label mb-1">Canal:</label>
+                                <select class="form-select form-select-sm" id="failed_canal"
+                                    style="box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
                                     <option>Llamada</option>
                                     <option>WhatsApp</option>
                                 </select>
@@ -1878,7 +2116,7 @@
 
                         <!-- LÓGICA INVALIDO (SIN FECHA) -->
                         <div id="logic-invalid" class="logic-section danger-border d-none">
-                            <label class="data-label mb-2 text-danger">Motivo de Invalidez:</label>
+                            <label class="data-label mb-2">Motivo de Invalidez:</label>
 
                             <div class="form-check mb-2">
                                 <input class="form-check-input" type="radio" name="invalid_res" id="rd_wrong_num"
@@ -1900,9 +2138,8 @@
 
                         <!-- SECCIÓN DE PROPIETARIO MEJORADA (GRID 3x2) -->
                         <div id="logic-propietario" class="logic-section owner-border d-none">
-                            <label class="data-label mb-2 text-warning text-uppercase fw-bold"
-                                style="letter-spacing: 0.5px;">
-                                1. Estado con Propietario
+                            <label class="data-label mb-2">
+                                Estado con Propietario
                             </label>
 
                             <div class="visual-grid grid-3-col">
@@ -1958,8 +2195,8 @@
                             </div>
 
                             <!-- Selector Específico Oculto -->
-                            <div id="owner_reason_container" class="mb-2 d-none">
-                                <label class="data-label mb-1 text-white">2. Detalle Específico</label>
+                            <div id="owner_reason_container" class="sub-logic mb-2 d-none">
+                                <label class="data-label mb-1">Detalle Específico</label>
                                 <select class="form-select form-select-sm" id="sel_prop_detalle"
                                     onchange="setResult(this.value, 'Guardar Gestión Propietario', 'warning')">
                                     <option value="" selected disabled>Seleccione detalle...</option>
@@ -1972,9 +2209,8 @@
                         <!-- NUEVA SECCIÓN DE CIERRE PROFESIONAL (GRID VISUAL 3x2) -->
                         <div id="logic-descartado" class="logic-section danger-border d-none">
 
-                            <label class="data-label mb-2 text-danger text-uppercase fw-bold"
-                                style="letter-spacing: 0.5px;">
-                                1. Diagnóstico de Cierre
+                            <label class="data-label mb-2">
+                                Diagnóstico de Cierre
                             </label>
 
                             <!-- Grid Visual 3 columnas -->
@@ -2030,8 +2266,8 @@
                             </div>
 
                             <!-- Selector Específico Oculto -->
-                            <div id="close_reason_container" class="mb-2 d-none">
-                                <label class="data-label mb-1 text-white">2. Motivo Específico</label>
+                            <div id="close_reason_container" class="sub-logic mb-2 d-none">
+                                <label class="data-label mb-1">Motivo Específico</label>
                                 <select class="form-select form-select-sm" id="close_reason"
                                     onchange="setResult('lead_cerrado')">
                                     <option value="" selected disabled>Seleccione detalle...</option>
@@ -2049,29 +2285,33 @@
                             </div>
                         </div>
 
-                        <div id="global-date-container" class="mt-3 mb-3 d-none">
-                            <label class="data-label text-warning">Próxima Acción (solo si aplica)</label>
-                            <input type="datetime-local" id="fecha_global" class="form-control form-control-sm"
-                                onchange="updateSummary()">
-                        </div>
+                        <div id="gestion-footer" class="d-none animate__animated animate__fadeIn">
+                            <div class="section-title mt-3">Detalle de Gestión</div>
+                            <div id="global-date-container" class="mt-3 mb-3 d-none">
+                                <label class="data-label mb-1">Próxima Acción (solo si aplica)</label>
+                                <input type="datetime-local" id="fecha_global" class="form-control form-control-sm"
+                                    onchange="updateSummary()">
+                            </div>
 
-                        <div class="mb-3">
-                            <label class="data-label mb-1">Comentarios</label>
-                            <textarea class="form-control" id="notas_manuales" rows="2"
-                                placeholder="Detalle importante..." oninput="updateSummary()"></textarea>
-                        </div>
+                            <div class="mb-3">
+                                <label class="data-label mb-1">Comentarios</label>
+                                <textarea class="form-control" id="notas_manuales" rows="2"
+                                    placeholder="Detalle importante..." oninput="updateSummary()"></textarea>
+                            </div>
 
-                        <div id="action-summary" class="summary-box d-none">
-                            <div class="summary-item"><span>Acción:</span> <strong id="sum_action">-</strong></div>
-                            <div class="summary-item"><span>Resultado:</span> <strong id="sum_result">-</strong></div>
-                            <div class="summary-item"><span>Seguimiento:</span> <strong id="sum_date"
-                                    class="text-warning">-</strong></div>
-                        </div>
+                            <div id="action-summary" class="summary-box d-none">
+                                <div class="summary-item"><span>Acción:</span> <strong id="sum_action">-</strong></div>
+                                <div class="summary-item"><span>Resultado:</span> <strong id="sum_result">-</strong>
+                                </div>
+                                <div class="summary-item"><span>Seguimiento:</span> <strong id="sum_date"
+                                        class="text-warning">-</strong></div>
+                            </div>
 
-                        <button type="submit" class="btn btn-disabled-strict w-100 btn-save" id="btnMainAction"
-                            disabled>
-                            <i class="fa-solid fa-lock me-2"></i> Complete la gestión
-                        </button>
+                            <button type="submit" class="btn btn-disabled-strict w-100 btn-save" id="btnMainAction"
+                                disabled>
+                                <i class="fa-solid fa-lock me-2"></i> Complete la gestión
+                            </button>
+                        </div>
                         <input type="hidden" id="estado_actual" value="{{ lead.crm_estado }}">
                     </form>
 
@@ -2607,8 +2847,8 @@
                 btn.disabled = true; // Mantener disabled técnico para evitar submit
                 btn.classList.add('btn-disabled-strict');
                 // Mostrar razón en el texto (Feedback UX)
-                const reasonText = missingReason ? ` (Falta: ${missingReason})` : "";
-                btn.innerHTML = `<i class="fa-solid fa-lock me-2"></i> Complete la gestión${reasonText}`;
+                const reasonText = missingReason ? `: ${missingReason}` : "";
+                btn.innerHTML = `<i class="fa-solid fa-lock me-2"></i> ${reasonText || 'Complete la gestión'}`;
             }
         }
 
@@ -2621,24 +2861,24 @@
                 const subRes = document.getElementById('resultado_gestion').value;
                 const date = document.getElementById('fecha_global').value;
 
-                if (!score) missing = "Calificación (A/B/C)";
-                else if (!subRes) missing = "Resultado";
-                else if ((subRes === 'visita_agendada' || subRes === 'requiere_seguimiento') && !date) missing = "Fecha Seguimiento";
+                if (!score) missing = "Calificar Lead (A/B/C)";
+                else if (!subRes) missing = "Manifestación del Lead";
+                else if ((subRes === 'visita_agendada' || subRes === 'requiere_seguimiento') && !date) missing = "Fecha de Seguimiento";
                 else isValid = true;
 
             } else if (currentInteraction === 'partial') {
                 const res = document.querySelector('input[name="partial_res"]:checked');
-                if (!res) missing = "Resultado Parcial";
+                if (!res) missing = "Situación del contacto";
                 else isValid = true;
 
             } else if (currentInteraction === 'failed') {
                 const res = document.querySelector('input[name="failed_res"]:checked');
-                if (!res) missing = "Tipo intento";
+                if (!res) missing = "Resultado del intento";
                 else isValid = true;
 
             } else if (currentInteraction === 'invalid') {
                 const res = document.querySelector('input[name="invalid_res"]:checked');
-                if (!res) missing = "Motivo invalidez";
+                if (!res) missing = "Motivo de invalidez";
                 else isValid = true;
 
             } else if (currentInteraction === 'descartado') {
@@ -2648,7 +2888,7 @@
 
             } else if (currentInteraction === 'propietario') {
                 const propReason = document.getElementById('sel_prop_detalle').value;
-                if (!propReason) missing = "Detalle propietario";
+                if (!propReason) missing = "Detalle Propietario";
                 else isValid = true;
             }
             updateMainButtonState(isValid, missing);
@@ -2674,6 +2914,9 @@
                 reasonContainer.classList.remove('d-none');
                 reasonContainer.classList.add('fade-in-down');
                 reasonSelect.disabled = false;
+
+                // Mostrar footer al elegir una categoría de propietario
+                document.getElementById('gestion-footer').classList.remove('d-none');
             }
             validateState();
         }
@@ -2696,6 +2939,9 @@
                 reasonContainer.classList.remove('d-none');
                 reasonContainer.classList.add('fade-in-down');
                 reasonSelect.disabled = false;
+
+                // Mostrar footer al elegir una categoría de cierre
+                document.getElementById('gestion-footer').classList.remove('d-none');
             }
             validateState();
         }
@@ -2802,6 +3048,8 @@
                     toggleLogic('descartado');
                     currentActionLabel = "Cerrar Lead";
                 }
+                // Siempre ocultamos el footer al cambiar de modo principal
+                document.getElementById('gestion-footer').classList.add('d-none');
             }
             updateSummary();
         }
@@ -2817,7 +3065,16 @@
             if (radio) radio.checked = true;
 
             const activeBlock = document.getElementById('logic-' + type);
-            if (activeBlock) activeBlock.classList.remove('d-none');
+            if (activeBlock) {
+                activeBlock.classList.remove('d-none');
+                // Mostramos el footer solo si es una lógica de contacto directo de Lead
+                // Para Propietario/Descartado, esperamos a que elijan una sub-categoría (render functions)
+                if (['effective', 'partial', 'failed', 'invalid'].includes(type)) {
+                    document.getElementById('gestion-footer').classList.remove('d-none');
+                } else {
+                    document.getElementById('gestion-footer').classList.add('d-none');
+                }
+            }
 
             if (type === 'effective') {
                 document.querySelectorAll('.sub-logic').forEach(el => el.classList.add('d-none'));

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
@@ -21,7 +21,8 @@
             --text-secondary: #94a3b8;
             --accent: #6366f1;
             --border-color: #334155;
-            --sidebar-width: 260px;
+            --sidebar-width: 200px;
+            --sidebar-width-collapsed: 70px;
         }
 
         [data-theme="light"] {
@@ -42,68 +43,158 @@
             overflow-x: hidden;
         }
 
-        /* --- SIDEBAR --- */
+        /* --- SIDEBAR Modern Hover Expand --- */
         .sidebar {
-            width: var(--sidebar-width);
+            width: var(--sidebar-width-collapsed);
             background: var(--bg-sidebar);
             height: 100vh;
             position: fixed;
-            left: -260px;
-            padding: 20px;
+            left: 0;
+            top: 0;
+            padding: 20px 0;
             border-right: 1px solid var(--border-color);
             z-index: 1050;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            white-space: nowrap;
         }
 
-        .sidebar.active {
-            left: 0;
+        .sidebar:hover {
+            width: var(--sidebar-width);
+            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
         }
 
         .brand {
-            font-size: 1.4rem;
+            font-size: 1.3rem;
             font-weight: 700;
             color: #fff;
             margin-bottom: 2rem;
             display: flex;
             align-items: center;
-            gap: 10px;
+            height: 50px;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .brand i {
+            min-width: var(--sidebar-width-collapsed);
+            text-align: center;
+            font-size: 1.8rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .brand span {
+            margin-left: -10px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .sidebar:hover .brand span {
+            opacity: 1;
         }
 
         .nav-link {
-            color: #94a3b8;
-            padding: 12px 15px;
-            border-radius: 8px;
-            margin-bottom: 5px;
+            color: #cbd5e1;
+            padding: 12px 0;
+            display: flex;
+            align-items: center;
             text-decoration: none;
-            display: block;
-            transition: 0.3s;
+            margin-bottom: 5px;
+            transition: all 0.2s;
+            height: 48px;
+            overflow: hidden;
+            width: 100%;
+            border-radius: 0;
         }
 
-        .nav-link.active,
+        .nav-link i {
+            min-width: var(--sidebar-width-collapsed);
+            text-align: center;
+            font-size: 1.25rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.25s ease-out;
+        }
+
+        .nav-link span {
+            margin-left: -10px;
+            opacity: 0;
+            transform: translateX(-10px);
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .sidebar:hover .nav-link span {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        /* Efecto base hover */
+        .nav-link:hover i {
+            transform: scale(1.1);
+        }
+
         .nav-link:hover {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent);
+        }
+
+        .nav-link.active {
             background: var(--accent);
             color: white !important;
         }
 
+        /* Dashboard: escala sutil */
+        .nav-link[href="/leads-dashboard"]:hover i {
+            transform: scale(1.15);
+        }
+
+        /* Listado Leads: baja ligeramente */
+        .nav-link[href="/crm"]:hover i {
+            transform: translateY(2px) scale(1.1);
+        }
+
+        /* Toggle Tema: rotación 180° */
+        .nav-link.theme-toggle {
+            margin-top: auto;
+            background: transparent;
+        }
+
+        .nav-link.theme-toggle:hover i {
+            transform: rotate(180deg) scale(1.1);
+            color: #f59e0b;
+        }
+
+        .nav-link.theme-toggle:hover {
+            background: rgba(245, 158, 11, 0.1);
+            color: #f59e0b;
+        }
+
+        /* Logout: pulse rojo */
+        .nav-link.logout {
+            margin-top: 5px;
+            color: var(--text-secondary);
+        }
+
+        .nav-link.logout:hover i {
+            transform: scale(1.15);
+            color: #ef4444;
+        }
+
+        .nav-link.logout:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+        }
+
         .main-content {
-            margin-left: 0;
+            margin-left: var(--sidebar-width-collapsed);
             padding: 30px;
             transition: all 0.4s ease;
-        }
-
-        .sidebar-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 1040;
-        }
-
-        .sidebar-overlay.active {
-            display: block;
         }
 
         /* --- CONTROLES SUPERIORES --- */
@@ -339,25 +430,31 @@
 
 <body>
 
-    <div class="sidebar-overlay" id="overlay" onclick="toggleSidebar()"></div>
-
     <nav class="sidebar" id="sidebar">
-        <div class="brand"><i class="fa-solid fa-robot"></i> PROCASA AI</div>
-        <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie me-2"></i> Dashboard</a>
-        <a href="/leads-dashboard" class="nav-link active"><i class="fa-solid fa-chart-pie me-2"></i> Leads</a>
-        <a href="/crm" class="nav-link"><i class="fa-solid fa-inbox me-2"></i> Bandeja CRM</a>
-        <a href="#" class="nav-link"><i class="fa-solid fa-calendar-check me-2"></i> Visitas</a>
-        <a href="#" class="nav-link d-none" id="nav-chat-live"><i class="fa-solid fa-comment-dots me-2"></i> Chat
-            Live</a>
+        <div class="brand">
+            <i class="fa-solid fa-robot text-primary"></i> <span>PROCASA AI</span>
+        </div>
+        <!-- Dashboard oculto temporalmente -->
+        <!-- <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i> <span>Dashboard</span></a> -->
+        <a href="/leads-dashboard" class="nav-link active"><i class="fa-solid fa-chart-line"></i>
+            <span>Dashboard</span></a>
+        <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+
+        <!-- Tema Toggle -->
+        <a href="#" class="nav-link theme-toggle" onclick="toggleTheme(); return false;">
+            <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
+        </a>
+
+        <!-- Logout -->
+        <a href="/logout" class="nav-link logout">
+            <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
+        </a>
     </nav>
 
     <div class="main-content" id="main-content">
 
         <div class="header-container">
             <div class="d-flex align-items-center">
-                <button class="menu-toggle me-3" onclick="toggleSidebar()">
-                    <i class="fa-solid fa-bars"></i>
-                </button>
                 <div>
                     <h2 class="fw-bold m-0">Leads Intelligence</h2>
                     <p class="text-secondary m-0 small">Rendimiento Comercial & Analytics AI</p>
@@ -374,9 +471,6 @@
                     <i class="fa-solid fa-times text-secondary ms-auto cursor-pointer" id="clear_date"
                         style="display:none;" onclick="clearDateFilter()"></i>
                 </div>
-                <button class="btn btn-outline-secondary" onclick="toggleTheme()">
-                    <i class="fa-solid fa-moon" id="theme-icon"></i>
-                </button>
             </div>
         </div>
 
@@ -543,28 +637,32 @@
             window.requestAnimationFrame(step);
         }
 
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('active');
-            document.getElementById('overlay').classList.toggle('active');
-        }
-        function closeSidebarOnly() {
-            document.getElementById('sidebar').classList.remove('active');
-            document.getElementById('overlay').classList.remove('active');
-        }
-
         function toggleTheme() {
-            const body = document.body;
-            let icon = document.getElementById('theme-icon');
+            const html = document.documentElement;
+            const icon = document.getElementById('themeIcon');
             CURRENT_THEME = (CURRENT_THEME === 'dark') ? 'light' : 'dark';
+            localStorage.setItem('theme', CURRENT_THEME);
+
             if (CURRENT_THEME === 'light') {
-                body.setAttribute('data-theme', 'light');
-                icon.className = 'fa-solid fa-sun';
-            } else {
-                body.removeAttribute('data-theme');
+                html.setAttribute('data-theme', 'light');
                 icon.className = 'fa-solid fa-moon';
+            } else {
+                html.setAttribute('data-theme', 'dark');
+                icon.className = 'fa-solid fa-sun';
             }
             if (FILTERED_DATA) renderCharts(FILTERED_DATA);
         }
+
+        // Aplicar tema guardado al cargar
+        (function () {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            CURRENT_THEME = savedTheme;
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            const icon = document.getElementById('themeIcon');
+            if (icon) {
+                icon.className = savedTheme === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+            }
+        })();
 
         // --- 4. CARGA Y FILTRADO DE DATOS ---
         async function loadData() {

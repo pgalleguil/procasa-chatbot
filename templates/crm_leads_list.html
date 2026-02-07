@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
@@ -18,14 +18,35 @@
             --text-secondary: #94a3b8;
             --accent: #6366f1;
             --border-color: #334155;
-            --sidebar-width: 260px;
+            --sidebar-width: 200px;
             --sidebar-width-collapsed: 70px;
             --transition-speed: 0.3s;
             --led-red: #ef4444;
             --led-yellow: #f59e0b;
             --led-green: #10b981;
             --led-gray: #64748b;
-            /* NUEVO COLOR PLOMO PARA CERRADO */
+            /* Variables para inputs y forms */
+            --input-bg: #334155;
+            --input-border: #475569;
+            --input-text: #fff;
+        }
+
+        /* TEMA LIGHT - Colores optimizados para legibilidad */
+        [data-theme="light"] {
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --bg-sidebar: #0f172a;
+            --text-primary: #1e293b;
+            --text-secondary: #475569;
+            --border-color: #e2e8f0;
+            --input-bg: #ffffff;
+            --input-border: #cbd5e1;
+            --input-text: #1e293b;
+            /* LEDs con más contraste para light mode */
+            --led-red: #dc2626;
+            --led-yellow: #d97706;
+            --led-green: #059669;
+            --led-gray: #6b7280;
         }
 
         body {
@@ -33,83 +54,161 @@
             color: var(--text-primary);
             font-family: 'Outfit', sans-serif;
             overflow-x: hidden;
+            transition: background-color 0.3s, color 0.3s;
         }
 
-        /* SIDEBAR */
+        /* SIDEBAR - Modern Hover Expand */
         .sidebar {
-            width: var(--sidebar-width);
+            width: var(--sidebar-width-collapsed);
             background: var(--bg-sidebar);
             height: 100vh;
             position: fixed;
-            padding: 20px;
+            left: 0;
+            top: 0;
+            padding: 20px 0;
             border-right: 1px solid var(--border-color);
             z-index: 1000;
-            transition: width var(--transition-speed);
+            transition: width var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            white-space: nowrap;
         }
 
-        .sidebar.collapsed {
-            width: var(--sidebar-width-collapsed);
-            padding: 20px 10px;
-        }
-
-        .sidebar.collapsed .brand span,
-        .sidebar.collapsed .nav-link span {
-            display: none;
-        }
-
-        .sidebar.collapsed .brand {
-            justify-content: center;
-        }
-
-        .sidebar.collapsed .nav-link {
-            text-align: center;
-            padding: 12px 0;
-        }
-
-        .sidebar.collapsed .nav-link i {
-            margin-right: 0 !important;
-            font-size: 1.2rem;
+        .sidebar:hover {
+            width: var(--sidebar-width);
+            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
         }
 
         .main-content {
-            margin-left: var(--sidebar-width);
+            margin-left: var(--sidebar-width-collapsed);
             padding: 30px;
             transition: margin-left var(--transition-speed);
         }
 
-        .main-content.expanded {
-            margin-left: var(--sidebar-width-collapsed);
-        }
-
         .brand {
-            font-size: 1.4rem;
+            font-size: 1.3rem;
             font-weight: 700;
             color: #fff;
             margin-bottom: 2rem;
             display: flex;
             align-items: center;
-            gap: 10px;
-            white-space: nowrap;
+            height: 50px;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .brand i {
+            min-width: var(--sidebar-width-collapsed);
+            text-align: center;
+            font-size: 1.8rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .brand span {
+            margin-left: -10px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .sidebar:hover .brand span {
+            opacity: 1;
         }
 
         .nav-link {
-            color: var(--text-secondary);
-            padding: 12px 15px;
-            display: block;
+            color: #cbd5e1;
+            padding: 12px 0;
+            display: flex;
+            align-items: center;
             text-decoration: none;
-            border-radius: 8px;
             margin-bottom: 5px;
-            transition: 0.2s;
-            white-space: nowrap;
+            transition: all 0.2s;
+            height: 48px;
+            overflow: hidden;
+            width: 100%;
+            border-radius: 0;
         }
 
-        .nav-link.active,
+        .nav-link i {
+            min-width: var(--sidebar-width-collapsed);
+            text-align: center;
+            font-size: 1.25rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.25s ease-out;
+        }
+
+        .nav-link span {
+            margin-left: -10px;
+            opacity: 0;
+            transform: translateX(-10px);
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .sidebar:hover .nav-link span {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        /* Efecto base hover para iconos normales */
+        .nav-link:hover i {
+            transform: scale(1.1);
+        }
+
         .nav-link:hover {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent);
+        }
+
+        .nav-link.active {
             background: var(--accent);
             color: white;
+        }
+
+        /* Dashboard: escala sutil (mismo color que hover base) */
+        .nav-link[href="/leads-dashboard"]:hover i {
+            transform: scale(1.15);
+        }
+
+        /* Listado Leads: icono baja ligeramente */
+        .nav-link[href="/crm"]:hover i {
+            transform: translateY(2px) scale(1.1);
+        }
+
+        /* Toggle Tema: rotación 180° */
+        .nav-link.theme-toggle {
+            margin-top: auto;
+            background: transparent;
+        }
+
+        .nav-link.theme-toggle:hover i {
+            transform: rotate(180deg) scale(1.1);
+            color: #f59e0b;
+        }
+
+        .nav-link.theme-toggle:hover {
+            background: rgba(245, 158, 11, 0.1);
+            color: #f59e0b;
+        }
+
+        /* Logout: pulse rojo */
+        .nav-link.logout {
+            margin-top: 5px;
+            color: var(--text-secondary);
+        }
+
+        .nav-link.logout:hover i {
+            transform: scale(1.15);
+            color: #ef4444;
+        }
+
+        .nav-link.logout:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
         }
 
         /* KPI CARDS (REINCORPORADAS) */
@@ -321,24 +420,74 @@
             cursor: pointer;
             margin-right: 15px;
         }
+
+        /* ========== LIGHT THEME OVERRIDES ========== */
+        [data-theme="light"] .summary-card {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        [data-theme="light"] .crm-table td {
+            color: var(--text-primary);
+        }
+
+        [data-theme="light"] .crm-table tbody tr:hover td {
+            background-color: rgba(99, 102, 241, 0.08);
+        }
+
+        [data-theme="light"] .prop-code-link:hover {
+            color: var(--accent);
+        }
+
+        [data-theme="light"] .toolbar {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        }
+
+        [data-theme="light"] .search-box input,
+        [data-theme="light"] .form-select-custom {
+            background-color: var(--input-bg);
+            border-color: var(--input-border);
+            color: var(--input-text);
+        }
+
+        [data-theme="light"] .text-white {
+            color: var(--text-primary) !important;
+        }
+
+        [data-theme="light"] .fw-bold {
+            color: var(--text-primary);
+        }
+
+        [data-theme="light"] .text-accent {
+            color: var(--accent) !important;
+        }
     </style>
 </head>
 
 <body>
 
-    <nav class="sidebar collapsed" id="sidebar">
+    <nav class="sidebar" id="sidebar">
         <div class="brand">
-            <i class="fa-solid fa-robot"></i> <span>PROCASA AI</span>
+            <i class="fa-solid fa-robot text-primary"></i> <span>PROCASA AI</span>
         </div>
-        <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie me-2"></i> <span>Dashboard</span></a>
-        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-users me-2"></i> <span>Leads</span></a>
-        <a href="/crm" class="nav-link active"><i class="fa-solid fa-inbox me-2"></i> <span>Bandeja CRM</span></a>
+        <!-- Dashboard oculto temporalmente -->
+        <!-- <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i> <span>Dashboard</span></a> -->
+        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
+        <a href="/crm" class="nav-link active"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+
+        <!-- Tema Toggle -->
+        <a href="#" class="nav-link theme-toggle" onclick="toggleTheme()">
+            <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
+        </a>
+
+        <!-- Logout -->
+        <a href="/logout" class="nav-link logout">
+            <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
+        </a>
     </nav>
 
-    <div class="main-content expanded" id="mainContent">
+    <div class="main-content" id="mainContent">
 
         <div class="d-flex align-items-center mb-4">
-            <button id="sidebarToggle" class="me-3 btn btn-sm btn-dark"><i class="fa-solid fa-bars"></i></button>
             <h2 class="fw-bold m-0 fs-4">Gestión de Leads</h2>
         </div>
 
@@ -490,15 +639,37 @@
     </div>
 
     <script>
-        document.getElementById('sidebarToggle').addEventListener('click', function () {
-            document.getElementById('sidebar').classList.toggle('collapsed');
-            document.getElementById('mainContent').classList.toggle('expanded');
-        });
+        // Toggle Theme (Light/Dark)
+        function toggleTheme() {
+            const html = document.documentElement;
+            const icon = document.getElementById('themeIcon');
+            if (html.getAttribute('data-theme') === 'light') {
+                html.setAttribute('data-theme', 'dark');
+                icon.classList.remove('fa-moon');
+                icon.classList.add('fa-sun');
+                localStorage.setItem('theme', 'dark');
+            } else {
+                html.setAttribute('data-theme', 'light');
+                icon.classList.remove('fa-sun');
+                icon.classList.add('fa-moon');
+                localStorage.setItem('theme', 'light');
+            }
+        }
 
-        // Script para manejar el botón "Ver Detalle" que ahora es el mismo click en la fila
+        // Apply saved theme on load
+        (function () {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            const icon = document.getElementById('themeIcon');
+            if (icon) {
+                icon.classList.remove('fa-sun', 'fa-moon');
+                icon.classList.add(savedTheme === 'light' ? 'fa-moon' : 'fa-sun');
+            }
+        })();
+
+        // Row click handlers
         document.querySelectorAll('.btn-detail').forEach(btn => {
             btn.addEventListener('click', function (e) {
-                // El click en la fila ya maneja la navegación, solo detenemos la propagación si es necesario
                 e.stopPropagation();
             });
         });

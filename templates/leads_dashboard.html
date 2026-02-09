@@ -245,6 +245,47 @@
             .hamburger-mobile {
                 display: flex !important;
             }
+
+            /* --- MOBILE DASHBOARD FIXES --- */
+
+            /* Stack Header Items */
+            .header-container {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 15px;
+            }
+
+            .header-container>div {
+                width: 100%;
+            }
+
+            /* Full Width Filters */
+            .filter-container {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .calendar-input {
+                width: 100%;
+                flex: 1;
+            }
+
+            /* Adjust Chart & Table containers padding */
+            .chart-container {
+                padding: 15px;
+            }
+
+            /* Responsive Table Search */
+            .search-container {
+                max-width: 100%;
+                margin-bottom: 10px;
+            }
+
+            .d-flex.justify-content-between.align-items-center.mb-3 {
+                flex-direction: column;
+                align-items: stretch !important;
+                gap: 10px;
+            }
         }
 
         .hamburger-mobile {
@@ -649,30 +690,7 @@
                 </div>
             </div>
 
-            <div class="chart-container">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="m-0">Últimos Leads Procesados</h5>
-                    <div class="search-container">
-                        <i class="fa-solid fa-magnifying-glass"></i>
-                        <input type="text" id="phoneSearch" class="search-input" placeholder="Buscar teléfono..."
-                            onkeyup="filterTable()">
-                    </div>
-                </div>
 
-                <div class="table-responsive">
-                    <table class="table-custom">
-                        <thead>
-                            <tr>
-                                <th>Fecha</th>
-                                <th>Prospecto</th>
-                                <th class="text-center">Score AI</th>
-                                <th>Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody id="leads-table-body"></tbody>
-                    </table>
-                </div>
-            </div>
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -1159,6 +1177,7 @@
 
             function renderTable(leads) {
                 const tbody = document.getElementById('leads-table-body');
+                if (!tbody) return;
                 tbody.innerHTML = '';
                 leads.forEach(l => {
                     const tr = document.createElement('tr');

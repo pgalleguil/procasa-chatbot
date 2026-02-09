@@ -188,14 +188,19 @@
 
         /* --- Mobile Tweaks --- */
         @media (max-width: 576px) {
+            .background-slider {
+                display: none;
+            }
+
+            body {
+                background: linear-gradient(135deg, #1a1a1a 0%, #2c3e50 100%);
+            }
+
             .login-card {
                 padding: 2rem 1.5rem;
                 border-radius: 20px;
-            }
-
-            .slide img {
-                animation: none;
-                /* Mejor rendimiento en móviles viejos */
+                background: rgba(255, 255, 255, 0.95);
+                /* More solid for contrast */
             }
         }
     </style>

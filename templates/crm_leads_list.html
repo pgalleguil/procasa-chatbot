@@ -527,6 +527,195 @@
             color: var(--accent) !important;
         }
     </style>
+    <style>
+        /* --- MODERN & RESPONSIVE IMPROVEMENTS --- */
+
+        /* 1. Glassmorphism & Modern Basics (DESKTOP ONLY PREFERENCE) */
+        @media (min-width: 992px) {
+            .crm-table tbody tr {
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                border-radius: 12px;
+            }
+
+            .crm-table tbody tr:hover {
+                transform: scale(1.005);
+                box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+                background-color: rgba(99, 102, 241, 0.05) !important;
+                z-index: 10;
+                position: relative;
+            }
+
+            /* Professional Movement for KPI Cards */
+            .summary-card {
+                transition: transform 0.3s ease, box-shadow 0.3s ease;
+            }
+
+            .summary-card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 15px 30px rgba(0, 0, 0, 0.15);
+            }
+        }
+
+        /* 2. LED Ripple Effect (Cleaner, "Apple-style" Status) */
+        @keyframes ripple-effect {
+            0% {
+                transform: scale(1);
+                opacity: 0.6;
+            }
+
+            100% {
+                transform: scale(2.5);
+                opacity: 0;
+            }
+        }
+
+        .led-indicator {
+            position: relative;
+            /* Ensure z-index is positive so ripple is behind if needed, or just let it shine */
+            z-index: 1;
+        }
+
+        /* Create the ripple using pseudo-element to avoid blurring the core dot */
+        .led-indicator::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: inherit;
+            /* Inherit the red/green/yellow from parent */
+            z-index: -1;
+            /* Animation details */
+            animation: ripple-effect 2s infinite cubic-bezier(0, 0, 0.2, 1);
+        }
+
+        /* Adjust colors to ensure they stand out without the messy glow */
+        .led-red {
+            background: var(--led-red);
+        }
+
+        .led-yellow {
+            background: var(--led-yellow);
+        }
+
+        .led-green {
+            background: var(--led-green);
+        }
+
+        .led-gray {
+            background: var(--led-gray);
+            animation: none;
+        }
+
+        /* Closed doesn't pulse */
+        .led-gray::after {
+            display: none;
+        }
+
+        /* No ripple for closed */
+
+        /* 3. Action Buttons - Modern & Touch Friendly */
+        .action-btn {
+            width: 38px;
+            height: 38px;
+            font-size: 1rem;
+            margin: 0 2px;
+            border-radius: 10px;
+            backdrop-filter: blur(4px);
+        }
+
+        /* --- MOBILE CARD VIEW TRANSFORM --- */
+        @media (max-width: 768px) {
+
+            /* Hide Table Header */
+            .crm-table thead {
+                display: none;
+            }
+
+            /* Block Layout for Table */
+            .crm-table,
+            .crm-table tbody,
+            .crm-table tr,
+            .crm-table td {
+                display: block;
+                width: 100%;
+            }
+
+            .crm-table tbody tr {
+                margin-bottom: 20px;
+                background: var(--bg-card);
+                border: 1px solid var(--border-color);
+                border-radius: 16px;
+                padding: 15px;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                position: relative;
+                overflow: hidden;
+            }
+
+            /* Remove default table borders */
+            .crm-table td {
+                border: none;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                padding: 10px 0;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                text-align: right;
+                min-height: 40px;
+            }
+
+            .crm-table td:last-child {
+                border-bottom: none;
+                padding-top: 15px;
+                justify-content: flex-end;
+                gap: 10px;
+            }
+
+            /* Data Labels via CSS (Fallback if HTML attrs missing) or Helper */
+            .crm-table td::before {
+                content: attr(data-label);
+                float: left;
+                font-weight: 700;
+                text-transform: uppercase;
+                font-size: 0.75rem;
+                color: var(--text-secondary);
+                letter-spacing: 0.5px;
+            }
+
+            /* Custom Adjustments for Specific Cells */
+            .crm-table td[data-label="Estado"] {
+                flex-direction: row-reverse;
+                justify-content: space-between;
+                background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.05));
+                margin: -15px -15px 10px -15px;
+                /* Bleed to edges */
+                padding: 12px 15px;
+                border-bottom: 1px solid var(--border-color);
+            }
+
+            /* Adjust Action Buttons for Mobile Touch */
+            .action-btn {
+                width: 45px;
+                height: 45px;
+                font-size: 1.2rem;
+            }
+
+            /* Hide Search Input Labels in Toolbar for space */
+            .toolbar {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+            }
+
+            .search-box,
+            .form-select-custom {
+                width: 100%;
+                min-width: 100%;
+            }
+        }
+    </style>
 </head>
 
 <body>
@@ -568,7 +757,7 @@
                 <div class="col-md-3">
                     <div class="summary-card" style="border-bottom: 3px solid var(--led-red);">
                         <div>
-                            <div class="summary-value text-danger">{{ kpis.nuevo }}</div>
+                            <div class="summary-value text-danger" id="kpi-nuevo" data-target="{{ kpis.nuevo }}">0</div>
                             <div class="summary-label">Sin Atender</div>
                         </div>
                         <i class="fa-solid fa-bell fa-2x text-danger opacity-25"></i>
@@ -577,7 +766,8 @@
                 <div class="col-md-3">
                     <div class="summary-card" style="border-bottom: 3px solid var(--led-yellow);">
                         <div>
-                            <div class="summary-value text-warning">{{ kpis.gestion }}</div>
+                            <div class="summary-value text-warning" id="kpi-gestion" data-target="{{ kpis.gestion }}">0
+                            </div>
                             <div class="summary-label">En Gestión</div>
                         </div>
                         <i class="fa-solid fa-comments fa-2x text-warning opacity-25"></i>
@@ -586,7 +776,8 @@
                 <div class="col-md-3">
                     <div class="summary-card" style="border-bottom: 3px solid var(--led-green);">
                         <div>
-                            <div class="summary-value text-success">{{ kpis.visita }}</div>
+                            <div class="summary-value text-success" id="kpi-visita" data-target="{{ kpis.visita }}">0
+                            </div>
                             <div class="summary-label">Visitas</div>
                         </div>
                         <i class="fa-solid fa-calendar-check fa-2x text-success opacity-25"></i>
@@ -596,7 +787,8 @@
                     <div class="summary-card" style="border-bottom: 3px solid var(--led-gray);">
                         <!-- Estilo Gris para Total -->
                         <div>
-                            <div class="summary-value text-secondary">{{ kpis.cerrado }}</div>
+                            <div class="summary-value text-secondary" id="kpi-cerrado" data-target="{{ kpis.cerrado }}">
+                                0</div>
                             <div class="summary-label">Cerrados</div>
                         </div>
                         <i class="fa-solid fa-archive fa-2x text-secondary opacity-25"></i>
@@ -644,34 +836,34 @@
                             <th width="15%">Estado</th>
                             <th width="20%">Cliente</th>
                             <th width="15%">Propiedad</th>
-                            <th width="30%">Última Acción CRM</th> <!-- CAMBIADO TÍTULO -->
+                            <th width="30%">Última Acción</th>
                             <th width="20%" class="text-end">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for lead in leads %}
                         <tr class="clickable-row" onclick="window.location.href='/crm/lead/{{ lead.phone }}'">
-                            <td>
+                            <td data-label="Estado">
                                 <div class="d-flex align-items-center">
                                     <div class="led-indicator {{ lead.led_class }}"></div>
-                                    <span class="small text-white">{{ lead.estado_badge }}</span>
+                                    <span class="small text-white fw-bold">{{ lead.estado_badge }}</span>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="Cliente">
                                 <div class="fw-bold">{{ lead.nombre }}</div>
                                 <div class="small text-secondary">{{ lead.whatsapp_display }}</div>
                             </td>
-                            <td>
+                            <td data-label="Propiedad">
                                 {% if lead.codigo_propiedad != "S/N" %}
                                 <a href="{{ lead.url_propiedad }}" target="_blank" class="prop-code-link"
                                     onclick="event.stopPropagation();">
-                                    {{ lead.codigo_propiedad }}
+                                    <i class="fa-solid fa-home me-1"></i>{{ lead.codigo_propiedad }}
                                 </a>
                                 {% else %}
-                                <span class="text-secondary small">S/N</span>
+                                <span class="text-secondary small fst-italic">Sin Propiedad</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td data-label="Última Acción">
                                 <!-- AQUÍ SE MUESTRA LA ACCIÓN REAL DEL USUARIO -->
                                 <div class="d-flex justify-content-between align-items-center">
                                     <span class="fw-bold text-accent" style="font-size: 0.9rem;">{{
@@ -684,7 +876,7 @@
                                     {{ lead.ultima_accion_nota }}
                                 </div>
                             </td>
-                            <td class="text-end">
+                            <td class="text-end" data-label="Acciones">
                                 <!-- Agregamos event.stopPropagation() a todos los botones de acción -->
                                 <a href="tel:{{ lead.phone }}" class="action-btn btn-phone"
                                     onclick="event.stopPropagation();" title="Llamar">
@@ -768,6 +960,34 @@
             document.querySelectorAll('.btn-detail').forEach(btn => {
                 btn.addEventListener('click', function (e) {
                     e.stopPropagation();
+                });
+            });
+
+            // --- Number Animation Script ---
+            document.addEventListener("DOMContentLoaded", () => {
+                const counters = document.querySelectorAll('.summary-value');
+                counters.forEach(counter => {
+                    const target = +counter.getAttribute('data-target');
+                    if (!target) {
+                        // If target is 0 or NaN, ensure it displays 0
+                        counter.innerText = target || 0;
+                        return;
+                    }
+
+                    const duration = 1500; // 1.5s total animation
+                    const increment = target / (duration / 16); // 60fps
+
+                    let current = 0;
+                    const updateCounter = () => {
+                        current += increment;
+                        if (current < target) {
+                            counter.innerText = Math.ceil(current);
+                            requestAnimationFrame(updateCounter);
+                        } else {
+                            counter.innerText = target;
+                        }
+                    };
+                    updateCounter();
                 });
             });
         </script>

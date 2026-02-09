@@ -9,6 +9,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Flatpickr (Calendario Moderno) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
 
     <style>
         :root {
@@ -770,6 +773,34 @@
 
             .comm-grid {
                 grid-template-columns: 1fr;
+            }
+
+            /* Fix Identity Header wrapping */
+            .identity-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            /* Adjust Action Buttons for Mobile */
+            .action-mode-grid {
+                grid-template-columns: repeat(3, 1fr);
+                /* Keep 3 cols but smaller text */
+                gap: 8px;
+            }
+
+            .action-btn {
+                padding: 10px 5px;
+                font-size: 0.75rem;
+            }
+
+            .action-btn i {
+                font-size: 1.2rem;
+            }
+
+            /* Ensure main content padding isn't too large */
+            .main-content {
+                padding: 15px !important;
             }
         }
 
@@ -1826,7 +1857,7 @@
                                         <span class="info-value">{{ lead.rut or '---' }}</span>
                                     </div>
                                 </div>
-                                <!-- Fila 2: Datos de Propiedad (Código + Ubicación bajo Email) -->
+                                <!-- Fila 2: Datos de Propiedad (Código Propiedad solo) -->
                                 <div class="info-row property-data">
                                     <div class="info-item">
                                         <span class="info-label">Código Propiedad</span>
@@ -1837,8 +1868,7 @@
                                         </a>
                                     </div>
                                     <div class="info-item">
-                                        <span class="info-label">Ubicación Interés</span>
-                                        <span class="info-value">{{ lead.datos_propiedad.comuna or '---' }}</span>
+                                        <!-- Removed duplicate Comuna -->
                                     </div>
                                     <div class="info-item">
                                         <!-- Celda vacía para mantener alineación -->
@@ -2151,20 +2181,20 @@
 
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="partial_res" id="rd_llamar_luego"
-                                        onclick="setResult('intento_fallido', 'Agendar Reintento', 'warning'); autoSetDate(0);">
+                                        onclick="setResult('intento_fallido', 'Agendar Reintento', 'warning');">
                                     <label class="form-check-label" for="rd_llamar_luego">Contestó: Pide llamar más
                                         tarde</label>
                                 </div>
 
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="partial_res" id="rd_ocupado"
-                                        onclick="setResult('intento_fallido', 'Agendar Reintento', 'warning'); autoSetDate(1);">
+                                        onclick="setResult('intento_fallido', 'Agendar Reintento', 'warning');">
                                     <label class="form-check-label" for="rd_ocupado">Contestó: "Estoy ocupado"</label>
                                 </div>
 
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="partial_res" id="rd_visto"
-                                        onclick="setResult('intento_fallido', 'Agendar Seguimiento', 'primary'); autoSetDate(2);">
+                                        onclick="setResult('intento_fallido', 'Agendar Seguimiento', 'primary');">
                                     <label class="form-check-label" for="rd_visto">WhatsApp: Visto sin respuesta</label>
                                 </div>
                             </div>
@@ -2175,17 +2205,17 @@
 
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="failed_res" id="rd_buzon"
-                                        onclick="autoSetDate(1)">
+                                        onclick="setResult('intento_fallido', 'Reintentar Mañana', 'warning');">
                                     <label class="form-check-label" for="rd_buzon">Buzón de voz</label>
                                 </div>
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="failed_res" id="rd_corta"
-                                        onclick="autoSetDate(1)">
+                                        onclick="setResult('intento_fallido', 'Reintentar Mañana', 'warning');">
                                     <label class="form-check-label" for="rd_corta">Timbra y corta</label>
                                 </div>
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="failed_res" id="rd_apagado"
-                                        onclick="autoSetDate(1)">
+                                        onclick="setResult('intento_fallido', 'Reintentar Mañana', 'warning');">
                                     <label class="form-check-label" for="rd_apagado">Teléfono apagado</label>
                                 </div>
 
@@ -2550,6 +2580,8 @@
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+        <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
         <script>
             // --- 1. GESTOR DE SESIÓN (ORIGINAL) ---
             // --- 1. GESTOR DE SESIÓN (MEJORADO: PASIVO) ---
@@ -2640,6 +2672,16 @@
 
                 // 3. AUTO-ARRAQUE LOGICA
                 setActionMode('contact');
+
+                // 4. Init Flatpickr
+                flatpickr("#fecha_global", {
+                    enableTime: true,
+                    dateFormat: "Y-m-d H:i",
+                    minDate: "today",
+                    locale: "es",
+                    time_24hr: true,
+                    disableMobile: "true"
+                });
             });
 
             // --- GESTIÓN DE BANNER Y TOASTS ---

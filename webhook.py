@@ -46,7 +46,7 @@ logging.basicConfig(
 logger = logging.getLogger("procasa-full")
 
 # CONFIGURACIÓN ZONA HORARIA CHILE
-CHILE_TZ = pytz.timezone('Chile/Continental')
+from chatbot.constants import CHILE_TZ
 
 # ========================= 1. INICIALIZACIÓN DE APP (MOVIDO AL INICIO) =========================
 BASE_DIR = Path(__file__).resolve().parent
@@ -148,7 +148,7 @@ def crear_admin_si_no_existe():
                 "hashed_password": hashed,
                 "nombre": "Administrador",
                 "is_active": True,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(CHILE_TZ)
             })
             logger.info("Usuario 'admin' creado → contraseña: procasa2025")
         else:

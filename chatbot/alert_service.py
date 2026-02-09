@@ -5,6 +5,7 @@ import pytz
 from datetime import datetime, timedelta
 from .storage import obtener_prospecto, actualizar_prospecto, save_pending_notification
 from .lead_router import find_responsible_executive, should_send_now, format_whatsapp_template
+from .constants import CHILE_TZ
 from .whatsapp_client import send_whatsapp_message
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ def should_send_alert(phone: str, lead_type: str, window_minutes: int) -> bool:
     except ValueError:
         return True
 
-    elapsed = datetime.utcnow() - last
+    elapsed = datetime.now(CHILE_TZ) - last
     return elapsed > timedelta(minutes=window_minutes)
 
 
@@ -47,7 +48,7 @@ def mark_alert_sent(phone: str, lead_type: str) -> None:
         except:
             alerts = {}
     
-    alerts[lead_type] = datetime.utcnow().isoformat()
+    alerts[lead_type] = datetime.now(CHILE_TZ).isoformat()
     actualizar_prospecto(phone, {"alerts_sent": alerts})
 
 
@@ -120,17 +121,21 @@ async def send_alert_once(
         # 3. DELAY PARA PERMITIR QUE EL BOT RECOJA DATOS (2 MINUTOS)
         # --- EVITAR DUPLICADOS EN COLA DE ESPERA ---
         lock_key = (phone, lead_type)
-        now = datetime.utcnow()
+        now = datetime.now(CHILE_TZ)
         if lock_key in actively_processing_alerts:
             last_lock_time = actively_processing_alerts[lock_key]
             if now - last_lock_time < timedelta(minutes=5):
-                logger.info(f"[ALERT] Bloqueado: Ya hay una alerta '{lead_type}' para {phone} en espera (hace {(now - last_lock_time).seconds}s)")
+                logger.info(f"[ALERT] Bloqueado (Memo): Ya hay una alerta '{lead_type}' para {phone} en espera (hace {(now - last_lock_time).seconds}s)")
                 return
         
         actively_processing_alerts[lock_key] = now
 
+        # --- MARCAR EN DB ANTES DEL DELAY ---
+        # Al marcarlo aquí, should_send_alert() rebotará cualquier otro intento en el futuro inmediato.
+        mark_alert_sent(phone, lead_type)
+
         ALERT_DELAY_SECONDS = 120
-        logger.info(f"[ALERT] Esperando {ALERT_DELAY_SECONDS}s antes de notificar a {exec_name} sobre {phone}...")
+        logger.info(f"[ALERT] Marcado en DB y esperando {ALERT_DELAY_SECONDS}s antes de notificar a {exec_name} sobre {phone}...")
         await asyncio.sleep(ALERT_DELAY_SECONDS)
         
         # Recargamos los datos del prospecto DESPUÉS del delay para capturar datos nuevos
@@ -147,7 +152,6 @@ async def send_alert_once(
             
             if sent:
                 logger.info(f"[ALERT] WhatsApp enviado a {exec_name} ({exec_phone}) por lead {phone}")
-                mark_alert_sent(phone, lead_type)
                 from .storage import log_event, EventType
                 log_event(phone, EventType.ALERT_SENT, "system", {"to": exec_name, "type": lead_type})
             else:
@@ -157,11 +161,9 @@ async def send_alert_once(
                 save_pending_notification({**lead_data, "target_phone": exec_phone, "target_name": exec_name})
         else:
             # Guardar para mañana
-            from .lead_router import CHILE_TZ
             now_cl = datetime.now(CHILE_TZ)
             logger.info(f"[ALERT] Fuera de horario (Chile: {now_cl.strftime('%H:%M:%S')}). Guardando lead {phone} para {exec_name}.")
             save_pending_notification({**lead_data, "target_phone": exec_phone, "target_name": exec_name})
-            mark_alert_sent(phone, lead_type) 
 
     except Exception as e:
         logger.error(f"[ALERT] ERROR routing alert: {e}", exc_info=True)

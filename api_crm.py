@@ -1,6 +1,7 @@
 from pymongo import MongoClient
 from config import Config
 from datetime import datetime
+import pytz
 import re
 import uuid
 
@@ -15,7 +16,15 @@ def format_relative_time(dt_obj):
     
     if not dt_obj or dt_obj == datetime.min: return "S/I"
             
-    now = datetime.utcnow()
+    # Los datos nuevos ya vienen en hora local (Chile/Continental)
+    # Los viejos en UTC, pero priorizamos la consistencia local.
+    chile_tz = pytz.timezone('Chile/Continental')
+    now = datetime.now(chile_tz)
+    
+    # Asegurar que dt_obj sea aware si no lo es (asumimos local)
+    if dt_obj.tzinfo is None:
+        dt_obj = chile_tz.localize(dt_obj)
+        
     diff = now - dt_obj
     seconds = diff.total_seconds()
     

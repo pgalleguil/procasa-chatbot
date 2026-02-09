@@ -17,7 +17,7 @@ from .storage import (
     log_event
 )
 from .crm_service import CrmService
-from .constants import PipelineStage, InteractionType, LeadIntent
+from .constants import PipelineStage, InteractionType, LeadIntent, CHILE_TZ
 
 from .grok_client import generar_respuesta, generar_respuesta_estructurada
 from .link_extractor import analizar_mensaje_para_link
@@ -175,7 +175,7 @@ async def process_user_message(phone: str, message: str) -> str:
     # Actualizar prospecto si encontramos propiedad nueva
     if propiedad and codigo_detectado:
         updates_prop = {
-            "ultimo_mensaje": datetime.utcnow().isoformat(),
+            "ultimo_mensaje": datetime.now(CHILE_TZ).isoformat(),
             "codigo": codigo_detectado,
             "precio_uf": propiedad.get("precio_uf"),
             "comuna": propiedad.get("comuna"),

@@ -7,6 +7,7 @@ from .constants import (
     ALLOWED_TRANSITIONS, LeadIntent, BOT_ALLOWED_STAGES, STAGE_REQUIREMENTS
 )
 from .storage import get_db, COLLECTION_CONVERSATIONS, log_event
+from .constants import CHILE_TZ
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +77,12 @@ class CrmService:
                     return False
 
         if old_stage == new_stage: return True # Sin cambios
-        now_iso = datetime.utcnow().isoformat() + "Z"
+        now_cl = datetime.now(CHILE_TZ)
+        now_iso = now_cl.isoformat()
         
         update_data = {
             "stage": new_stage,
-            "last_crm_update": datetime.utcnow() # Native datetime for sorting if needed
+            "last_crm_update": now_cl # Native datetime for sorting if needed
         }
         
         # Lifecycle Timestamps
@@ -126,7 +128,7 @@ class CrmService:
     def update_intent(phone: str, intent: LeadIntent, actor: str = "bot") -> bool:
         """Actualiza la intención detectada del cliente sin afectar el stage operativo."""
         db = get_db()
-        now_iso = datetime.utcnow().isoformat() + "Z"
+        now_iso = datetime.now(CHILE_TZ).isoformat()
         
         result = db[COLLECTION_CONVERSATIONS].update_one(
             {"phone": phone},
@@ -178,7 +180,7 @@ class CrmService:
     @staticmethod
     def assign_executive(phone: str, executive_name: str, method: str = "manual") -> bool:
         db = get_db()
-        now_iso = datetime.utcnow().isoformat() + "Z"
+        now_iso = datetime.now(CHILE_TZ).isoformat()
         
         res = db[COLLECTION_CONVERSATIONS].update_one(
             {"phone": phone},

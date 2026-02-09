@@ -1,5 +1,9 @@
 # chatbot/constants.py
 from enum import Enum
+import pytz
+
+# Configuración de Zona Horaria Chile
+CHILE_TZ = pytz.timezone('Chile/Continental')
 
 class PipelineStage(str, Enum):
     NEW = "NEW"
@@ -43,6 +47,17 @@ class InteractionResult(str, Enum):
     NO_ANSWER = "NO_ANSWER"
     VISIT_AGREED = "VISIT_AGREED"
     NOT_INTERESTED = "NOT_INTERESTED"
+
+class EventType(str, Enum):
+    MSG_IN = "msg_in"
+    MSG_OUT = "msg_out"
+    ASSIGNMENT = "assignment"
+    ASSIGNMENT_FAIL = "assignment_fail"
+    STAGE_CHANGE = "stage_change"
+    NOTE = "note"
+    ALERT_SENT = "alert_sent"
+    BOT_PAUSE = "bot_pause"
+    BOT_RESUME = "bot_resume"
     
 # Mapping for legacy compatibility or frontend display
 STAGE_LABELS = {

@@ -10,8 +10,7 @@ from .storage import get_db
 
 logger = logging.getLogger(__name__)
 
-# Configuración de Zona Horaria Chile
-CHILE_TZ = pytz.timezone('Chile/Continental')
+from .constants import CHILE_TZ
 
 # Constants for specific executives
 JORGE_PABLO_CARO = "Jorge Pablo Caro"
@@ -44,16 +43,20 @@ def should_send_now() -> bool:
     Mon-Fri, 09:00 - 18:00.
     """
     now = datetime.now(CHILE_TZ)
+    weekday = now.weekday()
+    hour = now.hour
+    minute = now.minute
     
-    # Monday = 0, Sunday = 6
-    if now.weekday() >= 5: # Saturday or Sunday
-        return False
-        
-    current_time = now.time()
-    start_time = time(9, 0)
-    end_time = time(21, 0) # Ajustado a las 21:00 para pruebas según solicitud del usuario
+    # Horario: Lunes a Viernes, 09:00 a 21:00 (Extendido para pruebas)
+    is_weekend = weekday >= 5
+    # Simplificamos la comparación de horas
+    is_in_hours = (hour >= 9 and hour < 21)
     
-    return start_time <= current_time <= end_time
+    result = (not is_weekend) and is_in_hours
+    
+    logger.info(f"[SCHEDULE_DEBUG] Chile Time: {now.strftime('%H:%M:%S')} | Hour: {hour} | Weekday: {weekday} | In Hours: {is_in_hours} | Final Result: {result}")
+    
+    return result
 
 def get_executive_phone(executive_name: str) -> Optional[str]:
     """

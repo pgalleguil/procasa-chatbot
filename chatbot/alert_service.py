@@ -53,7 +53,6 @@ async def send_alert_once(
     last_response: str,
     last_user_msg: str,
     full_history: list,
-    full_history: list,
     window_minutes: int = 60, # MODIFICADO: 60 minutos para evitar duplicidad si el cliente sigue hablando
     lead_type_label: str | None = None
 ):

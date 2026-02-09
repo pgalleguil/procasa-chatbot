@@ -366,21 +366,21 @@ async def process_user_message(phone: str, message: str) -> str:
 
     # CORRECCIÓN DE TIEMPOS: 60 minutos para evitar spam de correo
     if intencion == "escalado_urgente":
-        await send_alert_once(phone=phone, lead_type="EscaladoUrgente", lead_score=lead_score,
+        asyncio.create_task(send_alert_once(phone=phone, lead_type="EscaladoUrgente", lead_score=lead_score,
                         criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
-                        full_history=historial, window_minutes=60, lead_type_label="ESCALADO URGENTE")
+                        full_history=historial, window_minutes=60, lead_type_label="ESCALADO URGENTE"))
         metadata_tipo = {"tipo": "escalado_urgente", "intencion": intencion}
 
     elif intencion == "agendar_visita":
-        await send_alert_once(phone=phone, lead_type="InteresVisita", lead_score=lead_score,
+        asyncio.create_task(send_alert_once(phone=phone, lead_type="InteresVisita", lead_score=lead_score,
                         criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
-                        full_history=historial, window_minutes=60, lead_type_label="Interés de Visita") 
+                        full_history=historial, window_minutes=60, lead_type_label="Interés de Visita"))
         metadata_tipo = {"tipo": "gestion_visita", "intencion": intencion}
 
     elif intencion == "contacto_directo":
-        await send_alert_once(phone=phone, lead_type="SolicitudContacto", lead_score=lead_score,
+        asyncio.create_task(send_alert_once(phone=phone, lead_type="SolicitudContacto", lead_score=lead_score,
                         criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
-                        full_history=historial, window_minutes=60, lead_type_label="Solicitud de Contacto")
+                        full_history=historial, window_minutes=60, lead_type_label="Solicitud de Contacto"))
         metadata_tipo = {"tipo": "contacto_directo", "intencion": intencion}
 
     # =======================================================

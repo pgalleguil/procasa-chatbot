@@ -690,36 +690,45 @@ async def startup_event():
                     pending = get_pending_notifications()
                     if pending:
                         logger.info(f"[BACKGROUND] Procesando {len(pending)} leads pendientes...")
+                        processed_phones = set() # Para evitar duplicados en el mismo batch
+                        
                         for p in pending:
-                            lead_data = p["lead_data"]
-                            target_phone = lead_data.get("target_phone") or p.get("target_phone") # Fallback key
+                            lead_data = p.get("lead_data", {})
+                            phone = lead_data.get("phone")
+                            
+                            if not phone:
+                                mark_notification_sent(p["_id"])
+                                continue
+                                
+                            # Si ya procesamos este teléfono en este batch, marcamos como enviado (ignorado)
+                            if phone in processed_phones:
+                                mark_notification_sent(p["_id"])
+                                continue
+                            
+                            processed_phones.add(phone)
+                            
+                            target_phone = lead_data.get("target_phone") or p.get("target_phone")
                             target_name = lead_data.get("target_name") or p.get("target_name")
                             prop_code = lead_data.get("property_code")
                             
-                            if target_phone: # Solo si tenemos telefono destino
+                            if target_phone:
                                 msg = format_whatsapp_template(lead_data, target_name, prop_code)
-                                # --- ASIGNACIÓN EN CRM ROBUSTA ---
                                 try:
                                     from chatbot.crm_service import CrmService
                                     from chatbot.constants import InteractionType
-                                    
-                                    # Usamos el servicio centralizado para asignar
-                                    CrmService.assign_executive(lead_data["phone"], target_name, method="LeadRouter")
-                                    
+                                    CrmService.assign_executive(phone, target_name, method="LeadRouter")
                                 except Exception as e:
                                     logger.error(f"[BACKGROUND] Error asignando ejecutivo: {e}")
-                                    pass
 
                                 success = await send_whatsapp_message(target_phone, msg)
                                 if success:
-                                    # Usamos log_event centralizado (ya importado o desde storage)
                                     from chatbot.storage import log_event
-                                    log_event(lead_data["phone"], InteractionType.ALERT, "system", {"to": target_name, "type": "background_notification"})
+                                    log_event(phone, InteractionType.ALERT, "system", {"to": target_name, "type": "background_notification"})
                                     mark_notification_sent(p["_id"])
-                                    logger.info(f"[BACKGROUND] Lead {lead_data['phone']} enviado a {target_name}")
+                                    logger.info(f"[BACKGROUND] Lead {phone} enviado a {target_name}")
                                 else:
-                                    from chatbot.storage import log_event # Re-import seguro
-                                    log_event(lead_data["phone"], InteractionType.ALERT, "system", {"to": target_name, "reason": "background_fail", "status": "failed"})
+                                    # Si falla el envío, no marcamos como enviado para reintentar luego
+                                    logger.error(f"[BACKGROUND] Falló envío WA a {target_name} para {phone}")
                                 # ---------------------------------------------
                                 await asyncio.sleep(2) # Evitar rate limit
                             

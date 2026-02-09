@@ -49,7 +49,7 @@ def should_send_now() -> bool:
         
     current_time = now.time()
     start_time = time(9, 0)
-    end_time = time(18, 0)
+    end_time = time(21, 0) # Ajustado a las 21:00 para pruebas según solicitud del usuario
     
     return start_time <= current_time <= end_time
 

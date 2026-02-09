@@ -57,6 +57,26 @@
             transition: background-color 0.3s, color 0.3s;
         }
 
+        /* Modern Slim Scrollbar for Table */
+        .table-responsive::-webkit-scrollbar {
+            height: 6px;
+            width: 6px;
+        }
+
+        .table-responsive::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 10px;
+        }
+
+        .table-responsive::-webkit-scrollbar-thumb {
+            background: var(--accent);
+            border-radius: 10px;
+        }
+
+        .table-responsive::-webkit-scrollbar-thumb:hover {
+            background: #4f46e5;
+        }
+
         /* SIDEBAR - Modern Hover Expand */
         .sidebar {
             width: var(--sidebar-width-collapsed);
@@ -726,10 +746,10 @@
             <div class="brand">
                 <i class="fa-solid fa-robot text-primary"></i> <span>PROCASA AI</span>
             </div>
-            <!-- Dashboard oculto temporalmente -->
-            <!-- <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i> <span>Dashboard</span></a> -->
+            {% if user_role != 'agente' %}
             <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i>
                 <span>Dashboard</span></a>
+            {% endif %}
             <a href="/crm" class="nav-link active"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
 
             <!-- Tema Toggle -->
@@ -800,24 +820,42 @@
             <form action="/crm" method="GET" class="toolbar">
                 <div class="search-box">
                     <i class="fa-solid fa-search"></i>
-                    <input type="text" name="busqueda" placeholder="Teléfono o Nombre..."
+                    <input type="text" name="busqueda" placeholder="Teléfono, Nombre o Ejecutivo..."
                         value="{{ request.query_params.get('busqueda', '') }}">
                 </div>
 
                 <select class="form-select-custom" name="estado" onchange="this.form.submit()">
                     <option value="" {% if not request.query_params.get('estado') %}selected{% endif %}>Todos los
-                        Estados
-                    </option>
-                    <option value="nuevo" {% if request.query_params.get('estado')=='nuevo' %}selected{% endif %}>🔴 Sin
+                        Estados</option>
+                    <option value="NEW" {% if request.query_params.get('estado')=='NEW' %}selected{% endif %}>🔴 Sin
                         Atender</option>
-                    <option value="gestion" {% if request.query_params.get('estado')=='gestion' %}selected{% endif %}>🟡
-                        En
-                        Gestión</option>
-                    <option value="visita" {% if request.query_params.get('estado')=='visita' %}selected{% endif %}>🟢
-                        Visita Agendada</option>
-                    <option value="cerrado" {% if request.query_params.get('estado')=='cerrado' %}selected{% endif %}>⚪
-                        Cerrados</option>
+                    <option value="CONTACTED" {% if request.query_params.get('estado')=='CONTACTED' %}selected{% endif
+                        %}>🟡 En Gestión (Contactado)</option>
+                    <option value="INTERESTED" {% if request.query_params.get('estado')=='INTERESTED' %}selected{% endif
+                        %}>🟡 Interesado</option>
+                    <option value="VISIT_SCHEDULED" {% if request.query_params.get('estado')=='VISIT_SCHEDULED'
+                        %}selected{% endif %}>🟢 Visita Agendada</option>
+                    <option value="VISIT_DONE" {% if request.query_params.get('estado')=='VISIT_DONE' %}selected{% endif
+                        %}>🟢 Visita Realizada</option>
+                    <option value="OFFER" {% if request.query_params.get('estado')=='OFFER' %}selected{% endif %}>🟢
+                        Oferta</option>
+                    <option value="NEGOTIATION" {% if request.query_params.get('estado')=='NEGOTIATION' %}selected{%
+                        endif %}>🟢 Negociación</option>
+                    <option value="CLOSED_WON" {% if request.query_params.get('estado')=='CLOSED_WON' %}selected{% endif
+                        %}>⚪ Cerrado Ganado</option>
+                    <option value="CLOSED_LOST" {% if request.query_params.get('estado')=='CLOSED_LOST' %}selected{%
+                        endif %}>⚪ Cerrado Perdido</option>
                 </select>
+
+                {% if user_role in ['admin', 'supervisor'] %}
+                <select class="form-select-custom" name="ejecutivo" onchange="this.form.submit()">
+                    <option value="Todos" {% if current_ejecutivo=='Todos' %}selected{% endif %}>Todos los Ejecutivos
+                    </option>
+                    {% for exe in executives %}
+                    <option value="{{ exe }}" {% if current_ejecutivo==exe %}selected{% endif %}>{{ exe }}</option>
+                    {% endfor %}
+                </select>
+                {% endif %}
 
                 <select class="form-select-custom ms-auto" name="orden" onchange="this.form.submit()">
                     <option value="prioridad" {% if request.query_params.get('orden')=='prioridad' %}selected{% endif
@@ -910,8 +948,11 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="5" class="text-center text-secondary py-4">
-                                No hay leads que coincidan con la búsqueda.
+                            <td colspan="6" class="text-center text-secondary py-5">
+                                <div class="opacity-50 mb-3">
+                                    <i class="fa-solid fa-folder-open fa-3x"></i>
+                                </div>
+                                <p class="m-0 fw-medium">No hay leads que coincidan con la búsqueda.</p>
                             </td>
                         </tr>
                         {% endfor %}

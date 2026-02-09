@@ -2693,7 +2693,7 @@
 
                 if (ultimaAccion) {
                     lastActionEl.innerText = ultimaAccion;
-                    lastActionEl.title = ultimaAccion; // Tooltip for full text
+                    lastActionEl.title = ultimaAccion;
 
                     if (tiempoRelativo && tiempoRelativo !== 'None' && tiempoRelativo !== '') {
                         lastTimeEl.innerText = `· ${tiempoRelativo}`;
@@ -2702,15 +2702,25 @@
                     }
                 }
 
-                // Mapeo de estilos/labels (Consistencia total con Lista)
+                // --- 1. Mapeo de ESTADO ACTUAL ---
                 const states = {
+                    'NEW': { text: 'NUEVO', class: 'st-nuevo' },
+                    'CONTACTED': { text: 'EN GESTIÓN', class: 'st-gestion' },
+                    'INTERESTED': { text: 'INTERESADO', class: 'st-gestion' },
+                    'VISIT_SCHEDULED': { text: 'VISITA AGENDADA', class: 'st-visita' },
+                    'VISIT_DONE': { text: 'VISITA REALIZADA', class: 'st-visita' },
+                    'OFFER': { text: 'OFERTA', class: 'st-visita' },
+                    'NEGOTIATION': { text: 'NEGOCIACIÓN', class: 'st-visita' },
+                    'CLOSED_WON': { text: 'CERRADO GANADO', class: 'st-cerrado' },
+                    'CLOSED_LOST': { text: 'CERRADO PERDIDO', class: 'st-cerrado' },
+                    // Legacy Support
                     'nuevo': { text: 'SIN ATENDER', class: 'st-nuevo' },
                     'gestion': { text: 'EN GESTIÓN', class: 'st-gestion' },
                     'visita': { text: 'VISITA AGENDADA', class: 'st-visita' },
                     'cerrado': { text: 'CERRADO', class: 'st-cerrado' }
                 };
 
-                const cfg = states[estado] || states['gestion'];
+                const cfg = states[estado] || states['CONTACTED'];
                 label.innerText = cfg.text;
                 label.className = 'banner-value ' + cfg.class;
 
@@ -2725,11 +2735,13 @@
                     nextDateEl.innerHTML = '<span class="text-muted">No programado</span>';
                 }
 
-                // Actualizar Badge Lateral también (Sincronización in-place)
                 const badge = document.getElementById('estado_badge');
                 if (badge) {
                     badge.innerText = cfg.text;
-                    badge.className = 'badge-status ' + (estado === 'nuevo' ? 'bg-danger' : (estado === 'visita' ? 'bg-success' : (estado === 'cerrado' ? 'bg-secondary' : 'bg-warning')));
+                    const bClass = (estado === 'NEW' || estado === 'nuevo') ? 'bg-danger' :
+                        ((estado === 'VISIT_SCHEDULED' || estado === 'visita') ? 'bg-success' :
+                            ((estado === 'CLOSED_WON' || estado === 'CLOSED_LOST' || estado === 'cerrado') ? 'bg-secondary' : 'bg-warning'));
+                    badge.className = 'badge-status ' + bClass;
                 }
             }
 
@@ -3368,6 +3380,8 @@
 
                         // 2. FEEDBACK FUERTE (TOAST)
                         const statusText = {
+                            'NEW': 'Sin Atender', 'CONTACTED': 'En Gestión', 'VISIT_SCHEDULED': 'Visita Agendada',
+                            'CLOSED_WON': 'Cerrado Ganado', 'CLOSED_LOST': 'Cerrado Perdido',
                             'nuevo': 'Sin Atender', 'gestion': 'En Gestión', 'visita': 'Visita Agendada', 'cerrado': 'Cerrado'
                         }[resData.new_state] || 'Actualizado';
 

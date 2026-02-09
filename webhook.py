@@ -33,7 +33,7 @@ from fastapi import Cookie
 from campanas.handler import handle_campana_respuesta
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
-from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes
+from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives
 
 # ========================= CONFIGURACIÓN =========================
 from config import Config
@@ -344,7 +344,7 @@ async def ver_leads(request: Request):
     db = client[Config.DB_NAME]
     user = db["usuarios"].find_one({"username": username})
     
-    if not user or user.get("rol") != "supervisor":
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
         return RedirectResponse(url="/crm?error=acceso_denegado")
     
     return templates.TemplateResponse("leads_dashboard.html", {"request": request})
@@ -393,7 +393,9 @@ async def view_crm_detail(request: Request, phone: str):
     return templates.TemplateResponse("crm_lead_detail.html", {
         "request": request, 
         "lead": data,
-        "user_email": email
+        "user_email": email,
+        "user_role": user.get("rol", "agente"),
+        "user_name": user.get("nombre", "")
     })
 
 @app.post("/api/crm/log_action")
@@ -606,7 +608,7 @@ async def api_reporte_real():
 # ========================= 6. RUTAS CRM (MODIFICADAS PARA HORA LOCAL) =========================
 
 @app.get("/crm", response_class=HTMLResponse)
-async def view_crm_list(request: Request, estado: str = None, busqueda: str = None, orden: str = "prioridad"):
+async def view_crm_list(request: Request, estado: str = None, busqueda: str = None, orden: str = "prioridad", ejecutivo: str = None):
     username = await get_current_user(request)
     client = MongoClient(Config.MONGO_URI)
     db = client[Config.DB_NAME]
@@ -623,12 +625,20 @@ async def view_crm_list(request: Request, estado: str = None, busqueda: str = No
         busqueda=busqueda, 
         ordenar_por=orden,
         user_role=user_role,
-        user_name=user_name
+        user_name=user_name,
+        ejecutivo_filter=ejecutivo
     )
+    
+    executives = get_unique_executives() if user_role in ["admin", "supervisor"] else []
+
     return templates.TemplateResponse("crm_leads_list.html", {
         "request": request, 
         "leads": leads, 
-        "kpis": kpis
+        "kpis": kpis,
+        "user_role": user_role,
+        "user_name": user_name,
+        "executives": executives,
+        "current_ejecutivo": ejecutivo or "Todos"
     })
 
 @app.post("/api/marcar_gestionado")
@@ -687,28 +697,26 @@ async def startup_event():
                                 msg = format_whatsapp_template(lead_data, target_name, prop_code)
                                 # --- ASIGNACIÓN EN CRM ROBUSTA ---
                                 try:
-                                    from chatbot.storage import update_lead_state, log_event, EventType
-                                    update_lead_state(lead_data["phone"], metadata={
-                                        "ejecutivo_asignado": target_name,
-                                        "prospecto.ejecutivo": target_name,
-                                        "lifecycle.assigned_at": datetime.utcnow().isoformat() + "Z",
-                                        "metodo_asignacion": "LeadRouter"
-                                    })
-                                    log_event(lead_data["phone"], EventType.ASSIGNMENT, "system", {
-                                        "executive": target_name,
-                                        "method": "LeadRouter",
-                                        "context": "background_retry"
-                                    })
-                                except Exception:
+                                    from chatbot.crm_service import CrmService
+                                    from chatbot.constants import InteractionType
+                                    
+                                    # Usamos el servicio centralizado para asignar
+                                    CrmService.assign_executive(lead_data["phone"], target_name, method="LeadRouter")
+                                    
+                                except Exception as e:
+                                    logger.error(f"[BACKGROUND] Error asignando ejecutivo: {e}")
                                     pass
 
                                 success = await send_whatsapp_message(target_phone, msg)
                                 if success:
-                                    log_event(lead_data["phone"], EventType.ALERT_SENT, "system", {"to": target_name, "type": "background_notification"})
+                                    # Usamos log_event centralizado (ya importado o desde storage)
+                                    from chatbot.storage import log_event
+                                    log_event(lead_data["phone"], InteractionType.ALERT, "system", {"to": target_name, "type": "background_notification"})
                                     mark_notification_sent(p["_id"])
                                     logger.info(f"[BACKGROUND] Lead {lead_data['phone']} enviado a {target_name}")
                                 else:
-                                    log_event(lead_data["phone"], EventType.ASSIGNMENT_FAIL, "system", {"to": target_name, "reason": "background_fail"})
+                                    from chatbot.storage import log_event # Re-import seguro
+                                    log_event(lead_data["phone"], InteractionType.ALERT, "system", {"to": target_name, "reason": "background_fail", "status": "failed"})
                                 # ---------------------------------------------
                                 await asyncio.sleep(2) # Evitar rate limit
                             

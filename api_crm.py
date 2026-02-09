@@ -70,15 +70,15 @@ def process_chat_timeline(messages):
         })
     return processed
 
-# --- REGISTRO DE EVENTOS ---
+# --- REGISTRO DE EVENTOS (Delegado a storage) ---
+from chatbot.storage import log_event # Usamos el logger centralizado
+from chatbot.crm_service import CrmService
+from chatbot.constants import PipelineStage, InteractionType
+
+# log_crm_event se mantiene como alias por compatibilidad pero usa storage
 def log_crm_event(phone, event_type, agent="Sistema", meta_data=None):
-    db = get_db()
-    event = {
-        "phone": phone.replace(" ", "").replace("+", "").strip(),
-        "timestamp": datetime.now(),
-        "type": event_type, "agent": agent, "meta": meta_data or {}
-    }
-    return db["crm_events"].insert_one(event)
+    # Adaptador para usar storage.log_event
+    return log_event(phone, event_type, agent, meta_data)
 
 def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
     if not execute_at_str: return
@@ -102,20 +102,27 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
     db["crm_tasks"].insert_one(task)
 
 # --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
-def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad", user_role=None, user_name=None):
+def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad", user_role=None, user_name=None, ejecutivo_filter=None):
     db = get_db()
     query_parts = []
     
     # --- FILTRO DE SEGURIDAD (ROL) ---
     # Si NO es admin/supervisor, solo ver sus propios leads
     if user_role not in ["admin", "supervisor"] and user_name:
-        # Buscamos coincidencias en el nombre del ejecutivo asignado
-        # Normalizamos un poco para evitar errores de mayusculas/espacios
         regex_name = re.escape(user_name)
         query_parts.append({
             "$or": [
                 {"prospecto.ejecutivo": {"$regex": regex_name, "$options": "i"}},
                 {"ejecutivo_asignado": {"$regex": regex_name, "$options": "i"}}
+            ]
+        })
+    # Si es admin/supervisor y eligió un ejecutivo específico
+    elif ejecutivo_filter and ejecutivo_filter != "Todos":
+        regex_exec = re.escape(ejecutivo_filter)
+        query_parts.append({
+            "$or": [
+                {"prospecto.ejecutivo": {"$regex": regex_exec, "$options": "i"}},
+                {"ejecutivo_asignado": {"$regex": regex_exec, "$options": "i"}}
             ]
         })
 
@@ -126,6 +133,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         query_parts.append({"$or": [
             {"prospecto.codigo": {"$regex": regex_term, "$options": "i"}},
             {"prospecto.nombre": {"$regex": regex_term, "$options": "i"}},
+            {"prospecto.ejecutivo": {"$regex": regex_term, "$options": "i"}},
+            {"ejecutivo_asignado": {"$regex": regex_term, "$options": "i"}},
             {"phone": {"$regex": clean_phone}}
         ]})
     
@@ -159,7 +168,21 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     leads_procesados = []
     kpi_counts = {"nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0, "total": 0}
     
+    from chatbot.constants import PipelineStage
+    
     state_map = {
+        # Enums
+        PipelineStage.NEW:   {"label": "Sin Atender", "led": "led-red",    "priority": 1},
+        PipelineStage.CONTACTED: {"label": "En Gestión",  "led": "led-yellow", "priority": 3},
+        PipelineStage.INTERESTED: {"label": "Interesado",  "led": "led-yellow", "priority": 3},
+        PipelineStage.VISIT_SCHEDULED:  {"label": "Visita Agendada", "led": "led-green",  "priority": 2},
+        PipelineStage.VISIT_DONE:  {"label": "Visita Realizada", "led": "led-green",  "priority": 2},
+        PipelineStage.OFFER:  {"label": "Oferta", "led": "led-green",  "priority": 2},
+        PipelineStage.NEGOTIATION:  {"label": "Negociación", "led": "led-green",  "priority": 2},
+        PipelineStage.CLOSED_WON: {"label": "Cerrado Ganado",     "led": "led-gray",   "priority": 4},
+        PipelineStage.CLOSED_LOST: {"label": "Cerrado Perdido",     "led": "led-gray",   "priority": 4},
+
+        # Legacy Support
         "nuevo":   {"label": "Sin Atender", "led": "led-red",    "priority": 1},
         "visita":  {"label": "Visita Agendada", "led": "led-green",  "priority": 2},
         "gestion": {"label": "En Gestión",  "led": "led-yellow", "priority": 3},
@@ -170,7 +193,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     for lead in leads_list:
         raw_phone = lead.get("phone", "").replace("+", "").strip()
         # Priorizar el nuevo campo 'stage' (Capa Enterprise)
-        estado_db = lead.get("stage") or lead.get("crm_estado") or "new"
+        estado_db = lead.get("stage") or lead.get("crm_estado") or PipelineStage.NEW
         
         # Recuperar evento desde el mapa en memoria (sin ir a la DB)
         last_action_event = events_map.get(raw_phone)
@@ -192,13 +215,13 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             # Corrección Visual de Estado
             result_code = meta.get("result", "")
             if result_code == "visita_agendada":
-                estado_final = "visita"
+                estado_final = PipelineStage.VISIT_SCHEDULED
             elif result_code == "lead_cerrado":
-                estado_final = "cerrado"
+                estado_final = PipelineStage.CLOSED_WON
             elif result_code in ["lead_pausado", "requiere_seguimiento", "intento_fallido"]:
-                estado_final = "gestion"
-            elif estado_db == "nuevo": 
-                estado_final = "gestion"
+                estado_final = PipelineStage.CONTACTED
+            # ELIMINADO: No forzamos 'nuevo' a 'gestion' solo por existir el lead.
+            # Debe permanecer en su estado original hasta que haya acción humana real.
         else:
              msgs = lead.get("messages", [])
              if msgs:
@@ -209,10 +232,16 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
 
         # KPIS
         kpi_counts["total"] += 1
-        if estado_final in kpi_counts:
-            kpi_counts[estado_final] += 1
-        else:
-            kpi_counts["gestion"] += 1 
+        
+        # Mapeo de KPI Simplificado
+        kpi_key = "gestion" # Default
+        if estado_final in [PipelineStage.NEW, "nuevo"]: kpi_key = "nuevo"
+        elif estado_final in [PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE, "visita"]: kpi_key = "visita"
+        elif estado_final in [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST, "cerrado"]: kpi_key = "cerrado"
+        elif estado_final in [PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER, PipelineStage.NEGOTIATION, "gestion"]: kpi_key = "gestion"
+        
+        if kpi_key in kpi_counts:
+            kpi_counts[kpi_key] += 1
         
         if filtro_estado and estado_final != filtro_estado:
             continue
@@ -226,7 +255,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         else:
             last_ts_obj = datetime.min
 
-        config_estado = state_map.get(estado_final, state_map["gestion"])
+        config_estado = state_map.get(estado_final, state_map[PipelineStage.CONTACTED])
 
         leads_procesados.append({
             "phone": raw_phone,
@@ -257,6 +286,16 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         leads_procesados.sort(key=lambda x: safe_timestamp(x['real_timestamp']), reverse=True)
 
     return leads_procesados, kpi_counts
+
+def get_unique_executives():
+    """Retorna lista de nombres únicos de ejecutivos que tienen leads asignados."""
+    db = get_db()
+    # Buscamos en ambos campos posibles por legibilidad/historia
+    execs_1 = db["leads"].distinct("ejecutivo_asignado")
+    execs_2 = db["leads"].distinct("prospecto.ejecutivo")
+    
+    all_execs = set([e for e in execs_1 if e] + [e for e in execs_2 if e])
+    return sorted(list(all_execs))
 
 # --- 2. DETALLE DEL LEAD ---
 def get_lead_detail_data(phone):
@@ -313,20 +352,25 @@ def get_lead_detail_data(phone):
         "status": "pending"
     }, sort=[("execute_at", 1)])
 
+    # Prioridad al stage nuevo
+    crm_state = lead.get("stage") or lead.get("crm_estado") or "new"
+
     return {
         "phone": lead.get("phone"),
         "timeline": timeline,
         "nombre": prospecto.get("nombre", "Desconocido"),
         "email": prospecto.get("email", "No registrado"),
         "rut": prospecto.get("rut", "No registrado"),
-        "crm_estado": lead.get("crm_estado", "nuevo"),
+        "crm_estado": crm_state,
         "next_action_date": next_task["execute_at"].isoformat() if next_task else None,
         "last_action_label": formatted_new_history[0]["user_action"] if formatted_new_history else "Sin gestión aún",
         "last_action_relative": format_relative_time(formatted_new_history[0]["timestamp"]) if formatted_new_history else None,
         "last_crm_update": lead.get("last_crm_update").isoformat() if lead.get("last_crm_update") else None,
         "crm_history": formatted_new_history, 
         "sticky_notes": lead.get("sticky_notes", []),
-        "datos_propiedad": datos_propiedad
+        "datos_propiedad": datos_propiedad,
+        "last_intent": lead.get("last_intent"),
+        "last_intent_at": lead.get("last_intent_at")
     }
 
 # --- 3. ACTUALIZAR LEAD (CON VALIDACIÓN ESTRICTA) ---
@@ -357,44 +401,54 @@ def update_lead_crm_data(phone, data):
         elif res in ["lead_pausado", "requiere_seguimiento", "intento_fallido"]: new_state = "gestion"
         else: new_state = "gestion"
 
-    old_state = current_lead.get("crm_estado", "nuevo")
+    old_state = current_lead.get("stage") or current_lead.get("crm_estado", PipelineStage.NEW)
     
-    # Log de cambio de estado (Auditoría)
-    if old_state != new_state:
-        log_crm_event(phone_clean, "STATUS_CHANGE", meta_data={"from": old_state, "to": new_state})
+    # 1. ACTUALIZACIÓN DE ESTADO VIA SERVICE (Prioridad Absoluta)
+    if new_state and new_state != old_state:
+        # Mapeo de seguridad por si el frontend manda strings viejos
+        valid_stage = new_state
+        if new_state == "visita": valid_stage = PipelineStage.VISIT_SCHEDULED
+        elif new_state == "cerrado": valid_stage = PipelineStage.CLOSED_WON # O Lost, depende del contexto, asumimos flow feliz o el frontend debe ser explícito
+        elif new_state == "gestion": valid_stage = PipelineStage.CONTACTED
+        
+        # Si el frontend ya manda los Enums correctos (ideal), usamos eso.
+        # Fallback a lógica de negocio simple:
+        
+        CrmService.update_stage(phone_clean, valid_stage, actor="agent", notes=data.get("notas"))
+        new_state = valid_stage # Actualizamos para el return
 
     # Agendar tarea solo si hay fecha válida
     if next_date:
         schedule_crm_task(phone_clean, next_date, data.get("notas"))
-    elif new_state == "cerrado":
+    elif new_state in [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST]:
         # Cleanup: Si se cierra el lead, resolver tareas pendientes
         db["crm_tasks"].update_many(
             {"phone": phone_clean, "status": "pending"},
             {"$set": {"status": "completed", "resolved_at": datetime.now(), "resolution": "lead_closed"}}
         )
 
-    # Log de gestión comercial (Acción User)
-    event_result = log_crm_event(phone_clean, "GESTION_LOG", meta_data={
+    # Log de gestión comercial (Acción User) -> Usamos el log centralizado
+    log_event(phone_clean, InteractionType.HUMAN_NOTE, "agent", {
         "interaction_type": interaction_type,
         "result": result,
         "notes": data.get("notas"),
         "action_label": data.get("action_label"),
         "details_json": data.get("details_json", {})
     })
-
-    db["leads"].update_one(
-        {"phone": {"$regex": phone_clean}},
-        {"$set": {
-            "crm_estado": new_state,
-            "last_crm_update": datetime.now()
-        }}
-    )
+    
+    # NOTA: No actualizamos "crm_estado" manual en DB, update_stage ya lo hizo.
+    # Solo actualizamos last_crm_update si no hubo cambio de estado (si hubo, update_stage lo hizo)
+    if new_state == old_state:
+         db["leads"].update_one(
+            {"phone": {"$regex": phone_clean}},
+            {"$set": {"last_crm_update": datetime.now()}} # Mantenemos datetime.now() para sorting interno de mongo si se usa
+        )
 
     return {
         "status": "ok",
         "new_state": new_state,
         "next_action_date": next_date,
-        "event_id": str(event_result.inserted_id) if event_result else None
+        "event_id": "centralized_log"
     }
 
 def manage_crm_notes(phone, note_data, action="add"):

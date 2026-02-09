@@ -15,6 +15,9 @@ from .storage import (
     registrar_propiedades_vistas, # NUEVA IMPORTACIÓN (Anti-repetición)
     obtener_propiedades_vistas    # NUEVA IMPORTACIÓN (Anti-repetición)
 )
+from .crm_service import CrmService
+from .constants import PipelineStage, InteractionType, LeadIntent
+
 from .grok_client import generar_respuesta, generar_respuesta_estructurada
 from .link_extractor import analizar_mensaje_para_link
 from .utils import extraer_rut, extraer_email, safe_int_conversion, extraer_nombre_explicito
@@ -29,17 +32,9 @@ from .prompts import SYSTEM_PROMPT_PROSPECTO
 logger = logging.getLogger(__name__)
 
 # ==========================================
-#   LEAD SCORE
+#   LEAD SCORE (DELEGADO A CRM SERVICE)
 # ==========================================
-def calcular_lead_score(intencion: str, prospecto: dict) -> int:
-    score = 0
-    if intencion == "agendar_visita": score += 6
-    if intencion == "contacto_directo": score += 7
-    if intencion == "escalado_urgente": score += 10
-    if prospecto.get("email"): score += 2
-    if prospecto.get("nombre"): score += 2
-    if prospecto.get("rut"): score += 3
-    return score
+# La función local calcular_lead_score se ha eliminado en favor de CrmService.calculate_score
 
 # ==========================================
 #   FORMATO FICHA TÉCNICA (RESTITUÍDO)
@@ -350,43 +345,58 @@ async def process_user_message(phone: str, message: str) -> str:
         if email_detectado:
              actualizar_prospecto(phone, {"email": email_detectado.lower()})
 
+    # --- NUEVA LÓGICA DE INTENCIÓN (ENTERPRISE) ---
+    intent_map = {
+        "agendar_visita": LeadIntent.ASK_VISIT,
+        "contacto_directo": LeadIntent.ASK_INFO,
+        "escalado_urgente": LeadIntent.ASK_INFO, # Fallback a info + alerta
+        "consulta_general": LeadIntent.ASK_INFO
+    }
+    
+    selected_intent = intent_map.get(intencion, LeadIntent.OTHER)
+    CrmService.update_intent(phone, selected_intent, actor="bot")
+
     # =======================================================
-    # 9. ENVÍO DE ALERTAS Y METADATA (LÓGICA MEJORADA ANTI-DUPLICADOS)
+    # 9. ENVÍO DE ALERTAS...
     # =======================================================
-    metadata_tipo = {"tipo": "respuesta_general", "intencion": intencion}
+    metadata_tipo = {"tipo": "respuesta_general", "intencion": intencion, "lead_intent": selected_intent}
     prospecto_actual = obtener_prospecto(phone) or {} # Recargamos prospecto para lead score
-    lead_score = calcular_lead_score(intencion, prospecto_actual)
+    lead_doc = CrmService.get_lead(phone) or {} # Obtenemos documento completo para score
+    lead_score = CrmService.calculate_score(lead_doc)
 
     # CORRECCIÓN DE TIEMPOS: 60 minutos para evitar spam de correo
     if intencion == "escalado_urgente":
         await send_alert_once(phone=phone, lead_type="EscaladoUrgente", lead_score=lead_score,
                         criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
-                        full_history=historial, window_minutes=3, lead_type_label="ESCALADO URGENTE")
+                        full_history=historial, window_minutes=60, lead_type_label="ESCALADO URGENTE")
         metadata_tipo = {"tipo": "escalado_urgente", "intencion": intencion}
 
     elif intencion == "agendar_visita":
         await send_alert_once(phone=phone, lead_type="InteresVisita", lead_score=lead_score,
                         criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
-                        full_history=historial, window_minutes=3, lead_type_label="Interés de Visita") # AJUSTADO A 60 MIN
+                        full_history=historial, window_minutes=60, lead_type_label="Interés de Visita") 
         metadata_tipo = {"tipo": "gestion_visita", "intencion": intencion}
 
     elif intencion == "contacto_directo":
         await send_alert_once(phone=phone, lead_type="SolicitudContacto", lead_score=lead_score,
                         criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
-                        full_history=historial, window_minutes=3, lead_type_label="Solicitud de Contacto") # AJUSTADO A 60 MIN
+                        full_history=historial, window_minutes=60, lead_type_label="Solicitud de Contacto")
         metadata_tipo = {"tipo": "contacto_directo", "intencion": intencion}
 
     # =======================================================
     # 10. GUARDAR Y RETORNAR (COMPLETO)
     # =======================================================
     try:
-        from .storage import log_event, EventType, update_lead_state, PipelineStage
-        # Log del evento estructurado
-        log_event(phone, EventType.MSG_OUT, "bot", {"text": respuesta, "intencion": intencion})
+        # Log del evento estructurado (Ya usa InteractionType.BOT_MSG)
+        log_event(phone, InteractionType.BOT_MSG, "bot", {
+            "text": respuesta, 
+            "intencion": intencion,
+            "lead_intent": selected_intent
+        })
         
-        # Si es el primer contacto del bot, marcamos como CONTACTED
-        if not prospecto_actual.get("stage") or prospecto_actual.get("stage") == PipelineStage.NEW:
-            update_lead_state(phone, stage=PipelineStage.CONTACTED)
+        # No auto-promovemos a CONTACTED. El lead se queda en NEW (Rojo) hasta que el humano gestante lo tome.
+        pass
+            
     except Exception as ex_log:
         logger.error(f"Error logging bot event: {ex_log}")
 

@@ -682,6 +682,17 @@ async def startup_event():
                                 msg = format_whatsapp_template(lead_data, target_name, prop_code)
                                 success = await send_whatsapp_message(target_phone, msg)
                                 if success:
+                                    # --- ASIGNACIÓN EN CRM AL MOMENTO DEL ENVÍO ---
+                                    client = MongoClient(Config.MONGO_URI)
+                                    db = client[Config.DB_NAME]
+                                    db["leads"].update_one(
+                                        {"phone": lead_data["phone"]},
+                                        {"$set": {
+                                            "ejecutivo_asignado": target_name,
+                                            "prospecto.ejecutivo": target_name 
+                                        }}
+                                    )
+                                    # ---------------------------------------------
                                     mark_notification_sent(p["_id"])
                                     logger.info(f"[BACKGROUND] Lead {lead_data['phone']} enviado a {target_name}")
                                     await asyncio.sleep(2) # Evitar rate limit

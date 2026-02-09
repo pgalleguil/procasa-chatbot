@@ -53,7 +53,8 @@ async def send_alert_once(
     last_response: str,
     last_user_msg: str,
     full_history: list,
-    window_minutes: int = 3, # DEFAULT AUMENTADO A 60 MINUTOS
+    full_history: list,
+    window_minutes: int = 60, # MODIFICADO: 60 minutos para evitar duplicidad si el cliente sigue hablando
     lead_type_label: str | None = None
 ):
     """
@@ -88,16 +89,23 @@ async def send_alert_once(
         # Buscamos quién es el responsable REAL (según reglas JPC, Región, etc.)
         exec_name, exec_phone = find_responsible_executive(lead_data["property_code"])
         
-        if not exec_phone:
-            logger.warning(f"[ALERT] No se encontró teléfono para ejecutivo {exec_name}. Lead: {phone}")
-            # FALTA: ¿Se debe enviar a un admin por defecto? Por ahora lo guardamos como pendiente o logueamos.
-            # Podríamos enviarlo siempre a pendiente si no hay teléfono, pero el requerimiento dice "pendiente si fuera de horario".
-            # Asumiremos que si no hay teléfono, no podemos enviar WA.
-            return 
-
         # 3. VERIFICACIÓN DE HORARIO
         if should_send_now():
             # Enviar YA
+            # --- NUEVO: ACTUALIZAR CRM AL MOMENTO DEL ENVÍO ---
+            try:
+                from .storage import get_db
+                db = get_db()
+                db["leads"].update_one(
+                    {"phone": phone},
+                    {"$set": {
+                        "ejecutivo_asignado": exec_name,
+                        "prospecto.ejecutivo": exec_name 
+                    }}
+                )
+            except Exception:
+                pass
+
             message = format_whatsapp_template(lead_data, exec_name, lead_data["property_code"])
             sent = await send_whatsapp_message(exec_phone, message)
             if sent:
@@ -108,9 +116,12 @@ async def send_alert_once(
                 save_pending_notification({**lead_data, "target_phone": exec_phone, "target_name": exec_name})
         else:
             # Guardar para mañana
-            logger.info(f"[ALERT] Fuera de horario. Guardando lead {phone} para {exec_name}.")
+            logger.info(f"[ALERT] Fuera de horario (Actual: {datetime.now()}). Guardando lead {phone} para {exec_name}.")
             save_pending_notification({**lead_data, "target_phone": exec_phone, "target_name": exec_name})
-            mark_alert_sent(phone, lead_type) # Marcamos como "procesado" para no spamear, aunque se envíe mañana
+            
+            # CRITICO: Marcamos como enviado AHORA para evitar que si el cliente sigue hablando
+            # el sistema intente volver a procesarlo y crear duplicados en la cola.
+            mark_alert_sent(phone, lead_type) 
 
     except Exception as e:
         logger.error(f"[ALERT] ERROR routing alert: {e}", exc_info=True)

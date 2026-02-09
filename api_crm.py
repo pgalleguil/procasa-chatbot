@@ -102,10 +102,23 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
     db["crm_tasks"].insert_one(task)
 
 # --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
-def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad"):
+def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad", user_role=None, user_name=None):
     db = get_db()
     query_parts = []
     
+    # --- FILTRO DE SEGURIDAD (ROL) ---
+    # Si NO es admin/supervisor, solo ver sus propios leads
+    if user_role not in ["admin", "supervisor"] and user_name:
+        # Buscamos coincidencias en el nombre del ejecutivo asignado
+        # Normalizamos un poco para evitar errores de mayusculas/espacios
+        regex_name = re.escape(user_name)
+        query_parts.append({
+            "$or": [
+                {"prospecto.ejecutivo": {"$regex": regex_name, "$options": "i"}},
+                {"ejecutivo_asignado": {"$regex": regex_name, "$options": "i"}}
+            ]
+        })
+
     if busqueda and busqueda.strip():
         term = busqueda.strip()
         regex_term = re.escape(term)
@@ -166,7 +179,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         last_ts = lead.get("created_at")
         
         estado_final = estado_db 
-
+        
         if last_action_event:
             last_ts = last_action_event["timestamp"]
             meta = last_action_event.get("meta", {})
@@ -199,7 +212,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             kpi_counts[estado_final] += 1
         else:
             kpi_counts["gestion"] += 1 
-
+        
         if filtro_estado and estado_final != filtro_estado:
             continue
 
@@ -331,7 +344,7 @@ def update_lead_crm_data(phone, data):
             # Rechazar gestión incompleta (Backend Enforcement)
             print(f"⚠️ RECHAZADO: Intento de guardar 'Hablé' sin próxima fecha. Lead: {phone_clean}")
             return False 
-
+    
     new_state = data.get("estado_calculado")
     if not new_state:
         res = data.get("resultado_gestion")

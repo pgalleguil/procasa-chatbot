@@ -98,3 +98,37 @@ def obtener_propiedades_vistas(phone: str) -> List[str]:
     """Retorna la lista de códigos que ya se le recomendaron al usuario."""
     p = obtener_prospecto(phone)
     return p.get("propiedades_vistas", [])
+
+# ==========================================
+# NUEVAS FUNCIONES: NOTIFICACIONES PENDIENTES
+# ==========================================
+COLLECTION_PENDING_NOTIFICATIONS = "pending_notifications"
+
+def save_pending_notification(lead_data: dict):
+    """Guarda una notificación pendiente para ser procesada en horario hábil."""
+    db = get_db()
+    notification = {
+        "lead_data": lead_data,
+        "created_at": datetime.utcnow().isoformat(),
+        "status": "pending",
+        "attempts": 0
+    }
+    db[COLLECTION_PENDING_NOTIFICATIONS].insert_one(notification)
+
+def get_pending_notifications():
+    """Obtiene notificaciones pendientes."""
+    db = get_db()
+    return list(db[COLLECTION_PENDING_NOTIFICATIONS].find({"status": "pending"}))
+
+def mark_notification_sent(notification_id):
+    """Marca una notificación como enviada (o eliminada)."""
+    db = get_db()
+    db[COLLECTION_PENDING_NOTIFICATIONS].update_one(
+        {"_id": notification_id},
+        {"$set": {"status": "sent", "sent_at": datetime.utcnow().isoformat()}}
+    )
+
+def delete_pending_notification(notification_id):
+    """Elimina una notificación (si falló o ya no es necesaria)."""
+    db = get_db()
+    db[COLLECTION_PENDING_NOTIFICATIONS].delete_one({"_id": notification_id})

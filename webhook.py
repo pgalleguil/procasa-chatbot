@@ -57,6 +57,10 @@ app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+from chatbot.lead_router import should_send_now, format_whatsapp_template
+from chatbot.storage import get_pending_notifications, mark_notification_sent, save_pending_notification
+from chatbot.whatsapp_client import send_whatsapp_message
+
 # Función auxiliar para imágenes (necesaria globalmente)
 def get_images():
     prop_dir = STATIC_DIR / "propiedades"
@@ -361,14 +365,7 @@ async def ver_detalle_chat(request: Request, phone: str):
 
 # ========================= 6. RUTAS CRM (MODIFICADAS PARA HORA LOCAL) =========================
 
-@app.get("/crm", response_class=HTMLResponse)
-async def view_crm_list(request: Request, estado: str = None, busqueda: str = None, orden: str = "prioridad"):
-    leads, kpis = get_crm_leads_list(filtro_estado=estado, busqueda=busqueda, ordenar_por=orden)
-    return templates.TemplateResponse("crm_leads_list.html", {
-        "request": request, 
-        "leads": leads, 
-        "kpis": kpis
-    })
+
 
 @app.get("/crm/lead/{phone}", response_class=HTMLResponse)
 async def view_crm_detail(request: Request, phone: str):
@@ -479,41 +476,7 @@ except ImportError:
     def process_user_message(phone, message):
         return f"Respuesta de prueba para {phone}: {message[:50]}..."
 
-async def send_whatsapp_message(number: str, text: str) -> bool:
-    if not text:
-        return False
-    clean = "".join(filter(str.isdigit, number))
-    if len(clean) == 9 and clean.startswith("9"):
-        clean = "569" + clean
-    elif len(clean) == 12 and clean.startswith("569"):
-        clean = clean[1:] 
-
-    url = f"{Config.WASENDER_BASE_URL}/send-message"
-    payload = {"to": clean, "text": text}
-    headers = {
-        "Authorization": f"Bearer {Config.WASENDER_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-    try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=15)
-        if resp.status_code == 200 and resp.json().get("success"):
-            logger.info(f"Enviado correctamente a {clean}")
-            return True
-        else:
-            logger.warning(f"Fallo envío 1: {resp.text}")
-    except Exception as e:
-        logger.error(f"Excepción envío 1: {e}")
-
-    await asyncio.sleep(2)
-    try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=15)
-        if resp.status_code == 200:
-            logger.info(f"Enviado en reintento a {clean}")
-            return True
-    except Exception as e:
-        logger.error(f"Excepción reintento: {e}")
-    return False
+from chatbot.whatsapp_client import send_whatsapp_message
 
 async def process_with_debounce(phone: str, full_text: str):
     if phone in pending_tasks and not pending_tasks[phone].done():
@@ -537,7 +500,7 @@ async def process_with_debounce(phone: str, full_text: str):
             if not final_message:
                 return
             logger.info(f"[PROCESS] Procesando mensaje AGRUPADO de {phone}: {final_message[:80]}...")
-            bot_response = process_user_message(phone, final_message)
+            bot_response = await process_user_message(phone, final_message)
             if bot_response and bot_response.strip():
                 await send_whatsapp_message(phone, bot_response)
         except asyncio.CancelledError:
@@ -634,6 +597,34 @@ async def api_reporte_real():
     from api_reporte_real import get_reporte_real
     data = get_reporte_real()
     return data
+    
+# ========================= 6. RUTAS CRM (MODIFICADAS PARA HORA LOCAL) =========================
+
+@app.get("/crm", response_class=HTMLResponse)
+async def view_crm_list(request: Request, estado: str = None, busqueda: str = None, orden: str = "prioridad"):
+    username = await get_current_user(request)
+    client = MongoClient(Config.MONGO_URI)
+    db = client[Config.DB_NAME]
+    user = db["usuarios"].find_one({"username": username})
+    
+    if not user:
+        return RedirectResponse(url="/?error=sesion_invalida")
+
+    user_role = user.get("rol", "agente")
+    user_name = user.get("nombre", "") # Nombre Real (Ej: Mariela Arriagada)
+
+    leads, kpis = get_crm_leads_list(
+        filtro_estado=estado, 
+        busqueda=busqueda, 
+        ordenar_por=orden,
+        user_role=user_role,
+        user_name=user_name
+    )
+    return templates.TemplateResponse("crm_leads_list.html", {
+        "request": request, 
+        "leads": leads, 
+        "kpis": kpis
+    })
 
 @app.post("/api/marcar_gestionado")
 async def marcar_gestionado(request: Request):
@@ -671,6 +662,36 @@ async def unauthorized_exception_handler(request: Request, exc: HTTPException):
     # Si el usuario intenta acceder a una ruta de la interfaz (HTML), lo mandamos al login
     logger.warning(f"Redirigiendo a login por sesión expirada en: {request.url.path}")
     return RedirectResponse(url="/?error=sesion_expirada")
+
+@app.on_event("startup")
+async def startup_event():
+    async def process_pending_leads():
+        while True:
+            try:
+                if should_send_now():
+                    pending = get_pending_notifications()
+                    if pending:
+                        logger.info(f"[BACKGROUND] Procesando {len(pending)} leads pendientes...")
+                        for p in pending:
+                            lead_data = p["lead_data"]
+                            target_phone = lead_data.get("target_phone") or p.get("target_phone") # Fallback key
+                            target_name = lead_data.get("target_name") or p.get("target_name")
+                            prop_code = lead_data.get("property_code")
+                            
+                            if target_phone: # Solo si tenemos telefono destino
+                                msg = format_whatsapp_template(lead_data, target_name, prop_code)
+                                success = await send_whatsapp_message(target_phone, msg)
+                                if success:
+                                    mark_notification_sent(p["_id"])
+                                    logger.info(f"[BACKGROUND] Lead {lead_data['phone']} enviado a {target_name}")
+                                    await asyncio.sleep(2) # Evitar rate limit
+                            
+            except Exception as e:
+                logger.error(f"[BACKGROUND] Error en loop de pendientes: {e}")
+            
+            await asyncio.sleep(60) # Revisar cada minuto
+
+    asyncio.create_task(process_pending_leads())
 
 if __name__ == "__main__":
     import pathlib

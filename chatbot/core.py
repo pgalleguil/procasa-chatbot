@@ -79,12 +79,14 @@ def formatear_ficha_tecnica(propiedad):
 #   PROCESADOR PRINCIPAL
 # ==========================================
 
-def process_user_message(phone: str, message: str) -> str:
+
+async def process_user_message(phone: str, message: str) -> str:
     original_message = message
     msg_lower = original_message.lower()
     
     # 1. Guardar mensaje usuario
     guardar_mensaje(phone, "user", original_message)
+
 
     historial = obtener_conversacion(phone)
 
@@ -357,19 +359,19 @@ def process_user_message(phone: str, message: str) -> str:
 
     # CORRECCIÓN DE TIEMPOS: 60 minutos para evitar spam de correo
     if intencion == "escalado_urgente":
-        send_alert_once(phone=phone, lead_type="EscaladoUrgente", lead_score=lead_score,
+        await send_alert_once(phone=phone, lead_type="EscaladoUrgente", lead_score=lead_score,
                         criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
                         full_history=historial, window_minutes=3, lead_type_label="ESCALADO URGENTE")
         metadata_tipo = {"tipo": "escalado_urgente", "intencion": intencion}
 
     elif intencion == "agendar_visita":
-        send_alert_once(phone=phone, lead_type="InteresVisita", lead_score=lead_score,
+        await send_alert_once(phone=phone, lead_type="InteresVisita", lead_score=lead_score,
                         criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
                         full_history=historial, window_minutes=3, lead_type_label="Interés de Visita") # AJUSTADO A 60 MIN
         metadata_tipo = {"tipo": "gestion_visita", "intencion": intencion}
 
     elif intencion == "contacto_directo":
-        send_alert_once(phone=phone, lead_type="SolicitudContacto", lead_score=lead_score,
+        await send_alert_once(phone=phone, lead_type="SolicitudContacto", lead_score=lead_score,
                         criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
                         full_history=historial, window_minutes=3, lead_type_label="Solicitud de Contacto") # AJUSTADO A 60 MIN
         metadata_tipo = {"tipo": "contacto_directo", "intencion": intencion}

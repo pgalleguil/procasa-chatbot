@@ -103,7 +103,7 @@ async def send_alert_once(
             update_lead_state(phone, metadata={
                 "ejecutivo_asignado": exec_name,
                 "prospecto.ejecutivo": exec_name,
-                "lifecycle.assigned_at": datetime.utcnow().isoformat() + "Z",
+                "lifecycle.assigned_at": datetime.now(CHILE_TZ).isoformat(),
                 "metodo_asignacion": "LeadRouter"
                 # REMOVIDO: "lifecycle.stage" - esto corrompe el pipeline_stage real
             })

@@ -157,9 +157,9 @@ async def send_alert_once(
                 save_pending_notification({**lead_data, "target_phone": exec_phone, "target_name": exec_name})
         else:
             # Guardar para mañana
-            from .lead_router import CHILE_TZ # O importar pytz si no está ahí
-            now_cl = datetime.now(pytz.timezone('Chile/Continental'))
-            logger.info(f"[ALERT] Fuera de horario (Chile: {now_cl}). Guardando lead {phone} para {exec_name}.")
+            from .lead_router import CHILE_TZ
+            now_cl = datetime.now(CHILE_TZ)
+            logger.info(f"[ALERT] Fuera de horario (Chile: {now_cl.strftime('%H:%M:%S')}). Guardando lead {phone} para {exec_name}.")
             save_pending_notification({**lead_data, "target_phone": exec_phone, "target_name": exec_name})
             mark_alert_sent(phone, lead_type) 
 

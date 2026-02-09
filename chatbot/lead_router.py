@@ -10,6 +10,9 @@ from .storage import get_db
 
 logger = logging.getLogger(__name__)
 
+# Configuración de Zona Horaria Chile
+CHILE_TZ = pytz.timezone('Chile/Continental')
+
 # Constants for specific executives
 JORGE_PABLO_CARO = "Jorge Pablo Caro"
 MARIELA_ARRIAGADA = "Mariela Arriagada"
@@ -40,8 +43,7 @@ def should_send_now() -> bool:
     Check if current time in Chile is within business hours:
     Mon-Fri, 09:00 - 18:00.
     """
-    chile_tz = pytz.timezone('Chile/Continental')
-    now = datetime.now(chile_tz)
+    now = datetime.now(CHILE_TZ)
     
     # Monday = 0, Sunday = 6
     if now.weekday() >= 5: # Saturday or Sunday

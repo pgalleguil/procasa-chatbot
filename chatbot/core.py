@@ -1,7 +1,7 @@
-# chatbot/core.py
 import logging
 import re
 import json
+import asyncio
 from datetime import datetime
 
 from config import Config
@@ -13,7 +13,8 @@ from .storage import (
     obtener_prospecto,
     establecer_nombre_usuario,
     registrar_propiedades_vistas, # NUEVA IMPORTACIÓN (Anti-repetición)
-    obtener_propiedades_vistas    # NUEVA IMPORTACIÓN (Anti-repetición)
+    obtener_propiedades_vistas,    # NUEVA IMPORTACIÓN (Anti-repetición)
+    log_event
 )
 from .crm_service import CrmService
 from .constants import PipelineStage, InteractionType, LeadIntent

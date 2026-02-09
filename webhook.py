@@ -570,6 +570,11 @@ async def webhook(
         phone = "+56" + phone.lstrip("0")
 
     logger.info(f"[WHATSAPP] Mensaje recibido de {phone}: {text}")
+    try:
+        from chatbot.storage import log_event, EventType
+        log_event(phone, EventType.MSG_IN, "user", {"text": text})
+    except:
+        pass
     await process_with_debounce(phone, text)
     return JSONResponse({"ok": True}, status_code=200)
 
@@ -680,22 +685,32 @@ async def startup_event():
                             
                             if target_phone: # Solo si tenemos telefono destino
                                 msg = format_whatsapp_template(lead_data, target_name, prop_code)
+                                # --- ASIGNACIÓN EN CRM ROBUSTA ---
+                                try:
+                                    from chatbot.storage import update_lead_state, log_event, EventType
+                                    update_lead_state(lead_data["phone"], metadata={
+                                        "ejecutivo_asignado": target_name,
+                                        "prospecto.ejecutivo": target_name,
+                                        "lifecycle.assigned_at": datetime.utcnow().isoformat() + "Z",
+                                        "metodo_asignacion": "LeadRouter"
+                                    })
+                                    log_event(lead_data["phone"], EventType.ASSIGNMENT, "system", {
+                                        "executive": target_name,
+                                        "method": "LeadRouter",
+                                        "context": "background_retry"
+                                    })
+                                except Exception:
+                                    pass
+
                                 success = await send_whatsapp_message(target_phone, msg)
                                 if success:
-                                    # --- ASIGNACIÓN EN CRM AL MOMENTO DEL ENVÍO ---
-                                    client = MongoClient(Config.MONGO_URI)
-                                    db = client[Config.DB_NAME]
-                                    db["leads"].update_one(
-                                        {"phone": lead_data["phone"]},
-                                        {"$set": {
-                                            "ejecutivo_asignado": target_name,
-                                            "prospecto.ejecutivo": target_name 
-                                        }}
-                                    )
-                                    # ---------------------------------------------
+                                    log_event(lead_data["phone"], EventType.ALERT_SENT, "system", {"to": target_name, "type": "background_notification"})
                                     mark_notification_sent(p["_id"])
                                     logger.info(f"[BACKGROUND] Lead {lead_data['phone']} enviado a {target_name}")
-                                    await asyncio.sleep(2) # Evitar rate limit
+                                else:
+                                    log_event(lead_data["phone"], EventType.ASSIGNMENT_FAIL, "system", {"to": target_name, "reason": "background_fail"})
+                                # ---------------------------------------------
+                                await asyncio.sleep(2) # Evitar rate limit
                             
             except Exception as e:
                 logger.error(f"[BACKGROUND] Error en loop de pendientes: {e}")

@@ -169,7 +169,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     # 4. PROCESAR LEADS EN MEMORIA
     for lead in leads_list:
         raw_phone = lead.get("phone", "").replace("+", "").strip()
-        estado_db = lead.get("crm_estado", "nuevo")
+        # Priorizar el nuevo campo 'stage' (Capa Enterprise)
+        estado_db = lead.get("stage") or lead.get("crm_estado") or "new"
         
         # Recuperar evento desde el mapa en memoria (sin ir a la DB)
         last_action_event = events_map.get(raw_phone)
@@ -240,7 +241,10 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             "codigo_propiedad": detect_property_code(lead) or "S/N",
             "url_propiedad": f"https://www.procasa.cl/propiedad/{detect_property_code(lead)}" if detect_property_code(lead) else "#",
             "ultima_accion_titulo": last_action_text,
-            "ultima_accion_nota": last_action_note
+            "ultima_accion_nota": last_action_note,
+            "ejecutivo_nombre": lead.get("ejecutivo_asignado") or "No asignado",
+            "fecha_asignacion_relativa": format_relative_time(lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion")),
+            "stage": lead.get("stage") or "new"
         })
     
     def safe_timestamp(dt):

@@ -833,11 +833,12 @@
                 <table class="crm-table">
                     <thead>
                         <tr>
-                            <th width="15%">Estado</th>
-                            <th width="20%">Cliente</th>
-                            <th width="15%">Propiedad</th>
-                            <th width="30%">Última Acción</th>
-                            <th width="20%" class="text-end">Acciones</th>
+                            <th width="12%">Estado</th>
+                            <th width="18%">Cliente</th>
+                            <th width="12%">Propiedad</th>
+                            <th width="15%">Ejecutivo</th>
+                            <th width="28%">Última Acción</th>
+                            <th width="15%" class="text-end">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -862,6 +863,19 @@
                                 {% else %}
                                 <span class="text-secondary small fst-italic">Sin Propiedad</span>
                                 {% endif %}
+                            </td>
+                            <td data-label="Ejecutivo">
+                                <div class="fw-bold" style="font-size: 0.9rem;">
+                                    <i class="fa-solid fa-user-tie me-1 opacity-75"></i>{{ lead.ejecutivo_nombre }}
+                                </div>
+                                <div class="small text-secondary" style="font-size: 0.75rem;">
+                                    {% if lead.ejecutivo_nombre != "No asignado" %}
+                                    <i class="fa-solid fa-clock me-1 opacity-50"></i>Asignado {{
+                                    lead.fecha_asignacion_relativa }}
+                                    {% else %}
+                                    Pendiente de las 09:00
+                                    {% endif %}
+                                </div>
                             </td>
                             <td data-label="Última Acción">
                                 <!-- AQUÍ SE MUESTRA LA ACCIÓN REAL DEL USUARIO -->

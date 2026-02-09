@@ -379,5 +379,16 @@ async def process_user_message(phone: str, message: str) -> str:
     # =======================================================
     # 10. GUARDAR Y RETORNAR (COMPLETO)
     # =======================================================
+    try:
+        from .storage import log_event, EventType, update_lead_state, PipelineStage
+        # Log del evento estructurado
+        log_event(phone, EventType.MSG_OUT, "bot", {"text": respuesta, "intencion": intencion})
+        
+        # Si es el primer contacto del bot, marcamos como CONTACTED
+        if not prospecto_actual.get("stage") or prospecto_actual.get("stage") == PipelineStage.NEW:
+            update_lead_state(phone, stage=PipelineStage.CONTACTED)
+    except Exception as ex_log:
+        logger.error(f"Error logging bot event: {ex_log}")
+
     guardar_mensaje(phone, "assistant", respuesta, metadata_tipo)
     return respuesta

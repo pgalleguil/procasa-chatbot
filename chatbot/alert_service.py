@@ -88,38 +88,48 @@ async def send_alert_once(
         # Buscamos quién es el responsable REAL (según reglas JPC, Región, etc.)
         exec_name, exec_phone = find_responsible_executive(lead_data["property_code"])
         
-        # 3. VERIFICACIÓN DE HORARIO
+        # --- NUEVO: ASIGNACIÓN ROBUSTA (Enterprise Point 2.1) ---
+        # Primero aseguramos la asignación en DB, pase lo que pase con el WhatsApp.
+        try:
+            from .storage import update_lead_state, log_event, EventType, PipelineStage
+            
+            update_lead_state(phone, metadata={
+                "ejecutivo_asignado": exec_name,
+                "prospecto.ejecutivo": exec_name,
+                "lifecycle.assigned_at": datetime.utcnow().isoformat() + "Z",
+                "metodo_asignacion": "LeadRouter"
+            })
+            
+            # Log de auditoría inmutable
+            log_event(phone, EventType.ASSIGNMENT, "system", {
+                "executive": exec_name,
+                "method": "LeadRouter",
+                "property_code": lead_data["property_code"]
+            })
+            
+        except Exception as ex_assign:
+            logger.error(f"[ALERT] Critical error in lead assignment: {ex_assign}")
+
+        # 3. VERIFICACIÓN DE HORARIO NOTIFICACIÓN
         if should_send_now():
             # Enviar YA
-            # --- NUEVO: ACTUALIZAR CRM AL MOMENTO DEL ENVÍO ---
-            try:
-                from .storage import get_db
-                db = get_db()
-                db["leads"].update_one(
-                    {"phone": phone},
-                    {"$set": {
-                        "ejecutivo_asignado": exec_name,
-                        "prospecto.ejecutivo": exec_name 
-                    }}
-                )
-            except Exception:
-                pass
-
             message = format_whatsapp_template(lead_data, exec_name, lead_data["property_code"])
             sent = await send_whatsapp_message(exec_phone, message)
+            
             if sent:
                 logger.info(f"[ALERT] WhatsApp enviado a {exec_name} ({exec_phone}) por lead {phone}")
                 mark_alert_sent(phone, lead_type)
+                from .storage import log_event, EventType
+                log_event(phone, EventType.ALERT_SENT, "system", {"to": exec_name, "type": lead_type})
             else:
                 logger.error(f"[ALERT] Falló envío WA a {exec_name}. Guardando para reintento.")
+                from .storage import log_event, EventType
+                log_event(phone, EventType.ASSIGNMENT_FAIL, "system", {"to": exec_name, "reason": "wasender_failure"})
                 save_pending_notification({**lead_data, "target_phone": exec_phone, "target_name": exec_name})
         else:
             # Guardar para mañana
             logger.info(f"[ALERT] Fuera de horario (Actual: {datetime.now()}). Guardando lead {phone} para {exec_name}.")
             save_pending_notification({**lead_data, "target_phone": exec_phone, "target_name": exec_name})
-            
-            # CRITICO: Marcamos como enviado AHORA para evitar que si el cliente sigue hablando
-            # el sistema intente volver a procesarlo y crear duplicados en la cola.
             mark_alert_sent(phone, lead_type) 
 
     except Exception as e:

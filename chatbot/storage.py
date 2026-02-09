@@ -128,7 +128,85 @@ def mark_notification_sent(notification_id):
         {"$set": {"status": "sent", "sent_at": datetime.utcnow().isoformat()}}
     )
 
+# ==========================================
+# EVENT LOG & PIPELINE MANAGEMENT
+# ==========================================
+
+def log_event(phone: str, event_type: str, actor: str = "system", metadata: dict = None):
+    """Registra un evento estructurado e inmutable en crm_events."""
+    db = get_db()
+    event = {
+        "phone": str(phone).replace("+", "").strip(),
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "type": event_type,
+        "actor": actor,
+        "metadata": metadata or {}
+    }
+    db["crm_events"].insert_one(event)
+
+def update_lead_state(phone: str, stage: str = None, metadata: dict = None):
+    """
+    Actualiza el estado (pipeline stage) y los timestamps de ciclo de vida.
+    """
+    db = get_db()
+    update_data = {}
+    
+    if stage:
+        update_data["stage"] = stage
+    
+    # Marcamos timestamps automáticos según el stage
+    ts = datetime.utcnow().isoformat() + "Z"
+    if stage == PipelineStage.CONTACTED:
+        update_data["lifecycle.first_response_at"] = ts
+    elif stage == PipelineStage.VISIT_SCHEDULED:
+        update_data["lifecycle.visit_scheduled_at"] = ts
+    elif stage == PipelineStage.CLOSED_WON:
+        update_data["lifecycle.closed_at"] = ts
+    
+    if metadata:
+        for k, v in metadata.items():
+            update_data[k] = v
+
+    if update_data:
+        db[COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            {"$set": update_data, "$setOnInsert": {"lifecycle.created_at": ts}},
+            upsert=True
+        )
+        
+        # Registrar el cambio de estado si aplica
+        if stage:
+            log_event(phone, EventType.STAGE_CHANGE, "system", {"new_stage": stage})
+
 def delete_pending_notification(notification_id):
     """Elimina una notificación (si falló o ya no es necesaria)."""
     db = get_db()
-    db[COLLECTION_PENDING_NOTIFICATIONS].delete_one({"_id": notification_id})
+
+# ==========================================
+# CONSTANTES DE NEGOCIO (Pipeline & Eventos)
+# ==========================================
+class PipelineStage:
+    NEW = "new"  # Recién llegado, sin procesar
+    CONTACTED = "contacted" # Bot o Humano respondió
+    CONVERSING = "conversing" # Intercambio activo
+    VISIT_SCHEDULED = "visit_scheduled"
+    VISIT_DONE = "visit_done"
+    OFFER = "offer"
+    CLOSED_WON = "closed_won"
+    CLOSED_LOST = "closed_lost"
+
+class EventType:
+    MSG_IN = "msg_in"
+    MSG_OUT = "msg_out"
+    ASSIGNMENT = "assignment"
+    ASSIGNMENT_FAIL = "assignment_fail"
+    STAGE_CHANGE = "stage_change"
+    NOTE = "note"
+    ALERT_SENT = "alert_sent"
+    BOT_PAUSE = "bot_pause"
+    BOT_RESUME = "bot_resume"
+
+class LeadSource:
+    WHATSAPP = "whatsapp"
+    PORTAL = "portal"
+    MANUAL = "manual"

@@ -70,3 +70,34 @@ ALLOWED_TRANSITIONS = {
     PipelineStage.CLOSED_WON: [], # Terminal
     PipelineStage.CLOSED_LOST: [PipelineStage.CONTACTED] # Re-activation
 }
+
+# ============================================================================
+# ENTERPRISE VALIDATION RULES
+# ============================================================================
+
+# Bot-Safe Stages: Only these stages can be set by the bot
+# All other stages require human confirmation
+BOT_ALLOWED_STAGES = {
+    PipelineStage.NEW,
+    PipelineStage.CONTACTED,
+    PipelineStage.CLOSED_LOST  # Only if customer explicitly unsubscribes
+}
+
+# Required Fields for Critical Stages
+# These fields must be present in the lead document before transitioning
+STAGE_REQUIREMENTS = {
+    PipelineStage.VISIT_SCHEDULED: {
+        "required_fields": ["visit_date"],
+        "description": "Visit must have a confirmed date"
+    },
+    PipelineStage.OFFER: {
+        "required_fields": ["offer_amount"],
+        "description": "Offer must include amount",
+        "optional": True  # Can be enforced later
+    },
+    PipelineStage.CLOSED_WON: {
+        "required_fields": ["sale_amount", "sale_date"],
+        "description": "Closed sale must have amount and date",
+        "optional": True  # Can be enforced later
+    }
+}

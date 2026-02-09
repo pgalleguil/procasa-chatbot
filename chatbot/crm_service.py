@@ -2,7 +2,10 @@
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from .constants import PipelineStage, LeadSource, InteractionType, STAGE_LABELS, ALLOWED_TRANSITIONS, LeadIntent
+from .constants import (
+    PipelineStage, LeadSource, InteractionType, STAGE_LABELS, 
+    ALLOWED_TRANSITIONS, LeadIntent, BOT_ALLOWED_STAGES, STAGE_REQUIREMENTS
+)
 from .storage import get_db, COLLECTION_CONVERSATIONS, log_event
 
 logger = logging.getLogger(__name__)
@@ -42,11 +45,35 @@ class CrmService:
 
         old_stage = lead.get("stage", PipelineStage.NEW)
         
-        # --- REGLA DE ACTORES (Enterprise) ---
-        # El bot solo puede mover leads hasta CONTACTED o CLOSED_LOST (si el cliente pide baja)
-        if actor == "bot" and new_stage not in [PipelineStage.CONTACTED, PipelineStage.CLOSED_LOST]:
-            logger.warning(f"Intento de BOT de cambiar stage a {new_stage} bloqueado para {phone}. Solo humanos confirman hitos operativos.")
+        # ============================================================================
+        # ENTERPRISE VALIDATION RULES
+        # ============================================================================
+        
+        # Rule 1: Bot can only set specific stages (NEW, CONTACTED, CLOSED_LOST)
+        # All operational milestones require human confirmation
+        if actor == "bot" and new_stage not in BOT_ALLOWED_STAGES:
+            logger.warning(
+                f"[ENTERPRISE RULE] Bot attempted to set stage={new_stage} for {phone}. "
+                f"Only human actors can confirm operational milestones. Blocked."
+            )
             return False
+        
+        # Rule 2: Validate required fields for critical stages
+        if new_stage in STAGE_REQUIREMENTS:
+            requirements = STAGE_REQUIREMENTS[new_stage]
+            
+            # Skip validation if marked as optional
+            if not requirements.get("optional", False):
+                required_fields = requirements["required_fields"]
+                missing_fields = [f for f in required_fields if not lead.get(f)]
+                
+                if missing_fields:
+                    logger.error(
+                        f"[ENTERPRISE RULE] Cannot move {phone} to {new_stage}. "
+                        f"Missing required fields: {missing_fields}. "
+                        f"Reason: {requirements['description']}"
+                    )
+                    return False
 
         if old_stage == new_stage: return True # Sin cambios
         now_iso = datetime.utcnow().isoformat() + "Z"

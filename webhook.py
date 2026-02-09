@@ -378,8 +378,11 @@ async def view_crm_detail(request: Request, phone: str):
     if not data: 
         return HTMLResponse("Lead no encontrado")
     
+    user_name = user.get("nombre", "")
+    
     if user.get("rol") == "agente":
-        if data.get("agente_asignado") != username:
+        # Comparamos por nombre real ya que la asignación es por nombre (ej: "Pablo Galleguillos")
+        if data.get("ejecutivo_asignado") != user_name:
             return RedirectResponse(url="/crm?error=no_es_tu_lead")
     
     # LÓGICA FINAL SIMPLE (Solicitada por usuario): 

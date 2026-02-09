@@ -15,7 +15,7 @@ def format_relative_time(dt_obj):
     
     if not dt_obj or dt_obj == datetime.min: return "S/I"
             
-    now = datetime.now()
+    now = datetime.utcnow()
     diff = now - dt_obj
     seconds = diff.total_seconds()
     
@@ -192,15 +192,41 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     # 4. PROCESAR LEADS EN MEMORIA
     for lead in leads_list:
         raw_phone = lead.get("phone", "").replace("+", "").strip()
-        # Priorizar el nuevo campo 'stage' (Capa Enterprise)
-        estado_db = lead.get("stage") or lead.get("crm_estado") or PipelineStage.NEW
+        # PRIORIDAD DE ESTADO (Enterprise):
+        # 1. pipeline_stage (nuevo campo canónico)
+        # 2. stage (campo de transición)
+        # 3. crm_estado (legacy)
+        # 4. PipelineStage.NEW (default)
+        # NOTA: Ignoramos lifecycle.stage que es solo para tracking interno
+        estado_db = lead.get("pipeline_stage") or lead.get("stage") or lead.get("crm_estado") or PipelineStage.NEW
+        
+        # Normalizar strings legacy a Enums
+        if isinstance(estado_db, str):
+            estado_map_legacy = {
+                "nuevo": PipelineStage.NEW,
+                "new": PipelineStage.NEW,
+                "contacted": PipelineStage.CONTACTED,
+                "gestion": PipelineStage.CONTACTED,
+                "visita": PipelineStage.VISIT_SCHEDULED,
+                "cerrado": PipelineStage.CLOSED_WON
+            }
+            estado_db = estado_map_legacy.get(estado_db.lower(), PipelineStage.NEW)
         
         # Recuperar evento desde el mapa en memoria (sin ir a la DB)
         last_action_event = events_map.get(raw_phone)
         
         last_action_text = "Sin gestión aún"
         last_action_note = ""
-        last_ts = lead.get("created_at")
+        
+        # PRIORIDAD DE TIMESTAMP para tiempo relativo:
+        # 1. ultimo_mensaje (timestamp del último mensaje del chat)
+        # 2. lifecycle.assigned_at (cuándo fue asignado)
+        # 3. created_at (cuándo se creó el lead)
+        ultimo_msg_ts = lead.get("prospecto", {}).get("ultimo_mensaje")
+        lifecycle_ts = lead.get("lifecycle", {}).get("assigned_at")
+        created_ts = lead.get("created_at")
+        
+        last_ts = ultimo_msg_ts or lifecycle_ts or created_ts
         
         estado_final = estado_db 
         
@@ -370,7 +396,8 @@ def get_lead_detail_data(phone):
         "sticky_notes": lead.get("sticky_notes", []),
         "datos_propiedad": datos_propiedad,
         "last_intent": lead.get("last_intent"),
-        "last_intent_at": lead.get("last_intent_at")
+        "last_intent_at": lead.get("last_intent_at"),
+        "ejecutivo_asignado": lead.get("ejecutivo_asignado") # Requerido para RBAC en detalle
     }
 
 # --- 3. ACTUALIZAR LEAD (CON VALIDACIÓN ESTRICTA) ---

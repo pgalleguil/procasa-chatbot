@@ -1,5 +1,6 @@
 import logging
 import json
+import asyncio
 from datetime import datetime, timedelta
 from .storage import obtener_prospecto, actualizar_prospecto, save_pending_notification
 from .lead_router import find_responsible_executive, should_send_now, format_whatsapp_template
@@ -98,6 +99,7 @@ async def send_alert_once(
                 "prospecto.ejecutivo": exec_name,
                 "lifecycle.assigned_at": datetime.utcnow().isoformat() + "Z",
                 "metodo_asignacion": "LeadRouter"
+                # REMOVIDO: "lifecycle.stage" - esto corrompe el pipeline_stage real
             })
             
             # Log de auditoría inmutable
@@ -110,7 +112,19 @@ async def send_alert_once(
         except Exception as ex_assign:
             logger.error(f"[ALERT] Critical error in lead assignment: {ex_assign}")
 
-        # 3. VERIFICACIÓN DE HORARIO NOTIFICACIÓN
+        # 3. DELAY PARA PERMITIR QUE EL BOT RECOJA DATOS (2 MINUTOS)
+        # El bot detecta intención y envía alerta, pero primero debe terminar de pedir nombre/email/RUT
+        ALERT_DELAY_SECONDS = 120  # 2 minutos
+        logger.info(f"[ALERT] Esperando {ALERT_DELAY_SECONDS}s antes de notificar a {exec_name} sobre {phone}...")
+        await asyncio.sleep(ALERT_DELAY_SECONDS)
+        
+        # Recargamos los datos del prospecto DESPUÉS del delay para capturar datos nuevos
+        prospecto_actualizado = obtener_prospecto(phone) or {}
+        lead_data["nombre"] = prospecto_actualizado.get("nombre") or lead_data.get("nombre") or "Cliente"
+        lead_data["email"] = prospecto_actualizado.get("email") or lead_data.get("email")
+        lead_data["rut"] = prospecto_actualizado.get("rut") or lead_data.get("rut")
+        
+        # 4. VERIFICACIÓN DE HORARIO NOTIFICACIÓN
         if should_send_now():
             # Enviar YA
             message = format_whatsapp_template(lead_data, exec_name, lead_data["property_code"])

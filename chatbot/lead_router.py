@@ -108,11 +108,20 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     Returns (Executive Name, Executive Phone).
     """
     db = get_db()
-    prop = db["universo_obelix"].find_one({"codigo": property_code})
+    # QUERY MEJORADA: Busca por código Procasa O por códigos de portales (Yapo/ML)
+    query = {
+        "$or": [
+            {"codigo": property_code},
+            {"codigo_mercadolibre": property_code},
+            {"codigo_yapo": property_code}
+        ]
+    }
+    prop = db["universo_obelix"].find_one(query)
     
     if not prop:
-        logger.warning(f"Property code {property_code} not found in universo_obelix.")
-        return "No Asignado", None
+        logger.warning(f"Property code {property_code} not found in universo_obelix (ni en portales).")
+        # FALLBACK ROBUSTO: Retornar Administrativo o Default para no romper el flujo
+        return "Sin Asignar", "+56900000000" 
 
     original_executive = prop.get("ejecutivo", "")
     region = prop.get("region", "")

@@ -109,6 +109,7 @@ async def send_alert_once(
              logger.info(f"[ALERT] Lead ya asignado a {exec_name}. Manteniendo asignación.")
         else:
              # Si es nuevo o no tiene asignación válida, corremos el router
+             exec_name, exec_phone = find_responsible_executive(lead_data["property_code"])
              is_new_assignment = True
         
         logger.info(f"[ALERT] Ruteo: Ejecutivo determineado: {exec_name} | Teléfono: {exec_phone} | Es nuevo: {is_new_assignment}")

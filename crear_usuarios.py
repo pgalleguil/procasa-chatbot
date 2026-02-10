@@ -20,9 +20,10 @@ def registro_masivo_chile():
         #{"email": "pgalleguillos@procasa.cl", "nombre": "Pablo Galleguillos", "tel": "+56983219804", "rol": "agente"},
         #{"email": "p.galleguil@gmail.com", "nombre": "Pablo Galleguillos (Personal)", "tel": "+56983219804", "rol": "supervisor"},
         #{"email": "rgalleg59@gmail.com", "nombre": "Ronald Galleguillos", "tel": "+56995295922", "rol": "supervisor"}
-        {"email": "sensignia@procasa.cl", "nombre": "Susana Ensignia", "tel": "+56939125978", "rol": "agente"},
-        {"email": "marriagada@procasa.cl", "nombre": "Mariela Arriagada", "tel": "+56991788250", "rol": "agente"},
-        {"email": "egarrido@procasa.cl", "nombre": "Erika Garrido", "tel": "+56991951317", "rol": "agente"},
+        #{"email": "sensignia@procasa.cl", "nombre": "Susana Ensignia", "tel": "+56939125978", "rol": "agente"},
+        #{"email": "marriagada@procasa.cl", "nombre": "Mariela Arriagada", "tel": "+56991788250", "rol": "agente"},
+        #{"email": "egarrido@procasa.cl", "nombre": "Erika Garrido", "tel": "+56991951317", "rol": "agente"},
+        {"email": "rcheneaux@procasa.cl", "nombre": "Raquel Cheneaux", "tel": "+56961892120", "rol": "agente"}
 
     ]
 

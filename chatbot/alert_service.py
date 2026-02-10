@@ -94,36 +94,51 @@ async def send_alert_once(
             "rut": criteria.get("rut")
         }
 
-        # 2. ENRUTAMIENTO INTELIGENTE
+        # 2. ENRUTAMIENTO INTELIGENTE (SOLO SI NO ESTÁ ASIGNADO)
         # Buscamos quién es el responsable REAL (según reglas JPC, Región, etc.)
-        exec_name, exec_phone = find_responsible_executive(lead_data["property_code"])
         
+        assigned_exec = prospecto.get("ejecutivo_asignado") or prospecto.get("ejecutivo")
+        
+        # Si ya tiene ejecutivo y es válido (no un administrativo genérico), mantenemos al mismo.
+        if assigned_exec and assigned_exec != "Sin Asignar" and assigned_exec != "No Asignado":
+             exec_name = assigned_exec
+             # Intentamos obtener el teléfono de ese ejecutivo existente
+             from .lead_router import get_executive_phone
+             exec_phone = get_executive_phone(assigned_exec)
+             is_new_assignment = False
+             logger.info(f"[ALERT] Lead ya asignado a {exec_name}. Manteniendo asignación.")
+        else:
+             # Si es nuevo o no tiene asignación válida, corremos el router
+             exec_name, exec_phone = find_responsible_executive(lead_data["property_code"])
+             is_new_assignment = True
+
         # --- NUEVO: ASIGNACIÓN ROBUSTA (Enterprise Point 2.1) ---
-        # Primero aseguramos la asignación en DB, pase lo que pase con el WhatsApp.
-        try:
-            from .storage import update_lead_state, log_event, EventType
-            from .lead_router import get_next_business_slot
-            
-            # SLA Protection: Si es fuera de horario, la "atención" empieza en el próximo bloque laboral
-            now_cl = datetime.now(CHILE_TZ)
-            assigned_at = get_next_business_slot(now_cl)
-            
-            update_lead_state(phone, metadata={
-                "ejecutivo_asignado": exec_name,
-                "prospecto.ejecutivo": exec_name,
-                "lifecycle.assigned_at": assigned_at.isoformat(),
-                "metodo_asignacion": "LeadRouter"
-            })
-            
-            # Log de auditoría inmutable
-            log_event(phone, EventType.ASSIGNMENT, "system", {
-                "executive": exec_name,
-                "method": "LeadRouter",
-                "property_code": lead_data["property_code"]
-            })
-            
-        except Exception as ex_assign:
-            logger.error(f"[ALERT] Critical error in lead assignment: {ex_assign}")
+        # Solo actualizamos DB si es una NUEVA asignación
+        if is_new_assignment:
+            try:
+                from .storage import update_lead_state, log_event, EventType
+                from .lead_router import get_next_business_slot
+                
+                # SLA Protection: Si es fuera de horario, la "atención" empieza en el próximo bloque laboral
+                now_cl = datetime.now(CHILE_TZ)
+                assigned_at = get_next_business_slot(now_cl)
+                
+                update_lead_state(phone, metadata={
+                    "ejecutivo_asignado": exec_name,
+                    "prospecto.ejecutivo": exec_name,
+                    "lifecycle.assigned_at": assigned_at.isoformat(),
+                    "metodo_asignacion": "LeadRouter"
+                })
+                
+                # Log de auditoría inmutable
+                log_event(phone, EventType.ASSIGNMENT, "system", {
+                    "executive": exec_name,
+                    "method": "LeadRouter",
+                    "property_code": lead_data["property_code"]
+                })
+                
+            except Exception as ex_assign:
+                logger.error(f"[ALERT] Critical error in lead assignment: {ex_assign}")
 
         # 3. DELAY PARA PERMITIR QUE EL BOT RECOJA DATOS (2 MINUTOS)
         # --- EVITAR DUPLICADOS EN COLA DE ESPERA ---
@@ -153,8 +168,25 @@ async def send_alert_once(
         
         # 4. VERIFICACIÓN DE HORARIO NOTIFICACIÓN
         if should_send_now():
+            # Bloqueo de seguridad: No enviar WhatsApp al número dummy
+            if exec_phone == "+56900000000":
+                logger.warning(f"[ALERT] Bloqueado envío a número dummy (+56900000000). Lead {phone} marcado como Sin Asignar.")
+                return
+
+            # --- ANTISPAM ROBUSTO PARA SEGUIMIENTOS ---
+            # Si NO es asignación nueva, verificamos ventana de tiempo (ej: 24 horas)
+            # para no spamear al ejecutivo cada que el cliente respira.
+            if not is_new_assignment:
+                # 24 horas = 1440 minutos
+                if not should_send_alert(phone, "SeguimientoCliente", window_minutes=1440):
+                     logger.info(f"[ALERT] Seguimiento omitido para {phone}. Se ha notificado recientemente al ejecutivo.")
+                     return
+                else:
+                    # Marcamos que enviamos notificación de seguimiento AHORA
+                    mark_alert_sent(phone, "SeguimientoCliente")
+
             # Enviar YA
-            message = format_whatsapp_template(lead_data, exec_name, lead_data["property_code"])
+            message = format_whatsapp_template(lead_data, exec_name, lead_data["property_code"], is_new_assignment=is_new_assignment)
             sent = await send_whatsapp_message(exec_phone, message)
             
             if sent:

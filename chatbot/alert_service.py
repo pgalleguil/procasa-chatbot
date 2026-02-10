@@ -31,6 +31,9 @@ def should_send_alert(phone: str, lead_type: str, window_minutes: int) -> bool:
 
     try:
         last = datetime.fromisoformat(ts_iso)
+        # Asegurar que sea aware si no lo es (la DB a veces guarda naive aunque usemos isoformat)
+        if last.tzinfo is None:
+            last = CHILE_TZ.localize(last)
     except ValueError:
         return True
 

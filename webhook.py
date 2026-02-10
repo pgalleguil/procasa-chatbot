@@ -575,20 +575,34 @@ async def webhook(
         ""
     ).strip()
 
-    if not phone or not text:
-        return JSONResponse({"status": "ignored"}, status_code=200)
+    # Limpieza y normalización de teléfono
+    # Si detectamos que es un grupo (@g.us), lo ignoramos para el bot
+    remote_jid = key.get("remoteJid") or ""
+    if "@g.us" in remote_jid:
+        logger.info(f"[WHATSAPP] Ignorando mensaje de grupo: {remote_jid}")
+        return JSONResponse({"status": "group message ignored"}, status_code=200)
 
-    # Normalización de teléfono
-    phone = phone.replace("@c.us", "").replace("@s.whatsapp.net", "")
-    if phone.startswith("56") and len(phone) == 11:
-        phone = "+" + phone
-    elif not phone.startswith("+") and phone.isdigit():
-        phone = "+56" + phone.lstrip("0")
+    # Limpiamos el número: nos quedamos solo con dígitos
+    phone_digits = "".join(filter(str.isdigit, phone))
+    
+    if not phone_digits:
+        return JSONResponse({"status": "invalid phone"}, status_code=200)
+
+    # Normalización para Chile (Casos comunes de entrada: 912345678, 56912345678, +56912345678)
+    if phone_digits.startswith("56") and len(phone_digits) >= 11:
+        phone = "+" + phone_digits
+    elif len(phone_digits) == 9 and phone_digits.startswith("9"):
+        phone = "+56" + phone_digits
+    else:
+        # Fallback genérico si no es Chile o ya tiene formato internacional
+        phone = "+" + phone_digits
 
     logger.info(f"[WHATSAPP] {'[HUMANO]' if from_me else '[CLIENTE]'} Mensaje en {phone}: {text}")
     try:
         from chatbot.storage import log_event, EventType
-        log_event(phone, EventType.MSG_IN if not from_me else EventType.MSG_OUT, "user" if not from_me else "agent", {"text": text})
+        # Para el log de eventos, usamos el número limpio sin el '+'
+        phone_log = phone.replace("+", "")
+        log_event(phone_log, EventType.MSG_IN if not from_me else EventType.MSG_OUT, "user" if not from_me else "agent", {"text": text})
     except:
         pass
         

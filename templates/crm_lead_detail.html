@@ -3393,25 +3393,17 @@
                         );
 
                         // 3. RETORNO A ESTADO INICIAL (Cleanup UI post-save)
+                        // 3. Cleanup UI post-save (No ocultamos el área de trabajo, solo reseteamos botones)
                         setTimeout(() => {
-                            // Ocultar área de trabajo y mostrar empty state
-                            document.getElementById('crm-work-area').classList.add('d-none');
-                            document.getElementById('empty-state').classList.remove('d-none');
-
-                            // Quitar estados activos de botones superiores
-                            document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active'));
-
-                            // Resetear form y variables globales
-                            document.getElementById('crmForm').reset();
-                            currentInteraction = null;
-                            currentActionLabel = null;
-                            currentResultLabel = null;
-
-                            // Restaurar botón (por si acaso se vuelve a abrir)
+                            // Restaurar botón
                             btn.disabled = false;
                             btn.innerHTML = originalText;
                             btn.classList.remove('btn-success');
                             btn.classList.add('btn-primary');
+
+                            // Omitimos el ocultamiento del área de trabajo para evitar el "Empty State"
+                            // document.getElementById('crm-work-area').classList.add('d-none');
+                            // document.getElementById('empty-state').classList.remove('d-none');
 
                             validateState();
                         }, 2000);
@@ -3671,6 +3663,12 @@
             function sortNotes() {
                 // Placeholder para ordenamiento si se desea
             }
+
+            // --- INICIALIZACIÓN POR DEFECTO ---
+            // Abrir modo Contacto por defecto para evitar el "Empty State" inicial
+            document.addEventListener('DOMContentLoaded', () => {
+                setActionMode('contact');
+            });
         </script>
         <!-- Overlay para cerrar menú móvil -->
         <div id="sidebarOverlay"

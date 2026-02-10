@@ -4,6 +4,15 @@ from datetime import datetime
 import pytz
 import re
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
+
+try:
+    from chatbot.constants import CHILE_TZ
+except ImportError:
+    import pytz
+    CHILE_TZ = pytz.timezone('Chile/Continental')
 
 def get_db():
     client = MongoClient(Config.MONGO_URI)
@@ -72,10 +81,16 @@ def process_chat_timeline(messages):
     for msg in messages:
         role = msg.get("role", "user")
         css_class = "chat-bot" if role in ["assistant", "system"] else "user-message"
+        
+        ts_obj = msg.get("timestamp")
+        if isinstance(ts_obj, str):
+            try: ts_obj = datetime.fromisoformat(ts_obj)
+            except: pass
+            
         processed.append({
             "role": css_class, 
             "content": msg.get("content", ""),
-            "timestamp": msg.get("timestamp")
+            "timestamp": ts_obj
         })
     return processed
 
@@ -137,15 +152,10 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
 
     if busqueda and busqueda.strip():
         term = busqueda.strip()
-        regex_term = re.escape(term)
+        # Limpiar caracteres no numéricos para búsqueda exacta por teléfono
         clean_phone = re.sub(r'\D', '', term)
-        query_parts.append({"$or": [
-            {"prospecto.codigo": {"$regex": regex_term, "$options": "i"}},
-            {"prospecto.nombre": {"$regex": regex_term, "$options": "i"}},
-            {"prospecto.ejecutivo": {"$regex": regex_term, "$options": "i"}},
-            {"ejecutivo_asignado": {"$regex": regex_term, "$options": "i"}},
-            {"phone": {"$regex": clean_phone}}
-        ]})
+        if clean_phone:
+            query_parts.append({"phone": {"$regex": clean_phone}})
     
     query = {"$and": query_parts} if query_parts else {}
     
@@ -161,7 +171,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         pipeline = [
             {"$match": {
                 "phone": {"$in": phones_in_page}, 
-                "type": "GESTION_LOG"
+                "type": {"$in": ["GESTION_LOG", "HUMAN_NOTE", "STATUS_CHANGE"]}
             }},
             {"$sort": {"timestamp": -1}},
             {"$group": {
@@ -268,12 +278,19 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         # KPIS
         kpi_counts["total"] += 1
         
-        # Mapeo de KPI Simplificado
-        kpi_key = "gestion" # Default
-        if estado_final in [PipelineStage.NEW, "nuevo"]: kpi_key = "nuevo"
-        elif estado_final in [PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE, "visita"]: kpi_key = "visita"
-        elif estado_final in [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST, "cerrado"]: kpi_key = "cerrado"
-        elif estado_final in [PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER, PipelineStage.NEGOTIATION, "gestion"]: kpi_key = "gestion"
+        # Mapeo de KPI Simplificado (Auditado para Enterprise)
+        kpi_key = "gestion"  # Default fallback
+        # Tomamos el valor final proactivamente para evitar problemas de stringificación de Enums
+        st_str = str(estado_final).upper().split('.')[-1]
+        
+        if st_str in ["NEW", "NUEVO"]:
+            kpi_key = "nuevo"
+        elif st_str in ["VISIT_SCHEDULED", "VISIT_DONE", "VISITA"]:
+            kpi_key = "visita"
+        elif st_str in ["CLOSED_WON", "CLOSED_LOST", "CERRADO"]:
+            kpi_key = "cerrado"
+        elif st_str in ["CONTACTED", "INTERESTED", "OFFER", "NEGOTIATION", "GESTION"]:
+            kpi_key = "gestion"
         
         if kpi_key in kpi_counts:
             kpi_counts[kpi_key] += 1
@@ -292,8 +309,39 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
 
         config_estado = state_map.get(estado_final, state_map[PipelineStage.CONTACTED])
 
+        # 5. SLA / TIEMPO DE RESPUESTA (ENTERPRISE)
+        sla_status = "good"
+        sla_label = ""
+        
+        # Consideramos "unmanaged" si es NEW o CONTACTED (En Gestión)
+        if estado_final in [PipelineStage.NEW, PipelineStage.CONTACTED]:
+            if last_ts:
+                try:
+                    if isinstance(last_ts, str):
+                        last_action_dt = datetime.fromisoformat(last_ts.replace("Z", ""))
+                    else:
+                        last_action_dt = last_ts
+                    
+                    # Normalizar a offset-aware si es necesario (asumimos Chile)
+                    if last_action_dt.tzinfo is None:
+                        last_action_dt = CHILE_TZ.localize(last_action_dt)
+                    
+                    diff = datetime.now(CHILE_TZ) - last_action_dt
+                    hours_diff = diff.total_seconds() / 3600
+                    
+                    if hours_diff >= 3:
+                        sla_status = "critical"
+                        sla_label = "Crítico (+3h)"
+                    elif hours_diff >= 1:
+                        sla_status = "warning"
+                        sla_label = "Advertencia (+1h)"
+                except Exception as e:
+                    logger.error(f"Error calculating SLA for {raw_phone}: {e}")
+
         leads_procesados.append({
             "phone": raw_phone,
+            "sla_status": sla_status,
+            "sla_label": sla_label,
             "whatsapp_display": f"+{raw_phone}",
             "nombre": lead.get("prospecto", {}).get("nombre") or "Desconocido",
             "estado": estado_final,
@@ -305,7 +353,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             "codigo_propiedad": detect_property_code(lead) or "S/N",
             "url_propiedad": f"https://www.procasa.cl/propiedad/{detect_property_code(lead)}" if detect_property_code(lead) else "#",
             "ultima_accion_titulo": last_action_text,
-            "ultima_accion_nota": last_action_note,
+            "ultima_accion_note": last_action_note,
             "ejecutivo_nombre": lead.get("ejecutivo_asignado") or "No asignado",
             "fecha_asignacion_relativa": format_relative_time(lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion")),
             "stage": lead.get("stage") or "new"
@@ -358,7 +406,7 @@ def get_lead_detail_data(phone):
     # Se incluyen logs de sistema y gestión para auditoría completa
     new_events_cursor = db["crm_events"].find({
         "phone": phone_clean,
-        "type": {"$in": ["GESTION_LOG", "STATUS_CHANGE", "SYSTEM_LOG"]} 
+        "type": {"$in": ["GESTION_LOG", "STATUS_CHANGE", "SYSTEM_LOG", "HUMAN_NOTE", "ASSIGNMENT", "ALERT"]} 
     }).sort("timestamp", -1)
     
     formatted_new_history = []
@@ -368,8 +416,13 @@ def get_lead_detail_data(phone):
         evt_type = evt.get("type")
         display_type = "system" if evt_type == "STATUS_CHANGE" else "user"
         
+        ts_obj = evt["timestamp"]
+        if isinstance(ts_obj, str):
+            try: ts_obj = datetime.fromisoformat(ts_obj)
+            except: pass
+            
         formatted_new_history.append({
-            "timestamp": evt["timestamp"],
+            "timestamp": ts_obj,
             "user_action": meta.get("action_label", "Evento Sistema") if evt_type != "STATUS_CHANGE" else "Cambio de Estado",
             "result": meta.get("result", ""),
             "notes": meta.get("notes", "") or meta.get("to", ""), 

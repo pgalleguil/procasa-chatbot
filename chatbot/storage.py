@@ -126,14 +126,14 @@ def delete_pending_notification(notification_id):
 # EVENT LOG & PIPELINE
 # ==========================================
 
-def log_event(phone: str, event_type: str, actor: str = "system", metadata: dict = None):
+def log_event(phone: str, event_type: str, actor: str = "system", meta: dict = None):
     db = get_db()
     event = {
         "phone": str(phone).replace("+", "").strip(),
         "timestamp": datetime.now(CHILE_TZ).isoformat(),
         "type": event_type,
         "actor": actor,
-        "metadata": metadata or {}
+        "meta": meta or {}
     }
     db["crm_events"].insert_one(event)
 
@@ -163,4 +163,4 @@ def update_lead_state(phone: str, stage: str = None, metadata: dict = None):
             upsert=True
         )
         if stage:
-            log_event(phone, EventType.STAGE_CHANGE, "system", {"new_stage": stage})
+            log_event(phone, InteractionType.STATUS_CHANGE, "system", {"to": stage})

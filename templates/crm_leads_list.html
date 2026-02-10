@@ -443,6 +443,98 @@
             box-shadow: 0 0 3px rgba(100, 116, 139, 0.5);
         }
 
+        @keyframes pulse-red {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+
+            70% {
+                transform: scale(1.1);
+                box-shadow: 0 0 10px 5px rgba(239, 68, 68, 0);
+            }
+
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        .pulse-red {
+            animation: pulse-red 2s infinite;
+        }
+
+        /* HYPER-PREMIUM CLOUD TOOLTIP */
+        .cloud-tooltip .tooltip-inner {
+            max-width: 300px !important;
+            background: rgba(15, 23, 42, 0.95) !important;
+            backdrop-filter: blur(16px) !important;
+            -webkit-backdrop-filter: blur(16px) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+            border-radius: 24px !important;
+            padding: 20px 25px !important;
+            color: #f8fafc !important;
+            font-size: 1.05rem !important;
+            font-weight: 400 !important;
+            line-height: 1.6 !important;
+            text-align: left !important;
+        }
+
+        .cloud-tooltip .tooltip-arrow::before {
+            border-top-color: rgba(15, 23, 42, 0.95) !important;
+        }
+
+        /* NORMALIZED TYPOGRAPHY */
+        .sla-text-normalized {
+            font-size: 0.9rem !important;
+            font-weight: 600;
+        }
+
+        /* ACTIONS COLUMN REBALANCED */
+        .actions-cell-wrapper {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            width: 100%;
+            gap: 12px;
+        }
+
+        .action-btn-premium {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            text-decoration: none;
+            position: relative;
+        }
+
+        .action-btn-premium:hover {
+            transform: translateY(-3px);
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+            box-shadow: 0 8px 16px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-whatsapp-premium:hover {
+            background: #22c55e;
+            border-color: #22c55e;
+            box-shadow: 0 8px 16px rgba(34, 197, 94, 0.3);
+        }
+
+        .btn-phone-premium:hover {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3);
+        }
+
         .prop-code-link {
             color: var(--accent);
             text-decoration: none;
@@ -820,7 +912,7 @@
             <form action="/crm" method="GET" class="toolbar">
                 <div class="search-box">
                     <i class="fa-solid fa-search"></i>
-                    <input type="text" name="busqueda" placeholder="Teléfono, Nombre o Ejecutivo..."
+                    <input type="text" name="busqueda" placeholder="Filtrar por Teléfono..."
                         value="{{ request.query_params.get('busqueda', '') }}">
                 </div>
 
@@ -872,11 +964,18 @@
                     <thead>
                         <tr>
                             <th width="12%">Estado</th>
+                            <th width="15%">
+                                SLA / Tiempo
+                                <i class="fa-solid fa-circle-question ms-1 text-accent opacity-75"
+                                    style="cursor: help; font-size: 0.85rem;" data-bs-toggle="tooltip"
+                                    data-bs-custom-class="cloud-tooltip" data-bs-placement="top" data-bs-html="true"
+                                    data-bs-title="<b>Métricas de Respuesta CRM</b><br><br>Tiempo desde la última gestión:<br><br>🟢 &lt; 1h: Gestión en Tiempo<br>🟡 1-3h: Advertencia<br>🔴 &gt; 3h: Crítico / Urgente"></i>
+                            </th>
                             <th width="18%">Cliente</th>
-                            <th width="12%">Propiedad</th>
+                            <th width="10%">Propiedad</th>
                             <th width="15%">Ejecutivo</th>
-                            <th width="28%">Última Acción</th>
-                            <th width="15%" class="text-end">Acciones</th>
+                            <th width="20%">Última Acción</th>
+                            <th width="10%" class="text-center">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -885,7 +984,25 @@
                             <td data-label="Estado">
                                 <div class="d-flex align-items-center">
                                     <div class="led-indicator {{ lead.led_class }}"></div>
-                                    <span class="small text-white fw-bold">{{ lead.estado_badge }}</span>
+                                    <span class="text-white fw-bold" style="font-size: 0.9rem;">{{ lead.estado_badge
+                                        }}</span>
+                                </div>
+                            </td>
+                            <td data-label="SLA / Tiempo">
+                                <div class="d-flex align-items-center">
+                                    {% if lead.sla_status == 'critical' %}
+                                    <div class="led-indicator led-red pulse-red"></div>
+                                    <span class="text-danger fw-bold" style="font-size: 0.9rem;">{{ lead.sla_label
+                                        }}</span>
+                                    {% elif lead.sla_status == 'warning' %}
+                                    <div class="led-indicator led-yellow"></div>
+                                    <span class="text-warning fw-bold" style="font-size: 0.9rem;">{{ lead.sla_label
+                                        }}</span>
+                                    {% else %}
+                                    <div class="led-indicator led-green" style="opacity: 0.8;"></div>
+                                    <span class="text-success fw-bold opacity-75" style="font-size: 0.9rem;">En
+                                        tiempo</span>
+                                    {% endif %}
                                 </div>
                             </td>
                             <td data-label="Cliente">
@@ -904,7 +1021,8 @@
                             </td>
                             <td data-label="Ejecutivo">
                                 <div class="fw-bold" style="font-size: 0.9rem;">
-                                    <i class="fa-solid fa-user-tie me-1 opacity-75"></i>{{ lead.ejecutivo_nombre }}
+                                    <i class="fa-solid fa-user-tie me-1 opacity-75 text-accent"></i>{{
+                                    lead.ejecutivo_nombre }}
                                 </div>
                                 <div class="small text-secondary" style="font-size: 0.75rem;">
                                     {% if lead.ejecutivo_nombre != "No asignado" %}
@@ -917,33 +1035,33 @@
                             </td>
                             <td data-label="Última Acción">
                                 <!-- AQUÍ SE MUESTRA LA ACCIÓN REAL DEL USUARIO -->
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <span class="fw-bold text-accent" style="font-size: 0.9rem;">{{
-                                        lead.ultima_accion_titulo }}</span>
-                                    <span class="badge bg-dark text-secondary border border-secondary"
-                                        style="font-size: 0.7rem;">{{ lead.tiempo_relativo }}</span>
+                                <div class="fw-bold text-accent" style="font-size: 0.9rem;">
+                                    {{ lead.ultima_accion_titulo }}
+                                </div>
+                                <div class="small text-secondary" style="font-size: 0.75rem;">
+                                    <i class="fa-solid fa-clock me-1 opacity-50"></i>{{ lead.tiempo_relativo }}
                                 </div>
                                 <div class="small text-secondary fst-italic mt-1 text-truncate"
                                     style="max-width: 250px;">
                                     {{ lead.ultima_accion_nota }}
                                 </div>
                             </td>
-                            <td class="text-end" data-label="Acciones">
-                                <!-- Agregamos event.stopPropagation() a todos los botones de acción -->
-                                <a href="tel:{{ lead.phone }}" class="action-btn btn-phone"
-                                    onclick="event.stopPropagation();" title="Llamar">
-                                    <i class="fa-solid fa-phone"></i>
-                                </a>
-                                <button class="action-btn btn-whatsapp"
-                                    onclick="window.open('https://wa.me/{{ lead.phone }}'); event.stopPropagation();"
-                                    title="WhatsApp">
-                                    <i class="fa-brands fa-whatsapp"></i>
-                                </button>
-                                <button class="action-btn btn-detail"
-                                    onclick="window.location.href='/crm/lead/{{ lead.phone }}'; event.stopPropagation();"
-                                    title="Ver Detalle">
-                                    <i class="fa-solid fa-chevron-right"></i>
-                                </button>
+                            <td class="text-center" data-label="Acciones">
+                                <div class="actions-cell-wrapper">
+                                    <a href="tel:{{ lead.phone }}" class="action-btn-premium btn-phone-premium"
+                                        onclick="event.stopPropagation();" title="Llamar">
+                                        <i class="fa-solid fa-phone"></i>
+                                    </a>
+                                    <a href="https://wa.me/{{ lead.phone }}" target="_blank"
+                                        class="action-btn-premium btn-whatsapp-premium"
+                                        onclick="event.stopPropagation();" title="WhatsApp">
+                                        <i class="fa-brands fa-whatsapp"></i>
+                                    </a>
+                                    <a href="/crm/lead/{{ lead.phone }}" class="action-btn-premium btn-detail"
+                                        onclick="event.stopPropagation();" title="Ver Detalle">
+                                        <i class="fa-solid fa-chevron-right"></i>
+                                    </a>
+                                </div>
                             </td>
                         </tr>
                         {% else %}
@@ -966,6 +1084,7 @@
             style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"
             onclick="toggleMobileMenu()"></div>
 
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
         <script>
             function toggleMobileMenu() {
                 const sidebar = document.getElementById('sidebar');
@@ -1018,31 +1137,55 @@
                 });
             });
 
-            // --- Number Animation Script ---
+            // --- Multi-Step Robust Initialization ---
             document.addEventListener("DOMContentLoaded", () => {
+                // 1. Tooltip Initialization (Isolated to avoid crashing other scripts)
+                try {
+                    if (typeof bootstrap !== 'undefined') {
+                        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+                        tooltipTriggerList.map(function (tooltipTriggerEl) {
+                            return new bootstrap.Tooltip(tooltipTriggerEl);
+                        });
+                        console.log("✅ Tooltips initialized");
+                    } else {
+                        console.warn("⚠️ Bootstrap JS not loaded, tooltips will use native title");
+                    }
+                } catch (e) {
+                    console.error("❌ Error initializing tooltips:", e);
+                }
+
+                // 2. Number Animation Script (Critical Path)
                 const counters = document.querySelectorAll('.summary-value');
                 counters.forEach(counter => {
-                    const target = +counter.getAttribute('data-target');
-                    if (!target) {
-                        // If target is 0 or NaN, ensure it displays 0
-                        counter.innerText = target || 0;
-                        return;
-                    }
-
-                    const duration = 1500; // 1.5s total animation
-                    const increment = target / (duration / 16); // 60fps
-
-                    let current = 0;
-                    const updateCounter = () => {
-                        current += increment;
-                        if (current < target) {
-                            counter.innerText = Math.ceil(current);
-                            requestAnimationFrame(updateCounter);
-                        } else {
-                            counter.innerText = target;
+                    try {
+                        const target = +counter.getAttribute('data-target');
+                        if (isNaN(target) || target <= 0) {
+                            counter.innerText = '0';
+                            return;
                         }
-                    };
-                    updateCounter();
+
+                        const duration = 1200; // Faster feel
+                        const frameRate = 1000 / 60;
+                        const totalFrames = Math.round(duration / frameRate);
+                        const increment = target / totalFrames;
+
+                        let current = 0;
+                        let frame = 0;
+
+                        const updateCounter = () => {
+                            frame++;
+                            current += increment;
+                            if (frame < totalFrames) {
+                                counter.innerText = Math.floor(current);
+                                requestAnimationFrame(updateCounter);
+                            } else {
+                                counter.innerText = target;
+                            }
+                        };
+                        updateCounter();
+                    } catch (e) {
+                        console.error("❌ Error animating counter:", e);
+                    }
                 });
             });
         </script>

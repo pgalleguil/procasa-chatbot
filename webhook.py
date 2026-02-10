@@ -558,29 +558,38 @@ async def webhook(
     msg_obj = messages_data if isinstance(messages_data, dict) else messages_data[0]
     key = msg_obj.get("key", {})
     from_me = key.get("fromMe", False)
+
+    # --- DEBUG CRÍTICO: VER EL PAYLOAD COMPLETO ---
+    logger.info(f"[DEBUG PAYLOAD] Key: {key}")
+    logger.info(f"[DEBUG PAYLOAD] From: {msg_obj.get('from')} | SenderPn: {key.get('senderPn')} | Cleaned: {key.get('cleanedSenderPn')}")
+    # ----------------------------------------------
     
-    # Contexto de la conversación: remoteJid es el ID del chat (el cliente)
-    phone = (
-        key.get("remoteJid") or 
-        msg_obj.get("from") or 
-        key.get("cleanedSenderPn") or
-        key.get("senderPn", "") or
-        ""
-    ).split("@")[0].strip()
+    # --- EXTRACCIÓN ROBUSTA DE TELÉFONO ---
+    # 1. Intentamos obtener el número limpio directamente del payload (lo más fiable)
+    phone = key.get("cleanedSenderPn") or key.get("senderPn")
+    
+    # 2. Si no existe, usamos el 'remoteJid' pero SOLO si parece un número normal (evitamos LIDs)
+    if not phone:
+        remote_jid = key.get("remoteJid", "")
+        if "@s.whatsapp.net" in remote_jid and not "@lid" in remote_jid:
+            phone = remote_jid.split("@")[0]
+            
+    # 3. Fallback: usamos 'from' del mensaje
+    if not phone:
+        msg_from = msg_obj.get("from", "")
+        if "@s.whatsapp.net" in msg_from and not "@lid" in msg_from:
+            phone = msg_from.split("@")[0]
 
-    text = (
-        msg_obj.get("messageBody") or
-        msg_obj.get("message", {}).get("conversation") or
-        msg_obj.get("message", {}).get("extendedTextMessage", {}).get("text", "") or
-        ""
-    ).strip()
+    # 4. Último recurso (puede ser peligroso si es LID, pero es mejor que nada)
+    if not phone:
+        phone = (key.get("remoteJid") or msg_obj.get("from") or "").split("@")[0]
 
-    # Limpieza y normalización de teléfono
-    # Si detectamos que es un grupo (@g.us), lo ignoramos para el bot
-    remote_jid = key.get("remoteJid") or ""
-    if "@g.us" in remote_jid:
-        logger.info(f"[WHATSAPP] Ignorando mensaje de grupo: {remote_jid}")
-        return JSONResponse({"status": "group message ignored"}, status_code=200)
+    phone = str(phone).strip()
+
+    # Si detectamos que es un grupo (@g.us), lo ignoramos
+    if "@g.us" in (key.get("remoteJid") or ""):
+         logger.info(f"[WHATSAPP] Ignorando mensaje de grupo")
+         return JSONResponse({"status": "group message ignored"}, status_code=200)
 
     # Limpiamos el número: nos quedamos solo con dígitos
     phone_digits = "".join(filter(str.isdigit, phone))

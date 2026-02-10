@@ -98,14 +98,18 @@ async def send_alert_once(
         # --- NUEVO: ASIGNACIÓN ROBUSTA (Enterprise Point 2.1) ---
         # Primero aseguramos la asignación en DB, pase lo que pase con el WhatsApp.
         try:
-            from .storage import update_lead_state, log_event, EventType, PipelineStage
+            from .storage import update_lead_state, log_event, EventType
+            from .lead_router import get_next_business_slot
+            
+            # SLA Protection: Si es fuera de horario, la "atención" empieza en el próximo bloque laboral
+            now_cl = datetime.now(CHILE_TZ)
+            assigned_at = get_next_business_slot(now_cl)
             
             update_lead_state(phone, metadata={
                 "ejecutivo_asignado": exec_name,
                 "prospecto.ejecutivo": exec_name,
-                "lifecycle.assigned_at": datetime.now(CHILE_TZ).isoformat(),
+                "lifecycle.assigned_at": assigned_at.isoformat(),
                 "metodo_asignacion": "LeadRouter"
-                # REMOVIDO: "lifecycle.stage" - esto corrompe el pipeline_stage real
             })
             
             # Log de auditoría inmutable

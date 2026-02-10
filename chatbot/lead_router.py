@@ -1,7 +1,7 @@
 
 import logging
 import random
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import pytz
 from typing import Dict, Any, Optional, Tuple
 from pymongo import MongoClient
@@ -11,6 +11,11 @@ from .storage import get_db
 logger = logging.getLogger(__name__)
 
 from .constants import CHILE_TZ
+
+# --- CONFIGURACIÓN DE HORARIOS ---
+BUSINESS_START_HOUR = 9
+BUSINESS_END_HOUR = 23  # Extendido para pruebas
+BUSINESS_DAYS = [0, 1, 2, 3, 4] # Lunes a Viernes
 
 # Constants for specific executives
 JORGE_PABLO_CARO = "Jorge Pablo Caro"
@@ -39,24 +44,38 @@ def normalize_text(text: str) -> str:
 
 def should_send_now() -> bool:
     """
-    Check if current time in Chile is within business hours:
-    Mon-Fri, 09:00 - 18:00.
+    Check if current time in Chile is within business hours.
     """
     now = datetime.now(CHILE_TZ)
     weekday = now.weekday()
     hour = now.hour
-    minute = now.minute
     
-    # Horario: Lunes a Viernes, 09:00 a 21:00 (Extendido para pruebas)
-    is_weekend = weekday >= 5
-    # Simplificamos la comparación de horas
-    is_in_hours = (hour >= 9 and hour < 21)
+    is_business_day = weekday in BUSINESS_DAYS
+    is_in_hours = (hour >= BUSINESS_START_HOUR and hour < BUSINESS_END_HOUR)
     
-    result = (not is_weekend) and is_in_hours
+    result = is_business_day and is_in_hours
     
     logger.info(f"[SCHEDULE_DEBUG] Chile Time: {now.strftime('%H:%M:%S')} | Hour: {hour} | Weekday: {weekday} | In Hours: {is_in_hours} | Final Result: {result}")
     
     return result
+
+def get_next_business_slot(dt: datetime) -> datetime:
+    """Calcula el inicio del próximo bloque laboral si dt está fuera de horario."""
+    # Si ya es hora laboral, retornar el mismo
+    if dt.hour >= BUSINESS_START_HOUR and dt.hour < BUSINESS_END_HOUR and dt.weekday() in BUSINESS_DAYS:
+        return dt
+    
+    next_slot = dt.replace(hour=BUSINESS_START_HOUR, minute=0, second=0, microsecond=0)
+    
+    # Si ya pasó la hora de inicio de hoy, es mañana
+    if dt.hour >= BUSINESS_END_HOUR or (dt.hour == BUSINESS_START_HOUR and dt.minute > 0):
+        next_slot += timedelta(days=1)
+    
+    # Si cae en fin de semana, saltar al lunes
+    while next_slot.weekday() not in BUSINESS_DAYS:
+        next_slot += timedelta(days=1)
+        
+    return next_slot
 
 def get_executive_phone(executive_name: str) -> Optional[str]:
     """

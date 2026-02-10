@@ -80,6 +80,24 @@ def actualizar_prospecto(phone: str, datos: dict):
 def establecer_nombre_usuario(phone: str, nombre: str):
     actualizar_prospecto(phone, {"nombre": nombre})
 
+def obtener_bot_pausado(phone: str) -> bool:
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}, {"is_paused": 1})
+    if not doc:
+        return False
+    return doc.get("is_paused", False)
+
+def toggle_bot_pausado(phone: str) -> bool:
+    """Toggles and returns the new state"""
+    db = get_db()
+    current_state = obtener_bot_pausado(phone)
+    new_state = not current_state
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {"is_paused": new_state}}
+    )
+    return new_state
+
 def registrar_propiedades_vistas(phone: str, nuevos_codigos: List[str]):
     if not nuevos_codigos: return
     db = get_db()

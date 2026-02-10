@@ -83,6 +83,23 @@ async def process_user_message(phone: str, message: str) -> str:
     # 1. Guardar mensaje usuario
     guardar_mensaje(phone, "user", original_message)
 
+    # === LÓGICA DE PAUSA (INTERCEPCIÓN) ===
+    from .storage import obtener_bot_pausado, toggle_bot_pausado
+    
+    if original_message.strip() == "..":
+        nuevo_estado = toggle_bot_pausado(phone)
+        if nuevo_estado:
+            respuesta_pausa = "🤖 *Bot pausado.* He dejado de intervenir para que puedas hablar con el cliente. Escribe `..` de nuevo para reactivarme."
+        else:
+            respuesta_pausa = "🤖 *Bot reactivado.* ¡Hola de nuevo! Ya estoy listo para seguir ayudando a los clientes."
+        
+        guardar_mensaje(phone, "assistant", respuesta_pausa, {"tipo": "bot_toggle"})
+        return respuesta_pausa
+
+    # Si el bot está pausado, NO procesamos ni respondemos, pero el mensaje ya se guardó arriba
+    if obtener_bot_pausado(phone):
+        logger.info(f"[PAUSED] Bot pausado para {phone}. Ignorando procesamiento.")
+        return "" # Retornamos vacío para que el webhook no envíe nada
 
     historial = obtener_conversacion(phone)
 

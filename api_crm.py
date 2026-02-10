@@ -171,7 +171,13 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         pipeline = [
             {"$match": {
                 "phone": {"$in": phones_in_page}, 
-                "type": {"$in": ["GESTION_LOG", "HUMAN_NOTE", "STATUS_CHANGE"]}
+                "type": {"$in": [
+                    "GESTION_LOG", "HUMAN_NOTE", "STATUS_CHANGE", 
+                    "CLICK_WHATSAPP_LEAD", "CLICK_PHONE_LEAD", "CLICK_EMAIL_LEAD",
+                    "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
+                    "CLICK_WHATSAPP_OWNER", "CLICK_PHONE_OWNER", "CLICK_EMAIL_OWNER",
+                    "SEND_WA_OWNER", "SEND_EMAIL_OWNER"
+                ]}
             }},
             {"$sort": {"timestamp": -1}},
             {"$group": {
@@ -245,17 +251,47 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         lifecycle_ts = lead.get("lifecycle", {}).get("assigned_at")
         created_ts = lead.get("created_at")
         
+        # Determine the fallback timestamp (Order: Msg > Assigned > Created)
         last_ts = ultimo_msg_ts or lifecycle_ts or created_ts
+        
+        # If no management action exists, clarify the text
+        if not last_action_event:
+            if ultimo_msg_ts:
+                last_action_text = "Mensaje del Cliente"
+            elif lifecycle_ts:
+                 last_action_text = "Asignado"
+            else:
+                 last_action_text = "Creado"
         
         estado_final = estado_db 
         
         if last_action_event:
             last_ts = last_action_event["timestamp"]
             meta = last_action_event.get("meta", {})
-            last_action_text = meta.get("action_label", "Gestión CRM")
+            evt_type = last_action_event.get("type")
+            
+            # --- MAPEO DE ETIQUETAS DE ACCIÓN ---
+            type_labels = {
+                "CLICK_WHATSAPP_LEAD": "Click WhatsApp (Lead)",
+                "CLICK_PHONE_LEAD": "Llamada Iniciada",
+                "CLICK_EMAIL_LEAD": "Click Email (Lead)",
+                "SEND_WA_LEAD": "WhatsApp Enviado",
+                "SEND_EMAIL_LEAD": "Email Enviado",
+                "CLICK_WHATSAPP_OWNER": "Click WhatsApp (Prop)",
+                "CLICK_PHONE_OWNER": "Llamada Prop. Iniciada",
+                "CLICK_EMAIL_OWNER": "Click Email (Prop)",
+                "SEND_WA_OWNER": "WhatsApp Enviado (Prop)",
+                "SEND_EMAIL_OWNER": "Email Enviado (Prop)",
+                "STATUS_CHANGE": "Cambio de Estado",
+                "HUMAN_NOTE": "Gestión Manual"
+            }
+            
+            last_action_text = meta.get("action_label") or type_labels.get(evt_type, "Gestión CRM")
             
             if meta.get("notes"):
                 last_action_note = meta.get("notes")[:50] + "..."
+            elif not meta.get("action_label") and evt_type.startswith("CLICK_"):
+                last_action_note = f"Canal: {meta.get('channel', '---')}"
 
             # Corrección Visual de Estado
             result_code = meta.get("result", "")
@@ -309,32 +345,52 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
 
         config_estado = state_map.get(estado_final, state_map[PipelineStage.CONTACTED])
 
-        # 5. SLA / TIEMPO DE RESPUESTA (ENTERPRISE)
+        # 5. SLA / TIEMPO DE RESPUESTA (ENTERPRISE - FIRST RESPONSE MODEL)
         sla_status = "good"
         sla_label = ""
         
-        # Consideramos "unmanaged" si es NEW o CONTACTED (En Gestión)
-        if estado_final in [PipelineStage.NEW, PipelineStage.CONTACTED]:
-            if last_ts:
+        ejecutivo = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
+        
+        # CASO 1: NO ASIGNADO -> SLA PAUSADO
+        if not ejecutivo or ejecutivo == "No asignado":
+             sla_status = "pending"
+             sla_label = "Pendiente Asignación"
+             
+        # CASO 2: GESTIONADO (TIENE ACCIÓN HUMANA O NO ESTÁ EN ESTADO INICIAL) -> SLA CUMPLIDO
+        elif last_action_event or estado_final not in [PipelineStage.NEW, PipelineStage.CONTACTED]:
+             sla_status = "fulfilled"
+             sla_label = "Gestionado" 
+             
+        # CASO 3: ASIGNADO SIN GESTIÓN -> SLA CRONÓMETRO CORRIENDO
+        # El lead está asignado pero nadie ha hecho nada (ni click, ni mensaje, ni nota)
+        else:
+             # Usamos fecha de asignación como inicio del SLA (Fallback a creación)
+             lifecycle_ts = lead.get("lifecycle", {}).get("assigned_at")
+             start_time_sla = lifecycle_ts or lead.get("created_at")
+             
+             if start_time_sla:
                 try:
-                    if isinstance(last_ts, str):
-                        last_action_dt = datetime.fromisoformat(last_ts.replace("Z", ""))
+                    if isinstance(start_time_sla, str):
+                        start_dt = datetime.fromisoformat(start_time_sla.replace("Z", ""))
                     else:
-                        last_action_dt = last_ts
+                        start_dt = start_time_sla
                     
-                    # Normalizar a offset-aware si es necesario (asumimos Chile)
-                    if last_action_dt.tzinfo is None:
-                        last_action_dt = CHILE_TZ.localize(last_action_dt)
+                    if start_dt.tzinfo is None:
+                        start_dt = CHILE_TZ.localize(start_dt)
                     
-                    diff = datetime.now(CHILE_TZ) - last_action_dt
-                    hours_diff = diff.total_seconds() / 3600
+                    diff = datetime.now(CHILE_TZ) - start_dt
+                    minutes_diff = diff.total_seconds() / 60
                     
-                    if hours_diff >= 3:
+                    # UMBRALES (Ajustados por Feedback: Advertencia 1-3h, Critico > 3h)
+                    if minutes_diff >= 180: # 3 Horas sin gestión (180 min)
                         sla_status = "critical"
-                        sla_label = "Crítico (+3h)"
-                    elif hours_diff >= 1:
+                        sla_label = "Crítico" 
+                    elif minutes_diff >= 60: # 1 Hora sin gestión (60 min)
                         sla_status = "warning"
-                        sla_label = "Advertencia (+1h)"
+                        sla_label = "Advertencia" 
+                    else:
+                        sla_status = "good" 
+                        sla_label = "En tiempo"
                 except Exception as e:
                     logger.error(f"Error calculating SLA for {raw_phone}: {e}")
 
@@ -406,7 +462,13 @@ def get_lead_detail_data(phone):
     # Se incluyen logs de sistema y gestión para auditoría completa
     new_events_cursor = db["crm_events"].find({
         "phone": phone_clean,
-        "type": {"$in": ["GESTION_LOG", "STATUS_CHANGE", "SYSTEM_LOG", "HUMAN_NOTE", "ASSIGNMENT", "ALERT"]} 
+        "type": {"$in": [
+            "GESTION_LOG", "STATUS_CHANGE", "SYSTEM_LOG", "HUMAN_NOTE", 
+            "ASSIGNMENT", "ALERT", "CLICK_WHATSAPP_LEAD", "CLICK_PHONE_LEAD", 
+            "CLICK_EMAIL_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
+            "CLICK_WHATSAPP_OWNER", "CLICK_PHONE_OWNER", "CLICK_EMAIL_OWNER",
+            "SEND_WA_OWNER", "SEND_EMAIL_OWNER"
+        ]} 
     }).sort("timestamp", -1)
     
     formatted_new_history = []
@@ -421,14 +483,29 @@ def get_lead_detail_data(phone):
             try: ts_obj = datetime.fromisoformat(ts_obj)
             except: pass
             
+        # ETIQUETAS DINÁMICAS PARA EL HISTORIAL
+        type_labels = {
+            "CLICK_WHATSAPP_LEAD": "Mensaje WhatsApp Iniciado",
+            "CLICK_PHONE_LEAD": "Llamada Telefónica Iniciada",
+            "CLICK_EMAIL_LEAD": "Redacción de Email Abierta",
+            "SEND_WA_LEAD": "WhatsApp Enviado",
+            "SEND_EMAIL_LEAD": "Email Enviado",
+            "CLICK_WHATSAPP_OWNER": "Llamada/WA a Propietario",
+            "SEND_WA_OWNER": "WhatsApp enviado a Propietario",
+            "STATUS_CHANGE": "Cambio de Estado",
+            "HUMAN_NOTE": meta.get("action_label", "Nota de Gestión")
+        }
+
+        user_action_display = meta.get("action_label") or type_labels.get(evt_type, "Evento CRM")
+            
         formatted_new_history.append({
             "timestamp": ts_obj,
-            "user_action": meta.get("action_label", "Evento Sistema") if evt_type != "STATUS_CHANGE" else "Cambio de Estado",
+            "user_action": user_action_display if evt_type != "STATUS_CHANGE" else "Cambio de Estado",
             "result": meta.get("result", ""),
-            "notes": meta.get("notes", "") or meta.get("to", ""), 
+            "notes": meta.get("notes", "") or meta.get("to", "") or meta.get("content_preview", ""), 
             "type_class": display_type,
             "raw_type": evt_type,
-            "channel": meta.get("interaction_type") # p.ej. 'wa', 'phone', 'email'
+            "channel": meta.get("interaction_type") or meta.get("channel") # p.ej. 'wa', 'phone', 'email'
         })
         
     timeline = process_chat_timeline(lead.get("messages", []))

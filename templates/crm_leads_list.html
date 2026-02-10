@@ -491,49 +491,7 @@
             font-weight: 600;
         }
 
-        /* ACTIONS COLUMN REBALANCED */
-        .actions-cell-wrapper {
-            display: flex;
-            justify-content: space-around;
-            align-items: center;
-            width: 100%;
-            gap: 12px;
-        }
 
-        .action-btn-premium {
-            width: 44px;
-            height: 44px;
-            border-radius: 12px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            color: var(--text-secondary);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            text-decoration: none;
-            position: relative;
-        }
-
-        .action-btn-premium:hover {
-            transform: translateY(-3px);
-            background: var(--accent);
-            color: white;
-            border-color: var(--accent);
-            box-shadow: 0 8px 16px rgba(99, 102, 241, 0.3);
-        }
-
-        .btn-whatsapp-premium:hover {
-            background: #22c55e;
-            border-color: #22c55e;
-            box-shadow: 0 8px 16px rgba(34, 197, 94, 0.3);
-        }
-
-        .btn-phone-premium:hover {
-            background: #3b82f6;
-            border-color: #3b82f6;
-            box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3);
-        }
 
         .prop-code-link {
             color: var(--accent);
@@ -546,45 +504,7 @@
             text-decoration: underline;
         }
 
-        /* BUTTONS */
-        .action-btn {
-            width: 34px;
-            height: 34px;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            background: transparent;
-            color: var(--text-secondary);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            margin-left: 5px;
-            transition: 0.2s;
-            text-decoration: none;
-        }
 
-        /* Celeste para teléfono */
-        .btn-phone:hover {
-            background: #3b82f6;
-            color: white;
-            border-color: #3b82f6;
-            box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
-        }
-
-        /* Verde para WhatsApp */
-        .btn-whatsapp:hover {
-            background: #25D366;
-            color: white;
-            border-color: #25D366;
-            box-shadow: 0 0 10px rgba(37, 211, 102, 0.4);
-        }
-
-        /* Default hover */
-        .btn-detail:hover {
-            /* Este es el botón "Ver detalle" */
-            background: var(--accent);
-            color: white;
-            border-color: var(--accent);
-        }
 
         .clickable-row {
             cursor: pointer;
@@ -650,9 +570,9 @@
             }
 
             .crm-table tbody tr:hover {
-                transform: scale(1.005);
-                box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
-                background-color: rgba(99, 102, 241, 0.05) !important;
+                transform: translateY(-3px);
+                box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.3);
+                background-color: rgba(99, 102, 241, 0.08) !important;
                 z-index: 10;
                 position: relative;
             }
@@ -728,15 +648,7 @@
 
         /* No ripple for closed */
 
-        /* 3. Action Buttons - Modern & Touch Friendly */
-        .action-btn {
-            width: 38px;
-            height: 38px;
-            font-size: 1rem;
-            margin: 0 2px;
-            border-radius: 10px;
-            backdrop-filter: blur(4px);
-        }
+
 
         /* --- MOBILE CARD VIEW TRANSFORM --- */
         @media (max-width: 768px) {
@@ -807,12 +719,7 @@
                 border-bottom: 1px solid var(--border-color);
             }
 
-            /* Adjust Action Buttons for Mobile Touch */
-            .action-btn {
-                width: 45px;
-                height: 45px;
-                font-size: 1.2rem;
-            }
+
 
             /* Hide Search Input Labels in Toolbar for space */
             .toolbar {
@@ -963,45 +870,40 @@
                 <table class="crm-table">
                     <thead>
                         <tr>
-                            <th width="12%">Estado</th>
-                            <th width="15%">
+                            <th width="16.6%">
                                 SLA / Tiempo
                                 <i class="fa-solid fa-circle-question ms-1 text-accent opacity-75"
                                     style="cursor: help; font-size: 0.85rem;" data-bs-toggle="tooltip"
                                     data-bs-custom-class="cloud-tooltip" data-bs-placement="top" data-bs-html="true"
-                                    data-bs-title="<b>Métricas de Respuesta CRM</b><br><br>Tiempo desde la última gestión:<br><br>🟢 &lt; 1h: Gestión en Tiempo<br>🟡 1-3h: Advertencia<br>🔴 &gt; 3h: Crítico / Urgente"></i>
+                                    data-bs-title="<b>Métrica: 1er Contacto</b><br><br>Tiempo desde asignación hasta la primera gestión humana.<br><br>🟢 Gestionado: Ya tiene acción.<br>🟡 Advertencia: 1 - 3 horas sin gestión.<br>🔴 Crítico: > 3 horas sin gestión."></i>
                             </th>
-                            <th width="18%">Cliente</th>
-                            <th width="10%">Propiedad</th>
-                            <th width="15%">Ejecutivo</th>
-                            <th width="20%">Última Acción</th>
-                            <th width="10%" class="text-center">Acciones</th>
+                            <th width="16.6%">Cliente</th>
+                            <th width="16.6%">Propiedad</th>
+                            <th width="16.6%">Estado</th>
+                            <th width="16.6%">Última Acción</th>
+                            <th width="16.6%">Ejecutivo</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for lead in leads %}
                         <tr class="clickable-row" onclick="window.location.href='/crm/lead/{{ lead.phone }}'">
-                            <td data-label="Estado">
-                                <div class="d-flex align-items-center">
-                                    <div class="led-indicator {{ lead.led_class }}"></div>
-                                    <span class="text-white fw-bold" style="font-size: 0.9rem;">{{ lead.estado_badge
-                                        }}</span>
-                                </div>
-                            </td>
                             <td data-label="SLA / Tiempo">
                                 <div class="d-flex align-items-center">
                                     {% if lead.sla_status == 'critical' %}
                                     <div class="led-indicator led-red pulse-red"></div>
-                                    <span class="text-danger fw-bold" style="font-size: 0.9rem;">{{ lead.sla_label
-                                        }}</span>
+                                    <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
                                     {% elif lead.sla_status == 'warning' %}
                                     <div class="led-indicator led-yellow"></div>
-                                    <span class="text-warning fw-bold" style="font-size: 0.9rem;">{{ lead.sla_label
-                                        }}</span>
+                                    <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
+                                    {% elif lead.sla_status == 'pending' %}
+                                    <i class="fa-solid fa-clock text-secondary opacity-50"></i>
+                                    <span class="text-secondary ms-2 fst-italic">{{ lead.sla_label }}</span>
+                                    {% elif lead.sla_status == 'fulfilled' %}
+                                    <i class="fa-solid fa-check-circle text-success"></i>
+                                    <span class="fw-bold text-success ms-2">{{ lead.sla_label }}</span>
                                     {% else %}
                                     <div class="led-indicator led-green" style="opacity: 0.8;"></div>
-                                    <span class="text-success fw-bold opacity-75" style="font-size: 0.9rem;">En
-                                        tiempo</span>
+                                    <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
                                     {% endif %}
                                 </div>
                             </td>
@@ -1019,18 +921,10 @@
                                 <span class="text-secondary small fst-italic">Sin Propiedad</span>
                                 {% endif %}
                             </td>
-                            <td data-label="Ejecutivo">
-                                <div class="fw-bold" style="font-size: 0.9rem;">
-                                    <i class="fa-solid fa-user-tie me-1 opacity-75 text-accent"></i>{{
-                                    lead.ejecutivo_nombre }}
-                                </div>
-                                <div class="small text-secondary" style="font-size: 0.75rem;">
-                                    {% if lead.ejecutivo_nombre != "No asignado" %}
-                                    <i class="fa-solid fa-clock me-1 opacity-50"></i>Asignado {{
-                                    lead.fecha_asignacion_relativa }}
-                                    {% else %}
-                                    Pendiente de las 09:00
-                                    {% endif %}
+                            <td data-label="Estado">
+                                <div class="d-flex align-items-center">
+                                    <span class="text-white fw-bold" style="font-size: 0.9rem;">{{ lead.estado_badge
+                                        }}</span>
                                 </div>
                             </td>
                             <td data-label="Última Acción">
@@ -1046,21 +940,18 @@
                                     {{ lead.ultima_accion_nota }}
                                 </div>
                             </td>
-                            <td class="text-center" data-label="Acciones">
-                                <div class="actions-cell-wrapper">
-                                    <a href="tel:{{ lead.phone }}" class="action-btn-premium btn-phone-premium"
-                                        onclick="event.stopPropagation();" title="Llamar">
-                                        <i class="fa-solid fa-phone"></i>
-                                    </a>
-                                    <a href="https://wa.me/{{ lead.phone }}" target="_blank"
-                                        class="action-btn-premium btn-whatsapp-premium"
-                                        onclick="event.stopPropagation();" title="WhatsApp">
-                                        <i class="fa-brands fa-whatsapp"></i>
-                                    </a>
-                                    <a href="/crm/lead/{{ lead.phone }}" class="action-btn-premium btn-detail"
-                                        onclick="event.stopPropagation();" title="Ver Detalle">
-                                        <i class="fa-solid fa-chevron-right"></i>
-                                    </a>
+                            <td data-label="Ejecutivo">
+                                <div class="fw-bold" style="font-size: 0.9rem;">
+                                    <i class="fa-solid fa-user-tie me-1 opacity-75 text-accent"></i>{{
+                                    lead.ejecutivo_nombre }}
+                                </div>
+                                <div class="small text-secondary" style="font-size: 0.75rem;">
+                                    {% if lead.ejecutivo_nombre != "No asignado" %}
+                                    <i class="fa-solid fa-clock me-1 opacity-50"></i>Asignado {{
+                                    lead.fecha_asignacion_relativa }}
+                                    {% else %}
+                                    Pendiente de las 09:00
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
@@ -1130,12 +1021,7 @@
                 }
             })();
 
-            // Row click handlers
-            document.querySelectorAll('.btn-detail').forEach(btn => {
-                btn.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                });
-            });
+
 
             // --- Multi-Step Robust Initialization ---
             document.addEventListener("DOMContentLoaded", () => {

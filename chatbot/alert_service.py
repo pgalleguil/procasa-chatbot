@@ -97,7 +97,7 @@ async def send_alert_once(
         # 2. ENRUTAMIENTO INTELIGENTE (SOLO SI NO ESTÁ ASIGNADO)
         # Buscamos quién es el responsable REAL (según reglas JPC, Región, etc.)
         
-        assigned_exec = prospecto.get("ejecutivo_asignado") or prospecto.get("ejecutivo")
+        assigned_exec = criteria.get("ejecutivo_asignado") or criteria.get("ejecutivo")
         
         # Si ya tiene ejecutivo y es válido (no un administrativo genérico), mantenemos al mismo.
         if assigned_exec and assigned_exec != "Sin Asignar" and assigned_exec != "No Asignado":
@@ -109,8 +109,9 @@ async def send_alert_once(
              logger.info(f"[ALERT] Lead ya asignado a {exec_name}. Manteniendo asignación.")
         else:
              # Si es nuevo o no tiene asignación válida, corremos el router
-             exec_name, exec_phone = find_responsible_executive(lead_data["property_code"])
              is_new_assignment = True
+        
+        logger.info(f"[ALERT] Ruteo: Ejecutivo determineado: {exec_name} | Teléfono: {exec_phone} | Es nuevo: {is_new_assignment}")
 
         # --- NUEVO: ASIGNACIÓN ROBUSTA (Enterprise Point 2.1) ---
         # Solo actualizamos DB si es una NUEVA asignación
@@ -156,8 +157,9 @@ async def send_alert_once(
         # Al marcarlo aquí, should_send_alert() rebotará cualquier otro intento en el futuro inmediato.
         mark_alert_sent(phone, lead_type)
 
+        # ALERT_DELAY_SECONDS = 120 (Restaurado a 2 mins por solicitud del usuario para capturar datos)
         ALERT_DELAY_SECONDS = 120
-        logger.info(f"[ALERT] Marcado en DB y esperando {ALERT_DELAY_SECONDS}s antes de notificar a {exec_name} sobre {phone}...")
+        logger.info(f"[ALERT] Marcado en DB y esperando {ALERT_DELAY_SECONDS}s antes de notificar a {exec_name} sobre {phone} (Prop: {lead_data['property_code']})...")
         await asyncio.sleep(ALERT_DELAY_SECONDS)
         
         # Recargamos los datos del prospecto DESPUÉS del delay para capturar datos nuevos

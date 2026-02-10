@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, Tuple
 from pymongo import MongoClient
 from config import Config
 from .storage import get_db
+from .utils import safe_int_conversion
 
 logger = logging.getLogger(__name__)
 
@@ -90,10 +91,13 @@ def get_executive_phone(executive_name: str) -> Optional[str]:
         user = db["usuarios"].find_one({"nombre": {"$regex": f"^{re.escape(executive_name)}$", "$options": "i"}})
         
     if user:
-        # Buscamos el campo 'telefono' (según sugeriste) o 'movil'
-        phone = user.get("telefono") or user.get("movil")
+        # Buscamos el campo 'telefono' (según sugeriste), 'tel' o 'movil'
+        phone = user.get("telefono") or user.get("tel") or user.get("movil")
         if phone:
+            logger.info(f"[LOOKUP] Usuario encontrado: {user.get('nombre')} | Tel: {phone}")
             return str(phone).strip()
+    
+    logger.warning(f"[LOOKUP] No se encontró usuario '{executive_name}' en colección 'usuarios'.")
 
     # 2. Respaldo: Números encontrados hoy (mientras los pasas a la base de datos)
     fallbacks = {
@@ -108,22 +112,30 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     Returns (Executive Name, Executive Phone).
     """
     db = get_db()
-    # QUERY MEJORADA: Busca por código Procasa O por códigos de portales (Yapo/ML)
+    
+    # BUSQUEDA ROBUSTA (String o Int)
+    p_int = safe_int_conversion(property_code)
+    logger.info(f"[ROUTER] Buscando responsable para propiedad: '{property_code}' (int: {p_int})")
+    
     query = {
         "$or": [
             {"codigo": property_code},
+            {"codigo": p_int},
             {"codigo_mercadolibre": property_code},
-            {"codigo_yapo": property_code}
+            {"codigo_mercadolibre": p_int},
+            {"codigo_yapo": property_code},
+            {"codigo_yapo": p_int}
         ]
     }
     prop = db["universo_obelix"].find_one(query)
     
     if not prop:
-        logger.warning(f"Property code {property_code} not found in universo_obelix (ni en portales).")
+        logger.warning(f"[ROUTER] Propiedad {property_code} NO encontrada en universo_obelix (ni en portales).")
         # FALLBACK ROBUSTO: Retornar Administrativo o Default para no romper el flujo
         return "Sin Asignar", "+56900000000" 
 
     original_executive = prop.get("ejecutivo", "")
+    logger.info(f"[ROUTER] Propiedad encontrada. Ejecutivo original en ficha: '{original_executive}'")
     region = prop.get("region", "")
     comuna = prop.get("comuna", "")
     

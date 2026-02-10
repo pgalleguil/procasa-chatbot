@@ -756,7 +756,15 @@ async def startup_event():
                             prop_code = lead_data.get("property_code")
                             
                             if target_phone:
-                                msg = format_whatsapp_template(lead_data, target_name, prop_code)
+                                # FILTER: Si es el número dummy, marcar como enviado (ignorado) y seguir
+                                if target_phone == "+56900000000":
+                                    logger.warning(f"[BACKGROUND] Ignorando envío pendiente a {target_phone} (Dummy). Marcado como procesado.")
+                                    mark_notification_sent(p["_id"])
+                                    continue
+
+                                # FIX: format_whatsapp_template ahora requiere is_new_assignment (o usa default True)
+                                msg = format_whatsapp_template(lead_data, target_name, prop_code, is_new_assignment=True)
+                                
                                 try:
                                     from chatbot.crm_service import CrmService
                                     from chatbot.constants import InteractionType

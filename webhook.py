@@ -591,6 +591,15 @@ async def webhook(
          logger.info(f"[WHATSAPP] Ignorando mensaje de grupo")
          return JSONResponse({"status": "group message ignored"}, status_code=200)
 
+    # --- EXTRACCIÓN DEL TEXTO (RESTAURADA) ---
+    text = (
+        msg_obj.get("messageBody") or
+        msg_obj.get("message", {}).get("conversation") or
+        msg_obj.get("message", {}).get("extendedTextMessage", {}).get("text", "") or
+        ""
+    ).strip()
+    # -----------------------------------------
+
     # Limpiamos el número: nos quedamos solo con dígitos
     phone_digits = "".join(filter(str.isdigit, phone))
     

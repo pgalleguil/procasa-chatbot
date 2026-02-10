@@ -76,12 +76,14 @@ def formatear_ficha_tecnica(propiedad):
 # ==========================================
 
 
-async def process_user_message(phone: str, message: str) -> str:
+async def process_user_message(phone: str, message: str, is_from_me: bool = False) -> str:
     original_message = message
     msg_lower = original_message.lower()
     
-    # 1. Guardar mensaje usuario
-    guardar_mensaje(phone, "user", original_message)
+    # 1. Guardar mensaje (con el rol correcto)
+    # Si viene de 'me' (del dueño del bot), lo guardamos como assistant/human
+    role = "assistant" if is_from_me else "user"
+    guardar_mensaje(phone, role, original_message)
 
     # === LÓGICA DE PAUSA (INTERCEPCIÓN) ===
     from .storage import obtener_bot_pausado, toggle_bot_pausado
@@ -89,17 +91,24 @@ async def process_user_message(phone: str, message: str) -> str:
     if original_message.strip() == "..":
         nuevo_estado = toggle_bot_pausado(phone)
         if nuevo_estado:
-            respuesta_pausa = "🤖 *Bot pausado.* He dejado de intervenir para que puedas hablar con el cliente. Escribe `..` de nuevo para reactivarme."
+            logger.info(f"🤖 [TOGGLE] Bot PAUSADO para {phone}")
         else:
-            respuesta_pausa = "🤖 *Bot reactivado.* ¡Hola de nuevo! Ya estoy listo para seguir ayudando a los clientes."
+            logger.info(f"🤖 [TOGGLE] Bot REACTIVADO para {phone}")
         
-        guardar_mensaje(phone, "assistant", respuesta_pausa, {"tipo": "bot_toggle"})
-        return respuesta_pausa
+        # Guardamos en DB para historial interno pero retornamos vacío para NO enviar a WhatsApp
+        guardar_mensaje(phone, "assistant", f"Bot {'Pausado' if nuevo_estado else 'Reactivado'} (Comando ..)", {"tipo": "bot_toggle"})
+        return "" 
 
-    # Si el bot está pausado, NO procesamos ni respondemos, pero el mensaje ya se guardó arriba
+    # Si es un mensaje manual del agente (is_from_me), no hacemos nada más, 
+    # solo lo dejamos guardado en el historial arriba.
+    if is_from_me:
+        logger.info(f"[MANUAL] Mensaje manual detectado para {phone}. Guardado en contexto.")
+        return ""
+
+    # Si el bot está pausado, NO procesamos ni respondemos para el cliente
     if obtener_bot_pausado(phone):
         logger.info(f"[PAUSED] Bot pausado para {phone}. Ignorando procesamiento.")
-        return "" # Retornamos vacío para que el webhook no envíe nada
+        return "" 
 
     historial = obtener_conversacion(phone)
 

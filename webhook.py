@@ -483,7 +483,7 @@ except ImportError:
 
 from chatbot.whatsapp_client import send_whatsapp_message
 
-async def process_with_debounce(phone: str, full_text: str):
+async def process_with_debounce(phone: str, full_text: str, is_from_me: bool = False):
     if phone in pending_tasks and not pending_tasks[phone].done():
         pending_tasks[phone].cancel()
         logger.info(f"[DEBOUNCE] Tarea anterior cancelada para {phone}")
@@ -496,7 +496,7 @@ async def process_with_debounce(phone: str, full_text: str):
         
     last_message_time[phone] = time.time()
 
-    async def delayed_process():
+    async def delayed_process(from_me: bool):
         try:
             await asyncio.sleep(DEBOUNCE_SECONDS)
             if time.time() - last_message_time.get(phone, 0) < DEBOUNCE_SECONDS - 0.1:
@@ -504,8 +504,12 @@ async def process_with_debounce(phone: str, full_text: str):
             final_message = accumulated_messages.pop(phone, "").strip()
             if not final_message:
                 return
-            logger.info(f"[PROCESS] Procesando mensaje AGRUPADO de {phone}: {final_message[:80]}...")
-            bot_response = await process_user_message(phone, final_message)
+            
+            # Si es mensaje nuestro, lo registramos pero el bot no debe responder 
+            # (Excepto si es el comando de toggle)
+            logger.info(f"[PROCESS] Procesando mensaje {'HUMANO' if from_me else 'CLIENTE'} de {phone}")
+            bot_response = await process_user_message(phone, final_message, is_from_me=from_me)
+            
             if bot_response and bot_response.strip():
                 await send_whatsapp_message(phone, bot_response)
         except asyncio.CancelledError:
@@ -516,7 +520,7 @@ async def process_with_debounce(phone: str, full_text: str):
             if phone in pending_tasks:
                 pending_tasks.pop(phone, None)
 
-    task = asyncio.create_task(delayed_process())
+    task = asyncio.create_task(delayed_process(is_from_me))
     pending_tasks[phone] = task
 
 # ========================= 8. WEBHOOK & API ENDPOINTS =========================
@@ -552,12 +556,18 @@ async def webhook(
         return JSONResponse({"status": "no messages"}, status_code=200)
 
     msg_obj = messages_data if isinstance(messages_data, dict) else messages_data[0]
+    key = msg_obj.get("key", {})
+    from_me = key.get("fromMe", False)
+    
+    # Contexto de la conversación: remoteJid es el ID del chat (el cliente)
     phone = (
-        msg_obj.get("key", {}).get("cleanedSenderPn") or
-        msg_obj.get("key", {}).get("senderPn", "").split("@")[0] or
-        msg_obj.get("from", "").split("@")[0] or
+        key.get("remoteJid") or 
+        msg_obj.get("from") or 
+        key.get("cleanedSenderPn") or
+        key.get("senderPn", "") or
         ""
-    ).strip()
+    ).split("@")[0].strip()
+
     text = (
         msg_obj.get("messageBody") or
         msg_obj.get("message", {}).get("conversation") or
@@ -568,19 +578,21 @@ async def webhook(
     if not phone or not text:
         return JSONResponse({"status": "ignored"}, status_code=200)
 
+    # Normalización de teléfono
     phone = phone.replace("@c.us", "").replace("@s.whatsapp.net", "")
     if phone.startswith("56") and len(phone) == 11:
         phone = "+" + phone
-    elif not phone.startswith("+"):
+    elif not phone.startswith("+") and phone.isdigit():
         phone = "+56" + phone.lstrip("0")
 
-    logger.info(f"[WHATSAPP] Mensaje recibido de {phone}: {text}")
+    logger.info(f"[WHATSAPP] {'[HUMANO]' if from_me else '[CLIENTE]'} Mensaje en {phone}: {text}")
     try:
         from chatbot.storage import log_event, EventType
-        log_event(phone, EventType.MSG_IN, "user", {"text": text})
+        log_event(phone, EventType.MSG_IN if not from_me else EventType.MSG_OUT, "user" if not from_me else "agent", {"text": text})
     except:
         pass
-    await process_with_debounce(phone, text)
+        
+    await process_with_debounce(phone, text, is_from_me=from_me)
     return JSONResponse({"ok": True}, status_code=200)
 
 @app.get("/health")

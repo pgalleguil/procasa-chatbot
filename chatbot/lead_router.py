@@ -15,7 +15,7 @@ from .constants import CHILE_TZ
 
 # --- CONFIGURACIÓN DE HORARIOS ---
 BUSINESS_START_HOUR = 9
-BUSINESS_END_HOUR = 18  # Extendido para pruebas
+BUSINESS_END_HOUR = 21  # Extendido para pruebas
 BUSINESS_DAYS = [0, 1, 2, 3, 4] # Lunes a Viernes
 
 # Constants for specific executives

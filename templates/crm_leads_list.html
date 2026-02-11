@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Procasa AI | Bandeja</title>
+    <title>Procasa | Bandeja</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -674,8 +674,12 @@
 
 
 
-        /* --- MOBILE CARD VIEW TRANSFORM --- */
+        /* --- MOBILE CARD VIEW TRANSFORM (REFINADO PARA EQUIPOS EN TERRENO) --- */
         @media (max-width: 768px) {
+            .main-content {
+                padding: 15px;
+                /* Menos padding lateral en móvil */
+            }
 
             /* Hide Table Header */
             .crm-table thead {
@@ -692,70 +696,112 @@
             }
 
             .crm-table tbody tr {
-                margin-bottom: 20px;
+                margin-bottom: 25px;
                 background: var(--bg-card);
                 border: 1px solid var(--border-color);
-                border-radius: 16px;
-                padding: 15px;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                border-radius: 20px;
+                padding: 0;
+                /* Padding interno manejado por celdas */
+                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
                 position: relative;
                 overflow: hidden;
+                transition: transform 0.2s;
             }
 
-            /* Remove default table borders */
+            .crm-table tbody tr:active {
+                transform: scale(0.98);
+            }
+
+            /* Celdas del Lead */
             .crm-table td {
                 border: none;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-                padding: 10px 0;
+                padding: 12px 20px;
                 display: flex;
-                justify-content: space-between;
-                align-items: center;
-                text-align: right;
-                min-height: 40px;
+                flex-direction: column;
+                align-items: flex-start;
+                text-align: left;
+                min-height: auto;
             }
 
-            .crm-table td:last-child {
-                border-bottom: none;
-                padding-top: 15px;
-                justify-content: flex-end;
-                gap: 10px;
-            }
-
-            /* Data Labels via CSS (Fallback if HTML attrs missing) or Helper */
+            /* Etiqueta flotante / Label */
             .crm-table td::before {
                 content: attr(data-label);
-                float: left;
-                font-weight: 700;
+                display: block;
+                font-size: 0.65rem;
+                font-weight: 800;
                 text-transform: uppercase;
-                font-size: 0.75rem;
                 color: var(--text-secondary);
-                letter-spacing: 0.5px;
+                letter-spacing: 1px;
+                margin-bottom: 4px;
+                opacity: 0.7;
             }
 
-            /* Custom Adjustments for Specific Cells */
-            .crm-table td[data-label="Estado"] {
-                flex-direction: row-reverse;
-                justify-content: space-between;
-                background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.05));
-                margin: -15px -15px 10px -15px;
-                /* Bleed to edges */
-                padding: 12px 15px;
+            /* SLA / TIEMPO: Destacado en el header de la tarjeta */
+            .crm-table td[data-label="SLA / Tiempo"] {
+                background: rgba(255, 255, 255, 0.03);
                 border-bottom: 1px solid var(--border-color);
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+                padding: 15px 20px;
             }
 
+            .crm-table td[data-label="SLA / Tiempo"]::before {
+                margin-bottom: 0;
+            }
 
+            /* CLIENTE: Nombre grande */
+            .crm-table td[data-label="Cliente"] .fw-bold {
+                font-size: 1.1rem;
+                color: var(--text-primary);
+            }
 
-            /* Hide Search Input Labels in Toolbar for space */
+            /* ESTADO: Badge visual */
+            .crm-table td[data-label="Estado"] {
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+                background: linear-gradient(90deg, rgba(99, 102, 241, 0.05), transparent);
+            }
+
+            .crm-table td[data-label="Estado"]::before {
+                margin-bottom: 0;
+            }
+
+            /* ÚLTIMA ACCIÓN: Layout compacto */
+            .crm-table td[data-label="Última Acción"] {
+                background: rgba(0, 0, 0, 0.1);
+                border-top: 1px solid var(--border-color);
+            }
+
+            /* EJECUTIVO: Discreto */
+            .crm-table td[data-label="Ejecutivo"] {
+                border-top: 1px dashed rgba(255, 255, 255, 0.1);
+                padding-bottom: 20px;
+            }
+
+            /* Toolbar y Filtros en móvil */
             .toolbar {
                 flex-direction: column;
                 align-items: stretch;
-                gap: 10px;
+                gap: 12px;
+                background: transparent;
+                border: none;
+                padding: 0;
+                margin-bottom: 30px;
             }
 
             .search-box,
             .form-select-custom {
-                width: 100%;
+                width: 100% !important;
                 min-width: 100%;
+                height: 50px;
+                /* Más fácil de tocar */
+            }
+
+            .search-box input {
+                height: 50px;
+                font-size: 1rem;
             }
         }
     </style>
@@ -767,7 +813,9 @@
 
         <nav class="sidebar" id="sidebar">
             <div class="brand">
-                <i class="fa-solid fa-robot text-primary"></i> <span>PROCASA AI</span>
+                <img src="/static/logo.png" alt="PROCASA"
+                    style="max-height: 30px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
+                    onerror="this.style.display='none'"> <span>PROCASA</span>
             </div>
             {% if user_role != 'agente' %}
             <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i>

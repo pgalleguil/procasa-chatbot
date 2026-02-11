@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Procasa AI | Detalle Lead</title>
+    <title>Procasa | Detalle Lead</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -1814,7 +1814,9 @@
 
         <nav class="sidebar" id="sidebar">
             <div class="brand">
-                <i class="fa-solid fa-robot text-primary"></i> <span>PROCASA AI</span>
+                <img src="/static/logo.png" alt="PROCASA"
+                    style="max-height: 30px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
+                    onerror="this.style.display='none'"> <span>PROCASA</span>
             </div>
             <a href="/crm" class="nav-link"><i class="fa-solid fa-arrow-left"></i> <span>Volver</span></a>
 
@@ -1971,7 +1973,7 @@
                             </div>
                             <div class="collapse mt-2" id="chatHistoryCollapse">
                                 <div class="bg-dark p-2 rounded border border-secondary chat-scroll-custom"
-                                    style="max-height: 200px; overflow-y: auto;">
+                                    style="max-height: 400px; overflow-y: auto;">
                                     {% for msg in lead.timeline %}
                                     {% set is_ia = msg.role == 'chat-bot' %}
                                     <div class="chat-msg-{{ 'assistant' if is_ia else 'user' }}">
@@ -2283,7 +2285,7 @@
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="failed_res" id="rd_corta"
                                         onclick="setResult('intento_fallido', 'Reintentar Mañana', 'warning');">
-                                    <label class="form-check-label" for="rd_corta">Timbra y corta</label>
+                                    <label class="form-check-label" for="rd_corta">Marca y corta</label>
                                 </div>
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="failed_res" id="rd_apagado"
@@ -2475,7 +2477,7 @@
                             <div id="gestion-footer" class="d-none animate__animated animate__fadeIn">
                                 <div class="section-title mt-3">Detalle de Gestión</div>
                                 <div id="global-date-container" class="mt-3 mb-3 d-none">
-                                    <label class="data-label mb-1">Próxima Acción (solo si aplica)</label>
+                                    <label class="data-label mb-1">Próxima Acción</label>
                                     <input type="datetime-local" id="fecha_global" class="form-control form-control-sm"
                                         onchange="updateSummary()">
                                 </div>
@@ -2975,11 +2977,12 @@
             const closingReasons = {
                 'ganado': [
                     { val: 'venta_concretada', text: 'Venta Concretada' },
-                    { val: 'derivado', text: 'Derivado a otra propiedad (Ganado)' }
+                    { val: 'derivado', text: 'Derivado a otra propiedad' }
                 ],
                 'precio': [
                     { val: 'rechazo_bancario', text: 'Crédito Rechazado / Sin Capacidad' },
                     { val: 'fuera_presupuesto', text: 'Precio fuera de presupuesto' },
+                    { val: 'prop_sube_precio', text: 'Propietario sube de precio' },
                     { val: 'espera_baja', text: 'Cliente espera baja de precio' },
                     { val: 'condiciones', text: 'Condiciones comerciales no aceptadas' },
                     { val: 'gastos_altos', text: 'Gastos comunes/asociados altos' }
@@ -2994,7 +2997,7 @@
                 ],
                 'cliente': [
                     { val: 'arrepentimiento', text: 'Cliente se arrepiente' },
-                    { val: 'dejo_responder', text: 'Dejó de responder (Ghosting)' },
+                    { val: 'dejo_responder', text: 'Dejó de responder' },
                     { val: 'sin_urgencia_real', text: 'Sin urgencia real de compra' },
                     { val: 'cancelada_personal', text: 'Compra cancelada (Decisión personal)' }
                 ],
@@ -3029,18 +3032,18 @@
                             { label: "🤖 Solicitud Visita (Alt)", channel: "wa", text: "Hola [[nombre]], vi que solicitaste agendar visita para [[propiedad]].\n\nPerfecto, tengo disponibilidad [[día]] a las [[hora]].\n¿Te sirve?" },
                             { label: "🤖 Datos Incompletos", channel: "wa", text: "Hola [[nombre]] 👋\nSoy [[ejecutivo]] de Procasa.\n\nVi que solicitaste visita para la propiedad en [[comuna]].\n\nPara generar la orden de visita necesito completar:\n✔ Nombre completo\n✔ RUT\n\nCuando me los envíes coordinamos de inmediato." },
                             { label: "🤖 Más Información", channel: "wa", text: "Hola [[nombre]] 👋\nSoy [[ejecutivo]] de Procasa.\n\nVi que solicitaste más información sobre la propiedad en [[comuna]].\n\nCuéntame, ¿qué aspecto te interesa revisar con más detalle?\nPrecio, gastos comunes, entorno, financiamiento?" },
-                            { label: "📩 Confirmación Visita", channel: "email", subject: "Confirmación de Visita – [[propiedad]]", text: "Estimado/a [[nombre completo]],\n\nConfirmamos la visita a la propiedad ubicada en [[direccion]], [[comuna]].\n\nFecha: [[día]]\nHora: [[hora]]\n\nSus datos han sido correctamente registrados para la orden de visita.\n\nQuedo atento/a ante cualquier ajuste.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" },
-                            { label: "📩 Datos para Visita", channel: "email", subject: "Información requerida para visita – [[propiedad]]", text: "Estimado/a [[nombre]],\n\nPara poder coordinar la visita solicitada, necesitamos completar sus datos para el registro correspondiente.\n\nAgradeceré nos indique:\n- Nombre completo\n- RUT\n\nQuedo atento/a para coordinar en cuanto recibamos esta información.\n\nSaludos,\n[[ejecutivo]]\nProcasa" },
-                            { label: "📩 Información Detallada", channel: "email", subject: "Información detallada – [[propiedad]]", text: "Estimado/a [[nombre]],\n\nAdjunto encontrará la información detallada de la propiedad ubicada en [[direccion]].\n\nSi desea coordinar visita o revisar condiciones de financiamiento, quedo atento/a.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
+                            { label: "📩 Confirmación Visita", channel: "email", subject: "Confirmación de Visita – [[propiedad]]", text: "[[nombre completo]],\n\nConfirmamos la visita a la propiedad ubicada en [[direccion]], [[comuna]].\n\nFecha: [[día]]\nHora: [[hora]]\n\nSus datos han sido correctamente registrados para la orden de visita.\n\nQuedo atento/a ante cualquier ajuste.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" },
+                            { label: "📩 Datos para Visita", channel: "email", subject: "Información requerida para visita – [[propiedad]]", text: "[[nombre]],\n\nPara poder coordinar la visita solicitada, necesitamos completar sus datos para el registro correspondiente.\n\nAgradeceré nos indique:\n- Nombre completo\n- RUT\n\nQuedo atento/a para coordinar en cuanto recibamos esta información.\n\nSaludos,\n[[ejecutivo]]\nProcasa" },
+                            { label: "📩 Información Detallada", channel: "email", subject: "Información detallada – [[propiedad]]", text: "[[nombre]],\n\nAdjunto encontrará la información detallada de la propiedad ubicada en [[direccion]].\n\nSi desea coordinar visita o revisar condiciones de financiamiento, quedo atento/a.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
                         ],
                         stage2: [
                             { label: "🔥 Propuesta Visita", channel: "wa", text: "Por lo que conversamos, la mejor forma de evaluarla es en terreno.\n\n¿Te parece si coordinamos visita esta semana?" },
                             { label: "🔥 Visita (Cerrada)", channel: "wa", text: "Tengo disponibilidad jueves 17:00 o sábado 11:00.\n¿Cuál te acomoda más?" },
-                            { label: "📩 Agenda Visita", channel: "email", subject: "Agenda de visita – [[propiedad]]", text: "Estimado/a [[nombre]],\n\nConfirmo disponibilidad para visita en los siguientes horarios:\n\n- [[día]] [[hora]]\n- [[día]] [[hora]]\n\nQuedo atento/a a su confirmación.\n\nSaludos,\n[[ejecutivo]]" }
+                            { label: "📩 Agenda Visita", channel: "email", subject: "Agenda de visita – [[propiedad]]", text: "[[nombre]],\n\nConfirmo disponibilidad para visita en los siguientes horarios:\n\n- [[día]] [[hora]]\n- [[día]] [[hora]]\n\nQuedo atento/a a su confirmación.\n\nSaludos,\n[[ejecutivo]]" }
                         ],
                         stage3: [
                             { label: "📅 Confirmar Visita", channel: "wa", text: "Hola [[nombre]] 👋\nConfirmo visita:\n\n📍 [[direccion]]\n🕒 [[hora]]\n\n¿Seguimos según lo acordado?" },
-                            { label: "📩 Recordatorio Visita", channel: "email", subject: "Recordatorio de visita – [[propiedad]]", text: "Estimado/a [[nombre]],\n\nLe recordamos la visita agendada para [[día]] a las [[hora]] en [[direccion]].\n\nAnte cualquier eventualidad, puede contactarnos directamente.\n\nSaludos,\nProcasa" }
+                            { label: "📩 Recordatorio Visita", channel: "email", subject: "Recordatorio de visita – [[propiedad]]", text: "[[nombre]],\n\nLe recordamos la visita agendada para [[día]] a las [[hora]] en [[direccion]].\n\nAnte cualquier eventualidad, puede contactarnos directamente.\n\nSaludos,\nProcasa" }
                         ],
                         stage4: [
                             { label: "🏁 Interés Alto", channel: "wa", text: "[[nombre]], por lo que vimos hoy, creo que esta propiedad calza bastante con lo que buscas.\n\n¿Te parece si avanzamos con propuesta formal?" },
@@ -3049,12 +3052,12 @@
                         ],
                         stage5: [
                             { label: "💰 Solicitar Documentos", channel: "wa", text: "Para formalizar la oferta necesitamos:\n\n✔ Pre-aprobación bancaria\n✔ Cédula de identidad\n\nCon eso dejamos todo presentado formalmente al propietario." },
-                            { label: "📩 Documentación", channel: "email", subject: "Documentación requerida – Proceso de oferta", text: "Estimado/a [[nombre]],\n\nPara proceder con la presentación formal de oferta necesitamos:\n\n- Pre-aprobación bancaria\n- Copia de cédula de identidad\n\nUna vez recibidos, gestionaremos la presentación inmediata.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
+                            { label: "📩 Documentación", channel: "email", subject: "Documentación requerida – Proceso de oferta", text: "[[nombre]],\n\nPara proceder con la presentación formal de oferta necesitamos:\n\n- Pre-aprobación bancaria\n- Copia de cédula de identidad\n\nUna vez recibidos, gestionaremos la presentación inmediata.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
                         ],
                         stage6: [
                             { label: "❄️ Retomar Interés", channel: "wa", text: "Hola [[nombre]] 👋\nQuería retomar tu interés por la propiedad en [[comuna]].\n\n¿Sigues evaluando opciones o ya avanzaste con otra alternativa?" },
                             { label: "❄️ Cierre Definitivo", channel: "wa", text: "Si prefieres que no te siga contactando, avísame y dejamos el seguimiento cerrado." },
-                            { label: "📩 Seguimiento Formal", channel: "email", subject: "Seguimiento – [[propiedad]]", text: "Estimado/a [[nombre]],\n\nLe escribo para consultar si continúa evaluando la propiedad en [[comuna]] o si ya ha tomado decisión.\n\nQuedo atento/a a su confirmación.\n\nSaludos,\n[[ejecutivo]]" }
+                            { label: "📩 Seguimiento Formal", channel: "email", subject: "Seguimiento – [[propiedad]]", text: "[[nombre]],\n\nLe escribo para consultar si continúa evaluando la propiedad en [[comuna]] o si ya ha tomado decisión.\n\nQuedo atento/a a su confirmación.\n\nSaludos,\n[[ejecutivo]]" }
                         ]
                     }
                 },
@@ -3067,27 +3070,27 @@
                     ],
                     data: {
                         coord: [
-                            { label: "📲 Solicitud Directa", channel: "wa", text: "Don/Doña [[owner_name]] 👋\nTenemos un cliente interesado en visitar su propiedad en [[direccion]].\n\n¿Le parece bien coordinar visita este [[día]] a las [[hora]]?" },
-                            { label: "📲 Alternativa Abierta", channel: "wa", text: "Don [[owner_name]],\nTengo un interesado calificado que desea visitar la propiedad.\n\n¿En qué horarios tiene disponibilidad esta semana?" },
-                            { label: "📲 Confirmación Previa", channel: "wa", text: "Don [[owner_name]],\nAntes de coordinar visita, quisiera confirmar que la propiedad continúa disponible.\n\nEn cuanto me confirme, agendamos." },
-                            { label: "📲 Seguimiento Coordinación", channel: "wa", text: "Don [[owner_name]],\nQuedo atento a su confirmación para coordinar la visita solicitada.\n\nEl cliente mantiene interés." },
-                            { label: "📧 Solicitud Visita", channel: "email", subject: "Solicitud de visita – [[direccion]]", text: "Estimado/a [[owner_name]],\n\nTenemos un cliente interesado en visitar su propiedad ubicada en [[direccion]].\n\nAgradeceré nos confirme disponibilidad para coordinar la visita.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
+                            { label: "📲 Solicitud Directa", channel: "wa", text: "[[owner_name]] 👋\nTenemos un cliente interesado en visitar su propiedad en [[direccion]].\n\n¿Le parece bien coordinar visita este [[día]] a las [[hora]]?" },
+                            { label: "📲 Alternativa Abierta", channel: "wa", text: "[[owner_name]],\nTengo un interesado calificado que desea visitar la propiedad.\n\n¿En qué horarios tiene disponibilidad esta semana?" },
+                            { label: "📲 Confirmación Previa", channel: "wa", text: "[[owner_name]],\nAntes de coordinar visita, quisiera confirmar que la propiedad continúa disponible.\n\nEn cuanto me confirme, agendamos." },
+                            { label: "📲 Seguimiento Coordinación", channel: "wa", text: "[[owner_name]],\nQuedo atento a su confirmación para coordinar la visita solicitada.\n\nEl cliente mantiene interés." },
+                            { label: "📧 Solicitud Visita", channel: "email", subject: "Solicitud de visita – [[direccion]]", text: "[[owner_name]],\n\nTenemos un cliente interesado en visitar su propiedad ubicada en [[direccion]].\n\nAgradeceré nos confirme disponibilidad para coordinar la visita.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
                         ],
                         confirm: [
-                            { label: "📲 Confirmación Simple", channel: "wa", text: "Don [[owner_name]],\nVisita confirmada para [[día]] a las [[hora]].\n\nLe aviso cuando el cliente llegue." },
-                            { label: "📲 Recordatorio Previo", channel: "wa", text: "Don [[owner_name]],\nLe recuerdo visita hoy a las [[hora]].\n\nCualquier eventualidad me avisa." },
-                            { label: "📧 Confirmación Visita", channel: "email", subject: "Confirmación de visita – [[direccion]]", text: "Estimado/a [[owner_name]],\n\nConfirmamos visita para el día [[día]] a las [[hora]].\n\nLe informaré el resultado posteriormente.\n\nSaludos,\n[[ejecutivo]]" }
+                            { label: "📲 Confirmación Simple", channel: "wa", text: "[[owner_name]],\nVisita confirmada para [[día]] a las [[hora]].\n\nLe aviso cuando el cliente llegue." },
+                            { label: "📲 Recordatorio Previo", channel: "wa", text: "[[owner_name]],\nLe recuerdo visita hoy a las [[hora]].\n\nCualquier eventualidad me avisa." },
+                            { label: "📧 Confirmación Visita", channel: "email", subject: "Confirmación de visita – [[direccion]]", text: "[[owner_name]],\n\nConfirmamos visita para el día [[día]] a las [[hora]].\n\nLe informaré el resultado posteriormente.\n\nSaludos,\n[[ejecutivo]]" }
                         ],
                         result: [
-                            { label: "📲 Interés Alto", channel: "wa", text: "Don [[owner_name]],\nLa visita se realizó correctamente 👍\n\nEl cliente mostró interés y está evaluando condiciones." },
+                            { label: "📲 Interés Alto", channel: "wa", text: "[[owner_name]],\nLa visita se realizó correctamente 👍\n\nEl cliente mostró interés y está evaluando condiciones." },
                             { label: "📲 Interés Medio", channel: "wa", text: "La visita se realizó sin inconvenientes.\n\nEl cliente está comparando con otra alternativa y nos dará respuesta." },
                             { label: "📲 Sin Interés", channel: "wa", text: "La visita se realizó según lo acordado.\n\nEn esta ocasión el cliente decidió no avanzar.\nSeguimos gestionando nuevos interesados." },
-                            { label: "📧 Resultado Visita", channel: "email", subject: "Resultado de visita – [[direccion]]", text: "Estimado/a [[owner_name]],\n\nLa visita programada se realizó según lo acordado.\n\nNivel de interés: [[alto/medio/bajo]].\n\nContinuamos gestionando interesados.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
+                            { label: "📧 Resultado Visita", channel: "email", subject: "Resultado de visita – [[direccion]]", text: "[[owner_name]],\n\nLa visita programada se realizó según lo acordado.\n\nNivel de interés: [[alto/medio/bajo]].\n\nContinuamos gestionando interesados.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
                         ],
                         offer: [
-                            { label: "📲 Intención Oferta", channel: "wa", text: "Don [[owner_name]],\nEl cliente visitó y manifestó intención de avanzar.\n\nEstoy validando antecedentes para presentar oferta formal." },
+                            { label: "📲 Intención Oferta", channel: "wa", text: "[[owner_name]],\nEl cliente visitó y manifestó intención de avanzar.\n\nEstoy validando antecedentes para presentar oferta formal." },
                             { label: "📲 Presentación Oferta", channel: "wa", text: "Hemos recibido oferta por su propiedad:\n\nMonto: [[monto]]\nCondiciones: [[condiciones]]\n\n¿Le parece que la revisemos?" },
-                            { label: "📧 Presentación Oferta", channel: "email", subject: "Presentación de oferta – [[direccion]]", text: "Estimado/a [[owner_name]],\n\nAdjunto encontrará la oferta formal recibida para su propiedad.\n\nQuedo atento/a para revisarla en conjunto y gestionar respuesta.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
+                            { label: "📧 Presentación Oferta", channel: "email", subject: "Presentación de oferta – [[direccion]]", text: "[[owner_name]],\n\nAdjunto encontrará la oferta formal recibida para su propiedad.\n\nQuedo atento/a para revisarla en conjunto y gestionar respuesta.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
                         ]
                     }
                 }
@@ -3134,17 +3137,21 @@
 
                     if (!score) missing = "Calificar Lead (A/B/C)";
                     else if (!subRes) missing = "Manifestación del Lead";
-                    else if ((subRes === 'visita_agendada' || subRes === 'requiere_seguimiento') && !date) missing = "Fecha de Seguimiento";
+                    else if (!date) missing = "Fecha de Seguimiento";
                     else isValid = true;
 
                 } else if (currentInteraction === 'partial') {
                     const res = document.querySelector('input[name="partial_res"]:checked');
+                    const date = document.getElementById('fecha_global').value;
                     if (!res) missing = "Situación del contacto";
+                    else if (!date) missing = "Fecha de Seguimiento";
                     else isValid = true;
 
                 } else if (currentInteraction === 'failed') {
                     const res = document.querySelector('input[name="failed_res"]:checked');
+                    const date = document.getElementById('fecha_global').value;
                     if (!res) missing = "Resultado del intento";
+                    else if (!date) missing = "Fecha de Seguimiento";
                     else isValid = true;
 
                 } else if (currentInteraction === 'invalid') {
@@ -3158,9 +3165,17 @@
                     else isValid = true;
 
                 } else if (currentInteraction === 'propietario') {
+                    const selectedCat = document.querySelector('input[name="owner_cat_radio"]:checked')?.value;
                     const propReason = document.getElementById('sel_prop_detalle').value;
+                    const date = document.getElementById('fecha_global').value;
+
                     if (!propReason) missing = "Detalle Propietario";
-                    else isValid = true;
+                    else {
+                        // Obligatorio para todos excepto No Autoriza y No Disponible
+                        const isOptional = (selectedCat === 'prop_no_autoriza' || selectedCat === 'prop_no_disponible');
+                        if (!isOptional && !date) missing = "Fecha de Seguimiento";
+                        else isValid = true;
+                    }
                 }
                 updateMainButtonState(isValid, missing);
             }
@@ -3219,32 +3234,10 @@
 
 
 
-            function autoSetDate(daysToAdd) {
-                if (daysToAdd === 0) return; // Si es 0, no hacer nada (o limpiar)
-
-                const date = new Date();
-                date.setDate(date.getDate() + daysToAdd);
-
-                // Smart UX: Si es visita (1 dia), poner a las 10:00 AM para sugerir mañana
-                if (daysToAdd === 1) {
-                    date.setHours(10, 0, 0, 0);
-                } else {
-                    // Si es llamar luego (0 dias o algo asi), mantener hora o +2h
-                    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-                }
-
-                // Formato datetime-local: YYYY-MM-DDTHH:mm
-                // Ajuste manual simple para Chile/ISO
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                const hours = String(date.getHours()).padStart(2, '0');
-                const minutes = String(date.getMinutes()).padStart(2, '0');
-
-                const dateString = `${year}-${month}-${day}T${hours}:${minutes}`;
-
-                document.getElementById('fecha_global').value = dateString;
-                updateSummary();
+            function autoSetDate(days, label) {
+                // Función deshabilitada por requerimiento del usuario:
+                // "LA FECHA Y HORARIO SIEMPRE LA DEBE DEFINIR EL USUARIO"
+                return;
             }
 
             function setResult(val, btnText = null, btnType = 'primary') {
@@ -3279,43 +3272,42 @@
             }
 
             function setActionMode(mode) {
-                logAction('CHANGE_MODE', { mode: mode });
-
                 // 1. Ocultar Empty State y Mostrar Trabajo
                 document.getElementById('empty-state').classList.add('d-none');
                 document.getElementById('crm-work-area').classList.remove('d-none');
 
-                document.querySelectorAll('.action-btn').forEach(b => b.classList.remove('active', 'active-prop', 'active-close'));
-                document.querySelectorAll('.logic-section').forEach(el => el.classList.add('d-none'));
-                document.getElementById('contact-context').classList.add('d-none');
-                document.querySelectorAll('.context-btn').forEach(b => b.classList.remove('active'));
-
-                const btn = document.getElementById('mode_' + mode);
-                if (mode === 'prop') btn.classList.add('active-prop');
-                else if (mode === 'close') btn.classList.add('active-close');
-
-                else btn.classList.add('active');
-
-                // --- LÓGICA DE TOGGLE DE IDENTIDAD (Lead vs Owner) ---
                 const idLead = document.getElementById('identity-lead');
                 const idOwner = document.getElementById('identity-owner');
+                const btnContact = document.getElementById('mode_contact');
+                const btnProp = document.getElementById('mode_prop');
+                const btnClose = document.getElementById('mode_close');
 
-                // Resetear visibilidad por defecto
+                // LIMPIEZA TOTAL DE FORMULARIO AL CAMBIAR DE MODO
+                resetGestionForm();
+
                 idLead.classList.add('d-none');
                 idOwner.classList.add('d-none');
+                btnContact.classList.remove('active');
+                btnProp.classList.remove('active-prop');
+                btnClose.classList.remove('active-close');
+
+                // Ocultar todas las secciones de lógica
+                document.querySelectorAll('.logic-section').forEach(s => s.classList.add('d-none'));
+                document.getElementById('contact-context').classList.add('d-none');
 
                 if (mode === 'prop') {
+                    btnProp.classList.add('active-prop');
                     idOwner.classList.remove('d-none'); // Mostrar Propietario
                     toggleLogic('propietario');
                     currentActionLabel = "Gestión Propietario";
                 } else {
                     if (mode === 'contact') {
+                        btnContact.classList.add('active');
                         idLead.classList.remove('d-none'); // Mostrar Lead
                         document.getElementById('contact-context').classList.remove('d-none');
                         currentActionLabel = "Contactar Lead";
-
                     } else if (mode === 'close') {
-                        // Ocultar Lead en Cerrar (según tu pedido)
+                        btnClose.classList.add('active-close');
                         toggleLogic('descartado');
                         currentActionLabel = "Cerrar Lead";
                     }
@@ -3325,12 +3317,44 @@
                 updateSummary();
             }
 
+            function resetGestionForm() {
+                // Limpiar inputs de radio
+                document.querySelectorAll('.crm-form-container input[type="radio"]').forEach(rad => rad.checked = false);
+                // Limpiar selects (excepto los de sistema básicos si los hubiera)
+                document.querySelectorAll('.crm-form-container select').forEach(sel => {
+                    sel.selectedIndex = 0;
+                    if (sel.id === 'sel_prop_detalle' || sel.id === 'close_reason') {
+                        sel.disabled = true;
+                    }
+                });
+                // Limpiar textareas
+                document.querySelectorAll('.crm-form-container textarea').forEach(txt => txt.value = "");
+                // Limpiar fecha global
+                const fechaGlobal = document.getElementById('fecha_global');
+                if (fechaGlobal) fechaGlobal.value = "";
+
+                // Ocultar contenedores dinámicos
+                const ownerContainer = document.getElementById('owner_reason_container');
+                if (ownerContainer) ownerContainer.classList.add('d-none');
+                const closeContainer = document.getElementById('close_reason_container');
+                if (closeContainer) closeContainer.classList.add('d-none');
+
+                // Resetear el estado de los botones de contexto de contacto
+                document.querySelectorAll('.context-btn').forEach(b => b.classList.remove('active'));
+
+                // Resetear etiquetas de resumen
+                currentResultLabel = "";
+                nextBtnText = "Guardar Gestión";
+                nextBtnClass = "primary";
+            }
+
             function toggleLogic(type) {
-                currentInteraction = type;
-                if (['effective', 'partial', 'failed', 'invalid'].includes(type)) {
-                    document.querySelectorAll('.context-btn').forEach(b => b.classList.remove('active'));
-                    document.getElementById('ctx_' + type).classList.add('active');
+                // Al cambiar de sub-lógica, también limpiamos para no arrastrar selecciones previas
+                if (currentInteraction !== type) {
+                    resetGestionForm();
                 }
+
+                currentInteraction = type;
                 document.querySelectorAll('.logic-section').forEach(el => el.classList.add('d-none'));
                 const radio = document.querySelector(`input[name="interaction_type"][value="${type}"]`);
                 if (radio) radio.checked = true;
@@ -3338,6 +3362,7 @@
                 const activeBlock = document.getElementById('logic-' + type);
                 if (activeBlock) {
                     activeBlock.classList.remove('d-none');
+                    activeBlock.classList.add('animate__animated', 'animate__fadeIn'); // Add animation
                     // Mostramos el footer solo si es una lógica de contacto directo de Lead
                     // Para Propietario/Descartado, esperamos a que elijan una sub-categoría (render functions)
                     if (['effective', 'partial', 'failed', 'invalid'].includes(type)) {
@@ -3361,7 +3386,6 @@
                 } else if (type === 'failed') {
                     currentActionLabel = "Intento Fallido";
                     setResult('intento_fallido', "Registrar Intento", "primary");
-                    autoSetDate(1);
                 } else if (type === 'invalid') {
                     currentActionLabel = "Contacto Inválido";
                     nextBtnText = "Cerrar Lead";

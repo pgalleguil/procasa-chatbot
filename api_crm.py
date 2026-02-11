@@ -173,10 +173,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                 "phone": {"$in": phones_in_page}, 
                 "type": {"$in": [
                     "GESTION_LOG", "HUMAN_NOTE", "STATUS_CHANGE", 
-                    "CLICK_WHATSAPP_LEAD", "CLICK_PHONE_LEAD", "CLICK_EMAIL_LEAD",
-                    "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
-                    "CLICK_WHATSAPP_OWNER", "CLICK_PHONE_OWNER", "CLICK_EMAIL_OWNER",
-                    "SEND_WA_OWNER", "SEND_EMAIL_OWNER"
+                    "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CLICK_PHONE_LEAD",
+                    "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
                 ]}
             }},
             {"$sort": {"timestamp": -1}},
@@ -464,9 +462,9 @@ def get_lead_detail_data(phone):
         "phone": phone_clean,
         "type": {"$in": [
             "GESTION_LOG", "STATUS_CHANGE", "SYSTEM_LOG", "HUMAN_NOTE", 
-            "ASSIGNMENT", "ALERT", "CLICK_WHATSAPP_LEAD", "CLICK_PHONE_LEAD", 
-            "CLICK_EMAIL_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
-            "CLICK_WHATSAPP_OWNER", "CLICK_PHONE_OWNER", "CLICK_EMAIL_OWNER",
+            "ASSIGNMENT", "ALERT", "CLICK_PHONE_LEAD", 
+            "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
+            "CLICK_PHONE_OWNER",
             "SEND_WA_OWNER", "SEND_EMAIL_OWNER"
         ]} 
     }).sort("timestamp", -1)

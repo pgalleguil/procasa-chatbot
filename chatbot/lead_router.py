@@ -15,14 +15,17 @@ from .constants import CHILE_TZ
 
 # --- CONFIGURACIÓN DE HORARIOS ---
 BUSINESS_START_HOUR = 9
-BUSINESS_END_HOUR = 21  # Extendido para pruebas
+BUSINESS_END_HOUR = 18  # Extendido para pruebas
 BUSINESS_DAYS = [0, 1, 2, 3, 4] # Lunes a Viernes
 
 # Constants for specific executives
-JORGE_PABLO_CARO = "Jorge Pablo Caro"
-MARIELA_ARRIAGADA = "Mariela Arriagada"
-SUSANA_ENSIGNIA = "Susana Ensignia"
 ERIKA_GARRIDO = "Erika Garrido"
+SUSANA_ENSIGNIA = "Susana Ensignia"
+MARIELA_ARRIAGADA = "Mariela Arriagada"
+RAQUEL_CHENEAUX = "Raquel Cheneaux"
+
+# Lista para Round Robin (Jorge Pablo Caro - RM)
+ROUND_ROBIN_TEAM = [MARIELA_ARRIAGADA, SUSANA_ENSIGNIA, ERIKA_GARRIDO, RAQUEL_CHENEAUX]
 
 # Phone mapping (This should ideally be in a DB or Config, but hardcoding for now as requested/implied)
 # NOTE: You will need to fill in real numbers or ensure they are in the DB users collection.
@@ -78,6 +81,43 @@ def get_next_business_slot(dt: datetime) -> datetime:
         
     return next_slot
 
+def get_next_round_robin_executive(norm_comuna: str = "") -> str:
+    """
+    Obtiene el siguiente ejecutivo de la lista usando un estado persistente en MongoDB.
+    Si el ejecutivo seleccionado es Mariela pero la comuna no es de su prioridad, 
+    se salta al siguiente de la lista.
+    """
+    db = get_db()
+    state_col = db["lead_routing_state"]
+    mariela_comunas = ["macul", "nunoa", "providencia", "las condes", "santiago"]
+    
+    # Buscamos el estado actual
+    state = state_col.find_one({"id": "jpc_rm_round_robin"})
+    last_index = state.get("last_index", -1) if state else -1
+    
+    # Intentamos encontrar el siguiente válido
+    for i in range(1, len(ROUND_ROBIN_TEAM) + 1):
+        next_index = (last_index + i) % len(ROUND_ROBIN_TEAM)
+        candidate = ROUND_ROBIN_TEAM[next_index]
+        
+        # Filtro Mariela: Si es Mariela, debe ser comuna de prioridad
+        if candidate == MARIELA_ARRIAGADA:
+            if not any(c in norm_comuna for c in mariela_comunas):
+                logger.info(f"[ROUTER] Saltando a Mariela para comuna '{norm_comuna}' (No es prioridad).")
+                continue
+        
+        # Si llegamos aquí, el candidato es válido
+        state_col.update_one(
+            {"id": "jpc_rm_round_robin"}, 
+            {"$set": {"last_index": next_index}}, 
+            upsert=True
+        )
+        logger.info(f"[ROUTER] Round Robin: Turno de {candidate} (index {next_index}) para comuna '{norm_comuna}'")
+        return candidate
+
+    # Fallback extremo (si algo fallara en el loop)
+    return ERIKA_GARRIDO
+
 def get_executive_phone(executive_name: str) -> Optional[str]:
     """
     Look up executive phone in 'usuarios' collection (field 'telefono' or 'movil').
@@ -98,13 +138,7 @@ def get_executive_phone(executive_name: str) -> Optional[str]:
             return str(phone).strip()
     
     logger.warning(f"[LOOKUP] No se encontró usuario '{executive_name}' en colección 'usuarios'.")
-
-    # 2. Respaldo: Números encontrados hoy (mientras los pasas a la base de datos)
-    fallbacks = {
-        MARIELA_ARRIAGADA: "+56991788250",
-        SUSANA_ENSIGNIA: "+56939125978"
-    }
-    return fallbacks.get(executive_name)
+    return None
 
 def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     """
@@ -143,24 +177,23 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     norm_comuna = normalize_text(comuna)
     norm_exec = normalize_text(original_executive)
 
-    target_executive_name = original_executive # Default to the one in DB
+    target_executive_name = original_executive # Default: El que viene en la ficha
 
-    # Logic for Jorge Pablo Caro
-    if "jorge pablo caro" in norm_exec:
-        # Rule 1: XIII Region Metropolitana
+    # REGLA 0: Si el ejecutivo de la ficha ya es uno de los nuestros, se queda con él (Lo lógico)
+    our_team = ROUND_ROBIN_TEAM # Erika, Mariela, Susana, Raquel
+    if any(normalize_text(member) in norm_exec for member in our_team):
+        logger.info(f"[ROUTER] Propiedad ya pertenece a alguien del equipo ({original_executive}). Manteniendo.")
+        target_executive_name = original_executive
+    
+    # REGLA 1: Jorge Pablo Caro (Distribución Especial)
+    elif "jorge pablo caro" in norm_exec:
+        # 1.1 RM -> Round Robin entre los 4 (Con filtro Mariela interno)
         if "metropolitana" in norm_region or "xiii" in norm_region:
-            priority_comunas = ["nunoa", "providencia", "santiago", "santiago centro", "macul"]
-            
-            if any(c in norm_comuna for c in priority_comunas):
-                target_executive_name = MARIELA_ARRIAGADA
-            else:
-                # Distribute between Susana and Erika
-                # Simple random distribution for now
-                target_executive_name = random.choice([SUSANA_ENSIGNIA, ERIKA_GARRIDO])
-                
-        # Rule 2: V Region de Valparaiso
-        elif "valparaiso" in norm_region or "v region" in norm_region:
-             target_executive_name = ERIKA_GARRIDO
+            target_executive_name = get_next_round_robin_executive(norm_comuna)
+        # 1.2 Otras Regiones -> Erika Garrido
+        else:
+            logger.info(f"[ROUTER] Propiedad de JPC fuera de RM ({region}). Asignando a Erika Garrido.")
+            target_executive_name = ERIKA_GARRIDO
     
     # Get phone for the determined executive
     phone = get_executive_phone(target_executive_name)

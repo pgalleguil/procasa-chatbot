@@ -558,6 +558,30 @@
         [data-theme="light"] .text-accent {
             color: var(--accent) !important;
         }
+
+        /* SESSION MODAL */
+        #sessionModal .modal-content {
+            background-color: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        #sessionModal .modal-header {
+            border-bottom: 3px solid #f59e0b;
+        }
+
+        #sessionModal .modal-title {
+            color: #f59e0b;
+            font-weight: 700;
+        }
+
+        .timer-display {
+            font-size: 2rem;
+            font-weight: 700;
+            text-align: center;
+            color: var(--text-primary);
+            margin: 10px 0;
+            font-family: monospace;
+        }
     </style>
     <style>
         /* --- MODERN & RESPONSIVE IMPROVEMENTS --- */
@@ -975,6 +999,28 @@
             style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"
             onclick="toggleMobileMenu()"></div>
 
+        <!-- MODAL DE EXPIRACIÓN DE SESIÓN -->
+        <div class="modal fade" id="sessionModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="fa-solid fa-hourglass-half me-2"></i> Sesión por Expirar</h5>
+                    </div>
+                    <div class="modal-body text-center">
+                        <p class="text-secondary">Por seguridad, su sesión expirará pronto debido a inactividad.</p>
+                        <div class="timer-display" id="sessionTimerDisplay">02:00</div>
+                        <p class="small text-muted">Si no extiende la sesión, será redirigido al login.</p>
+                    </div>
+                    <div class="modal-footer justify-content-center">
+                        <a href="/logout" class="btn btn-outline-danger btn-sm">Cerrar Sesión</a>
+                        <button type="button" class="btn btn-warning fw-bold" onclick="sessionManager.extendSession()">
+                            <i class="fa-solid fa-rotate-right me-2"></i> Extender Sesión
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
         <script>
             function toggleMobileMenu() {
@@ -1073,7 +1119,83 @@
                         console.error("❌ Error animating counter:", e);
                     }
                 });
+
+                // 3. Session Manager Initialization
+                sessionManager.init();
             });
+
+            // --- GESTOR DE SESIÓN ---
+            const sessionManager = {
+                timeoutSeconds: 1800, // 30 mins
+                warningSeconds: 120,
+                lastActivity: Date.now(),
+                checkInterval: null,
+                modalInstance: null,
+                warningActive: false,
+
+                init: function () {
+                    const modalEl = document.getElementById('sessionModal');
+                    if (!modalEl) return;
+                    this.modalInstance = new bootstrap.Modal(modalEl);
+
+                    ['click', 'keydown', 'mousemove'].forEach(evt => {
+                        document.addEventListener(evt, () => this.recordActivity());
+                    });
+
+                    this.checkInterval = setInterval(() => this.checkSession(), 60000);
+                },
+
+                recordActivity: function () {
+                    this.lastActivity = Date.now();
+                    if (this.warningActive) {
+                        this.extendSession(true);
+                    }
+                },
+
+                checkSession: function () {
+                    const now = Date.now();
+                    const idleTimeSeconds = (now - this.lastActivity) / 1000;
+
+                    if (idleTimeSeconds > (this.timeoutSeconds - this.warningSeconds)) {
+                        this.showWarning(Math.max(0, this.timeoutSeconds - idleTimeSeconds));
+                    }
+                },
+
+                showWarning: function (timeLeft) {
+                    if (this.warningActive) return;
+                    this.warningActive = true;
+
+                    let secondsLeft = Math.floor(timeLeft);
+                    const display = document.getElementById('sessionTimerDisplay');
+                    this.modalInstance.show();
+
+                    this.countdownInterval = setInterval(() => {
+                        secondsLeft--;
+                        const min = Math.floor(secondsLeft / 60);
+                        const sec = secondsLeft % 60;
+                        if (display) display.innerText = `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+
+                        if (secondsLeft <= 0) {
+                            window.location.href = '/logout?reason=timeout';
+                        }
+                    }, 1000);
+                },
+
+                extendSession: function (passive = false) {
+                    if (!this.warningActive && !passive) return;
+
+                    fetch('/ping')
+                        .then(() => {
+                            if (this.warningActive) {
+                                this.warningActive = false;
+                                clearInterval(this.countdownInterval);
+                                this.modalInstance.hide();
+                            }
+                            this.lastActivity = Date.now();
+                        })
+                        .catch(err => console.error("Error extending session:", err));
+                }
+            };
         </script>
     </body>
 

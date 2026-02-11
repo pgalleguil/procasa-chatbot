@@ -2894,6 +2894,7 @@
                 precio: "{{ lead.datos_propiedad.precio_uf }}",
                 ownerPhone: "{{ lead.datos_propiedad.movil_propietario }}",
                 ownerName: "{{ lead.datos_propiedad.nombre_propietario }}",
+                ownerEmail: "{{ lead.datos_propiedad.email_propietario }}",
                 crm_estado: "{{ lead.crm_estado }}",
                 next_action_date: "{{ lead.next_action_date or '' }}",
                 last_crm_update: "{{ lead.last_crm_update or '' }}",
@@ -3704,7 +3705,7 @@
                 const btn = document.getElementById('btnSendComm');
                 const msgBody = document.getElementById('commMessage');
                 const phone = target === 'lead' ? leadData.telefono : leadData.ownerPhone;
-                const email = target === 'lead' ? leadData.email : "propietario@email.com";
+                const email = target === 'lead' ? leadData.email : leadData.ownerEmail;
 
                 if (currentCommChannel === 'wa') {
                     btn.innerHTML = '<i class="fa-brands fa-whatsapp me-1"></i> Abrir WhatsApp';
@@ -3734,7 +3735,11 @@
                     }, target);
 
                     if (currentCommChannel === 'wa') {
-                        // --- LÓGICA WHATSAPP ---
+                        // --- LÓGICA WHATSAPP con Validación ---
+                        if (!phone || phone === 'None' || phone.replace(/\D/g, '').length < 6) {
+                            alert("⚠️ Error: El destinatario no tiene un número de teléfono válido registrado.");
+                            return;
+                        }
                         const cleanPhone = phone.replace(/\D/g, '');
                         const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}`;
                         window.open(url, '_blank');

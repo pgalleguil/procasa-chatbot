@@ -201,16 +201,38 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         events_map = {r["_id"]: r["last_event"] for r in agg_results}
 
     leads_procesados = []
-    # KPIs globales para el filtro actual (ejecutivo/rol)
-    # Hacemos una agregación rápida para los KPIs totales sin paginación
+    # KPIs con agregación robusta
+    # 1. Contar basándonos en el campo de estado de la base de datos
     kpi_pipeline = [
         {"$match": query},
         {"$project": {
+            "phone": 1,
             "st": {"$ifNull": ["$pipeline_stage", {"$ifNull": ["$stage", "$crm_estado"]}]}
         }},
-        {"$group": {"_id": "$st", "count": {"$sum": 1}}}
+        {"$group": {"_id": "$st", "count": {"$sum": 1}, "phones": {"$push": "$phone"}}}
     ]
     kpi_results = list(db["leads"].aggregate(kpi_pipeline))
+    
+    # 2. Identificar cuáles de esos leads 'Sin Atender' tienen eventos de gestión
+    all_new_phones = []
+    for res in kpi_results:
+        st = str(res["_id"] or "").lower()
+        if any(x in st for x in ["new", "nuevo"]):
+            all_new_phones.extend(res["phones"])
+            
+    # Consultar eventos solo para los que figuran como NUEVOS en DB
+    promoted_to_gestion = 0
+    if all_new_phones:
+        cleaned_new_phones = [p.replace("+","").strip() for p in all_new_phones if p]
+        has_events = db["crm_events"].distinct("phone", {
+            "phone": {"$in": cleaned_new_phones},
+            "type": {"$in": [
+                "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
+                "CLICK_PHONE_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
+            ]}
+        })
+        promoted_to_gestion = len(has_events)
+
     kpi_counts = {"nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0, "total": total_count}
     
     from chatbot.constants import PipelineStage
@@ -219,10 +241,19 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         count = res["count"]
         if not st: st = PipelineStage.NEW
         st_str = str(st).lower()
-        if any(x in st_str for x in ["new", "nuevo"]): kpi_counts["nuevo"] += count
-        elif any(x in st_str for x in ["visit", "visita"]): kpi_counts["visita"] += count
-        elif any(x in st_str for x in ["closed", "cerrado"]): kpi_counts["cerrado"] += count
-        else: kpi_counts["gestion"] += count
+        
+        if any(x in st_str for x in ["new", "nuevo"]): 
+            kpi_counts["nuevo"] += count
+        elif any(x in st_str for x in ["visit", "visita"]): 
+            kpi_counts["visita"] += count
+        elif any(x in st_str for x in ["closed", "cerrado"]): 
+            kpi_counts["cerrado"] += count
+        else: 
+            kpi_counts["gestion"] += count
+
+    # Ajustar KPIs: Mover los que tienen eventos de 'nuevo' a 'gestion'
+    kpi_counts["nuevo"] -= promoted_to_gestion
+    kpi_counts["gestion"] += promoted_to_gestion
 
     state_map = {
         # Enums
@@ -312,7 +343,15 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             elif not meta.get("action_label") and evt_type.startswith("CLICK_"):
                 last_action_note = f"Canal: {meta.get('channel', '---')}"
 
-            # Corrección Visual de Estado
+            # Corrección Visual de Estado: Promoción por gestión ANY (Lead o Propietario)
+            management_types = [
+                "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
+                "CLICK_PHONE_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
+            ]
+            
+            if estado_final == PipelineStage.NEW and (evt_type in management_types or meta.get("result")):
+                estado_final = PipelineStage.CONTACTED
+
             result_code = meta.get("result", "")
             if result_code == "visita_agendada":
                 estado_final = PipelineStage.VISIT_SCHEDULED
@@ -564,18 +603,19 @@ def update_lead_crm_data(phone, data):
     old_state = current_lead.get("stage") or current_lead.get("crm_estado", PipelineStage.NEW)
     
     # 1. ACTUALIZACIÓN DE ESTADO VIA SERVICE (Prioridad Absoluta)
+    # Forzamos promoción si es NEW y hay gestión
+    if (new_state == old_state) and (old_state == PipelineStage.NEW or str(old_state).lower() in ["nuevo", "new"]):
+        new_state = "gestion"
+
     if new_state and new_state != old_state:
         # Mapeo de seguridad por si el frontend manda strings viejos
         valid_stage = new_state
         if new_state == "visita": valid_stage = PipelineStage.VISIT_SCHEDULED
-        elif new_state == "cerrado": valid_stage = PipelineStage.CLOSED_WON # O Lost, depende del contexto, asumimos flow feliz o el frontend debe ser explícito
+        elif new_state == "cerrado": valid_stage = PipelineStage.CLOSED_WON
         elif new_state == "gestion": valid_stage = PipelineStage.CONTACTED
         
-        # Si el frontend ya manda los Enums correctos (ideal), usamos eso.
-        # Fallback a lógica de negocio simple:
-        
         CrmService.update_stage(phone_clean, valid_stage, actor="agent", notes=data.get("notas"))
-        new_state = valid_stage # Actualizamos para el return
+        new_state = valid_stage 
 
     # Agendar tarea solo si hay fecha válida
     if next_date:

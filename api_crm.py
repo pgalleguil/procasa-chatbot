@@ -126,7 +126,7 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
     db["crm_tasks"].insert_one(task)
 
 # --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
-def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad", user_role=None, user_name=None, ejecutivo_filter=None):
+def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad", user_role="agente", user_name="", ejecutivo_filter=None, page=1, limit=10):
     db = get_db()
     query_parts = []
     
@@ -156,16 +156,28 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         clean_phone = re.sub(r'\D', '', term)
         if clean_phone:
             query_parts.append({"phone": {"$regex": clean_phone}})
+        else:
+            # Búsqueda por nombre si no es teléfono
+            query_parts.append({"prospecto.nombre": {"$regex": term, "$options": "i"}})
     
     query = {"$and": query_parts} if query_parts else {}
     
-    # 1. TRAER LEADS (Ejecutar query inmediata)
-    leads_list = list(db["leads"].find(query).limit(200))
+    # 1. CONTAR TOTAL PARA PAGINACIÓN
+    total_count = db["leads"].count_documents(query)
     
-    # 2. OPTIMIZACIÓN: Obtener lista de teléfonos para hacer UNA SOLA consulta de eventos
+    # 2. TRAER LEADS (Paginados)
+    skip = (page - 1) * limit
+    leads_cursor = db["leads"].find(query)
+    
+    if ordenar_por == "fecha":
+        leads_cursor = leads_cursor.sort("created_at", -1)
+    
+    leads_list = list(leads_cursor.skip(skip).limit(limit))
+    
+    # 3. OPTIMIZACIÓN: Obtener lista de teléfonos para hacer UNA SOLA consulta de eventos
     phones_in_page = [l.get("phone", "").replace("+","").strip() for l in leads_list if l.get("phone")]
     
-    # 3. BULK QUERY DE EVENTOS (Agregación para obtener el último por teléfono)
+    # 4. BULK QUERY DE EVENTOS (Agregación para obtener el último por teléfono)
     events_map = {}
     if phones_in_page:
         pipeline = [
@@ -189,10 +201,29 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         events_map = {r["_id"]: r["last_event"] for r in agg_results}
 
     leads_procesados = []
-    kpi_counts = {"nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0, "total": 0}
+    # KPIs globales para el filtro actual (ejecutivo/rol)
+    # Hacemos una agregación rápida para los KPIs totales sin paginación
+    kpi_pipeline = [
+        {"$match": query},
+        {"$project": {
+            "st": {"$ifNull": ["$pipeline_stage", {"$ifNull": ["$stage", "$crm_estado"]}]}
+        }},
+        {"$group": {"_id": "$st", "count": {"$sum": 1}}}
+    ]
+    kpi_results = list(db["leads"].aggregate(kpi_pipeline))
+    kpi_counts = {"nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0, "total": total_count}
     
     from chatbot.constants import PipelineStage
-    
+    for res in kpi_results:
+        st = res["_id"]
+        count = res["count"]
+        if not st: st = PipelineStage.NEW
+        st_str = str(st).lower()
+        if any(x in st_str for x in ["new", "nuevo"]): kpi_counts["nuevo"] += count
+        elif any(x in st_str for x in ["visit", "visita"]): kpi_counts["visita"] += count
+        elif any(x in st_str for x in ["closed", "cerrado"]): kpi_counts["cerrado"] += count
+        else: kpi_counts["gestion"] += count
+
     state_map = {
         # Enums
         PipelineStage.NEW:   {"label": "Sin Atender", "led": "led-red",    "priority": 1},
@@ -215,12 +246,6 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     # 4. PROCESAR LEADS EN MEMORIA
     for lead in leads_list:
         raw_phone = lead.get("phone", "").replace("+", "").strip()
-        # PRIORIDAD DE ESTADO (Enterprise):
-        # 1. pipeline_stage (nuevo campo canónico)
-        # 2. stage (campo de transición)
-        # 3. crm_estado (legacy)
-        # 4. PipelineStage.NEW (default)
-        # NOTA: Ignoramos lifecycle.stage que es solo para tracking interno
         estado_db = lead.get("pipeline_stage") or lead.get("stage") or lead.get("crm_estado") or PipelineStage.NEW
         
         # Normalizar strings legacy a Enums
@@ -241,10 +266,6 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         last_action_text = "Sin gestión aún"
         last_action_note = ""
         
-        # PRIORIDAD DE TIMESTAMP para tiempo relativo:
-        # 1. ultimo_mensaje (timestamp del último mensaje del chat)
-        # 2. lifecycle.assigned_at (cuándo fue asignado)
-        # 3. created_at (cuándo se creó el lead)
         ultimo_msg_ts = lead.get("prospecto", {}).get("ultimo_mensaje")
         lifecycle_ts = lead.get("lifecycle", {}).get("assigned_at")
         created_ts = lead.get("created_at")
@@ -299,36 +320,13 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                 estado_final = PipelineStage.CLOSED_WON
             elif result_code in ["lead_pausado", "requiere_seguimiento", "intento_fallido"]:
                 estado_final = PipelineStage.CONTACTED
-            # ELIMINADO: No forzamos 'nuevo' a 'gestion' solo por existir el lead.
-            # Debe permanecer en su estado original hasta que haya acción humana real.
         else:
              msgs = lead.get("messages", [])
              if msgs:
                  last_msg = msgs[-1]
-                 # Validación segura de timestamp
                  ts = last_msg.get("timestamp")
                  if ts: last_ts = ts
 
-        # KPIS
-        kpi_counts["total"] += 1
-        
-        # Mapeo de KPI Simplificado (Auditado para Enterprise)
-        kpi_key = "gestion"  # Default fallback
-        # Tomamos el valor final proactivamente para evitar problemas de stringificación de Enums
-        st_str = str(estado_final).upper().split('.')[-1]
-        
-        if st_str in ["NEW", "NUEVO"]:
-            kpi_key = "nuevo"
-        elif st_str in ["VISIT_SCHEDULED", "VISIT_DONE", "VISITA"]:
-            kpi_key = "visita"
-        elif st_str in ["CLOSED_WON", "CLOSED_LOST", "CERRADO"]:
-            kpi_key = "cerrado"
-        elif st_str in ["CONTACTED", "INTERESTED", "OFFER", "NEGOTIATION", "GESTION"]:
-            kpi_key = "gestion"
-        
-        if kpi_key in kpi_counts:
-            kpi_counts[kpi_key] += 1
-        
         if filtro_estado and estado_final != filtro_estado:
             continue
 
@@ -343,28 +341,23 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
 
         config_estado = state_map.get(estado_final, state_map[PipelineStage.CONTACTED])
 
-        # 5. SLA / TIEMPO DE RESPUESTA (ENTERPRISE - FIRST RESPONSE MODEL)
+        # 5. SLA / TIEMPO DE RESPUESTA (Ajustado con Métrica Naranja)
         sla_status = "good"
         sla_label = ""
         
         ejecutivo = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
         
-        # CASO 1: NO ASIGNADO -> SLA PAUSADO
         if not ejecutivo or ejecutivo == "No asignado":
              sla_status = "pending"
              sla_label = "Pendiente Asignación"
              
-        # CASO 2: GESTIONADO (TIENE ACCIÓN HUMANA O NO ESTÁ EN ESTADO INICIAL) -> SLA CUMPLIDO
         elif last_action_event or estado_final not in [PipelineStage.NEW, PipelineStage.CONTACTED]:
              sla_status = "fulfilled"
              sla_label = "Gestionado" 
              
-        # CASO 3: ASIGNADO SIN GESTIÓN -> SLA CRONÓMETRO CORRIENDO
-        # El lead está asignado pero nadie ha hecho nada (ni click, ni mensaje, ni nota)
         else:
-             # Usamos fecha de asignación como inicio del SLA (Fallback a creación)
-             lifecycle_ts = lead.get("lifecycle", {}).get("assigned_at")
-             start_time_sla = lifecycle_ts or lead.get("created_at")
+             # Usamos fecha de asignación como inicio del SLA
+             start_time_sla = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
              
              if start_time_sla:
                 try:
@@ -379,18 +372,21 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                     diff = datetime.now(CHILE_TZ) - start_dt
                     minutes_diff = diff.total_seconds() / 60
                     
-                    # UMBRALES (Ajustados por Feedback: Advertencia 1-3h, Critico > 3h)
-                    if minutes_diff >= 180: # 3 Horas sin gestión (180 min)
+                    # UMBRALES: Rojo (>180), Naranja (150-180), Amarillo (60-150), Verde (<60)
+                    if minutes_diff >= 180:
                         sla_status = "critical"
                         sla_label = "Crítico" 
-                    elif minutes_diff >= 60: # 1 Hora sin gestión (60 min)
+                    elif minutes_diff >= 150: # 2:30 Horas (150 min)
+                         sla_status = "near_critical"
+                         sla_label = "Próximo a Crítico"
+                    elif minutes_diff >= 60:
                         sla_status = "warning"
                         sla_label = "Advertencia" 
                     else:
                         sla_status = "good" 
                         sla_label = "En tiempo"
                 except Exception as e:
-                    logger.error(f"Error calculating SLA for {raw_phone}: {e}")
+                    logger.error(f"Error calculando SLA: {e}")
 
         leads_procesados.append({
             "phone": raw_phone,
@@ -408,7 +404,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             "url_propiedad": f"https://www.procasa.cl/propiedad/{detect_property_code(lead)}" if detect_property_code(lead) else "#",
             "ultima_accion_titulo": last_action_text,
             "ultima_accion_note": last_action_note,
-            "ejecutivo_nombre": lead.get("ejecutivo_asignado") or "No asignado",
+            "ejecutivo_nombre": ejecutivo or "No asignado",
             "fecha_asignacion_relativa": format_relative_time(lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion")),
             "stage": lead.get("stage") or "new"
         })
@@ -422,7 +418,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     else:
         leads_procesados.sort(key=lambda x: safe_timestamp(x['real_timestamp']), reverse=True)
 
-    return leads_procesados, kpi_counts
+    return leads_procesados, kpi_counts, total_count
 
 def get_unique_executives():
     """Retorna lista de nombres únicos de ejecutivos que tienen leads asignados."""

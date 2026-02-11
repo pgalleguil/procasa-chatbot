@@ -17,11 +17,11 @@
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
             --accent: #6366f1;
-            --border-color: #334155;
+            --led-red: #ef4444;
+            --led-orange: #f97316;
             --sidebar-width: 200px;
             --sidebar-width-collapsed: 70px;
             --transition-speed: 0.3s;
-            --led-red: #ef4444;
             --led-yellow: #f59e0b;
             --led-green: #10b981;
             --led-gray: #64748b;
@@ -45,6 +45,7 @@
             /* LEDs con más contraste para light mode */
             --led-red: #dc2626;
             --led-yellow: #d97706;
+            --led-orange: #ea580c;
             --led-green: #059669;
             --led-gray: #6b7280;
         }
@@ -370,6 +371,11 @@
             font-size: 0.9rem;
         }
 
+        .led-orange {
+            background: var(--led-orange);
+            box-shadow: 0 0 8px var(--led-orange);
+        }
+
         /* TABLE */
         .crm-table {
             width: 100%;
@@ -599,6 +605,72 @@
                 background-color: rgba(99, 102, 241, 0.08) !important;
                 z-index: 10;
                 position: relative;
+            }
+
+            /* PAGINATION */
+            .pagination-container {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 20px 0;
+                margin-top: 10px;
+                border-top: 1px solid var(--border-color);
+                flex-wrap: wrap;
+                gap: 15px;
+            }
+
+            .pagination-info {
+                font-size: 0.9rem;
+                color: var(--text-secondary);
+            }
+
+            .pagination-controls {
+                display: flex;
+                gap: 5px;
+            }
+
+            .page-btn {
+                min-width: 38px;
+                height: 38px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid var(--border-color);
+                color: var(--text-primary);
+                text-decoration: none;
+                font-weight: 500;
+                transition: all 0.2s;
+            }
+
+            .page-btn:hover:not(.disabled) {
+                background: var(--accent);
+                border-color: var(--accent);
+                color: white;
+            }
+
+            .page-btn.active {
+                background: var(--accent);
+                border-color: var(--accent);
+                color: white;
+            }
+
+            .page-btn.disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+                pointer-events: none;
+            }
+
+            .page-btn i {
+                font-size: 0.8rem;
+            }
+
+            @media (max-width: 768px) {
+                .pagination-container {
+                    flex-direction: column;
+                    text-align: center;
+                }
             }
 
             /* Professional Movement for KPI Cards */
@@ -947,7 +1019,7 @@
                                 <i class="fa-solid fa-circle-question ms-1 text-accent opacity-75"
                                     style="cursor: help; font-size: 0.85rem;" data-bs-toggle="tooltip"
                                     data-bs-custom-class="cloud-tooltip" data-bs-placement="top" data-bs-html="true"
-                                    data-bs-title="<b>Métrica: 1er Contacto</b><br><br>Tiempo desde asignación hasta la primera gestión humana.<br><br>🟢 Gestionado: Ya tiene acción.<br>🟡 Advertencia: 1 - 3 horas sin gestión.<br>🔴 Crítico: > 3 horas sin gestión."></i>
+                                    data-bs-title="<b>Métrica SLA: Prioridad Ejecutiva</b><br><br>Tiempo desde asignación hasta la primera gestión humana.<br><br>🟢 <b>Gestionado</b>: Ya tiene acción.<br>🟢 <b>En tiempo</b>: < 1 hora.<br>🟡 <b>Advertencia</b>: 1h - 2.5 horas.<br>🟠 <b>Próximo a Crítico</b>: 2.5h - 3 horas.<br>🔴 <b>Crítico</b>: > 3 horas."></i>
                             </th>
                             <th width="16.6%">Cliente</th>
                             <th width="16.6%">Propiedad</th>
@@ -963,6 +1035,9 @@
                                 <div class="d-flex align-items-center">
                                     {% if lead.sla_status == 'critical' %}
                                     <div class="led-indicator led-red pulse-red"></div>
+                                    <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
+                                    {% elif lead.sla_status == 'near_critical' %}
+                                    <div class="led-indicator led-orange"></div>
                                     <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
                                     {% elif lead.sla_status == 'warning' %}
                                     <div class="led-indicator led-yellow"></div>
@@ -1040,6 +1115,49 @@
                     </tbody>
                 </table>
             </div>
+
+            <!-- PAGINACIÓN -->
+            {% if pagination.total_pages > 1 %}
+            <div class="pagination-container">
+                <div class="pagination-info">
+                    Mostrando {{ (pagination.current_page - 1) * pagination.limit + 1 }} -
+                    {{ [pagination.current_page * pagination.limit, pagination.total_count]|min }}
+                    de {{ pagination.total_count }} leads
+                </div>
+                <div class="pagination-controls">
+                    {% set base_url = "/crm?" %}
+                    {% if request.query_params.get('estado') %}{% set base_url = base_url ~ "estado=" ~
+                    request.query_params.get('estado') ~ "&" %}{% endif %}
+                    {% if request.query_params.get('busqueda') %}{% set base_url = base_url ~ "busqueda=" ~
+                    request.query_params.get('busqueda') ~ "&" %}{% endif %}
+                    {% if request.query_params.get('orden') %}{% set base_url = base_url ~ "orden=" ~
+                    request.query_params.get('orden') ~ "&" %}{% endif %}
+                    {% if request.query_params.get('ejecutivo') %}{% set base_url = base_url ~ "ejecutivo=" ~
+                    request.query_params.get('ejecutivo') ~ "&" %}{% endif %}
+
+                    <a href="{{ base_url }}page={{ pagination.current_page - 1 }}"
+                        class="page-btn {{ 'disabled' if not pagination.has_prev }}">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </a>
+
+                    {% for p in range(1, pagination.total_pages + 1) %}
+                    {% if p == 1 or p == pagination.total_pages or (p >= pagination.current_page - 2 and p <=
+                        pagination.current_page + 2) %} <a href="{{ base_url }}page={{ p }}"
+                        class="page-btn {{ 'active' if p == pagination.current_page }}">
+                        {{ p }}
+                        </a>
+                        {% elif p == 2 or p == pagination.total_pages - 1 %}
+                        <span class="page-btn disabled">...</span>
+                        {% endif %}
+                        {% endfor %}
+
+                        <a href="{{ base_url }}page={{ pagination.current_page + 1 }}"
+                            class="page-btn {{ 'disabled' if not pagination.has_next }}">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </a>
+                </div>
+            </div>
+            {% endif %}
         </div>
 
         <!-- Overlay para cerrar menú móvil -->
@@ -1062,7 +1180,7 @@
                     <div class="modal-footer justify-content-center">
                         <a href="/logout" class="btn btn-outline-danger btn-sm">Cerrar Sesión</a>
                         <button type="button" class="btn btn-warning fw-bold" onclick="sessionManager.extendSession()">
-                            <i class="fa-solid fa-rotate-right me-2"></i> Extender Sesión
+                            <i class="fa-solid fa-rotate-right me-2"></i> Mantener Conectado
                         </button>
                     </div>
                 </div>
@@ -1182,9 +1300,7 @@
                 warningActive: false,
 
                 init: function () {
-                    const modalEl = document.getElementById('sessionModal');
-                    if (!modalEl) return;
-                    this.modalInstance = new bootstrap.Modal(modalEl);
+                    this.modalInstance = new bootstrap.Modal(document.getElementById('sessionModal'));
 
                     ['click', 'keydown', 'mousemove'].forEach(evt => {
                         document.addEventListener(evt, () => this.recordActivity());
@@ -1229,19 +1345,15 @@
                     }, 1000);
                 },
 
-                extendSession: function (passive = false) {
-                    if (!this.warningActive && !passive) return;
+                extendSession: function (silent = false) {
+                    this.lastActivity = Date.now();
+                    this.warningActive = false;
+                    if (this.countdownInterval) clearInterval(this.countdownInterval);
+                    if (!silent) this.modalInstance.hide();
 
-                    fetch('/ping')
-                        .then(() => {
-                            if (this.warningActive) {
-                                this.warningActive = false;
-                                clearInterval(this.countdownInterval);
-                                this.modalInstance.hide();
-                            }
-                            this.lastActivity = Date.now();
-                        })
-                        .catch(err => console.error("Error extending session:", err));
+                    fetch('/api/keep-alive', { method: 'POST' })
+                        .then(r => console.log("Sesión extendida (Keep-Alive)"))
+                        .catch(e => console.error("Error keeping alive", e));
                 }
             };
         </script>

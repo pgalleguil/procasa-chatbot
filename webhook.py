@@ -655,7 +655,14 @@ async def api_reporte_real():
 # ========================= 6. RUTAS CRM (MODIFICADAS PARA HORA LOCAL) =========================
 
 @app.get("/crm", response_class=HTMLResponse)
-async def view_crm_list(request: Request, estado: str = None, busqueda: str = None, orden: str = "prioridad", ejecutivo: str = None):
+async def view_crm_list(
+    request: Request, 
+    estado: str = None, 
+    busqueda: str = None, 
+    orden: str = "prioridad", 
+    ejecutivo: str = None,
+    page: int = Query(1, ge=1)
+):
     username = await get_current_user(request)
     client = MongoClient(Config.MONGO_URI)
     db = client[Config.DB_NAME]
@@ -665,17 +672,21 @@ async def view_crm_list(request: Request, estado: str = None, busqueda: str = No
         return RedirectResponse(url="/?error=sesion_invalida")
 
     user_role = user.get("rol", "agente")
-    user_name = user.get("nombre", "") # Nombre Real (Ej: Mariela Arriagada)
+    user_name = user.get("nombre", "")
 
-    leads, kpis = get_crm_leads_list(
+    limit = 10
+    leads, kpis, total_count = get_crm_leads_list(
         filtro_estado=estado, 
         busqueda=busqueda, 
         ordenar_por=orden,
         user_role=user_role,
         user_name=user_name,
-        ejecutivo_filter=ejecutivo
+        ejecutivo_filter=ejecutivo,
+        page=page,
+        limit=limit
     )
     
+    total_pages = (total_count + limit - 1) // limit
     executives = get_unique_executives() if user_role in ["admin", "supervisor"] else []
 
     return templates.TemplateResponse("crm_leads_list.html", {
@@ -685,7 +696,15 @@ async def view_crm_list(request: Request, estado: str = None, busqueda: str = No
         "user_role": user_role,
         "user_name": user_name,
         "executives": executives,
-        "current_ejecutivo": ejecutivo or "Todos"
+        "current_ejecutivo": ejecutivo or "Todos",
+        "pagination": {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+            "limit": limit
+        }
     })
 
 @app.post("/api/marcar_gestionado")

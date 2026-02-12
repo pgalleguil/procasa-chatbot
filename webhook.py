@@ -58,7 +58,12 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 from chatbot.lead_router import should_send_now, format_whatsapp_template
-from chatbot.storage import get_pending_notifications, mark_notification_sent, save_pending_notification
+from chatbot.storage import (
+    get_pending_notifications, 
+    mark_notification_sent, 
+    save_pending_notification,
+    get_user_by_phone
+)
 from chatbot.whatsapp_client import send_whatsapp_message
 
 # Función auxiliar para imágenes (necesaria globalmente)
@@ -586,6 +591,15 @@ async def webhook(
 
     phone = str(phone).strip()
 
+    # --- FILTRO DE EJECUTIVOS (Solicitado por usuario) ---
+    # Si quien escribe es un ejecutivo (excepto Pablo Galleguillos), 
+    # forzamos from_me=True para que el bot no responda.
+    user_found = get_user_by_phone(phone)
+    if user_found and user_found.get("rol") in ["agente", "supervisor"]:
+        if user_found.get("nombre") != "Pablo Galleguillos":
+            logger.info(f"[FILTER] Mensaje de EJECUTIVO ({user_found.get('nombre')}) detectado. Forzando modo manual.")
+            from_me = True
+
     # Si detectamos que es un grupo (@g.us), lo ignoramos
     if "@g.us" in (key.get("remoteJid") or ""):
          logger.info(f"[WHATSAPP] Ignorando mensaje de grupo")
@@ -815,7 +829,7 @@ async def startup_event():
                 await monitor_sla_thresholds()
             except Exception as e:
                 logger.error(f"[BACKGROUND] Error en loop de SLA: {e}")
-            await asyncio.sleep(600)  # Revisar cada 10 minutos (600s)
+            await asyncio.sleep(60)  # Revisar cada minuto (60s) para mayor precisión
 
     asyncio.create_task(process_pending_leads())
     asyncio.create_task(sla_monitor())

@@ -54,7 +54,18 @@ async def monitor_sla_thresholds():
             if warning_exists:
                 continue
 
-            # 3. Verificar si ya hubo gestión humana (Doble chequeo de seguridad)
+            # 3. Verificar si ya se envió la notificación inicial de nuevo lead (Requisito)
+            # Solo enviamos alerta de SLA si el ejecutivo ya fue avisado previamente.
+            initial_notif = db["crm_events"].find_one({
+                "phone": phone_clean,
+                "type": {"$in": ["alert_sent", "ALERT", "ASSIGNMENT"]}
+            })
+            
+            if not initial_notif:
+                # Si no se ha notificado la asignación inicial, no enviamos SLA aún
+                continue
+
+            # 4. Verificar si ya hubo gestión humana (Doble chequeo de seguridad)
             management_types = [
                 "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
                 "CLICK_PHONE_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
@@ -126,6 +137,9 @@ async def monitor_sla_thresholds():
                         "reason": "near_critical_threshold"
                     })
                     logger.info(f"[SLA_MONITOR] Notificación SLA enviada a {ejecutivo} para lead {phone}")
+                    
+                    # 9. Esperar para evitar rate limit (Account Protection: 5s)
+                    await asyncio.sleep(5)
 
         except Exception as e:
             logger.error(f"[SLA_MONITOR] Error crítico procesando lead {lead.get('phone')}: {e}", exc_info=True)

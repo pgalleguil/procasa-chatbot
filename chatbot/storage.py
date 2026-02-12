@@ -182,3 +182,16 @@ def update_lead_state(phone: str, stage: str = None, metadata: dict = None):
         )
         if stage:
             log_event(phone, InteractionType.STATUS_CHANGE, "system", {"to": stage})
+
+def get_user_by_phone(phone: str) -> Optional[dict]:
+    """Busca un usuario en la colección 'usuarios' por su teléfono (normalizado)."""
+    if not phone:
+        return None
+    db = get_db()
+    # Normalizamos el teléfono para la búsqueda (quitamos + y espacios)
+    phone_clean = str(phone).replace("+", "").replace(" ", "").strip()
+    
+    # Buscamos por teléfono con regex para ser flexibles
+    return db["usuarios"].find_one({
+        "telefono": {"$regex": phone_clean}
+    })

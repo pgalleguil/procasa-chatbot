@@ -15,7 +15,7 @@ async def monitor_sla_thresholds():
     Usa la colección 'crm_sla_warnings' para evitar duplicados.
     """
     if not should_send_now():
-        logger.info("[SLA_MONITOR] Fuera de horario comercial. Saltando revisión.")
+        logger.debug("[SLA_MONITOR] Fuera de horario comercial. Saltando revisión.")
         return
 
     db = get_db()
@@ -38,7 +38,7 @@ async def monitor_sla_thresholds():
     if not leads:
         return
 
-    logger.info(f"[SLA_MONITOR] Revisando {len(leads)} leads potenciales para SLA...")
+    logger.debug(f"[SLA_MONITOR] Revisando {len(leads)} leads potenciales para SLA...")
 
     for lead in leads:
         try:

@@ -2,7 +2,6 @@
 import json
 from openai import OpenAI
 from config import Config
-from .prompts import PROMPT_CLASIFICACION_BI
 
 client = OpenAI(
     api_key=Config.XAI_API_KEY,
@@ -94,29 +93,16 @@ Ejemplo recomendado: "¡Hola! Bienvenido/a a Procasa. 😊 Si ya tienes una prop
     # =========================================================================
     # 2. INSTRUCCIONES TÉCNICAS DE EXTRACCIÓN (AGREGADO AL FINAL)
     # =========================================================================
-# PEGAR ESTO DENTRO DE generar_respuesta_estructurada
-    # Asegúrate que esta primera línea tenga 4 espacios de margen a la izquierda
     system_prompt_extraction = f"""
-    {PROMPT_CLASIFICACION_BI}
-
     [INSTRUCCIONES DE EXTRACCIÓN Y SALIDA - FORMATO JSON]
     1. Analiza el mensaje del usuario. 
     2. Si menciona datos nuevos que NO están aquí: {json.dumps(datos_conocidos, ensure_ascii=False)}, extráelos.
-    3. Clasifica la operación según el módulo de Business Intelligence arriba detallado.
     
     Responde EXCLUSIVAMENTE con este JSON válido (sin etiquetas markdown):
     {{
         "intencion": "agendar_visita | contacto_directo | escalado_urgente | consulta_general", 
         "respuesta_bot": "Tu respuesta conversacional aquí (según las reglas de negocio)",
-        "datos_extraidos": {{ "campo": "valor" }}, 
-        "bi_analytics": {{
-            "escenario_chat": "VALOR_DE_LISTA",
-            "tipo_contacto": "VALOR_DE_LISTA",
-            "intencion_cliente": "VALOR_DE_LISTA",
-            "desempeno_chat": "VALOR_DE_LISTA",
-            "motivo_no_visita": "VALOR_DE_LISTA",
-            "recuperabilidad": "VALOR_DE_LISTA"
-        }}
+        "datos_extraidos": {{ "campo": "valor" }}
     }}
     """
 
@@ -128,13 +114,13 @@ Ejemplo recomendado: "¡Hola! Bienvenido/a a Procasa. 😊 Si ya tienes una prop
     ]
 
     try:
-        print(f"[GROK_BI] Analizando Inteligencia Comercial ({len(structured_messages)} msgs)...")
+        print(f"[GROK] Generando respuesta estructurada ({len(structured_messages)} msgs)...")
         
         response = client.chat.completions.create(
             model=Config.GROK_MODEL or "grok-4-1-fast-non-reasoning",
             messages=structured_messages,
             temperature=0.1, 
-            max_tokens=1000, 
+            max_tokens=600, 
             timeout=45
         )
         
@@ -151,15 +137,13 @@ Ejemplo recomendado: "¡Hola! Bienvenido/a a Procasa. 😊 Si ya tienes una prop
         return {
             "intencion": datos.get("intencion", "consulta_general").lower().strip(),
             "datos_extraidos": datos.get("datos_extraidos", {}),
-            "respuesta_bot": datos.get("respuesta_bot", "Gracias por tu consulta."),
-            "bi_analytics": datos.get("bi_analytics", {}) 
+            "respuesta_bot": datos.get("respuesta_bot", "Gracias por tu consulta.")
         }
 
     except Exception as e:
-        print(f"[ERROR GROK_BI] {e}")
+        print(f"[ERROR GROK] {e}")
         return {
             "intencion": "consulta_general",
             "datos_extraidos": {},
-            "respuesta_bot": "Disculpa, tengo un problema técnico momentáneo. ¿Me puedes repetir tu consulta?",
-            "bi_analytics": {"error": str(e)}
+            "respuesta_bot": "Disculpa, tengo un problema técnico momentáneo. ¿Me puedes repetir tu consulta?"
         }

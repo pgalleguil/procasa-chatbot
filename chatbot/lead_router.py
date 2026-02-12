@@ -222,22 +222,26 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
     mensaje_usuario = lead_data.get("last_message", "Interesado en esta propiedad")
 
     # Header dinámico según si es nuevo o seguimiento
-    header = "🔔 *Nuevo Lead Asignado*" if is_new_assignment else "💬 *Cliente Escribió Nuevamente*"
+    header = "🚀 *¡Nuevo Lead Asignado!*" if is_new_assignment else "💬 *Actualización de Lead*"
     
     # Si es seguimiento, enfatizamos que ya tiene dueño
     contexto_extra = ""
     if not is_new_assignment:
-        contexto_extra = f"\n⚠️ _Este cliente ya está asignado a ti._\n"
+        contexto_extra = f"⚠️ _Este cliente ya está asignado a ti._\n"
+
+    crm_url = "https://procasa-chatbot-yr8d.onrender.com/"
 
     template = (
-        f"{header}\n"
+        f"{header}\n\n"
+        f"Hola {executive_name}, se ha asignado un nuevo lead a tu gestión. "
+        f"Realiza la gestión a la brevedad para maximizar la conversión. ⚡\n\n"
         f"🏠 *Propiedad*: {property_code} | {operacion}\n"
-        f"📍 *Ubicación*: {comuna}, {region}\n\n"
+        f"📍 *Ubicación*: {comuna}, {region}\n"
         f"👤 *Cliente*: {nombre_cliente}\n"
-        f"📱 *Teléfono*: {fono_cliente}\n"
-        f"✉️ *Email*: {email_cliente}\n"
         f"{contexto_extra}"
         f"📝 *Comentario*: {mensaje_usuario}\n\n"
-        f"🚀 _Por favor contactar a la brevedad._"
+        f"🔗 *Ver y Gestionar en CRM*:\n{crm_url}\n\n"
+        f"💡 _Recuerda ingresar con tu correo corporativo Procasa._\n"
+        f"¡Mucho éxito con la gestión! 🚀"
     )
     return template

@@ -808,7 +808,17 @@ async def startup_event():
             
             await asyncio.sleep(60) # Revisar cada minuto
 
+    async def sla_monitor():
+        while True:
+            try:
+                from chatbot.sla_service import monitor_sla_thresholds
+                await monitor_sla_thresholds()
+            except Exception as e:
+                logger.error(f"[BACKGROUND] Error en loop de SLA: {e}")
+            await asyncio.sleep(600)  # Revisar cada 10 minutos (600s)
+
     asyncio.create_task(process_pending_leads())
+    asyncio.create_task(sla_monitor())
 
 if __name__ == "__main__":
     import pathlib

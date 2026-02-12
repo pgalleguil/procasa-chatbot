@@ -67,7 +67,7 @@ class Config:
     GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 
     # === CLAVE SECRETA PARA SESIONES (OBLIGATORIA) ===
-    SECRET_KEY = os.getenv("SECRET_KEY")
+    SECRET_KEY = os.getenv("SECRET_KEY", "procasa_enterprise_secure_key_2025_fixed")
     if not SECRET_KEY:
         import secrets
         SECRET_KEY = secrets.token_hex(32)

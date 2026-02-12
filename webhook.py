@@ -101,24 +101,40 @@ def create_access_token(data: dict):
 # --- MIDDLEWARE DE SESIÓN SLIDING (SOLUCIÓN TIMEOUT) ---
 @app.middleware("http")
 async def slide_session_middleware(request: Request, call_next):
+    # 1. Ejecutar la petición primero
     response = await call_next(request)
     
-    # Rutas exentas
-    if request.url.path.startswith("/static") or request.url.path in ["/", "/login", "/webhook", "/logout", "/auth/google/callback"]:
+    # 2. Rutas exentas (no necesitan renovación ni tienen cookies de sesión)
+    if request.url.path.startswith("/static") or request.url.path in ["/logout", "/webhook", "/auth/google/callback"]:
         return response
 
+    # 3. Lógica de Sliding Session (JWT)
     token = request.cookies.get("access_token")
     if token:
-        # Renovación SIMPLE y PERMISIVA para Localhost
-        response.set_cookie(
-            key="access_token",
-            value=token,
-            httponly=True,
-            secure=False,       # <--- IMPORTANTE: Falso para que funcione en tu PC
-            samesite="lax",     # <--- Lax permite la navegación normal
-            max_age=1800,      
-            path="/"            # <--- Asegura que funcione en todo el sitio
-        )
+        try:
+            # Intentamos decodificar para ver si es válido
+            payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
+            username = payload.get("sub")
+            
+            if username:
+                # Si el token es válido y tenemos el usuario, generamos uno NUEVO con 'exp' fresca
+                # Esto es lo que permite que la sesión "se deslice" (slide)
+                new_token = create_access_token({"sub": username})
+                
+                # Seteamos la nueva cookie con el nuevo token
+                response.set_cookie(
+                    key="access_token",
+                    value=new_token,
+                    httponly=True,
+                    secure=False,       # Falso para desarrollo local
+                    samesite="lax",
+                    max_age=1800,       # 30 minutos de vida para la COOKIE
+                    path="/"
+                )
+        except JWTError:
+            # Si el token ya expiró o es inválido, no hacemos nada (el middleware de auth lo atrapará)
+            pass
+            
     return response
 
 async def get_current_user(request: Request):

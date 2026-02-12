@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from .storage import get_db, log_event
 from .constants import CHILE_TZ, PipelineStage, EventType
 from .whatsapp_client import send_whatsapp_message
@@ -12,25 +12,33 @@ async def monitor_sla_thresholds():
     """
     Monitorea los leads para detectar aquellos que están próximos a entrar en estado crítico
     (estado Naranja: >= 150 minutos desde la asignación sin gestión).
+    Usa la colección 'crm_sla_warnings' para evitar duplicados.
     """
     if not should_send_now():
         logger.info("[SLA_MONITOR] Fuera de horario comercial. Saltando revisión.")
         return
 
     db = get_db()
-    # 1. Buscar leads que podrían estar en riesgo (Sin Atender o Contactado pero sin gestión real)
-    # Buscamos leads asignados que no han sido marcados con advertencia de SLA aún.
+    
+    # 1. Búsqueda Robusta de Leads en etapas iniciales
+    # Incluimos leads donde el stage es NEW, CONTACTED o simplemente NO existe/es null.
     query = {
-        "pipeline_stage": {"$in": [PipelineStage.NEW, PipelineStage.CONTACTED]},
-        "ejecutivo_asignado": {"$exists": True, "$ne": "No asignado"},
-        "sla_warning_sent": {"$ne": True}
+        "$or": [
+            {"pipeline_stage": {"$in": [PipelineStage.NEW, PipelineStage.CONTACTED]}},
+            {"pipeline_stage": None},
+            {"pipeline_stage": {"$exists": False}},
+            {"stage": {"$in": ["new", "nuevo", "gestion", "contacted"]}},
+            {"stage": None},
+            {"stage": {"$exists": False}}
+        ],
+        "ejecutivo_asignado": {"$exists": True, "$ne": "No asignado"}
     }
     
     leads = list(db["leads"].find(query))
     if not leads:
         return
 
-    logger.info(f"[SLA_MONITOR] Revisando {len(leads)} leads en stages iniciales para SLA...")
+    logger.info(f"[SLA_MONITOR] Revisando {len(leads)} leads potenciales para SLA...")
 
     for lead in leads:
         try:
@@ -38,27 +46,36 @@ async def monitor_sla_thresholds():
             if not phone:
                 continue
             
-            ejecutivo = lead.get("ejecutivo_asignado")
+            phone_clean = phone.replace("+", "").replace(" ", "").strip()
             
-            # 2. Verificar si ya hubo gestión humana
-            # Si hay eventos de gestión, no enviamos alerta de SLA (ya se atendió)
+            # 2. Verificar si ya se envió advertencia para ESTE lead en la nueva colección
+            # Esto desacopla la lógica del documento principal del lead
+            warning_exists = db["crm_sla_warnings"].find_one({"phone": phone_clean})
+            if warning_exists:
+                continue
+
+            # 3. Verificar si ya hubo gestión humana (Doble chequeo de seguridad)
             management_types = [
                 "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
                 "CLICK_PHONE_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
             ]
             
-            phone_clean = phone.replace("+", "").replace(" ", "").strip()
             has_mgmt = db["crm_events"].find_one({
                 "phone": phone_clean,
                 "type": {"$in": management_types}
             })
             
             if has_mgmt:
-                # Si ya tiene gestión, marcamos para no revisar más este monitor si sigue en este stage
-                db["leads"].update_one({"_id": lead["_id"]}, {"$set": {"sla_warning_sent": True}})
+                # Si ya tiene gestión, marcamos en la colección de advertencias 
+                # para no procesarlo más como "pendiente de alerta"
+                db["crm_sla_warnings"].insert_one({
+                    "phone": phone_clean,
+                    "status": "ignored_already_managed",
+                    "timestamp": datetime.now(CHILE_TZ).isoformat()
+                })
                 continue
 
-            # 3. Calcular tiempo transcurrido desde asignación
+            # 4. Calcular tiempo transcurrido desde asignación
             start_time = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
             if not start_time:
                 continue
@@ -79,27 +96,30 @@ async def monitor_sla_thresholds():
             
             # Umbral Naranja: 150 minutos (2:30 horas)
             if minutes_diff >= 150:
+                ejecutivo = lead.get("ejecutivo_asignado")
                 logger.info(f"[SLA_MONITOR] Alerta! Lead {phone} asignado a {ejecutivo} hace {minutes_diff:.1f} min sin gestión.")
                 
-                # 4. Obtener teléfono del ejecutivo
+                # 5. Obtener teléfono del ejecutivo
                 exec_phone = get_executive_phone(ejecutivo)
-                if not exec_phone:
-                    logger.warning(f"[SLA_MONITOR] No se encontró teléfono para ejecutivo {ejecutivo}")
-                    # Marcamos para no reintentar infinitamente si no hay teléfono? 
-                    # Preferimos dejarlo por si se actualiza el perfil del usuario
-                    continue
-                
-                if exec_phone == "+56900000000":
+                if not exec_phone or exec_phone == "+56900000000":
                     continue
 
-                # 5. Enviar mensaje de WhatsApp
+                # 6. Enviar mensaje de WhatsApp
                 nombre_cliente = lead.get("prospecto", {}).get("nombre", "Cliente")
                 message = format_sla_warning_message(ejecutivo, nombre_cliente)
                 
                 sent = await send_whatsapp_message(exec_phone, message)
                 if sent:
-                    # 6. Marcar como enviado y registrar evento
-                    db["leads"].update_one({"_id": lead["_id"]}, {"$set": {"sla_warning_sent": True}})
+                    # 7. Registrar en la nueva colección de advertencias
+                    db["crm_sla_warnings"].insert_one({
+                        "phone": phone_clean,
+                        "executive": ejecutivo,
+                        "executive_phone": exec_phone,
+                        "sent_at": datetime.now(CHILE_TZ).isoformat(),
+                        "status": "sent"
+                    })
+                    
+                    # 8. Log de evento en el historial del lead
                     log_event(phone_clean, EventType.ALERT_SENT, "system", {
                         "to": ejecutivo, 
                         "type": "sla_warning",
@@ -108,7 +128,7 @@ async def monitor_sla_thresholds():
                     logger.info(f"[SLA_MONITOR] Notificación SLA enviada a {ejecutivo} para lead {phone}")
 
         except Exception as e:
-            logger.error(f"[SLA_MONITOR] Error procesando lead {lead.get('phone')}: {e}")
+            logger.error(f"[SLA_MONITOR] Error crítico procesando lead {lead.get('phone')}: {e}", exc_info=True)
 
 def format_sla_warning_message(executive_name, client_name):
     """Formatea el mensaje de advertencia de SLA."""

@@ -2731,7 +2731,7 @@
                     if (!silent) this.modalInstance.hide();
 
                     // Usar el nuevo endpoint POST para evitar 405
-                    fetch('/api/keep-alive', { method: 'POST' })
+                    fetch('/api/keep-alive', { method: 'POST', credentials: 'include' })
                         .then(r => console.log("Sesión extendida (Keep-Alive)"))
                         .catch(e => console.error("Error keeping alive", e));
                 }

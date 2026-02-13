@@ -126,7 +126,7 @@ async def slide_session_middleware(request: Request, call_next):
                     key="access_token",
                     value=new_token,
                     httponly=True,
-                    secure=False,       # Falso para desarrollo local
+                    secure=True,        # Cambiado a True para Render (HTTPS)
                     samesite="lax",
                     max_age=1800,       # 30 minutos de vida para la COOKIE
                     path="/"
@@ -265,7 +265,7 @@ async def auth_google_callback(request: Request, code: str):
             key="access_token", 
             value=access_token_jwt,
             httponly=True, 
-            secure=False,    
+            secure=True,    # Cambiado a True para Render (HTTPS)
             samesite="lax", 
             max_age=SESSION_TIME 
         )
@@ -312,7 +312,7 @@ async def login_post(request: Request, username: str = Form(...), password: str 
                 "access_token", 
                 token,
                 httponly=True, 
-                secure=False,
+                secure=True,   # Cambiado a True para Render (HTTPS)
                 samesite="lax", 
                 max_age=1800
             )

@@ -1351,7 +1351,7 @@
                     if (this.countdownInterval) clearInterval(this.countdownInterval);
                     if (!silent) this.modalInstance.hide();
 
-                    fetch('/api/keep-alive', { method: 'POST' })
+                    fetch('/api/keep-alive', { method: 'POST', credentials: 'include' })
                         .then(r => console.log("Sesión extendida (Keep-Alive)"))
                         .catch(e => console.error("Error keeping alive", e));
                 }

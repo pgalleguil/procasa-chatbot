@@ -1,4 +1,4 @@
-from pymongo import MongoClient
+# from pymongo import MongoClient (Replaced by singleton)
 from config import Config
 from datetime import datetime
 import pytz
@@ -14,9 +14,7 @@ except ImportError:
     import pytz
     CHILE_TZ = pytz.timezone('Chile/Continental')
 
-def get_db():
-    client = MongoClient(Config.MONGO_URI)
-    return client[Config.DB_NAME]
+from chatbot.storage import get_db
 
 def format_relative_time(dt_obj):
     if isinstance(dt_obj, str):
@@ -165,9 +163,9 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     # 1. CONTAR TOTAL PARA PAGINACIÓN
     total_count = db["leads"].count_documents(query)
     
-    # 2. TRAER LEADS (Paginados)
+    # 2. TRAER LEADS (Paginados) - EXCLUIMOS campos pesados para el listado
     skip = (page - 1) * limit
-    leads_cursor = db["leads"].find(query)
+    leads_cursor = db["leads"].find(query, {"messages": 0, "stage_history": 0})
     
     if ordenar_por == "fecha":
         leads_cursor = leads_cursor.sort("created_at", -1)

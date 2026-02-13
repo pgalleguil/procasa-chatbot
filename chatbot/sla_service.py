@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from .storage import get_db, log_event
 from .constants import CHILE_TZ, PipelineStage, EventType
 from .whatsapp_client import send_whatsapp_message
@@ -34,7 +34,7 @@ async def monitor_sla_thresholds():
         "ejecutivo_asignado": {"$exists": True, "$nin": ["No asignado", "Sin Asignar"]}
     }
     
-    leads = list(db["leads"].find(query))
+    leads = list(db["leads"].find(query, {"messages": 0, "stage_history": 0}))
     if not leads:
         return
 
@@ -71,57 +71,83 @@ async def monitor_sla_thresholds():
         "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
         "CLICK_PHONE_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
     ]
+    initial_notif_types = ["alert_sent", "ALERT", "ASSIGNMENT", "assignment", "alert"]
 
     for phone_clean, lead in lead_by_phone.items():
         try:
-            # A. Saltar si ya tiene advertencia
-            if phone_clean in existing_warnings:
-                continue
+            # 1. Calcular tiempo inicial (Asegurar que tenemos referencia antes de filtrar eventos)
+            raw_start = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
+            if not raw_start: continue
 
+            try:
+                if isinstance(raw_start, str): 
+                    start_dt = datetime.fromisoformat(raw_start.replace("Z", ""))
+                else: 
+                    start_dt = raw_start
+                if start_dt.tzinfo is None: start_dt = CHILE_TZ.localize(start_dt)
+            except: continue
+
+            # 2. Filtrar eventos por fecha (SOLO eventos posteriores a la asignación actual)
             phone_events = events_by_phone.get(phone_clean, [])
-            
-            # B. Verificar notificación inicial
-            has_initial = any(e["type"] in ["alert_sent", "ALERT", "ASSIGNMENT"] for e in phone_events)
+            current_events = []
+            for e in phone_events:
+                e_ts = e.get("timestamp")
+                if isinstance(e_ts, str): e_ts = datetime.fromisoformat(e_ts.replace("Z", ""))
+                if e_ts.tzinfo is None: e_ts = CHILE_TZ.localize(e_ts)
+                
+                # Tolerancia de 1 minuto para capturar el ASSIGNMENT que ocurre casi al mismo tiempo
+                if e_ts >= (start_dt - timedelta(minutes=1)):
+                    current_events.append(e)
+
+            # 3. Verificar si ya tiene advertencia CRÍTICA (Red)
+            # Si ya se envió roja, no molestamos más.
+            # Si se envió solo naranja, permitimos una roja más tarde.
+            existing = list(db["crm_sla_warnings"].find({"phone": phone_clean}))
+            has_red_warning = any(w.get("level") == "critical" for w in existing)
+            has_orange_warning = any(w.get("level") == "near_critical" for w in existing)
+
+            if has_red_warning: continue
+
+            # 4. Verificar notificación inicial (Cualquier alerta de asignación)
+            has_initial = any(e["type"] in initial_notif_types for e in current_events)
             if not has_initial:
+                # Caso borde: Si no hay evento pero tiene 'assigned_at' reciente, confiamos en el campo
+                if lead.get("lifecycle", {}).get("assigned_at"):
+                    has_initial = True
+                else:
+                    continue
+
+            # 5. Verificar gestión humana RECIENTE
+            has_recent_mgmt = any(e["type"] in management_types for e in current_events)
+            if has_recent_mgmt:
+                # Marcar como gestionado para no procesar en el próximo loop
+                if not any(w.get("status") == "ignored_already_managed" for w in existing):
+                    db["crm_sla_warnings"].insert_one({
+                        "phone": phone_clean,
+                        "status": "ignored_already_managed",
+                        "timestamp": datetime.now(CHILE_TZ).isoformat()
+                    })
                 continue
 
-            # C. Verificar gestión humana
-            has_mgmt = any(e["type"] in management_types for e in phone_events)
-            if has_mgmt:
-                db["crm_sla_warnings"].insert_one({
-                    "phone": phone_clean,
-                    "status": "ignored_already_managed",
-                    "timestamp": datetime.now(CHILE_TZ).isoformat()
-                })
-                continue
-
-            # D. Calcular tiempo
-            start_time = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
-            if not start_time: continue
-
-            if isinstance(start_time, str):
-                try: start_dt = datetime.fromisoformat(start_time.replace("Z", ""))
-                except: continue
-            else:
-                start_dt = start_time
-            
-            if start_dt.tzinfo is None:
-                start_dt = CHILE_TZ.localize(start_dt)
-            
             diff = datetime.now(CHILE_TZ) - start_dt
             minutes_diff = diff.total_seconds() / 60
             
-            # Umbral Naranja: 150 minutos
-            if minutes_diff >= 150:
+            level = None
+            if minutes_diff >= 180:
+                level = "critical"
+            elif minutes_diff >= 150 and not has_orange_warning:
+                level = "near_critical"
+
+            if level:
                 ejecutivo = lead.get("ejecutivo_asignado")
-                logger.info(f"[SLA_MONITOR] Alerta! Lead {phone_clean} asignado a {ejecutivo} hace {minutes_diff:.1f} min sin gestión.")
+                logger.info(f"[SLA_MONITOR] Alerta {level.upper()}! Lead {phone_clean} asignado a {ejecutivo} hace {minutes_diff:.1f} min sin gestión.")
                 
                 exec_phone = get_executive_phone(ejecutivo)
                 if not exec_phone or exec_phone == "+56900000000":
                     continue
 
                 nombre_cliente = lead.get("prospecto", {}).get("nombre", "Cliente")
-                message = format_sla_warning_message(ejecutivo, nombre_cliente)
+                message = format_sla_warning_message(ejecutivo, nombre_cliente, level)
                 
                 sent = await send_whatsapp_message(exec_phone, message)
                 if sent:
@@ -130,26 +156,36 @@ async def monitor_sla_thresholds():
                         "executive": ejecutivo,
                         "executive_phone": exec_phone,
                         "sent_at": datetime.now(CHILE_TZ).isoformat(),
+                        "level": level,
                         "status": "sent"
                     })
                     
-                    log_event(phone_clean, EventType.ALERT_SENT, "system", {
+                    log_event(phone_clean, "ALERT_SENT", "system", {
                         "to": ejecutivo, 
-                        "type": "sla_warning",
-                        "reason": "near_critical_threshold"
+                        "level": level,
+                        "reason": f"{level}_threshold"
                     })
-                    logger.info(f"[SLA_MONITOR] Notificación SLA enviada a {ejecutivo} para lead {phone_clean}")
-                    await asyncio.sleep(2) # Reducido sleep para bulk
+                    logger.info(f"[SLA_MONITOR] Notificación SLA {level} enviada a {ejecutivo}")
+                    await asyncio.sleep(2)
 
         except Exception as e:
-            logger.error(f"[SLA_MONITOR] Error crítico procesando lead {lead.get('phone')}: {e}", exc_info=True)
+            logger.error(f"[SLA_MONITOR] Error procesando lead {phone_clean}: {e}")
 
-def format_sla_warning_message(executive_name, client_name):
-    """Formatea el mensaje de advertencia de SLA."""
+def format_sla_warning_message(executive_name, client_name, level):
+    """Formatea el mensaje de advertencia de SLA según el nivel."""
+    if level == "critical":
+        header = "🔴 *SLA CRÍTICO - SIN RESPUESTA* 🔴"
+        time_text = "más de 3 horas"
+        footer = "⚠️ Este lead requiere atención URGENTE."
+    else:
+        header = "🟠 *PRÓXIMO A CRÍTICO - ALERTA SLA* 🟠"
+        time_text = "2:30 horas"
+        footer = "Por favor, contacta al cliente pronto para evitar indicadores rojos."
+
     return (
-        f"⚠️ *RECORDATORIO SLA CRÍTICO*\n\n"
-        f"Hola *{executive_name}*, el cliente *{client_name}* lleva *2:30 horas* asignado sin recibir gestión comercial.\n\n"
-        f"Está por pasar al estado *ROJO (Crítico)* en los indicadores. Por favor, realiza contacto a la brevedad para mejorar el rendimiento del equipo. ⚡\n\n"
-        f"🔗 *Accede al CRM para gestionar:* https://procasa-chatbot-yr8d.onrender.com/\n\n"
-        f"¡Vamos por esa venta! 🚀"
+        f"{header}\n\n"
+        f"Hola *{executive_name}*, el cliente *{client_name}* lleva *{time_text}* asignado sin recibir gestión comercial.\n\n"
+        f"{footer}\n\n"
+        f"🔗 *Gestionar ahora:* https://procasa-chatbot-yr8d.onrender.com/\n\n"
+        f"¡Mucho éxito! 🚀"
     )

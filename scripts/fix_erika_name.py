@@ -23,12 +23,19 @@ def fix_erika_name():
     )
     print(f"Properties updated in 'universo_obelix': {res_prop.modified_count}")
 
-    # 2. Update leads
+    # 2. Update leads (primary field)
     res_leads = db["leads"].update_many(
         {"ejecutivo_asignado": old_name},
         {"$set": {"ejecutivo_asignado": new_name}}
     )
-    print(f"Leads updated in 'leads': {res_leads.modified_count}")
+    print(f"Leads updated in 'leads' (ejecutivo_asignado): {res_leads.modified_count}")
+
+    # 3. Update leads (prospecto subdocument)
+    res_prospecto = db["leads"].update_many(
+        {"prospecto.ejecutivo": old_name},
+        {"$set": {"prospecto.ejecutivo": new_name}}
+    )
+    print(f"Leads updated in 'leads' (prospecto.ejecutivo): {res_prospecto.modified_count}")
 
     print("\n--- Done! ---")
 

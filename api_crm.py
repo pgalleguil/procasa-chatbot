@@ -216,7 +216,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     # 2. Identificar cuáles de esos leads 'Sin Atender' tienen eventos de gestión
     all_new_phones = []
     for res in kpi_results:
-        st = str(res["_id"] or "").lower()
+        # Fallback a 'NEW' si es nulo para consistencia con el contador
+        st = str(res["_id"] or "NEW").lower()
         if any(x in st for x in ["new", "nuevo"]):
             all_new_phones.extend(res["phones"])
             
@@ -232,6 +233,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             ]}
         })
         promoted_to_gestion = len(has_events)
+        if promoted_to_gestion > 0:
+            logger.info(f"[KPI_SYNC] Promocionando {promoted_to_gestion} leads de 'nuevo' a 'gestion' por actividad reciente.")
 
     kpi_counts = {"nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0, "total": total_count}
     

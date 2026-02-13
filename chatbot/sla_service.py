@@ -40,45 +40,54 @@ async def monitor_sla_thresholds():
 
     logger.debug(f"[SLA_MONITOR] Revisando {len(leads)} leads potenciales para SLA...")
 
-    for lead in leads:
+    # --- OPTIMIZACIÓN: BULK QUERIES ---
+    phones_clean = []
+    lead_by_phone = {}
+    for l in leads:
+        p = l.get("phone")
+        if p:
+            pc = p.replace("+", "").replace(" ", "").strip()
+            phones_clean.append(pc)
+            lead_by_phone[pc] = l
+
+    # 1. Obtener todas las advertencias existentes de una vez
+    existing_warnings = set(db["crm_sla_warnings"].distinct("phone", {"phone": {"$in": phones_clean}}))
+
+    # 2. Obtener eventos relevantes (notificaciones iniciales y gestiones) para todos
+    relevant_event_types = ["alert_sent", "ALERT", "ASSIGNMENT"] + [
+        "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
+        "CLICK_PHONE_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
+    ]
+    
+    events_by_phone = {}
+    cursor = db["crm_events"].find({"phone": {"$in": phones_clean}, "type": {"$in": relevant_event_types}})
+    for evt in cursor:
+        ph = evt["phone"]
+        if ph not in events_by_phone: events_by_phone[ph] = []
+        events_by_phone[ph].append(evt)
+
+    # --- PROCESAMIENTO EN MEMORIA ---
+    management_types = [
+        "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
+        "CLICK_PHONE_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
+    ]
+
+    for phone_clean, lead in lead_by_phone.items():
         try:
-            phone = lead.get("phone")
-            if not phone:
-                continue
-            
-            phone_clean = phone.replace("+", "").replace(" ", "").strip()
-            
-            # 2. Verificar si ya se envió advertencia para ESTE lead en la nueva colección
-            # Esto desacopla la lógica del documento principal del lead
-            warning_exists = db["crm_sla_warnings"].find_one({"phone": phone_clean})
-            if warning_exists:
+            # A. Saltar si ya tiene advertencia
+            if phone_clean in existing_warnings:
                 continue
 
-            # 3. Verificar si ya se envió la notificación inicial de nuevo lead (Requisito)
-            # Solo enviamos alerta de SLA si el ejecutivo ya fue avisado previamente.
-            initial_notif = db["crm_events"].find_one({
-                "phone": phone_clean,
-                "type": {"$in": ["alert_sent", "ALERT", "ASSIGNMENT"]}
-            })
+            phone_events = events_by_phone.get(phone_clean, [])
             
-            if not initial_notif:
-                # Si no se ha notificado la asignación inicial, no enviamos SLA aún
+            # B. Verificar notificación inicial
+            has_initial = any(e["type"] in ["alert_sent", "ALERT", "ASSIGNMENT"] for e in phone_events)
+            if not has_initial:
                 continue
 
-            # 4. Verificar si ya hubo gestión humana (Doble chequeo de seguridad)
-            management_types = [
-                "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
-                "CLICK_PHONE_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
-            ]
-            
-            has_mgmt = db["crm_events"].find_one({
-                "phone": phone_clean,
-                "type": {"$in": management_types}
-            })
-            
+            # C. Verificar gestión humana
+            has_mgmt = any(e["type"] in management_types for e in phone_events)
             if has_mgmt:
-                # Si ya tiene gestión, marcamos en la colección de advertencias 
-                # para no procesarlo más como "pendiente de alerta"
                 db["crm_sla_warnings"].insert_one({
                     "phone": phone_clean,
                     "status": "ignored_already_managed",
@@ -86,16 +95,13 @@ async def monitor_sla_thresholds():
                 })
                 continue
 
-            # 4. Calcular tiempo transcurrido desde asignación
+            # D. Calcular tiempo
             start_time = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
-            if not start_time:
-                continue
+            if not start_time: continue
 
             if isinstance(start_time, str):
-                try: 
-                    start_dt = datetime.fromisoformat(start_time.replace("Z", ""))
-                except: 
-                    continue
+                try: start_dt = datetime.fromisoformat(start_time.replace("Z", ""))
+                except: continue
             else:
                 start_dt = start_time
             
@@ -105,23 +111,20 @@ async def monitor_sla_thresholds():
             diff = datetime.now(CHILE_TZ) - start_dt
             minutes_diff = diff.total_seconds() / 60
             
-            # Umbral Naranja: 150 minutos (2:30 horas)
+            # Umbral Naranja: 150 minutos
             if minutes_diff >= 150:
                 ejecutivo = lead.get("ejecutivo_asignado")
-                logger.info(f"[SLA_MONITOR] Alerta! Lead {phone} asignado a {ejecutivo} hace {minutes_diff:.1f} min sin gestión.")
+                logger.info(f"[SLA_MONITOR] Alerta! Lead {phone_clean} asignado a {ejecutivo} hace {minutes_diff:.1f} min sin gestión.")
                 
-                # 5. Obtener teléfono del ejecutivo
                 exec_phone = get_executive_phone(ejecutivo)
                 if not exec_phone or exec_phone == "+56900000000":
                     continue
 
-                # 6. Enviar mensaje de WhatsApp
                 nombre_cliente = lead.get("prospecto", {}).get("nombre", "Cliente")
                 message = format_sla_warning_message(ejecutivo, nombre_cliente)
                 
                 sent = await send_whatsapp_message(exec_phone, message)
                 if sent:
-                    # 7. Registrar en la nueva colección de advertencias
                     db["crm_sla_warnings"].insert_one({
                         "phone": phone_clean,
                         "executive": ejecutivo,
@@ -130,16 +133,13 @@ async def monitor_sla_thresholds():
                         "status": "sent"
                     })
                     
-                    # 8. Log de evento en el historial del lead
                     log_event(phone_clean, EventType.ALERT_SENT, "system", {
                         "to": ejecutivo, 
                         "type": "sla_warning",
                         "reason": "near_critical_threshold"
                     })
-                    logger.info(f"[SLA_MONITOR] Notificación SLA enviada a {ejecutivo} para lead {phone}")
-                    
-                    # 9. Esperar para evitar rate limit (Account Protection: 5s)
-                    await asyncio.sleep(5)
+                    logger.info(f"[SLA_MONITOR] Notificación SLA enviada a {ejecutivo} para lead {phone_clean}")
+                    await asyncio.sleep(2) # Reducido sleep para bulk
 
         except Exception as e:
             logger.error(f"[SLA_MONITOR] Error crítico procesando lead {lead.get('phone')}: {e}", exc_info=True)

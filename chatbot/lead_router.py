@@ -155,6 +155,7 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
         "$or": [
             {"codigo": property_code},
             {"codigo": p_int},
+            {"codigo": f"'{property_code}'"},  # Handle literal quotes like '12345'
             {"codigo_mercadolibre": property_code},
             {"codigo_mercadolibre": p_int},
             {"codigo_yapo": property_code},

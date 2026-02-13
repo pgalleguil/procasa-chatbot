@@ -31,7 +31,7 @@ async def monitor_sla_thresholds():
             {"stage": None},
             {"stage": {"$exists": False}}
         ],
-        "ejecutivo_asignado": {"$exists": True, "$ne": "No asignado"}
+        "ejecutivo_asignado": {"$exists": True, "$nin": ["No asignado", "Sin Asignar"]}
     }
     
     leads = list(db["leads"].find(query))

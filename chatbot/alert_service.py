@@ -5,8 +5,9 @@ import pytz
 from datetime import datetime, timedelta
 from .storage import obtener_prospecto, actualizar_prospecto, save_pending_notification
 from .lead_router import find_responsible_executive, should_send_now, format_whatsapp_template
+from .lead_router import find_responsible_executive, should_send_now, format_whatsapp_template
 from .constants import CHILE_TZ
-from .whatsapp_client import send_whatsapp_message
+from .notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -188,16 +189,22 @@ async def send_alert_once(
                     # Marcamos que enviamos notificación de seguimiento AHORA
                     mark_alert_sent(phone, "SeguimientoCliente")
 
-            # Enviar YA
+            # Enviar YA (Usando Servicio Idempotente)
             message = format_whatsapp_template(lead_data, exec_name, lead_data["property_code"], is_new_assignment=is_new_assignment)
-            sent = await send_whatsapp_message(exec_phone, message)
             
-            if sent:
-                logger.info(f"[ALERT] WhatsApp enviado a {exec_name} ({exec_phone}) por lead {phone}")
-                from .storage import log_event, EventType
-                log_event(phone, EventType.ALERT_SENT, "system", {"to": exec_name, "type": lead_type})
-            else:
+            # --- NUEVO: ENVÍO CENTRALIZADO ---
+            sent = await NotificationService.send_notification(
+                phone=exec_phone,
+                message=message,
+                alert_type=lead_type, # Usamos lead_type como clave de deduplicación
+                meta={"to": exec_name, "is_new_assignment": is_new_assignment},
+                dedup_window_minutes=10 # 10 minutos de protección extra
+            )
+            
+            if not sent:
                 logger.error(f"[ALERT] Falló envío WA a {exec_name}. Guardando para reintento.")
+                # Si falló (y no fue por duplicado), guardamos para reintento
+                # Nota: NotificationService retorna True si fue duplicado, False si error real.
                 from .storage import log_event, EventType
                 log_event(phone, EventType.ASSIGNMENT_FAIL, "system", {"to": exec_name, "reason": "wasender_failure"})
                 save_pending_notification({**lead_data, "target_phone": exec_phone, "target_name": exec_name})

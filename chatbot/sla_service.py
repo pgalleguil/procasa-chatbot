@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime, timedelta
 from .storage import get_db, log_event
 from .constants import CHILE_TZ, PipelineStage, EventType
-from .whatsapp_client import send_whatsapp_message
+from .notification_service import NotificationService
 from .lead_router import get_executive_phone, should_send_now
 
 logger = logging.getLogger(__name__)
@@ -149,7 +149,15 @@ async def monitor_sla_thresholds():
                 nombre_cliente = lead.get("prospecto", {}).get("nombre", "Cliente")
                 message = format_sla_warning_message(ejecutivo, nombre_cliente, level)
                 
-                sent = await send_whatsapp_message(exec_phone, message)
+                
+                sent = await NotificationService.send_notification(
+                    phone=exec_phone,
+                    message=message,
+                    alert_type=f"SLA_{level.upper()}",
+                    meta={"to": ejecutivo, "level": level},
+                    dedup_window_minutes=30 # 30 min para SLA
+                )
+
                 if sent:
                     db["crm_sla_warnings"].insert_one({
                         "phone": phone_clean,
@@ -159,13 +167,7 @@ async def monitor_sla_thresholds():
                         "level": level,
                         "status": "sent"
                     })
-                    
-                    log_event(phone_clean, "ALERT_SENT", "system", {
-                        "to": ejecutivo, 
-                        "level": level,
-                        "reason": f"{level}_threshold"
-                    })
-                    logger.info(f"[SLA_MONITOR] Notificación SLA {level} enviada a {ejecutivo}")
+                    logger.info(f"[SLA_MONITOR] Notificación SLA {level} procesada para {ejecutivo}")
                     await asyncio.sleep(2)
 
         except Exception as e:

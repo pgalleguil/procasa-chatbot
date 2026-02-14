@@ -695,6 +695,31 @@
 
         </div>
 
+        <!-- SESSION WARNING MODAL -->
+        <div class="modal fade" id="sessionWarningModal" tabindex="-1" data-bs-backdrop="static"
+            data-bs-keyboard="false">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content"
+                    style="background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary);">
+                    <div class="modal-header border-bottom border-secondary">
+                        <h5 class="modal-title"><i class="fa-solid fa-hourglass-half text-warning me-2"></i>Sesión por
+                            expirar</h5>
+                    </div>
+                    <div class="modal-body">
+                        <p>Tu sesión expirará en <span id="sessionTimeLeft" class="fw-bold text-danger">120s</span> por
+                            inactividad.</p>
+                        <p class="small text-muted mb-0">Mueve el mouse o presiona una tecla para mantenerla activa.</p>
+                    </div>
+                    <div class="modal-footer border-top border-secondary">
+                        <a href="/logout" class="btn btn-outline-danger btn-sm">Cerrar Sesión</a>
+                        <button type="button" class="btn btn-primary btn-sm"
+                            onclick="bootstrap.Modal.getInstance(document.getElementById('sessionWarningModal')).hide(); updateActivity();">Mantener
+                            Activa</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -1219,6 +1244,51 @@
                 const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
             });
             setInterval(loadData, 300000);
+
+            // --- SMART SESSION CONTROL ---
+            // 30 min session. Passive renew every 5 mins if active. Warning at 28 mins.
+            const SESSION_LIFETIME = 30 * 60 * 1000;
+            const WARNING_THRESHOLD = 2 * 60 * 1000;
+            const RENEWAL_INTERVAL = 5 * 60 * 1000;
+
+            let lastActivity = Date.now();
+            let lastRenewal = Date.now();
+
+            function updateActivity() { lastActivity = Date.now(); }
+            ['mousemove', 'click', 'keydown', 'scroll', 'touchstart'].forEach(evt => document.addEventListener(evt, updateActivity));
+
+            setInterval(() => {
+                const now = Date.now();
+                const idleTime = now - lastActivity;
+
+                // 1. HARD EXPIRATION
+                if (idleTime > SESSION_LIFETIME) {
+                    window.location.href = '/logout?reason=timeout';
+                    return;
+                }
+
+                // 2. WARNING MODAL
+                const timeLeft = SESSION_LIFETIME - idleTime;
+                try {
+                    const modalEl = document.getElementById('sessionWarningModal');
+                    if (modalEl) {
+                        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                        if (timeLeft < WARNING_THRESHOLD) {
+                            document.getElementById('sessionTimeLeft').innerText = Math.ceil(timeLeft / 1000) + "s";
+                            modal.show();
+                        } else {
+                            modal.hide();
+                        }
+                    }
+                } catch (e) { console.error("Session modal error", e); }
+
+                // 3. PASSIVE RENEWAL (Keep-Alive)
+                if (idleTime < RENEWAL_INTERVAL && (now - lastRenewal) > RENEWAL_INTERVAL) {
+                    fetch('/api/session/renew', { method: 'POST' })
+                        .then(res => { if (res.ok) lastRenewal = now; })
+                        .catch(err => console.error("Session renew failed", err));
+                }
+            }, 5000); 
         </script>
         <div id="sidebarOverlay"
             style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1150;"

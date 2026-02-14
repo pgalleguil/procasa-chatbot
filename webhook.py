@@ -135,7 +135,19 @@ async def slide_session_middleware(request: Request, call_next):
             # Si el token ya expiró o es inválido, no hacemos nada (el middleware de auth lo atrapará)
             pass
             
+        return response
+
     return response
+
+# --- ENDPOINT ESPECIAL PARA RENOVACIÓN DE SESIÓN (HEARTBEAT) ---
+@app.post("/api/session/renew")
+async def renew_session(user_name: str = Depends(get_current_user)):
+    """
+    Endpoint ligero llamado por el frontend para mantener la sesión viva.
+    El middleware 'slide_session_middleware' interceptará esta llamada
+    y renovará la cookie automáticamente si el token es válido.
+    """
+    return {"status": "renewed", "user": user_name}
 
 async def get_current_user(request: Request):
     token = request.cookies.get("access_token")
@@ -269,7 +281,8 @@ async def auth_google_callback(request: Request, code: str):
             samesite="lax", 
             max_age=SESSION_TIME 
         )
-        
+
+        logger.info("Conexión a MongoDB exitosa")
         logger.info(f"Sesión iniciada para {email} (Rol: {user_rol})")
         return response
 
@@ -503,6 +516,7 @@ except ImportError:
         return f"Respuesta de prueba para {phone}: {message[:50]}..."
 
 from chatbot.whatsapp_client import send_whatsapp_message
+from chatbot.notification_service import NotificationService
 
 async def process_with_debounce(phone: str, full_text: str, is_from_me: bool = False):
     if phone in pending_tasks and not pending_tasks[phone].done():
@@ -821,22 +835,116 @@ async def startup_event():
                                 except Exception as e:
                                     logger.error(f"[BACKGROUND] Error asignando ejecutivo: {e}")
 
-                                success = await send_whatsapp_message(target_phone, msg)
+                                success = await NotificationService.send_notification(
+                                    phone=target_phone,
+                                    message=msg,
+                                    alert_type="background_notification",
+                                    meta={"to": target_name, "is_background": True},
+                                    dedup_window_minutes=10
+                                )
+                                
                                 if success:
-                                    from chatbot.storage import log_event
-                                    log_event(phone, InteractionType.ALERT, "system", {"to": target_name, "type": "background_notification"})
+                                    # Si se envió (o era duplicado), marcamos como procesado
                                     mark_notification_sent(p["_id"])
-                                    logger.info(f"[BACKGROUND] Lead {phone} enviado a {target_name}")
+                                    logger.info(f"[BACKGROUND] Lead {phone} procesado exitosamente para {target_name}")
                                 else:
-                                    # Si falla el envío, no marcamos como enviado para reintentar luego
+                                    # Si falló el envío real (error de API), NO marcamos para reintentar
                                     logger.error(f"[BACKGROUND] Falló envío WA a {target_name} para {phone}")
-                                # ---------------------------------------------
                                 await asyncio.sleep(2) # Evitar rate limit
                             
             except Exception as e:
                 logger.error(f"[BACKGROUND] Error en loop de pendientes: {e}")
             
             await asyncio.sleep(60) # Revisar cada minuto
+
+async def check_scheduled_tasks():
+    """
+    Monitor de Tareas Agendadas (Próxima Acción).
+    Revisa crm_tasks buscando recordatorios vencidos y notifica al ejecutivo actual.
+    """
+    from chatbot.storage import get_db, log_event, EventType
+    from chatbot.lead_router import get_executive_phone
+    from chatbot.notification_service import NotificationService
+    
+    logger.info("[TASK_MONITOR] Iniciando monitor de tareas agendadas...")
+    
+    while True:
+        try:
+            db = get_db()
+            now = datetime.now(CHILE_TZ)
+            
+            # Buscar tareas pendientes cuya fecha ya pasó
+            # Nota: execute_at se guarda naive o aware, aseguramos comparación robusta
+            # Buscamos status 'pending' que tengan execute_at <= now
+            tasks = list(db["crm_tasks"].find({
+                "status": "pending",
+                "execute_at": {"$lte": now}
+            }))
+            
+            if tasks:
+                logger.info(f"[TASK_MONITOR] Procesando {len(tasks)} tareas vencidas...")
+                
+                for task in tasks:
+                    try:
+                        phone = task.get("phone")
+                        note = task.get("note", "Sin detalles")
+                        
+                        # Buscamos al lead para ver quién es el ejecutivo ACTUAL
+                        lead = db["leads"].find_one({"phone": phone})
+                        if not lead:
+                            # Lead fantasma, marcamos tarea como error
+                            db["crm_tasks"].update_one({"_id": task["_id"]}, {"$set": {"status": "error", "error": "lead_not_found"}})
+                            continue
+                            
+                        ejecutivo = lead.get("ejecutivo_asignado")
+                        if not ejecutivo or ejecutivo in ["No asignado", "Sin Asignar"]:
+                            # Sin ejecutivo, no hay a quien notificar
+                            continue
+                            
+                        exec_phone = get_executive_phone(ejecutivo)
+                        if not exec_phone or exec_phone == "+56900000000":
+                            continue
+                            
+                        # Construir mensaje de recordatorio
+                        crm_link = f"https://www.procasa.cl/crm/lead/{phone}"
+                        msg_text = (
+                            f"⏰ *Recordatorio CRM: {ejecutivo}*\n\n"
+                            f"Tienes una acción programada para el lead *{lead.get('prospecto', {}).get('nombre', 'Cliente')}* ({phone}).\n\n"
+                            f"📝 *Nota:* {note}\n"
+                            f"🔗 Gestionar: {crm_link}"
+                        )
+                        
+                        # Enviar notificación IDEMPOTENTE
+                        sent = await NotificationService.send_notification(
+                            phone=exec_phone,
+                            message=msg_text,
+                            alert_type="TASK_REMINDER",
+                            meta={"task_id": str(task["_id"]), "to": ejecutivo},
+                            dedup_window_minutes=60 
+                        )
+                        
+                        # Actualizar estado de tarea a 'notified' (no 'completed', el humano debe completar)
+                        if sent:
+                            db["crm_tasks"].update_one(
+                                {"_id": task["_id"]}, 
+                                {
+                                    "$set": {
+                                        "status": "notified", 
+                                        "notified_at": now.isoformat(),
+                                        "notification_sent_to": ejecutivo
+                                    }
+                                }
+                            )
+                            logger.info(f"[TASK_MONITOR] Recordatorio enviado a {ejecutivo} sobre {phone}")
+                            
+                    except Exception as e:
+                        logger.error(f"[TASK_MONITOR] Error procesando tarea {task.get('_id')}: {e}")
+            
+            await asyncio.sleep(60) # Revisar cada minuto
+            
+        except Exception as e:
+            logger.error(f"[TASK_MONITOR] Error en loop de tareas: {e}")
+            await asyncio.sleep(60)
 
     async def sla_monitor():
         while True:
@@ -849,6 +957,20 @@ async def startup_event():
 
     asyncio.create_task(process_pending_leads())
     asyncio.create_task(sla_monitor())
+    asyncio.create_task(check_scheduled_tasks())
+
+    # Índices para el Monitor de Tareas y Notificaciones
+    try:
+        db = MongoClient(Config.MONGO_URI)[Config.DB_NAME]
+        # Optimiza check_scheduled_tasks: status + execute_at
+        db["crm_tasks"].create_index([("status", 1), ("execute_at", 1)])
+        
+        # Optimiza NotificationService idempotency: phone + type + timestamp
+        db["crm_events"].create_index([("phone", 1), ("type", 1), ("timestamp", -1)])
+        
+        logger.info("Índices de CRM asegurados en startup.")
+    except Exception as e:
+        logger.warning(f"Error creando índices optimizados: {e}")
 
 if __name__ == "__main__":
     import pathlib

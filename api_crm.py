@@ -113,7 +113,11 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
         {"$set": {"status": "completed", "resolved_at": datetime.now(), "resolution": "superseded"}}
     )
     
-    try: execute_at = datetime.fromisoformat(execute_at_str.replace("Z", ""))
+    try: 
+        execute_at = datetime.fromisoformat(execute_at_str.replace("Z", ""))
+        # Asegurar timezone aware (Chile)
+        if execute_at.tzinfo is None:
+            execute_at = CHILE_TZ.localize(execute_at)
     except: return
     task = {
         "task_id": str(uuid.uuid4()),
@@ -498,9 +502,8 @@ def get_lead_detail_data(phone):
         "phone": phone_clean,
         "type": {"$in": [
             "GESTION_LOG", "STATUS_CHANGE", "HUMAN_NOTE", 
-            "CLICK_PHONE_LEAD", 
+            "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD",
             "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
-            "CLICK_PHONE_OWNER",
             "SEND_WA_OWNER", "SEND_EMAIL_OWNER"
         ]} 
     }).sort("timestamp", -1)
@@ -517,20 +520,20 @@ def get_lead_detail_data(phone):
             try: ts_obj = datetime.fromisoformat(ts_obj)
             except: pass
             
-        # ETIQUETAS DINÁMICAS PARA EL HISTORIAL
+        # ETIQUETAS DINÁMICAS PARA EL HISTORIAL (Mejorado para evitar "Evento CRM")
         type_labels = {
-            "CLICK_WHATSAPP_LEAD": "WhatsApp Iniciado",
             "CLICK_PHONE_LEAD": "Llamada Iniciada",
-            "CLICK_EMAIL_LEAD": "Redacción de Email",
+            "CLICK_WHATSAPP_LEAD": "WhatsApp Iniciado",
             "SEND_WA_LEAD": "WhatsApp Enviado",
             "SEND_EMAIL_LEAD": "Email Enviado",
-            "CLICK_WHATSAPP_OWNER": "WhatsApp/Llamada Prop.",
             "SEND_WA_OWNER": "WhatsApp Enviado (Prop.)",
+            "SEND_EMAIL_OWNER": "Email Enviado (Prop.)",
             "STATUS_CHANGE": "Cambio de Estado",
+            "GESTION_LOG": "Gestión Registrada",
             "HUMAN_NOTE": meta.get("action_label", "Nota de Gestión")
         }
 
-        user_action_display = meta.get("action_label") or type_labels.get(evt_type, "Evento CRM")
+        user_action_display = meta.get("action_label") or type_labels.get(evt_type, "Actividad")
         
         # --- MAPEO DE ICONOS DINÁMICOS ---
         # Formato: (Icono, Clase CSS)

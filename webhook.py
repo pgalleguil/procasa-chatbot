@@ -139,16 +139,6 @@ async def slide_session_middleware(request: Request, call_next):
 
     return response
 
-# --- ENDPOINT ESPECIAL PARA RENOVACIÓN DE SESIÓN (HEARTBEAT) ---
-@app.post("/api/session/renew")
-async def renew_session(user_name: str = Depends(get_current_user)):
-    """
-    Endpoint ligero llamado por el frontend para mantener la sesión viva.
-    El middleware 'slide_session_middleware' interceptará esta llamada
-    y renovará la cookie automáticamente si el token es válido.
-    """
-    return {"status": "renewed", "user": user_name}
-
 async def get_current_user(request: Request):
     token = request.cookies.get("access_token")
     if not token:
@@ -159,15 +149,26 @@ async def get_current_user(request: Request):
     if not token:
         logger.warning("Intento de acceso sin token")
         raise HTTPException(status_code=401, detail="No autenticado")
-    
+        
     try:
         payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
-        username: str = payload.get("sub")
+        username = payload.get("sub")
         if not username:
-            raise HTTPException(status_code=401, detail="Token inválido")
+            raise HTTPException(status_code=401, detail="Token sin usuario")
         return username
     except JWTError:
-        raise HTTPException(status_code=401, detail="Sesión expirada o inválida")
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+# --- ENDPOINT ESPECIAL PARA RENOVACIÓN DE SESIÓN (HEARTBEAT) ---
+@app.post("/api/session/renew")
+async def renew_session(user_name: str = Depends(get_current_user)):
+    """
+    Endpoint ligero llamado por el frontend para mantener la sesión viva.
+    El middleware 'slide_session_middleware' interceptará esta llamada
+    y renovará la cookie automáticamente si el token es válido.
+    """
+    return {"status": "renewed", "user": user_name}
+    
 
 def crear_admin_si_no_existe():
     try:

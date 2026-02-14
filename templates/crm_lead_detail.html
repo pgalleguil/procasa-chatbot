@@ -1254,6 +1254,55 @@
             color: var(--text-secondary);
         }
 
+        /* Timeline Action Colors */
+        .tl-icon.tl-wa {
+            background: rgba(37, 211, 102, 0.15) !important;
+            color: #25D366 !important;
+            border-color: #25D366 !important;
+        }
+
+        .tl-icon.tl-phone {
+            background: rgba(52, 152, 219, 0.15) !important;
+            color: #3498db !important;
+            border-color: #3498db !important;
+        }
+
+        .tl-icon.tl-email {
+            background: rgba(231, 76, 60, 0.15) !important;
+            color: #e74c3c !important;
+            border-color: #e74c3c !important;
+        }
+
+        .tl-icon.tl-visit {
+            background: rgba(16, 185, 129, 0.15) !important;
+            color: #10b981 !important;
+            border-color: #10b981 !important;
+        }
+
+        .tl-icon.tl-win {
+            background: rgba(245, 158, 11, 0.15) !important;
+            color: #f59e0b !important;
+            border-color: #f59e0b !important;
+        }
+
+        .tl-icon.tl-loss {
+            background: rgba(239, 68, 68, 0.15) !important;
+            color: #ef4444 !important;
+            border-color: #ef4444 !important;
+        }
+
+        .tl-icon.tl-status {
+            background: rgba(99, 102, 241, 0.15) !important;
+            color: var(--accent) !important;
+            border-color: var(--accent) !important;
+        }
+
+        .tl-icon.tl-note {
+            background: rgba(125, 125, 125, 0.1) !important;
+            color: var(--text-secondary) !important;
+            border-color: var(--border-color) !important;
+        }
+
         .tl-content {
             background: rgba(125, 125, 125, 0.03);
             border: 1px solid var(--border-color);
@@ -2558,29 +2607,10 @@
                         <div class="timeline-line"></div>
                         {% for h in lead.crm_history %}
                         <div class="tl-item">
-                            <!-- Distinción Visual: Auditoría vs Acción -->
-                            {% if h.raw_type == 'STATUS_CHANGE' %}
-                            <div class="tl-icon system"
-                                style="background: rgba(99, 102, 241, 0.2); color: var(--accent);">
-                                <i class="fa-solid fa-right-left"></i>
+                            <!-- Icono Dinámico usando Clases CSS (Sin errores de linter) -->
+                            <div class="tl-icon {{ h.type_class }} {{ h.icon_class }}">
+                                <i class="{{ h.icon or 'fa-solid fa-check' }}"></i>
                             </div>
-                            {% elif h.channel == 'wa' %}
-                            <div class="tl-icon user" style="background: rgba(37, 211, 102, 0.2); color: #25D366;">
-                                <i class="fa-brands fa-whatsapp"></i>
-                            </div>
-                            {% elif h.channel == 'phone' %}
-                            <div class="tl-icon user" style="background: rgba(52, 152, 219, 0.2); color: #3498db;">
-                                <i class="fa-solid fa-phone"></i>
-                            </div>
-                            {% elif h.channel == 'email' %}
-                            <div class="tl-icon user" style="background: rgba(231, 76, 60, 0.2); color: #e74c3c;">
-                                <i class="fa-solid fa-envelope"></i>
-                            </div>
-                            {% elif h.type_class == 'system' %}
-                            <div class="tl-icon system"><i class="fa-solid fa-gear"></i></div>
-                            {% else %}
-                            <div class="tl-icon user"><i class="fa-solid fa-check"></i></div>
-                            {% endif %}
 
                             <div class="tl-content">
                                 <span class="tl-date text-secondary small">{{ h.timestamp.strftime('%d/%m %H:%M')

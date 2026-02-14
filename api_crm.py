@@ -497,8 +497,8 @@ def get_lead_detail_data(phone):
     new_events_cursor = db["crm_events"].find({
         "phone": phone_clean,
         "type": {"$in": [
-            "GESTION_LOG", "STATUS_CHANGE", "SYSTEM_LOG", "HUMAN_NOTE", 
-            "ASSIGNMENT", "ALERT", "CLICK_PHONE_LEAD", 
+            "GESTION_LOG", "STATUS_CHANGE", "HUMAN_NOTE", 
+            "CLICK_PHONE_LEAD", 
             "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
             "CLICK_PHONE_OWNER",
             "SEND_WA_OWNER", "SEND_EMAIL_OWNER"
@@ -519,19 +519,56 @@ def get_lead_detail_data(phone):
             
         # ETIQUETAS DINÁMICAS PARA EL HISTORIAL
         type_labels = {
-            "CLICK_WHATSAPP_LEAD": "Mensaje WhatsApp Iniciado",
-            "CLICK_PHONE_LEAD": "Llamada Telefónica Iniciada",
-            "CLICK_EMAIL_LEAD": "Redacción de Email Abierta",
+            "CLICK_WHATSAPP_LEAD": "WhatsApp Iniciado",
+            "CLICK_PHONE_LEAD": "Llamada Iniciada",
+            "CLICK_EMAIL_LEAD": "Redacción de Email",
             "SEND_WA_LEAD": "WhatsApp Enviado",
             "SEND_EMAIL_LEAD": "Email Enviado",
-            "CLICK_WHATSAPP_OWNER": "Llamada/WA a Propietario",
-            "SEND_WA_OWNER": "WhatsApp enviado a Propietario",
+            "CLICK_WHATSAPP_OWNER": "WhatsApp/Llamada Prop.",
+            "SEND_WA_OWNER": "WhatsApp Enviado (Prop.)",
             "STATUS_CHANGE": "Cambio de Estado",
             "HUMAN_NOTE": meta.get("action_label", "Nota de Gestión")
         }
 
         user_action_display = meta.get("action_label") or type_labels.get(evt_type, "Evento CRM")
-            
+        
+        # --- MAPEO DE ICONOS DINÁMICOS ---
+        # Formato: (Icono, Clase CSS)
+        icon_map = {
+            "CLICK_WHATSAPP_LEAD": ("fa-brands fa-whatsapp", "tl-wa"),
+            "CLICK_PHONE_LEAD": ("fa-solid fa-phone", "tl-phone"),
+            "CLICK_EMAIL_LEAD": ("fa-solid fa-envelope", "tl-email"),
+            "SEND_WA_LEAD": ("fa-brands fa-whatsapp", "tl-wa"),
+            "SEND_EMAIL_LEAD": ("fa-solid fa-envelope", "tl-email"),
+            "CLICK_WHATSAPP_OWNER": ("fa-brands fa-whatsapp", "tl-wa"),
+            "SEND_WA_OWNER": ("fa-brands fa-whatsapp", "tl-wa"),
+            "STATUS_CHANGE": ("fa-solid fa-right-left", "tl-status"),
+            "HUMAN_NOTE": ("fa-solid fa-note-sticky", "tl-note"),
+            "GESTION_LOG": ("fa-solid fa-clipboard-check", "tl-note")
+        }
+        
+        # Valores por defecto
+        final_icon, final_class = icon_map.get(evt_type, ("fa-solid fa-check", ""))
+        
+        # Especialización por canal (sobrescribe tipo base)
+        channel = meta.get("interaction_type") or meta.get("channel")
+        if channel == 'wa':
+            final_icon, final_class = icon_map["SEND_WA_LEAD"]
+        elif channel == 'phone':
+            final_icon, final_class = icon_map["CLICK_PHONE_LEAD"]
+        elif channel == 'email':
+            final_icon, final_class = icon_map["SEND_EMAIL_LEAD"]
+
+        # Especialización por resultado en HUMAN_NOTE
+        res = str(meta.get("result", "")).lower()
+        if evt_type == "HUMAN_NOTE":
+            if "visita" in res:
+                final_icon, final_class = "fa-solid fa-calendar-check", "tl-visit"
+            elif "ganado" in res:
+                final_icon, final_class = "fa-solid fa-trophy", "tl-win"
+            elif any(x in res for x in ["perdido", "descartado", "inválido", "cerrado"]):
+                final_icon, final_class = "fa-solid fa-ban", "tl-loss"
+
         formatted_new_history.append({
             "timestamp": ts_obj,
             "user_action": user_action_display if evt_type != "STATUS_CHANGE" else "Cambio de Estado",
@@ -539,7 +576,9 @@ def get_lead_detail_data(phone):
             "notes": meta.get("notes", "") or meta.get("to", "") or meta.get("content_preview", ""), 
             "type_class": display_type,
             "raw_type": evt_type,
-            "channel": meta.get("interaction_type") or meta.get("channel") # p.ej. 'wa', 'phone', 'email'
+            "icon": final_icon,
+            "icon_class": final_class,
+            "channel": channel
         })
         
     timeline = process_chat_timeline(lead.get("messages", []))

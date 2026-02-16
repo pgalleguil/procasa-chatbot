@@ -1857,9 +1857,19 @@
 
         /* --- PROFESIONAL VALIDATION UX --- */
         .field-incomplete {
-            border-color: var(--danger-color) !important;
-            box-shadow: 0 0 8px rgba(239, 68, 68, 0.2) !important;
-            animation: pulse-border 2s infinite;
+            border: 2px solid var(--danger-color) !important;
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.4) !important;
+            animation: pulse-border 1.5s infinite, shake 0.4s ease-in-out;
+            border-radius: 8px;
+            position: relative;
+        }
+
+        .category-group.field-incomplete,
+        .scoring-group.field-incomplete {
+            padding: 10px;
+            background: rgba(239, 68, 68, 0.05);
+            margin: -5px;
+            border-radius: 12px;
         }
 
         @keyframes pulse-border {
@@ -1868,11 +1878,27 @@
             }
 
             50% {
-                box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+                box-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
             }
 
             100% {
                 box-shadow: 0 0 0px rgba(239, 68, 68, 0);
+            }
+        }
+
+        .enter-highlight {
+            animation: slideInFromRight 0.5s ease-out;
+        }
+
+        @keyframes slideInFromRight {
+            0% {
+                transform: translateX(20px);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateX(0);
+                opacity: 1;
             }
         }
 
@@ -2268,123 +2294,130 @@
                                     manifestó
                                     el Lead?</label>
 
-                                <!-- GRUPO 1: INTENCIÓN OPERATIVA (ACCION) -->
-                                <div class="category-group">
-                                    <!-- Header con icono de color sutil, pero texto gris/blanco -->
-                                    <div class="category-header"><i class="fa-solid fa-bolt me-1 text-success"></i>
-                                        Interés
-                                        Activo</div>
+                                <div id="manifestacion-step" class="d-none animate__animated animate__fadeIn">
+                                    <div id="manifestacion-container">
+                                        <!-- GRUPO 1: INTENCIÓN OPERATIVA (ACCION) -->
+                                        <div class="category-group">
+                                            <!-- Header con icono de color sutil, pero texto gris/blanco -->
+                                            <div class="category-header"><i
+                                                    class="fa-solid fa-bolt me-1 text-success"></i>
+                                                Interés
+                                                Activo</div>
 
-                                    <!-- Visita -->
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="radio" name="effective_result"
-                                            id="rd_visita"
-                                            onclick="toggleSubOption('sub_visita', 'Agendar Visita', 'visita_agendada', 'success', 0)">
-                                        <label class="form-check-label" for="rd_visita">Solicita Visita /
-                                            Coordinar</label>
-                                    </div>
-                                    <div id="sub_visita" class="sub-logic d-none">
-                                        <div class="form-check"><input class="form-check-input" type="checkbox"
-                                                id="chk_aviso_owner"><label class="form-check-label"
-                                                for="chk_aviso_owner">Falta
-                                                avisar a propietario</label></div>
-                                    </div>
+                                            <!-- Visita -->
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="effective_result"
+                                                    id="rd_visita"
+                                                    onclick="toggleSubOption('sub_visita', 'Agendar Visita', 'visita_agendada', 'success', 0)">
+                                                <label class="form-check-label" for="rd_visita">Solicita Visita /
+                                                    Coordinar</label>
+                                            </div>
+                                            <div id="sub_visita" class="sub-logic d-none">
+                                                <div class="form-check"><input class="form-check-input" type="checkbox"
+                                                        id="chk_aviso_owner"><label class="form-check-label"
+                                                        for="chk_aviso_owner">Falta
+                                                        avisar a propietario</label></div>
+                                            </div>
 
-                                    <!-- Oferta -->
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="radio" name="effective_result"
-                                            id="rd_oferta"
-                                            onclick="toggleSubOption('sub_oferta', 'Registrar Oferta', 'requiere_seguimiento', 'success', 1)">
-                                        <label class="form-check-label" for="rd_oferta">Quiere Presentar Oferta</label>
-                                    </div>
-                                    <div id="sub_oferta" class="sub-logic d-none">
-                                        <label class="data-label mb-2 mt-2">2. Manifestación del Lead <span
-                                                class="validation-dot" id="dot-result"></span></label>
-                                        <input type="number" class="form-control form-control-sm" placeholder="UF / $"
-                                            id="monto_oferta">
-                                    </div>
+                                            <!-- Oferta -->
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="effective_result"
+                                                    id="rd_oferta"
+                                                    onclick="toggleSubOption('sub_oferta', 'Registrar Oferta', 'requiere_seguimiento', 'success', 1)">
+                                                <label class="form-check-label" for="rd_oferta">Quiere Presentar
+                                                    Oferta</label>
+                                            </div>
+                                            <div id="sub_oferta" class="sub-logic d-none">
+                                                <label class="data-label mb-2 mt-2">2. Manifestación del Lead <span
+                                                        class="validation-dot" id="dot-result"></span></label>
+                                                <input type="number" class="form-control form-control-sm"
+                                                    placeholder="UF / $" id="monto_oferta">
+                                            </div>
 
-                                    <!-- Reunión -->
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="radio" name="effective_result"
-                                            id="rd_reunion"
-                                            onclick="toggleSubOption('sub_reunion', 'Agendar Reunión', 'requiere_seguimiento', 'primary', 2)">
-                                        <label class="form-check-label" for="rd_reunion">Solicita Reunión
-                                            (Oficina/Zoom)</label>
-                                    </div>
-                                </div>
-
-                                <!-- GRUPO 2: INTENCIÓN EXPLORATORIA (NUTRICION) -->
-                                <div class="category-group mt-3">
-                                    <div class="category-header"><i
-                                            class="fa-solid fa-magnifying-glass me-1 text-primary"></i>
-                                        Interés Exploratorio</div>
-
-                                    <!-- Pide Info -->
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="radio" name="effective_result"
-                                            id="rd_info"
-                                            onclick="toggleSubOption('sub_info', 'Enviar Información', 'requiere_seguimiento', 'primary', 2)">
-                                        <label class="form-check-label" for="rd_info">Pide más información /
-                                            Docs</label>
-                                    </div>
-                                    <div id="sub_info" class="sub-logic d-none">
-                                        <div class="form-check"><input class="form-check-input" type="checkbox"
-                                                id="chk_cip"><label class="form-check-label" for="chk_cip">CIP /
-                                                Planos</label>
+                                            <!-- Reunión -->
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="effective_result"
+                                                    id="rd_reunion"
+                                                    onclick="toggleSubOption('sub_reunion', 'Agendar Reunión', 'requiere_seguimiento', 'primary', 2)">
+                                                <label class="form-check-label" for="rd_reunion">Solicita Reunión
+                                                    (Oficina/Zoom)</label>
+                                            </div>
                                         </div>
-                                        <div class="form-check"><input class="form-check-input" type="checkbox"
-                                                id="chk_ggcc"><label class="form-check-label" for="chk_ggcc">Gastos
-                                                Comunes
-                                                /
-                                                Contrib.</label></div>
-                                    </div>
 
-                                    <!-- Busca Similares -->
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="radio" name="effective_result"
-                                            id="rd_similares"
-                                            onclick="toggleSubOption('sub_similares', 'Buscar Opciones', 'requiere_seguimiento', 'primary', 3)">
-                                        <label class="form-check-label" for="rd_similares">Busca opciones
-                                            similares</label>
-                                    </div>
-                                    <div id="sub_similares" class="sub-logic d-none">
-                                        <label class="data-label mb-1">Requerimiento:</label>
-                                        <input type="text" class="form-control form-control-sm"
-                                            placeholder="Ej: Misma zona, más barato" id="req_similares">
-                                    </div>
+                                        <!-- GRUPO 2: INTENCIÓN EXPLORATORIA (NUTRICION) -->
+                                        <div class="category-group mt-3">
+                                            <div class="category-header"><i
+                                                    class="fa-solid fa-magnifying-glass me-1 text-primary"></i>
+                                                Interés Exploratorio</div>
 
-                                    <!-- Comparando -->
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="radio" name="effective_result"
-                                            id="rd_comparando"
-                                            onclick="toggleSubOption('sub_comparando', 'Guardar Seguimiento', 'requiere_seguimiento', 'info', 5)">
-                                        <label class="form-check-label" for="rd_comparando">Está comparando /
-                                            Evaluando</label>
-                                    </div>
-                                </div>
+                                            <!-- Pide Info -->
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="effective_result"
+                                                    id="rd_info"
+                                                    onclick="toggleSubOption('sub_info', 'Enviar Información', 'requiere_seguimiento', 'primary', 2)">
+                                                <label class="form-check-label" for="rd_info">Pide más información /
+                                                    Docs</label>
+                                            </div>
+                                            <div id="sub_info" class="sub-logic d-none">
+                                                <div class="form-check"><input class="form-check-input" type="checkbox"
+                                                        id="chk_cip"><label class="form-check-label" for="chk_cip">CIP /
+                                                        Planos</label>
+                                                </div>
+                                                <div class="form-check"><input class="form-check-input" type="checkbox"
+                                                        id="chk_ggcc"><label class="form-check-label"
+                                                        for="chk_ggcc">Gastos
+                                                        Comunes
+                                                        /
+                                                        Contrib.</label></div>
+                                            </div>
 
-                                <!-- GRUPO 3: OBJECIONES / ENFRIAMIENTO -->
-                                <div class="category-group mt-3">
-                                    <div class="category-header"><i
-                                            class="fa-regular fa-snowflake me-1 text-secondary"></i>
-                                        Objeciones / Pausa</div>
+                                            <!-- Busca Similares -->
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="effective_result"
+                                                    id="rd_similares"
+                                                    onclick="toggleSubOption('sub_similares', 'Buscar Opciones', 'requiere_seguimiento', 'primary', 3)">
+                                                <label class="form-check-label" for="rd_similares">Busca opciones
+                                                    similares</label>
+                                            </div>
+                                            <div id="sub_similares" class="sub-logic d-none">
+                                                <label class="data-label mb-1">Requerimiento:</label>
+                                                <input type="text" class="form-control form-control-sm"
+                                                    placeholder="Ej: Misma zona, más barato" id="req_similares">
+                                            </div>
 
-                                    <div class="form-check mb-2">
-                                        <input class="form-check-input" type="radio" name="effective_result"
-                                            id="rd_objecion"
-                                            onclick="toggleSubOption('sub_objecion', 'Registrar Objeción', 'requiere_seguimiento', 'secondary', 15)">
-                                        <label class="form-check-label" for="rd_objecion">No le interesa (Esta
-                                            propiedad)</label>
-                                    </div>
-                                    <div id="sub_objecion" class="sub-logic d-none">
-                                        <select class="form-select form-select-sm" id="sel_motivo_objecion"
-                                            style="box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
-                                            <option>Precio muy alto</option>
-                                            <option>Ubicación no gusta</option>
-                                            <option>Estado propiedad</option>
-                                            <option>Sin urgencia real</option>
-                                        </select>
+                                            <!-- Comparando -->
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="effective_result"
+                                                    id="rd_comparando"
+                                                    onclick="toggleSubOption('sub_comparando', 'Guardar Seguimiento', 'requiere_seguimiento', 'info', 5)">
+                                                <label class="form-check-label" for="rd_comparando">Está comparando /
+                                                    Evaluando</label>
+                                            </div>
+                                        </div>
+
+                                        <!-- GRUPO 3: OBJECIONES / ENFRIAMIENTO -->
+                                        <div class="category-group mt-3">
+                                            <div class="category-header"><i
+                                                    class="fa-regular fa-snowflake me-1 text-secondary"></i>
+                                                Objeciones / Pausa</div>
+
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="effective_result"
+                                                    id="rd_objecion"
+                                                    onclick="toggleSubOption('sub_objecion', 'Registrar Objeción', 'requiere_seguimiento', 'secondary', 15)">
+                                                <label class="form-check-label" for="rd_objecion">No le interesa (Esta
+                                                    propiedad)</label>
+                                            </div>
+                                            <div id="sub_objecion" class="sub-logic d-none">
+                                                <select class="form-select form-select-sm" id="sel_motivo_objecion"
+                                                    style="box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                                                    <option>Precio muy alto</option>
+                                                    <option>Ubicación no gusta</option>
+                                                    <option>Estado propiedad</option>
+                                                    <option>Sin urgencia real</option>
+                                                </select>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -2397,20 +2430,23 @@
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="partial_res" id="rd_llamar_luego"
                                         onclick="setResult('intento_fallido', 'Agendar Reintento', 'warning');">
-                                    <label class="form-check-label" for="rd_llamar_luego">Contestó: Pide llamar más
+                                    <label class="form-check-label" for="rd_llamar_luego">Contestó: Pide llamar
+                                        más
                                         tarde</label>
                                 </div>
 
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="partial_res" id="rd_ocupado"
                                         onclick="setResult('intento_fallido', 'Agendar Reintento', 'warning');">
-                                    <label class="form-check-label" for="rd_ocupado">Contestó: "Estoy ocupado"</label>
+                                    <label class="form-check-label" for="rd_ocupado">Contestó: "Estoy
+                                        ocupado"</label>
                                 </div>
 
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" name="partial_res" id="rd_visto"
                                         onclick="setResult('intento_fallido', 'Agendar Seguimiento', 'primary');">
-                                    <label class="form-check-label" for="rd_visto">WhatsApp: Visto sin respuesta</label>
+                                    <label class="form-check-label" for="rd_visto">WhatsApp: Visto sin
+                                        respuesta</label>
                                 </div>
                             </div>
 
@@ -2435,10 +2471,12 @@
                                     <label class="form-check-label" for="rd_apagado">Teléfono apagado</label>
                                 </div>
 
-                                <div class="mt-3 pt-2 border-top border-secondary">
+                                <div id="failed-canal-step"
+                                    class="mt-3 pt-2 border-top border-secondary d-none animate__animated animate__fadeIn">
                                     <label class="data-label mb-1">Canal:</label>
                                     <select class="form-select form-select-sm" id="failed_canal"
-                                        style="box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                                        onchange="updateSummary()" style="box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                                        <option value="" selected disabled>Seleccione canal...</option>
                                         <option>Llamada</option>
                                         <option>WhatsApp</option>
                                     </select>
@@ -2463,7 +2501,8 @@
                                 </div>
 
                                 <div class="alert-danger-custom p-2 mt-2" style="font-size:0.75rem;">
-                                    <i class="fa-solid fa-triangle-exclamation"></i> Se marcará para cierre automático.
+                                    <i class="fa-solid fa-triangle-exclamation"></i> Se marcará para cierre
+                                    automático.
                                 </div>
                             </div>
 
@@ -2609,7 +2648,8 @@
                                 <div class="alert-danger-custom mt-3">
                                     <i class="fa-solid fa-lock"></i>
                                     <div>
-                                        <strong>ATENCIÓN:</strong> Esta acción congela el lead, detiene recordatorios y
+                                        <strong>ATENCIÓN:</strong> Esta acción congela el lead, detiene
+                                        recordatorios y
                                         cierra
                                         el SLA.
                                     </div>
@@ -2947,9 +2987,18 @@
 
             function showStrongToast(title, body, type = 'success', nextDate = null) {
                 const container = document.getElementById('toast-container') || createToastContainer();
+
+                // --- PREVENIR DUPLICADOS (FIX) ---
+                if (title.includes("Incompleta")) {
+                    const existing = container.querySelectorAll('.toast-enterprise');
+                    existing.forEach(t => {
+                        if (t.innerText.includes("Incompleta")) t.remove();
+                    });
+                }
+
                 const toast = document.createElement('div');
                 toast.className = 'toast-enterprise';
-                if (type === 'danger') toast.style.borderLeftColor = 'var(--danger-color)';
+                if (type === 'danger' || type === 'error') toast.style.borderLeftColor = 'var(--danger-color)';
 
                 let footerHtml = `
                 <div class="toast-footer-custom">
@@ -2960,7 +3009,9 @@
 
                 toast.innerHTML = `
                 <div class="toast-header-custom">
-                    <div class="toast-title text-success"><i class="fa-solid fa-circle-check"></i> ${title}</div>
+                    <div class="toast-title ${type === 'error' ? 'text-danger' : 'text-success'}">
+                        <i class="fa-solid ${type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check'}"></i> ${title}
+                    </div>
                 </div>
                 <div class="toast-body-custom">${body}</div>
                 ${footerHtml}
@@ -3256,15 +3307,16 @@
 
                 if (isValid) {
                     btn.classList.remove('incomplete');
-                    btn.classList.remove('btn-secondary');
-                    btn.classList.add(`btn-${nextBtnClass || 'primary'}`);
-                    btn.innerHTML = `<i class="fa-solid fa-check me-2"></i> ${nextBtnText || 'Guardar Gestión'}`;
+                    btn.classList.add('btn-primary');
+                    btn.innerHTML = `<i class="fa-solid fa-check me-2"></i> Guardar Gestión <span class="step-counter">${currentSteps}/${totalSteps}</span>`;
                     btn.style.opacity = "1";
                     btn.style.cursor = "pointer";
                 } else {
                     btn.classList.add('incomplete');
                     btn.style.opacity = "0.75";
-                    btn.innerHTML = `<i class="fa-solid fa-circle-info me-2"></i> ${missingReason || 'Complete la gestión'} <span class="step-counter">${currentSteps}/${totalSteps}</span>`;
+                    // --- GUÍA ADAPTATIVA (FIX) ---
+                    const guideText = missingReason ? `Falta: ${missingReason}` : 'Complete la gestión';
+                    btn.innerHTML = `<i class="fa-solid fa-circle-info me-2"></i> ${guideText} <span class="step-counter">${currentSteps}/${totalSteps}</span>`;
                 }
             }
 
@@ -3286,50 +3338,49 @@
                     if (subRes) { currentSteps++; setValidationDot('result', true); } else { setValidationDot('result', false); }
                     if (date) { currentSteps++; setValidationDot('date', true); } else { setValidationDot('date', false); }
 
-                    if (!score) { missing = "Calificar Lead"; }
-                    else if (!subRes) { missing = "Manifestación del Lead"; }
-                    else if (!date) { missing = "Fecha de Seguimiento"; }
+                    if (!score) { missing = "Calificación"; }
+                    else if (!subRes) { missing = "Manifestación"; }
+                    else if (!date) { missing = "Programar Seguimiento"; }
                     else { isValid = true; }
 
                 } else if (currentInteraction === 'partial') {
-                    totalSteps = 2; // Situación + Fecha
+                    totalSteps = 2;
                     const res = document.querySelector('input[name="partial_res"]:checked');
                     const date = document.getElementById('fecha_global').value;
 
                     if (res) { currentSteps++; setValidationDot('partial', true); } else { setValidationDot('partial', false); }
                     if (date) { currentSteps++; setValidationDot('date', true); } else { setValidationDot('date', false); }
 
-                    if (!res) missing = "Situación del contacto";
-                    else if (!date) missing = "Fecha de Seguimiento";
+                    if (!res) missing = "Situación";
+                    else if (!date) missing = "Programar Seguimiento";
                     else isValid = true;
 
                 } else if (currentInteraction === 'failed') {
-                    totalSteps = 2;
+                    totalSteps = 3;
                     const res = document.querySelector('input[name="failed_res"]:checked');
+                    const canal = document.getElementById('failed_canal').value;
                     const date = document.getElementById('fecha_global').value;
 
                     if (res) { currentSteps++; setValidationDot('failed', true); } else { setValidationDot('failed', false); }
+                    if (canal) { currentSteps++; }
                     if (date) { currentSteps++; setValidationDot('date', true); } else { setValidationDot('date', false); }
 
-                    if (!res) missing = "Resultado del intento";
-                    else if (!date) missing = "Fecha de Seguimiento";
+                    if (!res) missing = "Resultado";
+                    else if (!canal) missing = "Canal";
+                    else if (!date) missing = "Programar Seguimiento";
                     else isValid = true;
 
                 } else if (currentInteraction === 'invalid') {
                     totalSteps = 1;
                     const res = document.querySelector('input[name="invalid_res"]:checked');
                     if (res) { currentSteps++; setValidationDot('invalid', true); } else { setValidationDot('invalid', false); }
-
-                    if (!res) missing = "Motivo de invalidez";
-                    else isValid = true;
+                    if (!res) missing = "Motivo"; else isValid = true;
 
                 } else if (currentInteraction === 'descartado') {
                     totalSteps = 1;
                     const closeReason = document.getElementById('close_reason').value;
                     if (closeReason) { currentSteps++; setValidationDot('close', true); } else { setValidationDot('close', false); }
-
-                    if (!closeReason) missing = "Motivo de cierre";
-                    else isValid = true;
+                    if (!closeReason) missing = "Motivo de cierre"; else isValid = true;
 
                 } else if (currentInteraction === 'propietario') {
                     totalSteps = 2;
@@ -3344,7 +3395,7 @@
                     if (date && !isOptional) { currentSteps++; setValidationDot('date', true); } else if (!isOptional) { setValidationDot('date', false); }
 
                     if (!propReason) missing = "Detalle Propietario";
-                    else if (!isOptional && !date) missing = "Fecha de Seguimiento";
+                    else if (!isOptional && !date) missing = "Programar Seguimiento";
                     else isValid = true;
                 }
 
@@ -3357,6 +3408,11 @@
                 const selectedRadio = document.querySelector('input[name="owner_cat_radio"]:checked');
                 const reasonContainer = document.getElementById('owner_reason_container');
                 const reasonSelect = document.getElementById('sel_prop_detalle');
+
+                // RESET AL CAMBIAR CATEGORÍA
+                document.getElementById('gestion-footer').classList.add('d-none');
+                currentResultLabel = "";
+
                 if (!selectedRadio) return;
                 const category = selectedRadio.value;
                 reasonSelect.innerHTML = '<option value="" selected disabled>Seleccione detalle específico...</option>';
@@ -3372,8 +3428,6 @@
                     reasonContainer.classList.add('fade-in-down');
                     reasonSelect.disabled = false;
 
-                    // Mostrar footer al elegir una categoría de propietario
-                    document.getElementById('gestion-footer').classList.remove('d-none');
                 }
                 validateState();
             }
@@ -3382,6 +3436,11 @@
                 const selectedRadio = document.querySelector('input[name="close_cat_radio"]:checked');
                 const reasonContainer = document.getElementById('close_reason_container');
                 const reasonSelect = document.getElementById('close_reason');
+
+                // RESET AL CAMBIAR CATEGORÍA
+                document.getElementById('gestion-footer').classList.add('d-none');
+                currentResultLabel = "";
+
                 if (!selectedRadio) return;
                 const category = selectedRadio.value;
                 reasonSelect.innerHTML = '<option value="" selected disabled>Seleccione detalle específico...</option>';
@@ -3397,8 +3456,6 @@
                     reasonContainer.classList.add('fade-in-down');
                     reasonSelect.disabled = false;
 
-                    // Mostrar footer al elegir una categoría de cierre
-                    document.getElementById('gestion-footer').classList.remove('d-none');
                 }
                 validateState();
             }
@@ -3424,18 +3481,32 @@
                     const reasonSelect = document.getElementById('close_reason');
                     if (reasonSelect && reasonSelect.selectedIndex > 0) {
                         currentResultLabel = "Cierre: " + reasonSelect.options[reasonSelect.selectedIndex].text;
+                        // Progressive Disclosure: show footer when reason is selected
+                        document.getElementById('gestion-footer').classList.remove('d-none');
+                    }
+                    // FIXED: Si es inválido, también revelamos el footer de inmediato
+                    if (currentInteraction === 'invalid') {
+                        document.getElementById('gestion-footer').classList.remove('d-none');
                     }
                 } else {
                     dateContainer.classList.remove('d-none');
                     if (btnText) {
                         nextBtnText = btnText;
                         nextBtnClass = btnType;
+                        // Progressive Disclosure: show footer when result is set
+                        document.getElementById('gestion-footer').classList.remove('d-none');
                     }
                     if (currentInteraction === 'propietario') {
                         const ownerSelect = document.getElementById('sel_prop_detalle');
                         if (ownerSelect.selectedIndex > 0) {
                             currentResultLabel = ownerSelect.options[ownerSelect.selectedIndex].text;
+                            // Progressive Disclosure: show footer when reason is selected
+                            document.getElementById('gestion-footer').classList.remove('d-none');
                         }
+                    }
+                    // FIXED: Revelar footer para inválido/partial si tienen valor (Failed se maneja en updateSummary por pasos)
+                    if (['invalid', 'partial'].includes(currentInteraction) && val) {
+                        document.getElementById('gestion-footer').classList.remove('d-none');
                     }
                     if (currentInteraction) summaryBox.classList.remove('d-none');
                 }
@@ -3490,16 +3561,19 @@
 
             function resetGestionForm() {
                 // Limpiar inputs de radio
-                document.querySelectorAll('.crm-form-container input[type="radio"]').forEach(rad => rad.checked = false);
+                document.querySelectorAll('#crmForm input[type="radio"]').forEach(rad => rad.checked = false);
                 // Limpiar selects (excepto los de sistema básicos si los hubiera)
-                document.querySelectorAll('.crm-form-container select').forEach(sel => {
+                document.querySelectorAll('#crmForm select').forEach(sel => {
                     sel.selectedIndex = 0;
                     if (sel.id === 'sel_prop_detalle' || sel.id === 'close_reason') {
                         sel.disabled = true;
                     }
                 });
                 // Limpiar textareas
-                document.querySelectorAll('.crm-form-container textarea').forEach(txt => txt.value = "");
+                document.querySelectorAll('#crmForm textarea').forEach(txt => txt.value = "");
+
+                // Limpiar resultado oculto
+                document.getElementById('resultado_gestion').value = "";
                 // Limpiar fecha global
                 const fechaGlobal = document.getElementById('fecha_global');
                 if (fechaGlobal) fechaGlobal.value = "";
@@ -3509,6 +3583,14 @@
                 if (ownerContainer) ownerContainer.classList.add('d-none');
                 const closeContainer = document.getElementById('close_reason_container');
                 if (closeContainer) closeContainer.classList.add('d-none');
+
+                // --- PROGRESSIVE DISCLOSURE RESET ---
+                const manifestStep = document.getElementById('manifestacion-step');
+                if (manifestStep) manifestStep.classList.add('d-none');
+                const gestFooter = document.getElementById('gestion-footer');
+                if (gestFooter) gestFooter.classList.add('d-none');
+                const failedCanalStep = document.getElementById('failed-canal-step');
+                if (failedCanalStep) failedCanalStep.classList.add('d-none');
 
                 // Resetear el estado de los botones de contexto de contacto
                 document.querySelectorAll('.context-btn').forEach(b => b.classList.remove('active'));
@@ -3534,13 +3616,9 @@
                 if (activeBlock) {
                     activeBlock.classList.remove('d-none');
                     activeBlock.classList.add('animate__animated', 'animate__fadeIn'); // Add animation
-                    // Mostramos el footer solo si es una lógica de contacto directo de Lead
-                    // Para Propietario/Descartado, esperamos a que elijan una sub-categoría (render functions)
-                    if (['effective', 'partial', 'failed', 'invalid'].includes(type)) {
-                        document.getElementById('gestion-footer').classList.remove('d-none');
-                    } else {
-                        document.getElementById('gestion-footer').classList.add('d-none');
-                    }
+                    // Progressive logic: we hide it initially for EVERYTHING now.
+                    // It will be revealed by selection (updateSummary/toggleSubOption).
+                    document.getElementById('gestion-footer').classList.add('d-none');
                 }
 
                 if (type === 'effective') {
@@ -3610,6 +3688,61 @@
                 }
                 document.getElementById('sum_result').innerText = resText || '-';
 
+                // --- PROGRESSIVE DISCLOSURE (EFECTIVO) ---
+                if (currentInteraction === 'effective') {
+                    const score = document.querySelector('input[name="lead_score"]:checked');
+                    if (score) {
+                        document.getElementById('manifestacion-step').classList.remove('d-none');
+                    } else {
+                        document.getElementById('manifestacion-step').classList.add('d-none');
+                    }
+                    if (document.getElementById('resultado_gestion').value) {
+                        document.getElementById('gestion-footer').classList.remove('d-none');
+                    } else {
+                        document.getElementById('gestion-footer').classList.add('d-none');
+                    }
+                } else if (currentInteraction === 'failed') {
+                    const failedRes = document.querySelector('input[name="failed_res"]:checked');
+                    if (failedRes) {
+                        document.getElementById('failed-canal-step').classList.remove('d-none');
+                        // Reveal footer only if Canal is chosen
+                        if (document.getElementById('failed_canal').value) {
+                            document.getElementById('gestion-footer').classList.remove('d-none');
+                        } else {
+                            document.getElementById('gestion-footer').classList.add('d-none');
+                        }
+                    } else {
+                        document.getElementById('failed-canal-step').classList.add('d-none');
+                        document.getElementById('gestion-footer').classList.add('d-none');
+                    }
+                } else if (currentInteraction === 'partial') {
+                    if (document.querySelector('input[name="partial_res"]:checked')) {
+                        document.getElementById('gestion-footer').classList.remove('d-none');
+                    } else {
+                        document.getElementById('gestion-footer').classList.add('d-none');
+                    }
+                } else if (currentInteraction === 'invalid') {
+                    if (document.querySelector('input[name="invalid_res"]:checked')) {
+                        document.getElementById('gestion-footer').classList.remove('d-none');
+                    } else {
+                        document.getElementById('gestion-footer').classList.add('d-none');
+                    }
+                } else if (currentInteraction === 'propietario') {
+                    const ownerSelect = document.getElementById('sel_prop_detalle');
+                    if (ownerSelect && ownerSelect.value) {
+                        document.getElementById('gestion-footer').classList.remove('d-none');
+                    } else {
+                        document.getElementById('gestion-footer').classList.add('d-none');
+                    }
+                } else if (currentInteraction === 'descartado') {
+                    const closeSelect = document.getElementById('close_reason');
+                    if (closeSelect && closeSelect.value) {
+                        document.getElementById('gestion-footer').classList.remove('d-none');
+                    } else {
+                        document.getElementById('gestion-footer').classList.add('d-none');
+                    }
+                }
+
                 // LOGICA CORREGIDA PARA SEGUIMIENTO
                 const dateVal = document.getElementById('fecha_global').value;
 
@@ -3634,14 +3767,54 @@
                     btn.classList.add('shake-anim');
                     setTimeout(() => btn.classList.remove('shake-anim'), 400);
 
+                    let targetField = null;
+
+                    // Resaltado dinámico por sección
                     if (currentInteraction === 'effective') {
-                        if (!document.querySelector('input[name="lead_score"]:checked'))
-                            document.querySelector('.scoring-group').classList.add('field-incomplete');
-                        if (!document.getElementById('resultado_gestion').value)
-                            document.querySelector('.category-group')?.classList.add('field-incomplete');
-                        if (!document.getElementById('fecha_global').value)
-                            document.getElementById('fecha_global').classList.add('field-incomplete');
+                        if (!document.querySelector('input[name="lead_score"]:checked')) {
+                            targetField = document.querySelector('.scoring-group');
+                        } else if (!document.getElementById('resultado_gestion').value) {
+                            // FIXED: Highlighting the entire manifestacion-container
+                            targetField = document.getElementById('manifestacion-container');
+                        } else if (!document.getElementById('fecha_global').value) {
+                            targetField = document.getElementById('fecha_global');
+                        }
+                    } else if (currentInteraction === 'partial') {
+                        if (!document.querySelector('input[name="partial_res"]:checked')) {
+                            targetField = document.querySelector('#logic-partial');
+                        } else if (!document.getElementById('fecha_global').value) {
+                            targetField = document.getElementById('fecha_global');
+                        }
+                    } else if (currentInteraction === 'failed') {
+                        if (!document.querySelector('input[name="failed_res"]:checked')) {
+                            targetField = document.querySelector('#logic-failed');
+                        } else if (!document.getElementById('failed_canal').value) {
+                            targetField = document.getElementById('failed_canal');
+                        } else if (!document.getElementById('fecha_global').value) {
+                            targetField = document.getElementById('fecha_global');
+                        }
+                    } else if (currentInteraction === 'propietario') {
+                        if (!document.getElementById('sel_prop_detalle').value) {
+                            targetField = document.getElementById('owner_reason_container');
+                        } else if (!document.getElementById('fecha_global').value && document.getElementById('btnMainAction').innerText.includes("/2")) {
+                            targetField = document.getElementById('fecha_global');
+                        }
+                    } else if (currentInteraction === 'descartado') {
+                        if (!document.getElementById('close_reason').value) {
+                            targetField = document.getElementById('close_reason_container');
+                        }
                     }
+
+                    if (targetField) {
+                        targetField.classList.add('field-incomplete', 'enter-highlight');
+                        // Smart Positioning (Smooth Scroll)
+                        targetField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        // Focus if possible
+                        if (targetField.tagName === 'SELECT' || targetField.tagName === 'INPUT') {
+                            setTimeout(() => targetField.focus(), 500);
+                        }
+                    }
+
                     showStrongToast("Gestión Incompleta", "Por favor completa los campos resaltados.", "error");
                     return;
                 }

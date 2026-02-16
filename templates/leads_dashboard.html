@@ -1246,10 +1246,10 @@
             setInterval(loadData, 300000);
 
             // --- SMART SESSION CONTROL ---
-            // 30 min session. Passive renew every 5 mins if active. Warning at 28 mins.
-            const SESSION_LIFETIME = 30 * 60 * 1000;
+            // 120 min session. Passive renew every 10 mins if active. Warning at 118 mins.
+            const SESSION_LIFETIME = 120 * 60 * 1000;
             const WARNING_THRESHOLD = 2 * 60 * 1000;
-            const RENEWAL_INTERVAL = 5 * 60 * 1000;
+            const RENEWAL_INTERVAL = 10 * 60 * 1000;
 
             let lastActivity = Date.now();
             let lastRenewal = Date.now();

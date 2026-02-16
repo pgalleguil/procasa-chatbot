@@ -1292,6 +1292,9 @@
             });
 
             // --- GESTOR DE SESIÓN ---
+            const SESSION_LIFETIME = 120 * 60 * 1000;
+            const WARNING_THRESHOLD = 2 * 60 * 1000;
+            const RENEWAL_INTERVAL = 10 * 60 * 1000;
 
             let lastActivity = Date.now();
             let lastRenewal = Date.now();

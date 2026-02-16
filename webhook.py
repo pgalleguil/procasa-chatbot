@@ -22,12 +22,8 @@ import httpx
 from urllib.parse import urlencode
 
 import requests
-from fastapi import FastAPI, Request, HTTPException, Header, Query, Form, Depends, status
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi import Cookie
+from contextlib import asynccontextmanager
 
 # === TUS MÓDULOS PROPIOS ===
 from campanas.handler import handle_campana_respuesta
@@ -48,12 +44,40 @@ logger = logging.getLogger("procasa-full")
 # CONFIGURACIÓN ZONA HORARIA CHILE
 from chatbot.constants import CHILE_TZ
 
-# ========================= 1. INICIALIZACIÓN DE APP (MOVIDO AL INICIO) =========================
-BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "static"
-TEMPLATES_DIR = BASE_DIR / "templates"
+# Global state for background tasks monitoring
+background_tasks_status = {
+    "notifications_loop": {"status": "starting", "last_heartbeat": None},
+    "sla_monitor": {"status": "starting", "last_heartbeat": None},
+    "task_monitor": {"status": "starting", "last_heartbeat": None}
+}
 
-app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    logger.info("Bot PRO Iniciando (Lifespan Startup)...")
+    
+    # Iniciar tareas de fondo
+    n_task = asyncio.create_task(process_pending_leads_loop())
+    s_task = asyncio.create_task(sla_monitor_loop())
+    t_task = asyncio.create_task(check_scheduled_tasks_loop())
+    
+    # Crear admin y asegurar índices
+    crear_admin_si_no_existe()
+    asegurar_indices_db()
+    
+    yield
+    
+    # Shutdown logic
+    logger.info("Bot PRO Apagando (Lifespan Shutdown)...")
+    n_task.cancel()
+    s_task.cancel()
+    t_task.cancel()
+    try:
+        await asyncio.gather(n_task, s_task, t_task, return_exceptions=True)
+    except Exception as e:
+        logger.error(f"Error apagando tareas: {e}")
+
+app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
@@ -82,8 +106,11 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 if not hasattr(Config, "SECRET_KEY") or not Config.SECRET_KEY:
-    Config.SECRET_KEY = secrets.token_hex(32)
-    logger.warning(f"SECRET_KEY generada automáticamente: {Config.SECRET_KEY}")
+    # Si no hay clave en Config, usamos una por defecto PERO estable para evitar que cada worker tenga una distinta
+    Config.SECRET_KEY = "procasa_secret_default_key_2025"
+    logger.warning("ATENCIÓN: Usando SECRET_KEY por defecto. Se recomienda configurar una en variables de entorno para máxima seguridad.")
+else:
+    logger.info("SECRET_KEY cargada correctamente desde Config.")
 
 def get_password_hash(password: str):
     return pwd_context.hash(password)
@@ -93,8 +120,8 @@ def verify_password(plain_password: str, hashed_password: str):
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    # Expiración inicial (luego se renueva en el middleware)
-    expire = datetime.utcnow() + timedelta(minutes=30)
+    # Expiración aumentada a 120 minutos (2 horas) según plan de estabilidad
+    expire = datetime.now(pytz.utc) + timedelta(minutes=120)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, Config.SECRET_KEY, algorithm="HS256")
 
@@ -104,7 +131,7 @@ async def slide_session_middleware(request: Request, call_next):
     # 1. Ejecutar la petición primero
     response = await call_next(request)
     
-    # 2. Rutas exentas (no necesitan renovación ni tienen cookies de sesión)
+    # 2. Rutas exentas
     if request.url.path.startswith("/static") or request.url.path in ["/logout", "/webhook", "/auth/google/callback"]:
         return response
 
@@ -112,27 +139,30 @@ async def slide_session_middleware(request: Request, call_next):
     token = request.cookies.get("access_token")
     if token:
         try:
-            # Intentamos decodificar para ver si es válido
             payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
             username = payload.get("sub")
             
             if username:
-                # Si el token es válido y tenemos el usuario, generamos uno NUEVO con 'exp' fresca
-                # Esto es lo que permite que la sesión "se deslice" (slide)
+                # Renovación automática con cada interacción (Sliding Session)
                 new_token = create_access_token({"sub": username})
                 
-                # Seteamos la nueva cookie con el nuevo token
+                # Seteamos la nueva cookie con 2 HORAS (7200 segundos)
                 response.set_cookie(
                     key="access_token",
                     value=new_token,
                     httponly=True,
-                    secure=True,        # Cambiado a True para Render (HTTPS)
+                    secure=True,
                     samesite="lax",
-                    max_age=1800,       # 30 minutos de vida para la COOKIE
+                    max_age=7200,       # 120 minutos / 2 horas
                     path="/"
                 )
-        except JWTError:
-            # Si el token ya expiró o es inválido, no hacemos nada (el middleware de auth lo atrapará)
+                # Log ocasional para no saturar, pero útil para diagnóstico
+                if time.time() % 30 < 5: # Log aproximadamente cada 30s de actividad
+                    logger.info(f"[SESSION_RENEW] Sesión renovada para {username} (2h de margen)")
+        except JWTError as e:
+            # Solo logueamos si no es una simple expiración (para detectar ataques o desajustes de clave)
+            if "expired" not in str(e).lower():
+                logger.warning(f"[SESSION_ERROR] Error validando token: {e}")
             pass
             
         return response
@@ -674,7 +704,14 @@ async def webhook(
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "active_conversations": len(pending_tasks), "uptime": time.strftime("%Y-%m-%d %H:%M:%S")}
+    now = datetime.now(CHILE_TZ).isoformat()
+    return {
+        "status": "healthy", 
+        "server_time": now,
+        "active_conversations": len(pending_tasks),
+        "background_tasks": background_tasks_status,
+        "uptime_now": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
 
 @app.post("/api/keep-alive")
 async def api_keep_alive(request: Request):
@@ -789,81 +826,75 @@ async def unauthorized_exception_handler(request: Request, exc: HTTPException):
     logger.warning(f"Redirigiendo a login por sesión expirada en: {request.url.path}")
     return RedirectResponse(url="/?error=sesion_expirada")
 
-@app.on_event("startup")
-async def startup_event():
-    async def process_pending_leads():
-        while True:
-            try:
-                if should_send_now():
-                    pending = get_pending_notifications()
-                    if pending:
-                        logger.info(f"[BACKGROUND] Procesando {len(pending)} leads pendientes...")
-                        processed_phones = set() # Para evitar duplicados en el mismo batch
-                        
-                        for p in pending:
-                            lead_data = p.get("lead_data", {})
-                            phone = lead_data.get("phone")
-                            
-                            if not phone:
-                                mark_notification_sent(p["_id"])
-                                continue
-                                
-                            # Si ya procesamos este teléfono en este batch, marcamos como enviado (ignorado)
-                            if phone in processed_phones:
-                                mark_notification_sent(p["_id"])
-                                continue
-                            
-                            processed_phones.add(phone)
-                            
-                            target_phone = lead_data.get("target_phone") or p.get("target_phone")
-                            target_name = lead_data.get("target_name") or p.get("target_name")
-                            prop_code = lead_data.get("property_code")
-                            
-                            if target_phone:
-                                # FILTER: Si es el número dummy, marcar como enviado (ignorado) y seguir
-                                if target_phone == "+56900000000":
-                                    logger.warning(f"[BACKGROUND] Ignorando envío pendiente a {target_phone} (Dummy). Marcado como procesado.")
-                                    mark_notification_sent(p["_id"])
-                                    continue
+# ========================= 9. BACKGROUND LOOPS (REFACTORED) =========================
 
-                                # FIX: format_whatsapp_template ahora requiere is_new_assignment (o usa default True)
-                                msg = format_whatsapp_template(lead_data, target_name, prop_code, is_new_assignment=True)
-                                
-                                try:
-                                    from chatbot.crm_service import CrmService
-                                    from chatbot.constants import InteractionType
-                                    CrmService.assign_executive(phone, target_name, method="LeadRouter")
-                                except Exception as e:
-                                    logger.error(f"[BACKGROUND] Error asignando ejecutivo: {e}")
-
-                                success = await NotificationService.send_notification(
-                                    phone=target_phone,
-                                    message=msg,
-                                    alert_type="background_notification",
-                                    meta={"to": target_name, "is_background": True},
-                                    dedup_window_minutes=10
-                                )
-                                
-                                if success:
-                                    # Si se envió (o era duplicado), marcamos como procesado
-                                    mark_notification_sent(p["_id"])
-                                    logger.info(f"[BACKGROUND] Lead {phone} procesado exitosamente para {target_name}")
-                                else:
-                                    # Si falló el envío real (error de API), NO marcamos para reintentar
-                                    logger.error(f"[BACKGROUND] Falló envío WA a {target_name} para {phone}")
-                                await asyncio.sleep(2) # Evitar rate limit
-                            
-            except Exception as e:
-                logger.error(f"[BACKGROUND] Error en loop de pendientes: {e}")
+async def process_pending_leads_loop():
+    logger.info("[BACKGROUND] Iniciando loop de leads pendientes...")
+    while True:
+        try:
+            background_tasks_status["notifications_loop"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
+            background_tasks_status["notifications_loop"]["status"] = "running"
             
-            await asyncio.sleep(60) # Revisar cada minuto
+            if should_send_now():
+                pending = get_pending_notifications()
+                if pending:
+                    logger.info(f"[BACKGROUND] Procesando {len(pending)} leads pendientes...")
+                    processed_phones = set()
+                    
+                    for p in pending:
+                        lead_data = p.get("lead_data", {})
+                        phone = lead_data.get("phone")
+                        
+                        if not phone:
+                            mark_notification_sent(p["_id"])
+                            continue
+                            
+                        if phone in processed_phones:
+                            mark_notification_sent(p["_id"])
+                            continue
+                        
+                        processed_phones.add(phone)
+                        
+                        target_phone = lead_data.get("target_phone") or p.get("target_phone")
+                        target_name = lead_data.get("target_name") or p.get("target_name")
+                        prop_code = lead_data.get("property_code")
+                        
+                        if target_phone:
+                            if target_phone == "+56900000000":
+                                mark_notification_sent(p["_id"])
+                                continue
 
-async def check_scheduled_tasks():
-    """
-    Monitor de Tareas Agendadas (Próxima Acción).
-    Revisa crm_tasks buscando recordatorios vencidos y notifica al ejecutivo actual.
-    """
-    from chatbot.storage import get_db, log_event, EventType
+                            msg = format_whatsapp_template(lead_data, target_name, prop_code, is_new_assignment=True)
+                            
+                            try:
+                                from chatbot.crm_service import CrmService
+                                CrmService.assign_executive(phone, target_name, method="LeadRouter")
+                            except Exception as e:
+                                logger.error(f"[BACKGROUND] Error asignando ejecutivo: {e}")
+
+                            success = await NotificationService.send_notification(
+                                phone=target_phone,
+                                message=msg,
+                                alert_type="background_notification",
+                                meta={"to": target_name, "is_background": True},
+                                dedup_window_minutes=10
+                            )
+                            
+                            if success:
+                                mark_notification_sent(p["_id"])
+                                logger.info(f"[BACKGROUND] Lead {phone} procesado exitosamente para {target_name}")
+                            
+                            # Aumentado a 6 segundos por rate limit de WASender (5s)
+                            await asyncio.sleep(6)
+                        
+        except Exception as e:
+            logger.error(f"[BACKGROUND] Error en loop de pendientes: {e}")
+            background_tasks_status["notifications_loop"]["status"] = f"error: {str(e)}"
+        
+        await asyncio.sleep(60)
+
+async def check_scheduled_tasks_loop():
+    from chatbot.storage import get_db
     from chatbot.lead_router import get_executive_phone
     from chatbot.notification_service import NotificationService
     
@@ -871,12 +902,12 @@ async def check_scheduled_tasks():
     
     while True:
         try:
+            background_tasks_status["task_monitor"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
+            background_tasks_status["task_monitor"]["status"] = "running"
+            
             db = get_db()
             now = datetime.now(CHILE_TZ)
             
-            # Buscar tareas pendientes cuya fecha ya pasó
-            # Nota: execute_at se guarda naive o aware, aseguramos comparación robusta
-            # Buscamos status 'pending' que tengan execute_at <= now
             tasks = list(db["crm_tasks"].find({
                 "status": "pending",
                 "execute_at": {"$lte": now}
@@ -884,29 +915,23 @@ async def check_scheduled_tasks():
             
             if tasks:
                 logger.info(f"[TASK_MONITOR] Procesando {len(tasks)} tareas vencidas...")
-                
                 for task in tasks:
                     try:
                         phone = task.get("phone")
                         note = task.get("note", "Sin detalles")
-                        
-                        # Buscamos al lead para ver quién es el ejecutivo ACTUAL
                         lead = db["leads"].find_one({"phone": phone})
                         if not lead:
-                            # Lead fantasma, marcamos tarea como error
                             db["crm_tasks"].update_one({"_id": task["_id"]}, {"$set": {"status": "error", "error": "lead_not_found"}})
                             continue
                             
                         ejecutivo = lead.get("ejecutivo_asignado")
                         if not ejecutivo or ejecutivo in ["No asignado", "Sin Asignar"]:
-                            # Sin ejecutivo, no hay a quien notificar
                             continue
                             
                         exec_phone = get_executive_phone(ejecutivo)
                         if not exec_phone or exec_phone == "+56900000000":
                             continue
                             
-                        # Construir mensaje de recordatorio
                         crm_link = f"https://www.procasa.cl/crm/lead/{phone}"
                         msg_text = (
                             f"⏰ *Recordatorio CRM: {ejecutivo}*\n\n"
@@ -915,7 +940,6 @@ async def check_scheduled_tasks():
                             f"🔗 Gestionar: {crm_link}"
                         )
                         
-                        # Enviar notificación IDEMPOTENTE
                         sent = await NotificationService.send_notification(
                             phone=exec_phone,
                             message=msg_text,
@@ -924,54 +948,46 @@ async def check_scheduled_tasks():
                             dedup_window_minutes=60 
                         )
                         
-                        # Actualizar estado de tarea a 'notified' (no 'completed', el humano debe completar)
                         if sent:
                             db["crm_tasks"].update_one(
                                 {"_id": task["_id"]}, 
-                                {
-                                    "$set": {
-                                        "status": "notified", 
-                                        "notified_at": now.isoformat(),
-                                        "notification_sent_to": ejecutivo
-                                    }
-                                }
+                                {"$set": {"status": "notified", "notified_at": now.isoformat(), "notification_sent_to": ejecutivo}}
                             )
-                            logger.info(f"[TASK_MONITOR] Recordatorio enviado a {ejecutivo} sobre {phone}")
+                            # Sleep breve para tareas
+                            await asyncio.sleep(6)
                             
                     except Exception as e:
                         logger.error(f"[TASK_MONITOR] Error procesando tarea {task.get('_id')}: {e}")
             
-            await asyncio.sleep(60) # Revisar cada minuto
-            
         except Exception as e:
             logger.error(f"[TASK_MONITOR] Error en loop de tareas: {e}")
-            await asyncio.sleep(60)
+            background_tasks_status["task_monitor"]["status"] = f"error: {str(e)}"
+            
+        await asyncio.sleep(60)
 
-    async def sla_monitor():
-        while True:
-            try:
-                from chatbot.sla_service import monitor_sla_thresholds
-                await monitor_sla_thresholds()
-            except Exception as e:
-                logger.error(f"[BACKGROUND] Error en loop de SLA: {e}")
-            await asyncio.sleep(60)  # Revisar cada minuto (60s) para mayor precisión
+async def sla_monitor_loop():
+    logger.info("[SLA_MONITOR] Iniciando monitor de SLA...")
+    while True:
+        try:
+            background_tasks_status["sla_monitor"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
+            background_tasks_status["sla_monitor"]["status"] = "running"
+            
+            from chatbot.sla_service import monitor_sla_thresholds
+            await monitor_sla_thresholds()
+        except Exception as e:
+            logger.error(f"[BACKGROUND] Error en loop de SLA: {e}")
+            background_tasks_status["sla_monitor"]["status"] = f"error: {str(e)}"
+            
+        await asyncio.sleep(60)
 
-    asyncio.create_task(process_pending_leads())
-    asyncio.create_task(sla_monitor())
-    asyncio.create_task(check_scheduled_tasks())
-
-    # Índices para el Monitor de Tareas y Notificaciones
+def asegurar_indices_db():
     try:
         db = MongoClient(Config.MONGO_URI)[Config.DB_NAME]
-        # Optimiza check_scheduled_tasks: status + execute_at
         db["crm_tasks"].create_index([("status", 1), ("execute_at", 1)])
-        
-        # Optimiza NotificationService idempotency: phone + type + timestamp
         db["crm_events"].create_index([("phone", 1), ("type", 1), ("timestamp", -1)])
-        
-        logger.info("Índices de CRM asegurados en startup.")
+        logger.info("Índices de CRM asegurados.")
     except Exception as e:
-        logger.warning(f"Error creando índices optimizados: {e}")
+        logger.warning(f"Error creando índices: {e}")
 
 if __name__ == "__main__":
     import pathlib

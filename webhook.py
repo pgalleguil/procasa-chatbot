@@ -22,7 +22,11 @@ import httpx
 from urllib.parse import urlencode
 
 import requests
-from fastapi import Cookie
+from fastapi import FastAPI, Cookie, Request, HTTPException, Depends, status
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 
 # === TUS MÓDULOS PROPIOS ===
@@ -43,6 +47,11 @@ logger = logging.getLogger("procasa-full")
 
 # CONFIGURACIÓN ZONA HORARIA CHILE
 from chatbot.constants import CHILE_TZ
+
+# --- CONFIGURACIÓN DE DIRECTORIOS ---
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+TEMPLATES_DIR = BASE_DIR / "templates"
 
 # Global state for background tasks monitoring
 background_tasks_status = {

@@ -26,7 +26,7 @@ from .alert_service import send_alert_once
 from .classifier import es_propietario 
 
 # RAG IMPORT
-from .rag import buscar_propiedades, formatear_resultados_texto
+from .rag import buscar_propiedades, formatear_resultados_texto, buscar_semanticamente
 # Importamos el prompt maestro con las reglas estrictas (No horarios, no inventar)
 from .prompts import SYSTEM_PROMPT_PROSPECTO 
 
@@ -284,8 +284,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             codigos_vistos = obtener_propiedades_vistas(phone)
             
             # Buscamos excluyendo lo visto y limitando a 3 (o el límite que se defina)
-            resultados_rag = buscar_propiedades(
-                criterios_rag, 
+            # USAMOS BÚSQUEDA SEMÁNTICA (HÍBRIDA) EN VEZ DE LA SIMPLE
+            resultados_rag = buscar_semanticamente(
+                original_message, 
                 exclude_codes=codigos_vistos, 
                 limit=3
             )

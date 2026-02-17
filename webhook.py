@@ -33,7 +33,7 @@ from contextlib import asynccontextmanager
 from campanas.handler import handle_campana_respuesta
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
-from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives
+from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent
 
 # ========================= CONFIGURACIÓN =========================
 from config import Config
@@ -73,6 +73,14 @@ async def lifespan(app: FastAPI):
     # Crear admin y asegurar índices
     crear_admin_si_no_existe()
     asegurar_indices_db()
+    
+    # Pre-cargar modelo de embeddings (Evita hang en primer uso)
+    try:
+        from chatbot.semantic_engine import get_model
+        logger.info("Pre-cargando modelo de embeddings en background...")
+        get_model()
+    except Exception as e:
+        logger.error(f"Error pre-cargando modelo: {e}")
     
     yield
     
@@ -542,6 +550,49 @@ async def api_crm_notes(request: Request):
         return {"status": "error"}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+
+# --- BÚSQUEDA SEMÁNTICA ---
+@app.post("/api/crm/recommendations")
+async def api_crm_recommendations(request: Request):
+    try:
+        data = await request.json()
+        query = data.get("query", "")
+        exclude = data.get("exclude", [])
+        limit = data.get("limit", 3)
+        scope = data.get("scope", "local")
+        include_neighbors = data.get("include_neighbors", False)
+
+        if not query or len(query.strip()) < 5:
+            raise HTTPException(status_code=400, detail="Query muy corta")
+        
+        result = get_semantic_recommendations(query, exclude_codes=exclude, limit=limit, scope=scope, include_neighbors=include_neighbors)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[SEMANTIC] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- ENVÍO DE RECOMENDACIÓN ---
+@app.post("/api/crm/send_recommendation")
+async def api_crm_send_recommendation(request: Request):
+    try:
+        data = await request.json()
+        phone = data.get("phone", "")
+        properties = data.get("properties", [])
+        user_email = data.get("user_email", "")
+        
+        if not phone or not properties:
+            raise HTTPException(status_code=400, detail="Faltan datos")
+        
+        result = log_recommendation_sent(phone, properties, user_email)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[SEMANTIC] Error send_recommendation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ========================= 7. WHATSAPP LOGIC (CORE) =========================
 pending_tasks: Dict[str, Any] = {}

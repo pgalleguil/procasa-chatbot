@@ -564,6 +564,12 @@
             color: white;
         }
 
+        .btn-comm.rec:hover {
+            background: #8b5cf6;
+            border-color: #8b5cf6;
+            color: white;
+        }
+
         /* Botón toggle Chatbot - Discrete Style */
         .btn-chat-toggle {
             width: 100%;
@@ -585,6 +591,26 @@
         .btn-chat-toggle:hover {
             background: rgba(125, 125, 125, 0.08);
             color: var(--text-primary);
+        }
+
+        /* --- MODERN SCROLLBAR (NUEVO) --- */
+        .modern-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .modern-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .modern-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(125, 125, 125, 0.2);
+            border-radius: 10px;
+            transition: background 0.2s;
+        }
+
+        .modern-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(125, 125, 125, 0.4);
         }
 
         /* Rotation for chevron */
@@ -1969,6 +1995,419 @@
         }
 
         /* --- END OF CUSTOM STYLES --- */
+        /* --- SEMANTIC SEARCH PANEL (RESTORED ORIGINAL) --- */
+        .search-panel {
+            border-top: 3px solid var(--accent);
+        }
+
+        .sem-search-box .input-group {
+            background: var(--bg-card);
+
+        }
+
+        /* FIX: Toggle Visibility (Un-nested for standard CSS support) */
+        .scope-toggle-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.08);
+            /* Sutilmente más claro */
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            margin-top: 5px;
+            transition: all 0.2s;
+        }
+
+        .scope-toggle-group.active {
+            background: rgba(99, 102, 241, 0.15);
+            border-color: var(--accent);
+        }
+
+        .scope-toggle-group label {
+            color: var(--text-primary) !important;
+            font-weight: 700 !important;
+            font-size: 0.85rem !important;
+            cursor: pointer;
+            margin: 0;
+        }
+
+        .scope-toggle-group.active label {
+            color: var(--accent) !important;
+        }
+
+        .scope-toggle-group .form-switch {
+            padding-left: 2.5em;
+            /* Un poco más de espacio */
+            display: flex;
+            align-items: center;
+        }
+
+        .scope-toggle-group .form-check-input {
+            cursor: pointer;
+            width: 36px !important;
+            height: 20px !important;
+            margin-top: 0 !important;
+            background-color: rgba(255, 255, 255, 0.2) !important;
+            border-color: rgba(255, 255, 255, 0.3) !important;
+        }
+
+        .scope-toggle-group .form-check-input:checked {
+            background-color: var(--accent) !important;
+            border-color: var(--accent) !important;
+        }
+
+        .sem-search-box .input-group-text {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border: none;
+            padding-left: 15px;
+        }
+
+        .sem-search-box input {
+            background: transparent !important;
+            border: none !important;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            padding: 10px;
+        }
+
+        .sem-search-box input:focus {
+            box-shadow: none !important;
+        }
+
+        .sem-search-box .btn-primary {
+            border-radius: 0 8px 8px 0 !important;
+            padding: 0 20px;
+            font-weight: 600;
+        }
+
+        .sem-result {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px 12px 12px 42px;
+            /* Espacio para el checkbox absoluto */
+            margin-bottom: 12px;
+            transition: all 0.2s ease;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .sem-result:hover {
+            border-color: var(--accent);
+            background: rgba(99, 102, 241, 0.04);
+            transform: translateY(-2px);
+        }
+
+        .sem-result.selected {
+            border-color: var(--success-color);
+            background: rgba(34, 197, 94, 0.05);
+            box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+        }
+
+        .sem-result .prop-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .sem-result .prop-code {
+            font-weight: 700;
+            color: var(--accent);
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            /* La casita y el código se alinearán naturalmente aquí */
+        }
+
+        .sem-result .prop-location {
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .sem-result .prop-details {
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            opacity: 0.9;
+            margin-bottom: 4px;
+        }
+
+        .sem-result .prop-desc {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 6px;
+            line-height: 1.4;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding-top: 6px;
+        }
+
+        /* Checkbox Selection Style */
+        .sem-checkbox {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-card);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s;
+        }
+
+        .sem-result.selected .sem-checkbox {
+            background: var(--success-color);
+            border-color: var(--success-color);
+        }
+
+        .sem-result.selected .sem-checkbox::after {
+            content: '\f00c';
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            font-size: 10px;
+            color: white;
+        }
+
+        .sem-result .prop-link {
+            display: inline-block;
+            margin-top: 4px;
+            font-size: 0.78rem;
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .text-executive {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            letter-spacing: 0.3px;
+        }
+
+        .sem-loading {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-secondary);
+        }
+
+        .sem-loading i {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .sem-empty {
+            text-align: center;
+            padding: 15px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            border: 2px dashed var(--border-color);
+            border-radius: 10px;
+        }
+
+        .sem-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-bottom: 8px;
+        }
+
+        .sem-filter-tag {
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent);
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-weight: 600;
+        }
+
+        /* === RECOMMENDATION CONTAINER INSIDE MODAL === */
+        #recommendationContainer .input-group {
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        #recommendationContainer .input-group .form-control {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        #recommendationContainer .input-group .form-control::placeholder {
+            color: rgba(255, 255, 255, 0.35);
+            font-style: italic;
+            font-size: 0.72rem;
+            /* Slightly smaller to fit width */
+            line-height: normal;
+            /* Fix vertical clipping */
+            padding-top: 2px;
+        }
+
+        #recommendationContainer .input-group .input-group-text {
+            border-color: var(--border-color);
+        }
+
+        #recommendationContainer .btn-primary {
+            padding: 8px 16px;
+            font-weight: 600;
+        }
+
+        #semanticResultsModal {
+            border-radius: 8px;
+        }
+
+        /* REMAINDER OF CSS REMOVED AS IT IS NOW CONSOLIDATED ABOVE */
+
+        .sem-selected-chip .chip-remove {
+            cursor: pointer;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+
+        .sem-selected-chip .chip-remove:hover {
+            opacity: 1;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: none;
+            }
+        }
+
+        .btn-recommend {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #25d366, #128c7e);
+            color: #fff;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-recommend:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3);
+        }
+
+        .sem-msg-editor {
+            margin-top: 10px;
+        }
+
+        .sem-msg-editor textarea {
+            width: 100%;
+            min-height: 120px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--input-bg);
+            color: var(--input-text);
+            padding: 10px;
+            font-size: 0.82rem;
+            resize: vertical;
+            font-family: inherit;
+            line-height: 1.5;
+        }
+
+        .sem-msg-editor textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .sem-msg-label {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .sem-selected-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+
+        .sem-selected-chip {
+            background: rgba(99, 102, 241, 0.12);
+            color: var(--accent);
+            font-size: 0.75rem;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .sem-selected-chip .chip-remove {
+            cursor: pointer;
+            opacity: 0.6;
+            transition: 0.2s;
+        }
+
+        .sem-selected-chip .chip-remove:hover {
+            opacity: 1;
+        }
+
+        /* Modern Toggle Buttons */
+        .sem-toggle-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .sem-toggle-btn i {
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+
+        .sem-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+
+        .sem-toggle-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .sem-toggle-btn.active i {
+            opacity: 1;
+        }
     </style>
 </head>
 
@@ -2039,21 +2478,21 @@
 
                 <div class="card-custom" style="border-top: 3px solid var(--accent);">
 
-                    <!-- 1. SELECTOR DE MODO (TABS) -->
+                    <!-- BOTONES DE MODO (TABS) -->
                     <div class="action-mode-grid">
-                        <button class="action-btn" id="mode_contact" onclick="setActionMode('contact')">
-                            <i class="fa-solid fa-user-check"></i> <span>Lead</span>
-                        </button>
-                        <button class="action-btn" id="mode_prop" onclick="setActionMode('prop')">
-                            <i class="fa-solid fa-house-user"></i> <span>Propietario</span>
-                        </button>
-
-                        <button class="action-btn" id="mode_close" onclick="setActionMode('close')">
-                            <i class="fa-solid fa-ban"></i> <span>Cerrar</span>
-                        </button>
-                    </div>
-
-                    <!-- 2. EMPTY STATE (NUEVO - MENSAJE INICIAL) -->
+                        <div class="action-btn" id="mode_contact" onclick="setActionMode('contact')">
+                            <i class="fa-solid fa-user"></i>
+                            Lead
+                        </div>
+                        <div class="action-btn" id="mode_prop" onclick="setActionMode('prop')">
+                            <i class="fa-solid fa-house-user"></i>
+                            Propietario
+                        </div>
+                        <div class="action-btn" id="mode_close" onclick="setActionMode('close')">
+                            <i class="fa-solid fa-door-closed"></i>
+                            Cierre
+                        </div>
+                    </div> <!-- 2. EMPTY STATE (NUEVO - MENSAJE INICIAL) -->
                     <div id="empty-state" class="empty-state">
                         <i class="fa-solid fa-hand-pointer"></i>
                         <p class="m-0">Selecciona una acción arriba para cargar los detalles.</p>
@@ -2209,6 +2648,76 @@
                                 <button onclick="openCommPanel('owner', 'email')" class="btn-comm em">
                                     <i class="fa-solid fa-envelope"></i> Email
                                 </button>
+                            </div>
+                        </div>
+
+                        <!-- 4. CONTENEDOR RECOMENDACIÓN (NUEVO MODO) -->
+                        <div id="mode-recommend-container" class="d-none animate__animated animate__fadeIn">
+                            <div class="card-custom search-panel">
+                                <div class="section-title">
+                                    <span>
+                                        <i class="fa-solid fa-brain me-2"></i> Recomendar Propiedades
+                                    </span>
+                                    <!-- Scope Toggle (Standard Bootstrap Switch) -->
+                                    <div class="form-check form-switch mb-3 p-0 d-flex flex-wrap align-items-center gap-2"
+                                        style="background: transparent; padding: 0 !important; border-radius: 0; border: none; box-shadow: none;">
+
+                                        <!-- Oficina Toggle (Button Type) -->
+                                        <div class="sem-toggle-btn active" id="btnToggleOffice"
+                                            onclick="toggleSemOption('office')">
+                                            <i class="fa-solid fa-building"></i>
+                                            <span>Oficina JPC</span>
+                                        </div>
+
+                                        <!-- Neighbors Toggle (Button Type) -->
+                                        <div class="sem-toggle-btn" id="btnToggleNeighbors"
+                                            onclick="toggleSemOption('neighbors')">
+                                            <i class="fa-solid fa-location-dot"></i>
+                                            <span>Comunas Similares</span>
+                                        </div>
+
+                                        <!-- Hidden Inputs for logic -->
+                                        <input type="checkbox" id="semScopeToggleModal" checked style="display:none;">
+                                        <input type="checkbox" id="semNeighborsToggle" style="display:none;"
+                                            onchange="resetSearchHistory()">
+                                    </div>
+                                </div>
+                                <div class="p-3">
+                                    <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 15px;">
+                                        Busca propiedades con IA y selecciona hasta 3 para recomendar por WhatsApp.
+                                    </p>
+
+                                    <!-- Selected chips -->
+                                    <div class="sem-selected-summary" id="semSelectedChips"></div>
+
+                                    <!-- Search input -->
+                                    <div id="semSearchArea"
+                                        style="border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; background: rgba(0,0,0,0.1);">
+                                        <div class="search-input-wrap">
+                                            <input type="text" id="semanticQuery"
+                                                placeholder="Ej: depto 2 dorms en Providencia arriendo..."
+                                                onkeydown="if(event.key==='Enter') searchSemantic()">
+                                            <button onclick="searchSemantic()" id="btnSemSearch">
+                                                <i class="fa-solid fa-magnifying-glass me-1"></i> Buscar
+                                            </button>
+                                        </div>
+                                        <div id="semanticFilters" class="sem-filters" style="display:none;"></div>
+                                        <!-- GRID ROW para resultados -->
+                                        <div id="semanticResults" class="row g-2"></div>
+                                    </div>
+
+                                    <!-- Recommendation area -->
+                                    <div class="sem-recommend-area" id="semRecommendArea">
+                                        <div class="sem-msg-editor">
+                                            <div class="sem-msg-label">
+                                                <i class="fa-brands fa-whatsapp me-1"></i> Mensaje para el lead
+                                                (editable):
+                                            </div>
+                                            <textarea id="semRecommendMsg" class="modern-scrollbar"></textarea>
+                                        </div>
+                                        <!-- Unified send button is now in the modal footer -->
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -2416,6 +2925,43 @@
                                                     <option>Estado propiedad</option>
                                                     <option>Sin urgencia real</option>
                                                 </select>
+                                            </div>
+                                        </div>
+
+                                        <!-- GRUPO 4: FEEDBACK DE RECOMENDACIÓN -->
+                                        <div class="category-group mt-3">
+                                            <div class="category-header">
+                                                <i class="fa-solid fa-hand-holding-heart me-1 text-success"></i>
+                                                Resultado de Recomendación
+                                            </div>
+
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="effective_result"
+                                                    id="rd_rec_ok"
+                                                    onclick="toggleSubOption('sub_rec_ok', 'Agendar Visita', 'visita_agendada', 'success', 0)">
+                                                <label class="form-check-label" for="rd_rec_ok">Le interesaron las
+                                                    opciones</label>
+                                            </div>
+
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="effective_result"
+                                                    id="rd_rec_adjust"
+                                                    onclick="toggleSubOption('sub_rec_adjust', 'Buscar Opciones', 'requiere_seguimiento', 'primary', 3)">
+                                                <label class="form-check-label" for="rd_rec_adjust">Desea otras opciones
+                                                    / Ajustar búsqueda</label>
+                                            </div>
+                                            <div id="sub_rec_adjust" class="sub-logic d-none">
+                                                <label class="data-label mb-1">Nuevos Requerimientos:</label>
+                                                <input type="text" class="form-control form-control-sm"
+                                                    placeholder="Ej: Más m2, otra zona..." id="req_rec_pref">
+                                            </div>
+
+                                            <div class="form-check mb-2">
+                                                <input class="form-check-input" type="radio" name="effective_result"
+                                                    id="rd_rec_no"
+                                                    onclick="toggleSubOption('sub_rec_no', 'Registrar Objeción', 'requiere_seguimiento', 'secondary', 15)">
+                                                <label class="form-check-label" for="rd_rec_no">No le gustaron las
+                                                    recomendaciones</label>
                                             </div>
                                         </div>
                                     </div>
@@ -2695,7 +3241,9 @@
             </div>
 
             <div class="right-column">
-                <!-- NOTAS ADHESIVAS (Lo único en la derecha ahora) -->
+                <!-- BÚSQUEDA SEMÁNTICA MOVIDA AL MÓDULO CENTRAL -->
+
+                <!-- NOTAS ADHESIVAS (Moved below Search Panel) -->
                 <div class="card-custom card-notes-hover">
                     <div class="section-title" style="color: var(--notes-color) !important;">
                         <span><i class="fa-regular fa-note-sticky me-2"></i> Notas Rápidas</span>
@@ -2790,7 +3338,7 @@
 
         <!-- COMMUNICATION MODAL -->
         <div class="modal fade" id="commModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-dialog modal-dialog-centered" id="commModalDialog">
                 <div class="modal-content">
                     <div class="modal-header" id="modalHeader">
                         <h5 class="modal-title" id="commTitle">Comunicación</h5>
@@ -2798,7 +3346,7 @@
                             aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
-                        <div class="comm-stage-tabs custom-scrollbar" id="commTabs"></div>
+                        <div class="comm-stage-tabs modern-scrollbar" id="commTabs"></div>
 
                         <div id="emailSubjectContainer" class="mb-3 d-none">
                             <label class="data-label mb-1">Asunto:</label>
@@ -2806,10 +3354,83 @@
                                 placeholder="Asunto del correo...">
                         </div>
 
-                        <div class="templates-list custom-scrollbar" id="templateList"></div>
+                        <div class="templates-list modern-scrollbar" id="templateList"></div>
 
-                        <label class="data-label mb-1">Mensaje:</label>
-                        <textarea class="form-control" id="commMessage" rows="5"></textarea>
+                        <!-- RECOMMENDATION CONTAINER (Hidden by default) -->
+                        <div id="recommendationContainer" class="d-none animate__animated animate__fadeIn">
+                            <!-- Search Bar -->
+                            <div id="semSearchAreaModal" class="sem-search-box mb-3 mt-2"
+                                style="border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; background: rgba(0,0,0,0.1);">
+                                <div class="input-group">
+                                    <span class="input-group-text border-end-0"
+                                        style="background: transparent; border: none; color: var(--text-secondary);"><i
+                                            class="fa-solid fa-wand-magic-sparkles"></i></span>
+                                    <input type="text" id="semanticQueryModal" class="form-control border-0"
+                                        style="background: transparent; color: var(--text-primary);"
+                                        placeholder="Ej: Casa en La Reina con patio grande y 4 dormitorios..."
+                                        onkeydown="if(event.key === 'Enter') searchSemantic()">
+                                    <button class="btn btn-primary" type="button" id="btnSemSearchModal"
+                                        onclick="searchSemantic()">
+                                        <i class="fa-solid fa-magnifying-glass"></i> Buscar
+                                    </button>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mt-3 px-1">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <!-- Scope Toggle (Button Type) -->
+                                        <div class="sem-toggle-btn active" id="btnToggleOfficeModal"
+                                            onclick="toggleSemOption('office', true)">
+                                            <i class="fa-solid fa-building"></i>
+                                            <span>Oficina JPC</span>
+                                        </div>
+
+                                        <!-- Neighbors Toggle (Button Type) -->
+                                        <div class="sem-toggle-btn" id="btnToggleNeighborsModal"
+                                            onclick="toggleSemOption('neighbors', true)">
+                                            <i class="fa-solid fa-location-dot"></i>
+                                            <span>Comunas Similares</span>
+                                        </div>
+
+                                        <!-- Hidden Inputs for logic -->
+                                        <input class="form-check-input" type="checkbox" id="scopeSwitchModal"
+                                            style="display:none;" onchange="toggleScope()">
+                                        <input class="form-check-input" type="checkbox" id="neighborsSwitchModal"
+                                            style="display:none;" onchange="resetSearchHistory()">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Chips Select -->
+                            <div id="semSelectedChipsModal" class="d-flex gap-2 flex-wrap mb-2"></div>
+
+                            <!-- Results Area -->
+                            <div id="semanticResultsModal" class="sem-results-grid modern-scrollbar p-1"
+                                style="max-height: 300px; overflow-y: auto;">
+                                <div class="text-center py-5">
+                                    <div class="mb-3" style="opacity: 0.3;">
+                                        <i class="fa-solid fa-microchip fa-3x"></i>
+                                    </div>
+                                    <h6 class="text-primary mb-2" style="font-weight: 700;">Asistente de Recomendación
+                                    </h6>
+                                    <p class="small text-secondary px-4">
+                                        Describa los requerimientos del cliente en lenguaje natural para identificar las
+                                        mejores opciones en nuestra red.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Message Preview for Recommendation -->
+                            <div id="semRecommendAreaModal" class="mt-3 pt-3 border-top border-secondary d-none">
+                                <label class="data-label mb-1">Mensaje de Recomendación:</label>
+                                <textarea class="form-control mb-2 modern-scrollbar" id="semRecommendMsgModal"
+                                    rows="4"></textarea>
+                            </div>
+                        </div>
+
+                        <!-- STANDARD MESSAGE CONTAINER -->
+                        <div id="messageContainer">
+                            <label class="data-label mb-1">Mensaje:</label>
+                            <textarea class="form-control modern-scrollbar" id="commMessage" rows="5"></textarea>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
@@ -2861,7 +3482,7 @@
                     // para mantener la cookie viva mientras el usuario trabaja
                     if (idleTimeSeconds < 300 && idleTimeSeconds > 10) {
                         // Si hay actividad reciente, pero no hemos hecho ping hace rato, lo hacemos
-                        // (Logica simplificada: cada vez que hay actividad real, el backend recibe requests si navega, 
+                        // (Logica simplificada: cada vez que hay actividad real, el backend recibe requests si navega,
                         // pero si solo está escribiendo un email largo, necesitamos el ping)
                     }
 
@@ -3197,6 +3818,7 @@
             const commTemplates = {
                 lead: {
                     tabs: [
+                        { id: 'recommendation', label: '🧠 Recomendador' },
                         { id: 'stage1', label: '1. Derivado Chatbot' },
                         { id: 'stage2', label: '2. Interés Activo' },
                         { id: 'stage3', label: '3. Confirmación Visita' },
@@ -3523,19 +4145,23 @@
                 const btnContact = document.getElementById('mode_contact');
                 const btnProp = document.getElementById('mode_prop');
                 const btnClose = document.getElementById('mode_close');
+                const recommendContainer = document.getElementById('mode-recommend-container');
+                const contactContext = document.getElementById('contact-context');
 
                 // LIMPIEZA TOTAL DE FORMULARIO AL CAMBIAR DE MODO
                 resetGestionForm();
 
                 idLead.classList.add('d-none');
                 idOwner.classList.add('d-none');
+                recommendContainer.classList.add('d-none');
+
                 btnContact.classList.remove('active');
                 btnProp.classList.remove('active-prop');
                 btnClose.classList.remove('active-close');
 
                 // Ocultar todas las secciones de lógica
                 document.querySelectorAll('.logic-section').forEach(s => s.classList.add('d-none'));
-                document.getElementById('contact-context').classList.add('d-none');
+                contactContext.classList.add('d-none');
 
                 if (mode === 'prop') {
                     btnProp.classList.add('active-prop');
@@ -3546,7 +4172,7 @@
                     if (mode === 'contact') {
                         btnContact.classList.add('active');
                         idLead.classList.remove('d-none'); // Mostrar Lead
-                        document.getElementById('contact-context').classList.remove('d-none');
+                        contactContext.classList.remove('d-none'); // Show Context Buttons by default
                         currentActionLabel = "Contactar Lead";
                     } else if (mode === 'close') {
                         btnClose.classList.add('active-close');
@@ -3555,6 +4181,26 @@
                     }
                     // Siempre ocultamos el footer al cambiar de modo principal
                     document.getElementById('gestion-footer').classList.add('d-none');
+                }
+                updateSummary();
+            }
+
+            function toggleRecommendMode() {
+                const container = document.getElementById('mode-recommend-container');
+                const context = document.getElementById('contact-context');
+
+                if (container.classList.contains('d-none')) {
+                    // Show Recommend
+                    container.classList.remove('d-none');
+                    context.classList.add('d-none');
+                    // Ensure form is reset when entering recommend to avoid confusion
+                    resetGestionForm();
+                    currentActionLabel = "Recomendar Propiedades";
+                } else {
+                    // Hide Recommend (Back to Contact)
+                    container.classList.add('d-none');
+                    context.classList.remove('d-none');
+                    currentActionLabel = "Contactar Lead";
                 }
                 updateSummary();
             }
@@ -3913,6 +4559,7 @@
                 if (currentCommTarget !== target || currentCommChannel !== newChannel) {
                     document.getElementById('commMessage').value = "";
                     document.getElementById('emailSubject').value = "";
+                    if (typeof resetSearchHistory === 'function') resetSearchHistory(); // Reset semantic search
                 }
 
                 currentCommTarget = target;
@@ -3920,8 +4567,8 @@
                 currentTemplateLabel = "Directo / Manual";
                 originalTemplateText = "";
 
-                const logType = `CLICK_${defaultChannel.toUpperCase()}_${target.toUpperCase()}`;
-                logAction(logType, { target: target, channel: defaultChannel }, target);
+                // Logging moved to button click to avoid spam ("WhatsApp Iniciado" garbage)
+                // logAction(logType, { target: target, channel: defaultChannel }, target);
 
                 if (currentCommChannel === 'phone') {
                     window.location.href = `tel:${target === 'lead' ? leadData.telefono : leadData.ownerPhone}`;
@@ -3958,7 +4605,19 @@
                 loadTemplates(target, firstTabId);
 
                 new bootstrap.Modal(document.getElementById('commModal')).show();
-                updateSendLink(target);
+                updateSendLink(target, firstTabId);
+
+                // Add real-time validation listener if not already present
+                const msgInput = document.getElementById('commMessage');
+                if (msgInput && !msgInput.dataset.listener) {
+                    msgInput.addEventListener('input', () => {
+                        const activeTab = document.querySelector('.stage-tab.active');
+                        const currentCategory = activeTab ? activeTab.innerText.toLowerCase() : ''; // Approximation or use state
+                        // We'll use a safer way to get category in the next step or keep track
+                        updateSendLink(target, semState.currentCategory || firstTabId);
+                    });
+                    msgInput.dataset.listener = "true";
+                }
             }
 
             function renderCommTabs(target) {
@@ -3974,6 +4633,10 @@
             }
 
             function loadTemplates(target, category, btnElement = null) {
+                semState.currentCategory = category; // Update global state
+                // Update global button state for this category
+                updateSendLink(target, category);
+
                 if (btnElement) {
                     document.querySelectorAll('.stage-tab').forEach(el => el.classList.remove('active'));
                     btnElement.classList.add('active');
@@ -3986,6 +4649,28 @@
                         document.getElementById('emailSubject').value = "";
                     }
                 }
+
+                // --- NUEVO: LÓGICA DE RECOMENDACIÓN ---
+                const recContainer = document.getElementById('recommendationContainer');
+                const tplList = document.getElementById('templateList');
+                const msgContainer = document.getElementById('messageContainer');
+                const footerBtn = document.getElementById('btnSendComm');
+
+                if (category === 'recommendation') {
+                    // UX FIX: Reset search whenever entering the recommendation tab
+                    if (typeof resetSearchHistory === 'function') resetSearchHistory();
+
+                    recContainer.classList.remove('d-none');
+                    tplList.classList.add('d-none');
+                    msgContainer.classList.add('d-none');
+                    return;
+                } else {
+                    recContainer.classList.add('d-none');
+                    tplList.classList.remove('d-none');
+                    msgContainer.classList.remove('d-none');
+                    footerBtn.classList.remove('d-none');
+                }
+
                 const container = document.getElementById('templateList');
                 container.innerHTML = "";
                 const allTemplates = commTemplates[target].data[category] || [];
@@ -4045,20 +4730,54 @@
                         .replace(/\[\[comuna\]\]/g, safeComuna);
                     document.getElementById('emailSubject').value = processedSubject;
                 }
+
+                // Force UI update so button turns green immediately
+                updateSendLink(currentCommTarget, semState.currentCategory);
             }
 
-            function updateSendLink(target) {
+            function updateSendLink(target, category) {
                 const btn = document.getElementById('btnSendComm');
                 const msgBody = document.getElementById('commMessage');
                 const phone = target === 'lead' ? leadData.telefono : leadData.ownerPhone;
                 const email = target === 'lead' ? leadData.email : leadData.ownerEmail;
 
+                // --- Common Logic: WhatsApp Green ---
+                const waGreen = '#25D366';
+
+                if (category === 'recommendation') {
+                    btn.innerHTML = '<i class="fa-brands fa-whatsapp me-1"></i> Recomendar por WhatsApp';
+                    btn.onclick = sendRecommendation;
+                    updateSelectionUI(); // This handles enabled/disabled for recommendations
+                    return;
+                }
+
+                // --- Standard Channel Logic ---
                 if (currentCommChannel === 'wa') {
                     btn.innerHTML = '<i class="fa-brands fa-whatsapp me-1"></i> Abrir WhatsApp';
-                    btn.className = 'btn btn-sm fw-bold btn-success';
                 } else {
                     btn.innerHTML = '<i class="fa-solid fa-envelope me-1"></i> Abrir Correo';
-                    btn.className = 'btn btn-sm fw-bold btn-primary';
+                }
+
+                // Validation for standard modes
+                const hasMessage = msgBody.value.trim().length > 0;
+                if (hasMessage) {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    if (currentCommChannel === 'wa') {
+                        btn.style.backgroundColor = waGreen;
+                        btn.style.borderColor = waGreen;
+                        btn.className = 'btn btn-sm fw-bold text-white';
+                    } else {
+                        btn.style.backgroundColor = ''; // Reset to Bootstrap primary
+                        btn.style.borderColor = '';
+                        btn.className = 'btn btn-sm fw-bold btn-primary';
+                    }
+                } else {
+                    btn.disabled = true;
+                    btn.style.opacity = '0.6';
+                    btn.className = 'btn btn-sm fw-bold btn-secondary';
+                    btn.style.backgroundColor = '';
+                    btn.style.borderColor = '';
                 }
 
                 btn.onclick = function (e) {
@@ -4066,6 +4785,12 @@
 
                     // 1. Obtener mensaje
                     const finalMsg = msgBody.value;
+
+                    // Log action triggers ONLY here (actual click)
+                    const logType = currentCommChannel === 'wa' ? `CLICK_WHATSAPP_${target.toUpperCase()}` : `CLICK_EMAIL_${target.toUpperCase()}`;
+                    if (currentCommChannel !== 'email') { // Emails are logged by backend usually, but consistent logging here:
+                        logAction(logType, { target: target, channel: currentCommChannel }, target);
+                    }
 
                     if (!finalMsg) {
                         alert("⚠️ Por favor escribe un mensaje antes de enviar.");
@@ -4264,6 +4989,460 @@
                 </div>
             </div>
         </div>
+        <!-- SEMANTIC SEARCH JS (FULL RECOMMENDATION WORKFLOW) -->
+        <script>
+            // === SEMANTIC SEARCH STATE ===
+            const semState = {
+                selected: [],
+                maxSelect: 3,
+                lastResults: [],  // Store last search results for re-rendering
+                seenCodes: [],    // Track ALL seen codes to rotate results
+                leadPhone: '{{ lead.phone }}',
+                leadName: '{{ lead.nombre }}',
+                leadComuna: '{{ lead.datos_propiedad.comuna }}',
+                leadTipo: '{{ lead.datos_propiedad.tipo or "" }}',
+                execName: '{{ user_name }}',
+                userEmail: '{{ user_email }}',
+                scope: 'local',
+                currentCategory: '' // Added to track active tab
+            };
+
+            // --- PRE-FILL LOGIC REMOVED ON USER REQUEST ---
+
+            function resetSearchHistory(clearSelection = false) {
+                console.log("[SEMANTIC] Resetting history/seen codes");
+
+                // Clear state
+                semState.seenCodes = [];
+                semState.lastResults = [];
+
+                if (clearSelection) {
+                    semState.selected = [];
+                    // Only reset button classes on full clear
+                    document.querySelectorAll('.sem-toggle-btn').forEach(btn => btn.classList.remove('active'));
+                    const btnOffice = document.getElementById('btnToggleOfficeModal') || document.getElementById('btnToggleOffice');
+                    if (btnOffice) btnOffice.classList.add('active');
+
+                    const officeSwitch = document.getElementById('scopeSwitchModal');
+                    if (officeSwitch) officeSwitch.checked = false;
+                    const neighborSwitch = document.getElementById('neighborsSwitchModal');
+                    if (neighborSwitch) neighborSwitch.checked = false;
+                }
+
+                // Clear Results UI but keep input
+                const container = document.getElementById('semanticResultsModal') || document.getElementById('semanticResults');
+                if (container) {
+                    const examples = [
+                        'Casa en La Reina con piscina y 4 dormitorios',
+                        'Depto cerca de Metro Los Leones en Providencia',
+                        'Parcela en Pirque con gran terreno',
+                        'Departamento moderno de 2 dorm en Las Condes',
+                        'Casa con patio grande en Ñuñoa'
+                    ];
+                    const randomEx = examples[Math.floor(Math.random() * examples.length)];
+                    const randomEx2 = examples[(Math.floor(Math.random() * examples.length) + 1) % examples.length];
+
+                    container.innerHTML = `
+                        <div class="text-center py-4 small" style="color: rgba(255,255,255,0.35);">
+                            <i class="fa-solid fa-robot fa-2x mb-2" style="opacity:0.3;"></i><br>
+                            <b>Buscador Inteligente</b><br>
+                            Usa lenguaje natural para encontrar propiedades ideales.<br>
+                        </div>`;
+                }
+
+                updateSelectionUI();
+
+                // Trigger search again if query exists
+                const qValue = (document.getElementById('semanticQueryModal') || { value: "" }).value.trim();
+                if (qValue.length >= 3) {
+                    searchSemantic();
+                }
+            }
+
+            // Ensure reset when modal closes
+            document.addEventListener('DOMContentLoaded', () => {
+                const commModal = document.getElementById('commModal');
+                if (commModal) {
+                    commModal.addEventListener('hidden.bs.modal', function () {
+                        if (typeof resetSearchHistory === 'function') resetSearchHistory();
+                    });
+                }
+            });
+
+            function toggleScope() {
+                const switchEl = document.getElementById('scopeSwitchModal');
+                if (!switchEl) return;
+
+                semState.scope = switchEl.checked ? 'global' : 'local';
+
+                // Trigger search again if query exists
+                const qValue = (document.getElementById('semanticQueryModal') || { value: "" }).value.trim();
+                if (qValue.length >= 3) {
+                    searchSemantic();
+                }
+            }
+
+
+            async function searchSemantic() {
+                // Unified: Detect if we are in modal or on-page
+                const queryModal = document.getElementById('semanticQueryModal');
+                const queryPage = document.getElementById('semanticQuery');
+                const query = (queryModal && queryModal.value.trim().length >= 3) ? queryModal.value : (queryPage ? queryPage.value : "");
+
+                const containerPage = document.getElementById('semanticResults');
+                const containerModal = document.getElementById('semanticResultsModal');
+                const container = containerModal || containerPage;
+
+                const btnModal = document.getElementById('btnSemSearchModal');
+                const btnPage = document.getElementById('btnSemSearch');
+                const btn = btnModal || btnPage;
+
+                if (!query || query.length < 3) return;
+
+                if (btn) {
+                    btn.disabled = true;
+                    btn.dataset.originalHtml = btn.innerHTML;
+                    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Buscando...';
+                }
+
+                if (container) container.innerHTML = '<div class="sem-loading"><i class="fa-solid fa-spinner"></i> Buscando...</div>';
+
+                // Detect scope and neighbors from both possible sources
+                const scopeSwitchModal = document.getElementById('scopeSwitchModal');
+                const scopeTogglePage = document.getElementById('semScopeToggleModal');
+                const scope = (scopeSwitchModal && scopeSwitchModal.checked) || (scopeTogglePage && !scopeTogglePage.checked) ? 'global' : 'local';
+
+                const neighborSwitchModal = document.getElementById('neighborsSwitchModal');
+                const neighborTogglePage = document.getElementById('semNeighborsToggle');
+                const includeNeighbors = (neighborSwitchModal && neighborSwitchModal.checked) || (neighborTogglePage && neighborTogglePage.checked);
+
+                // EXCLUSION LOGIC: Combine seen codes AND currently selected/pinned codes
+                let excludeCodes = [...semState.seenCodes];
+                if (semState.selected && semState.selected.length > 0) {
+                    semState.selected.forEach(s => {
+                        if (!excludeCodes.includes(s.codigo)) excludeCodes.push(s.codigo);
+                    });
+                }
+
+                try {
+                    const response = await fetch('/api/crm/recommendations', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            query: query,
+                            exclude: excludeCodes, // Use the combined list
+                            scope: scope,
+                            limit: 3,
+                            include_neighbors: includeNeighbors
+                        })
+                    });
+                    const data = await response.json();
+
+                    if (data.status === 'ok' && data.results && data.results.length > 0) {
+                        semState.lastResults = data.results;
+                        // Accumulate seen codes for rotation
+                        data.results.forEach(p => {
+                            if (!semState.seenCodes.includes(p.codigo)) {
+                                semState.seenCodes.push(p.codigo);
+                            }
+                        });
+                        renderSemanticResults(data.results);
+                    } else {
+                        container.innerHTML = '<div class="sem-empty">No se encontraron propiedades similares.</div>';
+                    }
+                } catch (err) {
+                    console.error(err);
+                    container.innerHTML = '<div class="sem-empty text-danger">Error al buscar.</div>';
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-magnifying-glass me-1"></i> Buscar';
+                }
+            }
+
+            function renderSemanticResults(results) {
+                const containerModal = document.getElementById('semanticResultsModal');
+                const containerPage = document.getElementById('semanticResults');
+                const container = containerModal || containerPage;
+                if (!container) return;
+
+                container.innerHTML = '';
+
+                if (!results || results.length === 0) {
+                    container.innerHTML = '<div class="sem-empty">No se encontraron propiedades similares.</div>';
+                    return;
+                }
+
+                results.forEach(p => {
+                    // FIX: Round UF and handle score display capping
+                    const price = p.precio_uf ? `UF ${Math.round(p.precio_uf)}` : (p.precio_clp ? `$${p.precio_clp}` : 'A consultar');
+
+                    // SYNC: Ensure we check against CURRENT selected state
+                    const isSelected = semState.selected && semState.selected.some(sp => sp.codigo === p.codigo);
+                    const selectedClass = isSelected ? 'selected' : '';
+
+                    // Score display: Max 99% to avoid confusion with "120%"
+                    const displayPercent = Math.min(99, Math.round(p.score * 100));
+
+                    const col = document.createElement('div');
+                    col.className = 'col-md-12 mb-2';
+                    col.innerHTML = `
+                        <div class="sem-result ${selectedClass}" id="res-${p.codigo}" onclick='toggleSelectProp(${JSON.stringify(p)})'>
+                            <div class="sem-checkbox"></div>
+                            <div class="prop-header">
+                                <div class="prop-code">
+                                    <i class="fa-solid fa-house-chimney"></i> ${p.codigo}
+                                </div>
+                                <div class="prop-location">${p.comuna}</div>
+                            </div>
+                            <div class="prop-details">
+                                <span class="fw-bold">${p.tipo} en ${p.operacion}</span>
+                                <span class="text-primary fw-bold">${price}</span>
+                                <span class="badge bg-primary-subtle text-primary border-primary-subtle">${displayPercent}% Match</span>
+                                ${p.expanded_from ? `<span class="badge bg-info-subtle text-info border-info-subtle ms-1"><i class="fa-solid fa-location-dot me-1"></i>Vía Comuna Vecina</span>` : ''}
+                            </div>
+                            <div class="prop-desc">
+                                <i class="fa-solid fa-bed me-1"></i> ${p.dormitorios} | 
+                                <i class="fa-solid fa-bath me-1"></i> ${p.banos} | 
+                                <i class="fa-solid fa-ruler-combined me-1"></i> ${p.m2_utiles}m²
+                                <a href="https://www.procasa.cl/propiedad/${p.codigo}" target="_blank" class="prop-link float-end" onclick="event.stopPropagation()">
+                                    <i class="fa-solid fa-up-right-from-square"></i> Ficha
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(col);
+                });
+            }
+
+            function toggleSelectProp(prop) {
+                const idx = semState.selected.findIndex(p => p.codigo === prop.codigo);
+                if (idx > -1) {
+                    semState.selected.splice(idx, 1);
+                } else {
+                    if (semState.selected.length >= 3) {
+                        alert("Máximo 3 propiedades.");
+                        return;
+                    }
+                    semState.selected.push(prop);
+                }
+                updateSelectionUI();
+                // Update results to reflect selection (for checkmarks/borders)
+                if (semState.lastResults && semState.lastResults.length > 0) {
+                    renderSemanticResults(semState.lastResults);
+                }
+            }
+
+            function toggleSemOption(type, isModal = false) {
+                if (type === 'office') {
+                    const input = isModal ? document.getElementById('scopeSwitchModal') : document.getElementById('semScopeToggleModal');
+                    const btn = isModal ? document.getElementById('btnToggleOfficeModal') : document.getElementById('btnToggleOffice');
+
+                    input.checked = !input.checked;
+                    if (input.checked) {
+                        btn.classList.add('active');
+                    } else {
+                        btn.classList.remove('active');
+                    }
+
+                    // Update label if needed or just rely on state
+                    if (isModal) toggleScope();
+                } else if (type === 'neighbors') {
+                    const input = isModal ? document.getElementById('neighborsSwitchModal') : document.getElementById('semNeighborsToggle');
+                    const btn = isModal ? document.getElementById('btnToggleNeighborsModal') : document.getElementById('btnToggleNeighbors');
+
+                    input.checked = !input.checked;
+                    if (input.checked) {
+                        btn.classList.add('active');
+                    } else {
+                        btn.classList.remove('active');
+                    }
+                    resetSearchHistory();
+                }
+            }
+
+            function removeSelectedProp(codigo) {
+                const idx = semState.selected.findIndex(p => p.codigo === codigo);
+                if (idx >= 0) {
+                    semState.selected.splice(idx, 1);
+                    updateSelectionUI();
+                }
+            }
+
+            function updateSelectionUI() {
+                const chipsContainer = document.getElementById('semSelectedChipsModal');
+                const badge = document.getElementById('semSelectedBadgeModal');
+                const searchArea = document.getElementById('semSearchAreaModal');
+                const recommendArea = document.getElementById('semRecommendAreaModal');
+                const msgBox = document.getElementById('semRecommendMsgModal');
+
+                // Badge (with null check to prevent Selection crashing)
+                if (badge) {
+                    badge.textContent = semState.selected.length;
+                    if (semState.selected.length > 0) badge.classList.add('active');
+                    else badge.classList.remove('active');
+                }
+
+                // Chips
+                chipsContainer.innerHTML = '';
+                semState.selected.forEach(p => {
+                    const chip = document.createElement('div');
+                    chip.className = 'sem-selected-chip';
+                    chip.innerHTML = `
+                        <span>${p.codigo}</span>
+                        <span class="chip-remove" onclick="removeSelectedProp('${p.codigo}')"><i class="fa-solid fa-xmark"></i></span>
+                     `;
+                    chipsContainer.appendChild(chip);
+                });
+
+                // Visibility logic
+                if (semState.selected.length >= 3) {
+                    searchArea.style.display = 'none';
+                } else {
+                    searchArea.style.display = 'block';
+                }
+
+                if (semState.selected.length > 0) {
+                    recommendArea.classList.remove('d-none');
+                    msgBox.value = buildRecommendMessage();
+                } else {
+                    recommendArea.classList.add('d-none');
+                }
+
+                // --- Footer Button Logic ---
+                const footerBtn = document.getElementById('btnSendComm');
+                const recContainer = document.getElementById('recommendationContainer');
+                const isRecVisible = recContainer && !recContainer.classList.contains('d-none');
+
+                if (isRecVisible && footerBtn) {
+                    const waGreen = '#25D366';
+                    if (semState.selected.length > 0) {
+                        footerBtn.disabled = false;
+                        footerBtn.style.backgroundColor = waGreen;
+                        footerBtn.style.borderColor = waGreen;
+                        footerBtn.className = 'btn btn-sm fw-bold text-white';
+                        footerBtn.style.opacity = '1';
+                    } else {
+                        footerBtn.disabled = true;
+                        footerBtn.className = 'btn btn-sm fw-bold btn-secondary';
+                        footerBtn.style.backgroundColor = '';
+                        footerBtn.style.borderColor = '';
+                        footerBtn.style.opacity = '0.6';
+                    }
+                }
+            }
+
+            function buildRecommendMessage() {
+                const props = semState.selected;
+                const leadDisplayName = (semState.leadName && semState.leadName !== "Desconocido") ? semState.leadName : "";
+                let msg = leadDisplayName ? `¡Hola ${leadDisplayName}! 👋\n\n` : `¡Hola! 👋\n\n`;
+                msg += `Soy ${semState.execName} de Procasa. He seleccionado estas propiedades de nuestra red que se ajustan perfectamente a tu búsqueda:\n\n`;
+
+                const formatter = new Intl.NumberFormat('es-CL', {
+                    style: 'currency',
+                    currency: 'CLP',
+                    minimumFractionDigits: 0
+                });
+
+                props.forEach((p, i) => {
+                    let priceText = "";
+                    if (p.precio_uf) {
+                        priceText = `UF ${Math.round(p.precio_uf)}`;
+                    } else if (p.precio_clp) {
+                        priceText = formatter.format(p.precio_clp);
+                    } else {
+                        priceText = "A consultar";
+                    }
+
+                    msg += `🏠 *${p.codigo}* | ${p.tipo} en ${p.comuna}\n`;
+                    msg += `✨ ${p.dormitorios} dorm / ${p.banos} baños / ${p.m2_utiles}m²\n`;
+                    msg += `💰 Precio: ${priceText}\n`;
+                    msg += `🔗 Ver Ficha: https://www.procasa.cl/propiedad/${p.codigo}\n\n`;
+                });
+
+                msg += `Si alguna te interesa o quieres más detalles, dime y coordinamos una visita. ¡Quedo atento!`;
+                return msg;
+            }
+
+            async function sendRecommendation() {
+                const msg = document.getElementById('semRecommendMsgModal').value;
+                const btn = document.getElementById('btnSendRecommendModal');
+                const mainBtn = document.getElementById('btnSendComm');
+
+                if (!msg) return;
+
+                // Log action triggers ONLY here (actual click)
+                const target = currentCommTarget || 'lead';
+                const logType = `CLICK_WHATSAPP_RECOMMEND_${target.toUpperCase()}`;
+
+                // Open WhatsApp
+                const url = `https://wa.me/${semState.leadPhone.replace(/[^\d]/g, '')}?text=${encodeURIComponent(msg)}`;
+                window.open(url, '_blank');
+
+                // UI Feedback on both buttons if applicable
+                const originalText = btn.innerHTML;
+                const feedbackText = '<i class="fa-solid fa-check"></i> ¡Enviado!';
+
+                btn.innerHTML = feedbackText;
+                btn.style.background = 'var(--success-color)';
+                btn.disabled = true;
+
+                if (mainBtn) {
+                    mainBtn.innerHTML = feedbackText;
+                    mainBtn.disabled = true;
+                }
+
+                try {
+                    // Log action in CRM general log (SLA FIX: SEND_WA_LEAD stops timer)
+                    await fetch('/api/crm/log_action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            phone: semState.leadPhone,
+                            data: {
+                                type: 'SEND_WA_LEAD',
+                                meta: {
+                                    action_label: 'Recomendación Enviada',
+                                    result: `Envió ${semState.selected.length} propiedades`,
+                                    notes: semState.selected.map(p => p.codigo).join(', '),
+                                    channel: 'wa'
+                                }
+                            }
+                        })
+                    });
+
+                    // Log the recommendation sent event
+                    await fetch('/api/crm/send_recommendation', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            phone: semState.leadPhone,
+                            selected_properties: semState.selected,
+                            user_email: semState.userEmail
+                        })
+                    });
+
+                    // Reset selection after delay
+                    setTimeout(() => {
+                        semState.selected = [];
+                        updateSelectionUI();
+                        btn.innerHTML = '<i class="fa-brands fa-whatsapp me-2"></i> Enviar Recomendación';
+                        btn.style.background = ''; // reset
+                        btn.disabled = false;
+                    }, 3000);
+
+                } catch (err) {
+                    console.error('Error sending recommendation:', err);
+                    btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error';
+                    btn.style.background = 'var(--danger-color)';
+                    btn.disabled = false;
+                }
+            }
+
+            // Ensure search state is reset when the modal is closed
+            document.getElementById('commModal').addEventListener('hidden.bs.modal', function () {
+                if (typeof resetSearchHistory === 'function') resetSearchHistory();
+            });
+        </script>
     </body>
 
 </html>

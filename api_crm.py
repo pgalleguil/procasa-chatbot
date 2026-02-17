@@ -713,3 +713,64 @@ def manage_crm_notes(phone, note_data, action="add"):
         db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$pull": {"sticky_notes": {"id": note_data.get("id")}}})
         return True
     return False
+
+
+# --- BÚSQUEDA SEMÁNTICA DE PROPIEDADES ---
+def get_semantic_recommendations(query: str, exclude_codes: list = None, limit: int = 3, scope: str = 'local', include_neighbors: bool = False):
+    """
+    Busca propiedades semánticamente similares a la descripción del cliente.
+    Usa embeddings + cosine similarity con filtros estructurados + fallback geográfico.
+    scope='local' -> Solo INMOBILIARIA SUCRE SPA
+    scope='global' -> Toda la red
+    """
+    try:
+        from chatbot.rag import buscar_semanticamente
+        
+        oficina = "INMOBILIARIA SUCRE SPA" if scope == 'local' else None
+        
+        results = buscar_semanticamente(query, limit=limit, exclude_codes=exclude_codes, oficina_filtro=oficina, include_neighbors=include_neighbors)
+        return {"status": "ok", "results": results, "count": len(results)}
+    except Exception as e:
+        logger.error(f"[SEMANTIC] Error en búsqueda semántica: {e}", exc_info=True)
+        return {"status": "error", "detail": str(e), "results": []}
+
+
+def log_recommendation_sent(phone: str, selected_properties: list, user_email: str):
+    """
+    Registra en crm_history cuando un ejecutivo envía una recomendación de propiedades.
+    """
+    try:
+        db = get_db()
+        from datetime import datetime
+        now = datetime.utcnow()
+
+        # Build summary of properties
+        prop_summary = ", ".join([
+            f"{p.get('tipo', 'Prop')} {p.get('codigo', '?')} ({p.get('comuna', '?')})"
+            for p in selected_properties
+        ])
+
+        history_entry = {
+            "timestamp": now,
+            "user_action": "Recomendación de propiedades",
+            "result": f"Envió {len(selected_properties)} propiedades por WhatsApp",
+            "notes": prop_summary,
+            "type_class": "recommendation",
+            "icon_class": "semantic",
+            "icon": "fa-solid fa-brain",
+            "source": "crm_semantic",
+            "exec_user": user_email
+        }
+
+        db.leads.update_one(
+            {"phone": phone},
+            {
+                "$push": {"crm_history": {"$each": [history_entry], "$position": 0}},
+                "$inc": {"semantic_search_count": 1}
+            }
+        )
+        logger.info(f"[SEMANTIC] Recomendación registrada para {phone}: {prop_summary}")
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"[SEMANTIC] Error registrando recomendación: {e}", exc_info=True)
+        return {"status": "error", "detail": str(e)}

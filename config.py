@@ -39,7 +39,7 @@ class Config:
     GROK_BASE_URL = os.getenv("GROK_BASE_URL", "https://api.x.ai/v1")
     GROK_TEMPERATURE = float(os.getenv("GROK_TEMPERATURE", "0.0"))
 
-    EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+    EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
     EMBEDDING_DIM = 384
 
     # === Parámetros de búsqueda ===

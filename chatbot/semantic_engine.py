@@ -3,7 +3,7 @@
 import re
 import logging
 from typing import Optional, List
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 import pymongo
 from pymongo import UpdateOne
 from config import Config
@@ -13,21 +13,22 @@ logger = logging.getLogger(__name__)
 
 # --- CONFIGURACIÓN ---
 # Modelo ligero y rápido (~80MB), ideal para español/inglés y CPU.
-# 5x más rápido que mpnet-base con una pérdida de precisión mínima para este caso.
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2" 
+# Usamos FastEmbed para reducir RAM (Render 512MB limit)
+MODEL_NAME = "BAAI/bge-small-en-v1.5" # Modelo por defecto de FastEmbed, muy similar en tamaño y mejor performance
 
 _model_instance = None
 
 def get_model():
-    """Singleton para cargar el modelo solo una vez."""
+    """Singleton para cargar el modelo solo una vez usando FastEmbed."""
     global _model_instance
     if _model_instance is None:
-        logger.info(f"Cargando modelo de embeddings: {MODEL_NAME} ...")
+        logger.info(f"Cargando modelo de embeddings (FastEmbed): {MODEL_NAME} ...")
         try:
-            _model_instance = SentenceTransformer(MODEL_NAME)
-            logger.info("Modelo cargado exitosamente.")
+            # FastEmbed carga el modelo de forma eficiente
+            _model_instance = TextEmbedding(model_name=MODEL_NAME)
+            logger.info("Modelo FastEmbed cargado exitosamente.")
         except Exception as e:
-            logger.error(f"FATAL: No se pudo cargar el modelo {MODEL_NAME}: {e}")
+            logger.error(f"FATAL: No se pudo cargar el modelo FastEmbed {MODEL_NAME}: {e}")
             return None
     return _model_instance
 
@@ -61,17 +62,19 @@ def clean_desc_for_embedding(text: Optional[str]) -> str:
 
 # --- GENERACIÓN DE VECTORES ---
 def generate_embedding(text: str) -> Optional[List[float]]:
-    """Genera el vector para un texto dado."""
+    """Genera el vector para un texto dado usando FastEmbed."""
     model = get_model()
     if not model or not text:
         return None
     
     try:
-        # encode devuelve numpy array, convertimo a list para MongoDB
-        vector = model.encode(text).tolist()
+        # FastEmbed model.embed devuelve un generador de vectores
+        # Usamos list() o next() para obtener el vector
+        embeddings_generator = model.embed([text])
+        vector = next(embeddings_generator).tolist()
         return vector
     except Exception as e:
-        logger.error(f"Error generando embedding: {e}")
+        logger.error(f"Error generando embedding con FastEmbed: {e}")
         return None
 
 # --- PROCESO BULK (Para correr en background o script) ---

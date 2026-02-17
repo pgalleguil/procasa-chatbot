@@ -3,7 +3,6 @@
 import re
 import logging
 from typing import Optional, List
-from fastembed import TextEmbedding
 import pymongo
 from pymongo import UpdateOne
 from config import Config
@@ -12,9 +11,8 @@ from .storage import get_db
 logger = logging.getLogger(__name__)
 
 # --- CONFIGURACIÓN ---
-# Modelo ligero y rápido (~80MB), ideal para español/inglés y CPU.
-# Usamos FastEmbed para reducir RAM (Render 512MB limit)
-MODEL_NAME = "BAAI/bge-small-en-v1.5" # Modelo por defecto de FastEmbed, muy similar en tamaño y mejor performance
+# Usamos un modelo multilingüe para mejor soporte de Español en Chile.
+MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2" 
 
 _model_instance = None
 
@@ -22,11 +20,15 @@ def get_model():
     """Singleton para cargar el modelo solo una vez usando FastEmbed."""
     global _model_instance
     if _model_instance is None:
-        logger.info(f"Cargando modelo de embeddings (FastEmbed): {MODEL_NAME} ...")
         try:
+            from fastembed import TextEmbedding
+            logger.info(f"Cargando modelo de embeddings (FastEmbed): {MODEL_NAME} ...")
             # FastEmbed carga el modelo de forma eficiente
             _model_instance = TextEmbedding(model_name=MODEL_NAME)
             logger.info("Modelo FastEmbed cargado exitosamente.")
+        except ImportError:
+            logger.error("ERROR: No se encontró el módulo 'fastembed'. Ejecuta 'pip install fastembed' localmente.")
+            return None
         except Exception as e:
             logger.error(f"FATAL: No se pudo cargar el modelo FastEmbed {MODEL_NAME}: {e}")
             return None

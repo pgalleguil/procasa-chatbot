@@ -24,6 +24,25 @@ SUSANA_ENSIGNIA = "Susana Ensignia"
 MARIELA_ARRIAGADA = "Mariela Arriagada"
 RAQUEL_CHENEAUX = "Raquel Cheneaux"
 
+# --- MODO VACACIONES ---
+# Agregue aquí los nombres de los ejecutivos que no están disponibles
+EXECUTIVES_ON_VACATION = [ERIKA_GARRIDO]
+
+# Mapeo de reemplazos para asignaciones directas (fuera de Round Robin)
+VACATION_REPLACEMENTS = {
+    ERIKA_GARRIDO: RAQUEL_CHENEAUX
+}
+
+def get_active_executive(name: str) -> str:
+    """Retorna el reemplazo si el ejecutivo está en vacaciones, de lo contrario retorna el mismo nombre."""
+    if name in EXECUTIVES_ON_VACATION:
+        replacement = VACATION_REPLACEMENTS.get(name)
+        if replacement:
+            logger.info(f"[VACATION] Redirigiendo asignación de {name} a su reemplazo: {replacement}")
+            return replacement
+        # Si no hay reemplazo definido pero está en vacaciones, el Round Robin o fallback se encargará
+    return name
+
 # Lista para Round Robin (Jorge Pablo Caro - RM)
 ROUND_ROBIN_TEAM = [MARIELA_ARRIAGADA, SUSANA_ENSIGNIA, ERIKA_GARRIDO, RAQUEL_CHENEAUX]
 
@@ -100,6 +119,11 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
         next_index = (last_index + i) % len(ROUND_ROBIN_TEAM)
         candidate = ROUND_ROBIN_TEAM[next_index]
         
+        # Filtro Vacaciones: Saltar si está en vacaciones
+        if candidate in EXECUTIVES_ON_VACATION:
+            logger.info(f"[ROUTER] Saltando a {candidate} (En modo vacaciones).")
+            continue
+
         # Filtro Mariela: Si es Mariela, debe ser comuna de prioridad
         if candidate == MARIELA_ARRIAGADA:
             if not any(c in norm_comuna for c in mariela_comunas):
@@ -116,7 +140,7 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
         return candidate
 
     # Fallback extremo (si algo fallara en el loop)
-    return ERIKA_GARRIDO
+    return get_active_executive(ERIKA_GARRIDO)
 
 def get_executive_phone(executive_name: str) -> Optional[str]:
     """
@@ -191,10 +215,10 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
         # 1.1 RM -> Round Robin entre los 4 (Con filtro Mariela interno)
         if "metropolitana" in norm_region or "xiii" in norm_region:
             target_executive_name = get_next_round_robin_executive(norm_comuna)
-        # 1.2 Otras Regiones -> Erika Garrido
+        # 1.2 Otras Regiones -> Erika Garrido (O su reemplazo)
         else:
-            logger.info(f"[ROUTER] Propiedad de JPC fuera de RM ({region}). Asignando a Erika Garrido.")
-            target_executive_name = ERIKA_GARRIDO
+            logger.info(f"[ROUTER] Propiedad de JPC fuera de RM ({region}). Buscando activo.")
+            target_executive_name = get_active_executive(ERIKA_GARRIDO)
     
     # Get phone for the determined executive
     phone = get_executive_phone(target_executive_name)

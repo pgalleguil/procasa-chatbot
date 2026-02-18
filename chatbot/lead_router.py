@@ -205,10 +205,11 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     target_executive_name = original_executive # Default: El que viene en la ficha
 
     # REGLA 0: Si el ejecutivo de la ficha ya es uno de los nuestros, se queda con él (Lo lógico)
+    # PERO: Respetamos si está de vacaciones y redirigimos a su reemplazo
     our_team = ROUND_ROBIN_TEAM # Erika, Mariela, Susana, Raquel
     if any(normalize_text(member) in norm_exec for member in our_team):
-        logger.info(f"[ROUTER] Propiedad ya pertenece a alguien del equipo ({original_executive}). Manteniendo.")
-        target_executive_name = original_executive
+        logger.info(f"[ROUTER] Propiedad ya pertenece a alguien del equipo ({original_executive}). Verificando disponibilidad.")
+        target_executive_name = get_active_executive(original_executive)
     
     # REGLA 1: Jorge Pablo Caro (Distribución Especial)
     elif "jorge pablo caro" in norm_exec:
@@ -227,6 +228,9 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     # The property card in universo_obelix has 'email_ejecutivo' and 'movil_ejecutivo' sometimes.
     if not phone and target_executive_name == original_executive:
          phone = prop.get("movil_ejecutivo") or prop.get("fono_ejecutivo")
+
+    # Final Safety Check: Asegurar que el ejecutivo final no esté de vacaciones (por si se coló por otra regla)
+    target_executive_name = get_active_executive(target_executive_name)
 
     return target_executive_name, phone
 

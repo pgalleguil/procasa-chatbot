@@ -475,11 +475,20 @@ def get_unique_executives():
     return sorted(list(all_execs))
 
 # --- 2. DETALLE DEL LEAD ---
-def get_lead_detail_data(phone):
+def get_lead_detail_data(phone, property_code=None):
     db = get_db()
     phone_clean = phone.replace(" ", "").replace("+", "").strip()
     
-    lead = db["leads"].find_one({"phone": {"$regex": phone_clean}})
+    query = {"phone": {"$regex": phone_clean}}
+    if property_code:
+        query["$or"] = [
+            {"prospecto.codigo": property_code},
+            {"prospecto.codigo": str(property_code)},
+            {"datos_propiedad.codigo": property_code},
+            {"datos_propiedad.codigo": str(property_code)}
+        ]
+        
+    lead = db["leads"].find_one(query, sort=[("created_at", -1)])
     if not lead: return None
     
     codigo = detect_property_code(lead)
@@ -504,7 +513,8 @@ def get_lead_detail_data(phone):
             "GESTION_LOG", "STATUS_CHANGE", "HUMAN_NOTE", 
             "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD",
             "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
-            "SEND_WA_OWNER", "SEND_EMAIL_OWNER"
+            "SEND_WA_OWNER", "SEND_EMAIL_OWNER",
+            "ASSIGNMENT", "MANUAL_ENTRY"
         ]} 
     }).sort("timestamp", -1)
     
@@ -530,7 +540,9 @@ def get_lead_detail_data(phone):
             "SEND_EMAIL_OWNER": "Email Enviado (Prop.)",
             "STATUS_CHANGE": "Cambio de Estado",
             "GESTION_LOG": "Gestión Registrada",
-            "HUMAN_NOTE": meta.get("action_label", "Nota de Gestión")
+            "HUMAN_NOTE": meta.get("action_label", "Nota de Gestión"),
+            "ASSIGNMENT": "Asignación de Lead",
+            "MANUAL_ENTRY": "Ingreso Manual"
         }
 
         user_action_display = meta.get("action_label") or type_labels.get(evt_type, "Actividad")
@@ -547,7 +559,9 @@ def get_lead_detail_data(phone):
             "SEND_WA_OWNER": ("fa-brands fa-whatsapp", "tl-wa"),
             "STATUS_CHANGE": ("fa-solid fa-right-left", "tl-status"),
             "HUMAN_NOTE": ("fa-solid fa-note-sticky", "tl-note"),
-            "GESTION_LOG": ("fa-solid fa-clipboard-check", "tl-note")
+            "GESTION_LOG": ("fa-solid fa-clipboard-check", "tl-note"),
+            "ASSIGNMENT": ("fa-solid fa-user-check", "tl-status"),
+            "MANUAL_ENTRY": ("fa-solid fa-user-plus", "tl-status")
         }
         
         # Valores por defecto

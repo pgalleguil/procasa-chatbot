@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Procasa | Ingreso Manual</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+
+    <style>
+        :root {
+            --bg-body: #0f172a;
+            --bg-card: #1e293b;
+            --bg-sidebar: #020617;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #6366f1;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --sidebar-width: 200px;
+            --sidebar-width-collapsed: 70px;
+            --transition-speed: 0.3s;
+            --input-bg: #334155;
+            --input-border: #475569;
+            --input-text: #fff;
+            --success-color: #22c55e;
+            --danger-color: #ef4444;
+            --warning-color: #f59e0b;
+        }
+
+        [data-theme="light"] {
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --bg-sidebar: #0f172a;
+            --text-primary: #1e293b;
+            --text-secondary: #475569;
+            --border-color: #e2e8f0;
+            --input-bg: #ffffff;
+            --input-border: #cbd5e1;
+            --input-text: #1e293b;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            overflow-x: hidden;
+            transition: background-color 0.3s, color 0.3s;
+            min-height: 100vh;
+        }
+
+        /* SIDEBAR - Sync with List Page */
+        .sidebar {
+            width: var(--sidebar-width-collapsed);
+            background: var(--bg-sidebar);
+            height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+            padding: 20px 0;
+            border-right: 1px solid var(--border-color);
+            z-index: 1000;
+            transition: width var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            white-space: nowrap;
+        }
+
+        .sidebar:hover {
+            width: var(--sidebar-width);
+            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .main-content {
+            margin-left: var(--sidebar-width-collapsed);
+            padding: 30px;
+            transition: margin-left var(--transition-speed);
+        }
+
+        .brand {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            height: 50px;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .brand span {
+            margin-left: -10px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .sidebar:hover .brand span {
+            opacity: 1;
+        }
+
+        .nav-link {
+            color: #cbd5e1;
+            padding: 12px 0;
+            display: flex;
+            align-items: center;
+            text-decoration: none;
+            margin-bottom: 5px;
+            transition: all 0.2s;
+            height: 48px;
+            overflow: hidden;
+            width: 100%;
+            border-radius: 0;
+        }
+
+        .nav-link i {
+            min-width: var(--sidebar-width-collapsed);
+            text-align: center;
+            font-size: 1.25rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.25s ease-out;
+        }
+
+        .nav-link span {
+            margin-left: -10px;
+            opacity: 0;
+            transform: translateX(-10px);
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .sidebar:hover .nav-link span {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .nav-link:hover {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent);
+        }
+
+        .nav-link.active {
+            background: var(--accent);
+            color: white;
+        }
+
+        /* FORM STYLES */
+        .entry-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            margin: 0 auto;
+            backdrop-filter: blur(10px);
+        }
+
+        .form-label {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .form-control,
+        .form-select {
+            background-color: var(--input-bg);
+            border: 1px solid var(--input-border);
+            color: var(--input-text);
+            border-radius: 10px;
+            padding: 12px 15px;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            background-color: var(--input-bg);
+            border-color: var(--accent);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+            color: var(--input-text);
+        }
+
+        .btn-entry {
+            padding: 12px 25px;
+            border-radius: 12px;
+            font-weight: 700;
+            transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-verify {
+            background: rgba(125, 125, 125, 0.1);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-verify:hover:not(:disabled) {
+            background: rgba(125, 125, 125, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .btn-submit {
+            background: var(--accent);
+            color: white;
+            border: none;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        .btn-submit:hover:not(:disabled) {
+            background: #4f46e5;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-submit:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-top: 10px;
+            display: none;
+        }
+
+        /* THEME TOGGLE */
+        .theme-toggle {
+            margin-top: auto;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                margin-left: 0;
+                padding: 20px;
+            }
+
+            .sidebar {
+                display: none;
+            }
+        }
+
+        .loader {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            display: none;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="sidebar" id="sidebar">
+        <div class="brand">
+            <img src="/static/logo.png" alt="PROCASA"
+                style="max-height: 30px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
+                onerror="this.style.display='none'"> <span>PROCASA</span>
+        </div>
+        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
+        {% if user_role in ['supervisor', 'admin'] %}
+        <a href="/manual-lead-entry" class="nav-link active"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
+                Manual</span></a>
+        {% endif %}
+        <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+
+        <a href="#" class="nav-link theme-toggle" onclick="toggleTheme(); return false;">
+            <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
+        </a>
+        <a href="/logout" class="nav-link logout"><i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span></a>
+    </nav>
+
+    <div class="main-content">
+        <div class="container">
+            <div class="d-flex align-items-center mb-4">
+                <h1 class="h3 fw-bold m-0"><i class="fa-solid fa-user-plus text-accent me-2"></i> Nuevo Lead Manual</h1>
+            </div>
+
+            <div class="entry-card">
+                <form id="manualLeadForm">
+                    <div class="row g-4">
+                        <!-- TELÉFONO -->
+                        <div class="col-md-6">
+                            <label class="form-label">Teléfono (Opcional si tiene Email)</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-transparent border-end-0"
+                                    style="border-color: var(--input-border); color: var(--text-secondary);">+56</span>
+                                <input type="text" id="phone" name="phone" class="form-control border-start-0"
+                                    placeholder="9 1234 5678">
+                            </div>
+                            <p class="small text-secondary mt-1">Sin el +56, solo los 9 dígitos.</p>
+                        </div>
+
+                        <!-- CÓDIGO PROPIEDAD -->
+                        <div class="col-md-6">
+                            <label class="form-label">Código Propiedad</label>
+                            <div class="d-flex gap-2">
+                                <input type="text" id="property_code" name="property_code" class="form-control"
+                                    placeholder="Ej: 12345" required>
+                                <button type="button" id="btnVerify" class="btn-entry btn-verify">
+                                    <span class="btn-text">Verificar</span>
+                                    <div class="loader" id="verifyLoader"></div>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="duplicateStatus" class="col-12">
+                            <!-- Status messages go here -->
+                        </div>
+
+                        <hr class="opacity-10 my-4">
+
+                        <!-- NOMBRE -->
+                        <div class="col-md-6">
+                            <label class="form-label">Nombre del Cliente</label>
+                            <input type="text" name="nombre" class="form-control" placeholder="Juan Pérez" required>
+                        </div>
+
+                        <!-- EMAIL -->
+                        <div class="col-md-6">
+                            <label class="form-label">Email (Obligatorio si no hay Teléfono)</label>
+                            <input type="email" id="email" name="email" class="form-control"
+                                placeholder="juan@correo.com">
+                        </div>
+
+                        <!-- ORIGEN -->
+                        <div class="col-md-6">
+                            <label class="form-label">Origen</label>
+                            <select name="origen" class="form-select" required>
+                                <option value="PortalInmobiliario">PortalInmobiliario</option>
+                                <option value="MercadoLibre">MercadoLibre</option>
+                                <option value="ChilePropiedades">ChilePropiedades</option>
+                                <option value="Yapo">Yapo</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12">
+                            <button type="submit" id="btnSubmit" class="btn-entry btn-submit" disabled>
+                                <i class="fa-solid fa-check-circle"></i> Crear Lead y Asignar
+                                <div class="loader" id="submitLoader"></div>
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+    <script>
+        let isVerified = false;
+
+        // VERIFICACIÓN DE DUPLICADOS
+        document.getElementById('btnVerify').addEventListener('click', async () => {
+            const phone = document.getElementById('phone').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const propertyCode = document.getElementById('property_code').value.trim();
+
+            if (!propertyCode) {
+                showToast("Ingresa el código de propiedad", "warning");
+                return;
+            }
+            if (!phone && !email) {
+                showToast("Ingresa al menos teléfono o email", "warning");
+                return;
+            }
+
+            const btn = document.getElementById('btnVerify');
+            const loader = document.getElementById('verifyLoader');
+            const statusDiv = document.getElementById('duplicateStatus');
+
+            btn.disabled = true;
+            loader.style.display = 'block';
+            statusDiv.innerHTML = '';
+
+            try {
+                const cleanPhone = phone ? phone.replace(/[^0-9]/g, "") : "";
+                let url = `/api/leads/check-duplicate?property_code=${propertyCode}`;
+                if (cleanPhone) url += `&phone=${cleanPhone}`;
+                if (email) url += `&email=${encodeURIComponent(email)}`;
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.exists) {
+                    statusDiv.innerHTML = `<div class="status-badge" style="display: flex; background: rgba(239, 68, 68, 0.1); color: var(--danger-color); border: 1px solid var(--danger-color);">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        ALERTA: Este lead ya existe para esta propiedad. Asignado a: ${data.assigned_to}
+                    </div>`;
+                    showToast("Lead duplicado detectado", "error");
+                    document.getElementById('btnSubmit').disabled = true;
+                } else {
+                    statusDiv.innerHTML = `<div class="status-badge" style="display: flex; background: rgba(34, 197, 94, 0.1); color: var(--success-color); border: 1px solid var(--success-color);">
+                        <i class="fa-solid fa-check-circle"></i>
+                        Disponible: No hay leads previos para esta combinación.
+                    </div>`;
+                    showToast("Validación exitosa", "success");
+                    isVerified = true;
+                    document.getElementById('btnSubmit').disabled = false;
+                }
+            } catch (error) {
+                showToast("Error al verificar duplicados", "error");
+            } finally {
+                btn.disabled = false;
+                loader.style.display = 'none';
+            }
+        });
+
+        // RESET VERIFICATION ON INPUT CHANGE
+        ['phone', 'email', 'property_code'].forEach(id => {
+            document.getElementById(id).addEventListener('input', () => {
+                isVerified = false;
+                document.getElementById('btnSubmit').disabled = true;
+                document.getElementById('duplicateStatus').innerHTML = '';
+            });
+        });
+
+        // SUBMISSION
+        document.getElementById('manualLeadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!isVerified) return;
+
+            const btn = document.getElementById('btnSubmit');
+            const loader = document.getElementById('submitLoader');
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+
+            // Require at least one contact method
+            if (!data.phone && !data.email) {
+                showToast("Debe proporcionar teléfono o email", "error");
+                return;
+            }
+
+            // Clean phone if present
+            if (data.phone) {
+                let digits = data.phone.replace(/\D/g, "");
+                // Si tiene 9 dígitos, anteponemos 56. Si ya tiene 11 o más, lo dejamos tal cual (solo dígitos).
+                data.phone = (digits.length === 9) ? "56" + digits : digits;
+            }
+
+            btn.disabled = true;
+            loader.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/leads/manual', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    showToast(`Lead creado y asignado a ${result.assigned_to}`, "success");
+                    setTimeout(() => {
+                        window.location.href = `/crm/lead/${result.phone}?codigo=${result.property_code}`;
+                    }, 1500);
+                } else {
+                    showToast(result.detail || result.message || "Error al crear lead", "error");
+                }
+            } catch (error) {
+                showToast("Error de conexión", "error");
+            } finally {
+                btn.disabled = false;
+                loader.style.display = 'none';
+            }
+        });
+
+        function showToast(msg, type) {
+            const colors = {
+                success: "#22c55e",
+                error: "#ef4444",
+                warning: "#f59e0b"
+            };
+            Toastify({
+                text: msg,
+                duration: 3000,
+                gravity: "bottom",
+                position: "right",
+                backgroundColor: colors[type] || "#6366f1"
+            }).showToast();
+        }
+
+        function toggleTheme() {
+            const html = document.documentElement;
+            const current = html.getAttribute('data-theme');
+            const target = current === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', target);
+            document.getElementById('themeIcon').className = target === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+            localStorage.setItem('theme', target);
+        }
+
+        // INIT THEME
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        document.getElementById('themeIcon').className = savedTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+    </script>
+</body>
+
+</html>

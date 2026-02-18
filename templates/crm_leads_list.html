@@ -889,9 +889,11 @@
                     style="max-height: 30px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
                     onerror="this.style.display='none'"> <span>PROCASA</span>
             </div>
-            {% if user_role != 'agente' %}
             <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i>
                 <span>Dashboard</span></a>
+            {% if user_role in ['supervisor', 'admin'] %}
+            <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
+                    Manual</span></a>
             {% endif %}
             <a href="/crm" class="nav-link active"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
 

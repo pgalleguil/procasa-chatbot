@@ -34,6 +34,7 @@ from campanas.handler import handle_campana_respuesta
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
 from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent
+from chatbot.manual_entry import create_manual_lead, check_lead_duplicate
 
 # ========================= CONFIGURACIÓN =========================
 from config import Config
@@ -429,7 +430,11 @@ async def ver_leads(request: Request):
     if not user or user.get("rol") not in ["admin", "supervisor"]:
         return RedirectResponse(url="/crm?error=acceso_denegado")
     
-    return templates.TemplateResponse("leads_dashboard.html", {"request": request})
+    return templates.TemplateResponse("leads_dashboard.html", {
+        "request": request,
+        "user_role": user.get("rol", "agente"),
+        "user_name": user.get("nombre", "")
+    })
 
 @app.get("/chat-detail/{phone}", response_class=HTMLResponse)
 async def ver_detalle_chat(request: Request, phone: str):
@@ -445,18 +450,66 @@ async def ver_detalle_chat(request: Request, phone: str):
         "phone": phone
     })
 
-# ========================= 6. RUTAS CRM (MODIFICADAS PARA HORA LOCAL) =========================
-
-
-
-@app.get("/crm/lead/{phone}", response_class=HTMLResponse)
-async def view_crm_detail(request: Request, phone: str):
+# --- RUTAS DE INGRESO MANUAL ---
+@app.get("/manual-lead-entry", response_class=HTMLResponse)
+async def view_manual_lead_entry(request: Request):
     username = await get_current_user(request)
     client = MongoClient(Config.MONGO_URI)
     db = client[Config.DB_NAME]
     user = db["usuarios"].find_one({"username": username})
     
-    data = get_lead_detail_data(phone)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        return RedirectResponse(url="/crm?error=acceso_denegado")
+    
+    # LÓGICA FINAL SIMPLE: Usar estrictamente el correo/usuario con el que se identificó.
+    email = user.get("email") or user.get("username")
+    if email: email = email.strip()
+
+    return templates.TemplateResponse("manual_lead_entry.html", {
+        "request": request,
+        "user_email": email,
+        "user_role": user.get("rol", "agente"),
+        "user_name": user.get("nombre", "")
+    })
+
+@app.get("/api/leads/check-duplicate")
+async def api_check_duplicate(request: Request, phone: str = Query(...), property_code: str = Query(...)):
+    # Seguridad básica
+    await get_current_user(request)
+    exists, executive = check_lead_duplicate(phone, property_code)
+    return {"exists": exists, "assigned_to": executive}
+
+@app.post("/api/leads/manual")
+async def api_create_manual_lead(request: Request):
+    username = await get_current_user(request)
+    client = MongoClient(Config.MONGO_URI)
+    db = client[Config.DB_NAME]
+    user = db["usuarios"].find_one({"username": username})
+    
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    data = await request.json()
+    result = create_manual_lead(data)
+    
+    if result.get("status") == "ok":
+        return result
+    else:
+        raise HTTPException(status_code=400, detail=result.get("message"))
+
+
+# ========================= 6. RUTAS CRM (MODIFICADAS PARA HORA LOCAL) =========================
+
+
+
+@app.get("/crm/lead/{phone}", response_class=HTMLResponse)
+async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None)):
+    username = await get_current_user(request)
+    client = MongoClient(Config.MONGO_URI)
+    db = client[Config.DB_NAME]
+    user = db["usuarios"].find_one({"username": username})
+    
+    data = get_lead_detail_data(phone, property_code=codigo)
     if not data: 
         return HTMLResponse("Lead no encontrado")
     

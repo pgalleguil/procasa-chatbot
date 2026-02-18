@@ -2421,7 +2421,13 @@
                     style="max-height: 30px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
                     onerror="this.style.display='none'"> <span>PROCASA</span>
             </div>
-            <a href="/crm" class="nav-link"><i class="fa-solid fa-arrow-left"></i> <span>Volver</span></a>
+            <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i>
+                <span>Dashboard</span></a>
+            {% if user_role in ['supervisor', 'admin'] %}
+            <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
+                    Manual</span></a>
+            {% endif %}
+            <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
 
             <!-- BOTÓN DE TEMA AGREGADO -->
             <a href="#" class="nav-link theme-toggle" onclick="toggleTheme()">

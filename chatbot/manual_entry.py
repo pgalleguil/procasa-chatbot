@@ -100,11 +100,9 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
     
     lead_doc = {
         "phone": phone or f"no-phone-{now.timestamp()}", 
-        "nombre": name,
-        "email": email,
-        "created_at": now,
-        "updated_at": now,
-        "last_crm_update": now,
+        "created_at": now.isoformat(),
+        "updated_at": now.isoformat(),
+        "last_crm_update": now.isoformat(),
         "source_type": "manual",
         "origen": origen,
         "stage": PipelineStage.NEW,
@@ -119,14 +117,14 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
             "canal_origen": origen
         },
         "lifecycle": {
-            "created_at": now,
-            "assigned_at": now
+            "created_at": now.isoformat(),
+            "assigned_at": now.isoformat()
         },
         "messages": [
             {
                 "role": "system",
                 "content": f"Lead ingresado manualmente. Origen: {origen}",
-                "timestamp": now
+                "timestamp": now.isoformat()
             }
         ],
         "stage_history": [
@@ -134,7 +132,7 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
                 "from": None,
                 "to": PipelineStage.NEW,
                 "actor": "supervisor",
-                "timestamp": now,
+                "timestamp": now.isoformat(),
                 "notes": "Ingreso manual"
             }
         ]

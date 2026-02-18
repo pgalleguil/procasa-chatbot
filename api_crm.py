@@ -82,8 +82,10 @@ def process_chat_timeline(messages):
         
         ts_obj = msg.get("timestamp")
         if isinstance(ts_obj, str):
-            try: ts_obj = datetime.fromisoformat(ts_obj)
-            except: pass
+            try: ts_obj = datetime.fromisoformat(ts_obj.replace('Z', ''))
+            except: ts_obj = datetime.min
+        
+        if ts_obj is None: ts_obj = datetime.min
             
         processed.append({
             "role": css_class, 
@@ -527,8 +529,10 @@ def get_lead_detail_data(phone, property_code=None):
         
         ts_obj = evt["timestamp"]
         if isinstance(ts_obj, str):
-            try: ts_obj = datetime.fromisoformat(ts_obj)
-            except: pass
+            try: ts_obj = datetime.fromisoformat(ts_obj.replace('Z', ''))
+            except: ts_obj = datetime.min
+        
+        if ts_obj is None: ts_obj = datetime.min
             
         # ETIQUETAS DINÁMICAS PARA EL HISTORIAL (Mejorado para evitar "Evento CRM")
         type_labels = {
@@ -617,10 +621,10 @@ def get_lead_detail_data(phone, property_code=None):
         "email": prospecto.get("email", "No registrado"),
         "rut": prospecto.get("rut", "No registrado"),
         "crm_estado": crm_state,
-        "next_action_date": next_task["execute_at"].isoformat() if next_task else None,
+        "next_action_date": next_task["execute_at"].isoformat() if next_task and isinstance(next_task["execute_at"], datetime) else (next_task["execute_at"] if next_task else None),
         "last_action_label": formatted_new_history[0]["user_action"] if formatted_new_history else "Sin gestión aún",
         "last_action_relative": format_relative_time(formatted_new_history[0]["timestamp"]) if formatted_new_history else None,
-        "last_crm_update": lead.get("last_crm_update").isoformat() if lead.get("last_crm_update") else None,
+        "last_crm_update": lead.get("last_crm_update").isoformat() if isinstance(lead.get("last_crm_update"), datetime) else lead.get("last_crm_update"),
         "crm_history": formatted_new_history, 
         "sticky_notes": lead.get("sticky_notes", []),
         "datos_propiedad": datos_propiedad,

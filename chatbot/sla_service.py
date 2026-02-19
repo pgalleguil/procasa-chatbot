@@ -62,7 +62,8 @@ async def monitor_sla_thresholds():
     # 2. Obtener eventos relevantes (notificaciones iniciales y gestiones) para todos
     relevant_event_types = ["alert_sent", "ALERT", "ASSIGNMENT"] + [
         "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
-        "CLICK_PHONE_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
+        "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", 
+        "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
     ]
     
     events_by_phone = {}
@@ -75,35 +76,57 @@ async def monitor_sla_thresholds():
     # --- PROCESAMIENTO EN MEMORIA ---
     management_types = [
         "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
-        "CLICK_PHONE_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
+        "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", 
+        "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
     ]
     initial_notif_types = ["alert_sent", "ALERT", "ASSIGNMENT", "assignment", "alert"]
 
     for phone_clean, lead in lead_by_phone.items():
         try:
-            # 1. Calcular tiempo inicial (Asegurar que tenemos referencia antes de filtrar eventos)
-            raw_start = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
-            if not raw_start: continue
+            # 1. Tiempos de referencia
+            raw_assigned = lead.get("lifecycle", {}).get("assigned_at")
+            raw_created = lead.get("created_at")
+            
+            if not raw_assigned: continue # Si no está asignado, no hay SLA que medir aquí
 
             try:
-                if isinstance(raw_start, str): 
-                    start_dt = datetime.fromisoformat(raw_start.replace("Z", ""))
-                else: 
-                    start_dt = raw_start
-                if start_dt.tzinfo is None: start_dt = CHILE_TZ.localize(start_dt)
+                assigned_dt = datetime.fromisoformat(raw_assigned.replace("Z", ""))
+                if assigned_dt.tzinfo is None: assigned_dt = CHILE_TZ.localize(assigned_dt)
+                
+                # Para búsqueda de gestiones, usamos el tiempo de creación como base
+                # para capturar gestiones proactivas pre-asignación oficial
+                created_dt = datetime.fromisoformat(raw_created.replace("Z", ""))
+                if created_dt.tzinfo is None: created_dt = CHILE_TZ.localize(created_dt)
             except: continue
 
-            # 2. Filtrar eventos por fecha (SOLO eventos posteriores a la asignación actual)
+            # 2. Filtrar eventos por fecha (Gestiones desde creación, Alertas desde asignación)
             phone_events = events_by_phone.get(phone_clean, [])
             current_events = []
+            has_management_ever = False
+
             for e in phone_events:
                 e_ts = e.get("timestamp")
                 if isinstance(e_ts, str): e_ts = datetime.fromisoformat(e_ts.replace("Z", ""))
                 if e_ts.tzinfo is None: e_ts = CHILE_TZ.localize(e_ts)
                 
-                # Tolerancia de 1 minuto para capturar el ASSIGNMENT que ocurre casi al mismo tiempo
-                if e_ts >= (start_dt - timedelta(minutes=1)):
+                # ¿Es una gestión? (Buscamos desde creación)
+                if e.get("type") in management_types and e_ts >= (created_dt - timedelta(minutes=5)):
+                    has_management_ever = True
+                
+                # ¿Es un evento relevante para el flujo actual? (Desde asignación)
+                if e_ts >= (assigned_dt - timedelta(minutes=1)):
                     current_events.append(e)
+
+            # 3. CRITERIO DE EXCLUSIÓN: Si ya tiene gestión (incluso pre-asignación), NO ALERTAR.
+            if has_management_ever:
+                if not any(w.get("status") == "ignored_already_managed" for w in existing):
+                    db["crm_sla_warnings"].insert_one({
+                        "phone": phone_clean,
+                        "status": "ignored_already_managed",
+                        "reason": "proactive_management_detected",
+                        "timestamp": datetime.now(CHILE_TZ).isoformat()
+                    })
+                continue
 
             # 3. Verificar si ya tiene advertencia CRÍTICA (Red)
             # Si ya se envió roja, no molestamos más.

@@ -1023,9 +1023,9 @@ async def process_pending_leads_loop():
                             )
                             if success: mark_notification_sent(p["_id"])
 
-                        # Throttling Anti-Spam: 10 segundos entre ejecutivos
-                        logger.info(f"[BACKGROUND] Pausa anti-spam (10s) para siguiente destinatario...")
-                        await asyncio.sleep(10)
+                        # Throttling Anti-Spam: 30 segundos entre ejecutivos (Aumentado por precaución de Meta)
+                        logger.info(f"[BACKGROUND] Pausa anti-spam (30s) para siguiente destinatario...")
+                        await asyncio.sleep(30)
                         
         except Exception as e:
             logger.error(f"[BACKGROUND] Error en loop de pendientes: {e}")

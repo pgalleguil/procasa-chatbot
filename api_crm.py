@@ -353,7 +353,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             # Corrección Visual de Estado: Promoción por gestión ANY (Lead o Propietario)
             management_types = [
                 "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
-                "CLICK_PHONE_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
+                "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", 
+                "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
             ]
             
             if estado_final == PipelineStage.NEW and (evt_type in management_types or meta.get("result")):

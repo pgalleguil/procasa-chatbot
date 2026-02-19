@@ -56,7 +56,8 @@ def check_lead_duplicate(phone: Optional[str], property_code: str, email: Option
     
     existing = db["leads"].find_one(query)
     if existing:
-        exec_name = existing.get("ejecutivo_asignado") or existing.get("prospecto", {}).get("ejecutivo") or "No asignado"
+        from .constants import UNASSIGNED_LABEL
+        exec_name = existing.get("ejecutivo_asignado") or existing.get("prospecto", {}).get("ejecutivo") or UNASSIGNED_LABEL
         return True, exec_name
     
     return False, None
@@ -119,6 +120,9 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
             "timestamp": now.isoformat()
         })
 
+    from .lead_router import get_next_business_slot
+    assigned_at = get_next_business_slot(now)
+
     lead_doc = {
         "phone": final_phone, 
         "created_at": now.isoformat(),
@@ -139,7 +143,7 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
         },
         "lifecycle": {
             "created_at": now.isoformat(),
-            "assigned_at": now.isoformat()
+            "assigned_at": assigned_at.isoformat()
         },
         "messages": messages,
         "stage_history": [

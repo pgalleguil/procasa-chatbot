@@ -97,7 +97,7 @@ def process_chat_timeline(messages):
 # --- REGISTRO DE EVENTOS (Delegado a storage) ---
 from chatbot.storage import log_event # Usamos el logger centralizado
 from chatbot.crm_service import CrmService
-from chatbot.constants import PipelineStage, InteractionType
+from chatbot.constants import PipelineStage, InteractionType, UNASSIGNED_LABEL
 
 # log_crm_event se mantiene como alias por compatibilidad pero usa storage
 def log_crm_event(phone, event_type, agent="Sistema", meta_data=None):
@@ -393,7 +393,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         
         ejecutivo = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
         
-        if not ejecutivo or ejecutivo == "No asignado":
+        if not ejecutivo or ejecutivo in [UNASSIGNED_LABEL, "No asignado", "Sin Asignar", "Sin asignar"]:
              sla_status = "pending"
              sla_label = "Pendiente Asignación"
              
@@ -450,7 +450,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             "url_propiedad": f"https://www.procasa.cl/propiedad/{detect_property_code(lead)}" if detect_property_code(lead) else "#",
             "ultima_accion_titulo": last_action_text,
             "ultima_accion_note": last_action_note,
-            "ejecutivo_nombre": ejecutivo or "No asignado",
+            "ejecutivo_nombre": ejecutivo or UNASSIGNED_LABEL,
             "fecha_asignacion_relativa": format_relative_time(lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion")),
             "stage": lead.get("stage") or "new"
         })

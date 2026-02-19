@@ -5,6 +5,8 @@ import pytz
 # Configuración de Zona Horaria Chile
 CHILE_TZ = pytz.timezone('Chile/Continental')
 
+UNASSIGNED_LABEL = "No Asignado"
+
 class PipelineStage(str, Enum):
     NEW = "NEW"
     CONTACTED = "CONTACTED"     # El BOT solo puede llegar hasta aquí

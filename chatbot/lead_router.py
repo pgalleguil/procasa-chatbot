@@ -24,7 +24,7 @@ SUSANA_ENSIGNIA = "Susana Ensignia"
 MARIELA_ARRIAGADA = "Mariela Arriagada"
 RAQUEL_CHENEAUX = "Raquel Cheneaux"
 PAULA_MORALES = "Paula Morales"
-ROCIO_ALIAGA = "Rocio Aliaga"
+ROCIO_ALIAGA = "Rocío Aliaga"
 
 # --- MODO VACACIONES ---
 # Agregue aquí los nombres de los ejecutivos que no están disponibles
@@ -58,13 +58,10 @@ def normalize_text(text: str) -> str:
     """Normalize text for comparison (lowercase, strip accents)."""
     if not text:
         return ""
-    replacements = (
-        ("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"),
-        ("ñ", "n"), ("ü", "u")
-    )
-    text = text.lower().strip()
-    for a, b in replacements:
-        text = text.replace(a, b)
+    import unicodedata
+    text = str(text).lower().strip()
+    # Normalize unicode to decompose accents, then filter them out
+    text = "".join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
     return text
 
 def should_send_now() -> bool:
@@ -125,7 +122,7 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
         if candidate in EXECUTIVES_ON_VACATION:
             logger.info(f"[ROUTER] Saltando a {candidate} (En modo vacaciones).")
             continue
-
+    
         # Filtro Mariela: Si es Mariela, debe ser comuna de prioridad
         if candidate == MARIELA_ARRIAGADA:
             if not any(c in norm_comuna for c in mariela_comunas):
@@ -147,17 +144,25 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
 def get_executive_phone(executive_name: str) -> Optional[str]:
     """
     Look up executive phone in 'usuarios' collection (field 'telefono' or 'movil').
+    Uses robust normalization for matching.
     """
+    if not executive_name or executive_name == "Sin Asignar":
+        return None
+
     db = get_db()
-    # 1. Prioridad: Buscar en la colección 'usuarios'
+    # 1. Intento directo exacto
     user = db["usuarios"].find_one({"nombre": executive_name})
     
+    # 2. Si falla, búsqueda robusta por normalización
     if not user:
-        import re
-        user = db["usuarios"].find_one({"nombre": {"$regex": f"^{re.escape(executive_name)}$", "$options": "i"}})
-        
+        norm_target = normalize_text(executive_name)
+        all_users = list(db["usuarios"].find({}, {"nombre": 1, "telefono": 1, "tel": 1, "movil": 1}))
+        for candidate in all_users:
+            if normalize_text(candidate.get("nombre")) == norm_target:
+                user = candidate
+                break
+                
     if user:
-        # Buscamos el campo 'telefono' (según sugeriste), 'tel' o 'movil'
         phone = user.get("telefono") or user.get("tel") or user.get("movil")
         if phone:
             logger.info(f"[LOOKUP] Usuario encontrado: {user.get('nombre')} | Tel: {phone}")
@@ -192,8 +197,8 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     
     if not prop:
         logger.warning(f"[ROUTER] Propiedad {property_code} NO encontrada en universo_obelix (ni en portales).")
-        # FALLBACK ROBUSTO: Retornar Administrativo o Default para no romper el flujo
-        return "Sin Asignar", "+56900000000" 
+        from .constants import UNASSIGNED_LABEL
+        return UNASSIGNED_LABEL, "+56900000000" 
 
     original_executive = prop.get("ejecutivo", "")
     logger.info(f"[ROUTER] Propiedad encontrada. Ejecutivo original en ficha: '{original_executive}'")
@@ -285,5 +290,31 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
         f"🔗 *Ver y Gestionar en CRM*:\n{crm_url}\n\n"
         f"💡 _Recuerda ingresar con tu correo corporativo Procasa._\n"
         f"¡Mucho éxito con la gestión! 🚀"
+    )
+    return template
+
+def format_summary_whatsapp_template(leads_list: list, executive_name: str) -> str:
+    """
+    Formats a single message summarizing multiple new leads for an executive.
+    """
+    header = f"🚀 *{len(leads_list)} Nuevos Leads Asignados*"
+    
+    leads_details = ""
+    for i, lead in enumerate(leads_list, 1):
+        nombre = lead.get("nombre") or lead.get("prospecto_nombre") or "Cliente Desconocido"
+        p_code = lead.get("property_code") or "S/N"
+        canal = lead.get("canal") or lead.get("source") or "Directo"
+        
+        leads_details += f"\n{i}. *{nombre}* - Casa: {p_code} ({canal})"
+
+    crm_url = "https://procasa-chatbot-yr8d.onrender.com/"
+
+    template = (
+        f"{header}\n\n"
+        f"Hola {executive_name}, tienes {len(leads_list)} nuevos leads esperando tu gestión:\n"
+        f"{leads_details}\n\n"
+        f"🔗 *Gestionar todos en el CRM*:\n{crm_url}\n\n"
+        f"⚡ _Realiza la gestión a la brevedad para no perder la oportunidad._\n"
+        f"¡Mucho éxito! 🚀"
     )
     return template

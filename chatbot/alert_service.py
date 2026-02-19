@@ -98,10 +98,12 @@ async def send_alert_once(
         # 2. ENRUTAMIENTO INTELIGENTE (SOLO SI NO ESTÁ ASIGNADO)
         # Buscamos quién es el responsable REAL (según reglas JPC, Región, etc.)
         
+        from .constants import UNASSIGNED_LABEL
         assigned_exec = criteria.get("ejecutivo_asignado") or criteria.get("ejecutivo")
         
         # Si ya tiene ejecutivo y es válido (no un administrativo genérico), mantenemos al mismo.
-        if assigned_exec and assigned_exec != "Sin Asignar" and assigned_exec != "No Asignado":
+        unassigned_labels = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", "Sin asignar", "N/A"]
+        if assigned_exec and assigned_exec not in unassigned_labels:
              exec_name = assigned_exec
              # Intentamos obtener el teléfono de ese ejecutivo existente
              from .lead_router import get_executive_phone

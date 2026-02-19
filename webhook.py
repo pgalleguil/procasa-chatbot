@@ -951,54 +951,81 @@ async def process_pending_leads_loop():
             if should_send_now():
                 pending = get_pending_notifications()
                 if pending:
-                    logger.info(f"[BACKGROUND] Procesando {len(pending)} leads pendientes...")
-                    processed_phones = set()
+                    logger.info(f"[BACKGROUND] Analizando {len(pending)} envíos pendientes...")
                     
+                    # 1. Agrupar por ejecutivo (target_phone)
+                    by_executive = {}
                     for p in pending:
                         lead_data = p.get("lead_data", {})
-                        phone = lead_data.get("phone")
+                        target_phone = lead_data.get("target_phone") or p.get("target_phone")
                         
-                        if not phone:
+                        if not target_phone or target_phone == "+56900000000":
                             mark_notification_sent(p["_id"])
                             continue
                             
-                        if phone in processed_phones:
-                            mark_notification_sent(p["_id"])
-                            continue
+                        if target_phone not in by_executive:
+                            by_executive[target_phone] = {"name": p.get("target_name") or lead_data.get("target_name"), "items": []}
                         
-                        processed_phones.add(phone)
-                        
-                        target_phone = lead_data.get("target_phone") or p.get("target_phone")
-                        target_name = lead_data.get("target_name") or p.get("target_name")
-                        prop_code = lead_data.get("property_code")
-                        
-                        if target_phone:
-                            if target_phone == "+56900000000":
-                                mark_notification_sent(p["_id"])
-                                continue
+                        by_executive[target_phone]["items"].append(p)
 
+                    # 2. Procesar cada ejecutivo
+                    from chatbot.lead_router import format_whatsapp_template, format_summary_whatsapp_template
+                    from chatbot.notification_service import NotificationService
+                    from chatbot.crm_service import CrmService
+
+                    for target_phone, data in by_executive.items():
+                        items = data["items"]
+                        target_name = data["name"]
+                        
+                        # Si tiene más de uno, enviamos resumen agrupado
+                        if len(items) > 1:
+                            logger.info(f"[BACKGROUND] Enviando resumen de {len(items)} leads a {target_name}")
+                            msg = format_summary_whatsapp_template(items, target_name)
+                            
+                            # Marcamos todos como asignados en CRM y enviados
+                            for item in items:
+                                lead_phone = item.get("lead_data", {}).get("phone")
+                                if lead_phone:
+                                    try: CrmService.assign_executive(lead_phone, target_name, method="LeadRouter")
+                                    except: pass
+                            
+                            success = await NotificationService.send_notification(
+                                phone=target_phone,
+                                message=msg,
+                                alert_type="background_notification_group",
+                                meta={"to": target_name, "count": len(items)},
+                                dedup_window_minutes=5
+                            )
+                            
+                            if success:
+                                for item in items: mark_notification_sent(item["_id"])
+
+                        # Si es solo uno, enviamos el template normal
+                        else:
+                            p = items[0]
+                            lead_data = p.get("lead_data", {})
+                            lead_phone = lead_data.get("phone")
+                            prop_code = lead_data.get("property_code")
+                            
+                            logger.info(f"[BACKGROUND] Enviando lead individual {lead_phone} a {target_name}")
                             msg = format_whatsapp_template(lead_data, target_name, prop_code, is_new_assignment=True)
                             
-                            try:
-                                from chatbot.crm_service import CrmService
-                                CrmService.assign_executive(phone, target_name, method="LeadRouter")
-                            except Exception as e:
-                                logger.error(f"[BACKGROUND] Error asignando ejecutivo: {e}")
-
+                            if lead_phone:
+                                try: CrmService.assign_executive(lead_phone, target_name, method="LeadRouter")
+                                except: pass
+                                
                             success = await NotificationService.send_notification(
                                 phone=target_phone,
                                 message=msg,
                                 alert_type="background_notification",
-                                meta={"to": target_name, "is_background": True},
-                                dedup_window_minutes=10
+                                meta={"to": target_name},
+                                dedup_window_minutes=5
                             )
-                            
-                            if success:
-                                mark_notification_sent(p["_id"])
-                                logger.info(f"[BACKGROUND] Lead {phone} procesado exitosamente para {target_name}")
-                            
-                            # Aumentado a 6 segundos por rate limit de WASender (5s)
-                            await asyncio.sleep(6)
+                            if success: mark_notification_sent(p["_id"])
+
+                        # Throttling Anti-Spam: 10 segundos entre ejecutivos
+                        logger.info(f"[BACKGROUND] Pausa anti-spam (10s) para siguiente destinatario...")
+                        await asyncio.sleep(10)
                         
         except Exception as e:
             logger.error(f"[BACKGROUND] Error en loop de pendientes: {e}")

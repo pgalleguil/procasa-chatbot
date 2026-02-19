@@ -18,10 +18,16 @@ async def monitor_sla_thresholds():
         logger.debug("[SLA_MONITOR] Fuera de horario comercial. Saltando revisión.")
         return
 
+    from .constants import UNASSIGNED_LABEL
     db = get_db()
     
     # 1. Búsqueda Robusta de Leads en etapas iniciales
     # Incluimos leads donde el stage es NEW, CONTACTED o simplemente NO existe/es null.
+    # Excluimos explícitamente cualquier variante de "No Asignado" / "Sin Asignar"
+    unassigned_patterns = [
+        UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", "Sin asignar", 
+        "no asignado", "sin asignar", "N/A", "Desconocido"
+    ]
     query = {
         "$or": [
             {"pipeline_stage": {"$in": [PipelineStage.NEW, PipelineStage.CONTACTED]}},
@@ -31,7 +37,7 @@ async def monitor_sla_thresholds():
             {"stage": None},
             {"stage": {"$exists": False}}
         ],
-        "ejecutivo_asignado": {"$exists": True, "$nin": ["No asignado", "Sin Asignar"]}
+        "ejecutivo_asignado": {"$exists": True, "$nin": unassigned_patterns}
     }
     
     leads = list(db["leads"].find(query, {"messages": 0, "stage_history": 0}))

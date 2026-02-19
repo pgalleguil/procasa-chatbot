@@ -180,7 +180,10 @@ class CrmService:
     @staticmethod
     def assign_executive(phone: str, executive_name: str, method: str = "manual") -> bool:
         db = get_db()
-        now_iso = datetime.now(CHILE_TZ).isoformat()
+        from .lead_router import get_next_business_slot
+        
+        now_cl = datetime.now(CHILE_TZ)
+        assigned_at = get_next_business_slot(now_cl)
         
         res = db[COLLECTION_CONVERSATIONS].update_one(
             {"phone": phone},
@@ -188,7 +191,7 @@ class CrmService:
                 "$set": {
                     "ejecutivo_asignado": executive_name,
                     "prospecto.ejecutivo": executive_name,
-                    "lifecycle.assigned_at": now_iso
+                    "lifecycle.assigned_at": assigned_at.isoformat()
                 }
             }
         )

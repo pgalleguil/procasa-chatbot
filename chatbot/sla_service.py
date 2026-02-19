@@ -87,19 +87,25 @@ async def monitor_sla_thresholds():
             raw_assigned = lead.get("lifecycle", {}).get("assigned_at")
             raw_created = lead.get("created_at")
             
-            if not raw_assigned: continue # Si no está asignado, no hay SLA que medir aquí
+            if not raw_assigned: continue 
 
             try:
-                assigned_dt = datetime.fromisoformat(raw_assigned.replace("Z", ""))
-                if assigned_dt.tzinfo is None: assigned_dt = CHILE_TZ.localize(assigned_dt)
+                # Usamos start_dt para mantener compatibilidad con el resto del archivo
+                start_dt = datetime.fromisoformat(raw_assigned.replace("Z", ""))
+                if start_dt.tzinfo is None: start_dt = CHILE_TZ.localize(start_dt)
                 
-                # Para búsqueda de gestiones, usamos el tiempo de creación como base
-                # para capturar gestiones proactivas pre-asignación oficial
                 created_dt = datetime.fromisoformat(raw_created.replace("Z", ""))
                 if created_dt.tzinfo is None: created_dt = CHILE_TZ.localize(created_dt)
             except: continue
 
-            # 2. Filtrar eventos por fecha (Gestiones desde creación, Alertas desde asignación)
+            # 2. Cargar advertencias existentes para este lead específico
+            existing = list(db["crm_sla_warnings"].find({"phone": phone_clean}))
+            has_red_warning = any(w.get("level") == "critical" for w in existing)
+            has_orange_warning = any(w.get("level") == "near_critical" for w in existing)
+            
+            if has_red_warning: continue
+
+            # 3. Filtrar eventos por fecha (Gestiones desde creación, Alertas desde asignación)
             phone_events = events_by_phone.get(phone_clean, [])
             current_events = []
             has_management_ever = False
@@ -114,10 +120,10 @@ async def monitor_sla_thresholds():
                     has_management_ever = True
                 
                 # ¿Es un evento relevante para el flujo actual? (Desde asignación)
-                if e_ts >= (assigned_dt - timedelta(minutes=1)):
+                if e_ts >= (start_dt - timedelta(minutes=1)):
                     current_events.append(e)
 
-            # 3. CRITERIO DE EXCLUSIÓN: Si ya tiene gestión (incluso pre-asignación), NO ALERTAR.
+            # 4. CRITERIO DE EXCLUSIÓN: Si ya tiene gestión (incluso pre-asignación), NO ALERTAR.
             if has_management_ever:
                 if not any(w.get("status") == "ignored_already_managed" for w in existing):
                     db["crm_sla_warnings"].insert_one({
@@ -128,16 +134,7 @@ async def monitor_sla_thresholds():
                     })
                 continue
 
-            # 3. Verificar si ya tiene advertencia CRÍTICA (Red)
-            # Si ya se envió roja, no molestamos más.
-            # Si se envió solo naranja, permitimos una roja más tarde.
-            existing = list(db["crm_sla_warnings"].find({"phone": phone_clean}))
-            has_red_warning = any(w.get("level") == "critical" for w in existing)
-            has_orange_warning = any(w.get("level") == "near_critical" for w in existing)
-
-            if has_red_warning: continue
-
-            # 4. Verificar notificación inicial (Cualquier alerta de asignación)
+            # 5. Verificar notificación inicial (Cualquier alerta de asignación)
             has_initial = any(e["type"] in initial_notif_types for e in current_events)
             if not has_initial:
                 # Caso borde: Si no hay evento pero tiene 'assigned_at' reciente, confiamos en el campo
@@ -145,18 +142,6 @@ async def monitor_sla_thresholds():
                     has_initial = True
                 else:
                     continue
-
-            # 5. Verificar gestión humana RECIENTE
-            has_recent_mgmt = any(e["type"] in management_types for e in current_events)
-            if has_recent_mgmt:
-                # Marcar como gestionado para no procesar en el próximo loop
-                if not any(w.get("status") == "ignored_already_managed" for w in existing):
-                    db["crm_sla_warnings"].insert_one({
-                        "phone": phone_clean,
-                        "status": "ignored_already_managed",
-                        "timestamp": datetime.now(CHILE_TZ).isoformat()
-                    })
-                continue
 
             diff = datetime.now(CHILE_TZ) - start_dt
             minutes_diff = diff.total_seconds() / 60
@@ -178,13 +163,12 @@ async def monitor_sla_thresholds():
                 nombre_cliente = lead.get("prospecto", {}).get("nombre", "Cliente")
                 message = format_sla_warning_message(ejecutivo, nombre_cliente, level)
                 
-                
                 sent = await NotificationService.send_notification(
                     phone=exec_phone,
                     message=message,
                     alert_type=f"SLA_{level.upper()}",
                     meta={"to": ejecutivo, "level": level},
-                    dedup_window_minutes=30 # 30 min para SLA
+                    dedup_window_minutes=30
                 )
 
                 if sent:

@@ -23,6 +23,8 @@ ERIKA_GARRIDO = "Erika Garrido"
 SUSANA_ENSIGNIA = "Susana Ensignia"
 MARIELA_ARRIAGADA = "Mariela Arriagada"
 RAQUEL_CHENEAUX = "Raquel Cheneaux"
+PAULA_MORALES = "Paula Morales"
+ROCIO_ALIAGA = "Rocio Aliaga"
 
 # --- MODO VACACIONES ---
 # Agregue aquí los nombres de los ejecutivos que no están disponibles
@@ -206,7 +208,7 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
 
     # REGLA 0: Si el ejecutivo de la ficha ya es uno de los nuestros, se queda con él (Lo lógico)
     # PERO: Respetamos si está de vacaciones y redirigimos a su reemplazo
-    our_team = ROUND_ROBIN_TEAM # Erika, Mariela, Susana, Raquel
+    our_team = [ERIKA_GARRIDO, MARIELA_ARRIAGADA, SUSANA_ENSIGNIA, RAQUEL_CHENEAUX, PAULA_MORALES, ROCIO_ALIAGA]
     if any(normalize_text(member) in norm_exec for member in our_team):
         logger.info(f"[ROUTER] Propiedad ya pertenece a alguien del equipo ({original_executive}). Verificando disponibilidad.")
         target_executive_name = get_active_executive(original_executive)
@@ -216,9 +218,20 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
         # 1.1 RM -> Round Robin entre los 4 (Con filtro Mariela interno)
         if "metropolitana" in norm_region or "xiii" in norm_region:
             target_executive_name = get_next_round_robin_executive(norm_comuna)
-        # 1.2 Otras Regiones -> Erika Garrido (O su reemplazo)
+        
+        # 1.2 Región del Maule (VII) -> Paula Morales
+        elif "maule" in norm_region or "vii" in norm_region:
+             logger.info(f"[ROUTER] Propiedad de JPC en Maule. Asignando a {PAULA_MORALES}")
+             target_executive_name = get_active_executive(PAULA_MORALES)
+             
+        # 1.3 Ñuble (XVI) o Bío Bío (VIII) -> Rocío Aliaga
+        elif any(r in norm_region for r in ["nuble", "bio", "xvi", "viii"]):
+             logger.info(f"[ROUTER] Propiedad de JPC en Ñuble/BioBio. Asignando a {ROCIO_ALIAGA}")
+             target_executive_name = get_active_executive(ROCIO_ALIAGA)
+
+        # 1.4 Otras Regiones (Físicas/Norte/Otras) -> Erika Garrido
         else:
-            logger.info(f"[ROUTER] Propiedad de JPC fuera de RM ({region}). Buscando activo.")
+            logger.info(f"[ROUTER] Propiedad de JPC en otra región ({region}). Asignando a {ERIKA_GARRIDO}")
             target_executive_name = get_active_executive(ERIKA_GARRIDO)
     
     # Get phone for the determined executive

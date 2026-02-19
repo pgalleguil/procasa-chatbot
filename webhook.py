@@ -473,10 +473,10 @@ async def view_manual_lead_entry(request: Request):
     })
 
 @app.get("/api/leads/check-duplicate")
-async def api_check_duplicate(request: Request, phone: str = Query(...), property_code: str = Query(...)):
+async def api_check_duplicate(request: Request, phone: str = Query(None), property_code: str = Query(...), email: str = Query(None)):
     # Seguridad básica
     await get_current_user(request)
-    exists, executive = check_lead_duplicate(phone, property_code)
+    exists, executive = check_lead_duplicate(phone, property_code, email)
     return {"exists": exists, "assigned_to": executive}
 
 @app.post("/api/leads/manual")

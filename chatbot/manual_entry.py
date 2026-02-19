@@ -70,15 +70,19 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
     import re
     phone_digits = re.sub(r"\D", "", data.get("phone", ""))
     
-    # Normalización para Chile: si tiene 9 dígitos, anteponemos 56
+    # Normalización para Chile: si tiene 9 dígitos, anteponemos +56
+    # Si ya tiene prefijo o es internacional, nos aseguramos que empiece con +
     if len(phone_digits) == 9:
-        phone = "56" + phone_digits
+        phone = "+56" + phone_digits
+    elif phone_digits:
+        phone = "+" + phone_digits
     else:
-        phone = phone_digits
+        phone = None
 
     property_code = str(data.get("property_code", "")).strip()
     name = data.get("nombre", "").strip()
     email = data.get("email", "").strip()
+    mensaje = data.get("mensaje", "").strip()
     origen = data.get("origen", data.get("channel", "Manual")) # Fallback to channel if origen missing
 
     if not property_code:
@@ -97,9 +101,26 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
     
     # 3. Prepare Lead Document
     now = datetime.now(CHILE_TZ)
+    final_phone = phone or f"no-phone-{now.timestamp()}"
     
+    messages = [
+        {
+            "role": "system",
+            "content": f"Lead ingresado manualmente. Origen: {origen}",
+            "timestamp": now.isoformat()
+        }
+    ]
+
+    # Si el usuario ingresó un mensaje inicial, lo agregamos como primer mensaje del usuario
+    if mensaje:
+        messages.append({
+            "role": "user",
+            "content": mensaje,
+            "timestamp": now.isoformat()
+        })
+
     lead_doc = {
-        "phone": phone or f"no-phone-{now.timestamp()}", 
+        "phone": final_phone, 
         "created_at": now.isoformat(),
         "updated_at": now.isoformat(),
         "last_crm_update": now.isoformat(),
@@ -120,13 +141,7 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
             "created_at": now.isoformat(),
             "assigned_at": now.isoformat()
         },
-        "messages": [
-            {
-                "role": "system",
-                "content": f"Lead ingresado manualmente. Origen: {origen}",
-                "timestamp": now.isoformat()
-            }
-        ],
+        "messages": messages,
         "stage_history": [
             {
                 "from": None,
@@ -158,7 +173,7 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
 
         # 6. Notify Executive
         notification_data = {
-            "phone": phone,
+            "phone": final_phone,
             "email": email,
             "target_phone": exec_phone,
             "target_name": exec_name,
@@ -174,7 +189,7 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
             "lead_id": lead_id,
             "assigned_to": exec_name,
             "exec_phone": exec_phone,
-            "phone": phone,
+            "phone": final_phone,
             "property_code": property_code
         }
     except Exception as e:

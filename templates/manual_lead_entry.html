@@ -339,7 +339,8 @@
                         <!-- NOMBRE -->
                         <div class="col-md-6">
                             <label class="form-label">Nombre del Cliente</label>
-                            <input type="text" name="nombre" class="form-control" placeholder="Juan Pérez" required>
+                            <input type="text" id="nombre" name="nombre" class="form-control" placeholder="Juan Pérez"
+                                required>
                         </div>
 
                         <!-- EMAIL -->
@@ -351,13 +352,24 @@
 
                         <!-- ORIGEN -->
                         <div class="col-md-6">
-                            <label class="form-label">Origen</label>
-                            <select name="origen" class="form-select" required>
-                                <option value="PortalInmobiliario">PortalInmobiliario</option>
+                            <label class="form-label">Origen (Requerido)</label>
+                            <select name="origen" id="origen" class="form-select" required>
+                                <option value="" selected disabled>Seleccione un origen...</option>
+                                <option value="Portal Inmobiliario">Portal Inmobiliario</option>
                                 <option value="MercadoLibre">MercadoLibre</option>
                                 <option value="ChilePropiedades">ChilePropiedades</option>
                                 <option value="Yapo">Yapo</option>
+                                <option value="Facebook">Facebook</option>
+                                <option value="Referido">Referido</option>
+                                <option value="Otro">Otro</option>
                             </select>
+                        </div>
+
+                        <!-- MENSAJE -->
+                        <div class="col-12">
+                            <label class="form-label">Mensaje o Nota Inicial (Opcional)</label>
+                            <textarea name="mensaje" class="form-control" rows="3"
+                                placeholder="Escribe aquí cualquier detalle adicional que el ejecutivo deba saber..."></textarea>
                         </div>
 
                         <div class="col-12">
@@ -375,6 +387,21 @@
     <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
     <script>
         let isVerified = false;
+        let lastVerifiedData = { phone: '', email: '', property_code: '' };
+
+        // AUTO-TRIM Y CAPITALIZAR
+        ['nombre', 'email', 'property_code'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('blur', function () {
+                if (!this.value) return;
+                this.value = this.value.trim();
+
+                if (id === 'nombre') {
+                    this.value = this.value.toLowerCase().split(' ').map(s => s.charAt(0).toUpperCase() + s.substring(1)).join(' ');
+                }
+            });
+        });
 
         // VERIFICACIÓN DE DUPLICADOS
         document.getElementById('btnVerify').addEventListener('click', async () => {
@@ -400,9 +427,12 @@
             statusDiv.innerHTML = '';
 
             try {
-                const cleanPhone = phone ? phone.replace(/[^0-9]/g, "") : "";
+                const cleanDigits = phone ? phone.replace(/[^0-9]/g, "") : "";
+                // Normalizamos con +56 para la verificación también
+                const normalizedPhone = cleanDigits.length === 9 ? "56" + cleanDigits : cleanDigits;
+
                 let url = `/api/leads/check-duplicate?property_code=${propertyCode}`;
-                if (cleanPhone) url += `&phone=${cleanPhone}`;
+                if (normalizedPhone) url += `&phone=${normalizedPhone}`;
                 if (email) url += `&email=${encodeURIComponent(email)}`;
 
                 const response = await fetch(url);
@@ -422,6 +452,7 @@
                     </div>`;
                     showToast("Validación exitosa", "success");
                     isVerified = true;
+                    lastVerifiedData = { phone: phone, email: email, property_code: propertyCode };
                     document.getElementById('btnSubmit').disabled = false;
                 }
             } catch (error) {
@@ -432,13 +463,30 @@
             }
         });
 
-        // RESET VERIFICATION ON INPUT CHANGE
-        ['phone', 'email', 'property_code'].forEach(id => {
+        // RESET VERIFICATION ONLY IF CRITICAL FIELDS CHANGE FROM LAST VERIFIED STATE
+        ['phone', 'property_code'].forEach(id => {
             document.getElementById(id).addEventListener('input', () => {
+                const currentVal = document.getElementById(id).value.trim();
+                // Si el valor actual es diferente al que se verificó, invalidamos
+                if (currentVal !== (id === 'phone' ? lastVerifiedData.phone : lastVerifiedData.property_code)) {
+                    isVerified = false;
+                    document.getElementById('btnSubmit').disabled = true;
+                    document.getElementById('duplicateStatus').innerHTML = '';
+                    console.log(`Verificación invalidada por cambio en ${id}`);
+                }
+            });
+        });
+
+        // El email es especial: si se verificó SIN email, agregar uno no invalida la verificación del teléfono/código
+        document.getElementById('email').addEventListener('input', () => {
+            // Solo invalidamos si se verificó CON un email y ahora es distinto.
+            // Si no había email verificado, dejamos que agregue uno sin forzar re-verificación
+            const currentEmail = document.getElementById('email').value.trim();
+            if (lastVerifiedData.email && currentEmail !== lastVerifiedData.email) {
                 isVerified = false;
                 document.getElementById('btnSubmit').disabled = true;
                 document.getElementById('duplicateStatus').innerHTML = '';
-            });
+            }
         });
 
         // SUBMISSION
@@ -460,7 +508,7 @@
             // Clean phone if present
             if (data.phone) {
                 let digits = data.phone.replace(/\D/g, "");
-                // Si tiene 9 dígitos, anteponemos 56. Si ya tiene 11 o más, lo dejamos tal cual (solo dígitos).
+                // Normalización con +56 (Backend ya se encarga del + pero lo enviamos limpio aquí para consistencia)
                 data.phone = (digits.length === 9) ? "56" + digits : digits;
             }
 
@@ -476,10 +524,19 @@
 
                 const result = await response.json();
                 if (response.ok) {
-                    showToast(`Lead creado y asignado a ${result.assigned_to}`, "success");
-                    setTimeout(() => {
-                        window.location.href = `/crm/lead/${result.phone}?codigo=${result.property_code}`;
-                    }, 1500);
+                    // MANTENER EN LA PÁGINA Y LIMPIAR CAMPOS
+                    showToast(`Lead creado exitosamente y asignado a ${result.assigned_to}`, "success");
+
+                    // Resetear formulario y estados
+                    e.target.reset();
+                    isVerified = false;
+                    lastVerifiedData = { phone: '', email: '', property_code: '' };
+                    document.getElementById('btnSubmit').disabled = true;
+                    document.getElementById('duplicateStatus').innerHTML = `
+                        <div class="status-badge" style="display: flex; background: rgba(34, 197, 94, 0.1); color: var(--success-color); border: 1px solid var(--success-color);">
+                            <i class="fa-solid fa-check-circle"></i> 
+                            Último lead creado: <a href="/crm/lead/${result.phone}?codigo=${result.property_code}" target="_blank" style="color: inherit; text-decoration: underline;">Ver ficha aquí</a>
+                        </div>`;
                 } else {
                     showToast(result.detail || result.message || "Error al crear lead", "error");
                 }

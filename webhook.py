@@ -959,7 +959,25 @@ async def process_pending_leads_loop():
                         lead_data = p.get("lead_data", {})
                         target_phone = lead_data.get("target_phone") or p.get("target_phone")
                         
+                        # Fix: Si no hay teléfono o es el dummy, intentamos re-enrutar antes de descartar
                         if not target_phone or target_phone == "+56900000000":
+                            from chatbot.lead_router import find_responsible_executive
+                            lead_phone = lead_data.get("phone")
+                            p_code = lead_data.get("property_code")
+                            if p_code:
+                                logger.info(f"[BACKGROUND] Re-enrutando lead {lead_phone} por falta de destino válido...")
+                                new_exec, new_phone = find_responsible_executive(p_code)
+                                if new_phone and new_phone != "+56900000000":
+                                    target_phone = new_phone
+                                    data["name"] = new_exec
+                                    # Actualizamos la data para que el mensaje se mande bien
+                                    lead_data["target_phone"] = new_phone
+                                    lead_data["target_name"] = new_exec
+                                    logger.info(f"[BACKGROUND] Re-enrutado exitosamente a {new_exec} ({new_phone})")
+                        
+                        if not target_phone or target_phone == "+56900000000":
+                            # Si después de re-enrutar sigue mal, lo marcamos para no ciclar eternamente
+                            logger.warning(f"[BACKGROUND] Skipped: No se pudo encontrar destino válido para lead {lead_data.get('phone')}")
                             mark_notification_sent(p["_id"])
                             continue
                             
@@ -982,11 +1000,17 @@ async def process_pending_leads_loop():
                             logger.info(f"[BACKGROUND] Enviando resumen de {len(items)} leads a {target_name}")
                             msg = format_summary_whatsapp_template(items, target_name)
                             
-                            # Marcamos todos como asignados en CRM y enviados
+                            # Marcamos todos como asignados en CRM (solo si no tienen ejecutivo aún)
                             for item in items:
                                 lead_phone = item.get("lead_data", {}).get("phone")
                                 if lead_phone:
-                                    try: CrmService.assign_executive(lead_phone, target_name, method="LeadRouter")
+                                    try:
+                                        lead_db = CrmService._db()["leads"].find_one({"phone": lead_phone}) if hasattr(CrmService, '_db') else None
+                                        existing_exec = (lead_db or {}).get("ejecutivo_asignado") if lead_db else None
+                                        from chatbot.constants import UNASSIGNED_LABEL
+                                        unassigned = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
+                                        if not existing_exec or existing_exec in unassigned:
+                                            CrmService.assign_executive(lead_phone, target_name, method="LeadRouter")
                                     except: pass
                             
                             success = await NotificationService.send_notification(
@@ -1011,7 +1035,14 @@ async def process_pending_leads_loop():
                             msg = format_whatsapp_template(lead_data, target_name, prop_code, is_new_assignment=True)
                             
                             if lead_phone:
-                                try: CrmService.assign_executive(lead_phone, target_name, method="LeadRouter")
+                                try:
+                                    from chatbot.storage import get_db as _get_db
+                                    _lead_db = _get_db()["leads"].find_one({"phone": lead_phone})
+                                    existing_exec = (_lead_db or {}).get("ejecutivo_asignado")
+                                    from chatbot.constants import UNASSIGNED_LABEL
+                                    unassigned = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
+                                    if not existing_exec or existing_exec in unassigned:
+                                        CrmService.assign_executive(lead_phone, target_name, method="LeadRouter")
                                 except: pass
                                 
                             success = await NotificationService.send_notification(

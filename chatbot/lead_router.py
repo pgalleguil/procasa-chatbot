@@ -141,12 +141,14 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
     # Fallback extremo (si algo fallara en el loop)
     return get_active_executive(ERIKA_GARRIDO)
 
+from .constants import UNASSIGNED_LABEL
+
 def get_executive_phone(executive_name: str) -> Optional[str]:
     """
     Look up executive phone in 'usuarios' collection (field 'telefono' or 'movil').
     Uses robust normalization for matching.
     """
-    if not executive_name or executive_name == "Sin Asignar":
+    if not executive_name or executive_name == UNASSIGNED_LABEL:
         return None
 
     db = get_db()
@@ -195,21 +197,26 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     }
     prop = db["universo_obelix"].find_one(query)
     
+    norm_region = ""
+    norm_comuna = ""
+    norm_exec = ""
+    original_executive = ""
+    phone = None
+
     if not prop:
-        logger.warning(f"[ROUTER] Propiedad {property_code} NO encontrada en universo_obelix (ni en portales).")
-        from .constants import UNASSIGNED_LABEL
-        return UNASSIGNED_LABEL, "+56900000000" 
+        logger.warning(f"[ROUTER] Propiedad {property_code} NO encontrada en universo_obelix. Usando fallback.")
+        target_executive_name = UNASSIGNED_LABEL
+    else:
+        original_executive = prop.get("ejecutivo", "")
+        logger.info(f"[ROUTER] Propiedad encontrada. Ejecutivo original en ficha: '{original_executive}'")
+        region = prop.get("region", "")
+        comuna = prop.get("comuna", "")
+        
+        norm_region = normalize_text(region)
+        norm_comuna = normalize_text(comuna)
+        norm_exec = normalize_text(original_executive)
 
-    original_executive = prop.get("ejecutivo", "")
-    logger.info(f"[ROUTER] Propiedad encontrada. Ejecutivo original en ficha: '{original_executive}'")
-    region = prop.get("region", "")
-    comuna = prop.get("comuna", "")
-    
-    norm_region = normalize_text(region)
-    norm_comuna = normalize_text(comuna)
-    norm_exec = normalize_text(original_executive)
-
-    target_executive_name = original_executive # Default: El que viene en la ficha
+        target_executive_name = original_executive # Default: El que viene en la ficha
 
     # REGLA 0: Si el ejecutivo de la ficha ya es uno de los nuestros, se queda con él (Lo lógico)
     # PERO: Respetamos si está de vacaciones y redirigimos a su reemplazo
@@ -218,6 +225,11 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
         logger.info(f"[ROUTER] Propiedad ya pertenece a alguien del equipo ({original_executive}). Verificando disponibilidad.")
         target_executive_name = get_active_executive(original_executive)
     
+    # REGLA 0.1: Si el ejecutivo es el Supervisor (Pablo), redirigimos al Round Robin del equipo
+    #elif "pablo galleguillos" in norm_exec:
+    #    logger.info(f"[ROUTER] Propiedad de Supervisor ({original_executive}). Derivando al equipo (Round Robin).")
+    #    target_executive_name = get_next_round_robin_executive(norm_comuna)
+
     # REGLA 1: Jorge Pablo Caro (Distribución Especial)
     elif "jorge pablo caro" in norm_exec:
         # 1.1 RM -> Round Robin entre los 4 (Con filtro Mariela interno)
@@ -247,8 +259,14 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     if not phone and target_executive_name == original_executive:
          phone = prop.get("movil_ejecutivo") or prop.get("fono_ejecutivo")
 
-    # Final Safety Check: Asegurar que el ejecutivo final no esté de vacaciones (por si se coló por otra regla)
+    # Final Safety Check: Asegurar que el el final no esté de vacaciones (por si se coló por otra regla)
     target_executive_name = get_active_executive(target_executive_name)
+
+    # FALLBACK DE EMERGENCIA: Si no hay teléfono o es No Asignado, asignamos a Round Robin
+    if not phone or target_executive_name == UNASSIGNED_LABEL:
+        logger.warning(f"[ROUTER] Fallback: Ejecutivo '{target_executive_name}' sin teléfono. Asignando a Round Robin (RM).")
+        target_executive_name = get_next_round_robin_executive("")
+        phone = get_executive_phone(target_executive_name)
 
     return target_executive_name, phone
 

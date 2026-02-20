@@ -40,6 +40,9 @@ def check_lead_duplicate(phone: Optional[str], property_code: str, email: Option
     if not query_filters:
         return False, None
 
+    # PASO 1: Coincidencia por teléfono/email Y propiedad
+    # Corregimos el bug: Antes bloqueaba si el teléfono existía en CUALQUIER lead.
+    # Ahora permitimos que un mismo teléfono se interese en diferentes propiedades.
     query = {
         "$or": query_filters,
         "$and": [

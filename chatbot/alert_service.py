@@ -102,8 +102,8 @@ async def send_alert_once(
         assigned_exec = criteria.get("ejecutivo_asignado") or criteria.get("ejecutivo")
         
         # Si ya tiene ejecutivo y es válido (no un administrativo genérico), mantenemos al mismo.
-        unassigned_labels = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", "Sin asignar", "N/A"]
-        if assigned_exec and assigned_exec not in unassigned_labels:
+        # unassigned_labels = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", "Sin asignar", "N/A"]
+        if assigned_exec and assigned_exec != UNASSIGNED_LABEL and assigned_exec != "Sin Asignar" and assigned_exec != "N/A":
              exec_name = assigned_exec
              # Intentamos obtener el teléfono de ese ejecutivo existente
              from .lead_router import get_executive_phone

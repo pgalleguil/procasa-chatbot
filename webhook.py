@@ -1055,7 +1055,7 @@ async def process_pending_leads_loop():
                             )
                             if success: mark_notification_sent(p["_id"])
 
-                        # TThrottling Anti-Spam: 30 segundos entre ejecutivos (Aumentado por precaución de Meta)
+                        # Throttling Anti-Spam: 30 segundos entre ejecutivos (Aumentado por precaución de Meta)
                         logger.info(f"[BACKGROUND] Pausa anti-spam (30s) para siguiente destinatario...")
                         await asyncio.sleep(30)
                         

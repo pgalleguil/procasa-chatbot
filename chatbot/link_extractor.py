@@ -9,7 +9,7 @@ def extraer_codigo_mercadolibre(url: str) -> Optional[str]:
     match = re.search(r"MLC[-_]?(\d+)", url)
     if match:
         codigo = f"MLC{match.group(1)}"
-        print(f"[EXTRACCIÓN] Código MLC detectado → Código extraído: {codigo}")
+        print(f"[EXTRACCION] Codigo MLC detectado -> Codigo extraido: {codigo}")
         return codigo
     return None
 
@@ -21,7 +21,7 @@ def extraer_codigo_yapo(url: str) -> Optional[str]:
     match = re.search(r"/(\d{8,12})$", url)
     if match:
         codigo = match.group(1)
-        print(f"[EXTRACCIÓN] Código Yapo detectado → Código extraído: {codigo}")
+        print(f"[EXTRACCION] Codigo Yapo detectado -> Codigo extraido: {codigo}")
         return codigo
     return None
 
@@ -44,8 +44,8 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
 
             if codigo_yapo:
                 print(f"\n[INFO] BUSCANDO EN universo_obelix")
-                print(f"[INFO] Campo usado → codigo_yapo")
-                print(f"[INFO] Valor buscado → '{codigo_yapo}'")
+                print(f"[INFO] Campo usado -> codigo_yapo")
+                print(f"[INFO] Valor buscado -> '{codigo_yapo}'")
 
                 db = get_db()
                 coleccion = db[Config.COLLECTION_NAME]
@@ -53,10 +53,10 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
                 propiedad = coleccion.find_one({"codigo_yapo": codigo_yapo})
 
                 if propiedad:
-                    print(f"[ÉXITO] ¡PROPIEDAD ENCONTRADA en Yapo! Código Procasa: {propiedad.get('codigo')}")
+                    print(f"[EXITO] PROPIEDAD ENCONTRADA en Yapo! Codigo Procasa: {propiedad.get('codigo')}")
                     return True, propiedad, plataforma_origen, codigo_yapo
                 else:
-                    print(f"[FALLO] NO se encontró propiedad con codigo_yapo = '{codigo_yapo}'")
+                    print(f"[FALLO] NO se encontro propiedad con codigo_yapo = '{codigo_yapo}'")
                     # Debug rápido
                     cursor = coleccion.find({"codigo_yapo": {"$exists": True}}).limit(3)
                     print(f"[DEBUG] Algunos codigo_yapo existentes: {[doc.get('codigo_yapo') for doc in cursor]}")
@@ -79,26 +79,31 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
                 plataforma_origen = "Otro Portal (MLC code)"
             
             print(f"\n[INFO] BUSCANDO EN universo_obelix")
-            print(f"[INFO] Campo usado → codigo_mercadolibre")
-            print(f"[INFO] Valor buscado → '{codigo_ml}'")
+            print(f"[INFO] Campo usado -> codigo_mercadolibre")
+            print(f"[INFO] Valor buscado -> '{codigo_ml}'")
 
             db = get_db()
             coleccion = db[Config.COLLECTION_NAME]
 
-            propiedad = coleccion.find_one({"codigo_mercadolibre": codigo_ml})
+            propiedad = coleccion.find_one({
+                "$or": [
+                    {"codigo_mercadolibre": codigo_ml},
+                    {"codigo_mercadolibre": codigo_ml.replace("MLC", "")}
+                ]
+            })
 
             if propiedad:
-                print(f"[ÉXITO] ¡PROPIEDAD ENCONTRADA! Desde: {plataforma_origen}")
-                print(f"[ÉXITO] Código Procasa: {propiedad.get('codigo')}")
-                print(f"[ÉXITO] Comuna: {propiedad.get('comuna')}")
+                print(f"[EXITO] PROPIEDAD ENCONTRADA! Desde: {plataforma_origen}")
+                print(f"[EXITO] Codigo Procasa: {propiedad.get('codigo')}")
+                print(f"[EXITO] Comuna: {propiedad.get('comuna')}")
                 return True, propiedad, plataforma_origen, codigo_ml
             else:
-                print(f"[FALLO] NO se encontró con codigo_mercadolibre = '{codigo_ml}'")
+                print(f"[FALLO] NO se encontro con codigo_mercadolibre = '{codigo_ml}' (ni sin prefijo)")
                 cursor = coleccion.find({"codigo_mercadolibre": {"$exists": True}}).limit(5)
-                print(f"[DEBUG] Últimos 5 codigo_mercadolibre guardados:")
+                print(f"[DEBUG] Ultimos 5 codigo_mercadolibre guardados:")
                 for doc in cursor:
                     valor = doc.get("codigo_mercadolibre")
-                    print(f"   → '{valor}' (tipo: {type(valor)})")
+                    print(f"   -> '{valor}' (tipo: {type(valor)})")
 
                 return True, None, plataforma_origen, codigo_ml
 

@@ -221,7 +221,41 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             ext_updates["codigo_yapo"] = codigo_externo
         elif plataforma_origen in ["MercadoLibre", "PortalInmobiliario", "Otro Portal (MLC code)"]:
             ext_updates["codigo_mercadolibre"] = codigo_externo
+        
+        # SOLO guardamos el código externo si NO encontramos una propiedad de Procasa
+        # o si queremos mantener la trazabilidad del link original.
+        # Pero nos aseguramos de no tocar el campo 'codigo' si ya tiene un valor de Procasa.
         actualizar_prospecto(phone, ext_updates)
+
+    # --- NOTIFICACIÓN POR PROPIEDAD DESCONOCIDA ---
+    if es_link and not propiedad and codigo_externo:
+        # Si es un link pero no encontramos propiedad, notificamos al Admin (Pablo Galleguillos)
+        from .lead_router import find_responsible_executive
+        # Re-verificamos responsable para gatillar alerta si sigue desasignado
+        exec_name, _ = find_responsible_executive(codigo_externo)
+        
+        if exec_name == "No Asignado":
+            admin_phone = "56983219804" # Pablo Galleguillos
+            admin_msg = (
+                f"🚨 *Propiedad No Encontrada*\n\n"
+                f"El cliente {prospecto_actual.get('nombre', 'Desconocido')} ({phone}) "
+                f"envió un link de {plataforma_origen or 'Portal'} con código `{codigo_externo}`, "
+                f"pero no existe en `universo_obelix`.\n\n"
+                f"El lead quedó *No Asignado*. Favor actualizar códigos o ingresar propiedad."
+            )
+            # Usamos send_alert_once para notificar al admin
+            asyncio.create_task(send_alert_once(
+                phone=admin_phone, 
+                lead_type="MissingProperty", 
+                lead_score=0,
+                criteria={"nombre": "Admin Pablo", "codigo_faltante": codigo_externo},
+                last_response=admin_msg,
+                last_user_msg=original_message,
+                full_history=[],
+                window_minutes=120, # No spamear al admin si el mismo link llega varias veces
+                lead_type_label="PROPIEDAD FALTANTE"
+            ))
+            logger.info(f"📢 Alerta de propiedad faltante ({codigo_externo}) enviada al administrador.")
 
     # =======================================================
     # 5. PREPARACIÓN DE MESSAGES PARA GROK

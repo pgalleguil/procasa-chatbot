@@ -28,7 +28,7 @@ CONFIG = {
     "max_pages": 500,             # Fallback de seguridad (auto-stop inteligente frena antes)
     "max_scrolls": 4,
     "scroll_delay": 0.9,
-    "max_concurrency": 3,
+    "max_concurrency": 4,
     "page_load_timeout": 30,      # 30s — si no carga, proxy lento → rotar
     "networkidle_timeout": 10,
     "html_max_chars": 16000,
@@ -178,6 +178,9 @@ async def extract_fast_path(url: str, client: httpx.AsyncClient) -> tuple:
                     "source": "fast_path",
                     "region": location.get("regionName") or location.get("region_name") or "N/A",
                     "comuna": location.get("communeName") or location.get("commune_name") or location.get("cityName") or "N/A",
+                    "sector": location.get("neighbourhood") or location.get("location_name") or "N/A",
+                    "lat": location.get("latitude") or location.get("lat") or "N/A",
+                    "lon": location.get("longitude") or location.get("lng") or location.get("lon") or "N/A",
                     "m2_total_str": str(props.get("size") or props.get("total_area") or "N/A"),
                     "m2_util_str": str(props.get("usefulSize") or props.get("useful_area") or "N/A"),
                     "gastos_comunes_str": str(props.get("maintenanceCost") or props.get("maintenance_cost") or "N/A"),
@@ -189,6 +192,11 @@ async def extract_fast_path(url: str, client: httpx.AsyncClient) -> tuple:
                     "publicador": props.get("sellerName") or props.get("contactName") or "N/A",
                     "raw_desc": props.get("description") or props.get("body") or "N/A",
                     "tipo_propiedad": props.get("category", {}).get("name") or "N/A",
+                    "list_time": props.get("listTime") or props.get("list_time") or props.get("date") or "N/A",
+                    "seller_id": str(props.get("userId") or props.get("user_id") or props.get("accountId") or props.get("account_id") or "N/A"),
+                    "seller_type": props.get("sellerType") or props.get("seller_type") or props.get("accountType") or "N/A",
+                    "company_name": props.get("companyName") or props.get("company_name") or props.get("agencyName") or "N/A",
+                    "images_url": [img.get("url") if isinstance(img, dict) else img for img in props.get("images", [])] if isinstance(props.get("images", []), list) else [],
                 }
                 
                 # Si campos críticos son N/A, mejor forzar fallback
@@ -261,6 +269,9 @@ async def extract_raw_data(page, url: str) -> dict:
                 return {
                     "region": location.get("regionName") or location.get("region_name") or "N/A",
                     "comuna": location.get("communeName") or location.get("commune_name") or location.get("cityName") or "N/A",
+                    "sector": location.get("neighbourhood") or location.get("location_name") or "N/A",
+                    "lat": location.get("latitude") or location.get("lat") or "N/A",
+                    "lon": location.get("longitude") or location.get("lng") or location.get("lon") or "N/A",
                     "m2_total_str": str(props.get("size") or props.get("total_area") or "N/A"),
                     "m2_util_str": str(props.get("usefulSize") or props.get("useful_area") or "N/A"),
                     "gastos_comunes_str": str(props.get("maintenanceCost") or props.get("maintenance_cost") or "N/A"),
@@ -272,6 +283,11 @@ async def extract_raw_data(page, url: str) -> dict:
                     "publicador": props.get("sellerName") or props.get("contactName") or "N/A",
                     "raw_desc": props.get("description") or props.get("body") or "N/A",
                     "tipo_propiedad": props.get("category", {}).get("name") or "N/A",
+                    "list_time": props.get("listTime") or props.get("list_time") or props.get("date") or "N/A",
+                    "seller_id": str(props.get("userId") or props.get("user_id") or props.get("accountId") or props.get("account_id") or "N/A"),
+                    "seller_type": props.get("sellerType") or props.get("seller_type") or props.get("accountType") or "N/A",
+                    "company_name": props.get("companyName") or props.get("company_name") or props.get("agencyName") or "N/A",
+                    "images_url": [img.get("url") if isinstance(img, dict) else img for img in props.get("images", [])] if isinstance(props.get("images", []), list) else [],
                 }
     except Exception as e:
         logging.debug(f"__NEXT_DATA__ no disponible: {e}")
@@ -355,7 +371,8 @@ async def extract_raw_data(page, url: str) -> dict:
 
     # Retornar todo lo extraído como dict crudo — sin IA, sin DB
     return {
-        "region": region, "comuna": comuna,
+        "region": region, "comuna": comuna, "sector": "N/A",
+        "lat": "N/A", "lon": "N/A",
         "m2_total_str": m2_total_str, "m2_util_str": m2_util_str,
         "gastos_comunes_str": gastos_comunes_str,
         "dormitorios_str": dormitorios_str, "banos_str": banos_str,
@@ -363,6 +380,8 @@ async def extract_raw_data(page, url: str) -> dict:
         "title": title, "price": price,
         "publicador": publicador, "raw_desc": raw_desc,
         "tipo_propiedad": tipo_propiedad,
+        "list_time": "N/A", "seller_id": "N/A", "seller_type": "N/A",
+        "company_name": "N/A", "images_url": [],
     }
 
 
@@ -454,11 +473,26 @@ D: {raw_desc[:1200]}"""
     tipo_prop = extracted.get("tipo_propiedad") or raw_data.get("tipo_propiedad", "N/A")
     if tipo_prop.lower().endswith('s'): tipo_prop = tipo_prop[:-1]
 
+    dias_en_portal = None
+    fecha_pub = raw_data.get("list_time")
+    if fecha_pub and fecha_pub != "N/A":
+        try:
+            if isinstance(fecha_pub, str):
+                if fecha_pub.endswith('Z'):
+                    fecha_pub = fecha_pub[:-1] + '+00:00'
+                pub_dt = datetime.fromisoformat(fecha_pub)
+                diff = datetime.now(timezone.utc) - pub_dt if pub_dt.tzinfo else datetime.now() - pub_dt
+                dias_en_portal = diff.days
+        except Exception:
+            pass
+
     return {
         "portal": CONFIG["portal_name"],
         "comuna": (extracted.get("comuna") or comuna).strip(),
         "region": (extracted.get("region") or region).strip(),
-        "sector": extracted.get("sector"),
+        "sector": extracted.get("sector") or raw_data.get("sector"),
+        "lat": raw_data.get("lat"),
+        "lon": raw_data.get("lon"),
         "tipo_propiedad": tipo_prop,
         "tipo_operacion": "Arriendo",
         "titulo": title.strip()[:220],
@@ -477,6 +511,13 @@ D: {raw_desc[:1200]}"""
         "descripcion": normalize_text(extracted.get("resumen_limpio", raw_desc), CONFIG["desc_max_chars"]),
         "es_propietario_directo": extracted.get("es_propietario_directo", False),
         "confianza_propietario": extracted.get("confianza", 0.5),
+        "dias_en_portal": dias_en_portal,
+        "fecha_publicacion": raw_data.get("list_time"),
+        "vendedor_id": raw_data.get("seller_id"),
+        "tipo_vendedor": raw_data.get("seller_type"),
+        "nombre_ejecutivo": raw_data.get("publicador"),
+        "nombre_corredora": raw_data.get("company_name"),
+        "enlaces_fotos": raw_data.get("images_url", []),
         "content_hash": content_hash,
         "fecha_scraping": datetime.now(timezone.utc).isoformat(),
         "fecha_ultima_vista": datetime.now(timezone.utc).isoformat()

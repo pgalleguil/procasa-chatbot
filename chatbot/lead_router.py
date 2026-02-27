@@ -273,7 +273,13 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     target_executive_name = get_active_executive(target_executive_name)
 
     # FALLBACK DE EMERGENCIA: Si no hay teléfono o es No Asignado, asignamos a Round Robin
+    # PERO: Respetamos la decisión de dejarlo como pendiente si la propiedad NO EXISTE (Rule refinement)
     if not phone or target_executive_name == UNASSIGNED_LABEL:
+        if not prop:
+            # PROPIEDAD DESCONOCIDA: No asignar automáticamente. Dejar que el Admin lo vea.
+            logger.warning(f"[ROUTER] Propiedad '{property_code}' desconocida. Dejando lead como '{UNASSIGNED_LABEL}'.")
+            return UNASSIGNED_LABEL, None
+            
         logger.warning(f"[ROUTER] Fallback: Ejecutivo '{target_executive_name}' sin teléfono. Asignando a Round Robin (RM).")
         target_executive_name = get_next_round_robin_executive("")
         phone = get_executive_phone(target_executive_name)

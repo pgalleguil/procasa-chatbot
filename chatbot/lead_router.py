@@ -160,8 +160,15 @@ def get_executive_phone(executive_name: str) -> Optional[str]:
         norm_target = normalize_text(executive_name)
         all_users = list(db["usuarios"].find({}, {"nombre": 1, "telefono": 1, "tel": 1, "movil": 1}))
         for candidate in all_users:
-            if normalize_text(candidate.get("nombre")) == norm_target:
+            norm_candidate = normalize_text(candidate.get("nombre"))
+            # Match exacto normalizado
+            if norm_candidate == norm_target:
                 user = candidate
+                break
+            # Match parcial: "raquel cheneaux" contenido en "raquel cheneaux valz" (o viceversa)
+            if norm_candidate and norm_target and (norm_candidate in norm_target or norm_target in norm_candidate):
+                user = candidate
+                logger.info(f"[LOOKUP] Match parcial: '{candidate.get('nombre')}' ~ '{executive_name}'")
                 break
                 
     if user:

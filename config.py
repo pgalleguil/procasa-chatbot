@@ -2,16 +2,21 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# Buscar .env en el mismo directorio que este archivo
+env_path = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(dotenv_path=env_path)
 
 class Config:
     # === Claves externas ===
     XAI_API_KEY = os.getenv("XAI_API_KEY")
     MONGO_URI = os.getenv("MONGO_URI")
     DB_NAME = os.getenv("DB_NAME", "URLS")
-    
 
-    # === WASENDERAPI.COM (WhatsApp) ===
+    # === PROXIES ===
+    USE_PROXIES = os.getenv("USE_PROXIES", "false").lower() == "true"
+    PROXIES = os.getenv("PROXIES", "")  # Lista de proxies separados por coma
+    PROXY_USER = os.getenv("PROXY_USER", "")
+    PROXY_PASS = os.getenv("PROXY_PASS", "")
     WASENDER_TOKEN = os.getenv("WASENDER_TOKEN")
     WASENDER_WEBHOOK_SECRET = os.getenv("WASENDER_WEBHOOK_SECRET")
     WASENDER_BASE_URL = os.getenv("WASENDER_BASE_URL", "https://wasenderapi.com/api")
@@ -39,7 +44,7 @@ class Config:
     GROK_BASE_URL = os.getenv("GROK_BASE_URL", "https://api.x.ai/v1")
     GROK_TEMPERATURE = float(os.getenv("GROK_TEMPERATURE", "0.0"))
 
-    EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+    EMBEDDING_MODEL = "all-MiniLM-L6-v2"
     EMBEDDING_DIM = 384
 
     # === Parámetros de búsqueda ===
@@ -54,7 +59,6 @@ class Config:
     # === Chatbot / colección ===
     HISTORIAL_MAX = 8
     COLLECTION_NAME = "universo_obelix"
-    COLLECTION_CONVERSATIONS = "leads"
 
     # === Logs y claves ===
     LOG_LEVEL = "INFO"
@@ -62,12 +66,12 @@ class Config:
     FEATURE_KEYS = ["precio_clp","precio_uf","dormitorios", "banos", "estacionamientos"]
 
     # === GOOGLE OAUTH (opcional) ===
-    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "TU_CLIENT_ID_AQUI")
-    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "TU_CLIENT_SECRET_AQUI")
+    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
     GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 
     # === CLAVE SECRETA PARA SESIONES (OBLIGATORIA) ===
-    SECRET_KEY = os.getenv("SECRET_KEY", "procasa_enterprise_secure_key_2025_fixed")
+    SECRET_KEY = os.getenv("SECRET_KEY")
     if not SECRET_KEY:
         import secrets
         SECRET_KEY = secrets.token_hex(32)

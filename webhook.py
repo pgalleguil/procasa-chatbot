@@ -516,8 +516,9 @@ async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None
     user_name = user.get("nombre", "")
     
     if user.get("rol") == "agente":
-        # Comparamos por nombre real ya que la asignación es por nombre (ej: "Pablo Galleguillos")
-        if data.get("ejecutivo_asignado") != user_name:
+        # Comparamos verificando si el nombre de usuario está contenido en el nombre asignado (para manejar casos de 2 apellidos como Raquel Cheneaux Valz vs Raquel Cheneaux)
+        ejecutivo_asignado = str(data.get("ejecutivo_asignado") or "").strip()
+        if user_name.lower() not in ejecutivo_asignado.lower():
             return RedirectResponse(url="/crm?error=no_es_tu_lead")
     
     # LÓGICA FINAL SIMPLE (Solicitada por usuario): 

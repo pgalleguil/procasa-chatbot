@@ -160,11 +160,62 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
         ]
     }
 
-    # 4. Save to DB
+    # 4. Chequear si el lead ya existe (cualquier propiedad)
+    existing_query = []
+    if final_phone: existing_query.append({"phone": final_phone})
+    if email: existing_query.append({"prospecto.email": email})
+    
+    existing_lead = None
+    if existing_query:
+        existing_lead = db["leads"].find_one({"$or": existing_query})
+
     try:
-        result = db["leads"].insert_one(lead_doc)
-        lead_id = str(result.inserted_id)
-        
+        if existing_lead:
+            lead_id = str(existing_lead["_id"])
+            # Update sequence for returning user
+            update_payload = {
+                "$set": {
+                    "last_crm_update": now.isoformat(),
+                    "updated_at": now.isoformat(),
+                    "origen": origen,
+                    "stage": PipelineStage.NEW, # Bump to NEW so it flags as Sin Atender 
+                    "pipeline_stage": PipelineStage.NEW,
+                    "prospecto.codigo": property_code, # Update active property
+                    "prospecto.canal_origen": origen
+                },
+                "$push": {
+                    "messages": {
+                        "role": "system",
+                        "content": f"El cliente se interesó en una nueva propiedad ({property_code}) vía {origen}.",
+                        "timestamp": now.isoformat()
+                    }
+                }
+            }
+            if mensaje:
+                update_payload["$push"]["messages"]["$each"] = [
+                    update_payload["$push"].pop("messages"),
+                    {"role": "user", "content": mensaje, "timestamp": now.isoformat()}
+                ]
+            
+            # Keep existing executive if they had one
+            current_exec = existing_lead.get("ejecutivo_asignado") or existing_lead.get("prospecto", {}).get("ejecutivo")
+            from .constants import UNASSIGNED_LABEL
+            if current_exec and current_exec not in [UNASSIGNED_LABEL, "No asignado"]:
+                exec_name = current_exec
+                from .lead_router import get_executive_phone
+                exec_phone = get_executive_phone(exec_name)
+            else:
+                 update_payload["$set"]["ejecutivo_asignado"] = exec_name
+                 update_payload["$set"]["prospecto.ejecutivo"] = exec_name
+                 update_payload["$set"]["lifecycle.assigned_at"] = assigned_at.isoformat()
+
+            db["leads"].update_one({"_id": existing_lead["_id"]}, update_payload)
+            
+        else:
+            # Insert brand new lead
+            result = db["leads"].insert_one(lead_doc)
+            lead_id = str(result.inserted_id)
+            
         # 5. Log Event
         log_event(phone or email, InteractionType.ASSIGNMENT, "supervisor", {
             "executive": exec_name,

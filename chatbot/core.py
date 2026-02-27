@@ -209,18 +209,19 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "operacion": propiedad.get("operacion"),
             "origen": nuevo_origen  # Siempre actualiza origen si viene de link
         }
-        
-        # === CORRECCIÓN CLAVE: Guardar código externo en campo correcto ===
-        if codigo_externo:
-            if plataforma_origen == "Yapo":
-                updates_prop["codigo_yapo"] = codigo_externo
-            elif plataforma_origen in ["MercadoLibre", "PortalInmobiliario", "Otro Portal (MLC code)"]:
-                updates_prop["codigo_mercadolibre"] = codigo_externo
-        
         actualizar_prospecto(phone, updates_prop)
         
         # Registrar para anti-repetición en RAG
         registrar_propiedades_vistas(phone, [codigo_detectado])
+
+    # === CORRECCIÓN: Guardar código externo aunque no esté en DB ===
+    if codigo_externo:
+        ext_updates = {"origen": nuevo_origen}
+        if plataforma_origen == "Yapo":
+            ext_updates["codigo_yapo"] = codigo_externo
+        elif plataforma_origen in ["MercadoLibre", "PortalInmobiliario", "Otro Portal (MLC code)"]:
+            ext_updates["codigo_mercadolibre"] = codigo_externo
+        actualizar_prospecto(phone, ext_updates)
 
     # =======================================================
     # 5. PREPARACIÓN DE MESSAGES PARA GROK

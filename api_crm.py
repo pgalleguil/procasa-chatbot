@@ -67,10 +67,15 @@ def get_real_property_data(db, codigo_propiedad):
     }
 
 def detect_property_code(lead):
-    code = lead.get("prospecto", {}).get("codigo")
+    p = lead.get("prospecto", {})
+    code = p.get("codigo")
     if code: return code
     code = lead.get("datos_propiedad", {}).get("codigo")
     if code: return code
+    code = p.get("codigo_yapo")
+    if code: return f"Yapo: {code}"
+    code = p.get("codigo_mercadolibre")
+    if code: return f"ML: {code}"
     return None
 
 def process_chat_timeline(messages):
@@ -169,24 +174,23 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     # 1. CONTAR TOTAL PARA PAGINACIÓN
     total_count = db["leads"].count_documents(query)
     
-    # 2. TRAER LEADS (Paginados) - EXCLUIMOS campos pesados para el listado
+    # 2. TRAER LEADS (Sin paginar para poder ordenar en memoria) - EXCLUIMOS campos pesados para el listado
     skip = (page - 1) * limit
     leads_cursor = db["leads"].find(query, {"messages": 0, "stage_history": 0})
     
-    if ordenar_por == "fecha":
-        leads_cursor = leads_cursor.sort("created_at", -1)
-    
-    leads_list = list(leads_cursor.skip(skip).limit(limit))
+    # Obtenemos TODOS para procesar y ordenar in-memory
+    leads_list = list(leads_cursor)
     
     # 3. OPTIMIZACIÓN: Obtener lista de teléfonos para hacer UNA SOLA consulta de eventos
-    phones_in_page = [l.get("phone", "").replace("+","").strip() for l in leads_list if l.get("phone")]
+    # (Al ser memoria, mapearemos todos para poder calcular SLA correctamente de la lista completa)
+    all_phones = [l.get("phone", "").replace("+","").strip() for l in leads_list if l.get("phone")]
     
     # 4. BULK QUERY DE EVENTOS (Agregación para obtener el último por teléfono)
     events_map = {}
-    if phones_in_page:
+    if all_phones:
         pipeline = [
             {"$match": {
-                "phone": {"$in": phones_in_page}, 
+                "phone": {"$in": all_phones}, 
                 "type": {"$in": [
                     "GESTION_LOG", "HUMAN_NOTE", "STATUS_CHANGE", 
                     "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CLICK_PHONE_LEAD",
@@ -205,62 +209,9 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         events_map = {r["_id"]: r["last_event"] for r in agg_results}
 
     leads_procesados = []
-    # KPIs con agregación robusta
-    # 1. Contar basándonos en el campo de estado de la base de datos
-    kpi_pipeline = [
-        {"$match": query},
-        {"$project": {
-            "phone": 1,
-            "st": {"$ifNull": ["$pipeline_stage", {"$ifNull": ["$stage", "$crm_estado"]}]}
-        }},
-        {"$group": {"_id": "$st", "count": {"$sum": 1}, "phones": {"$push": "$phone"}}}
-    ]
-    kpi_results = list(db["leads"].aggregate(kpi_pipeline))
-    
-    # 2. Identificar cuáles de esos leads 'Sin Atender' tienen eventos de gestión
-    all_new_phones = []
-    for res in kpi_results:
-        # Fallback a 'NEW' si es nulo para consistencia con el contador
-        st = str(res["_id"] or "NEW").lower()
-        if any(x in st for x in ["new", "nuevo"]):
-            all_new_phones.extend(res["phones"])
-            
-    # Consultar eventos solo para los que figuran como NUEVOS en DB
-    promoted_to_gestion = 0
-    if all_new_phones:
-        cleaned_new_phones = [p.replace("+","").strip() for p in all_new_phones if p]
-        has_events = db["crm_events"].distinct("phone", {
-            "phone": {"$in": cleaned_new_phones},
-            "type": {"$in": [
-                "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
-                "CLICK_PHONE_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
-            ]}
-        })
-        promoted_to_gestion = len(has_events)
-        if promoted_to_gestion > 0:
-            logger.info(f"[KPI_SYNC] Promocionando {promoted_to_gestion} leads de 'nuevo' a 'gestion' por actividad reciente.")
-
-    kpi_counts = {"nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0, "total": total_count}
-    
-    from chatbot.constants import PipelineStage
-    for res in kpi_results:
-        st = res["_id"]
-        count = res["count"]
-        if not st: st = PipelineStage.NEW
-        st_str = str(st).lower()
-        
-        if any(x in st_str for x in ["new", "nuevo"]): 
-            kpi_counts["nuevo"] += count
-        elif any(x in st_str for x in ["visit", "visita"]): 
-            kpi_counts["visita"] += count
-        elif any(x in st_str for x in ["closed", "cerrado"]): 
-            kpi_counts["cerrado"] += count
-        else: 
-            kpi_counts["gestion"] += count
-
-    # Ajustar KPIs: Mover los que tienen eventos de 'nuevo' a 'gestion'
-    kpi_counts["nuevo"] -= promoted_to_gestion
-    kpi_counts["gestion"] += promoted_to_gestion
+    # Inicializamos contadores a 0. Los sumaremos dinámicamente según el estado final real 
+    # evaluado en memoria para cada lead, lo que garantiza 100% de precisión visual.
+    kpi_counts = {"nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0, "total": len(leads_list)}
 
     state_map = {
         # Enums
@@ -374,6 +325,16 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                  ts = last_msg.get("timestamp")
                  if ts: last_ts = ts
 
+        # Contabilizar el estado final REAL para las tarjetas (independiente de si lo filtramos luego o no)
+        if estado_final in [PipelineStage.NEW]:
+            kpi_counts["nuevo"] += 1
+        elif estado_final in [PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE]:
+            kpi_counts["visita"] += 1
+        elif estado_final in [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST]:
+            kpi_counts["cerrado"] += 1
+        else:
+            kpi_counts["gestion"] += 1
+
         if filtro_estado and estado_final != filtro_estado:
             continue
 
@@ -394,6 +355,12 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         
         ejecutivo = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
         
+        # Limpieza visual para leads antiguos con >2 palabras
+        if ejecutivo and isinstance(ejecutivo, str) and ejecutivo not in [UNASSIGNED_LABEL, "No asignado", "Sin Asignar", "Sin asignar"]:
+            words = ejecutivo.strip().split()
+            if len(words) > 2:
+                ejecutivo = f"{words[0]} {words[1]}"
+        
         if not ejecutivo or ejecutivo in [UNASSIGNED_LABEL, "No asignado", "Sin Asignar", "Sin asignar"]:
              sla_status = "pending"
              sla_label = "Pendiente Asignación"
@@ -403,37 +370,31 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
              sla_label = "Gestionado" 
              
         else:
-             # Usamos fecha de asignación como inicio del SLA
-             start_time_sla = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
-             
-             if start_time_sla:
-                try:
-                    if isinstance(start_time_sla, str):
-                        start_dt = datetime.fromisoformat(start_time_sla.replace("Z", ""))
-                    else:
-                        start_dt = start_time_sla
+             # Usamos last_ts_obj que ya contiene el timestamp más lógico de actividad/creación
+             if last_ts_obj and last_ts_obj != datetime.min:
+                 try:
+                     start_dt = last_ts_obj
+                     if start_dt.tzinfo is None:
+                         start_dt = CHILE_TZ.localize(start_dt)
                     
-                    if start_dt.tzinfo is None:
-                        start_dt = CHILE_TZ.localize(start_dt)
+                     diff = datetime.now(CHILE_TZ) - start_dt
+                     minutes_diff = diff.total_seconds() / 60
                     
-                    diff = datetime.now(CHILE_TZ) - start_dt
-                    minutes_diff = diff.total_seconds() / 60
-                    
-                    # UMBRALES: Rojo (>180), Naranja (150-180), Amarillo (60-150), Verde (<60)
-                    if minutes_diff >= 180:
-                        sla_status = "critical"
-                        sla_label = "Crítico" 
-                    elif minutes_diff >= 150: # 2:30 Horas (150 min)
-                         sla_status = "near_critical"
-                         sla_label = "Próximo a Crítico"
-                    elif minutes_diff >= 60:
-                        sla_status = "warning"
-                        sla_label = "Advertencia" 
-                    else:
-                        sla_status = "good" 
-                        sla_label = "En tiempo"
-                except Exception as e:
-                    logger.error(f"Error calculando SLA: {e}")
+                     # UMBRALES: Rojo (>180), Naranja (150-180), Amarillo (60-150), Verde (<60)
+                     if minutes_diff >= 180:
+                         sla_status = "critical"
+                         sla_label = "Crítico" 
+                     elif minutes_diff >= 150: # 2:30 Horas (150 min)
+                          sla_status = "near_critical"
+                          sla_label = "Próximo a Crítico"
+                     elif minutes_diff >= 60:
+                         sla_status = "warning"
+                         sla_label = "Advertencia" 
+                     else:
+                         sla_status = "good" 
+                         sla_label = "En tiempo"
+                 except Exception as e:
+                     logger.error(f"Error calculando SLA: {e}")
 
         leads_procesados.append({
             "phone": raw_phone,
@@ -460,12 +421,22 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         try: return dt.timestamp()
         except: return 0.0
 
+    def get_sla_score(status):
+        return {"critical": 0, "near_critical": 1, "warning": 2, "pending": 3, "good": 4, "fulfilled": 5}.get(status, 99)
+
     if ordenar_por == "prioridad":
-        leads_procesados.sort(key=lambda x: (x['priority_score'], -safe_timestamp(x['real_timestamp'])))
+        # Primero por urgencia SLA (Crítico -> En tiempo -> Gestionado)
+        # Luego del más reciente al más antiguo
+        leads_procesados.sort(key=lambda x: (get_sla_score(x['sla_status']), -safe_timestamp(x['real_timestamp'])))
     else:
         leads_procesados.sort(key=lambda x: safe_timestamp(x['real_timestamp']), reverse=True)
 
-    return leads_procesados, kpi_counts, total_count
+    paginated_leads = leads_procesados[skip:skip+limit]
+
+    # El total REAL de leads en la pestaña actual (para que la barra de paginación abajo no dibuje páginas vacías)
+    total_filtrado = len(leads_procesados)
+
+    return paginated_leads, kpi_counts, total_filtrado
 
 def get_unique_executives():
     """Retorna lista de nombres únicos de ejecutivos que tienen leads asignados."""
@@ -475,7 +446,17 @@ def get_unique_executives():
     execs_2 = db["leads"].distinct("prospecto.ejecutivo")
     
     all_execs = set([e for e in execs_1 if e] + [e for e in execs_2 if e])
-    return sorted(list(all_execs))
+    
+    # Limpieza para que el filtro no muestre "Raquel Cheneaux" y "Raquel Cheneaux Valz" duplicado
+    cleaned_execs = set()
+    for e in all_execs:
+        words = str(e).strip().split()
+        if len(words) > 2:
+            cleaned_execs.add(f"{words[0]} {words[1]}")
+        else:
+            cleaned_execs.add(str(e).strip())
+            
+    return sorted(list(cleaned_execs))
 
 # --- 2. DETALLE DEL LEAD ---
 def get_lead_detail_data(phone, property_code=None):
@@ -615,6 +596,13 @@ def get_lead_detail_data(phone, property_code=None):
     # Prioridad al stage nuevo
     crm_state = lead.get("stage") or lead.get("crm_estado") or "new"
 
+    # Priority over legacy assignment naming 
+    ejec_asignado = lead.get("ejecutivo_asignado") or prospecto.get("ejecutivo")
+    if ejec_asignado and isinstance(ejec_asignado, str):
+        words = ejec_asignado.strip().split()
+        if len(words) > 2:
+            ejec_asignado = f"{words[0]} {words[1]}"
+
     return {
         "phone": lead.get("phone"),
         "timeline": timeline,
@@ -631,7 +619,7 @@ def get_lead_detail_data(phone, property_code=None):
         "datos_propiedad": datos_propiedad,
         "last_intent": lead.get("last_intent"),
         "last_intent_at": lead.get("last_intent_at"),
-        "ejecutivo_asignado": lead.get("ejecutivo_asignado") # Requerido para RBAC en detalle
+        "ejecutivo_asignado": ejec_asignado # Requerido para RBAC en detalle
     }
 
 # --- 3. ACTUALIZAR LEAD (CON VALIDACIÓN ESTRICTA) ---

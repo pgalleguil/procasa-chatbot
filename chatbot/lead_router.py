@@ -221,9 +221,12 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     # REGLA 0: Si el ejecutivo de la ficha ya es uno de los nuestros, se queda con él (Lo lógico)
     # PERO: Respetamos si está de vacaciones y redirigimos a su reemplazo
     our_team = [ERIKA_GARRIDO, MARIELA_ARRIAGADA, SUSANA_ENSIGNIA, RAQUEL_CHENEAUX, PAULA_MORALES, ROCIO_ALIAGA]
-    if any(normalize_text(member) in norm_exec for member in our_team):
-        logger.info(f"[ROUTER] Propiedad ya pertenece a alguien del equipo ({original_executive}). Verificando disponibilidad.")
-        target_executive_name = get_active_executive(original_executive)
+    
+    matched_member = next((member for member in our_team if normalize_text(member) in norm_exec), None)
+    
+    if matched_member:
+        logger.info(f"[ROUTER] Propiedad ya pertenece a alguien del equipo ({original_executive} -> normalizado a {matched_member}). Verificando disponibilidad.")
+        target_executive_name = get_active_executive(matched_member)
     
     # REGLA 0.1: Si el ejecutivo es el Supervisor (Pablo), redirigimos al Round Robin del equipo
     #elif "pablo galleguillos" in norm_exec:
@@ -250,6 +253,13 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
         else:
             logger.info(f"[ROUTER] Propiedad de JPC en otra región ({region}). Asignando a {ERIKA_GARRIDO}")
             target_executive_name = get_active_executive(ERIKA_GARRIDO)
+            
+    else:
+        # Para cualquier otro ejecutivo (externo o no contemplado), asegurarnos de usar solo Nombre + Apellido (2 palabras)
+        words = target_executive_name.split()
+        if len(words) > 2:
+            target_executive_name = f"{words[0]} {words[1]}"
+            logger.info(f"[ROUTER] Acortando nombre de ejecutivo: '{original_executive}' a '{target_executive_name}'")
     
     # Get phone for the determined executive
     phone = get_executive_phone(target_executive_name)

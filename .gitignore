@@ -22,6 +22,7 @@ ver_respultador.py
 correccion_envios_bloqueados.py
 email_campaña_propietarios.py
 email_campaña_propietarios_regiones.py
+scraping_yapo_proxys.py
 
 # Scripts de prueba o locales (opcional, pero recomendado)
 test_*.py

@@ -28,7 +28,7 @@ ROCIO_ALIAGA = "Rocío Aliaga"
 
 # --- MODO VACACIONES ---
 # Agregue aquí los nombres de los ejecutivos que no están disponibles
-#EXECUTIVES_ON_VACATION = [ERIKA_GARRIDO]
+EXECUTIVES_ON_VACATION = []
 
 # Mapeo de reemplazos para asignaciones directas (fuera de Round Robin)
 VACATION_REPLACEMENTS = {

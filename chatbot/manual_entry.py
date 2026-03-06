@@ -192,10 +192,13 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
                 }
             }
             if mensaje:
-                update_payload["$push"]["messages"]["$each"] = [
-                    update_payload["$push"].pop("messages"),
-                    {"role": "user", "content": mensaje, "timestamp": now.isoformat()}
-                ]
+                msg_system = update_payload["$push"]["messages"]
+                update_payload["$push"]["messages"] = {
+                    "$each": [
+                        msg_system,
+                        {"role": "user", "content": mensaje, "timestamp": now.isoformat()}
+                    ]
+                }
             
             # Keep existing executive if they had one
             current_exec = existing_lead.get("ejecutivo_asignado") or existing_lead.get("prospecto", {}).get("ejecutivo")

@@ -35,6 +35,7 @@ reporte*.py
 temp/
 tmp/
 __temp__/
+html_dumps/
 
 # Archivos del sistema
 .DS_Store

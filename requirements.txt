@@ -21,4 +21,5 @@ openai>=1.30.0
 pandas==2.2.3
 openpyxl==3.1.5
 xlsxwriter==3.2.0
+curl_cffi>=0.7.1
 --only-binary=all

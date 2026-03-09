@@ -11,12 +11,7 @@ from .utils import safe_int_conversion
 
 logger = logging.getLogger(__name__)
 
-from .constants import CHILE_TZ
-
-# --- CONFIGURACIÓN DE HORARIOS ---
-BUSINESS_START_HOUR = 9
-BUSINESS_END_HOUR = 18  # Extendido para pruebas
-BUSINESS_DAYS = [0, 1, 2, 3, 4] # Lunes a Viernes
+from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
 
 # Constants for specific executives
 ERIKA_GARRIDO = "Erika Garrido"

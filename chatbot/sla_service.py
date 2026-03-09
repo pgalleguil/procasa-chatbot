@@ -5,6 +5,7 @@ from .storage import get_db, log_event
 from .constants import CHILE_TZ, PipelineStage, EventType
 from .notification_service import NotificationService
 from .lead_router import get_executive_phone, should_send_now
+from .utils import calculate_business_minutes
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +92,18 @@ async def monitor_sla_thresholds():
 
             try:
                 # Usamos start_dt para mantener compatibilidad con el resto del archivo
-                start_dt = datetime.fromisoformat(raw_assigned.replace("Z", ""))
+                if isinstance(raw_assigned, datetime):
+                    start_dt = raw_assigned
+                else:
+                    start_dt = datetime.fromisoformat(str(raw_assigned).replace("Z", ""))
+                
                 if start_dt.tzinfo is None: start_dt = CHILE_TZ.localize(start_dt)
                 
-                created_dt = datetime.fromisoformat(raw_created.replace("Z", ""))
+                if isinstance(raw_created, datetime):
+                    created_dt = raw_created
+                else:
+                    created_dt = datetime.fromisoformat(str(raw_created).replace("Z", ""))
+                    
                 if created_dt.tzinfo is None: created_dt = CHILE_TZ.localize(created_dt)
             except: continue
 
@@ -143,8 +152,9 @@ async def monitor_sla_thresholds():
                 else:
                     continue
 
-            diff = datetime.now(CHILE_TZ) - start_dt
-            minutes_diff = diff.total_seconds() / 60
+            # diff = datetime.now(CHILE_TZ) - start_dt
+            # minutes_diff = diff.total_seconds() / 60
+            minutes_diff = calculate_business_minutes(start_dt, datetime.now(CHILE_TZ))
             
             level = None
             if minutes_diff >= 180:

@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Procasa | Detalle de Captación</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        :root {
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --bg-sidebar: #0f172a;
+            --text-primary: #1e293b;
+            --text-secondary: #475569;
+            --accent: #4f46e5;
+            --border-color: #e2e8f0;
+            --sidebar-width: 200px;
+            --sidebar-width-collapsed: 70px;
+            --transition-speed: 0.3s;
+        }
+
+        [data-theme="dark"] {
+            --bg-body: #0f172a;
+            --bg-card: #1e293b;
+            --bg-sidebar: #020617;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #6366f1;
+            --border-color: #334155;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            transition: all 0.3s ease;
+        }
+
+        /* SIDEBAR UNIFICADO */
+        .sidebar {
+            width: var(--sidebar-width-collapsed);
+            background: var(--bg-sidebar);
+            height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+            padding: 20px 0;
+            border-right: 1px solid var(--border-color);
+            z-index: 1000;
+            transition: width var(--transition-speed);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            white-space: nowrap;
+        }
+
+        .sidebar:hover {
+            width: var(--sidebar-width);
+        }
+
+        .nav-link {
+            color: #cbd5e1;
+            padding: 12px 0;
+            display: flex;
+            align-items: center;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .nav-link i {
+            min-width: var(--sidebar-width-collapsed);
+            text-align: center;
+            font-size: 1.25rem;
+        }
+
+        .nav-link.active {
+            color: var(--accent);
+            background: rgba(99, 102, 241, 0.1);
+            border-left: 3px solid var(--accent);
+        }
+
+        .main-content {
+            margin-left: var(--sidebar-width-collapsed);
+            padding: 30px;
+        }
+
+        .prop-card {
+            background: var(--bg-card);
+            border-radius: 24px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            margin-bottom: 30px;
+            border: 1px solid var(--border-color);
+        }
+
+        .gallery {
+            height: 450px;
+            background: #000;
+            position: relative;
+        }
+
+        .gallery img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* ANALISIS MERCADO */
+        .market-insight-card {
+            background: linear-gradient(135deg, var(--accent) 0%, #4338ca 100%);
+            color: white;
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: 0 8px 20px rgba(79, 70, 229, 0.2);
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        /* SEDUCCION CONTEXT */
+        .seduction-panel {
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 24px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+        }
+
+        .nav-tabs-custom {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            overflow-x: auto;
+            padding-bottom: 5px;
+        }
+
+        .tab-btn {
+            background: rgba(125, 125, 125, 0.05);
+            border: 1px solid var(--border-color);
+            padding: 8px 16px;
+            border-radius: 10px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: 0.2s;
+            white-space: nowrap;
+        }
+
+        .tab-btn.active {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        .script-box {
+            background: rgba(99, 102, 241, 0.05);
+            border-left: 4px solid var(--accent);
+            padding: 15px;
+            border-radius: 8px;
+            font-style: italic;
+            font-size: 0.95rem;
+            margin-top: 15px;
+        }
+
+        /* COMUNICACION */
+        .comm-bar {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+        }
+
+        .btn-comm {
+            flex: 1;
+            padding: 12px;
+            border-radius: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            text-decoration: none;
+            transition: 0.2s;
+        }
+
+        .btn-wa {
+            background: #25d366;
+            color: white;
+        }
+
+        .btn-ph {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-link {
+            background: #334155;
+            color: white;
+        }
+
+        .btn-comm:hover {
+            transform: translateY(-2px);
+            color: white;
+            filter: brightness(1.1);
+        }
+
+        .back-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-bottom: 25px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="sidebar" id="sidebar">
+        <div style="padding: 20px 15px; color: white; font-weight: 700; font-size: 1.2rem;">PROCASA</div>
+        <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i></a>
+        {% if user_role in ['supervisor', 'admin'] %}
+        <a href="/captacion" class="nav-link active"><i class="fa-solid fa-house-circle-check"></i></a>
+        {% endif %}
+
+        <a href="javascript:void(0)" class="nav-link mt-auto" onclick="toggleTheme()">
+            <i class="fa-solid fa-moon"></i>
+        </a>
+    </nav>
+
+    <div class="main-content">
+        <a href="/captacion" class="back-link"><i class="fa-solid fa-arrow-left"></i> Volver a Captaciones</a>
+
+        <div class="row g-4">
+            <!-- COLUMNA IZQUIERDA: Ficha Técnica -->
+            <div class="col-lg-8">
+                <div class="prop-card">
+                    <div class="gallery">
+                        {% if prop.enlaces_fotos %}
+                        <img src="{{ prop.enlaces_fotos[0] }}" id="mainImg" alt="Propiedad">
+                        {% else %}
+                        <div class="d-flex align-items-center justify-content-center h-100 text-secondary opacity-25">
+                            <i class="fa-solid fa-image fa-6x"></i>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="p-4">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <h2 class="fw-bold m-0">{{ prop.titulo }}</h2>
+                            <span class="badge rounded-pill bg-primary px-3 py-2">{{ prop.gestion.estado or 'NUEVO'
+                                }}</span>
+                        </div>
+                        <p class="text-secondary fs-5 mb-4">
+                            <i class="fa-solid fa-location-dot me-2"></i>{{ prop.comuna }}, {{ prop.region }}
+                        </p>
+
+                        <div class="row g-4 text-center py-4 border-top border-bottom">
+                            <div class="col-3">
+                                <div class="stat-value">{{ prop.precio_uf }} UF</div>
+                                <div class="small text-secondary">Venta</div>
+                            </div>
+                            <div class="col-3">
+                                <div class="stat-value">{{ prop.m2_total }} m²</div>
+                                <div class="small text-secondary">Superficie</div>
+                            </div>
+                            <div class="col-3">
+                                <div class="stat-value">{{ prop.dormitorios or 'S/I' }}</div>
+                                <div class="small text-secondary">Dorm.</div>
+                            </div>
+                            <div class="col-3">
+                                <div class="stat-value">{{ prop.banos or 'S/I' }}</div>
+                                <div class="small text-secondary">Baños</div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            <h5 class="fw-bold mb-3">Descripción de la Publicación</h5>
+                            <p class="text-secondary fs-6" style="white-space: pre-line; line-height: 1.6;">{{
+                                prop.descripcion }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- COLUMNA DERECHA: Herramientas de Gestión -->
+            <div class="col-lg-4">
+                <!-- LLAMADA A LA ACCIÓN -->
+                <div class="seduction-panel mb-4">
+                    <h5 class="fw-bold mb-1"><i class="fa-brands fa-whatsapp me-2"></i>Captación Inteligente</h5>
+                    <p class="small text-secondary mb-4">Manejo de objeciones y scripts de persuasión</p>
+
+                    <div class="nav-tabs-custom">
+                        <button class="tab-btn active" onclick="showScript('initial', this)">Seducción</button>
+                        {% for obj in prop.seduction_context.objections %}
+                        <button class="tab-btn" onclick="showScript('obj_{{ loop.index }}', this)">{{ obj.title
+                            }}</button>
+                        {% endfor %}
+                    </div>
+
+                    <div id="scriptContent">
+                        <div id="initial" class="script-box">
+                            "{{ prop.seduction_context.initial }}"
+                        </div>
+                        {% for obj in prop.seduction_context.objections %}
+                        <div id="obj_{{ loop.index }}" class="script-box d-none">
+                            "{{ obj.script }}"
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="comm-bar">
+                        <a href="https://wa.me/{{ prop.vendedor_telefono|replace('+','') }}?text={{ prop.seduction_context.initial|urlencode }}"
+                            class="btn-comm btn-wa" target="_blank">
+                            <i class="fa-brands fa-whatsapp"></i> WhatsApp
+                        </a>
+                        <a href="tel:{{ prop.vendedor_telefono }}" class="btn-comm btn-ph">
+                            <i class="fa-solid fa-phone"></i> Llamar
+                        </a>
+                    </div>
+
+                    <a href="{{ prop.url }}" target="_blank" class="btn-comm btn-link mt-3 w-100">
+                        <i class="fa-solid fa-external-link-alt"></i> Ver Publicación Original
+                    </a>
+                </div>
+
+                <!-- ANALISIS DE MERCADO VISUAL -->
+                <div class="market-insight-card mb-4">
+                    <h5 class="fw-bold mb-4">Insight de Mercado</h5>
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="small opacity-75">Tu Precio: {{ prop.uf_m2 }} UF/m²</span>
+                            <span class="small opacity-75">Media: {{ prop.market_stats.avg_uf_m2 }} UF/m²</span>
+                        </div>
+                        {% set pct = (prop.uf_m2 / (prop.market_stats.avg_uf_m2 * 2)) * 100 if
+                        prop.market_stats.avg_uf_m2 > 0 else 50 %}
+                        <div class="progress" style="height: 10px; background: rgba(255,255,255,0.2);">
+                            <div class="progress-bar bg-warning" style="--width: {{ pct }}%; width: var(--width);">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row text-center">
+                        <div class="col-6 border-end border-white border-opacity-25">
+                            <div class="fw-bold fs-5">{{ prop.market_stats.total_available }}</div>
+                            <div class="small opacity-75">Competencia</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="fw-bold fs-5">{{ prop.market_stats.demand_level }}</div>
+                            <div class="small opacity-75">Demanda</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ESTADO INTERNO -->
+                <div class="prop-card p-4">
+                    <h6 class="fw-bold mb-3">Seguimiento Interno</h6>
+                    <select class="form-select mb-3 shadow-none border" id="statusSelect" onchange="updateStatus()"
+                        style="border-radius:12px">
+                        <option value="NUEVO" {{ 'selected' if prop.gestion.estado=='NUEVO' }}>NUEVO</option>
+                        <option value="GESTION" {{ 'selected' if prop.gestion.estado=='GESTION' }}>EN GESTIÓN</option>
+                        <option value="CAPTADO" {{ 'selected' if prop.gestion.estado=='CAPTADO' }}>CAPTADO</option>
+                        <option value="DESCARTADO" {{ 'selected' if prop.gestion.estado=='DESCARTADO' }}>DESCARTADO
+                        </option>
+                    </select>
+                    <textarea class="form-control mb-3 shadow-none border" id="notes"
+                        placeholder="Agrega una nota de gestión..."
+                        style="height: 100px; border-radius:12px"></textarea>
+                    <button class="btn btn-primary w-100 fw-bold py-2" onclick="updateStatus()"
+                        style="border-radius:12px">Guardar Gestión</button>
+
+                    <div class="mt-4 pt-3 border-top">
+                        <div class="small text-secondary"><strong>Ejecutivo:</strong> {{ prop.ejecutivo_asignado or 'Sin
+                            asignar' }}</div>
+                        <div class="small text-secondary"><strong>Publicado por:</strong> {{ prop.vendedor_nombre }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showScript(id, btn) {
+            document.querySelectorAll('.script-box').forEach(s => s.classList.add('d-none'));
+            document.getElementById(id).classList.remove('d-none');
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        async function updateStatus() {
+            const status = document.getElementById('statusSelect').value;
+            const notes = document.getElementById('notes').value;
+            try {
+                const resp = await fetch('/api/captacion/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: "{{ prop.id }}", status: status, notes: notes })
+                });
+                if (resp.ok) {
+                    alert("Gestión guardada exitosamente");
+                    if (notes) document.getElementById('notes').value = "";
+                }
+            } catch (e) { alert("Error al guardar gestión"); }
+        }
+
+        function toggleTheme() {
+            const html = document.documentElement;
+            const target = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+            html.setAttribute('data-theme', target);
+            localStorage.setItem('theme', target);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const saved = localStorage.getItem('theme');
+            if (saved) document.documentElement.setAttribute('data-theme', saved);
+        });
+    </script>
+</body>
+
+</html>

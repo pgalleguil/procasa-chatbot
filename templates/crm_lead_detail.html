@@ -2428,6 +2428,10 @@
                     Manual</span></a>
             {% endif %}
             <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+            {% if user_role in ['supervisor', 'admin'] %}
+            <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i>
+                <span>Captaciones</span></a>
+            {% endif %}
 
             <!-- BOTÓN DE TEMA AGREGADO -->
             <a href="#" class="nav-link theme-toggle" onclick="toggleTheme()">

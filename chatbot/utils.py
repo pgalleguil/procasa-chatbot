@@ -1,6 +1,46 @@
-# chatbot/utils.py
+from datetime import datetime, timedelta, time
+from typing import Optional, List, Union
+from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
+
 import re
-from typing import Optional
+
+def calculate_business_minutes(start_dt: datetime, end_dt: datetime) -> float:
+    """
+    Calcula la cantidad de minutos transcurridos entre dos fechas, 
+    contando únicamente el tiempo dentro del horario laboral.
+    """
+    if not start_dt or not end_dt:
+        return 0.0
+    
+    # Asegurar que sean aware
+    if start_dt.tzinfo is None: start_dt = CHILE_TZ.localize(start_dt)
+    if end_dt.tzinfo is None: end_dt = CHILE_TZ.localize(end_dt)
+    
+    if start_dt > end_dt:
+        return 0.0
+    
+    total_minutes = 0.0
+    current_dt = start_dt
+    
+    # Iterar por días
+    while current_dt.date() <= end_dt.date():
+        if current_dt.weekday() in BUSINESS_DAYS:
+            # Definir ventana laboral para este día
+            b_start = current_dt.replace(hour=BUSINESS_START_HOUR, minute=0, second=0, microsecond=0)
+            b_end = current_dt.replace(hour=BUSINESS_END_HOUR, minute=0, second=0, microsecond=0)
+            
+            # Intersección entre [start_dt, end_dt] y [b_start, b_end]
+            period_start = max(current_dt, b_start)
+            period_end = min(end_dt, b_end)
+            
+            if period_start < period_end:
+                diff = period_end - period_start
+                total_minutes += diff.total_seconds() / 60
+        
+        # Saltar al inicio del día siguiente
+        current_dt = (current_dt + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+    return total_minutes
 
 # ==========================================
 # 1. LIMPIEZA DE TELÉFONO (FUNCIÓN FALTANTE)

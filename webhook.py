@@ -34,6 +34,10 @@ from campanas.handler import handle_campana_respuesta
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
 from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent
+from api_captacion import (
+    get_captacion_list, get_captacion_detail, update_captacion_status, 
+    distribute_sourced_leads, format_relative_time as format_captacion_time
+)
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate
 
 # ========================= CONFIGURACIÓN =========================
@@ -58,7 +62,8 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 background_tasks_status = {
     "notifications_loop": {"status": "starting", "last_heartbeat": None},
     "sla_monitor": {"status": "starting", "last_heartbeat": None},
-    "task_monitor": {"status": "starting", "last_heartbeat": None}
+    "task_monitor": {"status": "starting", "last_heartbeat": None},
+    "captacion_distributor": {"status": "starting", "last_heartbeat": None}
 }
 
 @asynccontextmanager
@@ -70,6 +75,7 @@ async def lifespan(app: FastAPI):
     n_task = asyncio.create_task(process_pending_leads_loop())
     s_task = asyncio.create_task(sla_monitor_loop())
     t_task = asyncio.create_task(check_scheduled_tasks_loop())
+    c_task = asyncio.create_task(captacion_distribution_loop())
     
     # Crear admin y asegurar índices
     crear_admin_si_no_existe()
@@ -90,8 +96,9 @@ async def lifespan(app: FastAPI):
     n_task.cancel()
     s_task.cancel()
     t_task.cancel()
+    c_task.cancel()
     try:
-        await asyncio.gather(n_task, s_task, t_task, return_exceptions=True)
+        await asyncio.gather(n_task, s_task, t_task, c_task, return_exceptions=True)
     except Exception as e:
         logger.error(f"Error apagando tareas: {e}")
 
@@ -498,7 +505,7 @@ async def api_create_manual_lead(request: Request):
         raise HTTPException(status_code=400, detail=result.get("message"))
 
 
-# ========================= 6. RUTAS CRM (MODIFICADAS PARA HORA LOCAL) =========================
+# ========================= 11. DETALLE Y GESTIÓN CRM =========================
 
 
 
@@ -848,6 +855,159 @@ async def api_reporte_real():
     data = get_reporte_real()
     return data
     
+
+# ========================= 10. RUTAS CAPTACIÓN (NUEVO) =========================
+
+@app.get("/captacion", response_class=HTMLResponse)
+async def view_captaciones(
+    request: Request,
+    comuna: str = Query(None),
+    estado: str = Query(None),
+    ejecutivo: str = Query(None),
+    page: int = Query(1, ge=1)
+):
+    username = await get_current_user(request)
+    client = MongoClient(Config.MONGO_URI)
+    db = client[Config.DB_NAME]
+    user = db["usuarios"].find_one({"username": username})
+    
+    if not user:
+        return RedirectResponse(url="/?error=sesion_invalida")
+
+    user_role = user.get("rol", "agente")
+    user_name = user.get("nombre", "")
+    
+    if user_role not in ["admin", "supervisor"]:
+        return RedirectResponse(url="/crm?error=access_denied")
+    
+    # Lista de ejecutivos para el filtro (solo admin/supervisor)
+    executives = []
+    if user_role in ["admin", "supervisor"]:
+        executives = get_unique_executives()
+    
+    limit = 10
+    items, total_count = get_captacion_list(
+        user_role=user_role,
+        user_name=user_name,
+        page=page,
+        limit=limit,
+        comuna_filter=comuna,
+        status_filter=estado,
+        executive_filter=ejecutivo
+    )
+    
+    # KPIs adicionales para el resumen (basados en el ejecutivo/permisos, no en los filtros actuales de lista)
+    base_query = {"details.es_propietario_directo": True}
+    if user_role not in ["admin", "supervisor"]:
+        base_query["gestion.ejecutivo_asignado"] = user_name
+    elif ejecutivo and ejecutivo != "Todos":
+        base_query["gestion.ejecutivo_asignado"] = ejecutivo
+
+    in_gestion_count = db["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "GESTION"})
+    captados_count = db["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"})
+    total_pages = (total_count + limit - 1) // limit
+
+    return templates.TemplateResponse("captacion_list.html", {
+        "request": request,
+        "items": items,
+        "total_count": total_count,
+        "in_gestion_count": in_gestion_count,
+        "captados_count": captados_count,
+        "user_role": user_role,
+        "user_name": user_name,
+        "current_comuna": comuna,
+        "current_estado": estado,
+        "current_ejecutivo": ejecutivo,
+        "executives": executives,
+        "pagination": {
+            "current_page": page,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1
+        }
+    })
+
+@app.get("/captacion/{obj_id}", response_class=HTMLResponse)
+async def view_captacion_detail_route(request: Request, obj_id: str):
+    username = await get_current_user(request)
+    client = MongoClient(Config.MONGO_URI)
+    db = client[Config.DB_NAME]
+    user = db["usuarios"].find_one({"username": username})
+    
+    if not user:
+        return RedirectResponse(url="/?error=sesion_invalida")
+
+    user_role = user.get("rol", "agente")
+    user_name = user.get("nombre", "")
+
+    if user_role not in ["admin", "supervisor"]:
+        return RedirectResponse(url="/crm?error=access_denied")
+
+    data = get_captacion_detail(obj_id)
+    if not data:
+        return HTMLResponse("Propiedad no encontrada")
+
+    # RBAC Check
+    user_name = user.get("nombre", "")
+    if user.get("rol") == "agente":
+        assigned = data.get("gestion", {}).get("ejecutivo_asignado")
+        if assigned and user_name.lower() not in assigned.lower():
+            return RedirectResponse(url="/captacion?error=no_asignada")
+
+    return templates.TemplateResponse("captacion_detail.html", {
+        "request": request,
+        "prop": data,
+        "user_name": user_name,
+        "user_role": user.get("rol", "agente")
+    })
+
+@app.post("/api/captacion/update")
+async def api_update_captacion(request: Request):
+    await get_current_user(request)
+    data = await request.json()
+    obj_id = data.get("id")
+    status = data.get("status")
+    notes = data.get("notes")
+    
+    if not obj_id or not status:
+        raise HTTPException(status_code=400, detail="Faltan datos")
+        
+    result = update_captacion_status(obj_id, status, notes)
+    return {"status": "ok"} if result else {"status": "error"}
+
+@app.post("/api/captacion/distribute")
+async def api_distribute_captacion(request: Request):
+    username = await get_current_user(request)
+    client = MongoClient(Config.MONGO_URI)
+    db = client[Config.DB_NAME]
+    user = db["usuarios"].find_one({"username": username})
+    
+    if user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+        
+    count = distribute_sourced_leads()
+    return {"status": "ok", "assigned": count}
+
+async def captacion_distribution_loop():
+    logger.info("[BACKGROUND] Iniciando loop de distribución de captaciones...")
+    while True:
+        try:
+            background_tasks_status["captacion_distributor"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
+            background_tasks_status["captacion_distributor"]["status"] = "running"
+            
+            count = distribute_sourced_leads()
+            if count > 0:
+                logger.info(f"[BACKGROUND] Se asignaron {count} nuevas captaciones automáticamente.")
+                
+            # Ejecutar cada 1 hora
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            background_tasks_status["captacion_distributor"]["status"] = "error"
+            logger.error(f"[BACKGROUND] Error en distribuidor de captaciones: {e}")
+            await asyncio.sleep(60)
+
 # ========================= 6. RUTAS CRM (MODIFICADAS PARA HORA LOCAL) =========================
 
 @app.get("/crm", response_class=HTMLResponse)

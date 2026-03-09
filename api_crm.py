@@ -102,6 +102,7 @@ def process_chat_timeline(messages):
 # --- REGISTRO DE EVENTOS (Delegado a storage) ---
 from chatbot.storage import log_event # Usamos el logger centralizado
 from chatbot.crm_service import CrmService
+from chatbot.utils import calculate_business_minutes
 from chatbot.constants import PipelineStage, InteractionType, UNASSIGNED_LABEL
 
 # log_crm_event se mantiene como alias por compatibilidad pero usa storage
@@ -142,20 +143,20 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     # --- FILTRO DE SEGURIDAD (ROL) ---
     # Si NO es admin/supervisor, solo ver sus propios leads
     if user_role not in ["admin", "supervisor"] and user_name:
-        regex_name = re.escape(user_name)
+        regex_name = re.compile(re.escape(user_name), re.IGNORECASE)
         query_parts.append({
             "$or": [
-                {"prospecto.ejecutivo": {"$regex": regex_name, "$options": "i"}},
-                {"ejecutivo_asignado": {"$regex": regex_name, "$options": "i"}}
+                {"prospecto.ejecutivo": regex_name},
+                {"ejecutivo_asignado": regex_name}
             ]
         })
     # Si es admin/supervisor y eligió un ejecutivo específico
     elif ejecutivo_filter and ejecutivo_filter != "Todos":
-        regex_exec = re.escape(ejecutivo_filter)
+        regex_exec = re.compile(re.escape(ejecutivo_filter), re.IGNORECASE)
         query_parts.append({
             "$or": [
-                {"prospecto.ejecutivo": {"$regex": regex_exec, "$options": "i"}},
-                {"ejecutivo_asignado": {"$regex": regex_exec, "$options": "i"}}
+                {"prospecto.ejecutivo": regex_exec},
+                {"ejecutivo_asignado": regex_exec}
             ]
         })
 
@@ -164,10 +165,12 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         # Limpiar caracteres no numéricos para búsqueda exacta por teléfono
         clean_phone = re.sub(r'\D', '', term)
         if clean_phone:
-            query_parts.append({"phone": {"$regex": clean_phone}})
+            regex_phone = re.compile(re.escape(clean_phone))
+            query_parts.append({"phone": regex_phone})
         else:
             # Búsqueda por nombre si no es teléfono
-            query_parts.append({"prospecto.nombre": {"$regex": term, "$options": "i"}})
+            regex_term = re.compile(re.escape(term), re.IGNORECASE)
+            query_parts.append({"prospecto.nombre": regex_term})
     
     query = {"$and": query_parts} if query_parts else {}
     
@@ -194,7 +197,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                 "type": {"$in": [
                     "GESTION_LOG", "HUMAN_NOTE", "STATUS_CHANGE", 
                     "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CLICK_PHONE_LEAD",
-                    "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER"
+                    "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER",
+                    "ASSIGNMENT"
                 ]}
             }},
             {"$sort": {"timestamp": -1}},
@@ -231,6 +235,12 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         "gestion": {"label": "En Gestión",  "led": "led-yellow", "priority": 3},
         "cerrado": {"label": "Cerrado",     "led": "led-gray",   "priority": 4}
     }
+    # Tipos de eventos considerados como gestión humana válida
+    management_types = [
+        "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
+        "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", 
+        "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
+    ]
 
     # 4. PROCESAR LEADS EN MEMORIA
     for lead in leads_list:
@@ -259,8 +269,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         lifecycle_ts = lead.get("lifecycle", {}).get("assigned_at")
         created_ts = lead.get("created_at")
         
-        # Determine the fallback timestamp (Order: Msg > Assigned > Created)
-        last_ts = ultimo_msg_ts or lifecycle_ts or created_ts
+        # Determine original fallback (Prioritize Assignment over Message for SLA consistency)
+        last_ts = lifecycle_ts or ultimo_msg_ts or created_ts
         
         # If no management action exists, clarify the text
         if not last_action_event:
@@ -291,7 +301,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                 "SEND_WA_OWNER": "WhatsApp Enviado (Prop)",
                 "SEND_EMAIL_OWNER": "Email Enviado (Prop)",
                 "STATUS_CHANGE": "Cambio de Estado",
-                "HUMAN_NOTE": "Gestión Manual"
+                "HUMAN_NOTE": "Gestión Manual",
+                "ASSIGNMENT": "Lead Asignado"
             }
             
             last_action_text = meta.get("action_label") or type_labels.get(evt_type, "Gestión CRM")
@@ -302,12 +313,6 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                 last_action_note = f"Canal: {meta.get('channel', '---')}"
 
             # Corrección Visual de Estado: Promoción por gestión ANY (Lead o Propietario)
-            management_types = [
-                "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
-                "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", 
-                "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
-            ]
-            
             if estado_final == PipelineStage.NEW and (evt_type in management_types or meta.get("result")):
                 estado_final = PipelineStage.CONTACTED
 
@@ -365,7 +370,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
              sla_status = "pending"
              sla_label = "Pendiente Asignación"
              
-        elif last_action_event or estado_final not in [PipelineStage.NEW, PipelineStage.CONTACTED]:
+        elif (last_action_event and last_action_event.get("type") in management_types) or estado_final not in [PipelineStage.NEW, PipelineStage.CONTACTED]:
              sla_status = "fulfilled"
              sla_label = "Gestionado" 
              
@@ -377,8 +382,9 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                      if start_dt.tzinfo is None:
                          start_dt = CHILE_TZ.localize(start_dt)
                     
-                     diff = datetime.now(CHILE_TZ) - start_dt
-                     minutes_diff = diff.total_seconds() / 60
+                     # diff = datetime.now(CHILE_TZ) - start_dt
+                     # minutes_diff = diff.total_seconds() / 60
+                     minutes_diff = calculate_business_minutes(start_dt, datetime.now(CHILE_TZ))
                     
                      # UMBRALES: Rojo (>180), Naranja (150-180), Amarillo (60-150), Verde (<60)
                      if minutes_diff >= 180:

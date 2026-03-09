@@ -90,10 +90,36 @@ async def block_resources(route):
     await route.continue_()
 
 # --- EXTRACCIÓN DE CONTACTO (LÓGICA PRESERVADA) ---
-async def extract_contact(page, listing_url, doc_id, coll, contact_data, worker_id=0):
-    # Ya no definimos los listeners aquí para evitar duplicados en reutilización
-    contact_data["phone"] = None 
-    
+async def extract_contact(page, listing_url, doc_id, coll, worker_id=0):
+    contact_data = {"phone": None}
+
+    async def handle_response(response):
+        # Interceptamos la respuesta que contiene el teléfono
+        if "cnmessage/send" in response.url or "contacts" in response.url:
+            try:
+                text = await response.text()
+                # Buscamos patrones de teléfono móvil Chile (+569 o 9) con 9 dígitos totales
+                phones = re.findall(r'(\+569\d{8}|9\d{8})', text.replace(" ", "").replace("-", ""))
+                if phones:
+                    # Filtrar posibles IDs de anuncio (comúnmente 8 dígitos o empiezan distinto)
+                    valid_phones = [p for p in phones if len(p.replace("+56", "")) == 9]
+                    if valid_phones:
+                        # Priorizar el que tiene +56
+                        with_prefix = [p for p in valid_phones if p.startswith("+56")]
+                        contact_data["phone"] = with_prefix[0] if with_prefix else valid_phones[0]
+                        logging.debug(f"🎯 Capturado por red: {contact_data['phone']}")
+            except: pass
+
+    page.on("response", handle_response)
+
+    # Capturar popups (WhatsApp abre en nueva pestaña)
+    async def handle_popup(popup):
+        await popup.wait_for_load_state()
+        p_url = popup.url
+        m = re.search(r'phone=(\d+)', p_url)
+        if m: contact_data["phone"] = "+" + m.group(1)
+    page.on("popup", handle_popup)
+
     try:
         # --- NAVEGACIÓN OPTIMIZADA: wait_until="commit" + wait_for_selector ---
         await page.goto(listing_url, wait_until="commit", timeout=CONTACT_CONFIG["page_timeout"])
@@ -271,28 +297,14 @@ async def main():
     queue = asyncio.Queue()
     for c in candidates: await queue.put(c)
 
-    # Contador global para mostrar el total real restante y tráfico
-    stats = {
-        "total_db_pending": total_db_pending,
-        "traffic_mb": 0.0,
-        "session_traffic": {} # wid -> current session traffic
-    }
+    # Contador global para mostrar el total real restante en base de datos
+    stats = {"total_db_pending": total_db_pending}
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-webrtc",
-                "--disable-features=WebRtcHideLocalIpsWithMdns",
-                "--disable-background-networking",
-                "--disable-background-timer-throttling",
-                "--no-sandbox"
-            ]
-        )
+        browser = await p.chromium.launch(headless=True)
 
         async def worker(wid):
             logging.info(f"[W{wid}] Worker iniciado")
-            stats["session_traffic"][wid] = 0.0
 
             while not queue.empty():
                 # --- CONTEXT REUSE: 6-8 anuncios por contexto ---
@@ -308,44 +320,6 @@ async def main():
                 logging.info(f"[W{wid}] Nueva sesión ({ads_per_session} ads) | Proxy: {proxy}")
 
                 context = await browser.new_context(user_agent=random.choice(USER_AGENTS), proxy=ctx_proxy)
-                
-                # --- REUTILIZAR PÁGINA POR SESIÓN ---
-                page = await context.new_page()
-                await Stealth().apply_stealth_async(page)
-                await page.route("**/*", block_resources)
-
-                # Diccionario compartido para capturar el teléfono vía red/popup
-                contact_capture = {"phone": None}
-
-                async def handle_response(response):
-                    if "cnmessage/send" in response.url or "contacts" in response.url:
-                        try:
-                            text = await response.text()
-                            phones = re.findall(r'(\+569\d{8}|9\d{8})', text.replace(" ", "").replace("-", ""))
-                            if phones:
-                                valid_phones = [p for p in phones if len(p.replace("+56", "")) == 9]
-                                if valid_phones:
-                                    with_prefix = [p for p in valid_phones if p.startswith("+56")]
-                                    contact_capture["phone"] = with_prefix[0] if with_prefix else valid_phones[0]
-                        except: pass
-                
-                async def handle_popup(popup):
-                    try:
-                        await popup.wait_for_load_state()
-                        m = re.search(r'phone=(\d+)', popup.url)
-                        if m: contact_capture["phone"] = "+" + m.group(1)
-                    except: pass
-
-                page.on("response", handle_response)
-                page.on("popup", handle_popup)
-
-                # Monitor de tráfico por worker
-                ad_traffic = [0]
-                async def count_traffic(response):
-                    try:
-                        size = int(response.headers.get("content-length", 0))
-                        ad_traffic[0] += size
-                    except: pass
                 processed_in_session = 0
 
                 try:
@@ -361,68 +335,31 @@ async def main():
                             queue.task_done()
                             continue
 
-                        # Crear página NUEVA por anuncio (más estable)
+                        logging.info(f"🌐 [W{wid}] Procesando (Q {queue.qsize()} | DB {stats['total_db_pending']}): {cand['url'][-30:]}")
+
+                        # Crear página dentro del contexto reutilizado
                         page = await context.new_page()
                         await Stealth().apply_stealth_async(page)
                         await page.route("**/*", block_resources)
 
-                        # Captura de teléfono por red
-                        contact_capture = {"phone": None}
-                        async def handle_response(response):
-                            if "cnmessage/send" in response.url or "contacts" in response.url:
-                                try:
-                                    text = await response.text()
-                                    phones = re.findall(r'(\+569\d{8}|9\d{8})', text.replace(" ", "").replace("-", ""))
-                                    if phones:
-                                        valid_phones = [p for p in phones if len(p.replace("+56", "")) == 9]
-                                        if valid_phones:
-                                            with_prefix = [p for p in valid_phones if p.startswith("+56")]
-                                            contact_capture["phone"] = with_prefix[0] if with_prefix else valid_phones[0]
-                                except: pass
-                        
-                        async def handle_popup(popup):
-                            try:
-                                await popup.wait_for_load_state()
-                                m = re.search(r'phone=(\d+)', popup.url)
-                                if m: contact_capture["phone"] = "+" + m.group(1)
-                            except: pass
-
-                        page.on("response", handle_response)
-                        page.on("popup", handle_popup)
-
-                        # Monitor de tráfico
-                        ad_traffic = [0]
-                        async def count_traffic(response):
-                            try:
-                                size = int(response.headers.get("content-length", 0))
-                                ad_traffic[0] += size
-                            except: pass
-                        page.on("response", count_traffic)
-
-                        logging.info(f"🌐 [W{wid}] Procesando (Q {queue.qsize()} | DB {stats['total_db_pending']}): {cand['url'][-30:]}")
-
                         try:
-                            result = await extract_contact(page, cand["url"], cand["_id"], coll, contact_capture, worker_id=wid)
-                            
-                            ad_mb = ad_traffic[0] / (1024 * 1024)
-                            stats["traffic_mb"] += ad_mb
-                            logging.info(f"📊 [W{wid}] Tráfico ad: {ad_mb:.2f}MB | Total: {stats['traffic_mb']:.1f}MB")
-
-                            if result == True:
+                            result = await extract_contact(page, cand["url"], cand["_id"], coll, worker_id=wid)
+                            if result == True: # Éxito o Eliminado (ya actualizado en BD)
                                 stats["total_db_pending"] -= 1
                             elif result == "timeout":
                                 logging.warning(f"🔄 [W{wid}] Re-encolando por timeout: {cand['url'][-20:]}")
                                 await queue.put(cand)
+                            # Si es False, se queda en DB como pendiente, no decrementamos
                         except Exception as e:
                             logging.error(f"❌ [W{wid}] Error en worker: {e}")
                         finally:
-                            await page.close()
+                            await page.close()  # Solo cerrar la página, no el contexto
                             queue.task_done()
                             processed_in_session += 1
                             await asyncio.sleep(random.uniform(1, 3))
 
                 finally:
-                    await context.close()
+                    await context.close()  # Cerrar contexto al final de la sesión
                     logging.info(f"[W{wid}] Sesión cerrada ({processed_in_session} ads procesados)")
 
             logging.info(f"[W{wid}] Worker finalizado")

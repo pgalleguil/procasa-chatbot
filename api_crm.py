@@ -400,8 +400,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                           sla_status = "critical"
                           sla_label = "Crítico" 
                       elif minutes_diff >= 150: # 2:30 Horas (150 min)
-                           sla_status = "near_critical"
-                           sla_label = "Próximo a Crítico"
+                          sla_status = "near_critical"
+                          sla_label = "Próximo a Crítico"
                       elif minutes_diff >= 60:
                           sla_status = "warning"
                           sla_label = "Advertencia" 

@@ -24,8 +24,9 @@ def registro_masivo_chile():
         #{"email": "marriagada@procasa.cl", "nombre": "Mariela Arriagada", "tel": "+56991788250", "rol": "agente"},
         #{"email": "egarrido@procasa.cl", "nombre": "Erika Garrido", "tel": "+56991951317", "rol": "agente"},
         #{"email": "rcheneaux@procasa.cl", "nombre": "Raquel Cheneaux", "tel": "+56961892120", "rol": "agente"},
-        #{"email": "aliaga@procasa.cl", "nombre": "Rocío Aliaga", "tel": "+56972329309", "rol": "agente"}
-        {"email": "pmorales@procasa.cl", "nombre": "Paula Morales", "tel": "+56965366155", "rol": "agente"}
+        #{"email": "aliaga@procasa.cl", "nombre": "Rocío Aliaga", "tel": "+56972329309", "rol": "agente"},
+        #{"email": "pmorales@procasa.cl", "nombre": "Paula Morales", "tel": "+56965366155", "rol": "agente"}
+        {"email": "mgalleguillos@procasa.cl", "nombre": "María Paz Galleguillos", "tel": "+56926937730", "rol": "agente"}
 
     ]
 

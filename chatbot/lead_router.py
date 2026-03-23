@@ -20,6 +20,7 @@ MARIELA_ARRIAGADA = "Mariela Arriagada"
 RAQUEL_CHENEAUX = "Raquel Cheneaux"
 PAULA_MORALES = "Paula Morales"
 ROCIO_ALIAGA = "Rocío Aliaga"
+MARIA_PAZ_GALLEGUILLOS = "María Paz Galleguillos"
 
 # --- MODO VACACIONES ---
 # Agregue aquí los nombres de los ejecutivos que no están disponibles
@@ -52,7 +53,7 @@ def get_active_executive(name: str, norm_comuna: str = "") -> str:
     return name
 
 # Lista para Round Robin (Jorge Pablo Caro - RM)
-ROUND_ROBIN_TEAM = [MARIELA_ARRIAGADA, SUSANA_ENSIGNIA, ERIKA_GARRIDO, RAQUEL_CHENEAUX]
+ROUND_ROBIN_TEAM = [MARIELA_ARRIAGADA, MARIA_PAZ_GALLEGUILLOS, SUSANA_ENSIGNIA, ERIKA_GARRIDO, RAQUEL_CHENEAUX]
 
 # Phone mapping (This should ideally be in a DB or Config, but hardcoding for now as requested/implied)
 # NOTE: You will need to fill in real numbers or ensure they are in the DB users collection.
@@ -138,6 +139,13 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
         if candidate == MARIELA_ARRIAGADA:
             if not any(c in norm_comuna for c in mariela_comunas):
                 logger.info(f"[ROUTER] Saltando a Mariela para comuna '{norm_comuna}' (No es prioridad).")
+                continue
+
+        # Filtro María Paz Galleguillos: Comunas asignadas
+        mariapaz_comunas = ["nunoa", "la reina", "las condes", "vitacura", "san miguel"]
+        if candidate == MARIA_PAZ_GALLEGUILLOS:
+            if not any(c in norm_comuna for c in mariapaz_comunas):
+                logger.info(f"[ROUTER] Saltando a Maria Paz para comuna '{norm_comuna}' (No es prioridad).")
                 continue
         
         # Si llegamos aquí, el candidato es válido
@@ -239,7 +247,7 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
 
     # REGLA 0: Si el ejecutivo de la ficha ya es uno de los nuestros, se queda con él (Lo lógico)
     # PERO: Respetamos si está de vacaciones y redirigimos a su reemplazo
-    our_team = [ERIKA_GARRIDO, MARIELA_ARRIAGADA, SUSANA_ENSIGNIA, RAQUEL_CHENEAUX, PAULA_MORALES, ROCIO_ALIAGA]
+    our_team = [ERIKA_GARRIDO, MARIELA_ARRIAGADA, SUSANA_ENSIGNIA, RAQUEL_CHENEAUX, PAULA_MORALES, ROCIO_ALIAGA, MARIA_PAZ_GALLEGUILLOS]
     
     matched_member = next((member for member in our_team if normalize_text(member) in norm_exec), None)
     

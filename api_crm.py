@@ -198,7 +198,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                     "GESTION_LOG", "HUMAN_NOTE", "STATUS_CHANGE", 
                     "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CLICK_PHONE_LEAD",
                     "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER",
-                    "ASSIGNMENT"
+                    "ASSIGNMENT", "assignment", "ALERT_SENT", "alert_sent",
+                    "MANUAL_ENTRY", "msg_out"
                 ]}
             }},
             {"$sort": {"timestamp": -1}},
@@ -239,7 +240,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     management_types = [
         "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
         "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", 
-        "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
+        "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER", "ALERT_SENT", "alert_sent"
     ]
 
     # 4. PROCESAR LEADS EN MEMORIA
@@ -329,6 +330,11 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                  last_msg = msgs[-1]
                  ts = last_msg.get("timestamp")
                  if ts: last_ts = ts
+                 
+                 # Detectar si el último mensaje fue una respuesta del sistema/bot
+                 # Si el bot ya respondió, no es "tan" urgente como uno sin respuesta absoluta
+                 if last_msg.get("role") in ["assistant", "system"]:
+                     last_action_text = "Respondido por Bot"
 
         # Contabilizar el estado final REAL para las tarjetas (independiente de si lo filtramos luego o no)
         if estado_final in [PipelineStage.NEW]:
@@ -370,7 +376,9 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
              sla_status = "pending"
              sla_label = "Pendiente Asignación"
              
-        elif (last_action_event and last_action_event.get("type") in management_types) or estado_final not in [PipelineStage.NEW, PipelineStage.CONTACTED]:
+        elif (last_action_event and last_action_event.get("type") in management_types) or \
+             (lead.get("messages") and lead.get("messages")[-1].get("role") in ["assistant", "system"] and estado_final != PipelineStage.NEW) or \
+             estado_final not in [PipelineStage.NEW, PipelineStage.CONTACTED]:
              sla_status = "fulfilled"
              sla_label = "Gestionado" 
              
@@ -384,7 +392,21 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                     
                      # diff = datetime.now(CHILE_TZ) - start_dt
                      # minutes_diff = diff.total_seconds() / 60
+                     
+                     # FIX: Si es un lead histórico (creado hace > 7 días) y fue auto-asignado hoy, 
+                     # no disparar alertas críticas de inmediato, dale margen al equipo.
+                     is_historical = False
+                     if created_ts:
+                         try:
+                             c_dt = datetime.fromisoformat(str(created_ts).replace('Z', ''))
+                             if (datetime.now() - c_dt.replace(tzinfo=None)).days > 7:
+                                 is_historical = True
+                         except: pass
+
                      minutes_diff = calculate_business_minutes(start_dt, datetime.now(CHILE_TZ))
+                     
+                     if is_historical and minutes_diff < 480: # 8 horas de margen para leads viejos
+                         minutes_diff = 0
                     
                      # UMBRALES: Rojo (>180), Naranja (150-180), Amarillo (60-150), Verde (<60)
                      if minutes_diff >= 180:
@@ -504,7 +526,8 @@ def get_lead_detail_data(phone, property_code=None):
             "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD",
             "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
             "SEND_WA_OWNER", "SEND_EMAIL_OWNER",
-            "ASSIGNMENT", "MANUAL_ENTRY"
+            "ASSIGNMENT", "assignment", "ALERT_SENT", "alert_sent", 
+            "MANUAL_ENTRY", "msg_out"
         ]} 
     }).sort("timestamp", -1)
     
@@ -534,7 +557,11 @@ def get_lead_detail_data(phone, property_code=None):
             "GESTION_LOG": "Gestión Registrada",
             "HUMAN_NOTE": meta.get("action_label", "Nota de Gestión"),
             "ASSIGNMENT": "Asignación de Lead",
-            "MANUAL_ENTRY": "Ingreso Manual"
+            "assignment": "Asignación de Lead",
+            "ALERT_SENT": "Alerta Enviada",
+            "alert_sent": "Alerta Enviada",
+            "MANUAL_ENTRY": "Ingreso Manual",
+            "msg_out": "Respuesta Bot"
         }
 
         user_action_display = meta.get("action_label") or type_labels.get(evt_type, "Actividad")

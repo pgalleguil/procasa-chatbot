@@ -86,6 +86,36 @@ class LeadProcessingService:
         }
 
     @staticmethod
+    def is_worthy_of_assignment(lead_doc: Dict[str, Any]) -> bool:
+        """
+        Determina si un lead merece ser asignado a un ejecutivo humano de forma PROACTIVA
+        durante el proceso de reparación de datos.
+        
+        IMPORTANTE: Solo asignamos si hay una señal EXPLÍCITA de intención que el chatbot
+        ya detectó pero no pudo asignar por falta de datos.
+        """
+        # 1. SOLO INTENCIÓN EXPLÍCITA CONFIRMADA POR EL BOT
+        # No asignamos por recencia ni por mensajes pendientes, dejamos que el bot lo maneje
+        # cuando el cliente vuelva a hablar.
+        
+        high_intent_types = ["ASK_VISIT", "GIVE_OFFER", "VISITA_SOLICITADA", "CONTACTO_HUMANO"]
+        
+        # Revisar BI Analytics (Señal más fuerte del Bot)
+        bi_res = lead_doc.get("bi_analytics_global", {}).get("RESULTADO_CHAT")
+        if bi_res in high_intent_types:
+            return True
+
+        # Revisar si se intentó enviar una alerta de alta intención
+        prospecto = lead_doc.get("prospecto", {}) or {}
+        alerts = prospecto.get("alerts_sent", {})
+        if "InteresVisita" in alerts or "SolicitudContacto" in alerts:
+            return True
+            
+        # 2. DEFAULT: No asignamos. 
+        # Al reparar cluster/zone, el bot podrá asignar solo la próxima vez que el cliente hable.
+        return False
+
+    @staticmethod
     def reassign_if_needed(lead_doc: Dict[str, Any]) -> Dict[str, Any]:
         """
         Intenta asignar un ejecutivo si el lead está "No Asignado".
@@ -97,6 +127,11 @@ class LeadProcessingService:
         
         if current_exec not in unassigned_labels:
             return {} # Ya tiene asignado
+
+        # NUEVO: Solo asignar si el lead tiene "mérito" (intención o novedad)
+        if not LeadProcessingService.is_worthy_of_assignment(lead_doc):
+            logger.info(f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} descartado para auto-asignación (Baja intención/Histórico)")
+            return {}
 
         property_code = prospecto.get("codigo") or lead_doc.get("codigo")
         if not property_code:

@@ -1204,7 +1204,7 @@ async def process_pending_leads_loop():
                         if not target_phone or target_phone == "+56900000000":
                             from chatbot.lead_router import find_responsible_executive
                             lead_phone = lead_data.get("phone")
-                            p_code = lead_data.get("property_code")
+                            p_code = lead_data.get("property_code") or lead_data.get("prospecto", {}).get("codigo")
                             if p_code:
                                 logger.info(f"[BACKGROUND] Re-enrutando lead {lead_phone} por falta de destino válido...")
                                 new_exec, new_phone = find_responsible_executive(p_code)

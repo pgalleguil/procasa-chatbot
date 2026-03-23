@@ -170,8 +170,27 @@ class LeadProcessingService:
                 # 3. Notificar si fue re-asignado o pedido explícitamente
                 if update_data.get("auto_reassigned") or force_notif:
                     full_lead = db["leads"].find_one({"_id": query_id})
-                    save_pending_notification(full_lead)
-                    logger.info(f"[PROCESS_SERVICE] Notificacion pendiente guardada para {full_lead.get('phone')}")
+                    
+                    # CORRECCIÓN: Estructurar la notificación para que webhook la entienda
+                    prospecto_data = full_lead.get("prospecto", {})
+                    prop_code = prospecto_data.get("codigo") or full_lead.get("codigo")
+                    exec_name = full_lead.get("ejecutivo_asignado") or prospecto_data.get("ejecutivo")
+                    
+                    from .lead_router import get_executive_phone
+                    exec_phone = get_executive_phone(exec_name) if exec_name else "+56900000000"
+                    
+                    structured_alert = {
+                        "phone": full_lead.get("phone"),
+                        "property_code": prop_code,
+                        "lead_type": "ReasignacionAutomatica",
+                        "target_name": exec_name,
+                        "target_phone": exec_phone,
+                        "nombre": prospecto_data.get("nombre") or full_lead.get("nombre", "Cliente"),
+                        "last_message": "Asignado automáticamente por el motor de distribución."
+                    }
+                    
+                    save_pending_notification(structured_alert)
+                    logger.info(f"[PROCESS_SERVICE] Notificacion pendiente estructurada guardada para {full_lead.get('phone')} (destinado a {exec_name})")
 
                 return True
             

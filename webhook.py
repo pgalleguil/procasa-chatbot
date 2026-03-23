@@ -750,6 +750,22 @@ async def webhook(
     key = msg_obj.get("key", {})
     from_me = key.get("fromMe", False)
 
+    # --- SEGURIDAD: FILTRO DE RECENCIA (ANTI-BURST) ---
+    # Evitamos responder a mensajes antiguos que se quedaron encolados
+    msg_ts = msg_obj.get("messageTimestamp")
+    if msg_ts:
+        # WhatsApp usa segundos desde el epoch (int)
+        try:
+            ts_int = int(msg_ts)
+            now_ts = int(time.time())
+            diff = now_ts - ts_int
+            if diff > 300: # 5 minutos
+                logger.warning(f"[SAFETY] Ignorando mensaje antiguo de {diff}s para evitar ráfagas masivas.")
+                return JSONResponse({"status": "old message ignored", "diff": diff}, status_code=200)
+        except Exception as te:
+            logger.error(f"Error validando timestamp: {te}")
+    # ----------------------------------------------
+
     # --- DEBUG CRÍTICO: VER EL PAYLOAD COMPLETO ---
     logger.info(f"[DEBUG PAYLOAD] Key: {key}")
     logger.info(f"[DEBUG PAYLOAD] From: {msg_obj.get('from')} | SenderPn: {key.get('senderPn')} | Cleaned: {key.get('cleanedSenderPn')}")

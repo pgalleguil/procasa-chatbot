@@ -101,11 +101,32 @@ def toggle_bot_pausado(phone: str) -> bool:
 def registrar_propiedades_vistas(phone: str, nuevos_codigos: List[str]):
     if not nuevos_codigos: return
     db = get_db()
-    db[COLLECTION_CONVERSATIONS].update_one(
-        {"phone": phone},
-        {"$addToSet": {"prospecto.propiedades_vistas": {"$each": nuevos_codigos}}},
-        upsert=True
-    )
+    nuevos_codigos = [str(c).strip() for c in nuevos_codigos if c]
+    
+    try:
+        db[COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            {"$addToSet": {"prospecto.propiedades_vistas": {"$each": nuevos_codigos}}},
+            upsert=True
+        )
+    except Exception as e:
+        # Si falla porque el campo no es un array (ej: es un string), lo convertimos
+        logger.warning(f"[STORAGE] Re-intentando registro de propiedades por conflicto de tipo: {e}")
+        doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}, {"prospecto.propiedades_vistas": 1})
+        current = (doc or {}).get("prospecto", {}).get("propiedades_vistas")
+        
+        if isinstance(current, str):
+            final_list = list(set([current] + nuevos_codigos))
+        elif isinstance(current, list):
+            final_list = list(set(current + nuevos_codigos))
+        else:
+            final_list = nuevos_codigos
+            
+        db[COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            {"$set": {"prospecto.propiedades_vistas": final_list}},
+            upsert=True
+        )
 
 def obtener_propiedades_vistas(phone: str) -> List[str]:
     p = obtener_prospecto(phone)

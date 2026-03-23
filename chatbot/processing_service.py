@@ -130,7 +130,7 @@ class LeadProcessingService:
 
         # NUEVO: Solo asignar si el lead tiene "mérito" (intención o novedad)
         if not LeadProcessingService.is_worthy_of_assignment(lead_doc):
-            logger.info(f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} descartado para auto-asignación (Baja intención/Histórico)")
+            logger.debug(f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} descartado para auto-asignación (Baja intención/Histórico)")
             return {}
 
         property_code = prospecto.get("codigo") or lead_doc.get("codigo")

@@ -30,14 +30,25 @@ VACATION_REPLACEMENTS = {
     ERIKA_GARRIDO: RAQUEL_CHENEAUX
 }
 
-def get_active_executive(name: str) -> str:
-    """Retorna el reemplazo si el ejecutivo está en vacaciones, de lo contrario retorna el mismo nombre."""
+def is_raquel_unavailable() -> bool:
+    """Retorna True si hoy es Lunes (0) o Miércoles (2)."""
+    now = datetime.now(CHILE_TZ)
+    return now.weekday() in [0, 2]
+
+def get_active_executive(name: str, norm_comuna: str = "") -> str:
+    """Retorna el reemplazo si el ejecutivo está en vacaciones, o si no está disponible, deriva a RR."""
     if name in EXECUTIVES_ON_VACATION:
         replacement = VACATION_REPLACEMENTS.get(name)
         if replacement:
             logger.info(f"[VACATION] Redirigiendo asignación de {name} a su reemplazo: {replacement}")
-            return replacement
-        # Si no hay reemplazo definido pero está en vacaciones, el Round Robin o fallback se encargará
+            name = replacement
+        else:
+            return get_next_round_robin_executive(norm_comuna)
+            
+    if name == RAQUEL_CHENEAUX and is_raquel_unavailable():
+        logger.info(f"[VACATION] {name} no trabaja hoy (Lunes o Miércoles). Derivando a Round Robin.")
+        return get_next_round_robin_executive(norm_comuna)
+
     return name
 
 # Lista para Round Robin (Jorge Pablo Caro - RM)
@@ -117,6 +128,11 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
         if candidate in EXECUTIVES_ON_VACATION:
             logger.info(f"[ROUTER] Saltando a {candidate} (En modo vacaciones).")
             continue
+            
+        # Filtro Raquel: No trabaja lunes y miércoles
+        if candidate == RAQUEL_CHENEAUX and is_raquel_unavailable():
+            logger.info(f"[ROUTER] Saltando a {candidate} (No está disponible hoy Lunes/Miércoles).")
+            continue
     
         # Filtro Mariela: Si es Mariela, debe ser comuna de prioridad
         if candidate == MARIELA_ARRIAGADA:
@@ -134,7 +150,8 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
         return candidate
 
     # Fallback extremo (si algo fallara en el loop)
-    return get_active_executive(ERIKA_GARRIDO)
+    # Evito llamar a get_active_executive con Erika de nuevo para prevenir recursividad, ERIKA puede ser el default
+    return ERIKA_GARRIDO
 
 from .constants import UNASSIGNED_LABEL
 
@@ -228,7 +245,7 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     
     if matched_member:
         logger.info(f"[ROUTER] Propiedad ya pertenece a alguien del equipo ({original_executive} -> normalizado a {matched_member}). Verificando disponibilidad.")
-        target_executive_name = get_active_executive(matched_member)
+        target_executive_name = get_active_executive(matched_member, norm_comuna)
     
     # REGLA 0.1: Si el ejecutivo es el Supervisor (Pablo), redirigimos al Round Robin del equipo
     #elif "pablo galleguillos" in norm_exec:
@@ -244,17 +261,17 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
         # 1.2 Región del Maule (VII) -> Paula Morales
         elif "maule" in norm_region or "vii" in norm_region:
              logger.info(f"[ROUTER] Propiedad de JPC en Maule. Asignando a {PAULA_MORALES}")
-             target_executive_name = get_active_executive(PAULA_MORALES)
+             target_executive_name = get_active_executive(PAULA_MORALES, norm_comuna)
              
-        # 1.3 Ñuble (XVI) o Bío Bío (VIII) -> Rocío Aliaga
-        elif any(r in norm_region for r in ["nuble", "bio", "xvi", "viii"]):
-             logger.info(f"[ROUTER] Propiedad de JPC en Ñuble/BioBio. Asignando a {ROCIO_ALIAGA}")
-             target_executive_name = get_active_executive(ROCIO_ALIAGA)
+        # 1.3 Ñuble (XVI), Bío Bío (VIII) o Valparaíso (V) -> Rocío Aliaga
+        elif any(r in norm_region for r in ["nuble", "bio", "xvi", "viii", "valparaiso", "quinta"]) or " v " in f" {norm_region} ":
+             logger.info(f"[ROUTER] Propiedad de JPC en Ñuble/BioBio/Valparaíso. Asignando a {ROCIO_ALIAGA}")
+             target_executive_name = get_active_executive(ROCIO_ALIAGA, norm_comuna)
 
         # 1.4 Otras Regiones (Físicas/Norte/Otras) -> Erika Garrido
         else:
             logger.info(f"[ROUTER] Propiedad de JPC en otra región ({region}). Asignando a {ERIKA_GARRIDO}")
-            target_executive_name = get_active_executive(ERIKA_GARRIDO)
+            target_executive_name = get_active_executive(ERIKA_GARRIDO, norm_comuna)
             
     else:
         # Para cualquier otro ejecutivo (externo o no contemplado), asegurarnos de usar solo Nombre + Apellido (2 palabras)
@@ -272,7 +289,7 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
          phone = prop.get("movil_ejecutivo") or prop.get("fono_ejecutivo")
 
     # Final Safety Check: Asegurar que el el final no esté de vacaciones (por si se coló por otra regla)
-    target_executive_name = get_active_executive(target_executive_name)
+    target_executive_name = get_active_executive(target_executive_name, norm_comuna)
 
     # FALLBACK DE EMERGENCIA: Si no hay teléfono o es No Asignado, asignamos a Round Robin
     # PERO: Respetamos la decisión de dejarlo como pendiente si la propiedad NO EXISTE (Rule refinement)

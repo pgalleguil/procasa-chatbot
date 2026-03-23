@@ -233,7 +233,7 @@ _DETAIL_PUBLICADO     = {"publicado"}
 # --- LÓGICA DE DETECCIÓN DE CORREDORES ---
 _BROKER_KEYWORDS = {
     # --- Grandes Franquicias y Cadenas ---
-    "remax", "re/max", "century 21", "c21", "engel", "völkers", "volkers", 
+    "remax", "re/max", "re max", "re-max", "century 21", "c21", "engel", "völkers", "volkers", 
     "keller williams", "kw chile", "coldwell banker", "sothebys", "realty", 
     "betterhomes", "property partners", "zillow", "houm", "isbast", "buydepa",
 
@@ -265,12 +265,13 @@ _BROKER_KEYWORDS = {
     "ejecutivo", "asesor", "habitacional", "comercializadora", "bienes raices",
     "corredor de propiedades", "gestora", "admon", "administración",
 
-    # --- Comportamiento Profesional ---
-    "exclusivo", "exclusividad", "oportunidad inversionistas", "entrega inmediata",
-    "cartera", "id anuncio", "codigo", "código", "visitas coordinar", "honorarios", 
-    "comisión", "comision", "plusvalía", "rentabilidad", "sala de ventas", 
+    # --- Servicios y Ganchos Comerciales (No Dueños) ---
+    "compra sin pie", "sin pie", "con subsidio", "ds1", "ds19", "gestionamos", 
+    "aprobacion", "pie en cuotas", "financiamiento", "con o sin pie", 
+    "oportunidad inversionista", "rentabilidad", "plusvalia", "sala de ventas",
     "piloto", "vende inmobiliaria", "arrienda inmobiliaria", "agendar visita",
-    "metraje aproximado", "gastos comunes aprox", "comisión más iva", "sii"
+    "metraje aproximado", "gastos comunes aprox", "comisión más iva", "sii",
+    "gestion de credito", "credito hipotecario", "evaluacion", "pre-aprobado"
 }
 
 # Abreviaciones peligrosas que necesitan límites de palabra (\b) para evitar falsos positivos
@@ -305,7 +306,8 @@ def is_likely_broker(seller_name: str, description: str, company_name: str = "N/
     broker_terms = [
         "comision", "honorarios", "corretaje", "orden de visita", 
         "corredor de propiedades", "gestion de arriendo", "exclusividad",
-        "gastos comunes aprox", "metraje aproximado", "agendar visita", "plusvalia"
+        "gastos comunes aprox", "metraje aproximado", "agendar visita", "plusvalia",
+        "sin pie", "compra sin pie", "subsidio", "gestionamos", "hipotecario", "financiamiento"
     ]
     formatted_desc = normalize_text(description).lower()
     for term in broker_terms:
@@ -1107,7 +1109,10 @@ async def process_with_ai(raw_data: dict, grok_client, uf_value: float = None, c
         
         # Detección de propietario directo: 
         # Si no hay señales claras de corredor, asumimos que es dueño (incluyendo si el nombre es Agente/Vendedor)
-        is_broker = is_likely_broker(publicador, raw_desc, raw_data.get("company_name", "N/A"))
+        is_broker = (
+            str(raw_data.get("seller_type", "")).lower() == "agente" or
+            is_likely_broker(publicador, raw_desc, raw_data.get("company_name", "N/A"))
+        )
         is_direct = not is_broker
         confianza_prop = 1.0 if is_broker else 0.95
         
@@ -1160,10 +1165,10 @@ async def process_with_ai(raw_data: dict, grok_client, uf_value: float = None, c
   "resumen_limpio": "Resumen ejecutivo sin ruidos"
 }}
 
-IMPORTANTE: Si el vendedor es una empresa (Re/Max, Century 21, Propiedades, etc.) o el nombre es generico como "Agente", "Inmobiliaria", o si la descripcion menciona "comision" u "honorarios", "es_propietario_directo" DEBE ser false.
-Solo es true si tienes la certeza de que el vendedor es una persona natural sin ningun vinculo profesional con el corretaje. Ante la duda, marca false.
+IMPORTANTE: Si el vendedor es una empresa (Re/Max, Century 21, Propiedades, etc.) o el nombre es generico como "Agente" o "Vendedor", o si la descripcion menciona "comision", "honorarios" o servicios como "compra sin pie", "gestion de subsidio", "financiamiento", "es_propietario_directo" DEBE ser false.
+Solo es true si tienes la certeza absoluta de que el vendedor es una persona natural particular que vende su propia casa. Si el aviso parece un producto de inversión o un servicio de ventas masivas, marca false.
     T: {title} | P: {publicador} | Precio: {price}
-    D: {raw_desc[:1500]} (Resumen descripción)"""
+    D: {raw_desc[:1800]} (Resumen descripción)"""
 
     try:
         resp = await grok_client.chat.completions.create(
@@ -1287,12 +1292,12 @@ Solo es true si tienes la certeza de que el vendedor es una persona natural sin 
         "piscina": extracted.get("piscina", False),
         "descripcion": normalize_text(extracted.get("resumen_limpio", raw_desc), CONFIG["desc_max_chars"]),
         "es_propietario_directo": False if (
-            raw_data.get("seller_type") == "Agente" or 
+            str(raw_data.get("seller_type", "")).lower() == "agente" or 
             is_likely_broker(publicador, raw_desc, raw_data.get("company_name", "N/A")) or
             is_likely_broker(publicador, raw_desc, extracted.get("nombre_corredora", "N/A"))
         ) else extracted.get("es_propietario_directo", False),
         "confianza_propietario": 1.0 if (
-            raw_data.get("seller_type") == "Agente" or 
+            str(raw_data.get("seller_type", "")).lower() == "agente" or 
             is_likely_broker(publicador, raw_desc, raw_data.get("company_name", "N/A"))
         ) else extracted.get("confianza", 0.5),
         "dias_en_portal": dias_en_portal,

@@ -1,426 +1,2709 @@
-<!DOCTYPE html>
-<html lang="es" data-theme="light">
+<!doctype html>
+<html lang="es" data-theme="dark">
 
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title>Procasa | Detalle de Captación</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+    <link rel="stylesheet" href="https://npmcdn.com/flatpickr/dist/themes/dark.css" />
 
     <style>
         :root {
-            --bg-body: #f1f5f9;
-            --bg-card: #ffffff;
-            --bg-sidebar: #0f172a;
-            --text-primary: #1e293b;
-            --text-secondary: #475569;
-            --accent: #4f46e5;
-            --border-color: #e2e8f0;
-            --sidebar-width: 200px;
-            --sidebar-width-collapsed: 70px;
+            --bg-body: #09090b;
+            /* zinc-950 */
+            --bg-card: rgba(24, 24, 27, 0.4);
+            /* zinc-900/40 */
+            --bg-sidebar: #09090b;
+            --text-primary: #f4f4f5;
+            /* zinc-100 */
+            --text-secondary: #a1a1aa;
+            /* zinc-400 */
+            --accent: #6366f1;
+            /* indigo-500 */
+            --accent-hover: #818cf8;
+            /* indigo-400 */
+            --owner-color: #f59e0b;
+            --owner-color-hover: #d97706;
+            --notes-color: #2dd4bf;
+            --danger-color: #ef4444;
+            --success-color: #10b981;
+            /* emerald-500 */
+            --border-color: rgba(255, 255, 255, 0.05);
+            --sidebar-width: 240px;
+            --sidebar-width-collapsed: 80px;
             --transition-speed: 0.3s;
+            --wa-color: #25d366;
+            --email-color: #3b82f6;
+            --input-bg: rgba(24, 24, 27, 0.5);
+            --input-border: rgba(255, 255, 255, 0.1);
+            --input-text: #f4f4f5;
         }
 
-        [data-theme="dark"] {
-            --bg-body: #0f172a;
-            --bg-card: #1e293b;
-            --bg-sidebar: #020617;
-            --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
-            --accent: #6366f1;
-            --border-color: #334155;
+        [data-theme="light"] {
+            --bg-body: #f8fafc;
+            --bg-card: rgba(255, 255, 255, 0.7);
+            --bg-sidebar: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --border-color: rgba(0, 0, 0, 0.05);
+            --input-bg: rgba(255, 255, 255, 0.5);
+            --input-border: rgba(0, 0, 0, 0.1);
+            --input-text: #0f172a;
+            --accent: #4f46e5;
+            --accent-hover: #4338ca;
         }
 
         body {
             background-color: var(--bg-body);
             color: var(--text-primary);
-            font-family: 'Outfit', sans-serif;
-            transition: all 0.3s ease;
+            font-family: "Outfit", sans-serif;
+            overflow-x: hidden;
+            transition:
+                background-color 0.3s,
+                color 0.3s;
+            background-image: radial-gradient(circle at 50% 0%,
+                    rgba(99, 102, 241, 0.05) 0%,
+                    transparent 50%);
+            min-height: 100vh;
         }
 
-        /* SIDEBAR UNIFICADO */
+        .modern-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+            display: block !important;
+        }
+
+        .modern-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+
+        .modern-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+
+        /* SIDEBAR */
         .sidebar {
             width: var(--sidebar-width-collapsed);
-            background: var(--bg-sidebar);
             height: 100vh;
             position: fixed;
             left: 0;
             top: 0;
-            padding: 20px 0;
+            padding: 30px 0;
             border-right: 1px solid var(--border-color);
-            z-index: 1000;
-            transition: width var(--transition-speed);
+            z-index: 1050;
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
             display: flex;
             flex-direction: column;
             white-space: nowrap;
+            backdrop-filter: blur(20px);
         }
 
         .sidebar:hover {
             width: var(--sidebar-width);
+            box-shadow: 20px 0 40px rgba(0, 0, 0, 0.2);
+        }
+
+        .brand {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 2.5rem;
+            display: flex;
+            align-items: center;
+            height: 50px;
+            padding: 0;
+            overflow: hidden;
+            letter-spacing: -0.02em;
+        }
+
+        .brand i,
+        .brand img {
+            min-width: var(--sidebar-width-collapsed);
+            text-align: center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .brand span {
+            margin-left: -10px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .sidebar:hover .brand span {
+            opacity: 1;
         }
 
         .nav-link {
-            color: #cbd5e1;
-            padding: 12px 0;
+            color: var(--text-secondary);
+            padding: 14px 0;
             display: flex;
             align-items: center;
             text-decoration: none;
-            transition: all 0.2s;
+            margin: 4px 12px;
+            border-radius: 16px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            height: 50px;
+            overflow: hidden;
+            width: calc(100% - 24px);
         }
 
         .nav-link i {
-            min-width: var(--sidebar-width-collapsed);
+            min-width: calc(var(--sidebar-width-collapsed) - 24px);
             text-align: center;
             font-size: 1.25rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.3s ease-out;
+        }
+
+        .nav-link span {
+            margin-left: 0px;
+            opacity: 0;
+            transform: translateX(-10px);
+            transition: all 0.3s;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .sidebar:hover .nav-link span {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
         }
 
         .nav-link.active {
-            color: var(--accent);
             background: rgba(99, 102, 241, 0.1);
-            border-left: 3px solid var(--accent);
+            color: var(--accent) !important;
         }
 
+        .nav-link.active i {
+            color: var(--accent);
+        }
+
+        /* Toggle Tema & Logout */
+        .nav-link.theme-toggle {
+            margin-top: auto;
+        }
+
+        .nav-link.theme-toggle:hover i {
+            transform: rotate(180deg) scale(1.1);
+            color: #f59e0b;
+        }
+
+        .nav-link.theme-toggle:hover {
+            background: rgba(245, 158, 11, 0.1);
+            color: #f59e0b;
+        }
+
+        .nav-link.logout {
+            margin-top: 5px;
+        }
+
+        .nav-link.logout:hover i {
+            transform: scale(1.15);
+            color: #ef4444;
+        }
+
+        .nav-link.logout:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+        }
+
+        /* MAIN CONTENT */
         .main-content {
             margin-left: var(--sidebar-width-collapsed);
-            padding: 30px;
+            padding: 40px;
+            transition: margin-left var(--transition-speed);
+            max-width: 1600px;
+            margin-right: auto;
         }
 
-        .prop-card {
+        .content-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 32px;
+            align-items: start;
+        }
+
+        @media (max-width: 1200px) {
+            .content-section {
+                grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
+            }
+        }
+
+        @media (max-width: 992px) {
+            .content-section {
+                grid-template-columns: 1fr;
+            }
+
+            .main-content {
+                padding: 20px;
+            }
+        }
+
+        /* CARDS & COMPONENTS */
+        .card-custom {
             background: var(--bg-card);
-            border-radius: 24px;
-            overflow: hidden;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
-            margin-bottom: 30px;
             border: 1px solid var(--border-color);
-        }
-
-        .gallery {
-            height: 450px;
-            background: #000;
+            border-radius: 32px;
+            padding: 32px;
+            margin-bottom: 32px;
+            transition: 0.3s ease;
             position: relative;
+            backdrop-filter: blur(24px);
+            box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.2);
         }
 
-        .gallery img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-        }
-
-        /* ANALISIS MERCADO */
-        .market-insight-card {
-            background: linear-gradient(135deg, var(--accent) 0%, #4338ca 100%);
-            color: white;
-            border-radius: 20px;
-            padding: 24px;
-            box-shadow: 0 8px 20px rgba(79, 70, 229, 0.2);
-        }
-
-        .stat-value {
-            font-size: 1.5rem;
-            font-weight: 700;
-        }
-
-        /* SEDUCCION CONTEXT */
-        .seduction-panel {
-            background: var(--bg-card);
-            border-radius: 20px;
-            padding: 24px;
-            border: 1px solid var(--border-color);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
-        }
-
-        .nav-tabs-custom {
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 24px;
             display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            overflow-x: auto;
-            padding-bottom: 5px;
+            align-items: center;
+            gap: 12px;
+            letter-spacing: -0.02em;
         }
 
-        .tab-btn {
-            background: rgba(125, 125, 125, 0.05);
-            border: 1px solid var(--border-color);
-            padding: 8px 16px;
-            border-radius: 10px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: var(--text-secondary);
-            cursor: pointer;
-            transition: 0.2s;
-            white-space: nowrap;
-        }
-
-        .tab-btn.active {
-            background: var(--accent);
-            color: white;
-            border-color: var(--accent);
-        }
-
-        .script-box {
-            background: rgba(99, 102, 241, 0.05);
-            border-left: 4px solid var(--accent);
-            padding: 15px;
-            border-radius: 8px;
-            font-style: italic;
-            font-size: 0.95rem;
-            margin-top: 15px;
-        }
-
-        /* COMUNICACION */
-        .comm-bar {
-            display: flex;
-            gap: 15px;
-            margin-top: 25px;
-        }
-
-        .btn-comm {
-            flex: 1;
+        .section-title i {
+            color: var(--accent);
+            background: rgba(99, 102, 241, 0.1);
             padding: 12px;
-            border-radius: 12px;
+            border-radius: 16px;
+            box-shadow: inset 0 2px 4px rgba(99, 102, 241, 0.2);
+        }
+
+        /* INPUTS */
+        .form-control,
+        .form-select {
+            background-color: var(--input-bg);
+            border: 1px solid var(--input-border);
+            color: var(--input-text);
+            border-radius: 16px;
+            padding: 14px 16px;
+            font-size: 0.95rem;
+            transition: all 0.3s;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            background-color: var(--input-bg);
+            color: var(--input-text);
+            border-color: var(--accent);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+        }
+
+        .input-group-text {
+            background-color: var(--input-bg);
+            border: 1px solid var(--input-border);
+            color: var(--text-secondary);
+            border-radius: 16px;
+        }
+
+        .btn {
+            border-radius: 16px;
+            padding: 12px 24px;
             font-weight: 700;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            letter-spacing: 0.02em;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+            border-color: var(--accent-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-wa-custom {
+            background-color: #25d366 !important;
+            border-color: #25d366 !important;
+            color: white !important;
+            box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3);
+        }
+
+        .btn-wa-custom:hover {
+            background-color: #128c7e !important;
+            border-color: #128c7e !important;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(37, 211, 102, 0.4);
+        }
+
+        .info-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        /* SCORE CIRCLE */
+        .score-circle {
+            width: 64px;
+            height: 64px;
+            border-radius: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 10px;
-            text-decoration: none;
-            transition: 0.2s;
-        }
-
-        .btn-wa {
-            background: #25d366;
+            font-size: 1.75rem;
+            font-weight: 900;
             color: white;
+            flex-shrink: 0;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
         }
 
-        .btn-ph {
+        .score-alta {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            box-shadow: 0 10px 25px rgba(16, 185, 129, 0.3);
+        }
+
+        .score-media {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            box-shadow: 0 10px 25px rgba(245, 158, 11, 0.3);
+        }
+
+        .score-baja {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            box-shadow: 0 10px 25px rgba(239, 68, 68, 0.3);
+        }
+
+        /* PIPELINE MACRO DOTS */
+        .macro-dot {
+            width: 48px;
+            height: 48px;
+            border-radius: 16px;
+            border: 2px solid var(--border-color);
+            background: var(--bg-card);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            font-weight: 800;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .macro-dot.active {
+            border-color: var(--accent);
             background: var(--accent);
             color: white;
+            box-shadow: 0 0 25px rgba(99, 102, 241, 0.5);
+            transform: scale(1.15);
         }
 
-        .btn-link {
-            background: #334155;
-            color: white;
-        }
-
-        .btn-comm:hover {
-            transform: translateY(-2px);
-            color: white;
-            filter: brightness(1.1);
-        }
-
-        .back-link {
+        .macro-label {
+            font-size: 0.75rem;
+            font-weight: 800;
             color: var(--text-secondary);
-            text-decoration: none;
-            margin-bottom: 25px;
-            display: inline-flex;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-top: 12px;
+            transition: all 0.3s;
+        }
+
+        .macro-label.active {
+            color: var(--accent);
+        }
+
+        /* HERO CARD */
+        .hero-card {
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: row;
+        }
+
+        /* Lead Verification Modal Styles */
+        .lead-modal {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            animation: fadeIn 0.3s ease;
+        }
+
+        .lead-modal-content {
+            background: #1a1a2e;
+            margin: 5% auto;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            width: 90%;
+            max-width: 800px;
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .lead-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 10px;
+        }
+
+        .lead-row {
+            background: rgba(255, 255, 255, 0.03);
+            transition: all 0.2s ease;
+        }
+
+        .lead-row:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: scale(1.005);
+        }
+
+        .lead-row td {
+            padding: 16px 15px;
+        }
+
+        .lead-row td:first-child {
+            border-radius: 12px 0 0 12px;
+        }
+
+        .lead-row td:last-child {
+            border-radius: 0 12px 12px 0;
+        }
+
+        .lead-circle {
+            width: 36px;
+            height: 36px;
+            background: var(--accent);
+            border-radius: 50%;
+            display: flex;
             align-items: center;
-            gap: 8px;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            font-size: 0.85rem;
+        }
+
+        .match-card-btn {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .match-card-btn:hover {
+            filter: brightness(1.2);
+            transform: translateY(-2px);
+        }
+
+        @media (max-width: 768px) {
+            .hero-card {
+                flex-direction: column;
+            }
+        }
+
+        /* Lead Verification Modal Styles */
+        .lead-modal {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            animation: fadeIn 0.3s ease;
+        }
+
+        .lead-modal-content {
+            background: #1a1a2e;
+            margin: 5% auto;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            width: 90%;
+            max-width: 800px;
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .lead-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 10px;
+        }
+
+        .lead-row {
+            background: rgba(255, 255, 255, 0.03);
+            transition: all 0.2s ease;
+        }
+
+        .lead-row:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: scale(1.005);
+        }
+
+        .lead-row td {
+            padding: 16px 15px;
+        }
+
+        .lead-row td:first-child {
+            border-radius: 12px 0 0 12px;
+        }
+
+        .lead-row td:last-child {
+            border-radius: 0 12px 12px 0;
+        }
+
+        .lead-circle {
+            width: 36px;
+            height: 36px;
+            background: var(--accent);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            font-size: 0.85rem;
+        }
+
+        .match-card-btn {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .match-card-btn:hover {
+            filter: brightness(1.2);
+            transform: translateY(-2px);
+        }
+
+        .hero-image-container {
+            width: 35%;
+            position: relative;
+            min-height: 300px;
+            background: #000;
+        }
+
+        @media (max-width: 768px) {
+            .hero-image-container {
+                width: 100%;
+                min-height: 250px;
+            }
+        }
+
+        .hero-image-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.8;
+        }
+
+        .hero-image-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to right, transparent, var(--bg-card));
+        }
+
+        @media (max-width: 768px) {
+            .hero-image-overlay {
+                background: linear-gradient(to bottom, transparent, var(--bg-card));
+            }
+        }
+
+        .hero-details {
+            width: 65%;
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        @media (max-width: 768px) {
+            .hero-details {
+                width: 100%;
+            }
+        }
+
+        .header-price-badge {
+            background: rgba(16, 185, 129, 0.1);
+            color: #10b981;
+            padding: 8px 16px;
+            border-radius: 16px;
+            font-weight: 900;
+            font-size: 1.25rem;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.1);
+        }
+
+        .badge-custom {
+            padding: 8px 16px;
+            border-radius: 12px;
+            font-weight: 800;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .badge-nuevo {
+            background: rgba(99, 102, 241, 0.15);
+            color: #818cf8;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        .badge-gestion {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        /* TIMELINE */
+        .timeline-box {
+            position: relative;
+            padding-left: 30px;
+            margin-top: 20px;
+        }
+
+        .timeline-line {
+            position: absolute;
+            left: 11px;
+            top: 10px;
+            bottom: 0;
+            width: 2px;
+            background: var(--border-color);
+        }
+
+        .tl-item {
+            position: relative;
+            margin-bottom: 24px;
+        }
+
+        .tl-icon {
+            position: absolute;
+            left: -30px;
+            top: 0;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 3px solid var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.6rem;
+            color: white;
+            box-shadow: 0 0 0 4px var(--bg-body);
+        }
+
+        .tl-content {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            padding: 16px;
+            border-radius: 16px;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        /* MODALS */
+        .modal-content {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            backdrop-filter: blur(24px);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            color: var(--text-primary);
+        }
+
+        .modal-header {
+            border-bottom: 1px solid var(--border-color);
+            padding: 20px 24px;
+        }
+
+        .modal-footer {
+            border-top: 1px solid var(--border-color);
+            padding: 20px 24px;
+        }
+
+        .btn-close-white {
+            filter: invert(1) grayscale(100%) brightness(200%);
+        }
+
+        /* COMM MODAL STYLES */
+        #commModal .stage-tabs-wrapper {
+            overflow-x: auto;
+            white-space: nowrap;
+            padding-bottom: 12px;
+            margin-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Visual scrollbar for tabs */
+        #commModal .stage-tabs-wrapper::-webkit-scrollbar {
+            height: 6px;
+            display: block;
+        }
+
+        #commModal .stage-tabs-wrapper::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+
+        #commModal .comm-stage-tabs {
+            display: inline-flex;
+            gap: 10px;
+            padding: 5px;
+        }
+
+        #commModal .stage-tab {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid transparent;
+            padding: 8px 20px;
+            border-radius: 30px;
+            color: #8696a0;
+            font-size: 0.85rem;
             font-weight: 500;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #commModal .stage-tab:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: #fff;
+        }
+
+        #commModal .stage-tab.active {
+            background: var(--accent);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        #commModal .templates-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 320px;
+            /* Reduced for better scroll trigger */
+            overflow-y: auto;
+            padding-right: 10px;
+            margin-bottom: 20px;
+        }
+
+        /* Visual scrollbar for templates */
+        #commModal .templates-list::-webkit-scrollbar {
+            width: 6px;
+            display: block;
+        }
+
+        #commModal .templates-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+
+        #commModal .template-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 14px 18px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        #commModal .template-card:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        #commModal .template-card.selected {
+            background: rgba(99, 102, 241, 0.1);
+            border-color: var(--accent);
+        }
+
+        #commModal .template-card.template-recommended {
+            border-left: 3px solid #10b981;
+            background: rgba(16, 185, 129, 0.03);
+        }
+
+        #commModal .template-card.template-recommended:hover {
+            background: rgba(16, 185, 129, 0.07);
+            border-color: #10b981;
+        }
+
+        /* Post-send toast */
+        #postSendToast {
+            position: fixed;
+            bottom: 28px;
+            right: 28px;
+            background: rgba(16, 185, 129, 0.95);
+            color: #fff;
+            padding: 12px 20px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            z-index: 9999;
+            display: none;
+            gap: 10px;
+            align-items: center;
+            animation: slideInRight 0.3s ease;
+        }
+
+        @keyframes slideInRight {
+            from {
+                transform: translateX(80px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .tpl-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .tpl-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .tpl-preview {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 300px;
+        }
+
+        .lead-preview-tag {
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 2px 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: help;
+            transition: all 0.2s ease;
+        }
+
+        .lead-preview-tag:hover {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: rgba(99, 102, 241, 0.4);
+            color: var(--accent);
+            transform: translateY(-1px);
         }
     </style>
 </head>
 
 <body>
+    <!-- SIDEBAR (Mismo menú, sin cambios en estructura) -->
     <nav class="sidebar" id="sidebar">
-        <div style="padding: 20px 15px; color: white; font-weight: 700; font-size: 1.2rem;">PROCASA</div>
-        <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i></a>
-        {% if user_role in ['supervisor', 'admin'] %}
-        <a href="/captacion" class="nav-link active"><i class="fa-solid fa-house-circle-check"></i></a>
-        {% endif %}
+        <div class="brand">
+            <img src="/static/logo.png" alt="PROCASA" style="
+            max-height: 30px;
+            width: auto;
+            min-width: var(--sidebar-width-collapsed);
+            object-fit: contain;
+            padding: 0 15px;
+          " onerror="this.style.display = 'none'" />
+            <span>PROCASA</span>
+        </div>
 
-        <a href="javascript:void(0)" class="nav-link mt-auto" onclick="toggleTheme()">
-            <i class="fa-solid fa-moon"></i>
+        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
+        {% if user_role in ['supervisor', 'admin'] %}
+        <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
+                Manual</span></a>
+        {% endif %}
+        <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+        <a href="/captacion" class="nav-link active"><i class="fa-solid fa-house-circle-check"></i>
+            <span>Captaciones</span></a>
+
+        <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="
+          toggleTheme();
+          return false;
+        ">
+            <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
+        </a>
+        <a href="/logout" class="nav-link logout">
+            <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
         </a>
     </nav>
 
+    <!-- MAIN CONTENT -->
     <div class="main-content">
-        <a href="/captacion" class="back-link"><i class="fa-solid fa-arrow-left"></i> Volver a Captaciones</a>
 
-        <div class="row g-4">
-            <!-- COLUMNA IZQUIERDA: Ficha Técnica -->
-            <div class="col-lg-8">
-                <div class="prop-card">
-                    <div class="gallery">
-                        {% if prop.enlaces_fotos %}
-                        <img src="{{ prop.enlaces_fotos[0] }}" id="mainImg" alt="Propiedad">
-                        {% else %}
-                        <div class="d-flex align-items-center justify-content-center h-100 text-secondary opacity-25">
-                            <i class="fa-solid fa-image fa-6x"></i>
-                        </div>
-                        {% endif %}
-                    </div>
-                    <div class="p-4">
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                            <h2 class="fw-bold m-0">{{ prop.titulo }}</h2>
-                            <span class="badge rounded-pill bg-primary px-3 py-2">{{ prop.gestion.estado or 'NUEVO'
-                                }}</span>
-                        </div>
-                        <p class="text-secondary fs-5 mb-4">
-                            <i class="fa-solid fa-location-dot me-2"></i>{{ prop.comuna }}, {{ prop.region }}
-                        </p>
-
-                        <div class="row g-4 text-center py-4 border-top border-bottom">
-                            <div class="col-3">
-                                <div class="stat-value">{{ prop.precio_uf }} UF</div>
-                                <div class="small text-secondary">Venta</div>
-                            </div>
-                            <div class="col-3">
-                                <div class="stat-value">{{ prop.m2_total }} m²</div>
-                                <div class="small text-secondary">Superficie</div>
-                            </div>
-                            <div class="col-3">
-                                <div class="stat-value">{{ prop.dormitorios or 'S/I' }}</div>
-                                <div class="small text-secondary">Dorm.</div>
-                            </div>
-                            <div class="col-3">
-                                <div class="stat-value">{{ prop.banos or 'S/I' }}</div>
-                                <div class="small text-secondary">Baños</div>
-                            </div>
-                        </div>
-
-                        <div class="mt-4">
-                            <h5 class="fw-bold mb-3">Descripción de la Publicación</h5>
-                            <p class="text-secondary fs-6" style="white-space: pre-line; line-height: 1.6;">{{
-                                prop.descripcion }}</p>
-                        </div>
-                    </div>
-                </div>
+        <!-- HEADER ROW: EJECUTIVO ASIGNADO -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h4 class="text-white m-0 fw-bold">Detalle de Captación</h4>
+            <div class="d-flex align-items-center gap-3">
+                <span class="info-label m-0">Ejecutivo Asignado:</span>
+                <span class="badge"
+                    style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); font-size: 0.9rem; padding: 6px 12px; border-radius: 8px;">
+                    <i class="fa-solid fa-user-tie me-2"></i>{{ prop.gestion.ejecutivo_asignado or 'Sin asignar' }}
+                </span>
             </div>
+        </div>
 
-            <!-- COLUMNA DERECHA: Herramientas de Gestión -->
-            <div class="col-lg-4">
-                <!-- LLAMADA A LA ACCIÓN -->
-                <div class="seduction-panel mb-4">
-                    <h5 class="fw-bold mb-1"><i class="fa-brands fa-whatsapp me-2"></i>Captación Inteligente</h5>
-                    <p class="small text-secondary mb-4">Manejo de objeciones y scripts de persuasión</p>
-
-                    <div class="nav-tabs-custom">
-                        <button class="tab-btn active" onclick="showScript('initial', this)">Seducción</button>
-                        {% for obj in prop.seduction_context.objections %}
-                        <button class="tab-btn" onclick="showScript('obj_{{ loop.index }}', this)">{{ obj.title
-                            }}</button>
-                        {% endfor %}
-                    </div>
-
-                    <div id="scriptContent">
-                        <div id="initial" class="script-box">
-                            "{{ prop.seduction_context.initial }}"
-                        </div>
-                        {% for obj in prop.seduction_context.objections %}
-                        <div id="obj_{{ loop.index }}" class="script-box d-none">
-                            "{{ obj.script }}"
-                        </div>
-                        {% endfor %}
-                    </div>
-
-                    <div class="comm-bar">
-                        <a href="https://wa.me/{{ prop.vendedor_telefono|replace('+','') }}?text={{ prop.seduction_context.initial|urlencode }}"
-                            class="btn-comm btn-wa" target="_blank">
-                            <i class="fa-brands fa-whatsapp"></i> WhatsApp
-                        </a>
-                        <a href="tel:{{ prop.vendedor_telefono }}" class="btn-comm btn-ph">
-                            <i class="fa-solid fa-phone"></i> Llamar
-                        </a>
-                    </div>
-
-                    <a href="{{ prop.url }}" target="_blank" class="btn-comm btn-link mt-3 w-100">
-                        <i class="fa-solid fa-external-link-alt"></i> Ver Publicación Original
-                    </a>
-                </div>
-
-                <!-- ANALISIS DE MERCADO VISUAL -->
-                <div class="market-insight-card mb-4">
-                    <h5 class="fw-bold mb-4">Insight de Mercado</h5>
-                    <div class="mb-4">
-                        <div class="d-flex justify-content-between mb-1">
-                            <span class="small opacity-75">Tu Precio: {{ prop.uf_m2 }} UF/m²</span>
-                            <span class="small opacity-75">Media: {{ prop.market_stats.avg_uf_m2 }} UF/m²</span>
-                        </div>
-                        {% set pct = (prop.uf_m2 / (prop.market_stats.avg_uf_m2 * 2)) * 100 if
-                        prop.market_stats.avg_uf_m2 > 0 else 50 %}
-                        <div class="progress" style="height: 10px; background: rgba(255,255,255,0.2);">
-                            <div class="progress-bar bg-warning" style="--width: {{ pct }}%; width: var(--width);">
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row text-center">
-                        <div class="col-6 border-end border-white border-opacity-25">
-                            <div class="fw-bold fs-5">{{ prop.market_stats.total_available }}</div>
-                            <div class="small opacity-75">Competencia</div>
-                        </div>
-                        <div class="col-6">
-                            <div class="fw-bold fs-5">{{ prop.market_stats.demand_level }}</div>
-                            <div class="small opacity-75">Demanda</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ESTADO INTERNO -->
-                <div class="prop-card p-4">
-                    <h6 class="fw-bold mb-3">Seguimiento Interno</h6>
-                    <select class="form-select mb-3 shadow-none border" id="statusSelect" onchange="updateStatus()"
-                        style="border-radius:12px">
-                        <option value="NUEVO" {{ 'selected' if prop.gestion.estado=='NUEVO' }}>NUEVO</option>
-                        <option value="GESTION" {{ 'selected' if prop.gestion.estado=='GESTION' }}>EN GESTIÓN</option>
-                        <option value="CAPTADO" {{ 'selected' if prop.gestion.estado=='CAPTADO' }}>CAPTADO</option>
-                        <option value="DESCARTADO" {{ 'selected' if prop.gestion.estado=='DESCARTADO' }}>DESCARTADO
-                        </option>
-                    </select>
-                    <textarea class="form-control mb-3 shadow-none border" id="notes"
-                        placeholder="Agrega una nota de gestión..."
-                        style="height: 100px; border-radius:12px"></textarea>
-                    <button class="btn btn-primary w-100 fw-bold py-2" onclick="updateStatus()"
-                        style="border-radius:12px">Guardar Gestión</button>
-
-                    <div class="mt-4 pt-3 border-top">
-                        <div class="small text-secondary"><strong>Ejecutivo:</strong> {{ prop.ejecutivo_asignado or 'Sin
-                            asignar' }}</div>
-                        <div class="small text-secondary"><strong>Publicado por:</strong> {{ prop.vendedor_nombre }}
-                        </div>
-                    </div>
+        <!-- PRÓXIMA ACCIÓN -->
+        {% if prop.next_action %}
+        <div class="card-custom mb-4"
+            style="background: rgba(245, 158, 11, 0.05); border-color: rgba(245, 158, 11, 0.2); padding: 20px 24px;">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="info-label" style="color: #f59e0b;"><i class="fa-solid fa-bolt me-2"></i>PRÓXIMA ACCIÓN
+                        RECOMENDADA</div>
+                    <h5 class="fw-bold text-white mt-2 mb-1">{{ prop.next_action.title }}</h5>
+                    <p class="text-secondary m-0" style="font-size: 0.95rem;">{{ prop.next_action.reason }}</p>
                 </div>
             </div>
         </div>
-    </div>
+        {% endif %}
 
-    <script>
-        function showScript(id, btn) {
-            document.querySelectorAll('.script-box').forEach(s => s.classList.add('d-none'));
-            document.getElementById(id).classList.remove('d-none');
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-        }
+        <!-- 1. PIPELINE SECTION -->
+        <div class="card-custom py-6 px-8 mb-8">
+            <div class="d-flex justify-content-between position-relative px-4">
+                <div style="
+              position: absolute;
+              top: 24px;
+              left: 40px;
+              right: 40px;
+              height: 2px;
+              background: var(--border-color);
+              z-index: 1;
+            "></div>
 
-        async function updateStatus() {
-            const status = document.getElementById('statusSelect').value;
-            const notes = document.getElementById('notes').value;
-            try {
-                const resp = await fetch('/api/captacion/update', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: "{{ prop.id }}", status: status, notes: notes })
+                {% set stages = [ {'id': 'detect', 'label': 'Detección', 'match':
+                ['NUEVO', 'DETECTADO']}, {'id': 'contact', 'label': 'Contacto',
+                'match': ['POR CONTACTAR', 'INTENTO DE CONTACTO', 'SIN RESPUESTA',
+                'GESTION']}, {'id': 'negotiate', 'label': 'Negociación', 'match':
+                ['CONTACTO EXITOSO', 'CORREDOR', 'INTERESADO EN TASACIÓN', 'TASACIÓN
+                ENVIADA', 'REUNIÓN AGENDADA']}, {'id': 'close', 'label': 'Cierre',
+                'match': ['CAPTADO', 'DESCARTADO', 'PROPIEDAD NO DISPONIBLE', 'NO
+                INTERESADO']} ] %} {% for s in stages %} {% set is_active =
+                prop.estado_captacion in s.match %}
+                <div class="d-flex flex-column align-items-center" style="z-index: 2; width: 80px">
+                    <div class="macro-dot {{ 'active' if is_active else '' }}">
+                        {{ loop.index }}
+                    </div>
+                    <div class="macro-label text-center {{ 'active' if is_active else '' }}">
+                        {{ s.label }}
+                    </div>
+                    {% if is_active %}
+                    <div class="mt-2 badge bg-primary" style="
+                font-size: 0.7rem;
+                padding: 4px 10px;
+                border-radius: 8px;
+                background: var(--accent) !important;
+              ">
+                        {{ prop.estado_captacion }}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- 2. HEADER SECTION (HERO CARD) -->
+        <div class="card-custom hero-card mb-8">
+            <!-- Photo Column -->
+            <div class="hero-image-container">
+                {% if prop.enlaces_fotos and prop.enlaces_fotos|length > 0 %}
+                <img src="{{ prop.enlaces_fotos[0] }}" alt="Propiedad" />
+                {% else %}
+                <div class="h-100 w-100 d-flex align-items-center justify-content-center text-secondary">
+                    <i class="fa-solid fa-camera fa-3x"></i>
+                </div>
+                {% endif %}
+                <div class="hero-image-overlay"></div>
+
+                <!-- Score Overlay -->
+                <div class="score-circle {% if prop.score_captacion >= 80 %}score-alta{% elif prop.score_captacion >= 50 %}score-media{% else %}score-baja{% endif %}"
+                    style="position: absolute; top: 24px; left: 24px">
+                    {{ prop.score_captacion }}
+                </div>
+            </div>
+
+            <!-- Details Column -->
+            <div class="hero-details">
+                <div class="d-flex justify-content-between align-items-start mb-4">
+                    <div>
+                        <h2 class="fw-bold m-0 mb-2" style="
+                  color: var(--text-primary);
+                  font-size: 1.75rem;
+                  letter-spacing: -0.02em;
+                ">
+                            {% if prop.score_captacion >= 80 %}Alta Prioridad{% elif
+                            prop.score_captacion >= 50 %}Propiedad Analizada{% else
+                            %}Captación Compleja{% endif %}
+                        </h2>
+                        <div style="
+                  font-size: 0.9rem;
+                  color: var(--accent);
+                  font-weight: 600;
+                  background: rgba(99, 102, 241, 0.1);
+                  padding: 6px 12px;
+                  border-radius: 12px;
+                  display: inline-flex;
+                  align-items: center;
+                ">
+                            <i class="fa-solid fa-wand-magic-sparkles me-2"></i>
+                            {{ prop.motivos_score[0] if prop.motivos_score else 'Analizado
+                            por Inteligencia Artificial' }}
+                        </div>
+                    </div>
+                    <div class="d-flex flex-column align-items-end gap-2">
+                        <div class="header-price-badge">{{ (prop.precio_uf or 0) | float | round(0) | int }} UF</div>
+                        <span
+                            class="badge {{ 'badge-nuevo' if prop.gestion.estado == 'NUEVO' else 'badge-gestion' }} badge-custom">
+                            {{ prop.gestion.estado }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="row g-4 py-4 my-2" style="
+              border-top: 1px solid var(--border-color);
+              border-bottom: 1px solid var(--border-color);
+            ">
+                    <div class="col-md-4">
+                        <span class="info-label"><i class="fa-solid fa-house-user me-2"></i>Distribución</span>
+                        <div class="fw-bold text-primary m-0" style="font-size: 1.1rem">
+                            <i class="fa-solid fa-bed me-1 text-secondary"></i>{{
+                            prop.dormitorios or '0' }} |
+                            <i class="fa-solid fa-shower me-1 text-secondary ms-1"></i>{{
+                            prop.banos or '0' }} |
+                            <i class="fa-solid fa-ruler-combined me-1 text-secondary ms-1"></i>{{ prop.m2_total or '0'
+                            }}m²
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <span class="info-label"><i class="fa-solid fa-tag me-2"></i>OPERACIÓN</span>
+                        <div class="fw-bold text-primary m-0 text-truncate" style="font-size: 1.1rem">
+                            {% if prop.details.operacion %}
+                            {{ prop.details.operacion|upper }}
+                            {% elif prop.details.precio_uf and prop.details.precio_uf < 1000 %} ARRIENDO {% else %}
+                                VENTA {% endif %} </div>
+                        </div>
+                        <div class="col-md-4">
+                            <span class="info-label"><i class="fa-solid fa-calendar-day me-2"></i>{{
+                                prop.gestion.label_antiguedad or 'Publicado' }} Hace</span>
+                            <div class="fw-bold text-{{ 'danger' if (prop.gestion.dias_en_portal|default(0)|int) > 30 else 'success' }} m-0"
+                                style="font-size: 1.1rem">
+                                {{ prop.gestion.dias_en_portal or '0' }} días
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-auto pt-4">
+                        <p class="text-secondary m-0" style="
+                white-space: pre-line;
+                line-height: 1.6;
+                font-size: 0.95rem;
+                display: -webkit-box;
+                -webkit-line-clamp: 2;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+              ">
+                            {{ prop.descripcion }}
+                        </p>
+                        <button class="btn btn-link p-0 mt-2 fw-bold text-decoration-none d-flex align-items-center"
+                            style="color: var(--accent); font-size: 0.9rem"
+                            onclick="const desc=this.previousElementSibling; const isExpanded = desc.style.webkitLineClamp === 'unset'; desc.style.webkitLineClamp = isExpanded ? '2' : 'unset'; this.querySelector('span').innerText = isExpanded ? 'Ver descripción completa' : 'Ocultar descripción'; this.querySelector('i').className = isExpanded ? 'fa-solid fa-chevron-down ms-2' : 'fa-solid fa-chevron-up ms-2';">
+                            <span>Ver descripción completa</span>
+                            <i class="fa-solid fa-chevron-down ms-2"></i>
+                        </button>
+
+                        <div class="mt-4 p-3 rounded-4"
+                            style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color);">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <span class="info-label"><i class="fa-solid fa-globe me-2"></i>Origen</span>
+                                    <div class="fw-bold text-white" style="font-size: 0.95rem;">Yapo Propiedades</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <span class="info-label"><i class="fa-solid fa-link me-2"></i>Link</span>
+                                    <div class="fw-bold" style="font-size: 0.95rem;">
+                                        <a href="{{ prop.url }}" target="_blank"
+                                            style="color: var(--accent); text-decoration: none;">Ver anuncio <i
+                                                class="fa-solid fa-external-link-alt ms-1"
+                                                style="font-size: 0.8rem;"></i></a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. CONTENT SECTION -->
+            <div class="content-section">
+                <!-- Columna Izquierda: Gestión -->
+                <div class="left-column">
+                    <div class="card-custom">
+                        <div class="section-title">
+                            <i class="fa-solid fa-address-card"></i> Gestión del Propietario
+                        </div>
+
+                        <div class="row g-4">
+                            <div class="col-12">
+                                <label class="info-label">Nombre</label>
+                                <input type="text" id="contact-nombre" class="form-control"
+                                    value="{{ prop.vendedor_nombre }}" placeholder="Nombre del propietario" />
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="info-label">Teléfono</label>
+                                <div class="input-group">
+                                    <input type="text" id="wa-telefono" class="form-control"
+                                        value="{{ prop.vendedor_telefono }}" placeholder="56912345678" />
+                                    <button type="button" id="btn-call" class="btn btn-primary" title="Llamar"
+                                        style="background: #4b5563; border-color: #4b5563;"
+                                        onclick="if(typeof logActivityAsync === 'function') logActivityAsync('call_initiated', 'tel', 'Llamada iniciada a ' + document.getElementById('wa-telefono').value, 'opened_dialer', ''); window.location.href='tel:' + document.getElementById('wa-telefono').value">
+                                        <i class="fa-solid fa-phone"></i>
+                                    </button>
+                                    <button type="button" id="btn-whatsapp" class="btn btn-wa-custom" title="WhatsApp"
+                                        data-bs-toggle="modal" data-bs-target="#commModal"
+                                        onclick="openCommPanel('owner', 'wa')">
+                                        <i class="fa-brands fa-whatsapp"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="info-label">Email</label>
+                                <div class="input-group">
+                                    <input type="email" id="contact-email" class="form-control"
+                                        value="{{ prop.vendedor_email or '' }}" placeholder="email@propietario.cl" />
+                                    <button type="button" id="btn-email" class="btn btn-primary" title="Enviar Email"
+                                        data-bs-toggle="modal" data-bs-target="#commModal"
+                                        onclick="openCommPanel('owner', 'email')">
+                                        <i class="fa-solid fa-envelope"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="info-label">Notas de contacto</label>
+                                <textarea id="contact-notas" class="form-control" rows="2"
+                                    placeholder="Notas internas sobre el contacto...">
+{{ prop.notas_contacto or '' }}</textarea>
+                            </div>
+
+
+                            <div class="col-12 mt-4">
+                                <button
+                                    class="btn btn-primary w-100 d-flex align-items-center justify-content-center gap-2 py-3 rounded-2xl"
+                                    onclick="saveContactInfo(event)" style="font-weight: 700; letter-spacing: 0.5px;">
+                                    <i class="fa-solid fa-floppy-disk"></i> GUARDAR DATOS DE CONTACTO
+                                </button>
+                            </div>
+                        </div>
+
+                        <hr class="my-5" style="border-color: var(--border-color)" />
+
+                        <div class="section-title">
+                            <i class="fa-solid fa-pen-to-square"></i> Registrar Avance
+                        </div>
+
+                        <div class="row g-4">
+                            <div class="col-md-6">
+                                <label class="info-label">Próximo Contacto</label>
+                                <div class="input-group">
+                                    <span class="input-group-text border-end-0"><i
+                                            class="fa-regular fa-calendar"></i></span>
+                                    <input type="text" id="proximo-contacto"
+                                        class="form-control border-start-0 ps-0 flatpickr-date"
+                                        placeholder="Seleccionar fecha"
+                                        value="{{ prop.gestion.proximo_contacto or '' }}" />
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="info-label">Estado</label>
+                                <select class="form-select" id="statusSelect">
+                                    <option value="DETECTADO">DETECTADO / NUEVO</option>
+                                    <option value="POR CONTACTAR">POR CONTACTAR</option>
+                                    <option value="GESTION">EN GESTIÓN</option>
+                                    <option value="CONTACTO EXITOSO">CONTACTO EXITOSO</option>
+                                    <option value="REUNIÓN AGENDADA">REUNIÓN AGENDADA</option>
+                                    <option value="CAPTADO">CAPTADO</option>
+                                    <option value="DESCARTADO">DESCARTADO</option>
+                                </select>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="info-label">Bitácora</label>
+                                <textarea class="form-control" id="notes" rows="3"
+                                    placeholder="Escribe el resultado de tu gestión aquí..."></textarea>
+                            </div>
+
+                            <div class="col-12 mt-2">
+                                <button
+                                    class="btn btn-primary w-100 d-flex align-items-center justify-content-center gap-2"
+                                    onclick="updateStatus()" style="background: var(--accent)">
+                                    <i class="fa-solid fa-check-circle"></i> ACTUALIZAR ESTADO
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Columna Derecha: Mercado y Timeline -->
+                <div class="right-column">
+                    <div class="card-custom">
+                        <div class="section-title">
+                            <i class="fa-solid fa-chart-line"></i> Análisis de Mercado
+                        </div>
+
+                        <div class="p-4 rounded-3xl mb-4" style="
+                background: rgba(16, 185, 129, 0.05);
+                border: 1px solid rgba(16, 185, 129, 0.1);
+              ">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <span class="info-label m-0">Atractivo del Precio</span>
+                                <span class="badge bg-success" style="
+                    padding: 6px 12px;
+                    border-radius: 8px;
+                    font-size: 0.75rem;
+                  ">Excelente</span>
+                            </div>
+                            <div class="progress" style="
+                  height: 12px;
+                  background: rgba(255, 255, 255, 0.05);
+                  border-radius: 10px;
+                  overflow: visible;
+                ">
+                                <div class="progress-bar bg-success position-relative" role="progressbar"
+                                    style="width: 45%; border-radius: 10px">
+                                    <div style="
+                      position: absolute;
+                      right: -8px;
+                      top: -4px;
+                      width: 20px;
+                      height: 20px;
+                      background: #fff;
+                      border: 4px solid #10b981;
+                      border-radius: 50%;
+                      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+                    "></div>
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between mt-3" style="
+                  font-size: 0.7rem;
+                  color: var(--text-secondary);
+                  font-weight: 800;
+                  text-transform: uppercase;
+                ">
+                                <span class="text-success">Barato</span>
+                                <span>Mercado</span>
+                                <span class="text-danger">Caro</span>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-6">
+                                <div class="p-3 rounded-2xl" style="
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid var(--border-color);
+                  ">
+                                    <div class="info-label">Precio UF/m²</div>
+                                    <div class="fs-4 fw-bold text-white">{{ prop.uf_m2 }}</div>
+                                    <div class="text-success mt-1" style="font-size: 0.75rem; font-weight: 700">
+                                        <i class="fa-solid fa-caret-down me-1"></i>{{
+                                        (prop.diff_pct|abs)|round }}% bajo media
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="p-3 rounded-2xl" style="
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid var(--border-color);
+                  ">
+                                    <div class="info-label">Media Zona</div>
+                                    <div class="fs-4 fw-bold text-white">
+                                        {{ prop.market_stats.avg_uf_m2 }}
+                                    </div>
+                                    <div class="text-secondary mt-1" style="font-size: 0.75rem; font-weight: 700">
+                                        UF/m²
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="p-4 rounded-3xl" style="
+                background: rgba(99, 102, 241, 0.05);
+                border: 1px solid rgba(99, 102, 241, 0.1);
+              ">
+                            <div class="info-label text-primary mb-3">
+                                <i class="fa-solid fa-sparkles me-2"></i>Puntos Críticos IA
+                            </div>
+                            <div class="d-flex flex-column gap-2">
+                                {% for motivo in prop.motivos_score %}
+                                <div class="d-flex align-items-start gap-2" style="
+                    font-size: 0.85rem;
+                    color: var(--text-primary);
+                    font-weight: 500;
+                  ">
+                                    <div style="
+                      width: 6px;
+                      height: 6px;
+                      border-radius: 50%;
+                      background: var(--accent);
+                      margin-top: 6px;
+                      flex-shrink: 0;
+                      box-shadow: 0 0 8px var(--accent);
+                    "></div>
+                                    {{ motivo }}
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PANEL: INTELIGENCIA DE DEMANDA (3 CAPAS) -->
+                    <div class="card-custom">
+                        <div class="section-title">
+                            <i class="fa-solid fa-chart-line"></i> Inteligencia de Demanda
+                        </div>
+
+                        {% set ma = ma or matching_analysis or {} %}
+                        {% set exact = ma.get('exact', 0) %}
+                        {% set zone = ma.get('zone', 0) %}
+                        {% set broad = ma.get('broad', 0) %}
+                        {% set exact_leads = ma.get('exact_leads', []) %}
+                        {% set zone_leads = ma.get('zone_leads', []) %}
+                        {% set broad_leads = ma.get('broad_leads', []) %}
+                        {% set score = ma.get('demand_score', 0) %}
+                        {% set zone_name = ma.get('zone_name', 'Sin zona') %}
+                        {% set pitch_text = ma.get('pitch_text', '') %}
+                        {% set pitch_level = ma.get('pitch_level', 'none') %}
+                        {% set filters = ma.get('applied_filters', {}) %}
+                        {% set total = exact + zone + broad %}
+
+                        {% if total > 0 %}
+                        <!-- 3 Niveles de Match -->
+                        <div class="d-flex flex-column gap-3 mb-3">
+                            <!-- Exact Match -->
+                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl"
+                                onclick="openLeadModal('exact')" style="
+                             background: {% if exact > 0 %}rgba(16, 185, 129, 0.08){% else %}rgba(255,255,255,0.02){% endif %};
+                             border: 1px solid {% if exact > 0 %}rgba(16, 185, 129, 0.2){% else %}var(--border-color){% endif %};
+                         ">
+                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">🎯</div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold"
+                                        style="font-size: 0.85rem; color: {% if exact > 0 %}#10b981{% else %}var(--text-secondary){% endif %};">
+                                        Coincidencias exactas
+                                    </div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">
+                                        Misma comuna + tipo + operación + rango de precio ±30%
+                                    </div>
+                                </div>
+                                <div
+                                    style="font-size: 1.5rem; font-weight: 800; color: {% if exact > 0 %}#10b981{% else %}var(--text-secondary){% endif %}; text-align: right;">
+                                    {{ exact }}
+                                </div>
+                            </div>
+
+                            <!-- Zone Match -->
+                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl"
+                                onclick="openLeadModal('zone')" style="
+                             background: {% if zone > 0 %}rgba(99, 102, 241, 0.08){% else %}rgba(255,255,255,0.02){% endif %};
+                             border: 1px solid {% if zone > 0 %}rgba(99, 102, 241, 0.2){% else %}var(--border-color){% endif %};
+                         ">
+                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">📍</div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold"
+                                        style="font-size: 0.85rem; color: {% if zone > 0 %}var(--accent){% else %}var(--text-secondary){% endif %};">
+                                        En tu zona ({{ zone_name }})
+                                    </div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">
+                                        Misma macro-zona geográfica
+                                    </div>
+                                </div>
+                                <div
+                                    style="font-size: 1.5rem; font-weight: 800; color: {% if zone > 0 %}var(--accent){% else %}var(--text-secondary){% endif %}; text-align: right;">
+                                    {{ zone }}
+                                </div>
+                            </div>
+
+                            <!-- Broad Match -->
+                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl"
+                                onclick="openLeadModal('broad')" style="
+                             background: {% if broad > 0 %}rgba(245, 158, 11, 0.06){% else %}rgba(255,255,255,0.02){% endif %};
+                             border: 1px solid {% if broad > 0 %}rgba(245, 158, 11, 0.15){% else %}var(--border-color){% endif %};
+                         ">
+                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">🔍</div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold"
+                                        style="font-size: 0.85rem; color: {% if broad > 0 %}#f59e0b{% else %}var(--text-secondary){% endif %};">
+                                        Base de Prospectos
+                                    </div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">
+                                        {{ broad }} clientes activos asimilables
+                                    </div>
+                                    {% if ma.get('active_recent', 0) > 0 %}
+                                    <div class="mt-1 fw-bold" style="font-size: 0.70rem; color: #10b981;">
+                                        <i class="fa-solid fa-bolt me-1"></i>
+                                        {% set is_arriendo = (prop.details.operacion and 'ARR' in
+                                        prop.details.operacion|upper) or (not prop.details.operacion and
+                                        prop.details.precio_uf and prop.details.precio_uf < 1000) %} {{ ma.active_recent
+                                            }} activos en los últimos {{ 30 if is_arriendo else 60 }} días </div>
+                                            {% endif %}
+                                            {% if ma.get('high_match', 0) > 0 %}
+                                            <div class="mt-1 fw-bold" style="font-size: 0.70rem; color: #3b82f6;">
+                                                <i class="fa-solid fa-bullseye me-1"></i>
+                                                {{ ma.high_match }} alta compatibilidad
+                                            </div>
+                                            {% endif %}
+                                    </div>
+                                    <div
+                                        style="font-size: 1.5rem; font-weight: 800; color: {% if broad > 0 %}#f59e0b{% else %}var(--text-secondary){% endif %}; text-align: right;">
+                                        <i class="fa-solid fa-chevron-right fs-6"></i>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Demand Score -->
+                            <div class="p-3 rounded-3xl mb-3"
+                                style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color);">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="info-label">Demand Score</span>
+                                    <span class="fw-bold" style="color: var(--accent); font-size: 1.1rem;">{{ score
+                                        }}</span>
+                                </div>
+                                <div
+                                    style="height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden;">
+                                    <div style="
+                                height: 100%;
+                                width: {{ [score / 50 * 100, 100]|min }}%;
+                                background: linear-gradient(90deg, #10b981, var(--accent), #f59e0b);
+                                border-radius: 3px;
+                                transition: width 0.5s ease;
+                            "></div>
+                                </div>
+                                <div class="d-flex justify-content-between mt-1"
+                                    style="font-size: 0.7rem; color: var(--text-secondary);">
+                                    <span>Baja</span>
+                                    <span>Alta</span>
+                                </div>
+                                <!-- Score → Acción recomendada -->
+                                {% if score >= 30 %}
+                                <div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3"
+                                    style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2);">
+                                    <span style="font-size:1rem;">🔥</span>
+                                    <div>
+                                        <div style="font-size:0.72rem; font-weight:700; color:#10b981;">Alta oportunidad
+                                            · Contactar ahora</div>
+                                        <div style="font-size:0.68rem; color:var(--text-secondary);">Demanda activa
+                                            detectable en esta zona</div>
+                                    </div>
+                                </div>
+                                {% elif score >= 10 %}
+                                <div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3"
+                                    style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);">
+                                    <span style="font-size:1rem;">⚡</span>
+                                    <div>
+                                        <div style="font-size:0.72rem; font-weight:700; color:#f59e0b;">Demanda media ·
+                                            Vale la pena contactar</div>
+                                        <div style="font-size:0.68rem; color:var(--text-secondary);">Hay interesados en
+                                            zona compatible</div>
+                                    </div>
+                                </div>
+                                {% else %}
+                                <div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3"
+                                    style="background: rgba(107,114,128,0.08); border: 1px solid rgba(107,114,128,0.15);">
+                                    <span style="font-size:1rem;">🔍</span>
+                                    <div>
+                                        <div style="font-size:0.72rem; font-weight:700; color:#6b7280;">Revisar precio
+                                            antes de contactar</div>
+                                        <div style="font-size:0.68rem; color:var(--text-secondary);">Baja demanda
+                                            detectada actualmente</div>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            {% else %}
+                            <!-- No matches at all -->
+                            <div class="text-center p-4" style="opacity: 0.6;">
+                                <i class="fa-solid fa-chart-line fs-3 mb-2" style="color: var(--text-secondary);"></i>
+                                <p class="mb-2" style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    Sin leads activos para este perfil actualmente.
+                                </p>
+                                <p class="mb-0" style="font-size: 0.75rem; color: var(--text-secondary);">
+                                    Zona: {{ zone_name }} · Cluster: {{ ma.get('cluster_id', 'N/A') if ma else 'N/A' }}
+                                </p>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="card-custom">
+                            <div class="section-title">
+                                <i class="fa-solid fa-clock-rotate-left"></i> Historial
+                            </div>
+                            <div class="timeline-box">
+                                <div class="timeline-line"></div>
+
+                                {% if prop.historial and prop.historial|length > 0 %}
+                                {% for item in prop.historial %}
+                                <div class="tl-item">
+                                    <div class="tl-icon"
+                                        style="border-color: {% if 'Llamad' in item.nota or 'teléfono' in item.canal|lower %}#3b82f6{% elif 'WhatsApp' in item.canal or 'wa' in item.canal %}#25d366{% elif 'correo' in item.canal|lower or 'email' in item.canal|lower %}#8b5cf6{% else %}var(--accent){% endif %};">
+                                        {% if 'Llamad' in item.nota or 'teléfono' in item.canal|lower %}
+                                        <i class="fa-solid fa-phone"></i>
+                                        {% elif 'WhatsApp' in item.canal or 'wa' in item.canal %}
+                                        <i class="fa-brands fa-whatsapp"></i>
+                                        {% elif 'correo' in item.canal|lower or 'email' in item.canal|lower %}
+                                        <i class="fa-solid fa-envelope"></i>
+                                        {% else %}
+                                        <i class="fa-solid fa-bolt"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="tl-content">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <span class="fw-bold text-white" style="font-size: 0.95rem">
+                                                {{ item.nota.split(' - ')[0] if ' - ' in item.nota else 'Actualización'
+                                                }}
+                                            </span>
+                                            <span class="badge"
+                                                style="background: rgba(255, 255, 255, 0.1); color: var(--text-secondary);">
+                                                {{ item.fecha }}
+                                            </span>
+                                        </div>
+                                        <div class="text-secondary mb-2" style="font-size: 0.85rem; line-height: 1.5">
+                                            {{ item.nota }}
+                                        </div>
+                                        <div style="font-size: 0.75rem; color: var(--text-secondary);">
+                                            <strong>Agente:</strong> {{ item.usuario }}
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                                {% else %}
+                                <div class="tl-item">
+                                    <div class="tl-icon"><i class="fa-solid fa-info"></i></div>
+                                    <div class="tl-content text-center py-4">
+                                        <div class="text-secondary" style="font-size: 0.9rem;">
+                                            No hay historial registrado aún.
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODALS -->
+
+            <!-- CRM COMMUNICATION MODAL -->
+            <div class="modal fade" id="commModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header" id="modalHeader">
+                            <h5 class="modal-title" id="commTitle">WhatsApp a Propietario</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                                aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <!-- Stage Tabs -->
+                            <div class="stage-tabs-wrapper">
+                                <div class="comm-stage-tabs" id="commTabs">
+                                    <!-- Filled by JS -->
+                                </div>
+                            </div>
+
+                            <div id="templateContainer" class="mb-4">
+                                <div class="templates-list modern-scrollbar" id="templateList">
+                                    <!-- Filled by JS -->
+                                </div>
+                            </div>
+
+                            <!-- Subject (for Email) -->
+                            <div id="emailSubjectContainer" class="mb-3 d-none">
+                                <label class="info-label">ASUNTO:</label>
+                                <input type="text" class="form-control" id="emailSubject">
+                            </div>
+
+                            <!-- Message Area -->
+                            <div id="messageContainer">
+                                <label class="info-label mb-2">MENSAJE:</label>
+                                <textarea class="form-control modern-scrollbar" id="commMessage" rows="5"
+                                    placeholder="Escribe tu mensaje aquí..."></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-secondary px-4 fw-bold" data-bs-dismiss="modal"
+                                style="background: rgba(255,255,255,0.1); border: none; font-size: 0.85rem;">Cancelar</button>
+                            <a id="btnSendComm" href="#" target="_blank"
+                                class="btn px-4 fw-bold d-flex align-items-center gap-2"
+                                style="background: #25D366; color: #fff; opacity: 0.6; cursor: pointer; font-size: 0.85rem;"
+                                onclick="
+                            if(typeof logActivityAsync === 'function') {
+                                const msg = document.getElementById('commMessage').value;
+                                const tpl = typeof currentSelectedTemplateLabel !== 'undefined' ? currentSelectedTemplateLabel : 'Mensaje Libre';
+                                logActivityAsync('message_sent', currentCommChannel, msg, 'opened_app', tpl);
+                            }
+                            if(typeof triggerFeedbackTimeout === 'function') { 
+                                setTimeout(() => { bootstrap.Modal.getInstance(document.getElementById('commModal')).hide(); triggerFeedbackTimeout(); }, 500); 
+                            }
+                        ">
+                                <i class="fa-brands fa-whatsapp"></i>
+                                <span id="waCtaLabel">Enviar mensaje</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- POST-SEND TOAST -->
+            <div id="postSendToast" style="display:none;"></div>
+
+            <!-- FEEDBACK LOOP MODAL -->
+            <div class="modal fade" id="feedbackModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i
+                                    class="fa-solid fa-clock-rotate-left me-2 text-warning"></i>Bitácora de
+                                Gestión</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                                aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body text-center">
+                            <p class="mb-4 text-secondary">¿Cuál fue el resultado de tu contacto recién realizado?</p>
+                            <div class="d-grid gap-3" style="grid-template-columns: repeat(2, 1fr);">
+                                <div class="p-3 border rounded-3xl" onclick="saveFeedback('Contacto Exitoso')"
+                                    style="cursor:pointer; border-color: var(--border-color) !important; background: rgba(255,255,255,0.02); transition: 0.2s;"
+                                    onmouseover="this.style.background='rgba(16, 185, 129, 0.1)'"
+                                    onmouseout="this.style.background='rgba(255,255,255,0.02)'">
+                                    <i class="fa-solid fa-check-circle text-success fs-2"></i><br><span
+                                        class="mt-2 d-block text-white fw-bold" style="font-size: 0.85rem;">Contacto
+                                        Exitoso</span>
+                                </div>
+                                <div class="p-3 border rounded-3xl" onclick="saveFeedback('Sin Respuesta')"
+                                    style="cursor:pointer; border-color: var(--border-color) !important; background: rgba(255,255,255,0.02); transition: 0.2s;"
+                                    onmouseover="this.style.background='rgba(239, 68, 68, 0.1)'"
+                                    onmouseout="this.style.background='rgba(255,255,255,0.02)'">
+                                    <i class="fa-solid fa-phone-slash text-danger fs-2"></i><br><span
+                                        class="mt-2 d-block text-white fw-bold" style="font-size: 0.85rem;">Sin
+                                        Respuesta</span>
+                                </div>
+                                <div class="p-3 border rounded-3xl" onclick="saveFeedback('Agendó Visita')"
+                                    style="cursor:pointer; border-color: var(--border-color) !important; background: rgba(255,255,255,0.02); transition: 0.2s;"
+                                    onmouseover="this.style.background='rgba(99, 102, 241, 0.1)'"
+                                    onmouseout="this.style.background='rgba(255,255,255,0.02)'">
+                                    <i class="fa-solid fa-calendar-check text-primary fs-2"></i><br><span
+                                        class="mt-2 d-block text-white fw-bold" style="font-size: 0.85rem;">Agendó
+                                        Visita</span>
+                                </div>
+                                <div class="p-3 border rounded-3xl" onclick="saveFeedback('No Interesado')"
+                                    style="cursor:pointer; border-color: var(--border-color) !important; background: rgba(255,255,255,0.02); transition: 0.2s;"
+                                    onmouseover="this.style.background='rgba(255,255,255,0.05)'"
+                                    onmouseout="this.style.background='rgba(255,255,255,0.02)'">
+                                    <i class="fa-solid fa-xmark text-secondary fs-2"></i><br><span
+                                        class="mt-2 d-block text-white fw-bold" style="font-size: 0.85rem;">No
+                                        Interesado</span>
+                                </div>
+                            </div>
+                            <textarea class="form-control mt-4" id="feedbackNotes" rows="2"
+                                placeholder="Opcional: Detalles adicionales de la gestión..."></textarea>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"
+                                style="background: rgba(255,255,255,0.1); border: none;">Omitir</button>
+                            <button type="button" class="btn btn-primary btn-sm fw-bold"
+                                onclick="saveFeedbackFromText()">Guardar Nota</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+            <script>
+                // Scripts originales de inicialización
+                document.addEventListener("DOMContentLoaded", () => {
+                    flatpickr(".flatpickr-date", {
+                        enableTime: true,
+                        dateFormat: "Y-m-d H:i",
+                        time_24hr: true,
+                        theme:
+                            document.documentElement.getAttribute("data-theme") === "light"
+                                ? "light"
+                                : "dark",
+                    });
+
+                    // Initial validation
+                    syncCommButtons();
+
+                    // Listeners for real-time validation
+                    const phoneInput = document.getElementById('wa-telefono');
+                    const emailInput = document.getElementById('contact-email');
+
+                    if (phoneInput) phoneInput.addEventListener('input', syncCommButtons);
+                    if (emailInput) emailInput.addEventListener('input', syncCommButtons);
                 });
-                if (resp.ok) {
-                    alert("Gestión guardada exitosamente");
-                    if (notes) document.getElementById('notes').value = "";
+
+                let lastSavedPhone = "{{ prop.vendedor_telefono or '' }}";
+                let lastSavedEmail = "{{ prop.vendedor_email or '' }}";
+
+                function syncCommButtons() {
+                    const phone = (document.getElementById('wa-telefono')?.value || "").trim();
+                    const email = (document.getElementById('contact-email')?.value || "").trim();
+
+                    // Check if values have changed since last save
+                    const phoneChanged = phone !== lastSavedPhone;
+                    const emailChanged = email !== lastSavedEmail;
+
+                    const btnCall = document.getElementById('btn-call');
+                    const btnWA = document.getElementById('btn-whatsapp');
+                    const btnEmail = document.getElementById('btn-email');
+
+                    // Logic: Enabled only if NOT empty AND NOT changed (saved)
+                    if (btnCall) {
+                        const canUsePhone = phone && !phoneChanged;
+                        btnCall.disabled = !canUsePhone;
+                        btnCall.style.opacity = canUsePhone ? "1" : "0.5";
+                        btnCall.style.cursor = canUsePhone ? "pointer" : "not-allowed";
+                        btnCall.title = !phone ? "Ingrese un teléfono" : (phoneChanged ? "Guarde los cambios para activar" : "Llamar");
+                    }
+                    if (btnWA) {
+                        const canUsePhone = phone && !phoneChanged;
+                        btnWA.disabled = !canUsePhone;
+                        btnWA.style.opacity = canUsePhone ? "1" : "0.5";
+                        btnWA.style.cursor = canUsePhone ? "pointer" : "not-allowed";
+                        btnWA.title = !phone ? "Ingrese un teléfono" : (phoneChanged ? "Guarde los cambios para activar" : "WhatsApp");
+                    }
+                    if (btnEmail) {
+                        const canUseEmail = email && !emailChanged;
+                        btnEmail.disabled = !canUseEmail;
+                        btnEmail.style.opacity = canUseEmail ? "1" : "0.5";
+                        btnEmail.style.cursor = canUseEmail ? "pointer" : "not-allowed";
+                        btnEmail.title = !email ? "Ingrese un email" : (emailChanged ? "Guarde los cambios para activar" : "Enviar Email");
+                    }
                 }
-            } catch (e) { alert("Error al guardar gestión"); }
+
+                function copyPitchText() {
+                    const pitch = document.getElementById("pitchText").value;
+                    navigator.clipboard.writeText(pitch).then(() => {
+                        const btn = event.currentTarget;
+                        const orig = btn.innerHTML;
+                        btn.innerHTML = '<i class="fa-solid fa-check"></i> ¡Copiado!';
+                        btn.style.background = 'rgba(16, 185, 129, 0.2)';
+                        btn.style.color = '#10b981';
+                        setTimeout(() => {
+                            btn.innerHTML = orig;
+                            btn.style.background = 'rgba(99, 102, 241, 0.15)';
+                            btn.style.color = 'var(--accent)';
+                        }, 2000);
+                    }).catch(err => {
+                        // Fallback for older browsers
+                        const ta = document.getElementById("pitchText");
+                        if (ta) {
+                            ta.style.display = 'block';
+                            ta.select();
+                            document.execCommand('copy');
+                            ta.style.display = 'none';
+                            alert("¡Mensaje copiado!");
+                        }
+                    });
+                }
+
+                function toggleTheme() {
+                    const html = document.documentElement;
+                    const icon = document.getElementById("themeIcon");
+                    const target =
+                        html.getAttribute("data-theme") === "light" ? "dark" : "light";
+                    html.setAttribute("data-theme", target);
+                    localStorage.setItem("theme", target);
+                    if (target === "light") {
+                        icon.className = "fa-solid fa-moon";
+                    } else {
+                        icon.className = "fa-solid fa-sun";
+                    }
+                }
+
+                function logActivityAsync(action, channel, message, result, template_used) {
+                    const payload = {
+                        id: "{{ prop.id|default(prop._id) }}",
+                        action: action,
+                        channel: channel,
+                        message: message,
+                        phone: document.getElementById('wa-telefono') ? document.getElementById('wa-telefono').value : '',
+                        result: result,
+                        template_used: template_used || ""
+                    };
+                    fetch('/api/captacion/log_action', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    }).then(r => r.json()).then(data => {
+                        if (data.status !== 'ok') console.error("Error logging action", data);
+                        else console.log("Action logged successfully");
+                    }).catch(e => console.error(e));
+                }
+
+                async function saveContactInfo(event) {
+                    event.preventDefault();
+                    const btn = event.currentTarget;
+                    const originalHtml = btn.innerHTML;
+                    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> GUARDANDO...';
+                    btn.disabled = true;
+
+                    const payload = {
+                        id: "{{ prop.id|default(prop._id) }}",
+                        nombre: document.getElementById('contact-nombre').value,
+                        telefono: document.getElementById('wa-telefono').value,
+                        email: document.getElementById('contact-email').value,
+                        notas: document.getElementById('contact-notas').value
+                    };
+
+                    try {
+                        const res = await fetch('/api/captacion/contact', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await res.json();
+                        if (data.status === 'ok') {
+                            // Update last saved state
+                            lastSavedPhone = payload.telefono;
+                            lastSavedEmail = payload.email;
+                            syncCommButtons();
+
+                            btn.innerHTML = '<i class="fa-solid fa-check"></i> GUARDADO';
+                            btn.classList.add('bg-success', 'border-success');
+                            setTimeout(() => {
+                                btn.innerHTML = originalHtml;
+                                btn.classList.remove('bg-success', 'border-success');
+                                btn.disabled = false;
+                            }, 2000);
+                        } else {
+                            throw new Error("Error en servidor");
+                        }
+                    } catch (e) {
+                        alert("Error al guardar: " + e.message);
+                        btn.innerHTML = originalHtml;
+                        btn.disabled = false;
+                    }
+                }
+
+                async function updateStatus() {
+                    const btn = document.querySelector('button[onclick="updateStatus()"]');
+                    const originalHtml = btn.innerHTML;
+                    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ACTUALIZANDO...';
+                    btn.disabled = true;
+
+                    const payload = {
+                        id: "{{ prop.id|default(prop._id) }}",
+                        status: document.getElementById('statusSelect').value,
+                        notes: document.getElementById('notes').value,
+                        next_followup: document.getElementById('proximo-contacto').value
+                    };
+
+                    try {
+                        const res = await fetch('/api/captacion/update', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await res.json();
+                        if (data.status === 'ok') {
+                            btn.innerHTML = '<i class="fa-solid fa-check"></i> ACTUALIZADO';
+                            btn.classList.add('bg-success', 'border-success');
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 1000);
+                        } else {
+                            throw new Error("Error en servidor");
+                        }
+                    } catch (e) {
+                        alert("Error al actualizar: " + e.message);
+                        btn.innerHTML = originalHtml;
+                        btn.disabled = false;
+                    }
+                }
+
+                // --- CRM COMMUNICATION LOGIC ---
+                const commTemplates = {
+                    owner: {
+                        tabs: [
+                            { id: 'hooks', label: '1. Iniciar (5)' },
+                            { id: 'response', label: '2. Respuesta (5)' },
+                            { id: 'proposal', label: '3. Propuesta (5)' },
+                            { id: 'closing', label: '4. Cierre (4)' },
+                            { id: 'followup', label: '5. Seguimiento (5)' },
+                            { id: 'objections', label: '6. Objeciones (14)' }
+                        ],
+                        data: {
+                            hooks: [
+                                {
+                                    id: "gancho_insight_especifico",
+                                    label: "Insight Específico ⭐",
+                                    recommended: true,
+                                    channel: "wa",
+                                    text: "Hola [[nombre]], estuve revisando tu propiedad en [[sector]] y me llamó la atención algo puntual 👀\n\nEstá muy alineada con lo que están buscando activos ahora, especialmente por precio y metraje.\n\n¿Aún la tienes disponible?"
+                                },
+                                {
+                                    id: "gancho_movimiento_zona",
+                                    label: "Movimiento en tu zona ⭐",
+                                    recommended: true,
+                                    channel: "wa",
+                                    text: "Hola [[nombre]], pasó algo interesante en [[sector]] esta semana 👀\n\nEl perfil de comprador activo cambió y tu propiedad encaja mejor que otras.\n\n¿Sigue disponible para contarte?"
+                                },
+                                {
+                                    id: "gancho_posicionamiento",
+                                    label: "Posicionamiento directo",
+                                    channel: "wa",
+                                    text: "Hola [[nombre]], vi tu propiedad en [[sector]] y tengo una manera de mostrarla directamente a personas que ya están buscando ahí.\n\nSoy [[agente]] de Procasa. ¿Sigue disponible?"
+                                },
+                                {
+                                    id: "gancho_pregunta_corta",
+                                    label: "Pregunta Corta",
+                                    channel: "wa",
+                                    text: "Hola [[nombre]], vi tu propiedad en [[sector]].\n\n¿Aún la tienes disponible?"
+                                },
+                                {
+                                    id: "gancho_suave",
+                                    label: "Gancho Frío",
+                                    channel: "wa",
+                                    text: "Hola [[nombre]], soy [[agente]] de Procasa.\n\nVi tu propiedad en [[sector]] y me gustó. Estamos trabajando con compradores en esa zona. ¿Sigue disponible?"
+                                }
+                            ],
+
+                            response: [
+                                {
+                                    id: "respuesta_suave_1",
+                                    label: "Calificación Suave 1",
+                                    channel: "wa",
+                                    text: "Buenísimo 👍\n\nPara no hacerte perder tiempo: ¿tienes intención de vender pronto o más bien estás evaluando opciones todavía?"
+                                },
+                                {
+                                    id: "respuesta_suave_2",
+                                    label: "Calificación Suave 2",
+                                    channel: "wa",
+                                    text: "Perfecto. Una pregunta rápida: ¿el motivo principal es cambio de vivienda, inversión o algo familiar?\n\nAsí entiendo cómo ayudarte mejor."
+                                },
+                                {
+                                    id: "respuesta_directa",
+                                    label: "Calificación Directa",
+                                    channel: "wa",
+                                    text: "Entendido.\n\n¿Has tenido visitas o interesados reales hasta ahora?\n\nEso me dice mucho del posicionamiento actual."
+                                },
+                                {
+                                    id: "respuesta_precio",
+                                    label: "Pregunta por Precio",
+                                    channel: "wa",
+                                    text: "¿El precio que tienes publicado es el que necesitas cerrar o estás abierto a calibrarlo según lo que está pasando hoy en el mercado?"
+                                },
+                                {
+                                    id: "respuesta_visitas",
+                                    label: "Pregunta por Visitas",
+                                    channel: "wa",
+                                    text: "¿Cuántas visitas has tenido? Y de esas, ¿alguna llegó a oferta?\n\nCon eso veo dónde está el cuello de botella real."
+                                }
+                            ],
+
+                            proposal: [
+                                {
+                                    id: "valor_filtro_real",
+                                    label: "Filtro de compradores ⭐",
+                                    recommended: true,
+                                    channel: "wa",
+                                    text: "La diferencia real no es publicar. Eso lo hace cualquiera.\n\nEs quién te trae compradores que ya pueden comprar.\n\nNosotros filtramos antes de que pisen tu propiedad.\n\n¿Te muestro cómo se ve eso en tu caso?"
+                                },
+                                {
+                                    id: "valor_red_interna",
+                                    label: "Red Interna Procasa",
+                                    channel: "wa",
+                                    text: "En Procasa somos más de 100 agentes con clientes en proceso activo.\n\nTu propiedad se muestra también en esa base interna, no solo en portales.\n\n¿Quieres que te explique cómo funciona?"
+                                },
+                                {
+                                    id: "valor_marketing_pro",
+                                    label: "Marketing Profesional",
+                                    channel: "wa",
+                                    text: "Si lleva tiempo publicada, probablemente está perdiéndose entre miles de avisos.\n\nUsamos posicionamiento premium + campañas dirigidas.\n\n¿Hablamos 5 minutos sobre cómo mejorar su visibilidad?"
+                                },
+                                {
+                                    id: "valor_panel_gestion",
+                                    label: "Panel de Gestión",
+                                    channel: "wa",
+                                    text: "Una de las cosas que más valoran nuestros propietarios:\n\nVes en tiempo real cuánta gente vio tu aviso y cuántos están pre-calificados.\n\n¿Quieres que te muestre cómo quedaría para la tuya?"
+                                },
+                                {
+                                    id: "valor_cruce_datos",
+                                    label: "Cruce de Datos",
+                                    channel: "wa",
+                                    text: "Nuestro sistema cruza tu propiedad con requerimientos reales de compradores activos.\n\nPor eso detectamos matches que otros no ven.\n\n¿Te gustaría ver los perfiles que ya tenemos?"
+                                }
+                            ],
+
+                            closing: [
+                                {
+                                    id: "cierre_micro_compromiso",
+                                    label: "Micro-Compromiso ⭐",
+                                    recommended: true,
+                                    channel: "wa",
+                                    text: "Te puedo mostrar en 3 minutos cómo están posicionadas propiedades como la tuya ahora mismo.\n\nSi te hace sentido, hablamos después. ¿Te lo muestro por aquí?"
+                                },
+                                {
+                                    id: "cierre_directo",
+                                    label: "Cierre Directo",
+                                    channel: "wa",
+                                    text: "Tengo un espacio hoy o mañana en la mañana para mostrarte la estrategia.\n\n¿Cuál te viene mejor para una llamada de 5 minutos?"
+                                },
+                                {
+                                    id: "urgencia",
+                                    label: "Urgencia Inteligente",
+                                    channel: "wa",
+                                    text: "Esta semana entraron nuevos compradores en [[sector]]. Estas ventanas no duran.\n\n¿Lo vemos pronto?"
+                                },
+                                {
+                                    id: "cierre_analisis",
+                                    label: "Análisis Gratis",
+                                    channel: "wa",
+                                    text: "Ya preparé una comparativa con propiedades similares a la tuya en [[sector]].\n\n¿Te la envío por aquí o prefieres que te explique los puntos clave en 3 minutos?"
+                                }
+                            ],
+
+                            followup: [
+                                {
+                                    id: "followup_cierre_vecino",
+                                    label: "Se vendió una similar ⭐",
+                                    recommended: true,
+                                    channel: "wa",
+                                    text: "Hola [[nombre]], te escribo porque esta semana se vendió una propiedad muy similar a la tuya en [[sector]] más rápido de lo esperado 👀\n\nEso cambió el tipo de compradores que están quedando disponibles.\n\n¿Quieres que te cuente cómo te afecta?"
+                                },
+                                {
+                                    id: "followup_quemada",
+                                    label: "Propiedad Quemada",
+                                    channel: "wa",
+                                    text: "Hola [[nombre]], noté que tu propiedad en [[sector]] lleva un tiempo publicada.\n\nLos algoritmos de los portales la están desplazando hacia abajo por los días que lleva.\n\nTenemos forma de resetear el posicionamiento. ¿Te cuento cómo lo hacemos?"
+                                },
+                                {
+                                    id: "reactivacion",
+                                    label: "Reactivación",
+                                    channel: "wa",
+                                    text: "Hola [[nombre]], ¿cómo estás?\n\nHace un tiempo vimos tu propiedad y justo ahora entraron nuevos compradores buscando en [[sector]].\n\n¿Sigues evaluando vender?"
+                                },
+                                {
+                                    id: "followup_suave",
+                                    label: "Recordatorio suave",
+                                    channel: "wa",
+                                    text: "Hola [[nombre]], solo paso a saludar.\n\nSeguimos con clientes buscando en tu zona. ¿Cómo va el proceso?\n\nSin compromiso, aquí estoy si necesitas apoyo."
+                                },
+                                {
+                                    id: "followup_dato_nuevo",
+                                    label: "Dato nuevo",
+                                    channel: "wa",
+                                    text: "Hola [[nombre]], te escribo porque pasó algo interesante en [[sector]] 👀\n\n¿Sigues con la propiedad disponible? Hay un detalle que creo que te conviene saber."
+                                }
+                            ],
+
+                            objections: [
+                                {
+                                    id: "obj_corredor",
+                                    label: "Tiene Corredor",
+                                    channel: "wa",
+                                    text: "Excelente que ya tengas apoyo.\n\nSolo una consulta rápida: ¿te está enviando reportes claros de cuánta gente ve el aviso versus cuántos consultan?\n\nSi sientes que está lento, podemos darte una segunda opinión sin compromiso."
+                                },
+                                {
+                                    id: "obj_publicada",
+                                    label: "Ya la tengo publicada",
+                                    channel: "wa",
+                                    text: "Claro.\n\nPublicar lo puede hacer cualquiera. El problema es que el 80% de los contactos no puede comprar.\n\nNosotros trabajamos sobre el 20% que sí. Ahí cambia el resultado."
+                                },
+                                {
+                                    id: "obj_comision",
+                                    label: "No quiero pagar comisión",
+                                    channel: "wa",
+                                    text: "Lo entiendo.\n\nPero lo que importa es el neto que te queda y el tiempo. Cada mes sin vender tiene un costo real.\n\nMi trabajo es que recibas el cheque máximo en el menor tiempo. ¿Comparamos los escenarios?"
+                                },
+                                {
+                                    id: "obj_vender_yo",
+                                    label: "Prefiero vender yo mismo",
+                                    channel: "wa",
+                                    text: "Perfecto, lo respeto.\n\nCuida mucho la validación legal de los oferentes: ahí es donde más ventas se caen hoy.\n\nSi te trabas con el estudio de títulos o la promesa, llámame y te doy una mano sin costo para que no pierdas la operación."
+                                },
+                                {
+                                    id: "obj_no_confio",
+                                    label: "No confío en inmobiliarias",
+                                    channel: "wa",
+                                    text: "Te entiendo, hay malas experiencias.\n\nFirmamos todo antes de empezar y trabajamos 100% transparente.\n\nSolo en el último mes cerramos 3 propiedades en [[sector]] que llevaban más de 90 días estancadas. ¿Te cuento brevemente qué cambió?"
+                                },
+                                {
+                                    id: "obj_precio_bajo",
+                                    label: "El precio es muy bajo",
+                                    channel: "wa",
+                                    text: "Entiendo la preocupación.\n\nNuestro cruce de datos puede mostrarte si está alineado o si hay espacio para mejorar.\n\n¿Quieres ver la comparativa actual?"
+                                },
+                                {
+                                    id: "obj_esperar",
+                                    label: "Quiero esperar",
+                                    channel: "wa",
+                                    text: "Claro, el timing importa.\n\nSolo te digo que esta semana entraron nuevos compradores en [[sector]]. Si quieres, te mantengo al tanto sin compromiso."
+                                },
+                                {
+                                    id: "obj_visita",
+                                    label: "Ya tengo visita agendada",
+                                    channel: "wa",
+                                    text: "¡Excelente!\n\nMientras tanto, ¿quieres info de otros interesados activos para negociar desde mejor posición?"
+                                },
+                                {
+                                    id: "obj_herencia",
+                                    label: "Es herencia / familiar",
+                                    channel: "wa",
+                                    text: "Entiendo, son casos especiales.\n\nTrabajamos con mucho respeto y discreción. ¿Quieres que te cuente cómo lo hemos manejado en otros casos?"
+                                },
+                                {
+                                    id: "obj_barato",
+                                    label: "Me ofrecieron más barato",
+                                    channel: "wa",
+                                    text: "Normal.\n\nLa diferencia no está en la comisión, está en quién trae compradores reales.\n\nDéjame mostrarte en 3 minutos cómo quedaría con nosotros."
+                                },
+                                {
+                                    id: "obj_tasacion",
+                                    label: "Ya tengo tasación",
+                                    channel: "wa",
+                                    text: "Genial.\n\nNosotros complementamos eso con demanda real. ¿Quieres ver cómo encaja con nuestra base de compradores activos?"
+                                },
+                                {
+                                    id: "obj_miedo_no_vender",
+                                    label: "Miedo de que no se venda",
+                                    channel: "wa",
+                                    text: "Es normal la duda.\n\nSolo en el último mes cerramos 3 propiedades en [[sector]] que llevaban más de 90 días estancadas.\n\nLa clave fue el cruce de datos. ¿Te cuento qué cambió en esos casos?"
+                                },
+                                {
+                                    id: "obj_tiempo",
+                                    label: "No tengo tiempo",
+                                    channel: "wa",
+                                    text: "Te entiendo perfectamente.\n\nNosotros filtramos, coordinamos visitas y te informamos solo con lo que importa.\n\nTú solo apruebas las ofertas."
+                                },
+                                {
+                                    id: "obj_exclusividad",
+                                    label: "No quiero exclusividad",
+                                    channel: "wa",
+                                    text: "No hay problema.\n\nSolo te sugiero centralizarlo para no quemar la propiedad con varios precios distintos en los portales, lo cual baja el valor percibido.\n\n¿Probamos 30 días y ves los resultados?"
+                                }
+                            ]
+                        }
+                    }
+                };
+
+                // --- LEAD TIMING CONTEXT (inyectado desde Jinja) ---
+                const _leadDiasPortal = parseInt("{{ prop.gestion.dias_en_portal|default(0)|int }}") || 0;
+                const _leadStage = _leadDiasPortal <= 7 ? 'nuevo' : _leadDiasPortal <= 30 ? 'activo' : 'estancado';
+                // Map stage → best hook template id
+                const _stageToTemplate = {
+                    nuevo: { cat: 'hooks', tid: 'gancho_insight_especifico' },
+                    activo: { cat: 'hooks', tid: 'gancho_movimiento_zona' },
+                    estancado: { cat: 'followup', tid: 'followup_quemada' }
+                };
+                // Contextual CTA label
+                const _ctaLabels = {
+                    nuevo: 'Enviar primer mensaje',
+                    activo: 'Continuar conversación',
+                    estancado: 'Reactivar lead'
+                };
+                (function setCtaLabel() {
+                    const el = document.getElementById('waCtaLabel');
+                    if (el) el.textContent = _ctaLabels[_leadStage] || 'Enviar mensaje';
+                })();
+
+                let currentCommTarget = 'owner';
+                let currentCommChannel = 'wa';
+
+                function openCommPanel(target, defaultChannel = 'wa') {
+                    try {
+                        currentCommTarget = target;
+                        currentCommChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel;
+
+                        const modalElement = document.getElementById('commModal');
+                        if (!modalElement) {
+                            console.error("Modal 'commModal' not found");
+                            return;
+                        }
+                        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+                        const header = document.getElementById('modalHeader');
+                        const title = document.getElementById('commTitle');
+                        const targetNameEl = document.getElementById('contact-nombre');
+                        const targetName = (targetNameEl && targetNameEl.value) ? targetNameEl.value : "Vendedor";
+
+                        const icon = currentCommChannel === 'wa' ? '<i class="fa-brands fa-whatsapp me-2" style="color: #25D366;"></i>' : '<i class="fa-solid fa-envelope me-2" style="color: #3b82f6;"></i>';
+                        title.innerHTML = `${icon} ${currentCommChannel === 'wa' ? 'WhatsApp a' : 'Email a'} <b class="ms-1">${targetName.split(' ')[0]}</b>`;
+
+                        const subjectContainer = document.getElementById('emailSubjectContainer');
+                        if (currentCommChannel === 'email') {
+                            subjectContainer.classList.remove('d-none');
+                            document.getElementById('emailSubject').value = "Consulta Propiedad " + "{{ prop.slug }}";
+                        } else {
+                            subjectContainer.classList.add('d-none');
+                        }
+
+                        renderCommTabs(target);
+
+                        // Zero-Decision: auto-seleccionar template según etapa del lead
+                        const defaultTid = "{{ default_template_id|default('') }}";
+                        if (defaultTid) {
+                            // Override explícito desde backend
+                            let foundCat = 'hooks';
+                            for (let cat in commTemplates[target].data) {
+                                if (commTemplates[target].data[cat].some(t => t.id === defaultTid)) {
+                                    foundCat = cat;
+                                    break;
+                                }
+                            }
+                            loadTemplates(target, foundCat, defaultTid);
+                        } else {
+                            // Auto-selección inteligente por etapa del lead
+                            const stageMap = _stageToTemplate[_leadStage] || { cat: 'hooks', tid: 'gancho_insight_especifico' };
+                            // Actualizar tab activo visualmente
+                            const tabs = document.querySelectorAll('.stage-tab');
+                            tabs.forEach(t => {
+                                t.classList.toggle('active', t.innerText.toLowerCase().includes(stageMap.cat.substring(0, 4)));
+                            });
+                            loadTemplates(target, stageMap.cat, stageMap.tid);
+                        }
+                    } catch (e) {
+                        console.error("Error opening modal:", e);
+                    }
+                }
+
+                function renderCommTabs(target) {
+                    const container = document.getElementById('commTabs');
+                    container.innerHTML = "";
+                    commTemplates[target].tabs.forEach((tab, index) => {
+                        const btn = document.createElement('button');
+                        btn.className = `stage-tab ${index === 0 ? 'active' : ''}`;
+                        btn.innerText = tab.label;
+                        btn.onclick = (e) => loadTemplates(target, tab.id, e.target);
+                        container.appendChild(btn);
+                    });
+                }
+
+                function loadTemplates(target, category, btnOrTid = null) {
+                    // Manejar si es un elemento DOM o un ID de plantilla
+                    let btnElement = (btnOrTid && btnOrTid.nodeType) ? btnOrTid : null;
+                    let targetTid = (btnOrTid && typeof btnOrTid === 'string') ? btnOrTid : null;
+
+                    if (btnElement) {
+                        document.querySelectorAll('.stage-tab').forEach(el => el.classList.remove('active'));
+                        btnElement.classList.add('active');
+                    }
+
+                    const container = document.getElementById('templateContainer');
+                    const tplList = document.getElementById('templateList');
+
+                    tplList.parentElement.classList.remove('d-none');
+                    tplList.innerHTML = "";
+
+                    const templates = (commTemplates[target].data[category] || []).filter(t => t.channel === currentCommChannel);
+
+                    if (templates.length === 0) {
+                        tplList.innerHTML = '<div class="text-center p-3 text-secondary small">No hay plantillas para este canal.</div>';
+                        return;
+                    }
+
+                    templates.forEach(tpl => {
+                        const card = document.createElement('div');
+                        card.className = 'template-card';
+                        if (tpl.recommended) card.classList.add('template-recommended');
+                        card.id = `tpl-card-${tpl.id || tpl.label.replace(/\s/g, '-')}`;
+                        card.onclick = () => {
+                            document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+                            card.classList.add('selected');
+                            selectTemplate(tpl.text, tpl.subject || "", tpl.label);
+                            // Update CTA after selection
+                            const cta = document.getElementById('waCtaLabel');
+                            if (cta) cta.textContent = _ctaLabels[_leadStage] || 'Enviar mensaje';
+                        };
+                        const recBadge = tpl.recommended
+                            ? `<span style="font-size:0.6rem;background:rgba(16,185,129,0.15);color:#10b981;padding:1px 6px;border-radius:10px;font-weight:600;">⭐ Recomendado</span>`
+                            : ``;
+                        const stageHint = tpl.recommended && _leadStage === 'estancado' && tpl.id && tpl.id.includes('followup')
+                            ? `<span style="font-size:0.6rem;color:#f59e0b;">⚠️ F-UP 48h sin respuesta</span>`
+                            : ``;
+                        card.innerHTML = `
+                    <div class="tpl-info">
+                        <div class="d-flex align-items-center gap-1 mb-1">
+                            <span class="tpl-title">${tpl.label}</span>
+                            ${recBadge}
+                            ${stageHint}
+                        </div>
+                        <span class="tpl-preview">${tpl.text.substring(0, 50)}...</span>
+                    </div>
+                    <i class="${currentCommChannel === 'wa' ? 'fa-brands fa-whatsapp' : 'fa-solid fa-envelope'} text-secondary"></i>
+                `;
+                        tplList.appendChild(card);
+
+                        // Zero-Decision: auto-click si es el template objetivo
+                        if (targetTid && (tpl.id === targetTid)) {
+                            setTimeout(() => card.click(), 50);
+                        }
+                    });
+                }
+
+                function openAndSelectTemplate(tid) {
+                    openCommPanel('owner', 'wa');
+                    // Buscamos en qué pestaña está el tid
+                    let foundCategory = 'hooks';
+                    for (let cat in commTemplates.owner.data) {
+                        if (commTemplates.owner.data[cat].some(t => t.id === tid)) {
+                            foundCategory = cat;
+                            break;
+                        }
+                    }
+                    renderCommTabs('owner');
+                    loadTemplates('owner', foundCategory, tid);
+                }
+
+                function openSuggestedNextStep() {
+                    // Intent count desde el backend (inyectado en el template)
+                    const intents = parseInt("{{ intent_count|default(0) }}");
+                    let targetTab = 'hooks';
+
+                    if (intents === 1) targetTab = 'response';
+                    else if (intents === 2) targetTab = 'proposal';
+                    else if (intents >= 3) targetTab = 'closing';
+
+                    openCommPanel('owner', 'wa');
+                    renderCommTabs('owner');
+                    loadTemplates('owner', targetTab);
+                }
+
+                let currentSelectedTemplateLabel = "";
+
+                function selectTemplate(text, subject = "", label = "") {
+                    currentSelectedTemplateLabel = label;
+                    const safeNameEl = document.getElementById('contact-nombre');
+                    const safeName = (safeNameEl && safeNameEl.value) ? safeNameEl.value : "Propietario";
+
+                    // Variables dinámicas (Fase 5)
+                    const sector = "{{ sector_name|default('') }}";
+                    const demanda = parseInt("{{ total_leads|default(0) }}");
+                    const dias_pub = parseInt("{{ days_published|default(0) }}");
+                    const precio_cbr = "{{ avg_cierre|default(0) }}";
+
+                    let processed = text
+                        .replace(/\[\[vendedor\]\]/g, safeName.split(' ')[0])
+                        .replace(/\{\{nombre\}\}/g, safeName.split(' ')[0])
+                        .replace(/\[\[sector\]\]/g, sector || "tu zona")
+                        .replace(/\{\{sector\}\}/g, sector || "tu zona")
+                        .replace(/\[\[demanda\]\]/g, demanda > 0 ? demanda : "varios")
+                        .replace(/\{\{demanda\}\}/g, demanda > 0 ? demanda : "varios")
+                        .replace(/\{\{X\}\}/g, demanda > 0 ? demanda : "varios")
+                        .replace(/\[\[dias_publicado\]\]/g, dias_pub)
+                        .replace(/\{\{dias_publicado\}\}/g, dias_pub)
+                        .replace(/\[\[precio_cierre\]\]/g, precio_cbr > 0 ? (precio_cbr + " UF/m2") : "valor de mercado")
+                        .replace(/\{\{precio_promedio_cierre\}\}/g, precio_cbr > 0 ? (precio_cbr + " UF/m2") : "valor de mercado");
+
+                    document.getElementById('commMessage').value = processed;
+                    if (currentCommChannel === 'email' && subject) {
+                        document.getElementById('emailSubject').value = subject.replace(/\[\[sector\]\]/g, sector || "tu zona");
+                    }
+                    updateSendLink();
+                }
+
+                // State Management for Comm Modal (Grok Suggestion)
+                const commState = {
+                    channel: 'wa',
+                    message: '',
+                    phone: '',
+                    email: '',
+                    subject: ''
+                };
+
+                function updateSendLink() {
+                    const btn = document.getElementById('btnSendComm');
+                    const msg = document.getElementById('commMessage').value;
+                    const phoneEl = document.getElementById('wa-telefono');
+                    const phone = (phoneEl && phoneEl.value) ? phoneEl.value.replace(/\D/g, '') : '';
+                    const emailEl = document.getElementById('contact-email');
+                    const email = (emailEl && emailEl.value) ? emailEl.value : '';
+                    const subjectEl = document.getElementById('emailSubject');
+                    const subject = (subjectEl && subjectEl.value) ? subjectEl.value : '';
+
+                    const isWA = currentCommChannel === 'wa';
+                    btn.innerHTML = isWA ? '<i class="fa-brands fa-whatsapp"></i> Abrir WhatsApp' : '<i class="fa-solid fa-envelope"></i> Abrir Correo';
+
+                    if (msg.trim().length > 0) {
+                        btn.style.opacity = "1";
+                        btn.style.cursor = "pointer";
+                        btn.style.pointerEvents = "auto";
+                        btn.style.background = isWA ? "#25D366" : "#3b82f6";
+                        btn.style.borderColor = isWA ? "#25D366" : "#3b82f6";
+                        btn.style.color = "#fff";
+
+                        if (isWA) {
+                            btn.href = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+                        } else {
+                            btn.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(msg)}`;
+                        }
+                    } else {
+                        btn.style.opacity = "0.6";
+                        btn.style.cursor = "not-allowed";
+                        btn.style.pointerEvents = "none";
+                        btn.style.background = "rgba(255,255,255,0.1)";
+                        btn.style.borderColor = "transparent";
+                        btn.href = "#";
+                    }
+                }
+
+                document.addEventListener('DOMContentLoaded', () => {
+                    const commMessageEl = document.getElementById('commMessage');
+                    if (commMessageEl) {
+                        commMessageEl.addEventListener('input', updateSendLink);
+                        commMessageEl.addEventListener('change', updateSendLink);
+                    }
+
+                    // Sync buttons on input (Grok Refactor)
+                    const phoneInput = document.getElementById('wa-telefono');
+                    if (phoneInput) phoneInput.addEventListener('input', syncCommButtons);
+
+                    const emailInput = document.getElementById('contact-email');
+                    if (emailInput) emailInput.addEventListener('input', syncCommButtons);
+
+                    // Re-trigger update when modal opens to avoid race conditions
+                    const commModalEl = document.getElementById('commModal');
+                    if (commModalEl) {
+                        commModalEl.addEventListener('shown.bs.modal', updateSendLink);
+                    }
+
+                    // Sync on load
+                    syncCommButtons();
+                });
+
+                let feedbackTimeout = null;
+                function triggerFeedbackTimeout() {
+                    // Mostrar toast de confirmación inmediato
+                    const toast = document.getElementById('postSendToast');
+                    if (toast) {
+                        toast.style.display = 'flex';
+                        toast.innerHTML = '<i class="fa-brands fa-whatsapp"></i> Mensaje enviado ✔ &nbsp;<small style="opacity:0.8;font-weight:400;">Próx. seguimiento: +24h</small>';
+                        setTimeout(() => { toast.style.display = 'none'; }, 4000);
+                    }
+                    // Abrir modal de bitácora después de 1s
+                    clearTimeout(feedbackTimeout);
+                    feedbackTimeout = setTimeout(() => {
+                        const fbModal = new bootstrap.Modal(document.getElementById('feedbackModal'));
+                        fbModal.show();
+                    }, 1000);
+                }
+
+                function saveFeedback(resultStr) {
+                    const notesVal = document.getElementById('feedbackNotes').value;
+                    const combined = resultStr + (notesVal ? " - " + notesVal : "");
+                    const currentNotes = document.getElementById('notes').value;
+                    document.getElementById('notes').value = (currentNotes ? currentNotes + "\\n" : "") + "📞 " + combined;
+
+                    const statusMap = {
+                        'Contacto Exitoso': 'CONTACTO EXITOSO',
+                        'Agendó Visita': 'REUNIÓN AGENDADA',
+                        'No Interesado': 'DESCARTADO',
+                        'Sin Respuesta': 'GESTION'
+                    };
+                    if (statusMap[resultStr]) {
+                        document.getElementById('statusSelect').value = statusMap[resultStr];
+                    }
+
+                    const fbModal = bootstrap.Modal.getInstance(document.getElementById('feedbackModal'));
+                    if (fbModal) {
+                        fbModal.hide();
+                    }
+                }
+
+                function saveFeedbackFromText() {
+                    const notesVal = document.getElementById('feedbackNotes').value;
+                    if (notesVal) {
+                        saveFeedback('Gestión General');
+                    } else {
+                        const fbModal = bootstrap.Modal.getInstance(document.getElementById('feedbackModal'));
+                        if (fbModal) {
+                            fbModal.hide();
+                        }
+                    }
+                }
+            </script>
+
+            <!-- LEAD VERIFICATION MODAL -->
+            <div id="leadVerificationModal" class="lead-modal" onclick="if(event.target==this) closeLeadModal()">
+                <div class="lead-modal-content" style="max-width: 600px;">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <div>
+                            <h3 id="modalTitle" class="text-white fw-bold mb-1" style="font-size: 1.4rem;">Clientes
+                                activos compatibles con esta propiedad
+                            </h3>
+                            <p id="modalSubtitle" class="text-secondary small mb-0">Mostrando los más activos y
+                                compatibles</p>
+                        </div>
+                        <div class="text-white fs-2 pointer" onclick="closeLeadModal()"
+                            style="cursor: pointer; opacity: 0.5;">
+                            &times;</div>
+                    </div>
+
+                    <div class="table-responsive" style="max-height: 50vh; overflow-y: auto; overflow-x: hidden;">
+                        <div id="leadTableBody" class="d-flex flex-column gap-3 pe-2">
+                            <!-- Filled by JS -->
+                        </div>
+                    </div>
+
+                    <div class="mt-4 text-center">
+                        <p class="text-secondary italic small" style="opacity: 0.5;">
+                            <i class="fa-solid fa-lock me-1"></i>
+                            Clientes gestionados por nuestro equipo bajo políticas de confidencialidad.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                // Data injected from Backend
+                const _maData = {{ ma | tojson }};
+                const matchingLeadsData = {
+                    top: _maData.top_leads || [],
+                    exact: _maData.exact_leads || [],
+                    zone: _maData.zone_leads || [],
+                    broad: _maData.broad_leads || []
+                };
+                const matchingLeadsCounts = {
+                    exact: _maData.exact || 0,
+                    zone: _maData.zone || 0,
+                    broad: _maData.broad || 0
+                };
+                const matchingLeadsFilters = _maData.applied_filters || {};
+                const smartPitchText = _maData.pitch_text || "";
+
+                function openLeadModal(type) {
+                    let leads = matchingLeadsData[type] || [];
+
+                    // Si la categoría específica está vacía pero hay conteo, 
+                    // intentamos filtrar de top_leads como fallback secundario
+                    if (leads.length === 0 && type !== 'top') {
+                        leads = (matchingLeadsData['top'] || []).filter(l => l.bucket === type);
+                    }
+
+                    // Si sigue vacío y es 'top', ya es top.
+
+                    document.getElementById('modalTitle').innerText = "Clientes activos compatibles con esta propiedad";
+
+                    const totalCount = matchingLeadsCounts[type] || (type === 'top' ? matchingLeadsData['top'].length : 0);
+                    document.getElementById('modalSubtitle').innerText = `Mostrando los perfiles más compatibles (${totalCount})`;
+
+                    // Threshold dinámico según operación (30d arriendo, 60d venta)
+                    const activeThreshold = {{ 30 if (prop.details.operacion and 'ARR' in prop.details.operacion | upper) or(not prop.details.operacion and prop.details.precio_uf and prop.details.precio_uf < 1000) else 60
+                }};
+
+                // Ordenar: activos primero, luego históricos por días_old
+                leads.sort((a, b) => {
+                    const aActive = (a.days_old !== undefined && a.days_old < activeThreshold);
+                    const bActive = (b.days_old !== undefined && b.days_old < activeThreshold);
+                    if (aActive && !bActive) return -1;
+                    if (!aActive && bActive) return 1;
+                    return (a.days_old || 999) - (b.days_old || 999);
+                });
+
+                const tbody = document.getElementById('leadTableBody');
+                tbody.innerHTML = '';
+
+                if (leads.length === 0) {
+                    tbody.innerHTML = '<div class="text-center py-5 text-secondary">No hay evidencia detallada para este nivel.</div>';
+                } else {
+                    leads.forEach(lead => {
+                        const qualColors = { 'high': '#10b981', 'medium': '#f59e0b', 'low': '#6b7280' };
+                        const qualTexts = { 'high': 'Alta compatibilidad', 'medium': 'Compatibilidad media', 'low': 'Perfil general' };
+                        const qColor = qualColors[lead.quality_label || 'low'];
+                        const qText = qualTexts[lead.quality_label || 'low'];
+
+                        const isRecent = lead.days_old !== undefined && lead.days_old < activeThreshold;
+
+                        // Insertar separador entre activos e históricos
+                        const prevLead = tbody.lastElementChild;
+                        if (prevLead && prevLead.dataset.recent === 'true' && !isRecent) {
+                            const sep = document.createElement('div');
+                            sep.innerHTML = `<div style="font-size:0.7rem;color:#6b7280;text-transform:uppercase;letter-spacing:1px;padding:4px 0 2px;border-top:1px solid rgba(255,255,255,0.07);margin-top:2px;">⚪ Históricos (más de ${activeThreshold} días sin actividad)</div>`;
+                            tbody.appendChild(sep);
+                        }
+
+                        // Color del contador de días
+                        const daysColor = isRecent ? '#10b981' : lead.days_old > 60 ? '#ef4444' : '#f59e0b';
+
+                        const row = document.createElement('div');
+                        row.className = 'd-flex justify-content-between align-items-center p-3 rounded-4';
+                        row.dataset.recent = isRecent ? 'true' : 'false';
+                        row.style.background = isRecent ? 'rgba(16,185,129,0.04)' : 'rgba(255,255,255,0.02)';
+                        row.style.border = `1px solid ${isRecent ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)'}`;
+
+                        row.innerHTML = `
+                        <div>
+                            <div class="text-white fw-bold mb-1" style="font-size: 1.05rem;">
+                                <i class="fa-solid fa-user-circle ${isRecent ? 'text-success' : 'text-secondary'} me-2"></i>${lead.full_name}
+                            </div>
+                            <div class="d-flex flex-wrap gap-2 mt-2">
+                                <span class="badge rounded-pill" style="background: ${qColor}20; color: ${qColor}; font-weight: 500;">
+                                    <i class="fa-solid fa-bullseye me-1"></i>${qText}
+                                </span>
+                                ${isRecent
+                                ? '<span class="badge rounded-pill" style="background:rgba(16,185,129,0.12);color:#10b981;font-weight:500;"><i class="fa-solid fa-bolt me-1"></i>Activo</span>'
+                                : '<span class="badge rounded-pill" style="background:rgba(107,114,128,0.12);color:#6b7280;font-weight:500;"><i class="fa-solid fa-clock me-1"></i>Histórico</span>'
+                            }
+                                <span class="badge rounded-pill" style="background: rgba(99, 102, 241, 0.1); color: #818cf8; font-weight: 500;">
+                                    <i class="fa-solid fa-headset me-1"></i>En gestión por equipo
+                                </span>
+                            </div>
+                        </div>
+                        <div class="text-end" style="min-width: 80px;">
+                            <div class="text-secondary" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px;">Actividad</div>
+                            <div class="fw-bold" style="font-size: 1rem; color: ${daysColor};">
+                                ${lead.days_old == 0 ? 'Hoy' : lead.days_old + ' días'}
+                            </div>
+                        </div>
+                    `;
+                        tbody.appendChild(row);
+                    });
+                }
+
+                document.getElementById('leadVerificationModal').style.display = 'block';
         }
 
-        function toggleTheme() {
-            const html = document.documentElement;
-            const target = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-            html.setAttribute('data-theme', target);
-            localStorage.setItem('theme', target);
-        }
+                function closeLeadModal() {
+                    document.getElementById('leadVerificationModal').style.display = 'none';
+                }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const saved = localStorage.getItem('theme');
-            if (saved) document.documentElement.setAttribute('data-theme', saved);
-        });
-    </script>
+                // Global functions for older script blocks
+                window.openLeadModal = openLeadModal;
+                window.closeLeadModal = closeLeadModal;
+            </script>
 </body>
 
 </html>

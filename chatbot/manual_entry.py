@@ -5,6 +5,7 @@ from typing import Dict, Any, Tuple, Optional
 from .storage import get_db, log_event, save_pending_notification
 from .constants import CHILE_TZ, PipelineStage, InteractionType
 from .lead_router import find_responsible_executive
+from .processing_service import LeadProcessingService
 
 logger = logging.getLogger(__name__)
 
@@ -213,11 +214,13 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
                  update_payload["$set"]["lifecycle.assigned_at"] = assigned_at.isoformat()
 
             db["leads"].update_one({"_id": existing_lead["_id"]}, update_payload)
+            LeadProcessingService.process_lead(existing_lead["_id"])
             
         else:
             # Insert brand new lead
             result = db["leads"].insert_one(lead_doc)
             lead_id = str(result.inserted_id)
+            LeadProcessingService.process_lead(result.inserted_id)
             
         # 5. Log Event
         log_event(phone or email, InteractionType.ASSIGNMENT, "supervisor", {

@@ -3,12 +3,12 @@
 # webhook.py → BOT PRO 2025 CON LOGIN REAL + DASHBOARD + CAMPAÑAS 100% ORIGINALES
 import asyncio
 import logging
+import os
 import time
 import hmac
 import hashlib
 from typing import Dict, Any
 import re
-import os
 import secrets
 from pymongo import MongoClient
 from datetime import datetime, timedelta
@@ -35,10 +35,11 @@ from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
 from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent
 from api_captacion import (
-    get_captacion_list, get_captacion_detail, update_captacion_status, 
+    get_captacion_list, get_captacion_detail, update_captacion_status, update_contact_info,
     distribute_sourced_leads, format_relative_time as format_captacion_time
 )
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate
+from chatbot.processing_service import LeadProcessingService
 
 # ========================= CONFIGURACIÓN =========================
 from config import Config
@@ -63,7 +64,8 @@ background_tasks_status = {
     "notifications_loop": {"status": "starting", "last_heartbeat": None},
     "sla_monitor": {"status": "starting", "last_heartbeat": None},
     "task_monitor": {"status": "starting", "last_heartbeat": None},
-    "captacion_distributor": {"status": "starting", "last_heartbeat": None}
+    "captacion_distributor": {"status": "starting", "last_heartbeat": None},
+    "lead_processing": {"status": "starting", "last_heartbeat": None}
 }
 
 @asynccontextmanager
@@ -76,6 +78,7 @@ async def lifespan(app: FastAPI):
     s_task = asyncio.create_task(sla_monitor_loop())
     t_task = asyncio.create_task(check_scheduled_tasks_loop())
     c_task = asyncio.create_task(captacion_distribution_loop())
+    r_task = asyncio.create_task(reassign_unassigned_leads_loop())
     
     # Crear admin y asegurar índices
     crear_admin_si_no_existe()
@@ -97,8 +100,9 @@ async def lifespan(app: FastAPI):
     s_task.cancel()
     t_task.cancel()
     c_task.cancel()
+    r_task.cancel()
     try:
-        await asyncio.gather(n_task, s_task, t_task, c_task, return_exceptions=True)
+        await asyncio.gather(n_task, s_task, t_task, c_task, r_task, return_exceptions=True)
     except Exception as e:
         logger.error(f"Error apagando tareas: {e}")
 
@@ -954,9 +958,18 @@ async def view_captacion_detail_route(request: Request, obj_id: str):
         if assigned and user_name.lower() not in assigned.lower():
             return RedirectResponse(url="/captacion?error=no_asignada")
 
+    # Calcular leads coincidentes (Sistema Inteligente de 3 Capas)
+    from api_captacion import get_matching_leads_analysis
+    ma = get_matching_leads_analysis(data)
+
     return templates.TemplateResponse("captacion_detail.html", {
         "request": request,
         "prop": data,
+        "matching_leads_count": ma.get("exact", 0) + ma.get("zone", 0) + ma.get("broad", 0),
+        "matching_analysis": ma,
+        "ma": ma,
+        "zone_name": ma.get("zone_name", "Sin zona"),
+        "pitch_text": ma.get("pitch_text", ""),
         "user_name": user_name,
         "user_role": user.get("rol", "agente")
     })
@@ -968,12 +981,79 @@ async def api_update_captacion(request: Request):
     obj_id = data.get("id")
     status = data.get("status")
     notes = data.get("notes")
+    next_followup = data.get("next_followup")
+    channel = data.get("channel")
+    outcome = data.get("outcome")
+    user_name = data.get("user_name", "Sistema")
     
     if not obj_id or not status:
         raise HTTPException(status_code=400, detail="Faltan datos")
         
-    result = update_captacion_status(obj_id, status, notes)
+    result = update_captacion_status(
+        obj_id, 
+        status, 
+        notes, 
+        channel=channel, 
+        outcome=outcome, 
+        user_name=user_name, 
+        next_followup=next_followup
+    )
     return {"status": "ok"} if result else {"status": "error"}
+
+@app.post("/api/captacion/contact")
+async def api_update_captacion_contact(request: Request):
+    await get_current_user(request)
+    data = await request.json()
+    obj_id = data.get("id")
+    if not obj_id:
+        raise HTTPException(status_code=400, detail="Falta ID")
+    
+    # Check user name in session or payload
+    user_name = data.get("user_name")
+    if not user_name:
+        username_str = await get_current_user(request)
+        client = MongoClient(Config.MONGO_URI)
+        db = client[Config.DB_NAME]
+        user_doc = db["usuarios"].find_one({"username": username_str})
+        user_name = user_doc.get("nombre", username_str) if user_doc else "Sistema"
+    
+    result = update_contact_info(
+        obj_id,
+        nombre=data.get("nombre"),
+        telefono=data.get("telefono"),
+        email=data.get("email"),
+        notas=data.get("notas"),
+        user_name=user_name
+    )
+    return {"status": "ok"} if result else {"status": "error"}
+
+@app.post("/api/captacion/log_action")
+async def api_captacion_log_action(request: Request):
+    username_str = await get_current_user(request)
+    client = MongoClient(Config.MONGO_URI)
+    db = client[Config.DB_NAME]
+    user_doc = db["usuarios"].find_one({"username": username_str})
+    actual_name = user_doc.get("nombre", username_str) if user_doc else "Sistema"
+    
+    data = await request.json()
+    obj_id = data.get("id")
+    action = data.get("action")
+    channel = data.get("channel")
+    message = data.get("message")
+    phone = data.get("phone")
+    result = data.get("result")
+    template_used = data.get("template_used")
+    
+    if not obj_id or not action:
+        raise HTTPException(status_code=400, detail="Faltan datos")
+        
+    try:
+        from api_captacion import log_captacion_activity
+        success = log_captacion_activity(obj_id, actual_name, action, channel, message, phone, result, template_used)
+        return {"status": "ok"} if success else {"status": "error"}
+    except Exception as e:
+        logger.error(f"Error logging captacion action: {e}")
+        return {"status": "error", "message": str(e)}
 
 @app.post("/api/captacion/distribute")
 async def api_distribute_captacion(request: Request):
@@ -1130,7 +1210,7 @@ async def process_pending_leads_loop():
                                 new_exec, new_phone = find_responsible_executive(p_code)
                                 if new_phone and new_phone != "+56900000000":
                                     target_phone = new_phone
-                                    data["name"] = new_exec
+                                    p["target_name"] = new_exec
                                     # Actualizamos la data para que el mensaje se mande bien
                                     lead_data["target_phone"] = new_phone
                                     lead_data["target_name"] = new_exec
@@ -1251,12 +1331,26 @@ async def check_scheduled_tasks_loop():
                     try:
                         phone = task.get("phone")
                         note = task.get("note", "Sin detalles")
-                        lead = db["leads"].find_one({"phone": phone})
-                        if not lead:
-                            db["crm_tasks"].update_one({"_id": task["_id"]}, {"$set": {"status": "error", "error": "lead_not_found"}})
-                            continue
+                        
+                        is_captacion = task.get("lead_type") == "captacion"
+                        if is_captacion:
+                            from bson import ObjectId
+                            lead = db["yapo_propiedades"].find_one({"_id": ObjectId(task.get("obj_id"))})
+                            if not lead:
+                                db["crm_tasks"].update_one({"_id": task["_id"]}, {"$set": {"status": "error", "error": "captacion_not_found"}})
+                                continue
+                            ejecutivo = lead.get("gestion", {}).get("ejecutivo_asignado")
+                            lead_name = lead.get("details", {}).get("publicador", "Cliente")
+                            crm_link = f"https://www.procasa.cl/captacion/{task.get('obj_id')}"
+                        else:
+                            lead = db["leads"].find_one({"phone": phone})
+                            if not lead:
+                                db["crm_tasks"].update_one({"_id": task["_id"]}, {"$set": {"status": "error", "error": "lead_not_found"}})
+                                continue
+                            ejecutivo = lead.get("ejecutivo_asignado")
+                            lead_name = lead.get("prospecto", {}).get("nombre", "Cliente")
+                            crm_link = f"https://www.procasa.cl/crm/lead/{phone}"
                             
-                        ejecutivo = lead.get("ejecutivo_asignado")
                         if not ejecutivo or ejecutivo in ["No asignado", "Sin Asignar"]:
                             continue
                             
@@ -1264,10 +1358,9 @@ async def check_scheduled_tasks_loop():
                         if not exec_phone or exec_phone == "+56900000000":
                             continue
                             
-                        crm_link = f"https://www.procasa.cl/crm/lead/{phone}"
                         msg_text = (
                             f"⏰ *Recordatorio CRM: {ejecutivo}*\n\n"
-                            f"Tienes una acción programada para el lead *{lead.get('prospecto', {}).get('nombre', 'Cliente')}* ({phone}).\n\n"
+                            f"Tienes una acción programada para *{'la captación' if is_captacion else 'el lead'}* de *{lead_name}*.\n\n"
                             f"📝 *Nota:* {note}\n"
                             f"🔗 Gestionar: {crm_link}"
                         )
@@ -1320,6 +1413,53 @@ def asegurar_indices_db():
         logger.info("Índices de CRM asegurados.")
     except Exception as e:
         logger.warning(f"Error creando índices: {e}")
+
+async def reassign_unassigned_leads_loop():
+    logger.info("[BACKGROUND] Iniciando loop de procesamiento de leads (Clasificación/Asignación)...")
+    while True:
+        try:
+            background_tasks_status["lead_processing"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
+            background_tasks_status["lead_processing"]["status"] = "running"
+            
+            db = LeadProcessingService._db() if hasattr(LeadProcessingService, '_db') else None
+            if db is None:
+                from chatbot.storage import get_db
+                db = get_db()
+
+            from chatbot.constants import UNASSIGNED_LABEL
+            unassigned_labels = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
+            
+            # Query optimizada: Solo los que necesitan algo (Idempotencia)
+            query = {
+                "$or": [
+                    {"cluster_id": {"$exists": False}},
+                    {"cluster_id": {"$in": [None, ""]}},
+                    {"zone": {"$exists": False}},
+                    {"zone": {"$in": [None, ""]}},
+                    {"ejecutivo_asignado": {"$in": unassigned_labels}},
+                    {"prospecto.ejecutivo": {"$in": unassigned_labels}}
+                ]
+            }
+            
+            # Procesar por lotes (Batch processing)
+            leads = list(db["leads"].find(query).limit(100))
+            
+            if leads:
+                logger.info(f"[BACKGROUND] Procesando batch de {len(leads)} leads...")
+                for lead in leads:
+                    try:
+                        LeadProcessingService.process_lead(lead["_id"])
+                    except Exception as le:
+                        logger.error(f"[BACKGROUND] Error procesando lead {lead.get('_id')}: {le}")
+            
+            # Intervalo saludable (5 min)
+            await asyncio.sleep(300)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            background_tasks_status["lead_processing"]["status"] = f"error: {str(e)}"
+            logger.error(f"[BACKGROUND] Error en loop de procesamiento de leads: {e}")
+            await asyncio.sleep(60)
 
 if __name__ == "__main__":
     import pathlib

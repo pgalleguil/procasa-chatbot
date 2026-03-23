@@ -5,6 +5,7 @@ import os
 import random
 import re
 import sys
+import hashlib
 from datetime import datetime, timezone
 from itertools import cycle
 
@@ -90,6 +91,34 @@ async def block_resources(route):
     await route.continue_()
 
 # --- EXTRACCIÓN DE CONTACTO (LÓGICA PRESERVADA) ---
+def update_local_html(url: str, phone: str):
+    """Inyecta el teléfono revelado en el HTML local para auditorías futuras sin proxy."""
+    try:
+        filename = hashlib.md5(url.encode()).hexdigest() + ".html"
+        folder = os.path.join(os.path.dirname(__file__), "html_dumps")
+        filepath = os.path.join(folder, filename)
+        
+        if os.path.exists(filepath):
+            with open(filepath, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            # Tag para inyección
+            tag = f'<meta name="revealed-phone" content="{phone}">'
+            if tag not in content:
+                # Inyectar en el <head> si existe, sino al final
+                if "</head>" in content:
+                    new_content = content.replace("</head>", f"    {tag}\n</head>", 1)
+                else:
+                    new_content = content + f"\n<!-- REVEALED_PHONE: {phone} -->"
+                
+                with open(filepath, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+                logging.info(f"📝 HTML enriquecido con teléfono: {filename}")
+        else:
+            logging.debug(f"ℹ️ No se encontró HTML local para {filename}")
+    except Exception as e:
+        logging.error(f"⚠️ Error al actualizar HTML local: {e}")
+
 async def extract_contact(page, listing_url, doc_id, coll, contact_data, worker_id=0):
     # Ya no definimos los listeners aquí para evitar duplicados en reutilización
     contact_data["phone"] = None 
@@ -175,45 +204,55 @@ async def extract_contact(page, listing_url, doc_id, coll, contact_data, worker_
 
         await asyncio.sleep(1)
 
-        # 3. Revelar contacto forzando submit
-        for btn_sel in ['.show-phone', '.show-whatsapp', 'button[type="submit"]']:
-            if contact_data["phone"]: break
+        # 3. Revelar contacto - SOLO mediante botones explícitos de teléfono/WhatsApp
+        # NO se usan fallbacks de HTML ni submit genérico para evitar capturar teléfonos incorrectos
+        reveal_source = "none"
+        
+        # Verificar si existe un botón de revelar teléfono REAL en este anuncio
+        has_phone_button = False
+        for btn_sel in ['.show-phone', '.show-whatsapp']:
             try:
-                btn = page.locator(btn_sel)
-                if await btn.count() > 0:
-                    await btn.first.evaluate('el => { el.removeAttribute("disabled"); el.click(); }')
-                    
-                    # Espera progresiva de hasta 8 segundos (16 x 0.5s)
-                    for _ in range(16):
-                        if contact_data["phone"]: break
-                        await asyncio.sleep(0.5)
-                    
-                    # Fallback 1: leer texto del botón por si cambió a número
-                    if not contact_data["phone"]:
-                        try:
-                            btn_text = await btn.first.inner_text()
-                            m = re.search(r'(9\s?\d{4}\s?\d{4})', btn_text.replace("+56", "").replace("-", ""))
-                            if m:
-                                digits = re.sub(r'\s', '', m.group(1))
-                                contact_data["phone"] = "+56" + digits
-                        except: pass
-
-                    # Fallback 2: buscar en el HTML completo de la página
-                    if not contact_data["phone"]:
-                        try:
-                            html = await page.content()
-                            m = re.search(r'(9\s?\d{4}\s?\d{4})', html)
-                            if m:
-                                digits = re.sub(r'\s', '', m.group(1))
-                                contact_data["phone"] = "+56" + digits
-                        except: pass
-
-                    # Debug screenshot solo si falló todo
-                    if not contact_data["phone"]:
-                        try:
-                            await page.screenshot(path=f"debug_worker_{worker_id}.png", timeout=3000)
-                        except: pass
+                if await page.locator(btn_sel).count() > 0:
+                    has_phone_button = True
+                    break
             except: pass
+        
+        if not has_phone_button:
+            # Este anuncio solo tiene formulario de mensaje - no tiene teléfono público
+            logging.info(f"📵 [W{worker_id}] Anuncio sin botón de teléfono (solo formulario): {listing_url[-30:]}")
+        else:
+            for btn_sel in ['.show-phone', '.show-whatsapp']:
+                if contact_data["phone"]: break
+                try:
+                    btn = page.locator(btn_sel)
+                    if await btn.count() > 0:
+                        logging.info(f"🖱️ [W{worker_id}] Haciendo click en {btn_sel}")
+                        await btn.first.evaluate('el => { el.removeAttribute("disabled"); el.click(); }')
+                        
+                        # Espera progresiva de hasta 8 segundos (16 x 0.5s)
+                        for _ in range(16):
+                            if contact_data["phone"]: 
+                                reveal_source = "network_intercept"
+                                break
+                            await asyncio.sleep(0.5)
+                        
+                        # Fallback: leer texto del botón por si cambió a número visible
+                        if not contact_data["phone"]:
+                            try:
+                                btn_text = await btn.first.inner_text()
+                                clean_text = btn_text.replace("+56", "").replace("-", "").replace(" ", "")
+                                m = re.search(r'(9\d{8})', clean_text)
+                                if m:
+                                    digits = m.group(1)
+                                    if digits != fake_phone:  # EVITAR AUTO-CAPTURA
+                                        contact_data["phone"] = "+56" + digits
+                                        reveal_source = "button_text"
+                            except: pass
+                except: pass
+        
+        # ELIMINADO: Fallback de búsqueda en HTML completo de la página.
+        # Era la causa de captura de teléfonos incorrectos (del formulario de ProCasa,
+        # scripts embebidos, datos de sesión, etc.)
 
         if contact_data["phone"]:
             # Normalizar teléfono
@@ -222,8 +261,17 @@ async def extract_contact(page, listing_url, doc_id, coll, contact_data, worker_
                 if len(clean_phone) == 9: clean_phone = "+56" + clean_phone
                 elif clean_phone.startswith('56'): clean_phone = "+" + clean_phone
             
-            await coll.update_one({"_id": doc_id}, {"$set": {"details.whatsapp_phone": clean_phone}})
-            logging.info(f"✅ [W{worker_id}] Éxito: {clean_phone} | {listing_url[-20:]}")
+            # Guardar también el log de dónde salió e inyectar en HTML local
+            update_local_html(listing_url, clean_phone)
+            await coll.update_one(
+                {"_id": doc_id}, 
+                {"$set": {
+                    "details.whatsapp_phone": clean_phone,
+                    "metadata.phone_extraction_source": reveal_source,
+                    "metadata.extraction_date": datetime.now(timezone.utc)
+                }}
+            )
+            logging.info(f"✅ [W{worker_id}] Éxito: {clean_phone} (Fuente: {reveal_source}) | {listing_url[-20:]}")
             return True
         
         logging.warning(f"⚠️ [W{worker_id}] No se reveló el teléfono: {listing_url[-20:]}")
@@ -314,31 +362,6 @@ async def main():
                 await Stealth().apply_stealth_async(page)
                 await page.route("**/*", block_resources)
 
-                # Diccionario compartido para capturar el teléfono vía red/popup
-                contact_capture = {"phone": None}
-
-                async def handle_response(response):
-                    if "cnmessage/send" in response.url or "contacts" in response.url:
-                        try:
-                            text = await response.text()
-                            phones = re.findall(r'(\+569\d{8}|9\d{8})', text.replace(" ", "").replace("-", ""))
-                            if phones:
-                                valid_phones = [p for p in phones if len(p.replace("+56", "")) == 9]
-                                if valid_phones:
-                                    with_prefix = [p for p in valid_phones if p.startswith("+56")]
-                                    contact_capture["phone"] = with_prefix[0] if with_prefix else valid_phones[0]
-                        except: pass
-                
-                async def handle_popup(popup):
-                    try:
-                        await popup.wait_for_load_state()
-                        m = re.search(r'phone=(\d+)', popup.url)
-                        if m: contact_capture["phone"] = "+" + m.group(1)
-                    except: pass
-
-                page.on("response", handle_response)
-                page.on("popup", handle_popup)
-
                 # Monitor de tráfico por worker
                 ad_traffic = [0]
                 async def count_traffic(response):
@@ -372,19 +395,30 @@ async def main():
                             if "cnmessage/send" in response.url or "contacts" in response.url:
                                 try:
                                     text = await response.text()
-                                    phones = re.findall(r'(\+569\d{8}|9\d{8})', text.replace(" ", "").replace("-", ""))
-                                    if phones:
-                                        valid_phones = [p for p in phones if len(p.replace("+56", "")) == 9]
-                                        if valid_phones:
-                                            with_prefix = [p for p in valid_phones if p.startswith("+56")]
-                                            contact_capture["phone"] = with_prefix[0] if with_prefix else valid_phones[0]
+                                    # Extraer números descartando el fake_phone usado en este worker
+                                    resp_phones = re.findall(r'(\+569\d{8}|9\d{8})', text.replace(" ", "").replace("-", ""))
+                                    if resp_phones:
+                                        # Normalizar y filtrar auto-captura
+                                        candidates = []
+                                        for p in resp_phones:
+                                            clean_p = p.replace("+56", "")
+                                            if clean_p != fake_phone and len(clean_p) == 9:
+                                                candidates.append("+56" + clean_p)
+                                        
+                                        if candidates:
+                                            contact_capture["phone"] = candidates[0]
                                 except: pass
                         
                         async def handle_popup(popup):
                             try:
                                 await popup.wait_for_load_state()
                                 m = re.search(r'phone=(\d+)', popup.url)
-                                if m: contact_capture["phone"] = "+" + m.group(1)
+                                if m:
+                                    extracted = m.group(1)
+                                    if extracted.endswith(fake_phone):
+                                        logging.warning(f"⚠️ [W{wid}] Detectada auto-captura en popup WhatsApp. Ignorando.")
+                                    else:
+                                        contact_capture["phone"] = "+" + extracted
                             except: pass
 
                         page.on("response", handle_response)

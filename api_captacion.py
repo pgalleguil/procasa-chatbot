@@ -1,19 +1,22 @@
-
 from config import Config
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pytz
+from chatbot.constants import CHILE_TZ
 import logging
 import uuid
 import re
+from bson import ObjectId
 from chatbot.storage import get_db
 
 logger = logging.getLogger(__name__)
 
-try:
-    from chatbot.constants import CHILE_TZ
-except ImportError:
-    import pytz
-    CHILE_TZ = pytz.timezone('Chile/Continental')
+# --- CONFIGURACION CENTRALIZADA ---
+# CHILE_TZ is imported from chatbot.constants
+MARKET_STATS_CACHE = {} # Cache in-memory for 15 min (Grok suggestion)
+
+def get_chile_now():
+    """Retorna datetime actual en Chile."""
+    return datetime.now(CHILE_TZ)
 
 def format_relative_time(dt_obj):
     if not dt_obj: return "S/I"
@@ -41,8 +44,17 @@ def format_relative_time(dt_obj):
 
 def get_market_insights(comuna, tipo_propiedad):
     """
-    Calcula estadísticas de mercado basadas en universo_obelix
+    Calcula estadísticas de mercado basadas en universo_obelix.
+    Implementa caché de 15 min para evitar agregaciones pesadas.
     """
+    cache_key = f"{comuna}_{tipo_propiedad}"
+    now = get_chile_now()
+    
+    if cache_key in MARKET_STATS_CACHE:
+        cached_data, timestamp = MARKET_STATS_CACHE[cache_key]
+        if (now - timestamp).total_seconds() < 900: # 15 min
+            return cached_data
+
     db = get_db()
     
     # 1. UF/M2 Promedio en la comuna para ese tipo
@@ -71,6 +83,167 @@ def get_market_insights(comuna, tipo_propiedad):
         "demand_level": "Alta" if total_market > 50 else "Media" 
     }
 
+def calculate_lead_score_captacion(details, market_stats):
+    price_uf = details.get("precio_uf")
+    m2 = details.get("m2_total")
+    description = details.get("descripcion", "") or ""
+    
+    # 1. Recuperación agresiva de precio si no viene normalizado
+    if not price_uf or price_uf <= 0:
+        price_uf = _extract_numeric(details.get("precio", ""))
+    if not price_uf or price_uf <= 0:
+            titulo = details.get("titulo", "")
+            if isinstance(titulo, str):
+                import re
+                m = re.search(r'por\s+([\d\.]+)', titulo, re.IGNORECASE)
+                if m:
+                    try: price_uf = float(m.group(1))
+                    except: pass
+
+    # 2. Cálculo de Score base (50 pts)
+    score = 50
+    motivos = []
+    uf_m2 = 0
+    diff_pct = 0
+    
+    # 3. Factor Precio/M2 (El más crítico para captación)
+    if price_uf and m2 and m2 > 0:
+        uf_m2 = round(price_uf / m2, 1)
+        if market_stats and market_stats.get("avg_uf_m2", 0) > 0:
+            avg = market_stats["avg_uf_m2"]
+            diff_pct = ((uf_m2 - avg) / avg) * 100
+            
+            if diff_pct < -5:
+                score += 30
+                motivos.append(f"🔥 Oportunidad: {abs(diff_pct):.0f}% BAJO mercado")
+            elif diff_pct > 15:
+                score += 20
+                motivos.append(f"💰 Margen: {diff_pct:.0f}% SOBRE mercado (Negociable)")
+            elif diff_pct > 5:
+                score += 10
+                motivos.append(f"Precio sano ({diff_pct:.0f}% sobre media)")
+    else:
+        motivos.append("Faltan datos de m2 para análisis de precio")
+
+    # 4. Factor Tiempo (SLA de captación)
+    dias = details.get("dias_en_portal")
+    if dias is not None:
+        if dias <= 2:
+            score += 25
+            motivos.append(f"⚡ Primicia: Publicado hace {dias} días")
+        elif dias > 30:
+            score += 15
+            motivos.append("⏱️ Madurez: Más de 30 días (Dueño ansioso)")
+
+    # 5. Factor Confianza (Dueño vs Corredor)
+    conf = details.get("confianza_propietario", 0.5)
+    if conf >= 0.9:
+        score += 15
+        motivos.append("🤝 Trato Directo: Alta certeza de dueño")
+
+    # 6. IA DE CAPTABILIDAD (Heurísticas en descripción)
+    lower_desc = description.lower()
+    
+    # Detectar dueño frustrado o amateur
+    frustracion_keywords = ["sin comisión", "trato directo", "no llamar corredores", "no corredores", "particular", "dueño vende"]
+    if any(k in lower_desc for k in frustracion_keywords):
+        score += 15
+        motivos.append("🧠 IA: Dueño detectado (Evita corredores / Frustrado)")
+    
+    # Detectar urgencia
+    urgencia_keywords = ["oportunidad", "urgente", "remato", "conversable", "precio rebajado"]
+    if any(k in lower_desc for k in urgencia_keywords):
+        score += 10
+        motivos.append("🏃 IA: Detectada Urgencia / Disposición a negociar")
+
+    # 7. Factor Multimedia
+    fotos = len(details.get("enlaces_fotos", []))
+    if fotos > 10:
+        score += 5
+        motivos.append("📸 Buen material: Listado con muchas fotos")
+        
+    score = min(score, 100)
+    if score >= 85: prob = "CRÍTICA"
+    elif score >= 70: prob = "ALTA"
+    elif score >= 50: prob = "MEDIA"
+    else: prob = "BAJA"
+
+    return score, prob, motivos, uf_m2, diff_pct
+
+def get_next_action_recommendation(score, diff_pct, dias, publicador, comuna, price_uf, intent_count=0, matching_data=None):
+    """Genera la recomendación de acción basada en IA/Lógica de Negocio con demanda real."""
+    # Robustez de nombre (Mejora psicológica 5)
+    name = str(publicador).strip().split()[0].capitalize() if publicador and str(publicador).lower() not in ["particular", "n/a", "no disponible"] else "Propietario"
+    saludo = "Hola" if name == "Propietario" or not name else f"Hola {name}"
+    
+    # Preparar texto de demanda base (Mejora técnica 3)
+    demanda_txt = "Actualmente estamos trabajando con clientes activos buscando propiedades en ese sector."
+    if matching_data:
+        exact = matching_data.get("exact", 0)
+        zone = matching_data.get("zone", 0)
+        if exact > 0:
+            demanda_txt = f"Actualmente tenemos {exact} clientes buscando exactamente algo como tu propiedad y evaluando opciones esta misma semana."
+        elif zone > 0:
+            demanda_txt = f"Tenemos {zone} clientes activos buscando en tu sector y en contacto con nuestros ejecutivos ahora mismo."
+
+    # Lógica de Abandono (intent_count >= 5)
+    if intent_count >= 5:
+        return {
+            "title": "ARCHIVAR / SEGUIMIENTO PASIVO",
+            "reason": f"Se han realizado {intent_count} intentos sin éxito.",
+            "message": f"{saludo}, te escribí hace unos días. Veo que sigues con la venta. Si en el futuro necesitas apoyo profesional en Procasa, mi contacto sigue activo. ¡Éxito!",
+            "action_type": "whatsapp",
+            "urgency": "low",
+            "icon": "archive"
+        }
+
+    # Lógica de mensajes mejorados (Basado en feedback estratégico)
+    if score >= 85:
+        return {
+            "title": "¡LLAMADA CRÍTICA AHORA!",
+            "reason": "Propiedad nueva y bajo precio. Es una captación segura.",
+            "message": f"{saludo}, vi tu propiedad en {comuna} recién publicada 👀. {demanda_txt} ¿Te parece si lo vemos rápido? Podemos conectarlos directamente con tu propiedad.",
+            "action_type": "call",
+            "urgency": "critical",
+            "icon": "fire"
+        }
+    elif diff_pct < -2:
+        return {
+            "title": "Enviar WhatsApp: Valor de Mercado",
+            "reason": "El precio es competitivo. Ataca por la rapidez de cierre.",
+            "message": f"{saludo}, vi tu propiedad en {comuna} 👌. El precio está muy bien posicionado y justo coincide con lo que están buscando varios de nuestros clientes activos. Podríamos ayudarte a mostrarla directamente a personas que ya están evaluando opciones.",
+            "action_type": "whatsapp",
+            "urgency": "high",
+            "icon": "trending_down"
+        }
+    elif diff_pct > 15:
+        return {
+            "title": "WhatsApp: Estrategia de Precio",
+            "reason": f"Precio {diff_pct:.0f}% sobre promedio.",
+            "message": f"{saludo}, vi tu propiedad en {comuna}. Se ve muy bien, pero hoy los clientes están bastante sensibles al precio en el sector. Tenemos varios clientes activos buscando ahí, y con una estrategia correcta se puede posicionar mucho mejor. ¿Te interesa una referencia real de mercado?",
+            "action_type": "whatsapp",
+            "urgency": "medium",
+            "icon": "calculate"
+        }
+    elif (dias or 0) > 30:
+        return {
+            "title": "WhatsApp: Rescate de Listado",
+            "reason": "Lleva mucho tiempo estancada.",
+            "message": f"{saludo}, ¿cómo va la venta de tu propiedad en {comuna}? 🙂 Vi que lleva un tiempo publicada. Justo ahora tenemos clientes activos buscando en ese sector, pero muchas veces no llegan a propiedades que no están bien posicionadas. ¿Te gustaría moverla más rápido?",
+            "action_type": "whatsapp",
+            "urgency": "medium",
+            "icon": "restore"
+        }
+    else:
+        return {
+            "title": "Contacto de Cortesía",
+            "reason": "Propiedad estándar.",
+            "message": f"{saludo}, vi tu propiedad en {comuna} 👋. {demanda_txt} Si en algún momento necesitas apoyo para mostrarla o gestionar interesados, feliz te cuento cómo trabajamos.",
+            "action_type": "whatsapp",
+            "urgency": "low",
+            "icon": "chat"
+        }
+
 def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None):
     db = get_db()
     query = {"details.es_propietario_directo": True}
@@ -89,123 +262,1020 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
     if status_filter:
         query["gestion.estado"] = status_filter
 
-    total_count = db["yapo_propiedades"].count_documents(query)
+    cursor = list(db["yapo_propiedades"].find(query))
+    total_count = len(cursor)
     
-    skip = (page - 1) * limit
-    cursor = db["yapo_propiedades"].find(query).sort("details.fecha_scraping", -1).skip(skip).limit(limit)
+    # 1. Preload market stats to optimize
+    comuna_tipo_set = set()
+    for doc in cursor:
+        c = doc.get("details", {}).get("comuna")
+        t = doc.get("details", {}).get("tipo_propiedad", "Departamento")
+        if c: comuna_tipo_set.add((c, t))
+        
+    market_cache = {}
+    for c, t in comuna_tipo_set:
+        market_cache[(c,t)] = get_market_insights(c, t)
     
-    items = []
+    items_all = []
     for doc in cursor:
         details = doc.get("details", {})
         gestion = doc.get("gestion", {})
-        price_uf = details.get("precio_uf")
-        m2 = details.get("m2_total")
-        uf_m2 = round(price_uf / m2, 1) if (price_uf and m2 and m2 > 0) else 0
+        c = details.get("comuna")
+        t = details.get("tipo_propiedad", "Departamento")
+        m_stats = market_cache.get((c,t), {"avg_uf_m2": 0, "total_available": 0, "demand_level": "Media"})
         
-        items.append({
+        score, prob, motivos, uf_m2, diff_pct = calculate_lead_score_captacion(details, m_stats)
+        
+        # Smart Priority: score + matching weight
+        # Removed matching_count here because it was too slow for the list view
+        matching_priority = score # Fallback to score for sorting
+
+        items_all.append({
             "id": str(doc["_id"]),
             "url": doc.get("url"),
             "titulo": details.get("titulo", "Sin título"),
             "comuna": details.get("comuna", "S/I"),
             "precio": details.get("precio", "S/I"),
-            "precio_uf": price_uf,
+            "precio_uf": details.get("precio_uf"),
             "uf_m2": uf_m2,
             "estado": gestion.get("estado", "NUEVO"),
-            "fecha_scraping": format_relative_time(details.get("fecha_scraping")),
-            "vendedor": gestion.get("ejecutivo_asignado") or details.get("publicador", "Particular"),
-            "fotos": len(details.get("enlaces_fotos", []))
+            "ejecutivo": gestion.get("ejecutivo_asignado") or "Sin asignar",
+            "score_captacion": score,
+            "probabilidad": prob,
+            "intentos": gestion.get("intent_count", 0),
+            "fecha_detectado": format_relative_time(details.get("fecha_scraping")),
+            "sort_date": details.get("fecha_scraping", ""),
+            "matching_priority": matching_priority
         })
         
-    return items, total_count
+    items_all.sort(key=lambda x: (x["score_captacion"], x["sort_date"]), reverse=True)
+    
+    skip = (page - 1) * limit
+    items_paginated = items_all[skip : skip + limit]
+    
+    return items_paginated, total_count
 
 def get_captacion_detail(obj_id):
     from bson import ObjectId
+    from bson.errors import InvalidId
     db = get_db()
-    doc = db["yapo_propiedades"].find_one({"_id": ObjectId(obj_id)})
+    
+    try:
+        query_id = ObjectId(obj_id)
+    except InvalidId:
+        query_id = obj_id
+        
+    doc = db["yapo_propiedades"].find_one({"_id": query_id})
     if not doc: return None
     
     details = doc.get("details", {})
-    # Enriquecer con market stats
-    market = get_market_insights(details.get("comuna"), details.get("tipo_propiedad"))
+    gestion = doc.get("gestion", {})
+    
+    # --- Robustez en Antigüedad ---
+    dias_portal = gestion.get("dias_en_portal")
+    try:
+        dias_portal = int(dias_portal) if (dias_portal is not None and str(dias_portal) != "") else 0
+    except:
+        dias_portal = 0
+        
+    label_antiguedad = "Publicado"
+    
+    # Si es 0 o menor, usar fecha de captura/scraping
+    if dias_portal <= 0:
+        # Priorizar fecha_captura (root) luego fecha_scraping (details)
+        dt_base = doc.get("fecha_captura") or details.get("fecha_scraping") or doc.get("fecha")
+        
+        if dt_base:
+            try:
+                if isinstance(dt_base, str):
+                    # Limpiar Z y asegurar formato ISO
+                    dt_base = datetime.fromisoformat(dt_base.replace("Z", "+00:00"))
+                
+                if dt_base.tzinfo is None:
+                    dt_base = CHILE_TZ.localize(dt_base)
+                elif dt_base.tzinfo != CHILE_TZ:
+                    # Convertir a Chile TZ si es UTC u otro
+                    dt_base = dt_base.astimezone(CHILE_TZ)
+                    
+                now = get_chile_now()
+                diff = now - dt_base
+                dias_portal = max(0, diff.days)
+                label_antiguedad = "Captado"
+                
+                # Debug log if needed
+                # logger.info(f"Calc age: {now} - {dt_base} = {dias_portal} days")
+            except Exception as e:
+                logger.error(f"Error calculating antiquity for {obj_id}: {e}")
+                
+    gestion["dias_en_portal"] = dias_portal
+    gestion["label_antiguedad"] = label_antiguedad
+    market = get_market_insights(details.get("comuna"), details.get("tipo_propiedad", "Departamento"))
+    
+    score, prob, motivos, uf_m2, diff_pct = calculate_lead_score_captacion(details, market)
     
     price_uf = details.get("precio_uf")
     m2 = details.get("m2_total")
-    uf_m2 = round(price_uf / m2, 1) if (price_uf and m2 and m2 > 0) else 0
     
-    # Comparación
-    comparison = "below"
-    if market["avg_uf_m2"] > 0:
-        diff = ((uf_m2 - market["avg_uf_m2"]) / market["avg_uf_m2"]) * 100
-        if diff > 10: comparison = "above"
-        elif diff < -10: comparison = "below"
-        else: comparison = "market"
+    comparison = "market"
+    if diff_pct > 5: comparison = "above"
+    elif diff_pct < -5: comparison = "below"
+
+    # Preparar plantillas WA
+    owner_name = details.get('publicador', 'Propietario').split()[0]
+    comuna_name = details.get('comuna', 'su comuna')
+    
+
+
+    # Teléfono
+    raw_phone = details.get("whatsapp_phone") or doc.get("whatsapp_phone") or details.get("vendedor_id") or ""
+    vendedor_telefono = "".join(filter(str.isdigit, str(raw_phone)))
+    if vendedor_telefono.startswith("9") and len(vendedor_telefono) == 9:
+        vendedor_telefono = "56" + vendedor_telefono
+
+    # Nombre
+    vendedor_nombre = details.get("publicador") or "Propietario"
+    if vendedor_nombre.lower() in ["particular", "n/a", "no disponible"]: vendedor_nombre = "Propietario"
+    else: vendedor_nombre = vendedor_nombre.split()[0].capitalize()
+
+    # PIPELINE REALISTA
+    pipeline_stages = [
+        "DETECTADO", 
+        "POR CONTACTAR", 
+        "INTENTO DE CONTACTO", 
+        "CONTACTO EXITOSO", 
+        "SIN RESPUESTA", 
+        "TELÉFONO INVÁLIDO", 
+        "CORREDOR", 
+        "PROPIEDAD NO DISPONIBLE",
+        "NO INTERESADO",
+        "INTERESADO EN TASACIÓN",
+        "TASACIÓN ENVIADA",
+        "REUNIÓN AGENDADA",
+        "CAPTADO",
+        "DESCARTADO"
+    ]
+    
+    estado_actual = gestion.get("estado_captacion") or gestion.get("estado") or "DETECTADO"
+    if estado_actual == "GESTION": estado_actual = "POR CONTACTAR"
+    elif estado_actual == "NUEVO": estado_actual = "DETECTADO"
+            
+    intent_count = gestion.get("intent_count", 0)
+
+    # Matching Analysis (Demanda Real) - Movido arriba para usarlo en next_action
+    try:
+        ma = get_matching_leads_analysis(doc)
+    except Exception as e:
+        logger.error(f"Error in matching analysis: {e}")
+        ma = {
+            "exact": 0, "zone": 0, "broad": 0, 
+            "top_leads": [], "pitch_text": "", 
+            "active_recent": 0, "high_match": 0
+        }
+
+    # IA Recomienda Siguiente Acción (Pasando Matching Data)
+    next_action = get_next_action_recommendation(
+        score, diff_pct, details.get("dias_en_portal"), 
+        vendedor_nombre, comuna_name, 
+        price_uf, 
+        intent_count=intent_count,
+        matching_data=ma
+    )
+
+    # 2. Generar mensajes basados en Demanda Real y CBR (Fase 5 - Producción)
+    saludo = f"Hola {vendedor_nombre}" if vendedor_nombre != "Propietario" else "Hola"
+    exact_n = ma.get("exact", 0)
+    zone_n = ma.get("zone", 0)
+    total_leads = exact_n + zone_n
+    
+    sales_count = market.get("sales_count", 0)
+    sector_name = market.get("normalized_commune", comuna_name)
+    avg_cierre = market.get("avg_uf_m2", 0)
+    
+    # Cálculo de días publicado
+    days_published = 0
+    first_seen = doc.get("first_seen") or gestion.get("first_seen")
+    if first_seen:
+        try:
+            if isinstance(first_seen, str):
+                fs_dt = datetime.fromisoformat(first_seen.replace('Z', '+00:00'))
+            else:
+                fs_dt = first_seen
+            days_published = (datetime.now(fs_dt.tzinfo) - fs_dt).days
+        except: pass
+
+    # Lógica de Selección Inteligente (Fine-tuning)
+    if sales_count > 3:
+        default_template = "gancho_cbr"
+    elif total_leads > 3:
+        default_template = "gancho_demanda"
+    else:
+        default_template = "gancho_suave"
+
+    wa_templates = [
+        {"id": "gancho_cbr", "label": "🔥 Gancho CBR", "text": f"{saludo}, ¿cómo estás? 👋\n\nEstuve revisando tu propiedad en {sector_name} y analizando ventas reales del Conservador en esa zona.\n\nHoy hay diferencias importantes entre lo que se publica y lo que realmente se está cerrando.\n\nTengo esos datos específicos de tu sector. ¿Te interesa que te los comparta?"},
+        {"id": "gancho_demanda", "label": "🎯 Gancho Demanda", "text": f"{saludo}, ¿cómo estás? 👋\n\nTe escribo porque estamos trabajando con compradores activos buscando propiedades como la tuya en {sector_name}.\n\nPero no todas las propiedades están logrando conectar con esa demanda.\n\n¿Aún la tienes disponible?"},
+        {"id": "gancho_suave", "label": "👋 Gancho Suave", "text": f"{saludo}, ¿cómo estás? 👋\n\nVi tu propiedad en {sector_name} y quería saber si aún la tienes disponible.\n\nTe pregunto porque el mercado en tu zona se está moviendo y puede haber una oportunidad si se trabaja bien."},
+        {"id": "followup_1", "label": "🔁 Follow-up 1 (Data)", "text": f"{saludo}, te escribo de nuevo porque estuve revisando datos recientes de ventas en tu zona.\n\nHay propiedades que se están vendiendo bien cuando están correctamente posicionadas.\n\nSi aún la tienes disponible, vale la pena revisarlo con datos reales."},
+        {"id": "respuesta_suave", "label": "💬 Respuesta Suave", "text": "Buenísimo 👍\n\nPara entender bien, ¿estás buscando vender ahora o solo evaluando opciones?"}
+    ]
+
+
+    # Formatear historial estructurado (Restaurado)
+    historial = []
+    notas_raw = gestion.get("notas", [])
+    if isinstance(notas_raw, list):
+        for n in notas_raw:
+            historial.append({
+                "fecha": format_relative_time(n.get("timestamp")),
+                "nota": n.get("content", ""),
+                "usuario": n.get("usuario", "Sistema"),
+                "canal": n.get("canal", "Desconocido")
+            })
 
     return {
         "id": str(doc["_id"]),
+        "ma": ma,
         "titulo": details.get("titulo"),
         "descripcion": details.get("descripcion"),
         "url": doc.get("url"),
         "comuna": details.get("comuna"),
-        "region": details.get("region"),
-        "precio": details.get("precio"),
         "precio_uf": price_uf,
         "m2_total": m2,
         "uf_m2": uf_m2,
         "dormitorios": details.get("dormitorios"),
         "banos": details.get("banos"),
         "enlaces_fotos": details.get("enlaces_fotos", []),
-        "vendedor_nombre": details.get("publicador", "Particular"), # El dueño real
-        "vendedor_telefono": details.get("vendedor_id"), # El teléfono real extraído
-        "ejecutivo_asignado": doc.get("gestion", {}).get("ejecutivo_asignado"),
-        "gestion": doc.get("gestion", {}),
+        "score_captacion": score,
+        "probabilidad": prob,
+        "motivos_score": motivos,
+        "wa_templates": wa_templates,
+        "vendedor_nombre": vendedor_nombre, 
+        "vendedor_telefono": vendedor_telefono,
+        "gestion": gestion,
+        "estado_captacion": estado_actual,
+        "pipeline_stages": pipeline_stages,
+        "default_template_id": default_template,
+        "days_published": days_published,
+        "sales_count": sales_count,
+        "avg_cierre": avg_cierre,
+        "sector_name": sector_name,
+        "total_leads": total_leads,
+        "next_action": next_action,
+        "dynamic_actions": doc.get("dynamic_actions", {}),
         "market_stats": market,
-        "price_comparison": comparison,
-        "seduction_context": {
-            "initial": f"Hola {details.get('publicador', 'Particular')}, vi tu propiedad en {details.get('comuna')} ({price_uf} UF). Trabajo en Procasa y tenemos {market['total_available']*2 if market['total_available'] > 0 else 12} clientes buscando en esa zona esta semana. Me gustaría comentarte cómo podemos asegurar tu venta.",
-            "objections": [
-                {
-                    "title": "No quiero corredores",
-                    "script": "Te entiendo, muchos cobran y no hacen nada. En Procasa no solo publicamos; filtramos legalmente a los compradores y te aseguro que solo llevamos gente con crédito aprobado. ¿Te gustaría evitar visitas improductivas?"
-                },
-                {
-                    "title": "La comisión es alta",
-                    "script": "Nuestra comisión incluye seguro de arriendo/venta y asesoría legal completa. Un error en el contrato te puede costar mucho más que nuestro servicio. ¿Prefieres seguridad o ahorrar un poco y arriesgar el patrimonio?"
-                },
-                {
-                    "title": "Ya lo tengo vendido",
-                    "script": "¡Qué bueno! Si por alguna razón no se concreta el cierre, cuenta con nosotros. Tenemos una base de datos de interesados específicos para esta zona que quedaron fuera de otras ventas."
-                }
-            ]
-        }
+        "diff_pct": diff_pct,
+        "overprice_pct": diff_pct if diff_pct > 0 else 0,
+        "intent_count": intent_count,
+        "historial": historial,
+        "seduction_context": doc.get("seduction_context", {}),
+        "cluster_id": (doc.get("metadata") or {}).get("cluster_id") or doc.get("cluster_id"),
+        "zone": (doc.get("metadata") or {}).get("zone") or doc.get("zone"),
+        "details": details,
+        "tipo": details.get("tipo_propiedad") or details.get("tipo"),
+        "operacion": details.get("tipo_operacion") or details.get("operacion")
     }
 
-def update_captacion_status(obj_id, status, notes=None):
-    from bson import ObjectId
+def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=None, user_name="Sistema", next_followup=None):
     db = get_db()
-    update_data = {
+    
+    now = get_chile_now() # Store as Date object, not string
+    
+    current_doc = db["yapo_propiedades"].find_one({"_id": ObjectId(obj_id)})
+    if not current_doc:
+        return False
+        
+    old_status = current_doc.get("gestion", {}).get("estado_captacion") or current_doc.get("gestion", {}).get("estado") or "NUEVO"
+    
+    # 1. Preparar campos de actualización de alto nivel
+    update_fields = {
         "gestion.estado": status,
-        "gestion.fecha_ultima_gestion": datetime.now(timezone.utc).isoformat()
+        "gestion.estado_captacion": status,
+        "gestion.fecha_ultima_gestion": now
     }
-    if notes:
+    
+    if next_followup:
+        update_fields["gestion.next_followup"] = next_followup
+        # Crear tarea en crm_tasks
+        try:
+            # Handle formats: "2023-12-31 15:00" or ISO
+            date_str = next_followup.replace("T", " ").replace("Z", "")
+            try:
+                execute_at = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+            except ValueError:
+                execute_at = datetime.fromisoformat(date_str)
+            
+            # Localize to Chile
+            if execute_at.tzinfo is None:
+                execute_at = CHILE_TZ.localize(execute_at)
+                
+            task = {
+                "task_id": str(uuid.uuid4()),
+                "lead_type": "captacion",
+                "phone": "+56900000000",
+                "obj_id": str(obj_id),
+                "target_name": user_name,
+                "type": "REMINDER_CAPTACION",
+                "status": "pending",
+                "execute_at": execute_at,
+                "created_at": now,
+                "note": f"Contactar captación: {current_doc.get('details', {}).get('titulo', 'Sin título')} (Score: {current_doc.get('score_captacion', 0)})",
+                "agent": user_name
+            }
+            db["crm_tasks"].insert_one(task)
+        except Exception as e:
+            logger.error(f"Error scheduling captacion task: {e}")
+    
+    # 2. Incrementar contador de intentos si es una acción de contacto
+    inc_fields = {}
+    if outcome or (notes and "Intento" in notes):
+        inc_fields["gestion.intent_count"] = 1
+        update_fields["gestion.last_contact"] = now
+        if channel: update_fields["gestion.last_channel"] = channel
+
+    # 3. Empujar nota estructurada y estado
+    push_fields = {}
+    if notes or status:
+        push_fields["gestion.notas"] = {
+            "content": notes or f"Cambio de estado a {status}",
+            "timestamp": now,
+            "usuario": user_name,
+            "canal": channel or "Manual",
+            "resultado": outcome
+        }
+    
+    # Si cambió el estado, registrar el cambio
+    if old_status != status:
+        push_fields["gestion.status_history"] = {
+            "timestamp": now,
+            "user": user_name,
+            "from_state": old_status,
+            "to_state": status
+        }
+    
+    update_params = {"$set": update_fields}
+    if inc_fields: update_params["$inc"] = inc_fields
+    if push_fields: update_params["$push"] = push_fields
+    
+    db["yapo_propiedades"].update_one(
+        {"_id": ObjectId(obj_id)},
+        update_params
+    )
+    return True
+
+def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=None, user_name="Sistema"):
+    db = get_db()
+    
+    current_doc = db["yapo_propiedades"].find_one({"_id": ObjectId(obj_id)})
+    if not current_doc:
+        return False
+        
+    details = current_doc.get("details", {})
+    
+    update_fields = {}
+    audit_changes = []
+    now = get_chile_now()
+    
+    if nombre and nombre != details.get("publicador"):
+        update_fields["details.publicador"] = nombre
+        audit_changes.append({
+            "timestamp": now,
+            "user": user_name,
+            "field": "nombre",
+            "old_value": details.get("publicador"),
+            "new_value": nombre
+        })
+        
+    if telefono:
+        clean_phone = "".join(filter(str.isdigit, str(telefono)))
+        if clean_phone != details.get("whatsapp_phone"):
+            update_fields["details.whatsapp_phone"] = clean_phone
+            audit_changes.append({
+                "timestamp": now,
+                "user": user_name,
+                "field": "telefono",
+                "old_value": details.get("whatsapp_phone"),
+                "new_value": clean_phone
+            })
+            
+    if email and email != details.get("email"):
+        update_fields["details.email"] = email
+        audit_changes.append({
+            "timestamp": now,
+            "user": user_name,
+            "field": "email",
+            "old_value": details.get("email"),
+            "new_value": email
+        })
+        
+    if notas and notas != current_doc.get("notas_contacto"):
+        update_fields["notas_contacto"] = notas
+        # No audit for free-text notes, just update it
+    
+    update_params = {}
+    if update_fields:
+        update_params["$set"] = update_fields
+    if audit_changes:
+        update_params["$push"] = {"audit.contact_changes": {"$each": audit_changes}}
+        
+    if update_params:
         db["yapo_propiedades"].update_one(
             {"_id": ObjectId(obj_id)},
-            {"$push": {"gestion.notas": {
-                "content": notes,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }}}
+            update_params
         )
+    return True
+
+def log_captacion_activity(obj_id, user_name, action, channel, message, phone, result, template_used=None):
+    db = get_db()
+    now = get_chile_now()
     
-    db["yapo_propiedades"].update_one({"_id": ObjectId(obj_id)}, {"$set": update_data})
+    activity_entry = {
+        "timestamp": now,
+        "user": user_name,
+        "action": action,
+        "channel": channel,
+        "message": message,
+        "phone": phone,
+        "result": result
+    }
+    
+    if template_used:
+        activity_entry["template_used"] = template_used
+        
+    note_content = message
+    if template_used and "Plantilla" not in note_content:
+        note_content = f"[Plantilla: {template_used}] {message[:100]}..."
+        
+    note_entry = {
+        "content": note_content,
+        "timestamp": now,
+        "usuario": user_name,
+        "canal": channel,
+        "resultado": result
+    }
+    
+    db["yapo_propiedades"].update_one(
+        {"_id": ObjectId(obj_id)},
+        {"$push": {
+            "gestion.actividades": activity_entry,
+            "gestion.notas": note_entry
+        }, "$set": {"gestion.fecha_ultima_gestion": now}}
+    )
     return True
 
 def normalize_commune(name):
-    if not name: return ""
+    """
+    Normalización profunda de comunas para matching.
+    Maneja: acentos, minúsculas, caracteres especiales, y sinónimos comunes.
+    """
+    if not name: 
+        return "unknown"
+        
     import unicodedata
-    # Normalización básica: minúsculas, sin acentos y solo caracteres alfanuméricos
+    # 1. Básicos: Lowercase y Strip
     name = str(name).lower().strip()
+    
+    # 2. Sinónimos Críticos
+    mapping = {
+        "stgo": "santiago",
+        "santiago centro": "santiago",
+        "nunoa": "ñuñoa",
+        "vina del mar": "viña del mar",
+        "pena lolen": "peñalolen",
+        "penalolen": "peñalolen"
+    }
+    if name in mapping:
+        name = mapping[name]
+        
+    # 3. Remover acentos y caracteres raros
     name = "".join(c for c in unicodedata.normalize('NFD', name) if unicodedata.category(c) != 'Mn')
-    name = re.sub(r'[^a-z0-9]', '', name)
-    return name
+    name = name.replace("-", " ").replace("_", " ")
+    
+    # 4. Limpieza final: solo letras y números
+    name = re.sub(r'[^a-z0-9 ]', '', name)
+    # Colapsar espacios múltiples y strip
+    name = " ".join(name.split())
+    
+    return name if name else "unknown"
+
+def generate_cluster_id(prop_data):
+    """
+    Genera un ID único de segmento para matching masivo.
+    Formato: [COMUNA]-[TIPO]-[OPERACION]
+    Handle de datos anidados (algunas colecciones usan 'details')
+    """
+    # Intentar obtener datos de la raíz, de 'metadata' o de 'details'
+    metadata = prop_data.get("metadata", {})
+    details = prop_data.get("details", {})
+    
+    # Priorizar cluster_id ya existente
+    existing_cluster = prop_data.get("cluster_id") or metadata.get("cluster_id")
+    if existing_cluster:
+        return existing_cluster
+
+    comuna_raw = prop_data.get("comuna") or details.get("comuna") or metadata.get("comuna") or "desconocida"
+    comuna = normalize_commune(comuna_raw)
+    
+    tipo_raw = (prop_data.get("tipo") or prop_data.get("tipo_propiedad") or 
+                details.get("tipo") or details.get("tipo_propiedad") or 
+                metadata.get("tipo") or "").lower()
+    
+    if "depto" in tipo_raw or "departamento" in tipo_raw:
+        tipo = "DEPTO"
+    elif "casa" in tipo_raw:
+        tipo = "CASA"
+    elif "oficina" in tipo_raw:
+        tipo = "OFICINA"
+    elif "local" in tipo_raw:
+        tipo = "LOCAL"
+    elif "sitio" in tipo_raw or "terreno" in tipo_raw:
+        tipo = "TERRENO"
+    else:
+        tipo = "OTRO"
+        
+    op_raw = (prop_data.get("operacion") or details.get("operacion") or 
+              prop_data.get("tipo_operacion") or details.get("tipo_operacion") or 
+              metadata.get("operacion") or "").lower()
+              
+    if "arriendo" in op_raw or "alquiler" in op_raw:
+        op = "A"
+    else:
+        op = "V"
+        
+    return f"{comuna.upper()}-{tipo}-{op}"
+
+# ============================================
+# SISTEMA INTELIGENTE DE MATCHING (3 CAPAS)
+# ============================================
+
+# Macro-zonas geográficas (cada comuna en UNA sola zona)
+MACRO_ZONES = {
+    "RM-SUR": [
+        "la florida", "san miguel", "la cisterna", "san joaquin",
+        "la granja", "lo espejo", "san ramon", "la pintana",
+        "el bosque", "pedro aguirre cerda", "puente alto"
+    ],
+    "RM-CENTRO": [
+        "santiago", "santiago centro", "estacion central",
+        "independencia", "recoleta", "quinta normal"
+    ],
+    "RM-ORIENTE": [
+        "providencia", "nunoa", "ñuñoa", "las condes", "vitacura",
+        "lo barnechea", "la reina", "penalolen", "peñalolen", "macul"
+    ],
+    "RM-PONIENTE": [
+        "maipu", "cerrillos", "pudahuel", "lo prado",
+        "cerro navia", "renca"
+    ],
+    "RM-NORTE": [
+        "quilicura", "huechuraba", "conchali", "colina", "lampa"
+    ],
+    "COSTA-V": [
+        "vina del mar", "viña del mar", "valparaiso", "concon",
+        "quilpue", "villa alemana"
+    ],
+    "LITORAL": [
+        "el tabo", "el quisco", "algarrobo", "cartagena",
+        "santo domingo", "san antonio"
+    ],
+}
+
+# Lookup directo: comuna_normalizada -> zona (Diseño Unívoco)
+_COMUNA_TO_ZONE = {}
+for zone_name, comunas in MACRO_ZONES.items():
+    for c in comunas:
+        c_norm = normalize_commune(c)
+        # Prioridad: No sobreescribir si ya existe (evita duplicados como San Joaquín)
+        if c_norm not in _COMUNA_TO_ZONE:
+            _COMUNA_TO_ZONE[c_norm] = zone_name
+
+
+def get_zone_for_comuna(comuna_raw):
+    """Retorna la macro-zona para una comuna, o None si no está mapeada."""
+    norm = normalize_commune(comuna_raw)
+    return _COMUNA_TO_ZONE.get(norm)
+
+
+def _normalize_tipo(tipo_raw):
+    """Normaliza tipo de propiedad a código estándar."""
+    if not tipo_raw:
+        return "OTRO"
+    t = str(tipo_raw).lower()
+    if "depto" in t or "departamento" in t or "monoambiente" in t:
+        return "DEPTO"
+    elif "casa" in t:
+        return "CASA"
+    elif "oficina" in t:
+        return "OFICINA"
+    elif "local" in t:
+        return "LOCAL"
+    elif "sitio" in t or "terreno" in t or "parcela" in t:
+        return "TERRENO"
+    return "OTRO"
+
+
+def _normalize_operacion(op_raw):
+    """Normaliza operación a V o A."""
+    if not op_raw:
+        return "V"
+    o = str(op_raw).lower()
+    if "arriendo" in o or "alquiler" in o or "renta" in o:
+        return "A"
+    return "V"
+
+
+def _robust_extract_metadata(prop_data: dict, details: dict) -> dict:
+    """
+    Fallback: extrae comuna, tipo y operación escaneando texto libre
+    cuando los campos estructurados están vacíos.
+    Retorna dict con claves: comuna, tipo, operacion (strings crudos).
+    """
+    # Textos libres para escanear
+    url = (prop_data.get("url") or "").lower()
+    desc = (details.get("descripcion") or "").lower()
+    company = (details.get("nombre_corredora") or details.get("company_name") or "").lower()
+    titulo = (details.get("titulo") or "").lower()
+    combined = f"{url} {desc} {company} {titulo}"
+
+    result = {"comuna": "", "tipo": "", "operacion": ""}
+
+    # --- 1. Detectar operación ---
+    if not result["operacion"]:
+        if any(k in combined for k in ["arriendo", "alquiler", "renta", "bienes-raices-alquiler"]):
+            result["operacion"] = "Arriendo"
+        elif any(k in combined for k in ["venta", "compra", "bienes-raices-venta"]):
+            result["operacion"] = "Venta"
+
+    # --- 2. Detectar tipo de propiedad ---
+    if not result["tipo"]:
+        tipo_keywords = [
+            ("Departamento", ["departamento", "dpto", "depto", "apartamento", "apart"]),
+            ("Casa", ["casa ", "casas ", "residencia"]),
+            ("Oficina", ["oficina", "local comercial", "local"]),
+            ("Terreno", ["terreno", "sitio", "parcela"]),
+            ("Bodega", ["bodega", "warehouse"]),
+        ]
+        for tipo_name, kws in tipo_keywords:
+            if any(k in combined for k in kws):
+                result["tipo"] = tipo_name
+                break
+
+    # --- 3. Detectar comuna (escanea contra todas las comunas conocidas) ---
+    if not result["comuna"]:
+        # Lista de comunas conocidas ordenadas por longitud desc (evita match parcial)
+        known_comunas = sorted(COMUNA_TO_ZONE.keys(), key=len, reverse=True)
+        for c in known_comunas:
+            # Buscar con normalize: ñuñoa → nunoa en el text también
+            c_norm = c.replace("ñ", "n").replace("é", "e").replace("á", "a").replace("ó", "o").replace("ú", "u")
+            if c in combined or c_norm in combined:
+                result["comuna"] = c
+                break
+
+    return result
+
+# --- HELPERS & NORMALIZATION ---
+# CHILE_TZ imported at top
+
+def get_chile_now():
+    """Retorna datetime actual en Chile."""
+    return datetime.now(CHILE_TZ)
+
+def ensure_leads_indexes():
+    """Asegura índices de performance sugeridos por Grok."""
+    try:
+        db = get_db()
+        # Índice compuesto para matching
+        db["leads"].create_index([
+            ("estado", 1), 
+            ("ultima_actualizacion_bi", -1), 
+            ("operacion", 1),
+            ("prospecto.presupuesto_uf", 1)
+        ], name="idx_leads_matching_optimized")
+        logger.info("Índices de leads optimizados.")
+    except Exception as e:
+        logger.error(f"Error creando indices: {e}")
+
+def _get_lead_days_old(lead):
+    # Priorizamos la última actividad conocida sobre la fecha de creación
+    created = lead.get("created_at") or lead.get("fecha_creacion")
+    last_act = lead.get("ultima_actualizacion_bi")
+    
+    # Convertir ambos a datetime para comparar
+    def parse_dt(val):
+        if not val: return None
+        try:
+            if isinstance(val, str):
+                # Handle YYYY-MM-DD HH:MM:SS format from BI
+                if " " in val and ":" in val and "+" not in val and "Z" not in val:
+                    dt = datetime.strptime(val, "%Y-%m-%d %H:%M:%S")
+                else:
+                    dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+            else:
+                dt = val
+            
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=CHILE_TZ)
+            return dt.astimezone(CHILE_TZ)
+        except Exception:
+            return None
+
+    dt_created = parse_dt(created)
+    dt_last = parse_dt(last_act)
+    
+    # Usar el más reciente
+    effective_dt = dt_last or dt_created
+    if not effective_dt:
+        return 0
+        
+    diff = get_chile_now() - effective_dt
+    return max(0, diff.days)
+
+def _extract_numeric(val):
+    """Safely extracts a float from a string or number, handling suffixes like 'UF'."""
+    if val is None or val == "":
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        # Remove anything that's not a digit or a dot (ignoring separators like commas for now)
+        # But we must preserve the decimal point. 
+        # Actually, simpler: keep only digits and '.'
+        clean = "".join(c for c in val if c.isdigit() or c == "." or c == ",")
+        if not clean:
+            return 0.0
+        # If it has a comma and a dot, it's messy. If only comma, replace with dot.
+        if "," in clean and "." not in clean:
+            clean = clean.replace(",", ".")
+        elif "," in clean and "." in clean:
+            # Assume 1.234,56 format or similar. Remove the dot (thousands) and replace comma.
+            clean = clean.replace(".", "").replace(",", ".")
+        
+        try:
+            return float(clean)
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def _lead_recency_weight(lead):
+    """
+    Peso por recencia del lead (últimos 30d = 1.0, 30-90d = 0.5, >90d = 0.25).
+    """
+    days = _get_lead_days_old(lead)
+    if days <= 30: return 1.0
+    elif days <= 90: return 0.5
+    else: return 0.25
+
+
+
+def normalize_commune_v2(c):
+    if not c: return ""
+    c = str(c).strip().lower()
+    c = c.replace("-", " ")
+    c = " ".join(c.split())
+    mapping = {"stgo": "santiago", "santiago centro": "santiago"}
+    return mapping.get(c, c)
+
+COMUNA_TO_ZONE = {
+    "san miguel": "RM-SUR", "la florida": "RM-SUR", "macul": "RM-SUR", "puente alto": "RM-SUR", "san bernardo": "RM-SUR",
+    "peñalolen": "RM-ORIENTE", "penalolen": "RM-ORIENTE", "nunoa": "RM-ORIENTE", "ñuñoa": "RM-ORIENTE",
+    "providencia": "RM-ORIENTE", "las condes": "RM-ORIENTE", "vitacura": "RM-ORIENTE", "lo barnechea": "RM-ORIENTE", "la reina": "RM-ORIENTE",
+    "santiago": "RM-CENTRO", "estacion central": "RM-CENTRO",
+    "independencia": "RM-NORTE", "recoleta": "RM-NORTE", "huechuraba": "RM-NORTE", "conchali": "RM-NORTE", "quilicura": "RM-NORTE",
+    "pudahuel": "RM-PONIENTE", "maipu": "RM-PONIENTE", "cerrillos": "RM-PONIENTE"
+}
+
+def classify_lead_quality(lead_price, prop_price, days):
+    score = 0
+    diff = 1.0 # Max diff if missing price
+    if prop_price > 0 and lead_price > 0:
+        diff = abs(lead_price - prop_price) / prop_price
+        if diff < 0.2: score += 2
+        elif diff < 0.35: score += 1
+    if days < 30: score += 2
+    elif days < 90: score += 1
+    
+    if score >= 3: return "high", diff
+    elif score == 2: return "medium", diff
+    else: return "low", diff
+
+def get_matching_leads_analysis(prop_data):
+    """
+    Motor de Matching Profesional - Demanda Real, Activa y Creíble.
+    """
+    result = {
+        "exact": 0, "zone": 0, "broad": 0,
+        "active_recent": 0, "high_match": 0, "medium_match": 0,
+        "top_leads": [],
+        "zone_name": "", "cluster_id": "", "pitch_text": "",
+        "debug": {"total": 0, "after_operation": 0, "after_activity": 0, "after_price": 0}
+    }
+    
+    try:
+        details = prop_data.get("details", {})
+        comuna_raw = prop_data.get("comuna") or details.get("comuna") or ""
+        tipo_raw = prop_data.get("tipo") or prop_data.get("tipo_propiedad") or details.get("tipo_propiedad") or ""
+        op_raw = prop_data.get("operacion") or details.get("operacion") or details.get("tipo_operacion") or ""
+
+        # --- FALLBACK: Extracción robusta desde texto libre si faltan campos ---
+        if not comuna_raw or not tipo_raw or not op_raw:
+            fallback = _robust_extract_metadata(prop_data, details)
+            if not comuna_raw:
+                comuna_raw = fallback.get("comuna", "")
+            if not tipo_raw:
+                tipo_raw = fallback.get("tipo", "")
+            if not op_raw:
+                op_raw = fallback.get("operacion", "")
+
+        tipo_code = _normalize_tipo(tipo_raw)
+        prop_price = _extract_numeric(details.get("precio_uf") or prop_data.get("precio_uf") or 0)
+        
+        # Heurística: Si no hay operación pero el precio es bajísimo (< 1000 UF), es Arriendo
+        if not op_raw and prop_price > 0 and prop_price < 1000:
+            op_code = "A"
+        else:
+            op_code = _normalize_operacion(op_raw)
+            
+        comuna_norm = normalize_commune_v2(comuna_raw)
+        zone = COMUNA_TO_ZONE.get(comuna_norm) or get_zone_for_comuna(comuna_raw) or "Sin zona"
+        
+        # Filtro Inteligente de Precio Máximo
+        if prop_price < 3000: max_diff = 0.3    # ~ < 110M
+        elif prop_price < 4000: max_diff = 0.35 # ~ < 150M
+        else: max_diff = 0.4
+            
+        result["cluster_id"] = f"{comuna_norm.upper()}-{tipo_code}-{op_code}"
+        result["zone_name"] = zone
+    except Exception as e:
+        logger.error(f"Error metadata match: {e}")
+        return result
+
+    try:
+        db = get_db()
+        
+        # 1. Preparar filtros DB (Grok Opt)
+        now = get_chile_now()
+        date_limit = now - timedelta(days=90)
+        
+        # Filtro de precio base para DB (luego se refina en Python)
+        min_lead_price = prop_price * (1 - max_diff)
+        max_lead_price = prop_price * (1 + max_diff)
+        
+        query = {
+            "estado": {"$nin": ["Cerrado Perdido", "Cerrado Ganado"]},
+            "ultima_actualizacion_bi": {"$gte": date_limit.isoformat()},
+            "operacion": op_code # Filtro directo por operación
+        }
+        
+        # Solo agregar filtro de precio si prop_price es válido (Inclusivo para leads sin precio)
+        if prop_price > 0:
+            query["$or"] = [
+                {"prospecto.presupuesto_uf": {"$exists": False}},
+                {"prospecto.presupuesto_uf": 0},
+                {"prospecto.presupuesto_uf": {"$gte": min_lead_price, "$lte": max_lead_price}},
+                {"prospecto.precio": {"$gte": min_lead_price, "$lte": max_lead_price}}
+            ]
+
+        # Query optimizada con limite y sort
+        all_active_leads = list(db["leads"].find(query).sort("ultima_actualizacion_bi", -1).limit(3000))
+        result["debug"]["total"] = len(all_active_leads)
+
+        valid_leads = []
+        result["exact_leads"] = []
+        result["zone_leads"] = []
+        result["broad_leads"] = []
+        c_op = 0; c_act = 0; c_price = 0
+
+        for lead in all_active_leads:
+            prospecto = lead.get("prospecto", {})
+            lead_op = prospecto.get("operacion") or lead.get("operacion") or ""
+            lead_op_code = _normalize_operacion(lead_op)
+            
+            # FILTRO 1: Operacion
+            if lead_op_code != op_code: continue
+            c_op += 1
+            
+            # FILTRO 2: Actividad
+            days_old = int(_get_lead_days_old(lead))
+            if days_old > 90: continue
+            c_act += 1
+            
+            # FILTRO 3: Precio
+            lead_price = _extract_numeric(prospecto.get("presupuesto_uf") or prospecto.get("precio") or 0)
+            if prop_price > 0 and lead_price > 0:
+                diff = abs(lead_price - prop_price) / prop_price
+                if diff > max_diff: continue
+            c_price += 1
+            
+            # EVALUACION DE CALIDAD
+            quality_label, actual_diff = classify_lead_quality(lead_price, prop_price, days_old)
+            
+            # FILTRO 4: Tipo de Propiedad (Básico Broad)
+            lead_tipo = _normalize_tipo(prospecto.get("tipo") or prospecto.get("tipo_propiedad") or lead.get("tipo_interes") or "")
+            if lead_tipo != tipo_code: continue
+            
+            # MATCHING EXCLUYENTE
+            lead_comuna = normalize_commune_v2(prospecto.get("comuna") or lead.get("comuna_interes") or "")
+            is_exact = (lead_comuna == comuna_norm)
+            
+            lead_zone = COMUNA_TO_ZONE.get(lead_comuna) or get_zone_for_comuna(lead_comuna)
+            is_zone = False
+            if not is_exact:
+                if (zone and lead_zone and lead_zone == zone):
+                    is_zone = True
+                elif zone:
+                    pref_str = str(prospecto.get("comunas_preferidas") or "").lower()
+                    if normalize_commune_v2(zone) in pref_str or lead_comuna in pref_str: 
+                        is_zone = True
+            
+            bucket = "broad"
+            if is_exact:
+                result["exact"] += 1
+                bucket = "exact"
+            elif is_zone:
+                result["zone"] += 1
+                bucket = "zone"
+            else:
+                result["broad"] += 1
+                
+            # COUNTEOS EXTRA
+            # Threshold sugerido: 30 días para Arriendo (A), 60 días para Venta (V)
+            threshold = 30 if op_code == "A" else 60
+            if days_old < threshold: result["active_recent"] += 1
+            if quality_label == "high": result["high_match"] += 1
+            elif quality_label == "medium": result["medium_match"] += 1
+            
+            # MASK LEAD
+            mapped = _mask_lead_for_preview(lead)
+            mapped.update({
+                "quality_label": quality_label,
+                "days_old": int(days_old),
+                "bucket": bucket,
+                "diff": float(actual_diff)
+            })
+
+            valid_leads.append(mapped)
+            
+            # POPULATE SPECIFIC BUCKETS
+            if bucket == "exact" and len(result["exact_leads"]) < 10:
+                result["exact_leads"].append(mapped)
+            elif bucket == "zone" and len(result["zone_leads"]) < 10:
+                result["zone_leads"].append(mapped)
+            elif bucket == "broad" and len(result["broad_leads"]) < 10:
+                result["broad_leads"].append(mapped)
+
+        result["debug"].update({"after_operation": c_op, "after_activity": c_act, "after_price": c_price})
+        
+        # GLOBAL TOP LEADS
+        result["top_leads"] = sorted(valid_leads, key=lambda x: (x["days_old"], x["diff"]))[:10]
+
+        # LÓGICA DE PITCH AUTOMÁTICA
+        tipo_display = {"DEPTO": "departamentos", "CASA": "casas", "OFICINA": "oficinas", "LOCAL": "locales", "TERRENO": "terrenos"}.get(tipo_code, "propiedades")
+        op_display = "arriendo" if op_code == "A" else "compra"
+        comuna_display = comuna_raw or "su sector"
+        total_b = result["exact"] + result["zone"] + result["broad"]
+        
+        if result["exact"] > 0:
+            result["pitch_text"] = f"Tenemos {result['exact']} cliente{'s' if result['exact'] > 1 else ''} buscando activamente exactamente una propiedad como la tuya en {comuna_display}."
+        elif result["zone"] > 0:
+            result["pitch_text"] = f"Tenemos {result['zone']} cliente{'s' if result['zone'] > 1 else ''} activo{'s' if result['zone'] > 1 else ''} buscando en el sector de {result['zone_name']}, varios compatibles con tu propiedad."
+        else:
+            result["pitch_text"] = f"Tenemos una base activa de {total_b} clientes buscando {tipo_display} asimilables por precio y características."
+
+    except Exception as e:
+        logger.error(f"Error in matching logic: {e}")
+        
+    return result
+
+
+def _mask_lead_for_preview(lead):
+    """Anonymized version for Verification Modal (Privacy Centric). Ensure no ObjectIds."""
+    prospecto = lead.get("prospecto", {})
+    nombre = str(prospecto.get("nombre") or lead.get("nombre") or "Cliente")
+    
+    parts = nombre.strip().split()
+    if len(parts) >= 2 and len(parts[0]) > 0 and len(parts[1]) > 0:
+        initials = f"{parts[0][0].upper()}{parts[1][0].upper()}"
+    elif len(nombre) > 0:
+        initials = f"{nombre[0].upper()}"
+    else:
+        initials = "XX"
+        
+    executive = str(lead.get("ejecutivo_asignado") or lead.get("ejecutivo") or prospecto.get("ejecutivo") or "Sistema")
+    
+    # Cast codigo to string to avoid ObjectId serialization issues
+    codigo_raw = prospecto.get("codigo") or lead.get("datos_propiedad", {}).get("codigo") or lead.get("codigo") or "S/I"
+    codigo_str = str(codigo_raw)
+    
+    return {
+        "full_name": f"Cliente {initials}",
+        "executive": executive,
+        "codigo_consultado": codigo_str
+    }
+
+def get_matching_leads_count(prop_data):
+    """Wrapper de retrocompatibilidad. Retorna el número más relevante."""
+    analysis = get_matching_leads_analysis(prop_data)
+    return analysis["exact"] + analysis["zone"] + analysis["broad"]
 
 def distribute_sourced_leads():
     """
@@ -263,3 +1333,9 @@ def distribute_sourced_leads():
         assigned_count += 1
         
     return assigned_count
+
+# --- AUTO-INITIALIZATION ---
+try:
+    ensure_leads_indexes()
+except:
+    pass

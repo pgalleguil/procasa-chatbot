@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="light">
+<html lang="es" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
@@ -11,26 +11,40 @@
 
     <style>
         :root {
-            --bg-body: #f1f5f9;
-            --bg-card: #ffffff;
-            --bg-sidebar: #0f172a;
-            --text-primary: #1e293b;
-            --text-secondary: #475569;
-            --accent: #4f46e5;
-            --border-color: #e2e8f0;
-            --sidebar-width: 200px;
-            --sidebar-width-collapsed: 70px;
-            --transition-speed: 0.3s;
-        }
-
-        [data-theme="dark"] {
             --bg-body: #0f172a;
             --bg-card: #1e293b;
             --bg-sidebar: #020617;
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
             --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            --owner-color: #f59e0b;
+            --danger-color: #ef4444;
+            --success-color: #22c55e;
             --border-color: #334155;
+            --sidebar-width: 200px;
+            --sidebar-width-collapsed: 70px;
+            --transition-speed: 0.3s;
+            --input-bg: #334155;
+            --input-border: #475569;
+            --input-text: #fff;
+        }
+
+        [data-theme="light"] {
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --bg-sidebar: #0f172a;
+            --text-primary: #1e293b;
+            --text-secondary: #475569;
+            --accent: #4f46e5;
+            --accent-hover: #4338ca;
+            --owner-color: #d97706;
+            --danger-color: #dc2626;
+            --success-color: #059669;
+            --border-color: #e2e8f0;
+            --input-bg: #ffffff;
+            --input-border: #cbd5e1;
+            --input-text: #1e293b;
         }
 
         body {
@@ -38,10 +52,10 @@
             color: var(--text-primary);
             font-family: 'Outfit', sans-serif;
             overflow-x: hidden;
-            transition: all 0.3s ease;
+            transition: background-color 0.3s, color 0.3s;
         }
 
-        /* SIDEBAR UNIFICADO */
+        /* SIDEBAR — Clon exacto de crm_lead_detail.html */
         .sidebar {
             width: var(--sidebar-width-collapsed);
             background: var(--bg-sidebar);
@@ -51,7 +65,7 @@
             top: 0;
             padding: 20px 0;
             border-right: 1px solid var(--border-color);
-            z-index: 1000;
+            z-index: 1100;
             transition: width var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
             display: flex;
@@ -61,7 +75,7 @@
 
         .sidebar:hover {
             width: var(--sidebar-width);
-            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.2);
+            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
         }
 
         .brand {
@@ -72,16 +86,21 @@
             display: flex;
             align-items: center;
             height: 50px;
+            padding: 0;
+            overflow: hidden;
         }
 
         .brand i {
             min-width: var(--sidebar-width-collapsed);
             text-align: center;
             font-size: 1.8rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         .brand span {
-            margin-left: -5px;
+            margin-left: -10px;
             opacity: 0;
             transition: opacity 0.2s;
         }
@@ -99,131 +118,549 @@
             margin-bottom: 5px;
             transition: all 0.2s;
             height: 48px;
+            overflow: hidden;
+            width: 100%;
+            border-radius: 0;
         }
 
         .nav-link i {
             min-width: var(--sidebar-width-collapsed);
             text-align: center;
             font-size: 1.25rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.25s ease-out;
+        }
+
+        .nav-link:hover i {
+            transform: scale(1.1);
+        }
+
+        .nav-link.theme-toggle:hover i {
+            transform: rotate(180deg) scale(1.1);
+            color: var(--owner-color);
+        }
+
+        .nav-link.logout:hover i {
+            transform: scale(1.15);
+            color: var(--danger-color);
         }
 
         .nav-link span {
-            margin-left: -5px;
+            margin-left: -10px;
             opacity: 0;
+            transform: translateX(-10px);
             transition: all 0.2s;
             font-weight: 500;
         }
 
         .sidebar:hover .nav-link span {
             opacity: 1;
+            transform: translateX(0);
         }
 
-        .nav-link:hover,
-        .nav-link.active {
-            background: rgba(99, 102, 241, 0.15);
+        .nav-link:hover {
+            background: rgba(99, 102, 241, 0.1);
             color: var(--accent);
-            border-left: 3px solid var(--accent);
         }
 
         .nav-link.active {
-            font-weight: 600;
-            background: rgba(99, 102, 241, 0.2);
+            background: var(--accent);
+            color: white;
         }
 
+        .nav-link.theme-toggle {
+            margin-top: auto;
+            background: transparent;
+        }
+
+        .nav-link.theme-toggle:hover {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--owner-color);
+        }
+
+        .nav-link.logout {
+            margin-top: 5px;
+            color: var(--text-secondary);
+        }
+
+        .nav-link.logout:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+        }
+
+        /* Media Query Móviles */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 0;
+                left: -260px;
+                transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+
+            .sidebar.mobile-open {
+                width: 260px;
+                left: 0 !important;
+                box-shadow: 10px 0 30px rgba(0, 0, 0, 0.8);
+            }
+
+            .main-content {
+                margin-left: 0 !important;
+                padding: 15px;
+            }
+
+            .sidebar:hover {
+                width: 0;
+                box-shadow: none;
+            }
+
+            .sidebar.mobile-open:hover {
+                width: 260px;
+            }
+
+            .nav-link span,
+            .brand span {
+                opacity: 1 !important;
+                transform: translateX(0) !important;
+            }
+
+            .hamburger-mobile {
+                display: flex !important;
+            }
+        }
+
+        .hamburger-mobile {
+            display: none;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-right: 15px;
+        }
+
+        /* LAYOUT */
         .main-content {
             margin-left: var(--sidebar-width-collapsed);
             padding: 30px;
             transition: margin-left var(--transition-speed);
         }
 
-        /* CARDS PREMIUM */
-        .summary-card {
-            background: var(--bg-card);
-            border-radius: 16px;
-            padding: 24px;
+        /* HEADER */
+        .page-header {
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-            border: 1px solid var(--border-color);
-        }
-
-        .summary-value {
-            font-size: 1.8rem;
-            font-weight: 700;
-        }
-
-        /* TABLE PREMIUM */
-        .crm-table-container {
-            background: var(--bg-card);
-            border-radius: 20px;
-            padding: 25px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
-            margin-top: 30px;
-            border: 1px solid var(--border-color);
-        }
-
-        .crm-table {
-            width: 100%;
-            border-collapse: separate;
-            border-spacing: 0 5px;
-        }
-
-        .crm-table th {
-            padding: 15px 20px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .crm-table tbody tr {
-            background-color: var(--bg-card);
-            transition: all 0.2s;
-            cursor: pointer;
-        }
-
-        .crm-table tbody tr:hover {
-            background-color: rgba(99, 102, 241, 0.03);
-            transform: scale(1.005);
-        }
-
-        .crm-table td {
-            padding: 18px 20px;
-            border-top: 1px solid var(--border-color);
+            align-items: flex-end;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
             border-bottom: 1px solid var(--border-color);
         }
 
-        .badge-custom {
-            padding: 6px 12px;
-            border-radius: 8px;
+        .page-header h2 {
+            font-weight: 800;
+            font-size: 1.8rem;
+            margin: 0;
+            background: linear-gradient(135deg, var(--accent), #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .page-header p {
+            color: var(--text-secondary);
+            margin: 5px 0 0;
+            font-size: 0.95rem;
+        }
+
+        /* KPI CARDS */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 25px;
+        }
+
+        @media (max-width: 992px) {
+            .kpi-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 576px) {
+            .kpi-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .kpi-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            transition: all 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            border-radius: 14px 0 0 14px;
+        }
+
+        .kpi-card.total::before {
+            background: var(--accent);
+        }
+
+        .kpi-card.gestion::before {
+            background: var(--owner-color);
+        }
+
+        .kpi-card.captado::before {
+            background: var(--success-color);
+        }
+
+        .kpi-card.descartado::before {
+            background: var(--danger-color);
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .kpi-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .kpi-card.total .kpi-icon {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent);
+        }
+
+        .kpi-card.gestion .kpi-icon {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--owner-color);
+        }
+
+        .kpi-card.captado .kpi-icon {
+            background: rgba(34, 197, 94, 0.1);
+            color: var(--success-color);
+        }
+
+        .kpi-card.descartado .kpi-icon {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+        }
+
+        .kpi-value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .kpi-card.total .kpi-value {
+            color: var(--accent);
+        }
+
+        .kpi-card.gestion .kpi-value {
+            color: var(--owner-color);
+        }
+
+        .kpi-card.captado .kpi-value {
+            color: var(--success-color);
+        }
+
+        .kpi-card.descartado .kpi-value {
+            color: var(--danger-color);
+        }
+
+        .kpi-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
             font-weight: 600;
-            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        /* TABLE CONTAINER */
+        .table-container {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border-color);
+        }
+
+        /* FILTERS */
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-bar .search-box {
+            flex: 1;
+            min-width: 200px;
+            position: relative;
+        }
+
+        .filter-bar .search-box i {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .filter-bar .search-box input {
+            width: 100%;
+            padding: 10px 14px 10px 40px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 10px;
+            color: var(--input-text);
+            font-size: 0.9rem;
+            transition: border-color 0.2s;
+        }
+
+        .filter-bar .search-box input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        .filter-bar select {
+            padding: 10px 14px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 10px;
+            color: var(--input-text);
+            font-size: 0.9rem;
+            min-width: 160px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .filter-bar select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .filter-bar .btn-filter {
+            padding: 10px 20px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-bar .btn-filter:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+
+        /* PROPERTY TABLE */
+        .prop-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 6px;
+        }
+
+        .prop-table th {
+            padding: 12px 16px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .prop-table tbody tr {
+            background: var(--bg-card);
+            cursor: pointer;
+            transition: all 0.2s;
+            border-radius: 10px;
+        }
+
+        .prop-table tbody tr:hover {
+            background: rgba(99, 102, 241, 0.04);
+            transform: scale(1.003);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        }
+
+        .prop-table td {
+            padding: 14px 16px;
+            border-top: 1px solid var(--border-color);
+            vertical-align: middle;
+            font-size: 0.9rem;
+        }
+
+        .prop-table td:first-child {
+            border-radius: 10px 0 0 10px;
+        }
+
+        .prop-table td:last-child {
+            border-radius: 0 10px 10px 0;
+        }
+
+        .prop-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            display: block;
+            max-width: 280px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .prop-seller {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        /* BADGES */
+        .badge-custom {
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
         }
 
         .badge-nuevo {
-            background: rgba(59, 130, 246, 0.1);
+            background: rgba(59, 130, 246, 0.12);
             color: #3b82f6;
         }
 
         .badge-gestion {
-            background: rgba(245, 158, 11, 0.1);
+            background: rgba(245, 158, 11, 0.12);
             color: #f59e0b;
         }
 
         .badge-captado {
-            background: rgba(16, 185, 129, 0.1);
+            background: rgba(16, 185, 129, 0.12);
             color: #10b981;
         }
 
-        .market-badge {
-            font-size: 0.65rem;
-            padding: 2px 8px;
+        .badge-descartado {
+            background: rgba(239, 68, 68, 0.12);
+            color: #ef4444;
+        }
+
+        .opp-badge {
+            font-size: 0.62rem;
+            padding: 2px 6px;
             border-radius: 4px;
-            font-weight: 700;
-            background: #dcfce7;
-            color: #166534;
+            font-weight: 800;
+            background: rgba(34, 197, 94, 0.12);
+            color: var(--success-color);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        /* PAGINATION */
+        .pagination .page-link {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: 8px !important;
+            margin: 0 3px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .pagination .page-link:hover {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        .pagination .page-item.active .page-link {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        /* SCROLLBAR */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(125, 125, 125, 0.2);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(125, 125, 125, 0.4);
+        }
+
+        /* ANIMATIONS */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .kpi-card {
+            animation: fadeInUp 0.4s ease forwards;
+        }
+
+        .kpi-card:nth-child(2) {
+            animation-delay: 0.05s;
+        }
+
+        .kpi-card:nth-child(3) {
+            animation-delay: 0.1s;
+        }
+
+        .kpi-card:nth-child(4) {
+            animation-delay: 0.15s;
+        }
+
+        .table-container {
+            animation: fadeInUp 0.5s ease 0.2s forwards;
+            opacity: 0;
         }
     </style>
 </head>
@@ -240,100 +677,94 @@
         {% endif %}
 
         <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+
         {% if user_role in ['supervisor', 'admin'] %}
         <a href="/captacion" class="nav-link active"><i class="fa-solid fa-house-circle-check"></i>
             <span>Captaciones</span></a>
         {% endif %}
 
-        <a href="javascript:void(0)" class="nav-link mt-auto" onclick="toggleTheme()">
-            <i class="fa-solid fa-moon"></i> <span id="theme-text">Modo Oscuro</span>
+        <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="toggleTheme()">
+            <i class="fa-solid fa-moon"></i> <span>Modo Claro/Oscuro</span>
         </a>
-        <a href="/logout" class="nav-link">
+        <a href="/logout" class="nav-link logout">
             <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
         </a>
     </nav>
 
     <div class="main-content">
-        <div class="mb-5">
-            <h2 class="fw-bold mb-1">Listado de Captaciones</h2>
-            <p class="text-secondary m-0">Inmuebles detectados para prospección comercial</p>
-        </div>
-
-        <div class="row g-4 mb-4">
-            <div class="col-md-4">
-                <div class="summary-card">
-                    <div>
-                        <div class="summary-value text-primary">{{ total_count }}</div>
-                        <div class="summary-label text-secondary">Diponibles</div>
-                    </div>
-                    <i class="fa-solid fa-layer-group fa-2x opacity-25"></i>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="summary-card">
-                    <div>
-                        <div class="summary-value text-warning">{{ in_gestion_count or '--' }}</div>
-                        <div class="summary-label text-secondary">En Proceso</div>
-                    </div>
-                    <i class="fa-solid fa-clock-rotate-left fa-2x opacity-25"></i>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="summary-card">
-                    <div>
-                        <div class="summary-value text-success">{{ captados_count or '--' }}</div>
-                        <div class="summary-label text-secondary">Convertidos</div>
-                    </div>
-                    <i class="fa-solid fa-award fa-2x opacity-25"></i>
-                </div>
+        <div class="page-header">
+            <div>
+                <h2><i class="fa-solid fa-house-circle-check me-2"></i> Captaciones</h2>
+                <p>Inmuebles detectados para prospección comercial</p>
             </div>
         </div>
 
-        <div class="crm-table-container">
-            <form action="/captacion" method="GET" class="row g-3 mb-4 align-items-center">
-                <div class="col-md-4">
-                    <div class="input-group border rounded-3 p-1">
-                        <span class="input-group-text bg-transparent border-0"><i
-                                class="fa-solid fa-magnifying-glass opacity-50"></i></span>
-                        <input type="text" name="comuna" class="form-control border-0 bg-transparent shadow-none"
-                            placeholder="Buscar comuna..." value="{{ current_comuna or '' }}">
-                    </div>
+        <div class="kpi-grid">
+            <div class="kpi-card total">
+                <div class="kpi-icon"><i class="fa-solid fa-layer-group"></i></div>
+                <div>
+                    <div class="kpi-value">{{ total_count }}</div>
+                    <div class="kpi-label">Disponibles</div>
                 </div>
-                <div class="col-md-3">
-                    <select class="form-select border shadow-none" name="estado" onchange="this.form.submit()"
-                        style="border-radius:10px">
-                        <option value="">Cualquier estado</option>
-                        <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos</option>
-                        <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gestión
-                        </option>
-                        <option value="CAPTADO" {% if current_estado=='CAPTADO' %}selected{% endif %}>Captados</option>
-                    </select>
+            </div>
+            <div class="kpi-card gestion">
+                <div class="kpi-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
+                <div>
+                    <div class="kpi-value">{{ in_gestion_count or '0' }}</div>
+                    <div class="kpi-label">En Gestión</div>
                 </div>
+            </div>
+            <div class="kpi-card captado">
+                <div class="kpi-icon"><i class="fa-solid fa-trophy"></i></div>
+                <div>
+                    <div class="kpi-value">{{ captados_count or '0' }}</div>
+                    <div class="kpi-label">Captados</div>
+                </div>
+            </div>
+            <div class="kpi-card descartado">
+                <div class="kpi-icon"><i class="fa-solid fa-ban"></i></div>
+                <div>
+                    <div class="kpi-value">{{ descartados_count or '0' }}</div>
+                    <div class="kpi-label">Descartados</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <form action="/captacion" method="GET" class="filter-bar">
+                <div class="search-box">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" name="comuna" placeholder="Buscar por comuna..."
+                        value="{{ current_comuna or '' }}">
+                </div>
+                <select name="estado" onchange="this.form.submit()">
+                    <option value="">Cualquier estado</option>
+                    <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos</option>
+                    <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gestión</option>
+                    <option value="CAPTADO" {% if current_estado=='CAPTADO' %}selected{% endif %}>Captados</option>
+                    <option value="DESCARTADO" {% if current_estado=='DESCARTADO' %}selected{% endif %}>Descartados
+                    </option>
+                </select>
                 {% if user_role in ['supervisor', 'admin'] %}
-                <div class="col-md-3">
-                    <select class="form-select border shadow-none" name="ejecutivo" onchange="this.form.submit()"
-                        style="border-radius:10px">
-                        <option value="">Cualquier Ejecutivo</option>
-                        {% for exec in executives %}
-                        <option value="{{ exec }}" {% if current_ejecutivo==exec %}selected{% endif %}>{{ exec }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
+                <select name="ejecutivo" onchange="this.form.submit()">
+                    <option value="">Cualquier Ejecutivo</option>
+                    {% for exec in executives %}
+                    <option value="{{ exec }}" {% if current_ejecutivo==exec %}selected{% endif %}>{{ exec }}</option>
+                    {% endfor %}
+                </select>
                 {% endif %}
-                <div class="col-md-2">
-                    <button type="submit" class="btn btn-dark w-100" style="border-radius:10px">Filtrar</button>
-                </div>
+                <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
             </form>
 
             <div class="table-responsive">
-                <table class="crm-table">
+                <table class="prop-table">
                     <thead>
                         <tr>
-                            <th>Título de Publicación</th>
+                            <th>Propiedad</th>
                             <th>Comuna</th>
                             <th class="text-center">Precio (UF)</th>
-                            <th class="text-center">Puntaje m²</th>
+                            <th class="text-center">UF/m²</th>
+                            <th class="text-center">Score</th>
                             <th class="text-center">Estado</th>
                             <th>Detectado</th>
                         </tr>
@@ -341,25 +772,45 @@
                     <tbody>
                         {% for item in items %}
                         <tr onclick="location.href='/captacion/{{ item.id }}'">
-                            <td style="max-width:300px">
-                                <div class="fw-bold text-truncate">{{ item.titulo }}</div>
-                                <div class="small text-secondary">{{ item.vendedor }}</div>
+                            <td>
+                                <span class="prop-title">{{ item.titulo }}</span>
+                                <div class="prop-seller"><i class="fa-solid fa-user-tag me-1 opacity-50"></i>{{
+                                    item.vendedor }}</div>
                             </td>
-                            <td>{{ item.comuna }}</td>
+                            <td><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</td>
                             <td class="text-center">
-                                <div class="fw-bold">{{ item.precio_uf }}</div>
+                                <div class="fw-bold">{{ item.precio_uf or 'S/I' }}</div>
                                 <div class="small text-secondary">{{ item.precio }}</div>
                             </td>
                             <td class="text-center">
-                                <div class="fw-bold">{{ item.uf_m2 }}</div>
-                                {% if item.uf_m2 > 0 and item.uf_m2 < 60 %} <span class="market-badge">
-                                    OPORTUNIDAD</span>
+                                <div class="fw-bold">{{ item.uf_m2 or '-' }}</div>
+                                {% if item.uf_m2 > 0 and item.uf_m2 < 60 %} <span class="opp-badge"><i
+                                        class="fa-solid fa-arrow-trend-up me-1"></i>Oportunidad</span>
                                     {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <div class="fw-bold"
+                                    style="color: {% if item.score_captacion >= 80 %}#ef4444{% elif item.score_captacion >= 50 %}#f59e0b{% else %}#3b82f6{% endif %}">
+                                    {{ item.score_captacion }}
+                                </div>
+                                {% if item.score_captacion >= 80 %}
+                                <span class="badge"
+                                    style="background: rgba(239, 68, 68, 0.1); color: #ef4444; font-size: 0.65rem;">🔥
+                                    HOT</span>
+                                {% elif item.score_captacion >= 65 %}
+                                <span class="badge"
+                                    style="background: rgba(245, 158, 11, 0.1); color: #f59e0b; font-size: 0.65rem;">⚡
+                                    ALTA</span>
+                                {% endif %}
                             </td>
                             <td class="text-center">
                                 <span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span>
                             </td>
-                            <td class="small text-secondary">{{ item.fecha_scraping }}</td>
+                            <td>
+                                <div class="small fw-bold">{{ item.fecha_detectado }}</div>
+                                <div class="small text-secondary"><i class="fa-solid fa-clock me-1 opacity-50"></i>{{
+                                    item.dias_en_portal or '?' }} d.</div>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -370,13 +821,14 @@
             <nav class="mt-4">
                 <ul class="pagination justify-content-center">
                     {% if pagination.has_prev %}
-                    <li class="page-item"><a class="page-link border-0 text-dark"
+                    <li class="page-item"><a class="page-link"
                             href="?page={{ pagination.current_page - 1 }}&comuna={{ current_comuna or '' }}&estado={{ current_estado or '' }}&ejecutivo={{ current_ejecutivo or '' }}"><i
                                 class="fa-solid fa-chevron-left"></i></a></li>
                     {% endif %}
-                    <li class="page-item active"><a class="page-link" href="#">{{ pagination.current_page }}</a></li>
+                    <li class="page-item active"><a class="page-link" href="#">{{ pagination.current_page }} / {{
+                            pagination.total_pages }}</a></li>
                     {% if pagination.has_next %}
-                    <li class="page-item"><a class="page-link border-0 text-dark"
+                    <li class="page-item"><a class="page-link"
                             href="?page={{ pagination.current_page + 1 }}&comuna={{ current_comuna or '' }}&estado={{ current_estado or '' }}&ejecutivo={{ current_ejecutivo or '' }}"><i
                                 class="fa-solid fa-chevron-right"></i></a></li>
                     {% endif %}
@@ -390,31 +842,14 @@
     <script>
         function toggleTheme() {
             const html = document.documentElement;
-            const current = html.getAttribute('data-theme');
-            const target = current === 'light' ? 'dark' : 'light';
+            const target = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
             html.setAttribute('data-theme', target);
             localStorage.setItem('theme', target);
-            updateThemeIcon(target);
-        }
-
-        function updateThemeIcon(theme) {
-            const icon = document.querySelector('.nav-link i.fa-moon, .nav-link i.fa-sun');
-            const text = document.getElementById('theme-text');
-            if (theme === 'dark') {
-                icon.className = 'fa-solid fa-sun';
-                text.innerText = 'Modo Claro';
-            } else {
-                icon.className = 'fa-solid fa-moon';
-                text.innerText = 'Modo Oscuro';
-            }
         }
 
         document.addEventListener('DOMContentLoaded', () => {
             const saved = localStorage.getItem('theme');
-            if (saved) {
-                document.documentElement.setAttribute('data-theme', saved);
-                updateThemeIcon(saved);
-            }
+            if (saved) document.documentElement.setAttribute('data-theme', saved);
         });
     </script>
 </body>

@@ -354,6 +354,7 @@ async def auth_google_callback(request: Request, code: str):
 
 # ========================= 4. RUTAS DE LOGIN TRADICIONAL =========================
 
+@app.head("/")
 @app.get("/")
 async def login_get(request: Request):
     return templates.TemplateResponse(
@@ -758,13 +759,17 @@ async def webhook(
             now_ts = int(time.time())
             diff = now_ts - ts_int
             
-            # Relaxed filter: 20 minutos (1200s) para evitar problemas de desfase horario
-            if diff > 1200: 
-                logger.warning(f"[SAFETY] Ignorando mensaje antiguo de {diff}s (Remitente: {phone}).")
-                return JSONResponse({"status": "old message ignored", "diff": diff}, status_code=200)
+            # Logger de diagnóstico para detectar descalces de zona horaria (ej: 3 horas)
+            logger.info(f"[DEBUG TIMESTAMP] Msg TS: {ts_int} | Now: {now_ts} | Diff: {diff}s")
+
+            # Filtro muy amplio: 12 horas (43200s) para compensar descalces de servidor/cliente
+            # pero prevenir ráfagas de hace días.
+            if diff > 43200: 
+                logger.warning(f"[SAFETY] Ignorando mensaje MUY antiguo de {diff}s (Remitente: {phone}).")
+                return JSONResponse({"status": "very old message ignored", "diff": diff}, status_code=200)
             
             if diff > 60:
-                logger.info(f"[SAFETY] Procesando mensaje con retraso de {diff}s...")
+                logger.info(f"[SAFETY] Procesando mensaje con retraso detectado de {diff}s...")
         except Exception as te:
             logger.error(f"Error validando timestamp: {te}")
     # ----------------------------------------------

@@ -381,35 +381,35 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
              estado_final not in [PipelineStage.NEW, PipelineStage.CONTACTED]:
              sla_status = "fulfilled"
              sla_label = "Gestionado" 
-             
+
         else:
-             # Usamos last_ts_obj que ya contiene el timestamp más lógico de actividad/creación
-             if last_ts_obj and last_ts_obj != datetime.min:
-                 try:
-                     start_dt = last_ts_obj
-                     if start_dt.tzinfo is None:
-                         start_dt = CHILE_TZ.localize(start_dt)
+            # Usamos last_ts_obj que ya contiene el timestamp más lógico de actividad/creación
+            if last_ts_obj and last_ts_obj != datetime.min:
+                try:
+                    start_dt = last_ts_obj
+                    if start_dt.tzinfo is None:
+                        start_dt = CHILE_TZ.localize(start_dt)
                     
-                     # diff = datetime.now(CHILE_TZ) - start_dt
-                     # minutes_diff = diff.total_seconds() / 60
-                     
-                      minutes_diff = calculate_business_minutes(start_dt, datetime.now(CHILE_TZ))
+                    # diff = datetime.now(CHILE_TZ) - start_dt
+                    # minutes_diff = diff.total_seconds() / 60
                     
-                      # UMBRALES: Rojo (>180), Naranja (150-180), Amarillo (60-150), Verde (<60)
-                      if minutes_diff >= 180:
-                          sla_status = "critical"
-                          sla_label = "Crítico" 
-                      elif minutes_diff >= 150: # 2:30 Horas (150 min)
-                          sla_status = "near_critical"
-                          sla_label = "Próximo a Crítico"
-                      elif minutes_diff >= 60:
-                          sla_status = "warning"
-                          sla_label = "Advertencia" 
-                      else:
-                          sla_status = "good" 
-                          sla_label = "En tiempo"
-                 except Exception as e:
-                     logger.error(f"Error calculando SLA: {e}")
+                    minutes_diff = calculate_business_minutes(start_dt, datetime.now(CHILE_TZ))
+                    
+                    # UMBRALES: Rojo (>180), Naranja (150-180), Amarillo (60-150), Verde (<60)
+                    if minutes_diff >= 180:
+                        sla_status = "critical"
+                        sla_label = "Crítico" 
+                    elif minutes_diff >= 150: # 2:30 Horas (150 min)
+                        sla_status = "near_critical"
+                        sla_label = "Próximo a Crítico"
+                    elif minutes_diff >= 60:
+                        sla_status = "warning"
+                        sla_label = "Advertencia" 
+                    else:
+                        sla_status = "good" 
+                        sla_label = "En tiempo"
+                except Exception as e:
+                    logger.error(f"Error calculando SLA: {e}")
 
         leads_procesados.append({
             "phone": raw_phone,

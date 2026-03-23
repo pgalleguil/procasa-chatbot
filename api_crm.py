@@ -393,34 +393,21 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                      # diff = datetime.now(CHILE_TZ) - start_dt
                      # minutes_diff = diff.total_seconds() / 60
                      
-                     # FIX: Si es un lead histórico (creado hace > 7 días) y fue auto-asignado hoy, 
-                     # no disparar alertas críticas de inmediato, dale margen al equipo.
-                     is_historical = False
-                     if created_ts:
-                         try:
-                             c_dt = datetime.fromisoformat(str(created_ts).replace('Z', ''))
-                             if (datetime.now() - c_dt.replace(tzinfo=None)).days > 7:
-                                 is_historical = True
-                         except: pass
-
-                     minutes_diff = calculate_business_minutes(start_dt, datetime.now(CHILE_TZ))
-                     
-                     if is_historical and minutes_diff < 480: # 8 horas de margen para leads viejos
-                         minutes_diff = 0
+                      minutes_diff = calculate_business_minutes(start_dt, datetime.now(CHILE_TZ))
                     
-                     # UMBRALES: Rojo (>180), Naranja (150-180), Amarillo (60-150), Verde (<60)
-                     if minutes_diff >= 180:
-                         sla_status = "critical"
-                         sla_label = "Crítico" 
-                     elif minutes_diff >= 150: # 2:30 Horas (150 min)
-                          sla_status = "near_critical"
-                          sla_label = "Próximo a Crítico"
-                     elif minutes_diff >= 60:
-                         sla_status = "warning"
-                         sla_label = "Advertencia" 
-                     else:
-                         sla_status = "good" 
-                         sla_label = "En tiempo"
+                      # UMBRALES: Rojo (>180), Naranja (150-180), Amarillo (60-150), Verde (<60)
+                      if minutes_diff >= 180:
+                          sla_status = "critical"
+                          sla_label = "Crítico" 
+                      elif minutes_diff >= 150: # 2:30 Horas (150 min)
+                           sla_status = "near_critical"
+                           sla_label = "Próximo a Crítico"
+                      elif minutes_diff >= 60:
+                          sla_status = "warning"
+                          sla_label = "Advertencia" 
+                      else:
+                          sla_status = "good" 
+                          sla_label = "En tiempo"
                  except Exception as e:
                      logger.error(f"Error calculando SLA: {e}")
 

@@ -84,13 +84,12 @@ async def lifespan(app: FastAPI):
     crear_admin_si_no_existe()
     asegurar_indices_db()
     
-    # Pre-cargar modelo de embeddings (Evita hang en primer uso)
-    try:
-        from chatbot.semantic_engine import get_model
-        logger.info("Pre-cargando modelo de embeddings en background...")
-        get_model()
-    except Exception as e:
-        logger.error(f"Error pre-cargando modelo: {e}")
+    # Crear admin y asegurar índices
+    crear_admin_si_no_existe()
+    asegurar_indices_db()
+    
+    # El modelo de embeddings se cargará bajo demanda para ahorrar RAM en el arranque
+    logger.info("Startup completo. Modelo de embeddings se cargará en el primer uso.")
     
     yield
     
@@ -754,14 +753,18 @@ async def webhook(
     # Evitamos responder a mensajes antiguos que se quedaron encolados
     msg_ts = msg_obj.get("messageTimestamp")
     if msg_ts:
-        # WhatsApp usa segundos desde el epoch (int)
         try:
             ts_int = int(msg_ts)
             now_ts = int(time.time())
             diff = now_ts - ts_int
-            if diff > 300: # 5 minutos
-                logger.warning(f"[SAFETY] Ignorando mensaje antiguo de {diff}s para evitar ráfagas masivas.")
+            
+            # Relaxed filter: 20 minutos (1200s) para evitar problemas de desfase horario
+            if diff > 1200: 
+                logger.warning(f"[SAFETY] Ignorando mensaje antiguo de {diff}s (Remitente: {phone}).")
                 return JSONResponse({"status": "old message ignored", "diff": diff}, status_code=200)
+            
+            if diff > 60:
+                logger.info(f"[SAFETY] Procesando mensaje con retraso de {diff}s...")
         except Exception as te:
             logger.error(f"Error validando timestamp: {te}")
     # ----------------------------------------------
@@ -1457,8 +1460,8 @@ async def reassign_unassigned_leads_loop():
                 ]
             }
             
-            # Procesar por lotes (Batch processing)
-            leads = list(db["leads"].find(query).limit(100))
+            # Procesar por lotes (Batch processing de 20 para no bloquear ni agotar RAM)
+            leads = list(db["leads"].find(query).limit(20))
             
             if leads:
                 logger.info(f"[BACKGROUND] Procesando batch de {len(leads)} leads...")

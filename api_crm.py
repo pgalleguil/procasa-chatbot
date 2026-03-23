@@ -336,8 +336,12 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                  if last_msg.get("role") in ["assistant", "system"]:
                      last_action_text = "Respondido por Bot"
 
-        # Contabilizar el estado final REAL para las tarjetas (independiente de si lo filtramos luego o no)
-        if estado_final in [PipelineStage.NEW]:
+        # Identificar ejecutivo antes de contar KPIs
+        ejecutivo = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
+        is_assigned = ejecutivo and ejecutivo not in [UNASSIGNED_LABEL, "No asignado", "Sin Asignar", "Sin asignar"]
+
+        # Contabilizar el estado final REAL para las tarjetas
+        if estado_final in [PipelineStage.NEW] and is_assigned:
             kpi_counts["nuevo"] += 1
         elif estado_final in [PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE]:
             kpi_counts["visita"] += 1
@@ -364,7 +368,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         sla_status = "good"
         sla_label = ""
         
-        ejecutivo = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
+        # (ejecutivo ya definido arriba para KPI)
         
         # Limpieza visual para leads antiguos con >2 palabras
         if ejecutivo and isinstance(ejecutivo, str) and ejecutivo not in [UNASSIGNED_LABEL, "No asignado", "Sin Asignar", "Sin asignar"]:

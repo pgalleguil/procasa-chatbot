@@ -14,12 +14,19 @@ async def send_whatsapp_message(number: str, text: str) -> bool:
     if not text:
         return False
         
-    # Limpieza de número
-    clean = "".join(filter(str.isdigit, number))
-    if len(clean) == 9 and clean.startswith("9"):
-        clean = "569" + clean
-    elif len(clean) == 12 and clean.startswith("569"):
-        clean = clean[1:] 
+    # Tratamiento de destinatario
+    if "@" in number:
+        # Es un JID de grupo o canal, lo dejamos tal cual
+        clean = number.strip()
+    else:
+        # Es un número individual, aplicamos limpieza y normalización para Chile
+        clean = "".join(filter(str.isdigit, number))
+        if len(clean) == 9 and clean.startswith("9"):
+            clean = "569" + clean
+        elif len(clean) == 12 and clean.startswith("569"):
+            # Si ya tiene el 569, nos aseguramos que Wasender reciba el formato que espera
+            # (Algunos proveedores prefieren con +, otros sin. WASender suele aceptar ambos pero probamos sin + primero)
+            pass
 
     url = f"{Config.WASENDER_BASE_URL}/send-message"
     payload = {"to": clean, "text": text}

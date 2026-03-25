@@ -20,6 +20,9 @@ class Config:
     WASENDER_TOKEN = os.getenv("WASENDER_TOKEN")
     WASENDER_WEBHOOK_SECRET = os.getenv("WASENDER_WEBHOOK_SECRET")
     WASENDER_BASE_URL = os.getenv("WASENDER_BASE_URL", "https://wasenderapi.com/api")
+    DAILY_REPORT_GROUP_ID = os.getenv("DAILY_REPORT_GROUP_ID")
+    CRM_BASE_URL = os.getenv("CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")
+
 
     # === GMAIL ===
     GMAIL_USER = os.getenv("GMAIL_USER")

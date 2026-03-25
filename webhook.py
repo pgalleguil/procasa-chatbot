@@ -79,6 +79,7 @@ async def lifespan(app: FastAPI):
     t_task = asyncio.create_task(check_scheduled_tasks_loop())
     c_task = asyncio.create_task(captacion_distribution_loop())
     r_task = asyncio.create_task(reassign_unassigned_leads_loop())
+    d_task = asyncio.create_task(daily_report_loop())
     
     # Crear admin y asegurar índices
     crear_admin_si_no_existe()
@@ -100,8 +101,9 @@ async def lifespan(app: FastAPI):
     t_task.cancel()
     c_task.cancel()
     r_task.cancel()
+    d_task.cancel()
     try:
-        await asyncio.gather(n_task, s_task, t_task, c_task, r_task, return_exceptions=True)
+        await asyncio.gather(n_task, s_task, t_task, c_task, r_task, d_task, return_exceptions=True)
     except Exception as e:
         logger.error(f"Error apagando tareas: {e}")
 
@@ -742,6 +744,12 @@ async def webhook(
         logger.info("TEST WEBHOOK EXITOSO")
         return JSONResponse({"ok": True}, status_code=200)
 
+    # --- LOG AGRESIVO PARA DEBUG ---
+    logger.info(f"Incoming Webhook Event: {data.get('event')} | Payload size: {len(raw_body)}")
+    if "@g.us" in str(data):
+        logger.info(f"🎯 Grupo detectado en el payload! Raw: {json.dumps(data)[:500]}")
+
+
     messages_data = data.get("data", {}).get("messages", {}) or {}
     if not messages_data:
         return JSONResponse({"status": "no messages"}, status_code=200)
@@ -791,6 +799,12 @@ async def webhook(
     # --- DEBUG CRÍTICO: VER EL PAYLOAD COMPLETO ---
     logger.info(f"[DEBUG PAYLOAD] Key: {key}")
     logger.info(f"[DEBUG PAYLOAD] From: {msg_obj.get('from')} | SenderPn: {key.get('senderPn')} | Cleaned: {key.get('cleanedSenderPn')}")
+    
+    # --- DISCOVERY: CAPTURAR ID DE GRUPO ---
+    remote_jid = key.get("remoteJid", "")
+    if "@g.us" in remote_jid:
+        group_name = msg_obj.get("pushName") or "Grupo Desconocido"
+        logger.info(f"🔍 [GROUP_DISCOVERY] ID: {remote_jid} | Name: {group_name}")
     
     phone = str(phone).strip()
 
@@ -1477,6 +1491,25 @@ async def reassign_unassigned_leads_loop():
             background_tasks_status["lead_processing"]["status"] = f"error: {str(e)}"
             logger.error(f"[BACKGROUND] Error en loop de procesamiento de leads: {e}")
             await asyncio.sleep(60)
+
+async def daily_report_loop():
+    """Loop de fondo para enviar el reporte de SLA una vez al día."""
+    logger.info("[DAILY_REPORT] Iniciando monitor de reporte diario...")
+    from chatbot.daily_report import check_and_run_daily_report
+    while True:
+        try:
+            background_tasks_status["daily_report"] = {
+                "status": "running", 
+                "last_heartbeat": datetime.now(CHILE_TZ).isoformat()
+            }
+            await check_and_run_daily_report()
+        except Exception as e:
+            logger.error(f"[DAILY_REPORT] Error en loop: {e}")
+            if "daily_report" in background_tasks_status:
+                background_tasks_status["daily_report"]["status"] = f"error: {str(e)}"
+        
+        # Revisar cada 15 minutos (suficiente para no perder la ventana de 9:30 AM)
+        await asyncio.sleep(900)
 
 if __name__ == "__main__":
     import pathlib

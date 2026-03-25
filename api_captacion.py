@@ -262,56 +262,37 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
     if status_filter:
         query["gestion.estado"] = status_filter
 
-    cursor = list(db["yapo_propiedades"].find(query))
-    total_count = len(cursor)
+    # 1. CONTAR TOTAL
+    total_count = db["yapo_propiedades"].count_documents(query)
     
-    # 1. Preload market stats to optimize
-    comuna_tipo_set = set()
-    for doc in cursor:
-        c = doc.get("details", {}).get("comuna")
-        t = doc.get("details", {}).get("tipo_propiedad", "Departamento")
-        if c: comuna_tipo_set.add((c, t))
-        
-    market_cache = {}
-    for c, t in comuna_tipo_set:
-        market_cache[(c,t)] = get_market_insights(c, t)
+    # 2. TRAER PAGINADOS DESDE MONGO
+    skip = (page - 1) * limit
+    cursor = db["yapo_propiedades"].find(query)\
+                                   .sort("score_captacion", -1)\
+                                   .skip(skip)\
+                                   .limit(limit)
     
-    items_all = []
+    items_paginated = []
     for doc in cursor:
         details = doc.get("details", {})
         gestion = doc.get("gestion", {})
-        c = details.get("comuna")
-        t = details.get("tipo_propiedad", "Departamento")
-        m_stats = market_cache.get((c,t), {"avg_uf_m2": 0, "total_available": 0, "demand_level": "Media"})
         
-        score, prob, motivos, uf_m2, diff_pct = calculate_lead_score_captacion(details, m_stats)
-        
-        # Smart Priority: score + matching weight
-        # Removed matching_count here because it was too slow for the list view
-        matching_priority = score # Fallback to score for sorting
-
-        items_all.append({
+        items_paginated.append({
             "id": str(doc["_id"]),
             "url": doc.get("url"),
             "titulo": details.get("titulo", "Sin título"),
             "comuna": details.get("comuna", "S/I"),
             "precio": details.get("precio", "S/I"),
             "precio_uf": details.get("precio_uf"),
-            "uf_m2": uf_m2,
+            "uf_m2": doc.get("uf_m2_cache", 0),
             "estado": gestion.get("estado", "NUEVO"),
             "ejecutivo": gestion.get("ejecutivo_asignado") or "Sin asignar",
-            "score_captacion": score,
-            "probabilidad": prob,
+            "score_captacion": doc.get("score_captacion", 0),
+            "probabilidad": doc.get("probabilidad", "S/I"),
             "intentos": gestion.get("intent_count", 0),
             "fecha_detectado": format_relative_time(details.get("fecha_scraping")),
-            "sort_date": details.get("fecha_scraping", ""),
-            "matching_priority": matching_priority
+            "sort_date": details.get("fecha_scraping", "")
         })
-        
-    items_all.sort(key=lambda x: (x["score_captacion"], x["sort_date"]), reverse=True)
-    
-    skip = (page - 1) * limit
-    items_paginated = items_all[skip : skip + limit]
     
     return items_paginated, total_count
 
@@ -620,6 +601,13 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         {"_id": ObjectId(obj_id)},
         update_params
     )
+    
+    # Precomputación SaaS: Actualizar métricas de captación
+    try:
+        from chatbot.metrics import update_captacion_metrics
+        update_captacion_metrics(db, obj_id)
+    except: pass
+
     return True
 
 def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=None, user_name="Sistema"):

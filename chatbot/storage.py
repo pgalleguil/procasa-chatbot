@@ -5,6 +5,9 @@ import pytz
 from config import Config
 from typing import List, Dict, Optional
 from .constants import PipelineStage, InteractionType, EventType, CHILE_TZ
+import logging
+
+logger = logging.getLogger(__name__)
 
 _mongo_client = None
 
@@ -175,6 +178,13 @@ def log_event(phone: str, event_type: str, actor: str = "system", meta: dict = N
         "meta": meta or {}
     }
     db["crm_events"].insert_one(event)
+    
+    # Precomputación SaaS: Actualizar métricas del lead atómicamente
+    try:
+        from .metrics import update_lead_metrics
+        update_lead_metrics(db, phone, event_at=event["timestamp"], event_type=event_type)
+    except Exception as e:
+        logger.error(f"Error triggering metrics update in log_event: {e}")
 
 def update_lead_state(phone: str, stage: str = None, metadata: dict = None):
     db = get_db()
@@ -203,6 +213,12 @@ def update_lead_state(phone: str, stage: str = None, metadata: dict = None):
         )
         if stage:
             log_event(phone, InteractionType.STATUS_CHANGE, "system", {"to": stage})
+        else:
+            # Si no hay cambio de estado pero hay metadatos, forzamos refresco de métricas
+            try:
+                from .metrics import update_lead_metrics
+                update_lead_metrics(db, phone)
+            except: pass
 
 def get_user_by_phone(phone: str) -> Optional[dict]:
     """Busca un usuario en la colección 'usuarios' por su teléfono (normalizado)."""

@@ -750,20 +750,35 @@ async def webhook(
     key = msg_obj.get("key", {})
     from_me = key.get("fromMe", False)
 
+    # --- EXTRACCCIÓN ROBUSTA DE TELÉFONO (Movido arriba para evitar NameError) ---
+    phone = key.get("cleanedSenderPn") or key.get("senderPn")
+    if not phone:
+        remote_jid = key.get("remoteJid", "")
+        if "@s.whatsapp.net" in remote_jid and not "@lid" in remote_jid:
+            phone = remote_jid.split("@")[0]
+    if not phone:
+        msg_from = msg_obj.get("from", "")
+        if "@s.whatsapp.net" in msg_from and not "@lid" in msg_from:
+            phone = msg_from.split("@")[0]
+    if not phone:
+        phone = (key.get("remoteJid") or msg_obj.get("from") or "").split("@")[0]
+
     # --- SEGURIDAD: FILTRO DE RECENCIA (ANTI-BURST) ---
-    # Evitamos responder a mensajes antiguos que se quedaron encolados
     msg_ts = msg_obj.get("messageTimestamp")
     if msg_ts:
         try:
-            ts_int = int(msg_ts)
+            # Robust conversion for cases where Baileys/WASender sends Int64 as a dict {low, high}
+            if isinstance(msg_ts, dict):
+                ts_int = int(msg_ts.get("low", msg_ts.get("seconds", 0)))
+            else:
+                ts_int = int(msg_ts)
+                
             now_ts = int(time.time())
             diff = now_ts - ts_int
             
-            # Logger de diagnóstico para detectar descalces de zona horaria (ej: 3 horas)
+            # Logger de diagnóstico
             logger.info(f"[DEBUG TIMESTAMP] Msg TS: {ts_int} | Now: {now_ts} | Diff: {diff}s")
 
-            # Filtro muy amplio: 12 horas (43200s) para compensar descalces de servidor/cliente
-            # pero prevenir ráfagas de hace días.
             if diff > 43200: 
                 logger.warning(f"[SAFETY] Ignorando mensaje MUY antiguo de {diff}s (Remitente: {phone}).")
                 return JSONResponse({"status": "very old message ignored", "diff": diff}, status_code=200)
@@ -771,34 +786,12 @@ async def webhook(
             if diff > 60:
                 logger.info(f"[SAFETY] Procesando mensaje con retraso detectado de {diff}s...")
         except Exception as te:
-            logger.error(f"Error validando timestamp: {te}")
-    # ----------------------------------------------
+            logger.error(f"Error parseando timestamp ({type(msg_ts)}): {te}")
 
     # --- DEBUG CRÍTICO: VER EL PAYLOAD COMPLETO ---
     logger.info(f"[DEBUG PAYLOAD] Key: {key}")
     logger.info(f"[DEBUG PAYLOAD] From: {msg_obj.get('from')} | SenderPn: {key.get('senderPn')} | Cleaned: {key.get('cleanedSenderPn')}")
-    # ----------------------------------------------
     
-    # --- EXTRACCIÓN ROBUSTA DE TELÉFONO ---
-    # 1. Intentamos obtener el número limpio directamente del payload (lo más fiable)
-    phone = key.get("cleanedSenderPn") or key.get("senderPn")
-    
-    # 2. Si no existe, usamos el 'remoteJid' pero SOLO si parece un número normal (evitamos LIDs)
-    if not phone:
-        remote_jid = key.get("remoteJid", "")
-        if "@s.whatsapp.net" in remote_jid and not "@lid" in remote_jid:
-            phone = remote_jid.split("@")[0]
-            
-    # 3. Fallback: usamos 'from' del mensaje
-    if not phone:
-        msg_from = msg_obj.get("from", "")
-        if "@s.whatsapp.net" in msg_from and not "@lid" in msg_from:
-            phone = msg_from.split("@")[0]
-
-    # 4. Último recurso (puede ser peligroso si es LID, pero es mejor que nada)
-    if not phone:
-        phone = (key.get("remoteJid") or msg_obj.get("from") or "").split("@")[0]
-
     phone = str(phone).strip()
 
     # --- FILTRO DE EJECUTIVOS (Solicitado por usuario) ---

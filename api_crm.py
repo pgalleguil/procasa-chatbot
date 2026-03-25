@@ -174,50 +174,96 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     
     query = {"$and": query_parts} if query_parts else {}
     
-    # 1. CONTAR TOTAL PARA PAGINACIÓN
-    total_count = db["leads"].count_documents(query)
+    # 2. SEPARATE KPI COUNTS (Globales para la búsqueda actual pero sin filtro de estado)
+    base_kpi_query = query.copy() # Query que incluye ejecutivo y término de búsqueda
     
-    # 2. TRAER LEADS (Sin paginar para poder ordenar en memoria) - EXCLUIMOS campos pesados para el listado
+    # query_with_state: Query final que incluye el filtro de estado si existe
+    query_with_state = query.copy()
+    if filtro_estado and filtro_estado != "Todos":
+        # Mapeo invertido para buscar por el valor del Enum o string legacy en la DB
+        state_db_value = filtro_estado
+        if filtro_estado == "nuevo": state_db_value = PipelineStage.NEW
+        elif filtro_estado == "visita": state_db_value = PipelineStage.VISIT_SCHEDULED
+        elif filtro_estado == "gestion": state_db_value = PipelineStage.CONTACTED
+        elif filtro_estado == "cerrado": state_db_value = PipelineStage.CLOSED_WON
+        
+        query_with_state["pipeline_stage"] = state_db_value
+
+    # 1. CONTAR TOTAL PARA PAGINACIÓN (Basado en el filtro de estado)
+    total_count = db["leads"].count_documents(query_with_state)
+    
+    kpi_counts = {"total": total_count, "nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0}
+    
+    UNASSIGNED_VALUES = [None, "", "Sin Asignar", "No asignado", "No Asignado", "Sin asignar"]
+    assigned_filter = {"ejecutivo_asignado": {"$nin": UNASSIGNED_VALUES, "$exists": True}}
+    
+    kpi_counts["nuevo"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": PipelineStage.NEW}, assigned_filter]})
+
+    kpi_counts["visita"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE]}}]})
+    kpi_counts["cerrado"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST]}}]})
+    
+    # Total Global de la búsqueda (sin filtrar por estado específico) para la coherencia de las tarjetas
+    global_search_total = db["leads"].count_documents(base_kpi_query)
+    kpi_counts["gestion"] = global_search_total - (kpi_counts["nuevo"] + kpi_counts["visita"] + kpi_counts["cerrado"])
+    # Ajustamos el total de KPIs si queremos mostrar el total de la búsqueda global
+    kpi_counts["total"] = global_search_total
+
+    # 3. TRAER LEADS PAGINADOS DESDE MONGO
     skip = (page - 1) * limit
-    leads_cursor = db["leads"].find(query, {"messages": 0, "stage_history": 0})
     
-    # Obtenemos TODOS para procesar y ordenar in-memory
+    # Define sorting
+    if ordenar_por == "prioridad":
+        sort_criteria = [("priority_score", -1), ("last_event_at", -1)]
+    else:
+        sort_criteria = [("last_event_at", -1)]
+        
+    leads_cursor = db["leads"].find(query_with_state, {"messages": 0, "stage_history": 0})\
+                              .sort(sort_criteria)\
+                              .skip(skip)\
+                              .limit(limit)
+    
     leads_list = list(leads_cursor)
-    
-    # 3. OPTIMIZACIÓN: Obtener lista de teléfonos para hacer UNA SOLA consulta de eventos
-    # (Al ser memoria, mapearemos todos para poder calcular SLA correctamente de la lista completa)
-    all_phones = [l.get("phone", "").replace("+","").strip() for l in leads_list if l.get("phone")]
-    
-    # 4. BULK QUERY DE EVENTOS (Agregación para obtener el último por teléfono)
-    events_map = {}
-    if all_phones:
-        pipeline = [
-            {"$match": {
-                "phone": {"$in": all_phones}, 
-                "type": {"$in": [
-                    "GESTION_LOG", "HUMAN_NOTE", "STATUS_CHANGE", 
-                    "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CLICK_PHONE_LEAD",
-                    "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER",
-                    "ASSIGNMENT", "assignment", "ALERT_SENT", "alert_sent",
-                    "MANUAL_ENTRY", "msg_out"
-                ]}
-            }},
-            {"$sort": {"timestamp": -1}},
-            {"$group": {
-                "_id": "$phone",
-                "last_event": {"$first": "$$ROOT"}
-            }}
-        ]
-        # Ejecutamos la agregación rápida
-        agg_results = list(db["crm_events"].aggregate(pipeline))
-        # Mapeamos para acceso O(1)
-        events_map = {r["_id"]: r["last_event"] for r in agg_results}
 
     leads_procesados = []
-    # Inicializamos contadores a 0. Los sumaremos dinámicamente según el estado final real 
-    # evaluado en memoria para cada lead, lo que garantiza 100% de precisión visual.
-    kpi_counts = {"nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0, "total": len(leads_list)}
+    # (KPI counts are already calculated via optimized MongoDB queries above)
 
+    # 4b. BULK QUERY DE EVENTOS para los leads de ESTA PÁGINA solamente (máx 10-20 teléfonos)
+    # Esto es O(page_size), no O(total_leads). Correcto y eficiente.
+    page_phones = [l.get("phone", "").replace("+", "").strip() for l in leads_list]
+    management_types = [
+        "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
+        "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER",
+        "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER", "ALERT_SENT", "alert_sent"
+    ]
+    events_cursor = db["crm_events"].find(
+        {"phone": {"$in": page_phones}, "type": {"$in": management_types}},
+        sort=[("timestamp", -1)]
+    )
+    events_map = {}
+    for ev in events_cursor:
+        phone_ev = ev.get("phone", "")
+        if phone_ev not in events_map:
+            events_map[phone_ev] = ev
+
+    type_labels = {
+        "CLICK_WHATSAPP_LEAD": "Click WhatsApp (Lead)",
+        "CLICK_PHONE_LEAD": "Llamada Iniciada",
+        "CLICK_EMAIL_LEAD": "Click Email (Lead)",
+        "SEND_WA_LEAD": "WhatsApp Enviado",
+        "SEND_EMAIL_LEAD": "Email Enviado",
+        "CLICK_WHATSAPP_OWNER": "Click WhatsApp (Prop)",
+        "CLICK_PHONE_OWNER": "Llamada Prop. Iniciada",
+        "CLICK_EMAIL_OWNER": "Click Email (Prop)",
+        "SEND_WA_OWNER": "WhatsApp Enviado (Prop)",
+        "SEND_EMAIL_OWNER": "Email Enviado (Prop)",
+        "STATUS_CHANGE": "Cambio de Estado",
+        "HUMAN_NOTE": "Gestión Manual",
+        "ASSIGNMENT": "Lead Asignado",
+        "GESTION_LOG": "Gestión Registrada",
+        "ALERT_SENT": "Alerta Enviada",
+    }
+
+    # 5. PROCESAR LEADS EN MEMORIA
     state_map = {
         # Enums
         PipelineStage.NEW:   {"label": "Sin Atender", "led": "led-red",    "priority": 1},
@@ -229,7 +275,6 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         PipelineStage.NEGOTIATION:  {"label": "Negociación", "led": "led-green",  "priority": 2},
         PipelineStage.CLOSED_WON: {"label": "Cerrado Ganado",     "led": "led-gray",   "priority": 4},
         PipelineStage.CLOSED_LOST: {"label": "Cerrado Perdido",     "led": "led-gray",   "priority": 4},
-
         # Legacy Support
         "nuevo":   {"label": "Sin Atender", "led": "led-red",    "priority": 1},
         "visita":  {"label": "Visita Agendada", "led": "led-green",  "priority": 2},
@@ -260,160 +305,94 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             }
             estado_db = estado_map_legacy.get(estado_db.lower(), PipelineStage.NEW)
         
-        # Recuperar evento desde el mapa en memoria (sin ir a la DB)
-        last_action_event = events_map.get(raw_phone)
-        
-        last_action_text = "Sin gestión aún"
-        last_action_note = ""
+        last_ev = events_map.get(raw_phone)
+        if last_ev:
+            last_action_text = type_labels.get(last_ev.get("type"), "Acción registrada")
+            last_action_note = last_ev.get("metadata", {}).get("note", "")
+        else:
+            last_action_text = lead.get("last_action_label") or "Sin gestión aún"
+            last_action_note = ""
         
         ultimo_msg_ts = lead.get("prospecto", {}).get("ultimo_mensaje")
         lifecycle_ts = lead.get("lifecycle", {}).get("assigned_at")
         created_ts = lead.get("created_at")
         
         # Determine original fallback (Prioritize Assignment over Message for SLA consistency)
-        last_ts = lifecycle_ts or ultimo_msg_ts or created_ts
+        # We now use the precomputed last_event_at if available
+        last_ts = lead.get("last_event_at") or (last_ev.get("timestamp") if last_ev else None) or lifecycle_ts or ultimo_msg_ts or created_ts
         
-        # If no management action exists, clarify the text
-        if not last_action_event:
-            if ultimo_msg_ts:
-                last_action_text = "Mensaje del Cliente"
-            elif lifecycle_ts:
-                 last_action_text = "Asignado"
-            else:
-                 last_action_text = "Creado"
+        estado_final = estado_db
         
-        estado_final = estado_db 
+        # Promoción visual de estado: si tiene gestión pero DB dice NEW, mostrar como CONTACTADO
+        # Esto es visual solamente — no modifica la DB
+        MANAGEMENT_LABELS = {
+            "Click WhatsApp (Lead)", "Llamada Iniciada", "WhatsApp Enviado",
+            "Email Enviado", "Click WhatsApp (Prop)", "Llamada Prop. Iniciada",
+            "WhatsApp Enviado (Prop)", "Email Enviado (Prop)", "Cambio de Estado",
+            "Gestión Manual", "Acción registrada"
+        }
+        has_management = last_action_text and last_action_text not in ["Sin gestión aún", "Lead Asignado", "Respondido por Bot"]
         
-        if last_action_event:
-            last_ts = last_action_event["timestamp"]
-            meta = last_action_event.get("meta", {})
-            evt_type = last_action_event.get("type")
-            
-            # --- MAPEO DE ETIQUETAS DE ACCIÓN ---
-            type_labels = {
-                "CLICK_WHATSAPP_LEAD": "Click WhatsApp (Lead)",
-                "CLICK_PHONE_LEAD": "Llamada Iniciada",
-                "CLICK_EMAIL_LEAD": "Click Email (Lead)",
-                "SEND_WA_LEAD": "WhatsApp Enviado",
-                "SEND_EMAIL_LEAD": "Email Enviado",
-                "CLICK_WHATSAPP_OWNER": "Click WhatsApp (Prop)",
-                "CLICK_PHONE_OWNER": "Llamada Prop. Iniciada",
-                "CLICK_EMAIL_OWNER": "Click Email (Prop)",
-                "SEND_WA_OWNER": "WhatsApp Enviado (Prop)",
-                "SEND_EMAIL_OWNER": "Email Enviado (Prop)",
-                "STATUS_CHANGE": "Cambio de Estado",
-                "HUMAN_NOTE": "Gestión Manual",
-                "ASSIGNMENT": "Lead Asignado"
-            }
-            
-            last_action_text = meta.get("action_label") or type_labels.get(evt_type, "Gestión CRM")
-            
-            if meta.get("notes"):
-                last_action_note = meta.get("notes")[:50] + "..."
-            elif not meta.get("action_label") and evt_type.startswith("CLICK_"):
-                last_action_note = f"Canal: {meta.get('channel', '---')}"
+        if estado_final == PipelineStage.NEW and has_management:
+            estado_final = PipelineStage.CONTACTED
 
-            # Corrección Visual de Estado: Promoción por gestión ANY (Lead o Propietario)
-            if estado_final == PipelineStage.NEW and (evt_type in management_types or meta.get("result")):
-                estado_final = PipelineStage.CONTACTED
-
-            result_code = meta.get("result", "")
-            if result_code == "visita_agendada":
-                estado_final = PipelineStage.VISIT_SCHEDULED
-            elif result_code == "lead_cerrado":
-                estado_final = PipelineStage.CLOSED_WON
-            elif result_code in ["lead_pausado", "requiere_seguimiento", "intento_fallido"]:
-                estado_final = PipelineStage.CONTACTED
-        else:
-             msgs = lead.get("messages", [])
-             if msgs:
-                 last_msg = msgs[-1]
-                 ts = last_msg.get("timestamp")
-                 if ts: last_ts = ts
-                 
-                 # Detectar si el último mensaje fue una respuesta del sistema/bot
-                 # Si el bot ya respondió, no es "tan" urgente como uno sin respuesta absoluta
-                 if last_msg.get("role") in ["assistant", "system"]:
-                     last_action_text = "Respondido por Bot"
-
-        # Identificar ejecutivo antes de contar KPIs
+        
+        # Identificar ejecutivo y timestamp real para visualización
         ejecutivo = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
-        is_assigned = ejecutivo and ejecutivo not in [UNASSIGNED_LABEL, "No asignado", "Sin Asignar", "Sin asignar"]
-
-        # Contabilizar el estado final REAL para las tarjetas
-        if estado_final in [PipelineStage.NEW] and is_assigned:
-            kpi_counts["nuevo"] += 1
-        elif estado_final in [PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE]:
-            kpi_counts["visita"] += 1
-        elif estado_final in [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST]:
-            kpi_counts["cerrado"] += 1
+        
+        if last_ts:
+            try: 
+                if isinstance(last_ts, str):
+                    last_ts_obj = datetime.fromisoformat(last_ts.replace('Z', '+00:00'))
+                else:
+                    last_ts_obj = last_ts
+            except: last_ts_obj = datetime.now(CHILE_TZ)
         else:
-            kpi_counts["gestion"] += 1
+            last_ts_obj = datetime.now(CHILE_TZ)
 
-        if filtro_estado and estado_final != filtro_estado:
-            continue
-
-        # Formateo de fecha seguro
-        if isinstance(last_ts, str):
-            try: last_ts_obj = datetime.fromisoformat(last_ts.replace('Z', ''))
-            except: last_ts_obj = datetime.min
-        elif isinstance(last_ts, datetime):
-            last_ts_obj = last_ts
-        else:
-            last_ts_obj = datetime.min
-
+        # (SaaS Performance: Metrics are precomputed in lead doc)
         config_estado = state_map.get(estado_final, state_map[PipelineStage.CONTACTED])
 
-        # 5. SLA / TIEMPO DE RESPUESTA (Ajustado con Métrica Naranja)
-        sla_status = "good"
-        sla_label = ""
+        # 5. SLA / TIEMPO DE RESPUESTA (Dinámico para tiempo real)
+        sla_status = lead.get("sla_status", "good")
         
-        # (ejecutivo ya definido arriba para KPI)
+        if estado_final == PipelineStage.NEW:
+            # Calcular SLA en tiempo real porque el tiempo sigue corriendo
+            if last_ts_obj:
+                now = datetime.now(CHILE_TZ)
+                if last_ts_obj.tzinfo is None:
+                    try:
+                        last_ts_obj = CHILE_TZ.localize(last_ts_obj)
+                    except ValueError:
+                        pass # Si ya está offset-aware pero tzinfo no es None (raro)
+                
+                delta = now - last_ts_obj
+                sla_hours = delta.total_seconds() / 3600.0
+
+                if sla_hours <= 1.5:
+                    sla_status = "good"
+                elif sla_hours <= 2.5:
+                    sla_status = "near_critical"
+                else:
+                    sla_status = "critical"
+        else:
+            # Override visual para leads que ya están en gestión
+            sla_status = "fulfilled"
+            
+        sla_labels_map = {
+            "critical": "Crítico",
+            "near_critical": "Próximo a Crítico",
+            "warning": "Advertencia",
+            "good": "En tiempo",
+            "pending": "Pendiente Asignación",
+            "fulfilled": "Gestionado"
+        }
+        sla_label = sla_labels_map.get(sla_status, "En tiempo")
         
-        # Limpieza visual para leads antiguos con >2 palabras
-        if ejecutivo and isinstance(ejecutivo, str) and ejecutivo not in [UNASSIGNED_LABEL, "No asignado", "Sin Asignar", "Sin asignar"]:
-            words = ejecutivo.strip().split()
-            if len(words) > 2:
-                ejecutivo = f"{words[0]} {words[1]}"
-        
+        # Re-check pending if no executive
         if not ejecutivo or ejecutivo in [UNASSIGNED_LABEL, "No asignado", "Sin Asignar", "Sin asignar"]:
              sla_status = "pending"
              sla_label = "Pendiente Asignación"
-             
-        elif (last_action_event and last_action_event.get("type") in management_types) or \
-             (lead.get("messages") and lead.get("messages")[-1].get("role") in ["assistant", "system"] and estado_final != PipelineStage.NEW) or \
-             estado_final not in [PipelineStage.NEW, PipelineStage.CONTACTED]:
-             sla_status = "fulfilled"
-             sla_label = "Gestionado" 
-
-        else:
-            # Usamos last_ts_obj que ya contiene el timestamp más lógico de actividad/creación
-            if last_ts_obj and last_ts_obj != datetime.min:
-                try:
-                    start_dt = last_ts_obj
-                    if start_dt.tzinfo is None:
-                        start_dt = CHILE_TZ.localize(start_dt)
-                    
-                    # diff = datetime.now(CHILE_TZ) - start_dt
-                    # minutes_diff = diff.total_seconds() / 60
-                    
-                    minutes_diff = calculate_business_minutes(start_dt, datetime.now(CHILE_TZ))
-                    
-                    # UMBRALES: Rojo (>180), Naranja (150-180), Amarillo (60-150), Verde (<60)
-                    if minutes_diff >= 180:
-                        sla_status = "critical"
-                        sla_label = "Crítico" 
-                    elif minutes_diff >= 150: # 2:30 Horas (150 min)
-                        sla_status = "near_critical"
-                        sla_label = "Próximo a Crítico"
-                    elif minutes_diff >= 60:
-                        sla_status = "warning"
-                        sla_label = "Advertencia" 
-                    else:
-                        sla_status = "good" 
-                        sla_label = "En tiempo"
-                except Exception as e:
-                    logger.error(f"Error calculando SLA: {e}")
 
         leads_procesados.append({
             "phone": raw_phone,
@@ -436,26 +415,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             "stage": lead.get("stage") or "new"
         })
     
-    def safe_timestamp(dt):
-        try: return dt.timestamp()
-        except: return 0.0
-
-    def get_sla_score(status):
-        return {"critical": 0, "near_critical": 1, "warning": 2, "pending": 3, "good": 4, "fulfilled": 5}.get(status, 99)
-
-    if ordenar_por == "prioridad":
-        # Primero por urgencia SLA (Crítico -> En tiempo -> Gestionado)
-        # Luego del más reciente al más antiguo
-        leads_procesados.sort(key=lambda x: (get_sla_score(x['sla_status']), -safe_timestamp(x['real_timestamp'])))
-    else:
-        leads_procesados.sort(key=lambda x: safe_timestamp(x['real_timestamp']), reverse=True)
-
-    paginated_leads = leads_procesados[skip:skip+limit]
-
-    # El total REAL de leads en la pestaña actual (para que la barra de paginación abajo no dibuje páginas vacías)
-    total_filtrado = len(leads_procesados)
-
-    return paginated_leads, kpi_counts, total_filtrado
+    # 5. RETORNAR RESULTADOS
+    return leads_procesados, kpi_counts, total_count
 
 def get_unique_executives():
     """Retorna lista de nombres únicos de ejecutivos que tienen leads asignados."""
@@ -509,24 +470,26 @@ def get_lead_detail_data(phone, property_code=None):
             "url": "#"
         }
 
-    # Se incluyen logs de sistema y gestión para auditoría completa
+    # Se incluyen logs de gestión real para un historial limpio y útil
     new_events_cursor = db["crm_events"].find({
         "phone": phone_clean,
         "type": {"$in": [
             "GESTION_LOG", "STATUS_CHANGE", "HUMAN_NOTE", 
-            "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD",
+            "CLICK_PHONE_LEAD", "CLICK_PHONE_OWNER",
             "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
             "SEND_WA_OWNER", "SEND_EMAIL_OWNER",
-            "ASSIGNMENT", "assignment", "ALERT_SENT", "alert_sent", 
-            "MANUAL_ENTRY", "msg_out"
+            "ALERT_SENT", "alert_sent", "msg_out"
         ]} 
     }).sort("timestamp", -1)
     
     formatted_new_history = []
     for evt in new_events_cursor:
         meta = evt.get("meta", {})
-        # Distinción de tipo para UI
+        # Distincion de tipo para UI y filtro de ruido
         evt_type = evt.get("type")
+        if evt_type in ["CLICK_WHATSAPP_LEAD", "ASSIGNMENT", "assignment", "MANUAL_ENTRY", "CLICK_WHATSAPP_OWNER"]:
+            continue
+            
         display_type = "system" if evt_type == "STATUS_CHANGE" else "user"
         
         ts_obj = evt["timestamp"]
@@ -539,7 +502,7 @@ def get_lead_detail_data(phone, property_code=None):
         # ETIQUETAS DINÁMICAS PARA EL HISTORIAL (Mejorado para evitar "Evento CRM")
         type_labels = {
             "CLICK_PHONE_LEAD": "Llamada Iniciada",
-            "CLICK_WHATSAPP_LEAD": "WhatsApp Iniciado",
+            "CLICK_PHONE_OWNER": "Llamada Iniciada (Prop.)",
             "SEND_WA_LEAD": "WhatsApp Enviado",
             "SEND_EMAIL_LEAD": "Email Enviado",
             "SEND_WA_OWNER": "WhatsApp Enviado (Prop.)",

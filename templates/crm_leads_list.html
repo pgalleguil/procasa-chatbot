@@ -1299,6 +1299,21 @@
 
             });
 
+            // --- AUTO REFRESH AL VOLVER A LA PESTAÑA ---
+            let hiddenTimestamp = null;
+            document.addEventListener("visibilitychange", () => {
+                if (document.hidden) {
+                    hiddenTimestamp = Date.now();
+                } else if (hiddenTimestamp) {
+                    const timeAway = Date.now() - hiddenTimestamp;
+                    if (timeAway > 2000) { // Si estuvo fuera más de 2 segundos (tiempo suficiente para enviar un WA o mail)
+                        console.log("Pestaña activa nuevamente. Recargando para actualizar estados...");
+                        window.location.reload();
+                    }
+                    hiddenTimestamp = null;
+                }
+            });
+
             // --- GESTOR DE SESIÓN ---
             const SESSION_LIFETIME = 120 * 60 * 1000;
             const WARNING_THRESHOLD = 2 * 60 * 1000;

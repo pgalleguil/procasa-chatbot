@@ -261,6 +261,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         "ASSIGNMENT": "Lead Asignado",
         "GESTION_LOG": "Gestión Registrada",
         "ALERT_SENT": "Alerta Enviada",
+        "MANUAL_ENTRY": "Ingreso Manual",
     }
 
     # 5. PROCESAR LEADS EN MEMORIA
@@ -329,9 +330,9 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             "Click WhatsApp (Lead)", "Llamada Iniciada", "WhatsApp Enviado",
             "Email Enviado", "Click WhatsApp (Prop)", "Llamada Prop. Iniciada",
             "WhatsApp Enviado (Prop)", "Email Enviado (Prop)", "Cambio de Estado",
-            "Gestión Manual", "Acción registrada"
+            "Gestión Manual", "Gestión Registrada"
         }
-        has_management = last_action_text and last_action_text not in ["Sin gestión aún", "Lead Asignado", "Respondido por Bot"]
+        has_management = last_action_text in MANAGEMENT_LABELS
         
         if estado_final == PipelineStage.NEW and has_management:
             estado_final = PipelineStage.CONTACTED

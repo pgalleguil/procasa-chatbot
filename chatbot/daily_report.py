@@ -88,6 +88,22 @@ async def get_critical_leads_summary():
             if minutes_diff < CRITICAL_THRESHOLD_MINUTES:
                 continue
             
+            # --- REFUERZO DE SEGURIDAD (CRM_EVENTS) ---
+            # Si el lead tiene eventos de gestión humana reciente, lo saltamos
+            # Esto evita reportar leads que ya fueron gestionados pero el stage no sincronizó
+            phone_clean = str(lead.get("phone", "")).replace("+", "").strip()
+            recent_management = db["crm_events"].find_one({
+                "phone": {"$regex": f"^{phone_clean}"},
+                "type": {"$in": [
+                    "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
+                    "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", 
+                    "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
+                ]}
+            })
+            
+            if recent_management:
+                continue
+
             exec_name = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
             
             # Normalizar nombres de ejecutivos

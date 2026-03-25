@@ -1,5 +1,6 @@
-# chatbot/crm_service.py
 import logging
+import asyncio
+import re
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from .constants import (
@@ -15,22 +16,28 @@ class CrmService:
     @staticmethod
     def get_lead(phone: str) -> Optional[Dict]:
         """
-        Retrieves a normalized lead object. 
+        Retrieves a normalized lead object using flexible phone matching.
         Ensures 'stage' exists, defaults to NEW if missing.
         """
         db = get_db()
-        doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone})
+        phone_clean = phone.replace("+", "").strip()
+        
+        # Búsqueda flexible (con o sin +)
+        doc = db[COLLECTION_CONVERSATIONS].find_one({
+            "phone": {"$regex": f"^{re.escape(phone_clean)}|^\+{re.escape(phone_clean)}"}
+        })
+        
         if not doc:
             return None
         
         # Normalization on read
         if "stage" not in doc:
-            doc["stage"] = PipelineStage.NEW
+            doc["stage"] = doc.get("pipeline_stage") or PipelineStage.NEW
             
         return doc
 
     @staticmethod
-    def update_stage(phone: str, new_stage: PipelineStage, actor: str = "system", notes: str = None) -> bool:
+    def update_stage(phone: str, new_stage: PipelineStage, actor: str = "system", notes: Optional[str] = None) -> bool:
         """
         Centralizes ALL state changes.
         - Validates transition (soft warning)
@@ -105,10 +112,14 @@ class CrmService:
         }
 
         # 3. Perform DB Update
+        # Usamos el _id del lead encontrado para precisión absoluta
         result = db[COLLECTION_CONVERSATIONS].update_one(
-            {"phone": phone},
+            {"_id": lead["_id"]},
             {
-                "$set": update_data,
+                "$set": {
+                    **update_data,
+                    "pipeline_stage": new_stage # Sync both fields
+                },
                 "$push": {"stage_history": history_entry}
             }
         )

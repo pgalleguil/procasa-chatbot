@@ -48,7 +48,7 @@ def calculate_priority(lead_doc, now=None):
         "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
     ]
     
-    if is_managed or stage not in [PipelineStage.NEW, PipelineStage.CONTACTED]:
+    if is_managed or stage != PipelineStage.NEW:
         return "fulfilled", 0, "DONE"
 
     # Clasificación por tiempo
@@ -137,7 +137,8 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None):
         if event_at: update_data["last_event_at"] = event_at
         if event_type: update_data["last_event_type"] = event_type
         
-        db["leads"].update_one({"phone": phone_clean}, {"$set": update_data})
+        # Use _id for exact matching instead of potentially un-prefixed phone
+        db["leads"].update_one({"_id": lead["_id"]}, {"$set": update_data})
         
     except Exception as e:
         logger.error(f"Error updating lead metrics for {phone}: {e}")

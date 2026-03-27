@@ -66,32 +66,53 @@ async def get_critical_leads_summary():
         if stage != PipelineStage.NEW:
             continue
 
-        # Calcular tiempo desde la creación
-        created_at = lead.get("created_at")
-        if not created_at:
+        # --- DETERMINAR PUNTO DE INICIO PARA SLA ---
+        # Si está asignado, el SLA corre desde la asignación. Si no, desde la creación.
+        start_time = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
+        if not start_time:
             continue
             
         try:
-            if isinstance(created_at, str):
-                dt_created = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            if isinstance(start_time, str):
+                # Manejar formatos ISO con 'Z' o '+HH:MM'
+                dt_start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
             else:
-                dt_created = created_at
+                dt_start = start_time
             
-            # Asegurar timezone
-            if dt_created.tzinfo is None:
-                dt_created = CHILE_TZ.localize(dt_created)
+            # Asegurar que sea aware (Chile/Continental por defecto si no tiene tz)
+            if dt_start.tzinfo is None:
+                dt_start = CHILE_TZ.localize(dt_start)
+            else:
+                dt_start = dt_start.astimezone(CHILE_TZ)
                 
             # Calcular minutos de negocio transcurridos
-            minutes_diff = calculate_business_minutes(dt_created, now_cl)
+            minutes_diff = calculate_business_minutes(dt_start, now_cl)
             
             # Solo reportamos los que están en ESTADO CRÍTICO (> 3 horas hábiles sin atención)
             if minutes_diff < CRITICAL_THRESHOLD_MINUTES:
                 continue
             
-            # --- REFUERZO DE SEGURIDAD (CRM_EVENTS) ---
-            # Si el lead tiene eventos de gestión humana reciente, lo saltamos
-            # Esto evita reportar leads que ya fueron gestionados pero el stage no sincronizó
+            # --- REFUERZO DE SEGURIDAD (CRM_EVENTS / STATUS) ---
+            # Si el lead tiene eventos de gestión humana reciente o una acción manual reciente, lo saltamos
             phone_clean = str(lead.get("phone", "")).replace("+", "").strip()
+            
+            # Excluir si hubo una actualización manual o cambio de estado muy reciente (ej: reasignación)
+            # El dashboard dice "Acción registrada Hace 28m", esto se mapea a last_event_at
+            last_event_at = lead.get("last_event_at")
+            if last_event_at:
+                if isinstance(last_event_at, str):
+                    dt_event = datetime.fromisoformat(last_event_at.replace('Z', '+00:00'))
+                else: 
+                    dt_event = last_event_at
+                
+                # Sincronizar timezone
+                if dt_event.tzinfo is None: dt_event = CHILE_TZ.localize(dt_event)
+                
+                # Si hubo CUALQUIER evento en los últimos 30 min, no es "crítico" para el reporte
+                if (now_cl - dt_event.astimezone(CHILE_TZ)).total_seconds() < 1800:
+                    continue
+
+            # Búsqueda en eventos (Mismo criterio que antes)
             recent_management = db["crm_events"].find_one({
                 "phone": {"$regex": f"^{phone_clean}"},
                 "type": {"$in": [
@@ -187,14 +208,19 @@ async def send_daily_sla_report(group_id: str):
         logger.error(f"[DAILY_REPORT] Error enviando el reporte: {e}", exc_info=True)
         return False
 
-async def check_and_run_daily_report():
+async def check_and_run_daily_report(force: bool = False):
     """Lógica de scheduler que verifica si toca enviar el reporte hoy."""
     db = get_db()
     now_cl = datetime.now(CHILE_TZ)
     
-    # Solo ejecutar en la ventana de las 9:30 AM
-    if now_cl.hour != 9 or now_cl.minute < 30:
+    # 1. Filtro de Días de Semana (Lunes a Viernes)
+    if not force and now_cl.weekday() >= 5: # 5=Sábado, 6=Domingo
         return
+
+    # 2. Filtro de Horario (No antes de las 9:30 AM)
+    if not force:
+        if now_cl.hour < 9 or (now_cl.hour == 9 and now_cl.minute < 30):
+            return
 
     today_str = now_cl.strftime("%Y-%m-%d")
     

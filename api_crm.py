@@ -194,18 +194,27 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     
     kpi_counts = {"total": total_count, "nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0}
     
-    UNASSIGNED_VALUES = [None, "", "Sin Asignar", "No asignado", "No Asignado", "Sin asignar"]
-    assigned_filter = {"ejecutivo_asignado": {"$nin": UNASSIGNED_VALUES, "$exists": True}}
-    
-    kpi_counts["nuevo"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": PipelineStage.NEW}, assigned_filter]})
+    # 1. SIN ATENDER (Etapa NEW) - Leads que entran y esperan atención inicial.
+    kpi_counts["nuevo"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}]})
 
-    kpi_counts["visita"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE]}}]})
-    kpi_counts["cerrado"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST]}}]})
+    # 2. EN GESTIÓN (CONTACTED, INTERESTED, OFFER, NEGOTIATION) - Leads que ya han tenido interacción humana.
+    kpi_counts["gestion"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
+        PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER, PipelineStage.NEGOTIATION,
+        "gestion", "contacted"
+    ]}}]})
+
+    # 3. VISITAS (Agendadas o Realizadas)
+    kpi_counts["visita"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
+        PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE, "visita"
+    ]}}]})
+
+    # 4. CERRADOS (Ganados o Perdidos)
+    kpi_counts["cerrado"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
+        PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST, "cerrado"
+    ]}}]})
     
-    # Total Global de la búsqueda (sin filtrar por estado específico) para la coherencia de las tarjetas
+    # Coherencia del total global para la búsqueda
     global_search_total = db["leads"].count_documents(base_kpi_query)
-    kpi_counts["gestion"] = global_search_total - (kpi_counts["nuevo"] + kpi_counts["visita"] + kpi_counts["cerrado"])
-    # Ajustamos el total de KPIs si queremos mostrar el total de la búsqueda global
     kpi_counts["total"] = global_search_total
 
     # 3. TRAER LEADS PAGINADOS DESDE MONGO
@@ -334,8 +343,9 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         }
         has_management = last_action_text in MANAGEMENT_LABELS
         
-        if estado_final == PipelineStage.NEW and has_management:
-            estado_final = PipelineStage.CONTACTED
+        # Eliminada promocion visual para mantener consistencia estricta con los contadores de las tarjetas (KPIs)
+        # if estado_final == PipelineStage.NEW and has_management:
+        #     estado_final = PipelineStage.CONTACTED
 
         
         # Identificar ejecutivo y timestamp real para visualización

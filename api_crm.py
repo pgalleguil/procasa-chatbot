@@ -177,38 +177,50 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     # 2. SEPARATE KPI COUNTS (Globales para la búsqueda actual pero sin filtro de estado)
     base_kpi_query = query.copy() # Query que incluye ejecutivo y término de búsqueda
     
-    # query_with_state: Query final que incluye el filtro de estado si existe
+    # --- FILTRO DE ESTADO ---
     query_with_state = query.copy()
+    UNASSIGNED_VALUES = [None, "", "Sin Asignar", "No asignado", "No Asignado", "Sin asignar"]
+    
     if filtro_estado and filtro_estado != "Todos":
-        # Mapeo invertido para buscar por el valor del Enum o string legacy en la DB
-        state_db_value = filtro_estado
-        if filtro_estado == "nuevo": state_db_value = PipelineStage.NEW
-        elif filtro_estado == "visita": state_db_value = PipelineStage.VISIT_SCHEDULED
-        elif filtro_estado == "gestion": state_db_value = PipelineStage.CONTACTED
-        elif filtro_estado == "cerrado": state_db_value = PipelineStage.CLOSED_WON
-        
-        query_with_state["pipeline_stage"] = state_db_value
+        if filtro_estado == "UNASSIGNED":
+            # Caso especial: Sin Asignar (Nuevos sin ejecutivo)
+            query_with_state["pipeline_stage"] = {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}
+            query_with_state["$or"] = [{"ejecutivo_asignado": {"$in": UNASSIGNED_VALUES}}, {"ejecutivo_asignado": {"$exists": False}}]
+        else:
+            # Mapeo invertido para buscar por el valor del Enum o string legacy en la DB
+            state_db_value = filtro_estado
+            if filtro_estado == "nuevo": state_db_value = PipelineStage.NEW
+            elif filtro_estado == "visita": state_db_value = PipelineStage.VISIT_SCHEDULED
+            elif filtro_estado == "gestion": state_db_value = PipelineStage.CONTACTED
+            elif filtro_estado == "cerrado": state_db_value = PipelineStage.CLOSED_WON
+            query_with_state["pipeline_stage"] = state_db_value
 
     # 1. CONTAR TOTAL PARA PAGINACIÓN (Basado en el filtro de estado)
     total_count = db["leads"].count_documents(query_with_state)
     
-    kpi_counts = {"total": total_count, "nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0}
+    kpi_counts = {"total": total_count, "nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0, "sin_asignar": 0}
     
-    # 1. SIN ATENDER (Etapa NEW) - Leads que entran y esperan atención inicial.
-    kpi_counts["nuevo"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}]})
+    assigned_filter = {"ejecutivo_asignado": {"$nin": UNASSIGNED_VALUES, "$exists": True}}
+    unassigned_filter = {"$or": [{"ejecutivo_asignado": {"$in": UNASSIGNED_VALUES}}, {"ejecutivo_asignado": {"$exists": False}}]}
+    
+    # 1. SIN ASIGNAR (Nuevo y sin ejecutivo)
+    kpi_counts["sin_asignar"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, unassigned_filter]})
 
-    # 2. EN GESTIÓN (CONTACTED, INTERESTED, OFFER, NEGOTIATION) - Leads que ya han tenido interacción humana.
+    # 2. SIN ATENDER (Etapa NEW y ASIGNADO)
+    kpi_counts["nuevo"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, assigned_filter]})
+
+    # 3. EN GESTIÓN (CONTACTED, INTERESTED, OFFER, NEGOTIATION)
     kpi_counts["gestion"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
         PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER, PipelineStage.NEGOTIATION,
         "gestion", "contacted"
     ]}}]})
 
-    # 3. VISITAS (Agendadas o Realizadas)
+    # 4. VISITAS (Agendadas o Realizadas)
     kpi_counts["visita"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
         PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE, "visita"
     ]}}]})
 
-    # 4. CERRADOS (Ganados o Perdidos)
+    # 5. CERRADOS (Ganados o Perdidos)
     kpi_counts["cerrado"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
         PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST, "cerrado"
     ]}}]})
@@ -367,7 +379,8 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         # 5. SLA / TIEMPO DE RESPUESTA (Dinámico para tiempo real)
         sla_status = lead.get("sla_status", "good")
         
-        if estado_final == PipelineStage.NEW:
+        # Un lead también se considera gestionado (fulfilled) si tiene eventos de gestión recientes
+        if estado_final == PipelineStage.NEW and not has_management:
             # Calcular SLA en tiempo real porque el tiempo sigue corriendo
             if last_ts_obj:
                 now = datetime.now(CHILE_TZ)

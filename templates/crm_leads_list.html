@@ -924,8 +924,17 @@
             </div>
 
             <!-- KPIs: -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-3">
+            <div class="row g-3 mb-4 row-cols-1 row-cols-md-5">
+                <div class="col">
+                    <div class="summary-card" style="border-bottom: 3px solid var(--led-gray);">
+                        <div>
+                            <div class="summary-value text-secondary" id="kpi-sin-asignar" data-target="{{ kpis.sin_asignar }}">0</div>
+                            <div class="summary-label">Sin Asignar</div>
+                        </div>
+                        <i class="fa-solid fa-user-slash fa-2x text-secondary opacity-25"></i>
+                    </div>
+                </div>
+                <div class="col">
                     <div class="summary-card" style="border-bottom: 3px solid var(--led-red);">
                         <div>
                             <div class="summary-value text-danger" id="kpi-nuevo" data-target="{{ kpis.nuevo }}">0</div>
@@ -934,7 +943,7 @@
                         <i class="fa-solid fa-bell fa-2x text-danger opacity-25"></i>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col">
                     <div class="summary-card" style="border-bottom: 3px solid var(--led-yellow);">
                         <div>
                             <div class="summary-value text-warning" id="kpi-gestion" data-target="{{ kpis.gestion }}">0
@@ -944,7 +953,7 @@
                         <i class="fa-solid fa-comments fa-2x text-warning opacity-25"></i>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col">
                     <div class="summary-card" style="border-bottom: 3px solid var(--led-green);">
                         <div>
                             <div class="summary-value text-success" id="kpi-visita" data-target="{{ kpis.visita }}">0
@@ -954,7 +963,7 @@
                         <i class="fa-solid fa-calendar-check fa-2x text-success opacity-25"></i>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col">
                     <div class="summary-card" style="border-bottom: 3px solid var(--led-gray);">
                         <!-- Estilo Gris para Total -->
                         <div>
@@ -978,6 +987,7 @@
                 <select class="form-select-custom" name="estado" onchange="this.form.submit()">
                     <option value="" {% if not request.query_params.get('estado') %}selected{% endif %}>Todos los
                         Estados</option>
+                    <option value="UNASSIGNED" {% if request.query_params.get('estado')=='UNASSIGNED' %}selected{% endif %}>⚪ Sin Asignar (Pool)</option>
                     <option value="NEW" {% if request.query_params.get('estado')=='NEW' %}selected{% endif %}>🔴 Sin
                         Atender</option>
                     <option value="CONTACTED" {% if request.query_params.get('estado')=='CONTACTED' %}selected{% endif

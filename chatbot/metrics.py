@@ -137,6 +137,24 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None):
         if event_at: update_data["last_event_at"] = event_at
         if event_type: update_data["last_event_type"] = event_type
         
+        # --- AUTO-PROMOTION ---
+        # Si el evento es de gestión y el lead es nuevo, lo promovemos automáticamente a 'En Gestión'
+        is_managed = event_type in [
+            "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
+            "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "CLICK_EMAIL_LEAD",
+            "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
+        ]
+        
+        current_stage = lead.get("pipeline_stage") or lead.get("stage") or PipelineStage.NEW
+        if is_managed and (current_stage == PipelineStage.NEW or str(current_stage).lower() in ["new", "nuevo"]):
+            update_data["pipeline_stage"] = PipelineStage.CONTACTED
+            update_data["stage"] = "gestion"
+            # Registrar cambio de estado para el historial
+            try:
+                from .storage import log_event
+                log_event(phone, "STATUS_CHANGE", "system", {"from": current_stage, "to": PipelineStage.CONTACTED, "reason": "auto_promotion_on_gestion"})
+            except: pass
+
         # Use _id for exact matching instead of potentially un-prefixed phone
         db["leads"].update_one({"_id": lead["_id"]}, {"$set": update_data})
         

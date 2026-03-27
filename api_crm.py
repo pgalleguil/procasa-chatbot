@@ -189,7 +189,10 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         else:
             # Mapeo invertido para buscar por el valor del Enum o string legacy en la DB
             state_db_value = filtro_estado
-            if filtro_estado == "nuevo": state_db_value = PipelineStage.NEW
+            if filtro_estado in ["nuevo", "NEW"]: 
+                state_db_value = PipelineStage.NEW
+                # IMPORTANTE: Para el listado "Sin Atender", también excluimos los no asignados
+                query_with_state["ejecutivo_asignado"] = {"$nin": UNASSIGNED_VALUES, "$exists": True}
             elif filtro_estado == "visita": state_db_value = PipelineStage.VISIT_SCHEDULED
             elif filtro_estado == "gestion": state_db_value = PipelineStage.CONTACTED
             elif filtro_estado == "cerrado": state_db_value = PipelineStage.CLOSED_WON

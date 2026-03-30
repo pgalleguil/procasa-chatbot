@@ -78,7 +78,11 @@ async def send_alert_once(
         logger.info(f"[ALERT] SKIPPED LOW VALUE MSG: {msg_lower}")
         return
 
-    if not should_send_alert(phone, lead_type, window_minutes):
+    # EXCEPCIÓN: Si es un escalado urgente (ej: el cliente reclama que no lo llaman), 
+    # saltamos el bloqueo de tiempo para asegurar que el ejecutivo se entere.
+    is_urgent = lead_type == "EscaladoUrgente"
+    
+    if not is_urgent and not should_send_alert(phone, lead_type, window_minutes):
         logger.info(f"[ALERT] SKIPPED DUPLICATE ALERT {lead_type} for {phone} (Wait {window_minutes}m)")
         return
 

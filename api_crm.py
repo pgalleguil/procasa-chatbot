@@ -384,24 +384,33 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         
         # Un lead también se considera gestionado (fulfilled) si tiene eventos de gestión recientes
         if estado_final == PipelineStage.NEW and not has_management:
-            # Calcular SLA en tiempo real porque el tiempo sigue corriendo
-            if last_ts_obj:
-                now = datetime.now(CHILE_TZ)
-                if last_ts_obj.tzinfo is None:
-                    try:
-                        last_ts_obj = CHILE_TZ.localize(last_ts_obj)
-                    except ValueError:
-                        pass # Si ya está offset-aware pero tzinfo no es None (raro)
-                
-                delta = now - last_ts_obj
-                sla_hours = delta.total_seconds() / 3600.0
+            # Calcular SLA en tiempo real midiendo desde la ASIGNACIÓN (Sincronizado con Reporte SLA)
+            start_time = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
+            if start_time:
+                now_cl = datetime.now(CHILE_TZ)
+                try:
+                    if isinstance(start_time, str):
+                        dt_start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    else:
+                        dt_start = start_time
+                    if dt_start.tzinfo is None:
+                        dt_start = CHILE_TZ.localize(dt_start)
+                    else:
+                        dt_start = dt_start.astimezone(CHILE_TZ)
+                        
+                    # Contamos minutos hábiles para ser justos con los fines de semana/noches
+                    mins = calculate_business_minutes(dt_start, now_cl)
+                    sla_hours = mins / 60.0
 
-                if sla_hours <= 1.5:
-                    sla_status = "good"
-                elif sla_hours <= 2.5:
-                    sla_status = "near_critical"
-                else:
-                    sla_status = "critical"
+                    if sla_hours <= 1.5:
+                        sla_status = "good"
+                    elif sla_hours < 3.0: # 3.0 horas hábiles es el threshold del reporte crítico
+                        sla_status = "near_critical"
+                    else:
+                        sla_status = "critical"
+                except Exception as eval_e:
+                    logger.error(f"Error evaluando metricas de SLA en tarjeta: {eval_e}")
+                    pass
         else:
             # Override visual para leads que ya están en gestión
             sla_status = "fulfilled"

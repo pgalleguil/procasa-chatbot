@@ -489,8 +489,8 @@ async def view_manual_lead_entry(request: Request):
 async def api_check_duplicate(request: Request, phone: str = Query(None), property_code: str = Query(...), email: str = Query(None)):
     # Seguridad básica
     await get_current_user(request)
-    exists, executive = check_lead_duplicate(phone, property_code, email)
-    return {"exists": exists, "assigned_to": executive}
+    status, executive = check_lead_duplicate(phone, property_code, email)
+    return {"status": status, "exists": status != "not_found", "assigned_to": executive}
 
 @app.post("/api/leads/manual")
 async def api_create_manual_lead(request: Request):
@@ -556,16 +556,44 @@ async def api_crm_log_action(request: Request):
         data = await request.json()
         phone = data.get("phone")
         payload = data.get("data", {})
+        event_type = payload.get("type")
         
         # INYECTAR HORA DE CHILE EN EL METADATA
         now_cl = datetime.now(CHILE_TZ)
         if "meta" not in payload:
             payload["meta"] = {}
         payload["meta"]["server_time_cl"] = now_cl.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 1) Auto-Promoción de estado si estaba "Sin Atender"
+        from chatbot.storage import get_db
+        db = get_db()
+        phone_clean = str(phone).replace("+", "").strip()
+        lead = db["leads"].find_one({"phone": {"$regex": f"^{phone_clean}"}})
+        
+        if lead:
+            current_stage = lead.get("stage") or lead.get("pipeline_stage")
+            from chatbot.constants import PipelineStage
+            if str(current_stage).lower() in ["nuevo", "new"] or current_stage == PipelineStage.NEW:
+                MANAGEMENT_EVENTS = [
+                    "SEND_WA_OWNER", "CLICK_WHATSAPP_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER",
+                    "CLICK_WHATSAPP_LEAD", "CLICK_PHONE_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD"
+                ]
+                if event_type in MANAGEMENT_EVENTS:
+                    from chatbot.crm_service import CrmService
+                    try:
+                        CrmService.update_stage(
+                            phone_clean,
+                            PipelineStage.CONTACTED,
+                            actor="agent",
+                            notes=f"Auto-promoción por acción rapida: {event_type}"
+                        )
+                    except Exception as prom_err:
+                        logger.error(f"Error auto-promoviendo lead tras gestión: {prom_err}")
 
+        # 2) Guardar el evento
         log_crm_event(
             phone=phone, 
-            event_type=payload.get("type"), 
+            event_type=event_type, 
             meta_data=payload.get("meta")
         )
         return {"status": "ok"}
@@ -1508,8 +1536,8 @@ async def daily_report_loop():
             if "daily_report" in background_tasks_status:
                 background_tasks_status["daily_report"]["status"] = f"error: {str(e)}"
         
-        # Revisar cada 15 minutos (suficiente para no perder la ventana de 9:30 AM)
-        await asyncio.sleep(900)
+        # Revisar cada 5 minutos para asegurar que se envíe casi exactamente a las 9:30 AM
+        await asyncio.sleep(300)
 
 if __name__ == "__main__":
     import pathlib

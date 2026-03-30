@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import pytz
 from datetime import datetime, timedelta
 from .storage import get_db
 from .constants import CHILE_TZ, PipelineStage, UNASSIGNED_LABEL
@@ -112,14 +113,24 @@ async def get_critical_leads_summary():
                 if (now_cl - dt_event.astimezone(CHILE_TZ)).total_seconds() < 1800:
                     continue
 
-            # Búsqueda en eventos (Mismo criterio que antes)
+            # Búsqueda en eventos (Solo eventos creados DESPUÉS de la entrada del lead)
+            dt_start_utc_naive = dt_start.astimezone(pytz.utc).replace(tzinfo=None)
             recent_management = db["crm_events"].find_one({
                 "phone": {"$regex": f"^{phone_clean}"},
-                "type": {"$in": [
-                    "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
-                    "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", 
-                    "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
-                ]}
+                "timestamp": {"$gte": dt_start_utc_naive},
+                "$or": [
+                    {"type": {"$in": [
+                        "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
+                        "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", 
+                        "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
+                    ]}},
+                    {"type": "GESTION_LOG", "meta_data.action": {"$in": [
+                        "Click WhatsApp (Lead)", "Llamada Iniciada", "WhatsApp Enviado",
+                        "Email Enviado", "Click WhatsApp (Prop)", "Llamada Prop. Iniciada",
+                        "WhatsApp Enviado (Prop)", "Email Enviado (Prop)", "Cambio de Estado",
+                        "Gestión Manual", "Gestión Registrada"
+                    ]}}
+                ]
             })
             
             if recent_management:
@@ -146,8 +157,11 @@ async def get_critical_leads_summary():
 
     # Filtrar ejecutivos sin leads críticos y ordenar por cantidad descendente
     sorted_summary = []
+    
+    # Exclusión explícita solicitada: Maria Paz no debe recibir esta alerta
     for exec_name, data in summary.items():
-        if data["count"] > 0 and exec_name != UNASSIGNED_LABEL:
+        is_excluded = any(x in exec_name for x in ["Paz Galleguillos", "Raquel Cheneaux"])
+        if data["count"] > 0 and exec_name != UNASSIGNED_LABEL and not is_excluded:
             sorted_summary.append({
                 "name": exec_name,
                 "count": data["count"],

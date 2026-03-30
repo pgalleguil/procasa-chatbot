@@ -392,7 +392,7 @@
         let lastVerifiedData = { phone: '', email: '', property_code: '' };
 
         // AUTO-TRIM Y CAPITALIZAR
-        ['nombre', 'email', 'property_code'].forEach(id => {
+        ['nombre', 'email', 'property_code', 'phone'].forEach(id => {
             const el = document.getElementById(id);
             if (!el) return;
             el.addEventListener('blur', function () {
@@ -401,6 +401,17 @@
 
                 if (id === 'nombre') {
                     this.value = this.value.toLowerCase().split(' ').map(s => s.charAt(0).toUpperCase() + s.substring(1)).join(' ');
+                }
+                
+                if (id === 'phone') {
+                    // Limpiar todo lo que no sea dígito
+                    let digits = this.value.replace(/\D/g, "");
+                    // Si tiene más de 9 dígitos (ej: 569...), nos quedamos con los últimos 9
+                    if (digits.length >= 9) {
+                        this.value = digits.slice(-9);
+                    } else {
+                        this.value = digits;
+                    }
                 }
             });
         });
@@ -440,17 +451,26 @@
                 const response = await fetch(url);
                 const data = await response.json();
 
-                if (data.exists) {
+                if (data.status === 'duplicate_same_property') {
                     statusDiv.innerHTML = `<div class="status-badge" style="display: flex; background: rgba(239, 68, 68, 0.1); color: var(--danger-color); border: 1px solid var(--danger-color);">
                         <i class="fa-solid fa-triangle-exclamation"></i>
-                        ALERTA: Este lead ya existe para esta propiedad. Asignado a: ${data.assigned_to}
+                        BLOQUEADO: Este contacto ya tiene un lead para esta propiedad asignado a: ${data.assigned_to}
                     </div>`;
-                    showToast("Lead duplicado detectado", "error");
+                    showToast("Lead duplicado bloqueante", "error");
                     document.getElementById('btnSubmit').disabled = true;
+                } else if (data.status === 'existing_other_property') {
+                    statusDiv.innerHTML = `<div class="status-badge" style="display: flex; background: rgba(245, 158, 11, 0.1); color: var(--warning-color); border: 1px solid var(--warning-color);">
+                        <i class="fa-solid fa-circle-info"></i>
+                        AVISO: El contacto ya existe en el CRM (visto por ${data.assigned_to}), pero es una propiedad nueva. Puedes continuar.
+                    </div>`;
+                    showToast("Contacto existente (Propiedad Nueva)", "warning");
+                    isVerified = true;
+                    lastVerifiedData = { phone: phone, email: email, property_code: propertyCode };
+                    document.getElementById('btnSubmit').disabled = false;
                 } else {
                     statusDiv.innerHTML = `<div class="status-badge" style="display: flex; background: rgba(34, 197, 94, 0.1); color: var(--success-color); border: 1px solid var(--success-color);">
                         <i class="fa-solid fa-check-circle"></i>
-                        Disponible: No hay leads previos para esta combinación.
+                        Disponible: No hay registros previos para este contacto.
                     </div>`;
                     showToast("Validación exitosa", "success");
                     isVerified = true;

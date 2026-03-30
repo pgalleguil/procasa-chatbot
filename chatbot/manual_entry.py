@@ -9,42 +9,36 @@ from .processing_service import LeadProcessingService
 
 logger = logging.getLogger(__name__)
 
-def check_lead_duplicate(phone: Optional[str], property_code: str, email: Optional[str] = None) -> Tuple[bool, Optional[str]]:
+def check_lead_duplicate(phone: Optional[str], property_code: str, email: Optional[str] = None) -> Tuple[str, Optional[str]]:
     """
-    Checks if a lead with the same phone (or email) and property code already exists.
-    Returns (exists, executive_name).
+    Verifica si existe un lead por teléfono/email y propiedad.
+    Retorna (status, executive_name). 
+    Status: 'not_found', 'duplicate_same_property', 'existing_other_property'
     """
     db = get_db()
     property_code = str(property_code).strip()
     
-    query_filters = []
-    
+    # 1. Normalización de teléfono a los últimos 9 dígitos (Standard Chile)
+    phone_last_9 = None
     if phone:
-        # Limpiamos absolutamente todo excepto los dígitos
-        import re
-        phone_digits = re.sub(r"\D", "", str(phone))
-        
-        if phone_digits:
-            # Si el usuario ingresó 9 dígitos (ej: 990152481), buscamos que coincida con el final
-            # Esto permite que "990152481" coincida con "56990152481"
-            if len(phone_digits) == 9:
-                query_filters.append({"phone": {"$regex": phone_digits + "$"}})
-            else:
-                # Si ingresó más (ej: 569...), buscamos coincidencia exacta de los dígitos
-                query_filters.append({"phone": {"$regex": phone_digits}})
-    
+        digits = "".join(filter(str.isdigit, str(phone)))
+        if len(digits) >= 9:
+            phone_last_9 = digits[-9:]
+
+    # 2. Búsqueda por Email (exacto) o Teléfono (últimos 9 dígitos)
+    query_filters = []
+    if phone_last_9:
+        query_filters.append({"phone": {"$regex": phone_last_9 + "$"}})
     if email:
         email_clean = str(email).strip().lower()
         if email_clean:
             query_filters.append({"prospecto.email": email_clean})
 
     if not query_filters:
-        return False, None
+        return "not_found", None
 
-    # PASO 1: Coincidencia por teléfono/email Y propiedad
-    # Corregimos el bug: Antes bloqueaba si el teléfono existía en CUALQUIER lead.
-    # Ahora permitimos que un mismo teléfono se interese en diferentes propiedades.
-    query = {
+    # PASO 1: Buscar coincidencia TOTAL (Mismo contacto Y Misma propiedad)
+    dup_query = {
         "$or": query_filters,
         "$and": [
             {
@@ -58,13 +52,19 @@ def check_lead_duplicate(phone: Optional[str], property_code: str, email: Option
         ]
     }
     
-    existing = db["leads"].find_one(query)
-    if existing:
+    existing_same = db["leads"].find_one(dup_query)
+    if existing_same:
         from .constants import UNASSIGNED_LABEL
-        exec_name = existing.get("ejecutivo_asignado") or existing.get("prospecto", {}).get("ejecutivo") or UNASSIGNED_LABEL
-        return True, exec_name
+        exec_name = existing_same.get("ejecutivo_asignado") or existing_same.get("prospecto", {}).get("ejecutivo") or UNASSIGNED_LABEL
+        return "duplicate_same_property", exec_name
     
-    return False, None
+    # PASO 2: Buscar coincidencia PARCIAL (Mismo contacto pero OTRA propiedad)
+    existing_other = db["leads"].find_one({"$or": query_filters})
+    if existing_other:
+        exec_name = existing_other.get("ejecutivo_asignado") or "Desconocido"
+        return "existing_other_property", exec_name
+
+    return "not_found", None
 
 def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -97,8 +97,8 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
         return {"status": "error", "message": "Debe proporcionar al menos un Teléfono o un Email"}
 
     # 1. Final duplicate check (phone or email + property_code)
-    is_dup, executive = check_lead_duplicate(phone, property_code, email)
-    if is_dup:
+    status, executive = check_lead_duplicate(phone, property_code, email)
+    if status == "duplicate_same_property":
         return {"status": "error", "message": f"Este contacto ya existe para esta propiedad y está asignado a {executive}"}
 
     # 2. Assignment Logic
@@ -201,17 +201,21 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
                     ]
                 }
             
-            # Keep existing executive if they had one
+            # Lógica de ejecutivo: Priorizamos SIEMPRE mantener al ejecutivo que ya lo está atendiendo.
             current_exec = existing_lead.get("ejecutivo_asignado") or existing_lead.get("prospecto", {}).get("ejecutivo")
             from .constants import UNASSIGNED_LABEL
             if current_exec and current_exec not in [UNASSIGNED_LABEL, "No asignado"]:
+                # Respetamos que ya tiene un ejecutivo (ej: Raquel) aunque la propiedad sea de otro (ej: Erika)
                 exec_name = current_exec
                 from .lead_router import get_executive_phone
                 exec_phone = get_executive_phone(exec_name)
+                logger.info(f"[MANUAL] Lead existente. Manteniendo ejecutivo actual: {exec_name}")
             else:
-                 update_payload["$set"]["ejecutivo_asignado"] = exec_name
-                 update_payload["$set"]["prospecto.ejecutivo"] = exec_name
-                 update_payload["$set"]["lifecycle.assigned_at"] = assigned_at.isoformat()
+                # Si no tiene ejecutivo o está desasignado, le damos el de la propiedad
+                update_payload["$set"]["ejecutivo_asignado"] = exec_name
+                update_payload["$set"]["prospecto.ejecutivo"] = exec_name
+                update_payload["$set"]["lifecycle.assigned_at"] = assigned_at.isoformat()
+                logger.info(f"[MANUAL] Lead sin ejecutivo previo. Asignando a dueño de ficha: {exec_name}")
 
             db["leads"].update_one({"_id": existing_lead["_id"]}, update_payload)
             LeadProcessingService.process_lead(existing_lead["_id"])

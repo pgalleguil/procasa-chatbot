@@ -182,9 +182,10 @@ async def send_daily_sla_report(group_id: str):
         sorted_summary = await get_critical_leads_summary()
         
         if not sorted_summary:
-            # Si no hay pendientes críticos, NO enviamos nada (tal como pidió el usuario)
-            logger.info("[DAILY_REPORT] Sin leads críticos. No se enviará reporte hoy.")
-            return True # Retornamos True para marcar que la revisión del día se completó
+            # Si no hay pendientes críticos, NO enviamos nada, pero retornamos False 
+            # para seguir monitoreando durante el día hasta que aparezca uno y poder avisar.
+            logger.info("[DAILY_REPORT] Sin leads críticos por ahora. Se reintentará más tarde...")
+            return False
 
         # --- CONSTRUIR MENSAJE ---
         message_lines = [
@@ -215,7 +216,13 @@ async def send_daily_sla_report(group_id: str):
         ])
 
         message = "\n".join(message_lines)
+        logger.info(f"[DAILY_REPORT] Enviando reporte con {sum(s['count'] for s in sorted_summary)} casos críticos a {group_id}")
         sent = await send_whatsapp_message(group_id, message)
+        if sent:
+            logger.info("[DAILY_REPORT] Reporte diario enviado correctamente.")
+        else:
+            logger.error("[DAILY_REPORT] Fallo al enviar el mensaje por WhatsApp.")
+            
         return sent
 
     except Exception as e:
@@ -243,12 +250,16 @@ async def check_and_run_daily_report(force: bool = False):
     if state and state.get("last_run") == today_str:
         return
 
+    # Fallback al ID de grupo sacado del .env en caso que no esté seteado en Render
     group_id = getattr(Config, "DAILY_REPORT_GROUP_ID", None)
     if not group_id:
-        return
+        group_id = "56990152481-1598919271@g.us"
+        logger.warning(f"[DAILY_REPORT] Configuración DAILY_REPORT_GROUP_ID ausente. Usando fallback fijo: {group_id}")
 
+    logger.info(f"[DAILY_REPORT] Condiciones cumplidas. Ejecutando evaluación para reporte diario ({today_str})...")
     success = await send_daily_sla_report(group_id)
     if success:
+        # Solo se marca como "enviado hoy" si retornó True (es decir, SI habían leads Y se enviaron correctamente por WS)
         db["system_state"].update_one(
             {"type": "daily_report"},
             {"$set": {"last_run": today_str}},

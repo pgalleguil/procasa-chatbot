@@ -240,7 +240,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 f"🚨 *Propiedad No Encontrada*\n\n"
                 f"El cliente {prospecto_actual.get('nombre', 'Desconocido')} ({phone}) "
                 f"envió un link de {plataforma_origen or 'Portal'} con código `{codigo_externo}`, "
-                f"pero no existe en `universo_obelix`.\n\n"
+                f"pero no existe en `universo_cartera`.\n\n"
                 f"El lead quedó *No Asignado*. Favor actualizar códigos o ingresar propiedad."
             )
             # Usamos send_alert_once para notificar al admin

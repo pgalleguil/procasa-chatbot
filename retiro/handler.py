@@ -251,7 +251,7 @@ async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
         """)
 
     # Datos del ejecutivo
-    prop_data = db["universo_obelix"].find_one({"codigo": codigo_norm})
+    prop_data = db[Config.COLLECTION_NAME].find_one({"codigo": codigo_norm})
     email_ejecutivo = prop_data.get("email_ejecutivo") if prop_data else None
 
     # Hora local Chile para guardar en DB
@@ -278,7 +278,7 @@ async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
         upsert=True
     )
 
-    db["universo_obelix"].update_one(
+    db[Config.COLLECTION_NAME].update_one(
         {"codigo": codigo_norm},
         {"$set": { "disponible": False, "fecha_no_disponible": datetime.utcnow(), "motivo": "retiro_propietario" }}
     )
@@ -325,7 +325,7 @@ async def handle_solicitud_contacto(email: str, codigo: str, ip: str):
     client = MongoClient(Config.MONGO_URI)
     db = client[Config.DB_NAME]
     
-    prop_data = db["universo_obelix"].find_one({"codigo": codigo_norm})
+    prop_data = db[Config.COLLECTION_NAME].find_one({"codigo": codigo_norm})
     email_ejecutivo = prop_data.get("email_ejecutivo") if prop_data else None
 
     # Hora local Chile para guardar en DB

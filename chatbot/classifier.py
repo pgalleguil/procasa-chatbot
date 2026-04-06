@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def es_propietario(phone: str) -> tuple[bool, str]:
     """
     Retorna (es_propietario: bool, nombre_encontrado: str o None)
-    Busca en colección universo_obelix → campo movil_propietario
+    Busca en colección universo_cartera → campo movil_propietario
     """
     # Conexión Mongo dentro de la función para manejo de recursos
     mongo_client = None

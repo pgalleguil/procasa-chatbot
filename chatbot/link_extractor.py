@@ -5,11 +5,11 @@ from .storage import get_db
 from config import Config
 
 def extraer_codigo_mercadolibre(url: str) -> Optional[str]:
-    url = url.upper().replace("_", "-")
-    match = re.search(r"MLC[-_]?(\d+)", url)
+    # Normalizar para encontrar el código MLC
+    match = re.search(r"MLC[-_]?(\d+)", url, re.IGNORECASE)
     if match:
         codigo = f"MLC{match.group(1)}"
-        print(f"[EXTRACCION] Codigo MLC detectado -> Codigo extraido: {codigo}")
+        print(f"[EXTRACCION] Codigo MLC detectado -> {codigo}")
         return codigo
     return None
 
@@ -21,91 +21,83 @@ def extraer_codigo_yapo(url: str) -> Optional[str]:
     match = re.search(r"/(\d{8,12})$", url)
     if match:
         codigo = match.group(1)
-        print(f"[EXTRACCION] Codigo Yapo detectado -> Codigo extraido: {codigo}")
+        print(f"[EXTRACCION] Codigo Yapo detectado -> {codigo}")
         return codigo
     return None
 
 def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str, Optional[str]]:
     """
     Retorna: (encontrado_link, propiedad_encontrada, plataforma_origen, codigo_externo)
-    plataforma_origen: ej. "Yapo", "MercadoLibre", "PortalInmobiliario"
-    codigo_externo: ej. "28546597" o "MLC1234567890"
     """
     urls = re.findall(r'https?://[^\s]+', mensaje, re.IGNORECASE)
+    db = get_db()
+    coleccion = db[Config.COLLECTION_NAME]
     
     for url in urls:
-        url = url.split("?")[0].split("#")[0].rstrip("/")
-        url_lower = url.lower()  # ← DEFINIDO AQUÍ PARA TODO EL LOOP
+        # Limpieza básica (quitar query params)
+        url_clean = url.split("?")[0].split("#")[0].rstrip("/")
+        url_lower = url_clean.lower()
 
-        # === YAPO.CL (primero) ===
-        if "yapo.cl" in url_lower:
-            plataforma_origen = "Yapo"
-            codigo_yapo = extraer_codigo_yapo(url)
-
-            if codigo_yapo:
-                print(f"\n[INFO] BUSCANDO EN universo_obelix")
-                print(f"[INFO] Campo usado -> codigo_yapo")
-                print(f"[INFO] Valor buscado -> '{codigo_yapo}'")
-
-                db = get_db()
-                coleccion = db[Config.COLLECTION_NAME]
-
-                propiedad = coleccion.find_one({"codigo_yapo": codigo_yapo})
-
-                if propiedad:
-                    print(f"[EXITO] PROPIEDAD ENCONTRADA en Yapo! Codigo Procasa: {propiedad.get('codigo')}")
-                    return True, propiedad, plataforma_origen, codigo_yapo
-                else:
-                    print(f"[FALLO] NO se encontro propiedad con codigo_yapo = '{codigo_yapo}'")
-                    # Debug rápido
-                    cursor = coleccion.find({"codigo_yapo": {"$exists": True}}).limit(3)
-                    print(f"[DEBUG] Algunos codigo_yapo existentes: {[doc.get('codigo_yapo') for doc in cursor]}")
-
-                    return True, None, plataforma_origen, codigo_yapo
-            else:
-                # Es yapo.cl pero no tiene código válido → continuar con otros checks
-                continue
-
-        # === MERCADO LIBRE / PORTAL INMOBILIARIO ===
-        codigo_ml = extraer_codigo_mercadolibre(url)
-
-        if codigo_ml:
-            # Determinación de plataforma (ya no redefine url_lower)
-            if "portalinmobiliario.com" in url_lower:
-                plataforma_origen = "PortalInmobiliario"
-            elif "mercadolibre.cl" in url_lower or "mercadolibre.com" in url_lower:
-                plataforma_origen = "MercadoLibre"
-            else:
-                plataforma_origen = "Otro Portal (MLC code)"
-            
-            print(f"\n[INFO] BUSCANDO EN universo_obelix")
-            print(f"[INFO] Campo usado -> codigo_mercadolibre")
-            print(f"[INFO] Valor buscado -> '{codigo_ml}'")
-
-            db = get_db()
-            coleccion = db[Config.COLLECTION_NAME]
-
+        # === 1. TOC TOC ===
+        if "toctoc.com" in url_lower:
+            plataforma_origen = "TocToc"
+            print(f"\n[INFO] BUSCANDO EN {Config.COLLECTION_NAME} (Plataforma: {plataforma_origen})")
+            # Búsqueda por enlace en el campo específico solicitado
             propiedad = coleccion.find_one({
                 "$or": [
+                    {"toctoc.enlace": {"$regex": re.escape(url_clean), "$options": "i"}},
+                    {"toctoc.enlace": {"$regex": re.escape(url), "$options": "i"}}
+                ]
+            })
+            
+            if propiedad:
+                print(f"[EXITO] PROPIEDAD ENCONTRADA en TocToc! Codigo Procasa: {propiedad.get('codigo')}")
+                return True, propiedad, plataforma_origen, url_clean
+            else:
+                print(f"[FALLO] NO se encontró propiedad con toctoc.enlace para '{url_clean}'")
+                return True, None, plataforma_origen, url_clean
+
+        # === 2. YAPO.CL ===
+        if "yapo.cl" in url_lower:
+            plataforma_origen = "Yapo"
+            codigo_yapo = extraer_codigo_yapo(url_clean)
+            if codigo_yapo:
+                print(f"\n[INFO] BUSCANDO EN {Config.COLLECTION_NAME} (Plataforma: {plataforma_origen})")
+                propiedad = coleccion.find_one({"codigo_yapo": codigo_yapo})
+                if propiedad:
+                    return True, propiedad, plataforma_origen, codigo_yapo
+                return True, None, plataforma_origen, codigo_yapo
+
+        # === 3. MERCADO LIBRE / PORTAL INMOBILIARIO ===
+        codigo_ml = extraer_codigo_mercadolibre(url_clean)
+        if codigo_ml:
+            if "portalinmobiliario.com" in url_lower:
+                plataforma_origen = "PortalInmobiliario"
+            elif "mercadolibre." in url_lower:
+                plataforma_origen = "MercadoLibre"
+            else:
+                plataforma_origen = "Portal (MLC)"
+            
+            print(f"\n[INFO] BUSCANDO EN {Config.COLLECTION_NAME} (Plataforma: {plataforma_origen})")
+            # Búsqueda multi-campo exhaustiva según requerimiento
+            query = {
+                "$or": [
+                    {"codigo_pi": codigo_ml},
+                    {"codigo_pi": codigo_ml.replace("MLC", "")},
+                    {"publicaciones.portal_inmobiliario.codigo_pi": codigo_ml},
+                    {"publicaciones.portal_inmobiliario.url_pi": {"$regex": re.escape(url_clean), "$options": "i"}},
+                    # Compatibilidad con campos antiguos si existieran
                     {"codigo_mercadolibre": codigo_ml},
                     {"codigo_mercadolibre": codigo_ml.replace("MLC", "")}
                 ]
-            })
-
+            }
+            propiedad = coleccion.find_one(query)
+            
             if propiedad:
-                print(f"[EXITO] PROPIEDAD ENCONTRADA! Desde: {plataforma_origen}")
-                print(f"[EXITO] Codigo Procasa: {propiedad.get('codigo')}")
-                print(f"[EXITO] Comuna: {propiedad.get('comuna')}")
+                print(f"[EXITO] PROPIEDAD ENCONTRADA! Desde: {plataforma_origen} | Codigo Procasa: {propiedad.get('codigo')}")
                 return True, propiedad, plataforma_origen, codigo_ml
             else:
-                print(f"[FALLO] NO se encontro con codigo_mercadolibre = '{codigo_ml}' (ni sin prefijo)")
-                cursor = coleccion.find({"codigo_mercadolibre": {"$exists": True}}).limit(5)
-                print(f"[DEBUG] Ultimos 5 codigo_mercadolibre guardados:")
-                for doc in cursor:
-                    valor = doc.get("codigo_mercadolibre")
-                    print(f"   -> '{valor}' (tipo: {type(valor)})")
-
+                print(f"[FALLO] NO se encontró propiedad con '{codigo_ml}' (universo_cartera)")
                 return True, None, plataforma_origen, codigo_ml
 
-    # Ningún enlace reconocido
     return False, None, "", None

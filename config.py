@@ -61,7 +61,7 @@ class Config:
 
     # === Chatbot / colección ===
     HISTORIAL_MAX = 8
-    COLLECTION_NAME = "universo_obelix"
+    COLLECTION_NAME = "universo_cartera"
 
     # === Logs y claves ===
     LOG_LEVEL = "INFO"
@@ -74,9 +74,7 @@ class Config:
     GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 
     # === CLAVE SECRETA PARA SESIONES (OBLIGATORIA) ===
-    SECRET_KEY = os.getenv("SECRET_KEY")
-    if not SECRET_KEY:
-        import secrets
-        SECRET_KEY = secrets.token_hex(32)
-        #print(f"\nSECRET_KEY generada automáticamente (guárdala en .env):")
-        #print(f"SECRET_KEY={SECRET_KEY}\n")
+    SECRET_KEY = os.getenv("SECRET_KEY", "procasa_stable_secret_session_key_2025_hq")
+    # if not SECRET_KEY:
+    #     import secrets
+    #     SECRET_KEY = secrets.token_hex(32)

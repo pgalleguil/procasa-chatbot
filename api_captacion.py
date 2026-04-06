@@ -44,7 +44,7 @@ def format_relative_time(dt_obj):
 
 def get_market_insights(comuna, tipo_propiedad):
     """
-    Calcula estadísticas de mercado basadas en universo_obelix.
+    Calcula estadísticas de mercado basadas en universo_cartera.
     Implementa caché de 15 min para evitar agregaciones pesadas.
     """
     cache_key = f"{comuna}_{tipo_propiedad}"
@@ -72,7 +72,7 @@ def get_market_insights(comuna, tipo_propiedad):
         }}
     ]
     
-    stats = list(db["universo_obelix"].aggregate(pipeline))
+    stats = list(db[Config.COLLECTION_NAME].aggregate(pipeline))
     avg_uf_m2 = round(stats[0]["avg_uf_m2"], 1) if stats else 0
     total_market = stats[0]["count"] if stats else 0
 

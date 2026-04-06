@@ -17,7 +17,7 @@ class TestLeadRouter(unittest.TestCase):
         # Setup mock property
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
-        mock_db["universo_obelix"].find_one.return_value = {
+        mock_db["universo_cartera"].find_one.return_value = {
             "codigo": "123",
             "ejecutivo": "Jorge Pablo Caro",
             "region": "XIII Región Metropolitana",
@@ -33,7 +33,7 @@ class TestLeadRouter(unittest.TestCase):
         # Setup mock property
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
-        mock_db["universo_obelix"].find_one.return_value = {
+        mock_db["universo_cartera"].find_one.return_value = {
             "codigo": "124",
             "ejecutivo": "Jorge Pablo Caro",
             "region": "XIII Región Metropolitana",
@@ -49,7 +49,7 @@ class TestLeadRouter(unittest.TestCase):
         # Setup mock property
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
-        mock_db["universo_obelix"].find_one.return_value = {
+        mock_db["universo_cartera"].find_one.return_value = {
             "codigo": "125",
             "ejecutivo": "Jorge Pablo Caro",
             "region": "V Región de Valparaíso",
@@ -65,7 +65,7 @@ class TestLeadRouter(unittest.TestCase):
         # Setup mock property
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
-        mock_db["universo_obelix"].find_one.return_value = {
+        mock_db["universo_cartera"].find_one.return_value = {
             "codigo": "126",
             "ejecutivo": "Jorge Pablo Caro",
             "region": "XIII Región Metropolitana",
@@ -81,7 +81,7 @@ class TestLeadRouter(unittest.TestCase):
         # Setup mock property
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
-        mock_db["universo_obelix"].find_one.return_value = {
+        mock_db["universo_cartera"].find_one.return_value = {
             "codigo": "127",
             "ejecutivo": "Pedro Perez",
             "region": "XIII Región Metropolitana",

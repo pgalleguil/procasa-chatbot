@@ -48,7 +48,7 @@ def format_relative_time(dt_obj):
 def get_real_property_data(db, codigo_propiedad):
     if not codigo_propiedad or codigo_propiedad == "S/N":
         return None
-    prop = db["universo_obelix"].find_one({"codigo": str(codigo_propiedad)})
+    prop = db[Config.COLLECTION_NAME].find_one({"codigo": str(codigo_propiedad)})
     if not prop: return None
     return {
         "codigo": prop.get("codigo"),

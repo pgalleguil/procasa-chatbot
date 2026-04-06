@@ -182,9 +182,9 @@ async def send_daily_sla_report(group_id: str):
         sorted_summary = await get_critical_leads_summary()
         
         if not sorted_summary:
-            # Si no hay pendientes críticos, NO enviamos nada, pero retornamos False 
-            # para seguir monitoreando durante el día hasta que aparezca uno y poder avisar.
-            logger.info("[DAILY_REPORT] Sin leads críticos por ahora. Se reintentará más tarde...")
+            # Si no hay pendientes críticos, NO enviamos nada. Retornamos False.
+            # Como ahora la verificación es estricta (1 sola vez al día), esto no volverá a intentarse sino hasta mañana.
+            logger.info("[DAILY_REPORT] Sin leads críticos. El reporte no se enviará hoy.")
             return False
 
         # --- CONSTRUIR MENSAJE ---
@@ -257,11 +257,12 @@ async def check_and_run_daily_report(force: bool = False):
         logger.warning(f"[DAILY_REPORT] Configuración DAILY_REPORT_GROUP_ID ausente. Usando fallback fijo: {group_id}")
 
     logger.info(f"[DAILY_REPORT] Condiciones cumplidas. Ejecutando evaluación para reporte diario ({today_str})...")
-    success = await send_daily_sla_report(group_id)
-    if success:
-        # Solo se marca como "enviado hoy" si retornó True (es decir, SI habían leads Y se enviaron correctamente por WS)
-        db["system_state"].update_one(
-            {"type": "daily_report"},
-            {"$set": {"last_run": today_str}},
-            upsert=True
-        )
+    await send_daily_sla_report(group_id)
+    
+    # IMPORTANTE: Ahora marcamos como "ejecutado hoy" SIN IMPORTAR el resultado, 
+    # para asegurar la regla estricta de evaluar solamente una vez a las 09:30 y no molestar el resto del día.
+    db["system_state"].update_one(
+        {"type": "daily_report"},
+        {"$set": {"last_run": today_str}},
+        upsert=True
+    )

@@ -450,6 +450,11 @@
                 if (email) url += `&email=${encodeURIComponent(email)}`;
 
                 const response = await fetch(url);
+                if (response.status === 401) {
+                    showToast("Sesión expirada, redirigiendo...", "error");
+                    setTimeout(() => window.location.href = "/", 1500);
+                    return;
+                }
                 const data = await response.json();
 
                 if (data.status === 'duplicate_same_property') {

@@ -117,7 +117,7 @@ def construir_query(criterios: Dict) -> Dict:
 
 def buscar_propiedades(criterios: Dict, exclude_codes: List[str] = None, limit: int = 3) -> List[Dict]:
     """
-    Ejecuta la búsqueda en MongoDB 'universo_obelix'.
+    Ejecuta la búsqueda en MongoDB 'universo_cartera'.
     exclude_codes: Lista de códigos a NO mostrar porque ya se vieron.
     limit: Máximo estricto (default 3).
     """

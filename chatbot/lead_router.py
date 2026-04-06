@@ -1,5 +1,6 @@
 
 import logging
+import re
 import random
 from datetime import datetime, time, timedelta
 import pytz
@@ -215,14 +216,19 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
         "$or": [
             {"codigo": property_code},
             {"codigo": p_int},
-            {"codigo": f"'{property_code}'"},  # Handle literal quotes like '12345'
+            {"codigo": f"'{property_code}'"},
+            {"codigo_pi": property_code},
+            {"codigo_pi": p_int},
+            {"codigo_pi": property_code.replace("MLC", "") if isinstance(property_code, str) else property_code},
+            {"publicaciones.portal_inmobiliario.codigo_pi": property_code},
+            {"toctoc.enlace": {"$regex": re.escape(property_code), "$options": "i"}},
             {"codigo_mercadolibre": property_code},
             {"codigo_mercadolibre": p_int},
             {"codigo_yapo": property_code},
             {"codigo_yapo": p_int}
         ]
     }
-    prop = db["universo_obelix"].find_one(query)
+    prop = db[Config.COLLECTION_NAME].find_one(query)
     
     norm_region = ""
     norm_comuna = ""
@@ -231,7 +237,7 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     phone = None
 
     if not prop:
-        logger.warning(f"[ROUTER] Propiedad {property_code} NO encontrada en universo_obelix. Usando fallback.")
+        logger.warning(f"[ROUTER] Propiedad {property_code} NO encontrada en {Config.COLLECTION_NAME}. Usando fallback.")
         target_executive_name = UNASSIGNED_LABEL
     else:
         original_executive = prop.get("ejecutivo", "")
@@ -292,7 +298,7 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     phone = get_executive_phone(target_executive_name)
     
     # If we couldn't find the phone for the target, but we had an original executive with phone in the property card?
-    # The property card in universo_obelix has 'email_ejecutivo' and 'movil_ejecutivo' sometimes.
+    # The property card in universo_cartera has 'email_ejecutivo' and 'movil_ejecutivo' sometimes.
     if not phone and target_executive_name == original_executive:
          phone = prop.get("movil_ejecutivo") or prop.get("fono_ejecutivo")
 
@@ -318,7 +324,7 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
     Formats the WhatsApp message to be sent to the executive.
     """
     db = get_db()
-    prop = db["universo_obelix"].find_one({"codigo": property_code}) or {}
+    prop = db[Config.COLLECTION_NAME].find_one({"codigo": property_code}) or {}
     
     comuna = prop.get("comuna", "N/D")
     region = prop.get("region", "N/D")

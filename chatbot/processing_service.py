@@ -41,7 +41,7 @@ class LeadProcessingService:
     @staticmethod
     def classify(lead_doc: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Calcula cluster_id y zone para un lead, buscando datos en universo_obelix si es necesario.
+        Calcula cluster_id y zone para un lead, buscando datos en universo_cartera si es necesario.
         """
         prospecto = lead_doc.get("prospecto", {}) or {}
         
@@ -50,15 +50,15 @@ class LeadProcessingService:
         tipo = prospecto.get("tipo") or lead_doc.get("tipo_interes") or lead_doc.get("tipo_propiedad")
         operacion = prospecto.get("operacion") or lead_doc.get("operacion")
         
-        # 2. Si falta comuna pero tenemos código, buscar en universo_obelix
+        # 2. Si falta comuna pero tenemos código, buscar en universo_cartera
         property_code = prospecto.get("codigo") or lead_doc.get("codigo")
         if not comuna and property_code:
             try:
                 db = LeadProcessingService._db()
                 p_code_int = int(property_code) if str(property_code).isdigit() else None
-                prop = db["universo_obelix"].find_one({"codigo": p_code_int}) if p_code_int else None
+                prop = db["universo_cartera"].find_one({"codigo": p_code_int}) if p_code_int else None
                 if not prop:
-                    prop = db["universo_obelix"].find_one({"codigo": str(property_code)})
+                    prop = db["universo_cartera"].find_one({"codigo": str(property_code)})
                 
                 if prop:
                     details = prop.get("details", {})
@@ -98,21 +98,26 @@ class LeadProcessingService:
         # No asignamos por recencia ni por mensajes pendientes, dejamos que el bot lo maneje
         # cuando el cliente vuelva a hablar.
         
+        # 2. SEÑALES DE ALTA INTENCIÓN (Confirmado por bot)
         high_intent_types = ["ASK_VISIT", "GIVE_OFFER", "VISITA_SOLICITADA", "CONTACTO_HUMANO"]
-        
-        # Revisar BI Analytics (Señal más fuerte del Bot)
         bi_res = lead_doc.get("bi_analytics_global", {}).get("RESULTADO_CHAT")
         if bi_res in high_intent_types:
             return True
 
-        # Revisar si se intentó enviar una alerta de alta intención
-        prospecto = lead_doc.get("prospecto", {}) or {}
-        alerts = prospecto.get("alerts_sent", {})
-        if "InteresVisita" in alerts or "SolicitudContacto" in alerts:
+        # 3. LEADS MANUALES O DE PORTALES (Nuevos)
+        # Si fue ingresado manualmente, siempre queremos que se asigne si hay propiedad.
+        if lead_doc.get("source_type") == "manual":
             return True
-            
-        # 2. DEFAULT: No asignamos. 
-        # Al reparar cluster/zone, el bot podrá asignar solo la próxima vez que el cliente hable.
+        
+        # Si es de portal (Yapo/PI) y está en etapa NEW, mejor asignar de una vez
+        origen = lead_doc.get("origen") or ""
+        is_portal = any(x in origen for x in ["Yapo", "Portal", "Mercado"])
+        stage = str(lead_doc.get("stage") or lead_doc.get("pipeline_stage") or "").upper()
+        
+        if is_portal and stage == "NEW":
+            return True
+
+        # 4. DEFAULT: No asignamos (Historial sin señales claras)
         return False
 
     @staticmethod

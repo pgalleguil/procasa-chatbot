@@ -32,7 +32,7 @@ pipeline = [
         #]
     }},
     { "$lookup": {
-        "from": "universo_obelix",
+        "from": "universo_cartera",
         "localField": "codigo",
         "foreignField": "codigo",
         "as": "info"

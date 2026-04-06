@@ -366,6 +366,8 @@ def master_sync():
     coll.create_index("rol")
     coll.create_index("source")
 
+    # Set para trackear qué códigos encontramos en los archivos nuevos
+    codigos_encontrados_en_excel = set()
     nuevos = actualizados = vectores = cambios_audit = 0
 
     # ── FASE 1: prop_ (Red Procasa completa, TIEMPO REAL) ──────────────────────
@@ -374,6 +376,9 @@ def master_sync():
     for idx, row in tqdm(df_net.iterrows(), total=len(df_net), desc="prop_ red"):
         doc = parse_prop_network_row(list(row))
         if not doc: continue
+        cod_str = str(doc.get("codigo")).strip()
+        codigos_encontrados_en_excel.add(cod_str)
+        
         n, a, c, v = upsert_doc(coll, doc, dict_pub, None)
         nuevos += n; actualizados += a; cambios_audit += c; vectores += v
 
@@ -385,18 +390,42 @@ def master_sync():
         for idx, row in tqdm(df_prop.iterrows(), total=len(df_prop), desc="propiedades_"):
             doc = parse_propiedades_row(list(row))
             if not doc: continue
+            cod_str = str(doc.get("codigo")).strip()
+            codigos_encontrados_en_excel.add(cod_str)
+            
             n, a, c, v = upsert_doc(coll, doc, dict_pub, model_nlp)
             nuevos += n; actualizados += a; cambios_audit += c; vectores += v
     else:
         print("\nFASE 2: Sin archivo propiedades_ (se usaran datos de la red para esta oficina).")
 
+    # ── FASE 3: LIMPIEZA DE BAJAS (Sincronización con realidad 446) ────────────
+    print(f"\nFASE 3 [LIMPIEZA]: Verificando propiedades que ya no están en los archivos...")
+    
+    # Buscamos propiedades que el sistema cree disponibles pero que no vinieron en el Excel
+    query_bajas = {
+        "oficina": "PROCASA SUCRE", 
+        "disponible": True,
+        "codigo": {"$nin": list(codigos_encontrados_en_excel)}
+    }
+    
+    bajas_count = coll.count_documents(query_bajas)
+    if bajas_count > 0:
+        coll.update_many(
+            query_bajas, 
+            {"$set": {"disponible": False, "activa_obelix": False, "fecha_baja_automatica": datetime.now().isoformat()}}
+        )
+        print(f"   -> SE DETECTARON {bajas_count} BAJAS. (Marcadas como disponibles: False)")
+    else:
+        print("   -> No se detectaron bajas nuevas. Inventario al día.")
+
     print(f"\n--- REPORTE DE SINCRONIZACION ---")
     print(f"Propiedades Nuevas: {nuevos}")
     print(f"Propiedades Actualizadas: {actualizados}")
+    print(f"Propiedades Dadas de Baja: {bajas_count}")
     print(f"Cambios Auditados en Historial: {cambios_audit}")
     print(f"Vectores NLP Generados: {vectores}")
     print(f"Total en coleccion: {coll.count_documents({})}")
-    print(f"Disponibles: {coll.count_documents({'disponible': True})}")
+    print(f"Disponibles Reales (Sucre): {coll.count_documents({'oficina': 'PROCASA SUCRE', 'disponible': True})}")
     print("Proceso finalizado correctamente.")
 
 

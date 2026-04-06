@@ -175,10 +175,10 @@ def enviar_por_codigo(codigo: str):
     try:
         client = MongoClient(Config.MONGO_URI)
         db = client[Config.DB_NAME]
-        prop = db["universo_obelix"].find_one({"codigo": codigo})
+        prop = db[Config.COLLECTION_NAME].find_one({"codigo": codigo})
 
         if not prop:
-            print(f"❌ Propiedad {codigo} no encontrada en universo_obelix")
+            print(f"❌ Propiedad {codigo} no encontrada en {Config.COLLECTION_NAME}")
             return False
 
         # Email Propietario

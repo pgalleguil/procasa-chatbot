@@ -729,8 +729,18 @@ async def process_with_debounce(phone: str, full_text: str, is_from_me: bool = F
             # Si es mensaje nuestro, lo registramos pero el bot no debe responder 
             # (Excepto si es el comando de toggle)
             logger.info(f"[PROCESS] Procesando mensaje {'HUMANO' if from_me else 'CLIENTE'} de {phone}")
+            
+            capture_time = last_message_time.get(phone, 0)
             bot_response = await process_user_message(phone, final_message, is_from_me=from_me)
             
+            # --- PREVENCIÓN DE DOBLE RESPUESTA ---
+            # Si el usuario envió otro mensaje mientras el bot procesaba la respuesta (LLM), 
+            # last_message_time se habrá actualizado vía webhook. Abortamos esta respuesta
+            # vieja y dejamos que la nueva tarea (que ya empalmó los mensajes o leerá el historial) responda.
+            if last_message_time.get(phone, 0) > capture_time:
+                logger.warning(f"🚫 [ANTI-SPAM] El usuario {phone} escribió de nuevo mientras se procesaba. Se descarta respuesta 1 para que proceda la 2.")
+                return
+
             if bot_response and bot_response.strip():
                 await send_whatsapp_message(phone, bot_response)
         except asyncio.CancelledError:

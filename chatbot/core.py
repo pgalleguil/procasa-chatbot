@@ -231,8 +231,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     if es_link and not propiedad and codigo_externo:
         # Si es un link pero no encontramos propiedad, notificamos al Admin (Pablo Galleguillos)
         from .lead_router import find_responsible_executive
-        # Re-verificamos responsable para gatillar alerta si sigue desasignado
-        exec_name, _ = find_responsible_executive(codigo_externo)
+        
+        exec_name, _, assignment_type = find_responsible_executive(property_code=codigo_externo)
         
         if exec_name == "No Asignado":
             admin_phone = "56983219804" # Pablo Galleguillos

@@ -115,11 +115,13 @@ async def send_alert_once(
              is_new_assignment = False
              logger.info(f"[ALERT] Lead ya asignado a {exec_name}. Manteniendo asignación.")
         else:
-             # Si es nuevo o no tiene asignación válida, corremos el router
-             exec_name, exec_phone = find_responsible_executive(lead_data["property_code"])
+             logger.info(f"Asignando lead en base a propiedad {lead_data['property_code']}")
+             exec_name, exec_phone, assignment_type = find_responsible_executive(property_code=lead_data["property_code"])
+             lead_data["target_name"] = exec_name
+             lead_data["target_phone"] = exec_phone
+             lead_data["assignment_type"] = assignment_type
              is_new_assignment = True
-        
-        logger.info(f"[ALERT] Ruteo: Ejecutivo determineado: {exec_name} | Teléfono: {exec_phone} | Es nuevo: {is_new_assignment}")
+             logger.info(f"[ALERT] Ruteo: Ejecutivo determinado: {exec_name} | Teléfono: {exec_phone} | Es nuevo: {is_new_assignment}")
 
         # --- NUEVO: ASIGNACIÓN ROBUSTA (Enterprise Point 2.1) ---
         # Solo actualizamos DB si es una NUEVA asignación

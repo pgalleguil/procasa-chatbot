@@ -210,52 +210,58 @@ def get_executive_phone(executive_name: str) -> Optional[str]:
     logger.warning(f"[LOOKUP] No se encontró usuario '{executive_name}' en colección 'usuarios'.")
     return None
 
-def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
+def find_responsible_executive(property_code: Optional[str] = None, comuna: Optional[str] = None, zone: Optional[str] = None) -> Tuple[str, Optional[str], str]:
     """
-    Determines the responsible executive based on property rules.
-    Returns (Executive Name, Executive Phone).
+    Determines the responsible executive based on property rules or regional fallbacks.
+    Returns (Executive Name, Executive Phone, Assignment Type).
     """
     db = get_db()
     
-    # BUSQUEDA ROBUSTA (String o Int)
-    p_int = safe_int_conversion(property_code)
-    logger.info(f"[ROUTER] Buscando responsable para propiedad: '{property_code}' (int: {p_int})")
+    assignment_type = "COMMUNE_FALLBACK" if (not property_code and comuna) else "ZONE_FALLBACK" if (not property_code and zone) else "PROPERTY"
     
-    query = {
-        "$or": [
-            {"codigo": property_code},
-            {"codigo": p_int},
-            {"codigo": f"'{property_code}'"},
-            {"codigo_pi": property_code},
-            {"codigo_pi": p_int},
-            {"codigo_pi": property_code.replace("MLC", "") if isinstance(property_code, str) else property_code},
-            {"publicaciones.portal_inmobiliario.codigo_pi": property_code},
-            {"toctoc.enlace": {"$regex": re.escape(property_code), "$options": "i"}},
-            {"codigo_mercadolibre": property_code},
-            {"codigo_mercadolibre": p_int},
-            {"codigo_yapo": property_code},
-            {"codigo_yapo": p_int}
-        ]
-    }
-    prop = db[Config.COLLECTION_NAME].find_one(query)
+    # BUSQUEDA ROBUSTA (String o Int)
+    prop = None
+    if property_code:
+        p_int = safe_int_conversion(property_code)
+        logger.info(f"[ROUTER] Buscando responsable para propiedad: '{property_code}' (int: {p_int})")
+        
+        query = {
+            "$or": [
+                {"codigo": property_code},
+                {"codigo": p_int},
+                {"codigo": f"'{property_code}'"},
+                {"codigo_pi": property_code},
+                {"codigo_pi": p_int},
+                {"codigo_pi": property_code.replace("MLC", "") if isinstance(property_code, str) else property_code},
+                {"publicaciones.portal_inmobiliario.codigo_pi": property_code},
+                {"toctoc.enlace": {"$regex": re.escape(property_code), "$options": "i"}},
+                {"codigo_mercadolibre": property_code},
+                {"codigo_mercadolibre": p_int},
+                {"codigo_yapo": property_code},
+                {"codigo_yapo": p_int}
+            ]
+        }
+        prop = db[Config.COLLECTION_NAME].find_one(query)
     
     norm_region = ""
-    norm_comuna = ""
+    norm_comuna = normalize_text(comuna) if comuna else ""
     norm_exec = ""
     original_executive = ""
     phone = None
 
-    if not prop:
+    if not prop and property_code:
         logger.warning(f"[ROUTER] Propiedad {property_code} NO encontrada en {Config.COLLECTION_NAME}. Usando fallback.")
         target_executive_name = UNASSIGNED_LABEL
+    elif not prop:
+        target_executive_name = ""
     else:
         original_executive = prop.get("ejecutivo", "")
         logger.info(f"[ROUTER] Propiedad encontrada. Ejecutivo original en ficha: '{original_executive}'")
         region = prop.get("region", "")
-        comuna = prop.get("comuna", "")
+        prop_comuna = prop.get("comuna", "")
         
         norm_region = normalize_text(region)
-        norm_comuna = normalize_text(comuna)
+        norm_comuna = normalize_text(prop_comuna) if prop_comuna else norm_comuna
         norm_exec = normalize_text(original_executive)
 
         target_executive_name = original_executive # Default: El que viene en la ficha
@@ -337,7 +343,7 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
         # solo que el envío de Whatsapp fallará más abajo (y quedará guardado silenciosamente).
         logger.warning(f"[ROUTER] El ejecutivo '{target_executive_name}' no tiene teléfono en DB. Se mantiene el Lead pero no recibirá Whatsapp.")
 
-    return target_executive_name, phone
+    return target_executive_name, phone, assignment_type
 
 def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, property_code: str, is_new_assignment: bool = True) -> str:
     """

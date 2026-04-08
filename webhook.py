@@ -1269,7 +1269,7 @@ async def process_pending_leads_loop():
                             p_code = lead_data.get("property_code") or lead_data.get("prospecto", {}).get("codigo")
                             if p_code:
                                 logger.info(f"[BACKGROUND] Re-enrutando lead {lead_phone} por falta de destino válido...")
-                                new_exec, new_phone = find_responsible_executive(p_code)
+                                new_exec, new_phone, assignment_type = find_responsible_executive(property_code=p_code)
                                 if new_phone and new_phone != "+56900000000":
                                     target_phone = new_phone
                                     p["target_name"] = new_exec

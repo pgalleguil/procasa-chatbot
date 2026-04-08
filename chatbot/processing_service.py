@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from .constants import CHILE_TZ, UNASSIGNED_LABEL
 from .lead_router import find_responsible_executive
+from config import Config
 from .storage import get_db, save_pending_notification
 from api_captacion import (
     get_zone_for_comuna, normalize_commune_v2,
@@ -86,38 +87,84 @@ class LeadProcessingService:
         }
 
     @staticmethod
+    def calculate_score(lead_doc: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Calcula el score de un lead basado en BI, comportamiento y origen.
+        """
+        bi_score = 0
+        behavior_score = 0
+        source_score = 0
+
+        # A. BI Signals
+        bi_res = lead_doc.get("bi_analytics_global", {}).get("RESULTADO_CHAT")
+        if bi_res == "VISITA_SOLICITADA":
+            bi_score += 50
+        elif bi_res == "CONTACTO_HUMANO":
+            bi_score += 40
+        elif bi_res == "GIVE_OFFER":
+            bi_score += 50
+
+        # B. Behavioral Signals
+        message_count = lead_doc.get("message_count", 0)
+        messages = lead_doc.get("messages", [])
+        if message_count > 1 or len(messages) > 1:
+            behavior_score += 20
+        
+        last_activity = lead_doc.get("last_message_at") or lead_doc.get("last_updated") or lead_doc.get("updated_at")
+        if last_activity:
+            try:
+                dt = datetime.fromisoformat(str(last_activity).replace('Z', '+00:00'))
+                if dt.tzinfo is None:
+                    dt = CHILE_TZ.localize(dt)
+                else:
+                    dt = dt.astimezone(CHILE_TZ)
+                
+                now = datetime.now(CHILE_TZ)
+                if (now - dt).total_seconds() < 86400: # 24h
+                    behavior_score += 20
+            except:
+                pass
+        
+        prospecto = lead_doc.get("prospecto", {})
+        has_property_code = prospecto.get("codigo") or lead_doc.get("codigo") or lead_doc.get("property_code")
+        if has_property_code or lead_doc.get("url"):
+            behavior_score += 15
+            
+        origen = lead_doc.get("origen", "")
+        stage = str(lead_doc.get("stage") or lead_doc.get("pipeline_stage") or "").upper()
+        if any(x in origen for x in ["Yapo", "Portal", "Mercado"]) and stage == "NEW":
+            behavior_score += 25
+
+        # C. Source Signals
+        if lead_doc.get("source_type") == "manual":
+            source_score += 40
+
+        total = bi_score + behavior_score + source_score
+        return {
+            "total": total,
+            "breakdown": {
+                "bi": bi_score,
+                "behavior": behavior_score,
+                "source": source_score
+            }
+        }
+
+    @staticmethod
     def is_worthy_of_assignment(lead_doc: Dict[str, Any]) -> bool:
         """
         Determina si un lead merece ser asignado a un ejecutivo humano de forma PROACTIVA
-        durante el proceso de reparación de datos.
-        
-        IMPORTANTE: Solo asignamos si hay una señal EXPLÍCITA de intención que el chatbot
-        ya detectó pero no pudo asignar por falta de datos.
+        utilizando el sistema de scoring multi-capa.
         """
-        # 1. SOLO INTENCIÓN EXPLÍCITA CONFIRMADA POR EL BOT
-        # No asignamos por recencia ni por mensajes pendientes, dejamos que el bot lo maneje
-        # cuando el cliente vuelva a hablar.
+        score_data = LeadProcessingService.calculate_score(lead_doc)
+        total_score = score_data["total"]
+        threshold = getattr(Config, "LEAD_ASSIGNMENT_THRESHOLD", 40)
         
-        # 2. SEÑALES DE ALTA INTENCIÓN (Confirmado por bot)
-        high_intent_types = ["ASK_VISIT", "GIVE_OFFER", "VISITA_SOLICITADA", "CONTACTO_HUMANO"]
-        bi_res = lead_doc.get("bi_analytics_global", {}).get("RESULTADO_CHAT")
-        if bi_res in high_intent_types:
+        # Guardamos el score_data temporalmente en el doc para poder loggearlo después
+        lead_doc["_temp_score_data"] = score_data
+        
+        if total_score >= threshold:
             return True
 
-        # 3. LEADS MANUALES O DE PORTALES (Nuevos)
-        # Si fue ingresado manualmente, siempre queremos que se asigne si hay propiedad.
-        if lead_doc.get("source_type") == "manual":
-            return True
-        
-        # Si es de portal (Yapo/PI) y está en etapa NEW, mejor asignar de una vez
-        origen = lead_doc.get("origen") or ""
-        is_portal = any(x in origen for x in ["Yapo", "Portal", "Mercado"])
-        stage = str(lead_doc.get("stage") or lead_doc.get("pipeline_stage") or "").upper()
-        
-        if is_portal and stage == "NEW":
-            return True
-
-        # 4. DEFAULT: No asignamos (Historial sin señales claras)
         return False
 
     @staticmethod
@@ -139,10 +186,10 @@ class LeadProcessingService:
             return {}
 
         property_code = prospecto.get("codigo") or lead_doc.get("codigo")
-        if not property_code:
-            return {}
+        comuna = prospecto.get("comuna") or lead_doc.get("comuna")
+        zone = lead_doc.get("zone", "unknown")
 
-        exec_name, exec_phone = find_responsible_executive(str(property_code))
+        exec_name, exec_phone, assignment_type = find_responsible_executive(property_code=str(property_code) if property_code else None, comuna=comuna, zone=zone)
         
         # Validar destino real
         if not exec_phone or exec_phone == "+56900000000" or exec_name == UNASSIGNED_LABEL:
@@ -158,7 +205,8 @@ class LeadProcessingService:
             "ejecutivo_asignado": exec_name,
             "prospecto.ejecutivo": exec_name,
             "lifecycle.assigned_at": assigned_at.isoformat(),
-            "auto_reassigned": True
+            "auto_reassigned": True,
+            "assignment_type": assignment_type
         }
 
     @staticmethod
@@ -231,6 +279,23 @@ class LeadProcessingService:
                     
                     save_pending_notification(structured_alert)
                     logger.info(f"[PROCESS_SERVICE] Notificacion pendiente estructurada guardada para {full_lead.get('phone')} (destinado a {exec_name})")
+
+                # --- NUEVO: STRUCTURED LOGGING PARA DECISIONES ---
+                import json
+                temp_score_data = lead.get("_temp_score_data", {"total": 0, "breakdown": {"bi": 0, "behavior": 0, "source": 0}})
+                
+                decision_log = {
+                    "lead_id": str(query_id),
+                    "score": temp_score_data.get("total", 0),
+                    "bi_score": temp_score_data.get("breakdown", {}).get("bi", 0),
+                    "behavior_score": temp_score_data.get("breakdown", {}).get("behavior", 0),
+                    "source_score": temp_score_data.get("breakdown", {}).get("source", 0),
+                    "threshold": getattr(Config, "LEAD_ASSIGNMENT_THRESHOLD", 40),
+                    "decision": "ASSIGNED" if update_data.get("auto_reassigned") else "SKIPPED",
+                    "assignment_type": update_data.get("assignment_type", "N/A"),
+                    "reason": "fallback_regional" if update_data.get("assignment_type") in ["COMMUNE_FALLBACK", "ZONE_FALLBACK"] else "property_match" if update_data.get("assignment_type") == "PROPERTY" else "low_score_or_handled"
+                }
+                logger.info(f"[PROCESS_SERVICE_DECISION] {json.dumps(decision_log)}")
 
                 return True
             

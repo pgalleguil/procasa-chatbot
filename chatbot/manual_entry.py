@@ -101,8 +101,8 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
     if status == "duplicate_same_property":
         return {"status": "error", "message": f"Este contacto ya existe para esta propiedad y está asignado a {executive}"}
 
-    # 2. Assignment Logic
-    exec_name, exec_phone = find_responsible_executive(property_code)
+    # 3. Asignar ejecutivo
+    exec_name, exec_phone, assignment_type = find_responsible_executive(property_code=property_code)
     
     # 3. Prepare Lead Document
     now = datetime.now(CHILE_TZ)

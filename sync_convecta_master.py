@@ -314,6 +314,8 @@ def upsert_doc(coll, doc, dict_pub, model_nlp=None):
                     "valor_nuevo": new_val
                 })
                 cambios_count += 1
+                if field == "ejecutivo" and doc.get("oficina") == "PROCASA SUCRE":
+                    print(f" [CAMBIO EJECUTIVO - PROCASA SUCRE] Código {codigo}: {old_val} -> {new_val}")
 
     # NLP Vectors
     vector_gen = False

@@ -7,7 +7,7 @@ CHILE_TZ = pytz.timezone('Chile/Continental')
 
 # --- CONFIGURACIÓN DE HORARIOS ---
 BUSINESS_START_HOUR = 9
-BUSINESS_END_HOUR = 18
+BUSINESS_END_HOUR = 19
 BUSINESS_DAYS = [0, 1, 2, 3, 4] # Lunes a Viernes
 
 UNASSIGNED_LABEL = "No Asignado"

@@ -238,9 +238,11 @@ async def check_and_run_daily_report(force: bool = False):
     if not force and now_cl.weekday() >= 5: # 5=Sábado, 6=Domingo
         return
 
-    # 2. Filtro de Horario (No antes de las 9:30 AM)
+    # 2. Filtro de Horario estricto (Entre las 9:30 AM y 10:30 AM)
     if not force:
-        if now_cl.hour < 9 or (now_cl.hour == 9 and now_cl.minute < 30):
+        # Se asegura de no enviarlo a media tarde si el servidor reinicia
+        total_minutes = now_cl.hour * 60 + now_cl.minute
+        if total_minutes < 9 * 60 + 30 or total_minutes > 10 * 60 + 30:
             return
 
     today_str = now_cl.strftime("%Y-%m-%d")

@@ -1,7 +1,7 @@
-
 import logging
 import re
 import random
+import difflib
 from datetime import datetime, time, timedelta
 import pytz
 from typing import Dict, Any, Optional, Tuple
@@ -33,9 +33,10 @@ VACATION_REPLACEMENTS = {
 }
 
 def is_raquel_unavailable() -> bool:
-    """Retorna True si hoy es Lunes (0) o Miércoles (2)."""
+    """Retorna True si el día de asignación efectivo es Lunes (0) o Miércoles (2)."""
     now = datetime.now(CHILE_TZ)
-    return now.weekday() in [0, 2]
+    effective_time = get_next_business_slot(now)
+    return effective_time.weekday() in [0, 2]
 
 def get_active_executive(name: str, norm_comuna: str = "") -> str:
     """Retorna el reemplazo si el ejecutivo está en vacaciones, o si no está disponible, deriva a RR."""
@@ -192,6 +193,14 @@ def get_executive_phone(executive_name: str) -> Optional[str]:
                 logger.info(f"[LOOKUP] Match parcial: '{candidate.get('nombre')}' ~ '{executive_name}'")
                 break
                 
+            # Fuzzy match para atrapar problemas de encoding de base de datos (Ej: Rocío vs Roco)
+            if norm_candidate and norm_target:
+                similarity = difflib.SequenceMatcher(None, norm_target, norm_candidate).ratio()
+                if similarity > 0.85:
+                    user = candidate
+                    logger.info(f"[LOOKUP] Match fuzzy por similitud ({similarity:.2f}): '{candidate.get('nombre')}' ~ '{executive_name}'")
+                    break
+                
     if user:
         phone = user.get("telefono") or user.get("tel") or user.get("movil")
         if phone:
@@ -255,40 +264,46 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
     # PERO: Respetamos si está de vacaciones y redirigimos a su reemplazo
     our_team = [ERIKA_GARRIDO, MARIELA_ARRIAGADA, SUSANA_ENSIGNIA, RAQUEL_CHENEAUX, PAULA_MORALES, ROCIO_ALIAGA, MARIA_PAZ_GALLEGUILLOS]
     
+    # Check if the original executive is active in the users collection
+    is_active_user = False
+    if original_executive and original_executive != UNASSIGNED_LABEL:
+        # get_executive_phone does a lookup in 'usuarios'
+        test_phone = get_executive_phone(original_executive)
+        if test_phone:
+            is_active_user = True
+
     matched_member = next((member for member in our_team if normalize_text(member) in norm_exec), None)
     
     if matched_member:
         logger.info(f"[ROUTER] Propiedad ya pertenece a alguien del equipo ({original_executive} -> normalizado a {matched_member}). Verificando disponibilidad.")
         target_executive_name = get_active_executive(matched_member, norm_comuna)
     
-    # REGLA 0.1: Si el ejecutivo es el Supervisor (Pablo), redirigimos al Round Robin del equipo
-    #elif "pablo galleguillos" in norm_exec:
-    #    logger.info(f"[ROUTER] Propiedad de Supervisor ({original_executive}). Derivando al equipo (Round Robin).")
-    #    target_executive_name = get_next_round_robin_executive(norm_comuna)
-
-    # REGLA 1: Jorge Pablo Caro (Distribución Especial)
-    elif "jorge pablo caro" in norm_exec:
+    # REGLA 1: Distribución Regional (Para JPC o ejecutivos antiguos/inactivos o sin ejecutivo)
+    elif "jorge pablo caro" in norm_exec or not is_active_user:
+        if "jorge pablo caro" not in norm_exec:
+             logger.info(f"[ROUTER] Ejecutivo original '{original_executive}' inactivo o no asignado. Aplicando distribución regional.")
+             
         # 1.1 RM -> Round Robin entre los 4 (Con filtro Mariela interno)
         if "metropolitana" in norm_region or "xiii" in norm_region:
             target_executive_name = get_next_round_robin_executive(norm_comuna)
         
         # 1.2 Región del Maule (VII) -> Paula Morales
         elif "maule" in norm_region or "vii" in norm_region:
-             logger.info(f"[ROUTER] Propiedad de JPC en Maule. Asignando a {PAULA_MORALES}")
+             logger.info(f"[ROUTER] Propiedad en Maule. Asignando a {PAULA_MORALES}")
              target_executive_name = get_active_executive(PAULA_MORALES, norm_comuna)
              
         # 1.3 Ñuble (XVI), Bío Bío (VIII) o Valparaíso (V) -> Rocío Aliaga
         elif any(r in norm_region for r in ["nuble", "bio", "xvi", "viii", "valparaiso", "quinta"]) or " v " in f" {norm_region} ":
-             logger.info(f"[ROUTER] Propiedad de JPC en Ñuble/BioBio/Valparaíso. Asignando a {ROCIO_ALIAGA}")
+             logger.info(f"[ROUTER] Propiedad en Ñuble/BioBio/Valparaíso. Asignando a {ROCIO_ALIAGA}")
              target_executive_name = get_active_executive(ROCIO_ALIAGA, norm_comuna)
 
         # 1.4 Otras Regiones (Físicas/Norte/Otras) -> Erika Garrido
         else:
-            logger.info(f"[ROUTER] Propiedad de JPC en otra región ({region}). Asignando a {ERIKA_GARRIDO}")
+            logger.info(f"[ROUTER] Propiedad en otra región ({region}). Asignando a {ERIKA_GARRIDO}")
             target_executive_name = get_active_executive(ERIKA_GARRIDO, norm_comuna)
             
     else:
-        # Para cualquier otro ejecutivo (externo o no contemplado), asegurarnos de usar solo Nombre + Apellido (2 palabras)
+        # Para cualquier otro ejecutivo en la colección usuarios pero no en our_team (ej. perfiles especiales)
         words = target_executive_name.split()
         if len(words) > 2:
             target_executive_name = f"{words[0]} {words[1]}"
@@ -307,15 +322,20 @@ def find_responsible_executive(property_code: str) -> Tuple[str, Optional[str]]:
 
     # FALLBACK DE EMERGENCIA: Si no hay teléfono o es No Asignado, asignamos a Round Robin
     # PERO: Respetamos la decisión de dejarlo como pendiente si la propiedad NO EXISTE (Rule refinement)
-    if not phone or target_executive_name == UNASSIGNED_LABEL:
+    if target_executive_name == UNASSIGNED_LABEL or target_executive_name == "":
         if not prop:
             # PROPIEDAD DESCONOCIDA: No asignar automáticamente. Dejar que el Admin lo vea.
             logger.warning(f"[ROUTER] Propiedad '{property_code}' desconocida. Dejando lead como '{UNASSIGNED_LABEL}'.")
             return UNASSIGNED_LABEL, None
             
-        logger.warning(f"[ROUTER] Fallback: Ejecutivo '{target_executive_name}' sin teléfono. Asignando a Round Robin (RM).")
+        logger.warning(f"[ROUTER] Fallback: Sin ejecutivo válido. Asignando a Round Robin (RM).")
         target_executive_name = get_next_round_robin_executive("")
         phone = get_executive_phone(target_executive_name)
+        
+    elif not phone:
+        # NUEVA REGLA DE INTEGRIDAD: Si sabemos quién es, pero no está su teléfono, SE LO QUEDA IGUAL,
+        # solo que el envío de Whatsapp fallará más abajo (y quedará guardado silenciosamente).
+        logger.warning(f"[ROUTER] El ejecutivo '{target_executive_name}' no tiene teléfono en DB. Se mantiene el Lead pero no recibirá Whatsapp.")
 
     return target_executive_name, phone
 

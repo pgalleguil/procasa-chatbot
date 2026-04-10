@@ -20,19 +20,20 @@
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
             --accent: #6366f1;
-            --border-color: #334155;
-            --sidebar-width: 200px;
-            --sidebar-width-collapsed: 70px;
+            --border-color: rgba(255, 255, 255, 0.05);
+            --sidebar-width: 240px;
+            --sidebar-width-collapsed: 80px;
+            --transition-speed: 0.3s;
         }
 
         [data-theme="light"] {
             --bg-body: #f1f5f9;
             --bg-card: #ffffff;
-            --bg-sidebar: #1e293b;
-            --text-primary: #0f172a;
-            --text-secondary: #64748b;
-            --accent: #4f46e5;
+            --bg-sidebar: #0f172a;
+            --text-primary: #1e293b;
+            --text-secondary: #475569;
             --border-color: #e2e8f0;
+            --accent: #4f46e5;
         }
 
         body {
@@ -43,45 +44,45 @@
             overflow-x: hidden;
         }
 
-        /* --- SIDEBAR Modern Hover Expand --- */
+        /* SIDEBAR - Modern Glassmorphism */
         .sidebar {
             width: var(--sidebar-width-collapsed);
-            background: var(--bg-sidebar);
             height: 100vh;
             position: fixed;
             left: 0;
             top: 0;
-            padding: 20px 0;
+            padding: 30px 0;
             border-right: 1px solid var(--border-color);
             z-index: 1050;
-            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
             display: flex;
             flex-direction: column;
             white-space: nowrap;
+            backdrop-filter: blur(20px);
         }
 
         .sidebar:hover {
             width: var(--sidebar-width);
-            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
+            box-shadow: 20px 0 40px rgba(0, 0, 0, 0.2);
         }
 
         .brand {
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: #fff;
-            margin-bottom: 2rem;
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 2.5rem;
             display: flex;
             align-items: center;
             height: 50px;
             padding: 0;
             overflow: hidden;
+            letter-spacing: -0.02em;
         }
 
-        .brand i {
+        .brand i, .brand img {
             min-width: var(--sidebar-width-collapsed);
             text-align: center;
-            font-size: 1.8rem;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -90,7 +91,7 @@
         .brand span {
             margin-left: -10px;
             opacity: 0;
-            transition: opacity 0.2s;
+            transition: opacity 0.3s;
         }
 
         .sidebar:hover .brand span {
@@ -98,35 +99,36 @@
         }
 
         .nav-link {
-            color: #cbd5e1;
-            padding: 12px 0;
+            color: var(--text-secondary);
+            padding: 14px 0;
             display: flex;
             align-items: center;
             text-decoration: none;
-            margin-bottom: 5px;
-            transition: all 0.2s;
-            height: 48px;
+            margin: 4px 12px;
+            border-radius: 16px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            height: 50px;
             overflow: hidden;
-            width: 100%;
-            border-radius: 0;
+            width: calc(100% - 24px);
         }
 
         .nav-link i {
-            min-width: var(--sidebar-width-collapsed);
+            min-width: calc(var(--sidebar-width-collapsed) - 24px);
             text-align: center;
             font-size: 1.25rem;
             display: flex;
             justify-content: center;
             align-items: center;
-            transition: all 0.25s ease-out;
+            transition: all 0.3s ease-out;
         }
 
         .nav-link span {
-            margin-left: -10px;
+            margin-left: 0px;
             opacity: 0;
             transform: translateX(-10px);
-            transition: all 0.2s;
-            font-weight: 500;
+            transition: all 0.3s;
+            font-weight: 600;
+            font-size: 0.95rem;
         }
 
         .sidebar:hover .nav-link span {
@@ -134,62 +136,24 @@
             transform: translateX(0);
         }
 
-        /* Efecto base hover */
-        .nav-link:hover i {
-            transform: scale(1.1);
-        }
-
         .nav-link:hover {
-            background: rgba(99, 102, 241, 0.1);
-            color: var(--accent);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
         }
 
         .nav-link.active {
-            background: var(--accent);
-            color: white !important;
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent) !important;
         }
 
-        /* Dashboard: escala sutil */
-        .nav-link[href="/leads-dashboard"]:hover i {
-            transform: scale(1.15);
+        .nav-link.active i {
+            color: var(--accent);
         }
 
-        /* Listado Leads: baja ligeramente */
-        .nav-link[href="/crm"]:hover i {
-            transform: translateY(2px) scale(1.1);
-        }
-
-        /* Toggle Tema: rotación 180° */
-        .nav-link.theme-toggle {
-            margin-top: auto;
-            background: transparent;
-        }
-
-        .nav-link.theme-toggle:hover i {
-            transform: rotate(180deg) scale(1.1);
-            color: #f59e0b;
-        }
-
-        .nav-link.theme-toggle:hover {
-            background: rgba(245, 158, 11, 0.1);
-            color: #f59e0b;
-        }
-
-        /* Logout: pulse rojo */
-        .nav-link.logout {
-            margin-top: 5px;
-            color: var(--text-secondary);
-        }
-
-        .nav-link.logout:hover i {
-            transform: scale(1.15);
-            color: #ef4444;
-        }
-
-        .nav-link.logout:hover {
-            background: rgba(239, 68, 68, 0.1);
-            color: #ef4444;
-        }
+        .nav-link.theme-toggle { margin-top: auto; }
+        .nav-link.theme-toggle:hover i { transform: rotate(180deg) scale(1.1); color: #f59e0b; }
+        .nav-link.logout { margin-top: 5px; }
+        .nav-link.logout:hover { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
 
         .main-content {
             margin-left: var(--sidebar-width-collapsed);
@@ -536,14 +500,11 @@
 </head>
 
 <body>
-
-    <body>
-
         <nav class="sidebar" id="sidebar">
             <div class="brand">
                 <img src="/static/logo.png" alt="PROCASA"
                     style="max-height: 30px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
-                    onerror="this.style.display='none'"> <span>PROCASA</span>
+                    onerror="this.style.display='none'"> <span>MENÚ</span>
             </div>
             <!-- Dashboard oculto temporalmente -->
             <!-- <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i> <span>Dashboard</span></a> -->

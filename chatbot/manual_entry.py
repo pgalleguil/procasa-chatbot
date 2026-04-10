@@ -102,7 +102,11 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
         return {"status": "error", "message": f"Este contacto ya existe para esta propiedad y está asignado a {executive}"}
 
     # 3. Asignar ejecutivo
-    exec_name, exec_phone, assignment_type = find_responsible_executive(property_code=property_code)
+    exec_name, exec_phone, assignment_type = find_responsible_executive(
+        property_code=property_code,
+        lead_phone=phone,
+        lead_name=name
+    )
     
     # 3. Prepare Lead Document
     now = datetime.now(CHILE_TZ)

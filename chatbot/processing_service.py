@@ -189,7 +189,13 @@ class LeadProcessingService:
         comuna = prospecto.get("comuna") or lead_doc.get("comuna")
         zone = lead_doc.get("zone", "unknown")
 
-        exec_name, exec_phone, assignment_type = find_responsible_executive(property_code=str(property_code) if property_code else None, comuna=comuna, zone=zone)
+        exec_name, exec_phone, assignment_type = find_responsible_executive(
+            property_code=str(property_code) if property_code else None, 
+            comuna=comuna, 
+            zone=zone,
+            lead_phone=lead_doc.get("phone"),
+            lead_name=lead_doc.get("nombre") or lead_doc.get("prospecto", {}).get("nombre")
+        )
         
         # Validar destino real
         if not exec_phone or exec_phone == "+56900000000" or exec_name == UNASSIGNED_LABEL:
@@ -220,6 +226,30 @@ class LeadProcessingService:
             lead = db["leads"].find_one({"_id": query_id})
             if not lead:
                 return False
+
+            # --- AUTO-ARCHIVADO DE LEADS ANTIGUOS (Solicitado por usuario) ---
+            from datetime import timedelta
+            now_cl = datetime.now(CHILE_TZ)
+            created_at_val = lead.get("created_at") or lead.get("timestamp")
+            if created_at_val and not force:
+                try:
+                    if isinstance(created_at_val, str):
+                        created_dt = datetime.fromisoformat(created_at_val.replace('Z', '+00:00'))
+                    else:
+                        created_dt = created_at_val
+                    
+                    if created_dt.tzinfo is None:
+                        created_dt = CHILE_TZ.localize(created_dt)
+                    
+                    if (now_cl - created_dt) > timedelta(days=90):
+                        logger.info(f"[PROCESS_SERVICE] Lead {lead_id} tiene más de 90 días. Archivando automáticamente.")
+                        db["leads"].update_one(
+                            {"_id": query_id}, 
+                            {"$set": {"stage": "ARCHIVED", "archive_reason": "Lead antiguo (>90 días) sin procesar"}}
+                        )
+                        return True
+                except Exception as e_arch:
+                    logger.warning(f"[PROCESS_SERVICE] Error calculando antigüedad de lead {lead_id}: {e_arch}")
 
             # 1. Chequeo de idempotencia
             needs_classification = not lead.get("cluster_id") or not lead.get("zone")

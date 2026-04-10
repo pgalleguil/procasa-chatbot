@@ -200,7 +200,7 @@ def get_executive_phone(executive_name: str) -> Optional[str]:
     logger.warning(f"[LOOKUP] No se encontró usuario '{executive_name}' en colección 'usuarios'.")
     return None
 
-def find_responsible_executive(property_code: Optional[str] = None, comuna: Optional[str] = None, zone: Optional[str] = None) -> Tuple[str, Optional[str], str]:
+def find_responsible_executive(property_code: Optional[str] = None, comuna: Optional[str] = None, zone: Optional[str] = None, lead_phone: Optional[str] = None, lead_name: Optional[str] = None) -> Tuple[str, Optional[str], str]:
     """
     Determines the responsible executive based on property rules or regional fallbacks.
     Returns (Executive Name, Executive Phone, Assignment Type).
@@ -233,6 +233,7 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
         }
         prop = db[Config.COLLECTION_NAME].find_one(query)
     
+    region = ""
     norm_region = ""
     norm_comuna = normalize_text(comuna) if comuna else ""
     norm_exec = ""
@@ -242,6 +243,25 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
     if not prop and property_code:
         logger.warning(f"[ROUTER] Propiedad {property_code} NO encontrada en {Config.COLLECTION_NAME}. Usando fallback.")
         target_executive_name = UNASSIGNED_LABEL
+        
+        # --- Alerta de Propiedad Faltante (Solicitado por usuario) ---
+        try:
+            from .storage import save_pending_notification
+            # Notificar a Pablo Galleguillos (+56983219804)
+            lead_info = f" del cliente {lead_name} ({lead_phone})" if lead_phone else ""
+            alert_payload = {
+                "target_phone": "+56983219804",
+                "target_name": "Pablo Galleguillos",
+                "property_code": property_code,
+                "lead_type": "MISSING_PROPERTY_ALERT",
+                "nombre": "Sistema de Alertas",
+                "last_message": f"⚠️ ATENCIÓN: Se recibió un lead{lead_info} para la propiedad '{property_code}', pero este código NO existe en la colección 'universo_cartera'. Es probable que la base de datos esté desactualizada."
+            }
+            save_pending_notification(alert_payload)
+            logger.info(f"[ROUTER] Alerta de propiedad faltante programada para el administrador.")
+        except Exception as e_alert:
+            logger.error(f"[ROUTER] Error al programar alerta de propiedad faltante: {e_alert}")
+
     elif not prop:
         target_executive_name = ""
     else:

@@ -277,12 +277,34 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
         details = doc.get("details", {})
         gestion = doc.get("gestion", {})
         
+        # Fallback de fecha para antigüedad: scraping -> captura -> root
+        fecha_ref = details.get("fecha_scraping") or doc.get("fecha_captura") or doc.get("fecha")
+        
+        # Calcular dias desde scrape y formatear la fecha base
+        dias_portal = 0
+        fecha_str = "S/I"
+        if fecha_ref:
+            try:
+                dt_base = fecha_ref
+                if isinstance(dt_base, str):
+                    dt_base = datetime.fromisoformat(dt_base.replace("Z", "+00:00"))
+                if dt_base.tzinfo is None:
+                    dt_base = CHILE_TZ.localize(dt_base)
+                elif dt_base.tzinfo != CHILE_TZ:
+                    dt_base = dt_base.astimezone(CHILE_TZ)
+                now = get_chile_now()
+                diff = now - dt_base
+                dias_portal = max(0, diff.days)
+                fecha_str = dt_base.strftime("%d-%m-%Y")
+            except Exception:
+                pass
+
         items_paginated.append({
             "id": str(doc["_id"]),
             "url": doc.get("url"),
             "titulo": details.get("titulo", "Sin título"),
             "comuna": details.get("comuna", "S/I"),
-            "precio": details.get("precio", "S/I"),
+            "precio": str(details.get("precio", "S/I")).split("Ref.")[0].strip(),
             "precio_uf": details.get("precio_uf"),
             "uf_m2": doc.get("uf_m2_cache", 0),
             "estado": gestion.get("estado", "NUEVO"),
@@ -290,8 +312,10 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
             "score_captacion": doc.get("score_captacion", 0),
             "probabilidad": doc.get("probabilidad", "S/I"),
             "intentos": gestion.get("intent_count", 0),
-            "fecha_detectado": format_relative_time(details.get("fecha_scraping")),
-            "sort_date": details.get("fecha_scraping", "")
+            "fecha_detectado": format_relative_time(fecha_ref),
+            "sort_date": fecha_ref or "",
+            "dias_en_portal": dias_portal,
+            "fecha_str": fecha_str
         })
     
     return items_paginated, total_count

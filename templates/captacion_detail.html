@@ -14,15 +14,11 @@
 
     <style>
         :root {
-            --bg-body: #09090b;
-            /* zinc-950 */
-            --bg-card: rgba(24, 24, 27, 0.4);
-            /* zinc-900/40 */
-            --bg-sidebar: #09090b;
-            --text-primary: #f4f4f5;
-            /* zinc-100 */
-            --text-secondary: #a1a1aa;
-            /* zinc-400 */
+            --bg-body: #0f172a;
+            --bg-card: #1e293b;
+            --bg-sidebar: #020617;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
             --accent: #6366f1;
             /* indigo-500 */
             --accent-hover: #818cf8;
@@ -39,21 +35,21 @@
             --transition-speed: 0.3s;
             --wa-color: #25d366;
             --email-color: #3b82f6;
-            --input-bg: rgba(24, 24, 27, 0.5);
-            --input-border: rgba(255, 255, 255, 0.1);
-            --input-text: #f4f4f5;
+            --input-bg: #334155;
+            --input-border: #475569;
+            --input-text: #fff;
         }
 
         [data-theme="light"] {
-            --bg-body: #f8fafc;
-            --bg-card: rgba(255, 255, 255, 0.7);
-            --bg-sidebar: #ffffff;
-            --text-primary: #0f172a;
-            --text-secondary: #64748b;
-            --border-color: rgba(0, 0, 0, 0.05);
-            --input-bg: rgba(255, 255, 255, 0.5);
-            --input-border: rgba(0, 0, 0, 0.1);
-            --input-text: #0f172a;
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --bg-sidebar: #0f172a;
+            --text-primary: #1e293b;
+            --text-secondary: #475569;
+            --border-color: #e2e8f0;
+            --input-bg: #ffffff;
+            --input-border: #cbd5e1;
+            --input-text: #1e293b;
             --accent: #4f46e5;
             --accent-hover: #4338ca;
         }
@@ -935,11 +931,11 @@
             object-fit: contain;
             padding: 0 15px;
           " onerror="this.style.display = 'none'" />
-            <span>PROCASA</span>
+            <span>MENÚ</span>
         </div>
 
-        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
         {% if user_role in ['supervisor', 'admin'] %}
+        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
         <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
                 Manual</span></a>
         {% endif %}

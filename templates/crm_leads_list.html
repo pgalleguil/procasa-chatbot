@@ -17,21 +17,15 @@
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
             --accent: #6366f1;
-            --led-red: #ef4444;
-            --led-orange: #f97316;
-            --sidebar-width: 200px;
-            --sidebar-width-collapsed: 70px;
+            --border-color: rgba(255, 255, 255, 0.05);
+            --sidebar-width: 240px;
+            --sidebar-width-collapsed: 80px;
             --transition-speed: 0.3s;
-            --led-yellow: #f59e0b;
-            --led-green: #10b981;
-            --led-gray: #64748b;
-            /* Variables para inputs y forms */
             --input-bg: #334155;
             --input-border: #475569;
             --input-text: #fff;
         }
 
-        /* TEMA LIGHT - Colores optimizados para legibilidad */
         [data-theme="light"] {
             --bg-body: #f1f5f9;
             --bg-card: #ffffff;
@@ -42,12 +36,7 @@
             --input-bg: #ffffff;
             --input-border: #cbd5e1;
             --input-text: #1e293b;
-            /* LEDs con más contraste para light mode */
-            --led-red: #dc2626;
-            --led-yellow: #d97706;
-            --led-orange: #ea580c;
-            --led-green: #059669;
-            --led-gray: #6b7280;
+            --accent: #4f46e5;
         }
 
         body {
@@ -78,27 +67,27 @@
             background: #4f46e5;
         }
 
-        /* SIDEBAR - Modern Hover Expand */
+        /* SIDEBAR - Modern Glassmorphism */
         .sidebar {
             width: var(--sidebar-width-collapsed);
-            background: var(--bg-sidebar);
             height: 100vh;
             position: fixed;
             left: 0;
             top: 0;
-            padding: 20px 0;
+            padding: 30px 0;
             border-right: 1px solid var(--border-color);
-            z-index: 1000;
-            transition: width var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1050;
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
             display: flex;
             flex-direction: column;
             white-space: nowrap;
+            backdrop-filter: blur(20px);
         }
 
         .sidebar:hover {
             width: var(--sidebar-width);
-            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
+            box-shadow: 20px 0 40px rgba(0, 0, 0, 0.2);
         }
 
         .main-content {
@@ -108,21 +97,21 @@
         }
 
         .brand {
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: #fff;
-            margin-bottom: 2rem;
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 2.5rem;
             display: flex;
             align-items: center;
             height: 50px;
             padding: 0;
             overflow: hidden;
+            letter-spacing: -0.02em;
         }
 
-        .brand i {
+        .brand i, .brand img {
             min-width: var(--sidebar-width-collapsed);
             text-align: center;
-            font-size: 1.8rem;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -131,7 +120,7 @@
         .brand span {
             margin-left: -10px;
             opacity: 0;
-            transition: opacity 0.2s;
+            transition: opacity 0.3s;
         }
 
         .sidebar:hover .brand span {
@@ -139,35 +128,36 @@
         }
 
         .nav-link {
-            color: #cbd5e1;
-            padding: 12px 0;
+            color: var(--text-secondary);
+            padding: 14px 0;
             display: flex;
             align-items: center;
             text-decoration: none;
-            margin-bottom: 5px;
-            transition: all 0.2s;
-            height: 48px;
+            margin: 4px 12px;
+            border-radius: 16px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            height: 50px;
             overflow: hidden;
-            width: 100%;
-            border-radius: 0;
+            width: calc(100% - 24px);
         }
 
         .nav-link i {
-            min-width: var(--sidebar-width-collapsed);
+            min-width: calc(var(--sidebar-width-collapsed) - 24px);
             text-align: center;
             font-size: 1.25rem;
             display: flex;
             justify-content: center;
             align-items: center;
-            transition: all 0.25s ease-out;
+            transition: all 0.3s ease-out;
         }
 
         .nav-link span {
-            margin-left: -10px;
+            margin-left: 0px;
             opacity: 0;
             transform: translateX(-10px);
-            transition: all 0.2s;
-            font-weight: 500;
+            transition: all 0.3s;
+            font-weight: 600;
+            font-size: 0.95rem;
         }
 
         .sidebar:hover .nav-link span {
@@ -175,10 +165,24 @@
             transform: translateX(0);
         }
 
-        /* Efecto base hover para iconos normales */
-        .nav-link:hover i {
-            transform: scale(1.1);
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
         }
+
+        .nav-link.active {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent) !important;
+        }
+
+        .nav-link.active i {
+            color: var(--accent);
+        }
+
+        .nav-link.theme-toggle { margin-top: auto; }
+        .nav-link.theme-toggle:hover i { transform: rotate(180deg) scale(1.1); color: #f59e0b; }
+        .nav-link.logout { margin-top: 5px; }
+        .nav-link.logout:hover { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
 
         /* Media Query para Móviles */
         @media (max-width: 768px) {
@@ -231,10 +235,7 @@
             }
         }
 
-        .nav-link:hover {
-            background: rgba(99, 102, 241, 0.1);
-            color: var(--accent);
-        }
+
 
         .hamburger-mobile {
             display: none;
@@ -251,10 +252,7 @@
             margin-right: 15px;
         }
 
-        .nav-link.active {
-            background: var(--accent);
-            color: white;
-        }
+
 
         /* Dashboard: escala sutil (mismo color que hover base) */
         .nav-link[href="/leads-dashboard"]:hover i {
@@ -266,37 +264,7 @@
             transform: translateY(2px) scale(1.1);
         }
 
-        /* Toggle Tema: rotación 180° */
-        .nav-link.theme-toggle {
-            margin-top: auto;
-            background: transparent;
-        }
 
-        .nav-link.theme-toggle:hover i {
-            transform: rotate(180deg) scale(1.1);
-            color: #f59e0b;
-        }
-
-        .nav-link.theme-toggle:hover {
-            background: rgba(245, 158, 11, 0.1);
-            color: #f59e0b;
-        }
-
-        /* Logout: pulse rojo */
-        .nav-link.logout {
-            margin-top: 5px;
-            color: var(--text-secondary);
-        }
-
-        .nav-link.logout:hover i {
-            transform: scale(1.15);
-            color: #ef4444;
-        }
-
-        .nav-link.logout:hover {
-            background: rgba(239, 68, 68, 0.1);
-            color: #ef4444;
-        }
 
         /* KPI CARDS (REINCORPORADAS) */
         .summary-card {
@@ -324,51 +292,79 @@
         }
 
         /* TOOLBAR */
-        .toolbar {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 25px;
+        /* FILTERS (Homologados a captacion_list) */
+        .filter-bar {
             display: flex;
-            align-items: center;
-            gap: 15px;
+            gap: 12px;
+            margin-bottom: 20px;
             flex-wrap: wrap;
+            align-items: center;
         }
 
-        .search-box {
+        .filter-bar .search-box {
+            flex: 1;
+            min-width: 200px;
             position: relative;
-            width: 220px;
         }
 
-        .search-box input {
-            background: var(--bg-body);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            padding: 8px 10px 8px 35px;
-            border-radius: 8px;
-            width: 100%;
-            font-size: 0.9rem;
-        }
-
-        .search-box i {
+        .filter-bar .search-box i {
             position: absolute;
-            left: 10px;
+            left: 14px;
             top: 50%;
             transform: translateY(-50%);
             color: var(--text-secondary);
-            font-size: 0.8rem;
+            font-size: 0.9rem;
         }
 
-        .form-select-custom {
-            background-color: var(--bg-body);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            padding: 8px 30px 8px 10px;
-            border-radius: 8px;
-            cursor: pointer;
-            min-width: 150px;
+        .filter-bar .search-box input {
+            width: 100%;
+            padding: 10px 14px 10px 40px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 10px;
+            color: var(--input-text);
             font-size: 0.9rem;
+            transition: border-color 0.2s;
+        }
+
+        .filter-bar .search-box input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        .filter-bar select {
+            padding: 10px 14px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 10px;
+            color: var(--input-text);
+            font-size: 0.9rem;
+            min-width: 160px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .filter-bar select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .filter-bar .btn-filter {
+            padding: 10px 20px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-bar .btn-filter:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
         }
 
         .led-orange {
@@ -407,6 +403,7 @@
             vertical-align: middle;
             border-top: 1px solid var(--border-color);
             border-bottom: 1px solid var(--border-color);
+            box-shadow: inset 0 0 0 9999px rgba(255, 255, 255, 0.045);
         }
 
         .crm-table td:first-child {
@@ -592,6 +589,16 @@
     <style>
         /* --- MODERN & RESPONSIVE IMPROVEMENTS --- */
 
+        /* TABLE CONTAINER (Global) */
+        .table-container {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border-color);
+            margin-bottom: 30px;
+        }
+
         /* 1. Glassmorphism & Modern Basics (DESKTOP ONLY PREFERENCE) */
         @media (min-width: 992px) {
             .crm-table tbody tr {
@@ -606,71 +613,72 @@
                 z-index: 10;
                 position: relative;
             }
+        }
 
-            /* PAGINATION */
+        /* PAGINATION (Homologada globalmente) */
+        .pagination-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            margin-top: 10px;
+            border-top: 1px solid var(--border-color);
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .pagination-info {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .pagination-controls {
+            display: flex;
+            gap: 5px;
+        }
+
+        .page-btn {
+            min-width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .page-btn:hover:not(.disabled) {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .page-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .page-btn.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .page-btn i {
+            font-size: 0.8rem;
+        }
+
+        @media (max-width: 768px) {
             .pagination-container {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 20px 0;
-                margin-top: 10px;
-                border-top: 1px solid var(--border-color);
-                flex-wrap: wrap;
-                gap: 15px;
+                flex-direction: column;
+                text-align: center;
             }
-
-            .pagination-info {
-                font-size: 0.9rem;
-                color: var(--text-secondary);
-            }
-
-            .pagination-controls {
-                display: flex;
-                gap: 5px;
-            }
-
-            .page-btn {
-                min-width: 38px;
-                height: 38px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border-radius: 8px;
-                background: rgba(255, 255, 255, 0.05);
-                border: 1px solid var(--border-color);
-                color: var(--text-primary);
-                text-decoration: none;
-                font-weight: 500;
-                transition: all 0.2s;
-            }
-
-            .page-btn:hover:not(.disabled) {
-                background: var(--accent);
-                border-color: var(--accent);
-                color: white;
-            }
-
-            .page-btn.active {
-                background: var(--accent);
-                border-color: var(--accent);
-                color: white;
-            }
-
-            .page-btn.disabled {
-                opacity: 0.4;
-                cursor: not-allowed;
-                pointer-events: none;
-            }
-
-            .page-btn i {
-                font-size: 0.8rem;
-            }
-
-            @media (max-width: 768px) {
-                .pagination-container {
-                    flex-direction: column;
-                    text-align: center;
-                }
             }
 
             /* Professional Movement for KPI Cards */
@@ -887,7 +895,7 @@
             <div class="brand">
                 <img src="/static/logo.png" alt="PROCASA"
                     style="max-height: 30px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
-                    onerror="this.style.display='none'"> <span>PROCASA</span>
+                    onerror="this.style.display='none'"> <span>MENÚ</span>
             </div>
             {% if user_role in ['supervisor', 'admin'] %}
             <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i>
@@ -977,14 +985,15 @@
             </div>
 
             <!-- TOOLBAR DE FILTROS -->
-            <form action="/crm" method="GET" class="toolbar">
+            <div class="table-container">
+            <form action="/crm" method="GET" class="filter-bar">
                 <div class="search-box">
-                    <i class="fa-solid fa-search"></i>
+                    <i class="fa-solid fa-magnifying-glass"></i>
                     <input type="text" name="busqueda" placeholder="Filtrar por Teléfono..."
                         value="{{ request.query_params.get('busqueda', '') }}">
                 </div>
 
-                <select class="form-select-custom" name="estado" onchange="this.form.submit()">
+                <select name="estado" onchange="this.form.submit()">
                     <option value="" {% if not request.query_params.get('estado') %}selected{% endif %}>Todos los
                         Estados</option>
                     <option value="UNASSIGNED" {% if request.query_params.get('estado')=='UNASSIGNED' %}selected{% endif %}>⚪ Sin Asignar (Pool)</option>
@@ -1009,7 +1018,7 @@
                 </select>
 
                 {% if user_role in ['admin', 'supervisor'] %}
-                <select class="form-select-custom" name="ejecutivo" onchange="this.form.submit()">
+                <select name="ejecutivo" onchange="this.form.submit()">
                     <option value="Todos" {% if current_ejecutivo=='Todos' %}selected{% endif %}>Todos los Ejecutivos
                     </option>
                     {% for exe in executives %}
@@ -1018,13 +1027,14 @@
                 </select>
                 {% endif %}
 
-                <select class="form-select-custom ms-auto" name="orden" onchange="this.form.submit()">
+                <select style="margin-left: auto;" name="orden" onchange="this.form.submit()">
                     <option value="prioridad" {% if request.query_params.get('orden')=='prioridad' %}selected{% endif
                         %}>
                         Prioridad (Semáforo)</option>
                     <option value="fecha" {% if request.query_params.get('orden')=='fecha' %}selected{% endif %}>Más
                         Recientes</option>
                 </select>
+                <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
             </form>
 
             <!-- TABLA -->
@@ -1176,6 +1186,7 @@
                 </div>
             </div>
             {% endif %}
+            </div>
         </div>
 
         <!-- Overlay para cerrar menú móvil -->

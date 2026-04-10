@@ -113,7 +113,31 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     historial = obtener_conversacion(phone)
 
     # === OBTENEMOS PROSPECTO TEMPRANO PARA PODER USARLO EN ORIGEN Y EN TODO EL FLUJO ===
-    prospecto_actual = obtener_prospecto(phone) or {}
+    # NOTA: stage es un campo de nivel superior, no está dentro de 'prospecto'
+    db = get_db()
+    lead_doc_full = db["leads"].find_one({"phone": phone}) or {}
+    prospecto_actual = lead_doc_full.get("prospecto", {})
+
+    # NUEVO: Lógica de Reactivación (Si estaba archivado y vuelve a escribir)
+    # Se considera lead nuevo para efectos de procesamiento.
+    if lead_doc_full.get("stage") == "ARCHIVED":
+        logger.info(f"🔄 [REACTIVATION] Lead {phone} estaba ARCHIVADO y volvió a escribir. Reactivando...")
+        now_str = datetime.now(CHILE_TZ).isoformat()
+        
+        # Actualizamos campos de nivel superior para que el motor lo vea como nuevo
+        db["leads"].update_one(
+            {"phone": phone},
+            {"$set": {
+                "stage": PipelineStage.NEW,
+                "pipeline_stage": PipelineStage.NEW,
+                "archive_reason": None,
+                "reactivated_at": now_str,
+                "created_at": now_str, # Reset timestamps to avoid immediate re-archival
+                "timestamp": now_str,
+                "last_processed_at": None
+            }}
+        )
+        lead_doc_full["stage"] = PipelineStage.NEW # Actualizar copia local
 
     # Solo forzar WhatsApp como fallback si no hay origen previo (permite Yapo, MercadoLibre, etc.)
     if not prospecto_actual.get("origen"):
@@ -232,7 +256,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         # Si es un link pero no encontramos propiedad, notificamos al Admin (Pablo Galleguillos)
         from .lead_router import find_responsible_executive
         
-        exec_name, _, assignment_type = find_responsible_executive(property_code=codigo_externo)
+        exec_name, _, assignment_type = find_responsible_executive(
+            property_code=codigo_externo,
+            lead_phone=phone,
+            lead_name=prospecto_actual.get("nombre")
+        )
         
         if exec_name == "No Asignado":
             admin_phone = "56983219804" # Pablo Galleguillos

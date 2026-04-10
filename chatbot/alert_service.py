@@ -116,7 +116,11 @@ async def send_alert_once(
              logger.info(f"[ALERT] Lead ya asignado a {exec_name}. Manteniendo asignación.")
         else:
              logger.info(f"Asignando lead en base a propiedad {lead_data['property_code']}")
-             exec_name, exec_phone, assignment_type = find_responsible_executive(property_code=lead_data["property_code"])
+             exec_name, exec_phone, assignment_type = find_responsible_executive(
+                 property_code=lead_data["property_code"],
+                 lead_phone=phone,
+                 lead_name=lead_data.get("nombre")
+             )
              lead_data["target_name"] = exec_name
              lead_data["target_phone"] = exec_phone
              lead_data["assignment_type"] = assignment_type

@@ -848,6 +848,14 @@
         }
 
         /* Post-send toast */
+        .tiny-count {
+            font-size: 0.7rem;
+            opacity: 0.7;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1px 5px;
+            border-radius: 8px;
+        }
+
         #postSendToast {
             position: fixed;
             bottom: 28px;
@@ -997,15 +1005,16 @@
               z-index: 1;
             "></div>
 
-                {% set stages = [ {'id': 'detect', 'label': 'Detección', 'match':
-                ['NUEVO', 'DETECTADO']}, {'id': 'contact', 'label': 'Contacto',
-                'match': ['POR CONTACTAR', 'INTENTO DE CONTACTO', 'SIN RESPUESTA',
-                'GESTION']}, {'id': 'negotiate', 'label': 'Negociación', 'match':
-                ['CONTACTO EXITOSO', 'CORREDOR', 'INTERESADO EN TASACIÓN', 'TASACIÓN
-                ENVIADA', 'REUNIÓN AGENDADA']}, {'id': 'close', 'label': 'Cierre',
-                'match': ['CAPTADO', 'DESCARTADO', 'PROPIEDAD NO DISPONIBLE', 'NO
-                INTERESADO']} ] %} {% for s in stages %} {% set is_active =
-                prop.estado_captacion in s.match %}
+                {% set stages = [
+                {'id': 'contact', 'label': 'Contacto', 'match': ['Por contactar', 'Sin respuesta', 'Teléfono inválido',
+                'GESTION', 'NUEVO', 'DETECTADO', 'INTENTO DE CONTACTO']},
+                {'id': 'negotiate', 'label': 'Negociación', 'match': ['Contacto exitoso', 'Reunión agendada',
+                'INTERESADO EN TASACIÓN', 'TASACIÓN ENVIADA']},
+                {'id': 'close', 'label': 'Cierre', 'match': ['Captado', 'Descartado', 'Propiedad no disponible', 'No
+                interesado', 'Corredor', 'Publicación expirada']}
+                ] %}
+                {% for s in stages %}
+                {% set is_active = prop.estado_captacion in s.match %}
                 <div class="d-flex flex-column align-items-center" style="z-index: 2; width: 80px">
                     <div class="macro-dot {{ 'active' if is_active else '' }}">
                         {{ loop.index }}
@@ -1238,20 +1247,19 @@
                                     <input type="text" id="proximo-contacto"
                                         class="form-control border-start-0 ps-0 flatpickr-date"
                                         placeholder="Seleccionar fecha"
-                                        value="{{ prop.gestion.proximo_contacto or '' }}" />
+                                        value="{{ prop.gestion.next_followup or '' }}" />
                                 </div>
                             </div>
 
                             <div class="col-md-6">
                                 <label class="info-label">Estado</label>
                                 <select class="form-select" id="statusSelect">
-                                    <option value="DETECTADO">DETECTADO / NUEVO</option>
-                                    <option value="POR CONTACTAR">POR CONTACTAR</option>
-                                    <option value="GESTION">EN GESTIÓN</option>
-                                    <option value="CONTACTO EXITOSO">CONTACTO EXITOSO</option>
-                                    <option value="REUNIÓN AGENDADA">REUNIÓN AGENDADA</option>
-                                    <option value="CAPTADO">CAPTADO</option>
-                                    <option value="DESCARTADO">DESCARTADO</option>
+                                    {% for stage in prop.pipeline_stages %}
+                                    <option value="{{ stage }}" {% if prop.estado_captacion==stage %}selected{% endif
+                                        %}>
+                                        {{ stage }}
+                                    </option>
+                                    {% endfor %}
                                 </select>
                             </div>
 
@@ -1656,6 +1664,13 @@
                                 <label class="info-label mb-2">MENSAJE:</label>
                                 <textarea class="form-control modern-scrollbar" id="commMessage" rows="5"
                                     placeholder="Escribe tu mensaje aquí..."></textarea>
+                                <div class="d-flex justify-content-end mt-2">
+                                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3"
+                                        onclick="saveAsPersonalTemplate()"
+                                        style="font-size: 0.75rem; border: 1px dashed var(--accent); color: var(--accent);">
+                                        <i class="fa-solid fa-star me-1"></i> Guardar como plantilla personal
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <div class="modal-footer d-flex justify-content-end gap-2">
@@ -1955,45 +1970,52 @@
                 const commTemplates = {
                     owner: {
                         tabs: [
-                            { id: 'hooks', label: '1. Iniciar (5)' },
-                            { id: 'response', label: '2. Respuesta (5)' },
-                            { id: 'proposal', label: '3. Propuesta (5)' },
-                            { id: 'closing', label: '4. Cierre (4)' },
-                            { id: 'followup', label: '5. Seguimiento (5)' },
-                            { id: 'objections', label: '6. Objeciones (14)' }
+                            { id: 'personal', label: 'Personalizados' },
+                            { id: 'hooks', label: '1. Iniciar' },
+                            { id: 'response', label: '2. Respuesta' },
+                            { id: 'proposal', label: '3. Propuesta' },
+                            { id: 'closing', label: '4. Cierre' },
+                            { id: 'followup', label: '5. Seguimiento' },
+                            { id: 'objections', label: '6. Objeciones' }
                         ],
                         data: {
+                            personal: [],
                             hooks: [
                                 {
                                     id: "gancho_insight_especifico",
                                     label: "Insight Específico ⭐",
                                     recommended: true,
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Análisis sobre tu propiedad en [[sector]]",
                                     text: "Hola [[nombre]], estuve revisando tu propiedad en [[sector]] y me llamó la atención algo puntual 👀\n\nEstá muy alineada con lo que están buscando activos ahora, especialmente por precio y metraje.\n\n¿Aún la tienes disponible?"
                                 },
                                 {
                                     id: "gancho_movimiento_zona",
                                     label: "Movimiento en tu zona ⭐",
                                     recommended: true,
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Novedades sobre el mercado en [[sector]]",
                                     text: "Hola [[nombre]], pasó algo interesante en [[sector]] esta semana 👀\n\nEl perfil de comprador activo cambió y tu propiedad encaja mejor que otras.\n\n¿Sigue disponible para contarte?"
                                 },
                                 {
                                     id: "gancho_posicionamiento",
                                     label: "Posicionamiento directo",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Estrategia para tu propiedad en [[sector]]",
                                     text: "Hola [[nombre]], vi tu propiedad en [[sector]] y tengo una manera de mostrarla directamente a personas que ya están buscando ahí.\n\nSoy [[agente]] de Procasa. ¿Sigue disponible?"
                                 },
                                 {
                                     id: "gancho_pregunta_corta",
                                     label: "Pregunta Corta",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Consulta sobre propiedad en [[sector]]",
                                     text: "Hola [[nombre]], vi tu propiedad en [[sector]].\n\n¿Aún la tienes disponible?"
                                 },
                                 {
                                     id: "gancho_suave",
                                     label: "Gancho Frío",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Contacto de Procasa - Propiedad en [[sector]]",
                                     text: "Hola [[nombre]], soy [[agente]] de Procasa.\n\nVi tu propiedad en [[sector]] y me gustó. Estamos trabajando con compradores en esa zona. ¿Sigue disponible?"
                                 }
                             ],
@@ -2002,31 +2024,31 @@
                                 {
                                     id: "respuesta_suave_1",
                                     label: "Calificación Suave 1",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
                                     text: "Buenísimo 👍\n\nPara no hacerte perder tiempo: ¿tienes intención de vender pronto o más bien estás evaluando opciones todavía?"
                                 },
                                 {
                                     id: "respuesta_suave_2",
                                     label: "Calificación Suave 2",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
                                     text: "Perfecto. Una pregunta rápida: ¿el motivo principal es cambio de vivienda, inversión o algo familiar?\n\nAsí entiendo cómo ayudarte mejor."
                                 },
                                 {
                                     id: "respuesta_directa",
                                     label: "Calificación Directa",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
                                     text: "Entendido.\n\n¿Has tenido visitas o interesados reales hasta ahora?\n\nEso me dice mucho del posicionamiento actual."
                                 },
                                 {
                                     id: "respuesta_precio",
                                     label: "Pregunta por Precio",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
                                     text: "¿El precio que tienes publicado es el que necesitas cerrar o estás abierto a calibrarlo según lo que está pasando hoy en el mercado?"
                                 },
                                 {
                                     id: "respuesta_visitas",
                                     label: "Pregunta por Visitas",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
                                     text: "¿Cuántas visitas has tenido? Y de esas, ¿alguna llegó a oferta?\n\nCon eso veo dónde está el cuello de botella real."
                                 }
                             ],
@@ -2036,31 +2058,36 @@
                                     id: "valor_filtro_real",
                                     label: "Filtro de compradores ⭐",
                                     recommended: true,
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Nuestra metodología de filtrado en Procasa",
                                     text: "La diferencia real no es publicar. Eso lo hace cualquiera.\n\nEs quién te trae compradores que ya pueden comprar.\n\nNosotros filtramos antes de que pisen tu propiedad.\n\n¿Te muestro cómo se ve eso en tu caso?"
                                 },
                                 {
                                     id: "valor_red_interna",
                                     label: "Red Interna Procasa",
-                                    channel: "wa",
-                                    text: "En Procasa somos más de 100 agentes con clientes en proceso activo.\n\nTu propiedad se muestra también en esa base interna, no solo en portales.\n\n¿Quieres que te explique cómo funciona?"
+                                    channel: ["wa", "email"],
+                                    subject: "Acceso a la red interna de Procasa",
+                                    text: "En Procasa somos una de la redes de corretaje mas grande del país contamos con númerosos clientes en proceso activo.\n\nTu propiedad se muestra también en esa base interna, no solo en portales.\n\n¿Quieres que te explique cómo funciona?"
                                 },
                                 {
                                     id: "valor_marketing_pro",
                                     label: "Marketing Profesional",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Estrategia de marketing para tu propiedad",
                                     text: "Si lleva tiempo publicada, probablemente está perdiéndose entre miles de avisos.\n\nUsamos posicionamiento premium + campañas dirigidas.\n\n¿Hablamos 5 minutos sobre cómo mejorar su visibilidad?"
                                 },
                                 {
                                     id: "valor_panel_gestion",
                                     label: "Panel de Gestión",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Control total de tu venta en tiempo real",
                                     text: "Una de las cosas que más valoran nuestros propietarios:\n\nVes en tiempo real cuánta gente vio tu aviso y cuántos están pre-calificados.\n\n¿Quieres que te muestre cómo quedaría para la tuya?"
                                 },
                                 {
                                     id: "valor_cruce_datos",
                                     label: "Cruce de Datos",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Matches detectados para tu propiedad",
                                     text: "Nuestro sistema cruza tu propiedad con requerimientos reales de compradores activos.\n\nPor eso detectamos matches que otros no ven.\n\n¿Te gustaría ver los perfiles que ya tenemos?"
                                 }
                             ],
@@ -2237,13 +2264,93 @@
                     if (el) el.textContent = _ctaLabels[_leadStage] || 'Enviar mensaje';
                 })();
 
+                async function fetchPersonalTemplates() {
+                    try {
+                        const response = await fetch('/api/captacion/templates/personal');
+                        if (!response.ok) throw new Error("Error fetching templates");
+                        const data = await response.json();
+                        console.log("Personal templates data:", data);
+                        commTemplates.owner.data.personal = data.map(t => ({
+                            id: t._id,
+                            label: t.label,
+                            text: t.text,
+                            subject: t.subject || "",
+                            channel: t.channel || "wa",
+                            is_personal: true
+                        }));
+                        console.log("Mapped personal templates:", commTemplates.owner.data.personal);
+                        return true;
+                    } catch (e) {
+                        console.error("Personal templates fetch failed", e);
+                        return false;
+                    }
+                }
+
+                async function saveAsPersonalTemplate() {
+                    const text = document.getElementById('commMessage').value;
+                    const subject = document.getElementById('emailSubject').value;
+                    if (!text.trim()) {
+                        alert("Escribe un mensaje primero.");
+                        return;
+                    }
+
+                    const label = prompt("Dale un nombre a esta plantilla (ej: Mi saludo inicial):", "Plantilla Nueva");
+                    if (!label) return;
+
+                    try {
+                        const response = await fetch('/api/captacion/templates/personal', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                label: label,
+                                text: text,
+                                subject: subject,
+                                channel: currentCommChannel
+                            })
+                        });
+
+                        if (response.ok) {
+                            await fetchPersonalTemplates();
+                            renderCommTabs(currentCommTarget);
+                            loadTemplates(currentCommTarget, 'personal');
+                            alert("✅ Plantilla guardada en 'Personalizados'");
+                        }
+                    } catch (e) {
+                        console.error("Save template failed", e);
+                    }
+                }
+
+                async function deletePersonalTemplate(id, event) {
+                    if (event) event.stopPropagation();
+                    if (!confirm("¿Seguro que quieres eliminar esta plantilla?")) return;
+
+                    try {
+                        const response = await fetch('/api/captacion/templates/personal', {
+                            method: 'DELETE',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: id })
+                        });
+
+                        if (response.ok) {
+                            await fetchPersonalTemplates();
+                            renderCommTabs(currentCommTarget);
+                            loadTemplates(currentCommTarget, 'personal');
+                        }
+                    } catch (e) {
+                        console.error("Delete template failed", e);
+                    }
+                }
+
                 let currentCommTarget = 'owner';
                 let currentCommChannel = 'wa';
 
-                function openCommPanel(target, defaultChannel = 'wa') {
+                async function openCommPanel(target, defaultChannel = 'wa') {
                     try {
                         currentCommTarget = target;
                         currentCommChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel;
+
+                        // Cargar plantillas personales antes de renderizar
+                        await fetchPersonalTemplates();
 
                         const modalElement = document.getElementById('commModal');
                         if (!modalElement) {
@@ -2300,9 +2407,20 @@
                     const container = document.getElementById('commTabs');
                     container.innerHTML = "";
                     commTemplates[target].tabs.forEach((tab, index) => {
+                        const allTemplates = commTemplates[target].data[tab.id] || [];
+                        const count = allTemplates.filter(t =>
+                            tab.id === 'personal' || // Siempre mostrar todas las personales
+                            !t.channel ||
+                            t.channel === currentCommChannel ||
+                            (Array.isArray(t.channel) && t.channel.includes(currentCommChannel))
+                        ).length;
+
+                        // Ocultar si está vacío (excepto si estamos en modo edición o queremos forzarlo)
+                        if (count === 0) return;
+
                         const btn = document.createElement('button');
                         btn.className = `stage-tab ${index === 0 ? 'active' : ''}`;
-                        btn.innerText = tab.label;
+                        btn.innerHTML = `${tab.label} <span class="ms-1 tiny-count">(${count})</span>`;
                         btn.onclick = (e) => loadTemplates(target, tab.id, e.target);
                         container.appendChild(btn);
                     });
@@ -2324,7 +2442,11 @@
                     tplList.parentElement.classList.remove('d-none');
                     tplList.innerHTML = "";
 
-                    const templates = (commTemplates[target].data[category] || []).filter(t => t.channel === currentCommChannel);
+                    const templates = (commTemplates[target].data[category] || []).filter(t =>
+                        !t.channel ||
+                        t.channel === currentCommChannel ||
+                        (Array.isArray(t.channel) && t.channel.includes(currentCommChannel))
+                    );
 
                     if (templates.length === 0) {
                         tplList.innerHTML = '<div class="text-center p-3 text-secondary small">No hay plantillas para este canal.</div>';
@@ -2350,16 +2472,30 @@
                         const stageHint = tpl.recommended && _leadStage === 'estancado' && tpl.id && tpl.id.includes('followup')
                             ? `<span style="font-size:0.6rem;color:#f59e0b;">⚠️ F-UP 48h sin respuesta</span>`
                             : ``;
+                        const delBtn = tpl.is_personal
+                            ? `<button class="btn btn-link text-danger p-0 ms-2 opacity-50 hover-opacity-100" 
+                                       title="Eliminar plantilla" 
+                                       onclick="deletePersonalTemplate('${tpl.id}', event)"
+                                       style="transition: opacity 0.2s; border:none; background:none;">
+                                <i class="fa-solid fa-trash-can" style="font-size:0.75rem;"></i>
+                               </button>`
+                            : ``;
+
                         card.innerHTML = `
                     <div class="tpl-info">
-                        <div class="d-flex align-items-center gap-1 mb-1">
-                            <span class="tpl-title">${tpl.label}</span>
-                            ${recBadge}
-                            ${stageHint}
+                        <div class="d-flex align-items-center justify-content-between mb-1" style="width: 100%;">
+                            <div class="d-flex align-items-center gap-1">
+                                <span class="tpl-title" style="color: var(--accent); font-weight: 600;">${tpl.label}</span>
+                                ${recBadge}
+                                ${stageHint}
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                ${delBtn}
+                                <i class="${tpl.is_personal ? 'fa-solid fa-user-pen' : (currentCommChannel === 'wa' ? 'fa-brands fa-whatsapp' : 'fa-solid fa-envelope')} text-secondary" style="font-size: 0.8rem; opacity: 0.5;"></i>
+                            </div>
                         </div>
                         <span class="tpl-preview">${tpl.text.substring(0, 50)}...</span>
                     </div>
-                    <i class="${currentCommChannel === 'wa' ? 'fa-brands fa-whatsapp' : 'fa-solid fa-envelope'} text-secondary"></i>
                 `;
                         tplList.appendChild(card);
 
@@ -2406,16 +2542,20 @@
                     const safeName = (safeNameEl && safeNameEl.value) ? safeNameEl.value : "Propietario";
 
                     // Variables dinámicas (Fase 5)
-                    const sector = "{{ sector_name|default('') }}";
-                    const demanda = parseInt("{{ total_leads|default(0) }}");
-                    const dias_pub = parseInt("{{ days_published|default(0) }}");
-                    const precio_cbr = "{{ avg_cierre|default(0) }}";
+                    const sector = "{{ prop.sector_name|default(prop.comuna)|default('') }}";
+                    const demanda = parseInt("{{ prop.total_leads|default(0) }}");
+                    const dias_pub = parseInt("{{ prop.days_published|default(0) }}");
+                    const precio_cbr = "{{ prop.avg_cierre|default(0) }}";
+                    const agente = "{{ user_name|default('') }}";
 
                     let processed = text
+                        .replace(/\[\[nombre\]\]/g, safeName.split(' ')[0])
                         .replace(/\[\[vendedor\]\]/g, safeName.split(' ')[0])
                         .replace(/\{\{nombre\}\}/g, safeName.split(' ')[0])
                         .replace(/\[\[sector\]\]/g, sector || "tu zona")
                         .replace(/\{\{sector\}\}/g, sector || "tu zona")
+                        .replace(/\[\[agente\]\]/g, agente.split(' ')[0])
+                        .replace(/\{\{agente\}\}/g, agente.split(' ')[0])
                         .replace(/\[\[demanda\]\]/g, demanda > 0 ? demanda : "varios")
                         .replace(/\{\{demanda\}\}/g, demanda > 0 ? demanda : "varios")
                         .replace(/\{\{X\}\}/g, demanda > 0 ? demanda : "varios")

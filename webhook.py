@@ -36,7 +36,8 @@ from api_leads_intelligence import get_leads_executive_report, get_specific_lead
 from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent
 from api_captacion import (
     get_captacion_list, get_captacion_detail, update_captacion_status, update_contact_info,
-    distribute_sourced_leads, format_relative_time as format_captacion_time
+    distribute_sourced_leads, format_relative_time as format_captacion_time,
+    get_personal_templates, save_personal_template, delete_personal_template
 )
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate
 from chatbot.processing_service import LeadProcessingService
@@ -950,9 +951,6 @@ async def view_captaciones(
     user_role = user.get("rol", "agente")
     user_name = user.get("nombre", "")
     
-    if user_role not in ["admin", "supervisor"]:
-        return RedirectResponse(url="/crm?error=access_denied")
-    
     # Lista de ejecutivos para el filtro (solo admin/supervisor)
     executives = []
     if user_role in ["admin", "supervisor"]:
@@ -1013,8 +1011,7 @@ async def view_captacion_detail_route(request: Request, obj_id: str):
     user_role = user.get("rol", "agente")
     user_name = user.get("nombre", "")
 
-    if user_role not in ["admin", "supervisor"]:
-        return RedirectResponse(url="/crm?error=access_denied")
+
 
     data = get_captacion_detail(obj_id)
     if not data:
@@ -1123,6 +1120,44 @@ async def api_captacion_log_action(request: Request):
     except Exception as e:
         logger.error(f"Error logging captacion action: {e}")
         return {"status": "error", "message": str(e)}
+
+@app.get("/api/captacion/templates/personal")
+async def api_get_personal_templates(request: Request):
+    username_str = await get_current_user(request)
+    client = MongoClient(Config.MONGO_URI)
+    db = client[Config.DB_NAME]
+    user_doc = db["usuarios"].find_one({"username": username_str})
+    actual_name = user_doc.get("nombre", username_str) if user_doc else username_str
+    
+    return get_personal_templates(actual_name)
+
+@app.post("/api/captacion/templates/personal")
+async def api_save_personal_template(request: Request):
+    username_str = await get_current_user(request)
+    client = MongoClient(Config.MONGO_URI)
+    db = client[Config.DB_NAME]
+    user_doc = db["usuarios"].find_one({"username": username_str})
+    actual_name = user_doc.get("nombre", username_str) if user_doc else username_str
+    
+    data = await request.json()
+    tid = save_personal_template(actual_name, data)
+    return {"status": "ok", "id": tid}
+
+@app.delete("/api/captacion/templates/personal")
+async def api_delete_personal_template(request: Request):
+    username_str = await get_current_user(request)
+    client = MongoClient(Config.MONGO_URI)
+    db = client[Config.DB_NAME]
+    user_doc = db["usuarios"].find_one({"username": username_str})
+    actual_name = user_doc.get("nombre", username_str) if user_doc else username_str
+    
+    data = await request.json()
+    tid = data.get("id")
+    if not tid:
+        raise HTTPException(status_code=400, detail="Falta ID")
+        
+    success = delete_personal_template(tid, actual_name)
+    return {"status": "ok"} if success else {"status": "error"}
 
 @app.post("/api/captacion/distribute")
 async def api_distribute_captacion(request: Request):

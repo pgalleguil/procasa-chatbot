@@ -304,6 +304,11 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
             "url": doc.get("url"),
             "titulo": details.get("titulo", "Sin título"),
             "comuna": details.get("comuna", "S/I"),
+            "operacion": "ARRIENDO" if (
+                (details.get("tipo_operacion") and "ARR" in str(details.get("tipo_operacion")).upper()) or 
+                (details.get("operacion") and "ARR" in str(details.get("operacion")).upper()) or
+                (details.get("precio_uf") and float(details.get("precio_uf")) < 1000)
+            ) else "VENTA",
             "precio": str(details.get("precio", "S/I")).split("Ref.")[0].strip(),
             "precio_uf": details.get("precio_uf"),
             "uf_m2": doc.get("uf_m2_cache", 0),
@@ -402,27 +407,28 @@ def get_captacion_detail(obj_id):
     if vendedor_nombre.lower() in ["particular", "n/a", "no disponible"]: vendedor_nombre = "Propietario"
     else: vendedor_nombre = vendedor_nombre.split()[0].capitalize()
 
+    # Email y Notas (Nuevos campos persistentes)
+    vendedor_email = details.get("email") or details.get("vendedor_email") or ""
+    notas_contacto = doc.get("notas_contacto") or ""
+
     # PIPELINE REALISTA
     pipeline_stages = [
-        "DETECTADO", 
-        "POR CONTACTAR", 
-        "INTENTO DE CONTACTO", 
-        "CONTACTO EXITOSO", 
-        "SIN RESPUESTA", 
-        "TELÉFONO INVÁLIDO", 
-        "CORREDOR", 
-        "PROPIEDAD NO DISPONIBLE",
-        "NO INTERESADO",
-        "INTERESADO EN TASACIÓN",
-        "TASACIÓN ENVIADA",
-        "REUNIÓN AGENDADA",
-        "CAPTADO",
-        "DESCARTADO"
+        "Por contactar", 
+        "Contacto exitoso", 
+        "Sin respuesta", 
+        "Teléfono inválido", 
+        "Corredor", 
+        "Propiedad no disponible",
+        "Publicación expirada",
+        "No interesado",
+        "Reunión agendada",
+        "Captado",
+        "Descartado"
     ]
     
-    estado_actual = gestion.get("estado_captacion") or gestion.get("estado") or "DETECTADO"
-    if estado_actual == "GESTION": estado_actual = "POR CONTACTAR"
-    elif estado_actual == "NUEVO": estado_actual = "DETECTADO"
+    estado_actual = gestion.get("estado_captacion") or gestion.get("estado") or "Por contactar"
+    if estado_actual in ["GESTION", "NUEVO", "DETECTADO", "INTENTO DE CONTACTO"]: 
+        estado_actual = "Por contactar"
             
     intent_count = gestion.get("intent_count", 0)
 
@@ -516,6 +522,8 @@ def get_captacion_detail(obj_id):
         "wa_templates": wa_templates,
         "vendedor_nombre": vendedor_nombre, 
         "vendedor_telefono": vendedor_telefono,
+        "vendedor_email": vendedor_email,
+        "notas_contacto": notas_contacto,
         "gestion": gestion,
         "estado_captacion": estado_actual,
         "pipeline_stages": pipeline_stages,
@@ -1372,6 +1380,50 @@ def distribute_sourced_leads():
         assigned_count += 1
         
     return assigned_count
+
+def get_personal_templates(user_name):
+    """Retorna las plantillas personalizadas de un usuario."""
+    db = get_db()
+    templates = list(db["personal_templates"].find({"user_name": user_name}).sort("created_at", -1))
+    for t in templates:
+        t["_id"] = str(t["_id"])
+    return templates
+
+def save_personal_template(user_name, data):
+    """Guarda o actualiza una plantilla personalizada."""
+    db = get_db()
+    data["user_name"] = user_name
+    data["created_at"] = get_chile_now().isoformat()
+    
+    # Limpiar _id si viene vacío o nulo
+    if not data.get("_id"):
+        data.pop("_id", None)
+
+    if "_id" in data:
+        try:
+            tid = data.pop("_id")
+            db["personal_templates"].update_one(
+                {"_id": ObjectId(tid), "user_name": user_name},
+                {"$set": data},
+                upsert=True
+            )
+            return str(tid)
+        except Exception as e:
+            logging.error(f"Error updating template: {e}")
+            return None
+    else:
+        res = db["personal_templates"].insert_one(data)
+        return str(res.inserted_id)
+
+def delete_personal_template(template_id, user_name):
+    """Elimina una plantilla personalizada asegurando pertenencia."""
+    db = get_db()
+    try:
+        res = db["personal_templates"].delete_one({"_id": ObjectId(template_id), "user_name": user_name})
+        return res.deleted_count > 0
+    except Exception as e:
+        logging.error(f"Error deleting template: {e}")
+        return False
 
 # --- AUTO-INITIALIZATION ---
 try:

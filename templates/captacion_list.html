@@ -717,10 +717,8 @@
 
         <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
 
-        {% if user_role in ['supervisor', 'admin'] %}
         <a href="/captacion" class="nav-link active"><i class="fa-solid fa-house-circle-check"></i>
             <span>Captaciones</span></a>
-        {% endif %}
 
         <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="
           toggleTheme();
@@ -803,6 +801,7 @@
                     <thead>
                         <tr>
                             <th>Comuna</th>
+                            <th>Operación</th>
                             <th class="text-center">Precio</th>
                             <th class="text-center">Estado</th>
                             <th class="text-center">Antiguedad</th>
@@ -812,6 +811,13 @@
                         {% for item in items %}
                         <tr onclick="location.href='/captacion/{{ item.id }}'">
                             <td><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</td>
+                            <td>
+                                {% if 'VEN' in item.operacion %}
+                                <span class="badge-custom" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2);">VENTA</span>
+                                {% else %}
+                                <span class="badge-custom" style="background: rgba(99, 102, 241, 0.1); color: var(--accent); border: 1px solid rgba(99, 102, 241, 0.2);">ARRIENDO</span>
+                                {% endif %}
+                            </td>
                             <td class="text-center">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}

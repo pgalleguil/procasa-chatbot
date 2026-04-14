@@ -20,7 +20,7 @@ from .crm_service import CrmService
 from .constants import PipelineStage, InteractionType, LeadIntent, CHILE_TZ
 
 from .grok_client import generar_respuesta, generar_respuesta_estructurada
-from .link_extractor import analizar_mensaje_para_link
+from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional
 from .utils import extraer_rut, extraer_email, safe_int_conversion, extraer_nombre_explicito
 from .alert_service import send_alert_once
 from .classifier import es_propietario 
@@ -205,8 +205,22 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         nuevo_origen = plataforma_origen or "WhatsApp"
         codigo_externo = codigo_externo_raw
 
+    # 2. Si no es link, intentar detectar CODIGO INTERNACIONAL (9+ dígitos)
     if not propiedad:
-        # Buscar código numérico explícito en el mensaje (código Procasa interno)
+        cod_int = extraer_codigo_internacional(original_message)
+        if cod_int:
+            propiedad = get_db()[Config.COLLECTION_NAME].find_one({
+                "$or": [
+                    {"codigo_internacional": cod_int},
+                    {"publicaciones.codigo_internacional": cod_int}
+                ]
+            })
+            if propiedad:
+                codigo_detectado = str(propiedad.get("codigo"))
+                nuevo_origen = "WhatsApp (Int Code)"
+
+    # 3. Si no es lo anterior, buscar código numérico explícito corto (4-6 dígitos)
+    if not propiedad:
         match = re.search(r"\b(\d{4,6})\b", original_message)
         if match:
             cod = match.group(1)
@@ -216,7 +230,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 if not prospecto_actual.get("origen"):
                     nuevo_origen = "WhatsApp"
 
-    # 2. Si NO hay propiedad en mensaje actual, recuperar histórica
+    # 4. Si NO hay propiedad en mensaje actual, recuperar histórica
     if not propiedad and not any(x in msg_lower for x in ["busco", "otra", "tienes", "opciones"]):
         codigo_guardado = prospecto_actual.get("codigo")
         if codigo_guardado:

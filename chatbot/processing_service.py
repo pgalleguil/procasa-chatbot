@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from .constants import CHILE_TZ, UNASSIGNED_LABEL
 from .lead_router import find_responsible_executive
+from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional
 from config import Config
 from .storage import get_db, save_pending_notification
 from api_captacion import (
@@ -53,6 +54,32 @@ class LeadProcessingService:
         
         # 2. Si falta comuna pero tenemos código, buscar en universo_cartera
         property_code = prospecto.get("codigo") or lead_doc.get("codigo")
+        
+        # [AUTOMATION] Si no hay código, intentar extraerlo de los mensajes (historial)
+        if not property_code and lead_doc.get("messages"):
+            logger.info(f"[PROCESS_SERVICE] Intentando RE-IDENTIFICAR lead {lead_doc.get('phone')} desde historial...")
+            # Unimos los últimos mensajes para buscar links/códigos
+            all_text = " ".join([m.get("content", "") for m in lead_doc.get("messages", [])[-5:]])
+            found_link, prop_match, platform, code_raw = analizar_mensaje_para_link(all_text)
+            
+            if found_link and prop_match:
+                property_code = str(prop_match.get("codigo"))
+                logger.info(f"[PROCESS_SERVICE] ¡Match encontrado en historial! Código: {property_code}")
+            else:
+                # Probar código internacional
+                c_int = extraer_codigo_internacional(all_text)
+                if c_int:
+                    db = LeadProcessingService._db()
+                    prop_int = db["universo_cartera"].find_one({
+                        "$or": [
+                            {"codigo_internacional": c_int},
+                            {"publicaciones.codigo_internacional": c_int}
+                        ]
+                    })
+                    if prop_int:
+                        property_code = str(prop_int.get("codigo"))
+                        logger.info(f"[PROCESS_SERVICE] ¡Match por Cód Internacional en historial! Código: {property_code}")
+
         if not comuna and property_code:
             try:
                 db = LeadProcessingService._db()

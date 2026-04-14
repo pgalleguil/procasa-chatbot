@@ -81,10 +81,7 @@ async def lifespan(app: FastAPI):
     c_task = asyncio.create_task(captacion_distribution_loop())
     r_task = asyncio.create_task(reassign_unassigned_leads_loop())
     d_task = asyncio.create_task(daily_report_loop())
-    
-    # Crear admin y asegurar índices
-    crear_admin_si_no_existe()
-    asegurar_indices_db()
+    nudge_task = asyncio.create_task(inactive_lead_nudge_loop())
     
     # Crear admin y asegurar índices
     crear_admin_si_no_existe()
@@ -103,8 +100,9 @@ async def lifespan(app: FastAPI):
     c_task.cancel()
     r_task.cancel()
     d_task.cancel()
+    nudge_task.cancel()
     try:
-        await asyncio.gather(n_task, s_task, t_task, c_task, r_task, d_task, return_exceptions=True)
+        await asyncio.gather(n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, return_exceptions=True)
     except Exception as e:
         logger.error(f"Error apagando tareas: {e}")
 
@@ -1524,6 +1522,100 @@ def asegurar_indices_db():
         logger.info("Índices de CRM asegurados.")
     except Exception as e:
         logger.warning(f"Error creando índices: {e}")
+
+async def inactive_lead_nudge_loop():
+    logger.info("[NUDGE_LOOP] Iniciando monitor de reactivación (Nudge) de leads inactivos...")
+    while True:
+        try:
+            background_tasks_status["nudge_loop"] = {"status": "running", "last_heartbeat": datetime.now(CHILE_TZ).isoformat()}
+            
+            from chatbot.storage import get_db
+            from chatbot.whatsapp_client import send_whatsapp_message
+            db = get_db()
+            
+            now_utc = datetime.utcnow()
+            limit_max = now_utc - timedelta(hours=12) # No revivir muertos
+            limit_min = now_utc - timedelta(minutes=25) # Buffer antes de chequear el dinamismo real
+            
+            # Buscar leads que podrían necesitar nudge:
+            # - No rechazados o cerrados
+            # - Nunca se les ha enviado nudge o no tienen el flag exitoso
+            # - Tienen al menos 1 mensaje
+            query = {
+                "stage": {"$nin": ["ARCHIVED", "REJECTED", "CLOSED_LOST", "CLOSED_WON", "OFFER", "NEGOTIATION", "VISIT_DONE", "VISIT_SCHEDULED"]},
+                "nudge_status": {"$exists": False},
+                "messages.0": {"$exists": True}
+            }
+            
+            leads = list(db["leads"].find(query))
+            
+            for lead in leads:
+                messages = lead.get("messages", [])
+                if not messages:
+                    continue
+                    
+                last_msg = messages[-1]
+                # Solo si el último que habló fue el BOT
+                if last_msg.get("role") != "assistant":
+                    continue
+                
+                # Ver cuándo fue el último mensaje
+                last_time_str = last_msg.get("timestamp") or last_msg.get("time")
+                if not last_time_str:
+                    continue
+                
+                try:
+                    last_time = datetime.fromisoformat(str(last_time_str).replace("Z", "+00:00")).astimezone(pytz.utc).replace(tzinfo=None)
+                except:
+                    continue
+                    
+                time_diff_mins = (now_utc - last_time).total_seconds() / 60.0
+                
+                # Descartar si es muy viejo o muy reciente
+                if time_diff_mins > 720 or time_diff_mins < 30:
+                    continue
+                
+                # Timing dinámico: si interactuó mucho (3+ msgs del usuario), 30 mins está bien. Si 1 vez, 60 mins.
+                user_msgs_count = sum(1 for m in messages if m.get("role") == "user")
+                threshold_mins = 45 # Default moderado
+                if user_msgs_count >= 3:
+                    threshold_mins = 30
+                elif user_msgs_count <= 1:
+                    threshold_mins = 60
+                
+                if time_diff_mins >= threshold_mins:
+                    # EDGE CASE: Re-validar en tiempo real antes de enviar para evitar cruces
+                    fresh_lead = db["leads"].find_one({"_id": lead["_id"]})
+                    fresh_msgs = fresh_lead.get("messages", [])
+                    if fresh_msgs and fresh_msgs[-1].get("role") == "user":
+                        logger.info(f"[NUDGE] Cancelado para {lead.get('phone')} (Respondió justo ahora).")
+                        continue
+                    
+                    # Enviar el nudge
+                    phone = lead.get("phone")
+                    nudge_text = "Hola 🙂 Solo paso por aquí por si te quedó alguna duda. Si quieres, puedo ayudarte o ponerte en contacto con un ejecutivo para agendar. Si no es buen momento, ningún problema. 👍"
+                    
+                    logger.info(f"[NUDGE] Enviando reactivación a {phone} (Inactivo {int(time_diff_mins)} min, Umbral: {threshold_mins})")
+                    sent = await send_whatsapp_message(phone, nudge_text)
+                    
+                    if sent:
+                        db["leads"].update_one(
+                            {"_id": lead["_id"]},
+                            {"$set": {
+                                "nudge_status": "sent",
+                                "nudge_sent_at": datetime.now(CHILE_TZ).isoformat()
+                            }}
+                        )
+                        await asyncio.sleep(5) # Throttling ligero
+                        
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"[NUDGE_LOOP] Error global: {e}")
+            if "nudge_loop" in background_tasks_status:
+                background_tasks_status["nudge_loop"]["status"] = f"error: {str(e)}"
+        
+        await asyncio.sleep(120)  # Chequear cada 2 minutos
 
 async def reassign_unassigned_leads_loop():
     logger.info("[BACKGROUND] Iniciando loop de procesamiento de leads (Clasificación/Asignación)...")

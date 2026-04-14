@@ -1540,8 +1540,9 @@ async def reassign_unassigned_leads_loop():
             from chatbot.constants import UNASSIGNED_LABEL
             unassigned_labels = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
             
-            # Query optimizada: Solo los que necesitan algo (Idempotencia)
+            # Query optimizada: Solo los que necesitan algo (Idempotencia) y NO están en estados terminales
             query = {
+                "stage": {"$nin": ["ARCHIVED", "REJECTED", "CLOSED_LOST", "CLOSED_WON"]},
                 "$or": [
                     {"cluster_id": {"$exists": False}},
                     {"cluster_id": {"$in": [None, ""]}},

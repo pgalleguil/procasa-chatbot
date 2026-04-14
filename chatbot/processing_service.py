@@ -242,7 +242,7 @@ class LeadProcessingService:
                         created_dt = CHILE_TZ.localize(created_dt)
                     
                     if (now_cl - created_dt) > timedelta(days=90):
-                        logger.info(f"[PROCESS_SERVICE] Lead {lead_id} tiene más de 90 días. Archivando automáticamente.")
+                        logger.debug(f"[PROCESS_SERVICE] Lead {lead_id} tiene más de 90 días. Archivando automáticamente.")
                         db["leads"].update_one(
                             {"_id": query_id}, 
                             {"$set": {"stage": "ARCHIVED", "archive_reason": "Lead antiguo (>90 días) sin procesar"}}

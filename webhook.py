@@ -1543,10 +1543,18 @@ async def inactive_lead_nudge_loop():
             limit_max = now_utc - timedelta(hours=12) # No revivir muertos
             limit_min = now_utc - timedelta(minutes=25) # Buffer antes de chequear el dinamismo real
             
-            # Buscar leads que podrían necesitar nudge:
-            # - No rechazados o cerrados
-            # - Nunca se les ha enviado nudge o no tienen el flag exitoso
-            # - Tienen al menos 1 mensaje
+            # INTENCIONES AVANZADAS — no molestar si el lead ya está en proceso de visita/gestión
+            INTENTS_NO_NUDGE = {
+                "ASK_VISIT", "VISIT_SCHEDULED", "VISIT_DONE",
+                "GIVE_OFFER", "NEGOTIATION", "CLOSED_WON"
+            }
+            # Labels de ejecutivos "sin asignar" — si tiene ejecutivo real, no enviar nudge
+            from chatbot.constants import UNASSIGNED_LABEL
+            UNASSIGNED_LABELS = {
+                UNASSIGNED_LABEL, "No Asignado", "No asignado",
+                "Sin Asignar", "Sin asignar", "N/A", "", None
+            }
+
             query = {
                 "stage": {"$nin": ["ARCHIVED", "REJECTED", "CLOSED_LOST", "CLOSED_WON", "OFFER", "NEGOTIATION", "VISIT_DONE", "VISIT_SCHEDULED"]},
                 "nudge_status": {"$exists": False},
@@ -1559,57 +1567,100 @@ async def inactive_lead_nudge_loop():
                 messages = lead.get("messages", [])
                 if not messages:
                     continue
-                    
+
+                # ─── FILTRO 1: ya tiene ejecutivo real asignado → el humano se encarga ───
+                ejecutivo = (
+                    lead.get("ejecutivo_asignado") or
+                    lead.get("prospecto", {}).get("ejecutivo")
+                )
+                if ejecutivo not in UNASSIGNED_LABELS:
+                    logger.debug(f"[NUDGE] Omitido {lead.get('phone')}: ya asignado a {ejecutivo}.")
+                    db["leads"].update_one(
+                        {"_id": lead["_id"]},
+                        {"$set": {"nudge_status": "skipped_has_executive"}}
+                    )
+                    continue
+
+                # ─── FILTRO 2: intención avanzada (visita, oferta, negociación) ───
+                last_intent = lead.get("last_intent") or lead.get("prospecto", {}).get("last_intent", "")
+                if str(last_intent).upper() in INTENTS_NO_NUDGE:
+                    logger.debug(f"[NUDGE] Omitido {lead.get('phone')}: intención avanzada '{last_intent}'.")
+                    db["leads"].update_one(
+                        {"_id": lead["_id"]},
+                        {"$set": {"nudge_status": "skipped_advanced_intent"}}
+                    )
+                    continue
+
                 last_msg = messages[-1]
                 # Solo si el último que habló fue el BOT
                 if last_msg.get("role") != "assistant":
                     continue
-                
+
+                # ─── FILTRO 3: el bot ya respondió varias veces (conversación activa) ───
+                bot_msgs_count  = sum(1 for m in messages if m.get("role") == "assistant")
+                user_msgs_count = sum(1 for m in messages if m.get("role") == "user")
+
+                # Si el cliente interactuó más de 1 vez y el bot respondió más de 2 veces,
+                # la conversación ya está en marcha — NO mandar nudge genérico.
+                if user_msgs_count >= 2 and bot_msgs_count >= 3:
+                    logger.debug(f"[NUDGE] Omitido {lead.get('phone')}: conversación activa ({user_msgs_count}u/{bot_msgs_count}b msgs).")
+                    db["leads"].update_one(
+                        {"_id": lead["_id"]},
+                        {"$set": {"nudge_status": "skipped_active_conversation"}}
+                    )
+                    continue
+
                 # Ver cuándo fue el último mensaje
                 last_time_str = last_msg.get("timestamp") or last_msg.get("time")
                 if not last_time_str:
                     continue
-                
+
                 try:
                     last_time = datetime.fromisoformat(str(last_time_str).replace("Z", "+00:00")).astimezone(pytz.utc).replace(tzinfo=None)
                 except:
                     continue
-                    
+
                 time_diff_mins = (now_utc - last_time).total_seconds() / 60.0
-                
+
                 # Descartar si es muy viejo o muy reciente
                 if time_diff_mins > 720 or time_diff_mins < 30:
                     continue
-                
-                # Timing dinámico: si interactuó mucho (3+ msgs del usuario), 30 mins está bien. Si 1 vez, 60 mins.
-                user_msgs_count = sum(1 for m in messages if m.get("role") == "user")
-                threshold_mins = 45 # Default moderado
-                if user_msgs_count >= 3:
-                    threshold_mins = 30
-                elif user_msgs_count <= 1:
-                    threshold_mins = 60
-                
+
+                # Timing dinámico: 1 solo mensaje de usuario = esperar 60 min. Varios = 45 min.
+                threshold_mins = 60 if user_msgs_count <= 1 else 45
+
                 if time_diff_mins >= threshold_mins:
-                    # EDGE CASE: Re-validar en tiempo real antes de enviar para evitar cruces
+                    # Re-validar en tiempo real antes de enviar
                     fresh_lead = db["leads"].find_one({"_id": lead["_id"]})
                     fresh_msgs = fresh_lead.get("messages", [])
                     if fresh_msgs and fresh_msgs[-1].get("role") == "user":
                         logger.info(f"[NUDGE] Cancelado para {lead.get('phone')} (Respondió justo ahora).")
                         continue
-                    
-                    # Enviar el nudge
+
                     phone = lead.get("phone")
-                    nudge_text = "Hola 🙂 Solo paso por aquí por si te quedó alguna duda. Si quieres, puedo ayudarte o ponerte en contacto con un ejecutivo para agendar. Si no es buen momento, ningún problema. 👍"
-                    
+                    # Texto neutro — no menciona ejecutivos porque el lead no está asignado
+                    nudge_text = (
+                        "Hola 🙂 Solo quería saber si tienes alguna pregunta adicional "
+                        "sobre la propiedad. Estoy aquí para ayudarte. "
+                        "Si no es buen momento, no hay problema. 👍"
+                    )
+
                     logger.info(f"[NUDGE] Enviando reactivación a {phone} (Inactivo {int(time_diff_mins)} min, Umbral: {threshold_mins})")
                     sent = await send_whatsapp_message(phone, nudge_text)
-                    
+
                     if sent:
+                        from chatbot.storage import guardar_mensaje
+                        now_cl_str = datetime.now(CHILE_TZ).isoformat()
+                        # ── Guardar en historial del lead para trazabilidad ──
+                        guardar_mensaje(phone, "assistant", nudge_text, {
+                            "tipo": "nudge_reactivacion",
+                            "intencion": "reactivacion_automatica"
+                        })
                         db["leads"].update_one(
                             {"_id": lead["_id"]},
                             {"$set": {
                                 "nudge_status": "sent",
-                                "nudge_sent_at": datetime.now(CHILE_TZ).isoformat()
+                                "nudge_sent_at": now_cl_str
                             }}
                         )
                         await asyncio.sleep(5) # Throttling ligero

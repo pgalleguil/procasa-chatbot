@@ -23,7 +23,7 @@ from .grok_client import generar_respuesta, generar_respuesta_estructurada
 from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional
 from .utils import extraer_rut, extraer_email, safe_int_conversion, extraer_nombre_explicito
 from .alert_service import send_alert_once
-from .classifier import es_propietario 
+from .classifier import es_propietario, es_corredor_externo
 
 # RAG IMPORT
 from .rag import buscar_propiedades, formatear_resultados_texto, buscar_semanticamente
@@ -157,6 +157,22 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         return respuesta
 
     # =======================================================
+    # 2b. FLUJO CORREDOR DE PROPIEDADES EXTERNO
+    # =======================================================
+    # Si el mensaje contiene frases de corredor (canje, representación, etc.),
+    # informamos que PROCASA no opera con corredores externos y cerramos el diálogo.
+    if es_corredor_externo(original_message):
+        respuesta_corredor = (
+            "Estimado/a, muchas gracias por contactarnos. "
+            "PROCASA no realiza operaciones de canje ni trabaja con corredores externos. "
+            "Si usted es cliente final y está buscando una propiedad, con gusto lo atendemos. "
+            "Que tenga un excelente día."
+        )
+        logger.info(f"[CORREDOR] Respuesta de rechazo enviada a {phone}.")
+        guardar_mensaje(phone, "assistant", respuesta_corredor, {"tipo": "rechazo_corredor"})
+        return respuesta_corredor
+
+    # =======================================================
     # 3. ANÁLISIS PRELIMINAR DE DATOS Y EXTRACCIÓN PROACTIVA
     # =======================================================
     prospecto_actual = obtener_prospecto(phone) or {} 
@@ -220,11 +236,17 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 nuevo_origen = "WhatsApp (Int Code)"
 
     # 3. Si no es lo anterior, buscar código numérico explícito corto (4-6 dígitos)
+    #    Incluye búsqueda por codigo_procasa (códigos antiguos publicados en descripciones de portales)
     if not propiedad:
         match = re.search(r"\b(\d{4,6})\b", original_message)
         if match:
             cod = match.group(1)
-            propiedad = get_db()[Config.COLLECTION_NAME].find_one({"$or": [{"codigo": cod}, {"codigo": safe_int_conversion(cod)}]})
+            propiedad = get_db()[Config.COLLECTION_NAME].find_one({"$or": [
+                {"codigo": cod},
+                {"codigo": safe_int_conversion(cod)},
+                {"codigo_procasa": cod},
+                {"codigo_procasa": safe_int_conversion(cod)},
+            ]})
             if propiedad:
                 codigo_detectado = str(propiedad.get("codigo"))
                 if not prospecto_actual.get("origen"):

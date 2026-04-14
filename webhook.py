@@ -717,27 +717,32 @@ async def process_with_debounce(phone: str, full_text: str, is_from_me: bool = F
     last_message_time[phone] = time.time()
 
     async def delayed_process(from_me: bool):
+        # ANTI-DUPLICADO: Capturamos referencia a la tarea ACTUAL para compararla luego
+        current_task = asyncio.current_task()
         try:
             await asyncio.sleep(DEBOUNCE_SECONDS)
+            # Verificación 1: el usuario no envió otro mensaje durante el sleep
             if time.time() - last_message_time.get(phone, 0) < DEBOUNCE_SECONDS - 0.1:
                 return
             final_message = accumulated_messages.pop(phone, "").strip()
             if not final_message:
                 return
             
-            # Si es mensaje nuestro, lo registramos pero el bot no debe responder 
-            # (Excepto si es el comando de toggle)
             logger.info(f"[PROCESS] Procesando mensaje {'HUMANO' if from_me else 'CLIENTE'} de {phone}")
             
             capture_time = last_message_time.get(phone, 0)
             bot_response = await process_user_message(phone, final_message, is_from_me=from_me)
             
-            # --- PREVENCIÓN DE DOBLE RESPUESTA ---
-            # Si el usuario envió otro mensaje mientras el bot procesaba la respuesta (LLM), 
-            # last_message_time se habrá actualizado vía webhook. Abortamos esta respuesta
-            # vieja y dejamos que la nueva tarea (que ya empalmó los mensajes o leerá el historial) responda.
+            # Verificación 2: ¿llegó un mensaje nuevo MIENTRAS el LLM procesaba?
             if last_message_time.get(phone, 0) > capture_time:
-                logger.warning(f"🚫 [ANTI-SPAM] El usuario {phone} escribió de nuevo mientras se procesaba. Se descarta respuesta 1 para que proceda la 2.")
+                logger.warning(f"⚫ [ANTI-DUP-1] {phone}: nuevo mensaje llegó durante LLM. Descartando respuesta vieja.")
+                return
+
+            # Verificación 3: ¿ya existe una tarea más reciente en pending_tasks para este phone?
+            # Esto cubre el caso donde el cliente envió mensaje justo cuando el LLM terminó.
+            registered_task = pending_tasks.get(phone)
+            if registered_task is not None and registered_task is not current_task and not registered_task.done():
+                logger.warning(f"⚫ [ANTI-DUP-2] {phone}: hay tarea más nueva pendiente. Abortando envío de respuesta actual.")
                 return
 
             if bot_response and bot_response.strip():
@@ -747,7 +752,8 @@ async def process_with_debounce(phone: str, full_text: str, is_from_me: bool = F
         except Exception as e:
             logger.error(f"Error procesando {phone}: {e}", exc_info=True)
         finally:
-            if phone in pending_tasks:
+            # Solo limpiar si somos la tarea registrada actualmente
+            if pending_tasks.get(phone) is asyncio.current_task():
                 pending_tasks.pop(phone, None)
 
     task = asyncio.create_task(delayed_process(is_from_me))

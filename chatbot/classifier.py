@@ -130,3 +130,29 @@ def detectar_intencion_con_ai(mensaje_actual: str, historial_reducido: list) -> 
         if any(x in m for x in ["humano", "llamen", "contactar", "asesor"]):
             return "contacto_directo"
         return "consulta_general"
+
+# ==========================================
+# 3. DETECTOR DE CORREDOR EXTERNO
+# ==========================================
+
+# Palabras/frases que identifican a un corredor de propiedades externo
+_PATRON_CORREDOR = re.compile(
+    r'\b('
+    r'soy corredor|corredora?\s+de\s+prop|trabajo\s+como\s+corredor|'
+    r'corredor\s+inmobiliario|agente\s+inmobiliario|'
+    r'representando\s+a\s+(?:un|mi)\s+cliente|en\s+representaci[oó]n\s+de|'
+    r'ofrezco\s+canje|hago\s+canje|canjes?\s+de\s+prop|permuta|'
+    r'ACOP|corretaje|mis\s+clientes\s+buscan'
+    r')\b',
+    re.IGNORECASE
+)
+
+def es_corredor_externo(mensaje: str) -> bool:
+    """
+    Detecta si el mensaje proviene de un corredor de propiedades externo.
+    Retorna True si se detectan patrones de corredor/canje.
+    """
+    if _PATRON_CORREDOR.search(mensaje):
+        logger.info(f"[CORREDOR] Patrón de corredor externo detectado en mensaje.")
+        return True
+    return False

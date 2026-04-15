@@ -99,6 +99,7 @@ class LeadProcessingService:
 
         # 3. Normalizar y generar Cluster IDs
         comuna_ui = LeadProcessingService._normalize_commune_ui(comuna)
+        comuna_norm = normalize_commune_v2(comuna)
         tipo_code = _normalize_tipo(tipo)
         op_code = _normalize_operacion(operacion)
         
@@ -110,7 +111,8 @@ class LeadProcessingService:
             "zone": zone,
             "operacion": op_code,
             "tipo": tipo_code,
-            "comuna": comuna # Root field for matching
+            "comuna": comuna,      # Root field for display
+            "comuna_norm": comuna_norm # Added for optimized indexing
         }
 
     @staticmethod
@@ -304,11 +306,10 @@ class LeadProcessingService:
 
             if update_data:
                 now_cl = datetime.now(CHILE_TZ)
-                now_str = now_cl.isoformat()
-                update_data["last_processed_at"] = now_str
+                update_data["last_processed_at"] = now_cl
                 # Visibilidad en UI (Solo si no existe, para no pisar el historial real)
                 if not lead.get("ultima_actualizacion_bi"):
-                    update_data["ultima_actualizacion_bi"] = now_str
+                    update_data["ultima_actualizacion_bi"] = now_cl
 
                 db["leads"].update_one({"_id": query_id}, {"$set": update_data})
                 

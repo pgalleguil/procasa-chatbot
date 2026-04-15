@@ -1008,6 +1008,15 @@ def ensure_leads_indexes():
             ("gestion.ejecutivo_asignado", 1),
             ("score_captacion", -1)
         ], name="idx_yapo_gestion_ejecutivo_score")
+
+        # ÍNDICE MAESTRO PARA MATCHING ENGINE (Leads)
+        db["leads"].create_index([
+            ("operacion", 1),
+            ("estado", 1),
+            ("comuna_norm", 1),
+            ("tipo", 1),
+            ("ultima_actualizacion_bi", -1)
+        ], name="idx_leads_matching_ultra_v3")
         
         # Índice TTL para el sistema de caché persistente
         db["system_cache"].create_index("expires_at", expireAfterSeconds=0)
@@ -1183,9 +1192,11 @@ def get_matching_leads_analysis(prop_data):
         max_lead_price = prop_price * (1 + max_diff)
         
         query = {
-            "estado": {"$nin": ["Cerrado Perdido", "Cerrado Ganado"]},
-            "ultima_actualizacion_bi": {"$gte": date_limit.isoformat()},
-            "operacion": op_code # Filtro directo por operación
+            "operacion": op_code,
+            "estado": {"$in": ["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "Captado", "NUEVO", "DETECTADO"]},
+            "comuna_norm": comuna_norm,
+            "tipo": tipo_code,
+            "ultima_actualizacion_bi": {"$gte": date_limit} # Native datetime object for indexed performance
         }
         
         # Solo agregar filtro de precio si prop_price es válido (Inclusivo para leads sin precio)
@@ -1197,12 +1208,21 @@ def get_matching_leads_analysis(prop_data):
                 {"prospecto.precio": {"$gte": min_lead_price, "$lte": max_lead_price}}
             ]
 
+        # Proyección positiva para máxima velocidad (Senior Opt)
+        projection = {
+            "prospecto": 1,
+            "operacion": 1,
+            "estado": 1,
+            "comuna_norm": 1,
+            "tipo": 1,
+            "ultima_actualizacion_bi": 1
+        }
+
         # Query optimizada con limite, sort y proyeccion (Grok/Senior Opt)
-        # Traemos un pool razonable de 500 para filtrar en Python, pero ordenados por recencia
         all_active_leads = list(db["leads"].find(
             query, 
-            {"chat_log": 0, "analisis_ia": 0, "recomendaciones": 0} 
-        ).sort("ultima_actualizacion_bi", -1).limit(500))
+            projection
+        ).sort("ultima_actualizacion_bi", -1).limit(50))
         result["debug"]["total"] = len(all_active_leads)
 
         valid_leads = []

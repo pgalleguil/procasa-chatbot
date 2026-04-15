@@ -4534,6 +4534,10 @@
                 // logAction(logType, { target: target, channel: defaultChannel }, target);
 
                 if (currentCommChannel === 'phone') {
+                    // [NEW] Added logging for phone actions to ensure CRM registration and SLA auto-promotion
+                    const logType = `CLICK_PHONE_${target.toUpperCase()}`;
+                    logAction(logType, { target: target, channel: 'phone' }, target);
+
                     window.location.href = `tel:${target === 'lead' ? leadData.telefono : leadData.ownerPhone}`;
                     return;
                 }

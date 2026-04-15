@@ -44,15 +44,23 @@ class NotificationService:
             # Buscamos si ya se envió un evento de este tipo a este número recientemente.
             window_start = datetime.now(CHILE_TZ) - timedelta(minutes=dedup_window_minutes)
             
-            existing_event = db["crm_events"].find_one({
+            # Mejoramos la búsqueda de duplicados: Si viene un lead_phone en meta, 
+            # la deduplicación es por (ejecutivo + tipo + lead), no solo por ejecutivo.
+            dedup_query = {
                 "phone": phone_clean,
                 "type": "ALERT_SENT",
                 "meta.type": alert_type,
                 "timestamp": {"$gte": window_start.isoformat()}
-            })
+            }
+            
+            lead_phone_hint = (meta or {}).get("lead_phone")
+            if lead_phone_hint:
+                dedup_query["meta.lead_phone"] = lead_phone_hint
+
+            existing_event = db["crm_events"].find_one(dedup_query)
             
             if existing_event:
-                logger.warning(f"[NOTIFICATION] Bloqueado duplicado '{alert_type}' para {phone_clean}. Enviado previamente a las {existing_event.get('timestamp')}")
+                logger.warning(f"[NOTIFICATION] Bloqueado duplicado '{alert_type}' para {phone_clean} (Lead: {lead_phone_hint or 'N/A'}). Enviado previamente a las {existing_event.get('timestamp')}")
                 return True # Retornamos True para que el caller asuma "éxito" (ya fue gestionado)
 
             # 2. INTENTO DE ENVÍO

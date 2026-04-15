@@ -155,79 +155,30 @@ async def send_alert_once(
             except Exception as ex_assign:
                 logger.error(f"[ALERT] Critical error in lead assignment: {ex_assign}")
 
-        # 3. DELAY PARA PERMITIR QUE EL BOT RECOJA DATOS (2 MINUTOS)
-        # --- EVITAR DUPLICADOS EN COLA DE ESPERA ---
-        lock_key = (phone, lead_type)
-        now = datetime.now(CHILE_TZ)
-        if lock_key in actively_processing_alerts:
-            last_lock_time = actively_processing_alerts[lock_key]
-            if now - last_lock_time < timedelta(minutes=5):
-                logger.info(f"[ALERT] Bloqueado (Memo): Ya hay una alerta '{lead_type}' para {phone} en espera (hace {(now - last_lock_time).seconds}s)")
-                return
+        # 3. PERSISTENCIA DE LA NOTIFICACIÓN (REFACTORED)
+        # En lugar de esperar 2 minutos en memoria (frágil), guardamos la notificación
+        # en la base de datos inmediatamente. El loop de fondo 'process_pending_leads_loop'
+        # se encargará de enviarla en el momento correcto, asegurando persistencia si el servidor se reinicia.
         
-        actively_processing_alerts[lock_key] = now
-
-        # --- MARCAR EN DB ANTES DEL DELAY ---
-        # Al marcarlo aquí, should_send_alert() rebotará cualquier otro intento en el futuro inmediato.
+        # Marcamos en DB para evitar spam (idempotencia local del servicio de alertas)
         mark_alert_sent(phone, lead_type)
 
-        # ALERT_DELAY_SECONDS = 120 (Restaurado a 2 mins por solicitud del usuario para capturar datos)
-        ALERT_DELAY_SECONDS = 120
-        logger.info(f"[ALERT] Marcado en DB y esperando {ALERT_DELAY_SECONDS}s antes de notificar a {exec_name} sobre {phone} (Prop: {lead_data['property_code']})...")
-        await asyncio.sleep(ALERT_DELAY_SECONDS)
+        logger.info(f"[ALERT] Guardando notificación persistente para {exec_name} sobre lead {phone} (Prop: {lead_data['property_code']}).")
         
-        # Recargamos los datos del prospecto DESPUÉS del delay para capturar datos nuevos
-        prospecto_actualizado = obtener_prospecto(phone) or {}
-        lead_data["nombre"] = prospecto_actualizado.get("nombre") or lead_data.get("nombre") or "Cliente"
-        lead_data["email"] = prospecto_actualizado.get("email") or lead_data.get("email")
-        lead_data["rut"] = prospecto_actualizado.get("rut") or lead_data.get("rut")
+        # Inyectamos los datos del ejecutivo para que el loop sepa a dónde enviarlo
+        lead_data["target_phone"] = exec_phone
+        lead_data["target_name"] = exec_name
+        lead_data["is_new_assignment"] = is_new_assignment
         
-        # 4. VERIFICACIÓN DE HORARIO NOTIFICACIÓN
-        if should_send_now():
-            # Bloqueo de seguridad: No enviar WhatsApp al número dummy
-            if exec_phone == "+56900000000":
-                logger.warning(f"[ALERT] Bloqueado envío a número dummy (+56900000000). Lead {phone} marcado como Sin Asignar.")
-                return
-
-            # --- ANTISPAM ROBUSTO PARA SEGUIMIENTOS ---
-            # Si NO es asignación nueva, verificamos ventana de tiempo (ej: 24 horas)
-            # para no spamear al ejecutivo cada que el cliente respira.
-            if not is_new_assignment:
-                # 24 horas = 1440 minutos
-                if not should_send_alert(phone, "SeguimientoCliente", window_minutes=1440):
-                     logger.info(f"[ALERT] Seguimiento omitido para {phone}. Se ha notificado recientemente al ejecutivo.")
-                     return
-                else:
-                    # Marcamos que enviamos notificación de seguimiento AHORA
-                    mark_alert_sent(phone, "SeguimientoCliente")
-
-            # Enviar YA (Usando Servicio Idempotente)
-            message = format_whatsapp_template(lead_data, exec_name, lead_data["property_code"], is_new_assignment=is_new_assignment)
-            
-            # --- NUEVO: ENVÍO CENTRALIZADO ---
-            sent = await NotificationService.send_notification(
-                phone=exec_phone,
-                message=message,
-                alert_type=lead_type, # Usamos lead_type como clave de deduplicación
-                meta={"to": exec_name, "is_new_assignment": is_new_assignment},
-                dedup_window_minutes=10 # 10 minutos de protección extra
-            )
-            
-            if not sent:
-                logger.error(f"[ALERT] Falló envío WA a {exec_name}. Guardando para reintento.")
-                # Si falló (y no fue por duplicado), guardamos para reintento
-                # Nota: NotificationService retorna True si fue duplicado, False si error real.
-                from .storage import log_event, EventType
-                log_event(phone, EventType.ASSIGNMENT_FAIL, "system", {"to": exec_name, "reason": "wasender_failure"})
-                save_pending_notification({**lead_data, "target_phone": exec_phone, "target_name": exec_name})
-        else:
-            # Guardar para mañana
-            now_cl = datetime.now(CHILE_TZ)
-            logger.info(f"[ALERT] Fuera de horario (Chile: {now_cl.strftime('%H:%M:%S')}). Guardando lead {phone} para {exec_name}.")
-            save_pending_notification({**lead_data, "target_phone": exec_phone, "target_name": exec_name})
+        save_pending_notification(lead_data)
+        
+        # Opcional: Si queremos mantener un pequeño delay antes de que el loop lo procese, 
+        # podríamos agregar un campo 'send_after' a save_pending_notification, 
+        # pero por ahora priorizamos la fiabilidad absoluta.
 
     except Exception as e:
         logger.error(f"[ALERT] ERROR routing alert: {e}", exc_info=True)
+
     finally:
         # Liberar el lock siempre
         actively_processing_alerts.pop((phone, lead_type), None)

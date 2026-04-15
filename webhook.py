@@ -1448,7 +1448,7 @@ async def process_pending_leads_loop():
                                 phone=target_phone,
                                 message=msg,
                                 alert_type="background_notification",
-                                meta={"to": target_name},
+                                meta={"to": target_name, "lead_phone": lead_phone},
                                 dedup_window_minutes=5
                             )
                             if success: mark_notification_sent(p["_id"])

@@ -1392,57 +1392,25 @@
                         </div>
                     </div>
 
+
                     <!-- PANEL: INTELIGENCIA DE DEMANDA (3 CAPAS) - CARGA ASÍNCRONA -->
                     <div class="card-custom" id="matching-analysis-container">
                         <div class="section-title">
                             <i class="fa-solid fa-chart-line"></i> Inteligencia de Demanda
                         </div>
-                                    <span style="font-size:1rem;">🔥</span>
-                                    <div>
-                                        <div style="font-size:0.72rem; font-weight:700; color:#10b981;">Alta oportunidad
-                                            · Contactar ahora</div>
-                                        <div style="font-size:0.68rem; color:var(--text-secondary);">Demanda activa
-                                            detectable en esta zona</div>
-                                    </div>
-                                </div>
-                                {% elif score >= 10 %}
-                                <div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3"
-                                    style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);">
-                                    <span style="font-size:1rem;">⚡</span>
-                                    <div>
-                                        <div style="font-size:0.72rem; font-weight:700; color:#f59e0b;">Demanda media ·
-                                            Vale la pena contactar</div>
-                                        <div style="font-size:0.68rem; color:var(--text-secondary);">Hay interesados en
-                                            zona compatible</div>
-                                    </div>
-                                </div>
-                                {% else %}
-                                <div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3"
-                                    style="background: rgba(107,114,128,0.08); border: 1px solid rgba(107,114,128,0.15);">
-                                    <span style="font-size:1rem;">🔍</span>
-                                    <div>
-                                        <div style="font-size:0.72rem; font-weight:700; color:#6b7280;">Revisar precio
-                                            antes de contactar</div>
-                                        <div style="font-size:0.68rem; color:var(--text-secondary);">Baja demanda
-                                            detectada actualmente</div>
-                                    </div>
-                                </div>
-                                {% endif %}
-                            </div>
-
-                            {% else %}
-                            <!-- No matches at all -->
-                            <div class="text-center p-4" style="opacity: 0.6;">
-                                <i class="fa-solid fa-chart-line fs-3 mb-2" style="color: var(--text-secondary);"></i>
-                                <p class="mb-2" style="font-size: 0.85rem; color: var(--text-secondary);">
-                                    Sin leads activos para este perfil actualmente.
-                                </p>
-                                <p class="mb-0" style="font-size: 0.75rem; color: var(--text-secondary);">
-                                    Zona: {{ zone_name }} · Cluster: {{ ma.get('cluster_id', 'N/A') if ma else 'N/A' }}
-                                </p>
-                            </div>
-                            {% endif %}
+                        
+                        <!-- Loader -->
+                        <div id="matching-loader" class="text-center py-5">
+                            <div class="spinner-border text-primary mb-3" role="status"></div>
+                            <p class="text-secondary small">Cruzando datos con leads activos...</p>
                         </div>
+
+                        <!-- Content Area -->
+                        <div id="matching-content" class="d-none">
+                            <!-- JS: renderMatchingUI(data) -->
+                        </div>
+                    </div>
+
 
                         <div class="card-custom">
                             <div class="section-title">
@@ -2638,7 +2606,7 @@
                         renderMatchingUI(data);
                         
                         loader.style.display = 'none';
-                        container.style.display = 'block';
+                        container.classList.remove('d-none');
                     } catch (err) {
                         console.error('Matching Error:', err);
                         loader.innerHTML = '<p class="text-danger">Error cargando el análisis. Por favor recarga.</p>';

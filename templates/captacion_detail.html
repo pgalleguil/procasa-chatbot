@@ -1392,137 +1392,11 @@
                         </div>
                     </div>
 
-                    <!-- PANEL: INTELIGENCIA DE DEMANDA (3 CAPAS) -->
-                    <div class="card-custom">
+                    <!-- PANEL: INTELIGENCIA DE DEMANDA (3 CAPAS) - CARGA ASÍNCRONA -->
+                    <div class="card-custom" id="matching-analysis-container">
                         <div class="section-title">
                             <i class="fa-solid fa-chart-line"></i> Inteligencia de Demanda
                         </div>
-
-                        {% set ma = ma or matching_analysis or {} %}
-                        {% set exact = ma.get('exact', 0) %}
-                        {% set zone = ma.get('zone', 0) %}
-                        {% set broad = ma.get('broad', 0) %}
-                        {% set exact_leads = ma.get('exact_leads', []) %}
-                        {% set zone_leads = ma.get('zone_leads', []) %}
-                        {% set broad_leads = ma.get('broad_leads', []) %}
-                        {% set score = ma.get('demand_score', 0) %}
-                        {% set zone_name = ma.get('zone_name', 'Sin zona') %}
-                        {% set pitch_text = ma.get('pitch_text', '') %}
-                        {% set pitch_level = ma.get('pitch_level', 'none') %}
-                        {% set filters = ma.get('applied_filters', {}) %}
-                        {% set total = exact + zone + broad %}
-
-                        {% if total > 0 %}
-                        <!-- 3 Niveles de Match -->
-                        <div class="d-flex flex-column gap-3 mb-3">
-                            <!-- Exact Match -->
-                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl"
-                                onclick="openLeadModal('exact')" style="
-                             background: {% if exact > 0 %}rgba(16, 185, 129, 0.08){% else %}rgba(255,255,255,0.02){% endif %};
-                             border: 1px solid {% if exact > 0 %}rgba(16, 185, 129, 0.2){% else %}var(--border-color){% endif %};
-                         ">
-                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">🎯</div>
-                                <div class="flex-grow-1">
-                                    <div class="fw-bold"
-                                        style="font-size: 0.85rem; color: {% if exact > 0 %}#10b981{% else %}var(--text-secondary){% endif %};">
-                                        Coincidencias exactas
-                                    </div>
-                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">
-                                        Misma comuna + tipo + operación + rango de precio ±30%
-                                    </div>
-                                </div>
-                                <div
-                                    style="font-size: 1.5rem; font-weight: 800; color: {% if exact > 0 %}#10b981{% else %}var(--text-secondary){% endif %}; text-align: right;">
-                                    {{ exact }}
-                                </div>
-                            </div>
-
-                            <!-- Zone Match -->
-                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl"
-                                onclick="openLeadModal('zone')" style="
-                             background: {% if zone > 0 %}rgba(99, 102, 241, 0.08){% else %}rgba(255,255,255,0.02){% endif %};
-                             border: 1px solid {% if zone > 0 %}rgba(99, 102, 241, 0.2){% else %}var(--border-color){% endif %};
-                         ">
-                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">📍</div>
-                                <div class="flex-grow-1">
-                                    <div class="fw-bold"
-                                        style="font-size: 0.85rem; color: {% if zone > 0 %}var(--accent){% else %}var(--text-secondary){% endif %};">
-                                        En tu zona ({{ zone_name }})
-                                    </div>
-                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">
-                                        Misma macro-zona geográfica
-                                    </div>
-                                </div>
-                                <div
-                                    style="font-size: 1.5rem; font-weight: 800; color: {% if zone > 0 %}var(--accent){% else %}var(--text-secondary){% endif %}; text-align: right;">
-                                    {{ zone }}
-                                </div>
-                            </div>
-
-                            <!-- Broad Match -->
-                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl"
-                                onclick="openLeadModal('broad')" style="
-                             background: {% if broad > 0 %}rgba(245, 158, 11, 0.06){% else %}rgba(255,255,255,0.02){% endif %};
-                             border: 1px solid {% if broad > 0 %}rgba(245, 158, 11, 0.15){% else %}var(--border-color){% endif %};
-                         ">
-                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">🔍</div>
-                                <div class="flex-grow-1">
-                                    <div class="fw-bold"
-                                        style="font-size: 0.85rem; color: {% if broad > 0 %}#f59e0b{% else %}var(--text-secondary){% endif %};">
-                                        Base de Prospectos
-                                    </div>
-                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">
-                                        {{ broad }} clientes activos asimilables
-                                    </div>
-                                    {% if ma.get('active_recent', 0) > 0 %}
-                                    <div class="mt-1 fw-bold" style="font-size: 0.70rem; color: #10b981;">
-                                        <i class="fa-solid fa-bolt me-1"></i>
-                                        {% set is_arriendo = (prop.details.operacion and 'ARR' in
-                                        prop.details.operacion|upper) or (not prop.details.operacion and
-                                        prop.details.precio_uf and prop.details.precio_uf < 1000) %} {{ ma.active_recent
-                                            }} activos en los últimos {{ 30 if is_arriendo else 60 }} días </div>
-                                            {% endif %}
-                                            {% if ma.get('high_match', 0) > 0 %}
-                                            <div class="mt-1 fw-bold" style="font-size: 0.70rem; color: #3b82f6;">
-                                                <i class="fa-solid fa-bullseye me-1"></i>
-                                                {{ ma.high_match }} alta compatibilidad
-                                            </div>
-                                            {% endif %}
-                                    </div>
-                                    <div
-                                        style="font-size: 1.5rem; font-weight: 800; color: {% if broad > 0 %}#f59e0b{% else %}var(--text-secondary){% endif %}; text-align: right;">
-                                        <i class="fa-solid fa-chevron-right fs-6"></i>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Demand Score -->
-                            <div class="p-3 rounded-3xl mb-3"
-                                style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color);">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <span class="info-label">Demand Score</span>
-                                    <span class="fw-bold" style="color: var(--accent); font-size: 1.1rem;">{{ score
-                                        }}</span>
-                                </div>
-                                <div
-                                    style="height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden;">
-                                    <div style="
-                                height: 100%;
-                                width: {{ [score / 50 * 100, 100]|min }}%;
-                                background: linear-gradient(90deg, #10b981, var(--accent), #f59e0b);
-                                border-radius: 3px;
-                                transition: width 0.5s ease;
-                            "></div>
-                                </div>
-                                <div class="d-flex justify-content-between mt-1"
-                                    style="font-size: 0.7rem; color: var(--text-secondary);">
-                                    <span>Baja</span>
-                                    <span>Alta</span>
-                                </div>
-                                <!-- Score → Acción recomendada -->
-                                {% if score >= 30 %}
-                                <div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3"
-                                    style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2);">
                                     <span style="font-size:1rem;">🔥</span>
                                     <div>
                                         <div style="font-size:0.72rem; font-weight:700; color:#10b981;">Alta oportunidad
@@ -2724,119 +2598,204 @@
             </div>
 
             <script>
-                // Data injected from Backend
-                const _maData = {{ ma | tojson }};
-                const matchingLeadsData = {
-                    top: _maData.top_leads || [],
-                    exact: _maData.exact_leads || [],
-                    zone: _maData.zone_leads || [],
-                    broad: _maData.broad_leads || []
-                };
-                const matchingLeadsCounts = {
-                    exact: _maData.exact || 0,
-                    zone: _maData.zone || 0,
-                    broad: _maData.broad || 0
-                };
-                const matchingLeadsFilters = _maData.applied_filters || {};
-                const smartPitchText = _maData.pitch_text || "";
+                // --- AJUSTE: CARGA ASÍNCRONA DE MATCHING ---
+                let matchingLeadsData = { top: [], exact: [], zone: [], broad: [] };
+                let matchingLeadsCounts = { exact: 0, zone: 0, broad: 0 };
+                let matchingLeadsFilters = {};
+                let smartPitchText = "";
+                
+                async function loadMatchingAnalysis() {
+                    const objId = "{{ prop._id or prop.id }}";
+                    const container = document.getElementById('matching-content');
+                    const loader = document.getElementById('matching-loader');
+                    
+                    try {
+                        const response = await fetch(`/api/captacion/${objId}/matching`);
+                        if (!response.ok) throw new Error('Error en la carga');
+                        const data = await response.json();
+                        
+                        // Guardar para los modales
+                        const ma = data.ma || data.matching_analysis || {};
+                        matchingLeadsData = {
+                            top: ma.top_leads || [],
+                            exact: ma.exact_leads || [],
+                            zone: ma.exact_leads || [], // Fallback
+                            broad: ma.broad_leads || []
+                        };
+                        
+                        // Si exact_leads está vacío en zona, usar zone_leads si existe
+                        if (ma.zone_leads) matchingLeadsData.zone = ma.zone_leads;
+
+                        matchingLeadsCounts = {
+                            exact: data.exact || 0,
+                            zone: data.zone || 0,
+                            broad: data.broad || 0
+                        };
+                        matchingLeadsFilters = ma.applied_filters || {};
+                        smartPitchText = data.pitch_text || "";
+
+                        // Renderizar el contenido
+                        renderMatchingUI(data);
+                        
+                        loader.style.display = 'none';
+                        container.style.display = 'block';
+                    } catch (err) {
+                        console.error('Matching Error:', err);
+                        loader.innerHTML = '<p class="text-danger">Error cargando el análisis. Por favor recarga.</p>';
+                    }
+                }
+
+                function renderMatchingUI(data) {
+                    const ma = data.ma || data.matching_analysis || {};
+                    const total = data.exact + data.zone + data.broad;
+                    const container = document.getElementById('matching-content');
+                    
+                    if (total === 0) {
+                        container.innerHTML = `
+                            <div class="text-center p-4" style="opacity: 0.6;">
+                                <i class="fa-solid fa-chart-line fs-3 mb-2" style="color: var(--text-secondary);"></i>
+                                <p class="mb-2" style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    Sin leads activos para este perfil actualmente.
+                                </p>
+                                <p class="mb-0" style="font-size: 0.75rem; color: var(--text-secondary);">
+                                    Zona: ${data.zone_name || 'Sin zona'}
+                                </p>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    const score = ma.demand_score || 0;
+                    let scoreHtml = '';
+                    if (score >= 30) {
+                        scoreHtml = '<div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3" style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2);"><span style="font-size:1rem;">🔥</span><div><div style="font-size:0.72rem; font-weight:700; color:#10b981;">Alta oportunidad · Contactar ahora</div><div style="font-size:0.68rem; color:var(--text-secondary);">Demanda activa detectable en esta zona</div></div></div>';
+                    } else if (score >= 10) {
+                        scoreHtml = '<div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);"><span style="font-size:1rem;">⚡</span><div><div style="font-size:0.72rem; font-weight:700; color:#f59e0b;">Demanda media · Vale la pena contactar</div><div style="font-size:0.68rem; color:var(--text-secondary);">Hay interesados en zona compatible</div></div></div>';
+                    } else {
+                        scoreHtml = '<div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3" style="background: rgba(107,114,128,0.08); border: 1px solid rgba(107,114,128,0.15);"><span style="font-size:1rem;">🔍</span><div><div style="font-size:0.72rem; font-weight:700; color:#6b7280;">Revisar precio antes de contactar</div><div style="font-size:0.68rem; color:var(--text-secondary);">Baja demanda detectada actualmente</div></div></div>';
+                    }
+
+                    container.innerHTML = `
+                        <div class="d-flex flex-column gap-3 mb-3">
+                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl" onclick="openLeadModal('exact')" style="background: ${data.exact > 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.02)'}; border: 1px solid ${data.exact > 0 ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-color)'};">
+                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">🎯</div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold" style="font-size: 0.85rem; color: ${data.exact > 0 ? '#10b981' : 'var(--text-secondary)'};">Coincidencias exactas</div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Misma comuna + tipo + operación + rango de precio ±30%</div>
+                                </div>
+                                <div style="font-size: 1.5rem; font-weight: 800; color: ${data.exact > 0 ? '#10b981' : 'var(--text-secondary)'}; text-align: right;">${data.exact}</div>
+                            </div>
+
+                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl" onclick="openLeadModal('zone')" style="background: ${data.zone > 0 ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255,255,255,0.02)'}; border: 1px solid ${data.zone > 0 ? 'rgba(99, 102, 241, 0.2)' : 'var(--border-color)'};">
+                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">📍</div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold" style="font-size: 0.85rem; color: ${data.zone > 0 ? 'var(--accent)' : 'var(--text-secondary)'};">En tu zona (${data.zone_name || 'Sin zona'})</div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Misma macro-zona geográfica</div>
+                                </div>
+                                <div style="font-size: 1.5rem; font-weight: 800; color: ${data.zone > 0 ? 'var(--accent)' : 'var(--text-secondary)'}; text-align: right;">${data.zone}</div>
+                            </div>
+
+                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl" onclick="openLeadModal('broad')" style="background: ${data.broad > 0 ? 'rgba(245, 158, 11, 0.06)' : 'rgba(255,255,255,0.02)'}; border: 1px solid ${data.broad > 0 ? 'rgba(245, 158, 11, 0.15)' : 'var(--border-color)'};">
+                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">🔍</div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold" style="font-size: 0.85rem; color: ${data.broad > 0 ? '#f59e0b' : 'var(--text-secondary)'};">Base de Prospectos</div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">${data.broad} clientes activos asimilables</div>
+                                    ${ma.active_recent > 0 ? `<div class="mt-1 fw-bold" style="font-size: 0.70rem; color: #10b981;"><i class="fa-solid fa-bolt me-1"></i>${ma.active_recent} activos recientemente</div>` : ''}
+                                </div>
+                                <div style="font-size: 1.5rem; font-weight: 800; color: ${data.broad > 0 ? '#f59e0b' : 'var(--text-secondary)'}; text-align: right;"><i class="fa-solid fa-chevron-right fs-6"></i></div>
+                            </div>
+
+                            <div class="p-3 rounded-3xl mb-3" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color);">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="info-label">Demand Score</span>
+                                    <span class="fw-bold" style="color: var(--accent); font-size: 1.1rem;">${score}</span>
+                                </div>
+                                <div style="height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden;">
+                                    <div style="height: 100%; width: ${Math.min(score / 50 * 100, 100)}%; background: linear-gradient(90deg, #10b981, var(--accent), #f59e0b); border-radius: 3px; transition: width 0.5s ease;"></div>
+                                </div>
+                                <div class="d-flex justify-content-between mt-1" style="font-size: 0.7rem; color: var(--text-secondary);"><span>Baja</span><span>Alta</span></div>
+                                ${scoreHtml}
+                            </div>
+                        </div>
+                    `;
+                }
 
                 function openLeadModal(type) {
                     let leads = matchingLeadsData[type] || [];
-
-                    // Si la categoría específica está vacía pero hay conteo, 
-                    // intentamos filtrar de top_leads como fallback secundario
                     if (leads.length === 0 && type !== 'top') {
                         leads = (matchingLeadsData['top'] || []).filter(l => l.bucket === type);
                     }
 
-                    // Si sigue vacío y es 'top', ya es top.
-
                     document.getElementById('modalTitle').innerText = "Clientes activos compatibles con esta propiedad";
-
                     const totalCount = matchingLeadsCounts[type] || (type === 'top' ? matchingLeadsData['top'].length : 0);
                     document.getElementById('modalSubtitle').innerText = `Mostrando los perfiles más compatibles (${totalCount})`;
 
-                    // Threshold dinámico según operación (30d arriendo, 60d venta)
-                    const activeThreshold = {{ 30 if (prop.details.operacion and 'ARR' in prop.details.operacion | upper) or(not prop.details.operacion and prop.details.precio_uf and prop.details.precio_uf < 1000) else 60
-                }};
+                    const isArriendo = {{ 'true' if (prop.details.operacion and 'ARR' in prop.details.operacion|upper) or (not prop.details.operacion and prop.details.precio_uf and prop.details.precio_uf < 1000) else 'false' }};
+                    const activeThreshold = isArriendo ? 30 : 60;
 
-                // Ordenar: activos primero, luego históricos por días_old
-                leads.sort((a, b) => {
-                    const aActive = (a.days_old !== undefined && a.days_old < activeThreshold);
-                    const bActive = (b.days_old !== undefined && b.days_old < activeThreshold);
-                    if (aActive && !bActive) return -1;
-                    if (!aActive && bActive) return 1;
-                    return (a.days_old || 999) - (b.days_old || 999);
-                });
-
-                const tbody = document.getElementById('leadTableBody');
-                tbody.innerHTML = '';
-
-                if (leads.length === 0) {
-                    tbody.innerHTML = '<div class="text-center py-5 text-secondary">No hay evidencia detallada para este nivel.</div>';
-                } else {
-                    leads.forEach(lead => {
-                        const qualColors = { 'high': '#10b981', 'medium': '#f59e0b', 'low': '#6b7280' };
-                        const qualTexts = { 'high': 'Alta compatibilidad', 'medium': 'Compatibilidad media', 'low': 'Perfil general' };
-                        const qColor = qualColors[lead.quality_label || 'low'];
-                        const qText = qualTexts[lead.quality_label || 'low'];
-
-                        const isRecent = lead.days_old !== undefined && lead.days_old < activeThreshold;
-
-                        // Insertar separador entre activos e históricos
-                        const prevLead = tbody.lastElementChild;
-                        if (prevLead && prevLead.dataset.recent === 'true' && !isRecent) {
-                            const sep = document.createElement('div');
-                            sep.innerHTML = `<div style="font-size:0.7rem;color:#6b7280;text-transform:uppercase;letter-spacing:1px;padding:4px 0 2px;border-top:1px solid rgba(255,255,255,0.07);margin-top:2px;">⚪ Históricos (más de ${activeThreshold} días sin actividad)</div>`;
-                            tbody.appendChild(sep);
-                        }
-
-                        // Color del contador de días
-                        const daysColor = isRecent ? '#10b981' : lead.days_old > 60 ? '#ef4444' : '#f59e0b';
-
-                        const row = document.createElement('div');
-                        row.className = 'd-flex justify-content-between align-items-center p-3 rounded-4';
-                        row.dataset.recent = isRecent ? 'true' : 'false';
-                        row.style.background = isRecent ? 'rgba(16,185,129,0.04)' : 'rgba(255,255,255,0.02)';
-                        row.style.border = `1px solid ${isRecent ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)'}`;
-
-                        row.innerHTML = `
-                        <div>
-                            <div class="text-white fw-bold mb-1" style="font-size: 1.05rem;">
-                                <i class="fa-solid fa-user-circle ${isRecent ? 'text-success' : 'text-secondary'} me-2"></i>${lead.full_name}
-                            </div>
-                            <div class="d-flex flex-wrap gap-2 mt-2">
-                                <span class="badge rounded-pill" style="background: ${qColor}20; color: ${qColor}; font-weight: 500;">
-                                    <i class="fa-solid fa-bullseye me-1"></i>${qText}
-                                </span>
-                                ${isRecent
-                                ? '<span class="badge rounded-pill" style="background:rgba(16,185,129,0.12);color:#10b981;font-weight:500;"><i class="fa-solid fa-bolt me-1"></i>Activo</span>'
-                                : '<span class="badge rounded-pill" style="background:rgba(107,114,128,0.12);color:#6b7280;font-weight:500;"><i class="fa-solid fa-clock me-1"></i>Histórico</span>'
-                            }
-                                <span class="badge rounded-pill" style="background: rgba(99, 102, 241, 0.1); color: #818cf8; font-weight: 500;">
-                                    <i class="fa-solid fa-headset me-1"></i>En gestión por equipo
-                                </span>
-                            </div>
-                        </div>
-                        <div class="text-end" style="min-width: 80px;">
-                            <div class="text-secondary" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px;">Actividad</div>
-                            <div class="fw-bold" style="font-size: 1rem; color: ${daysColor};">
-                                ${lead.days_old == 0 ? 'Hoy' : lead.days_old + ' días'}
-                            </div>
-                        </div>
-                    `;
-                        tbody.appendChild(row);
+                    leads.sort((a, b) => {
+                        const aActive = (a.days_old !== undefined && a.days_old < activeThreshold);
+                        const bActive = (b.days_old !== undefined && b.days_old < activeThreshold);
+                        if (aActive && !bActive) return -1;
+                        if (!aActive && bActive) return 1;
+                        return (a.days_old || 999) - (b.days_old || 999);
                     });
-                }
 
-                document.getElementById('leadVerificationModal').style.display = 'block';
-        }
+                    const tbody = document.getElementById('leadTableBody');
+                    tbody.innerHTML = '';
+
+                    if (leads.length === 0) {
+                        tbody.innerHTML = '<div class="text-center py-5 text-secondary">No hay evidencia detallada para este nivel.</div>';
+                    } else {
+                        leads.forEach(lead => {
+                            const qualColors = { 'high': '#10b981', 'medium': '#f59e0b', 'low': '#6b7280' };
+                            const qualTexts = { 'high': 'Alta compatibilidad', 'medium': 'Compatibilidad media', 'low': 'Perfil general' };
+                            const qColor = qualColors[lead.quality_label || 'low'];
+                            const qText = qualTexts[lead.quality_label || 'low'];
+                            const isRecent = lead.days_old !== undefined && lead.days_old < activeThreshold;
+
+                            const prevLead = tbody.lastElementChild;
+                            if (prevLead && prevLead.dataset.recent === 'true' && !isRecent) {
+                                const sep = document.createElement('div');
+                                sep.innerHTML = `<div style="font-size:0.7rem;color:#6b7280;text-transform:uppercase;letter-spacing:1px;padding:4px 0 2px;border-top:1px solid rgba(255,255,255,0.07);margin-top:2px;">⚪ Históricos (más de ${activeThreshold} días sin actividad)</div>`;
+                                tbody.appendChild(sep);
+                            }
+
+                            const daysColor = isRecent ? '#10b981' : lead.days_old > 60 ? '#ef4444' : '#f59e0b';
+                            const row = document.createElement('div');
+                            row.className = 'd-flex justify-content-between align-items-center p-3 rounded-4';
+                            row.dataset.recent = isRecent ? 'true' : 'false';
+                            row.style.background = isRecent ? 'rgba(16,185,129,0.04)' : 'rgba(255,255,255,0.02)';
+                            row.style.border = `1px solid ${isRecent ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)'}`;
+                            row.innerHTML = `
+                                <div>
+                                    <div class="text-white fw-bold mb-1" style="font-size: 1.05rem;">
+                                        <i class="fa-solid fa-user-circle ${isRecent ? 'text-success' : 'text-secondary'} me-2"></i>${lead.full_name}
+                                    </div>
+                                    <div class="d-flex flex-wrap gap-2 mt-2">
+                                        <span class="badge rounded-pill" style="background: ${qColor}20; color: ${qColor}; font-weight: 500;"><i class="fa-solid fa-bullseye me-1"></i>${qText}</span>
+                                        ${isRecent ? '<span class="badge rounded-pill" style="background:rgba(16,185,129,0.12);color:#10b981;font-weight:500;"><i class="fa-solid fa-bolt me-1"></i>Activo</span>' : '<span class="badge rounded-pill" style="background:rgba(107,114,128,0.12);color:#6b7280;font-weight:500;"><i class="fa-solid fa-clock me-1"></i>Histórico</span>'}
+                                        <span class="badge rounded-pill" style="background: rgba(99, 102, 241, 0.1); color: #818cf8; font-weight: 500;"><i class="fa-solid fa-headset me-1"></i>En gestión por equipo</span>
+                                    </div>
+                                </div>
+                                <div class="text-end" style="min-width: 80px;">
+                                    <div class="text-secondary" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px;">Actividad</div>
+                                    <div class="fw-bold" style="font-size: 1rem; color: ${daysColor};">${lead.days_old == 0 ? 'Hoy' : lead.days_old + ' días'}</div>
+                                </div>`;
+                            tbody.appendChild(row);
+                        });
+                    }
+                    document.getElementById('leadVerificationModal').style.display = 'block';
+                }
 
                 function closeLeadModal() {
                     document.getElementById('leadVerificationModal').style.display = 'none';
                 }
 
-                // Global functions for older script blocks
+                // Cargar al iniciar
+                document.addEventListener('DOMContentLoaded', loadMatchingAnalysis);
+
+                // Global functions
                 window.openLeadModal = openLeadModal;
                 window.closeLeadModal = closeLeadModal;
             </script>

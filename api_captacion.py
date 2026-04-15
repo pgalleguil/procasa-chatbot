@@ -12,7 +12,33 @@ logger = logging.getLogger(__name__)
 
 # --- CONFIGURACION CENTRALIZADA ---
 # CHILE_TZ is imported from chatbot.constants
-MARKET_STATS_CACHE = {} # Cache in-memory for 15 min (Grok suggestion)
+MARKET_STATS_CACHE = {} # Legacy - Now using shared_cache in DB
+
+def get_cached_value(key):
+    """Obtiene un valor del caché persistente en MongoDB."""
+    try:
+        db = get_db()
+        doc = db["system_cache"].find_one({"_id": key})
+        if doc:
+            # MongoDB se encarga del TTL, pero validamos por si acaso
+            if doc.get("expires_at") > datetime.now(timezone.utc):
+                return doc.get("value")
+    except Exception as e:
+        logger.error(f"Error reading cache: {e}")
+    return None
+
+def set_cached_value(key, value, expire_seconds=300):
+    """Guarda un valor en el caché persistente en MongoDB."""
+    try:
+        db = get_db()
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expire_seconds)
+        db["system_cache"].update_one(
+            {"_id": key},
+            {"$set": {"value": value, "expires_at": expires_at}},
+            upsert=True
+        )
+    except Exception as e:
+        logger.error(f"Error writing cache: {e}")
 
 def get_chile_now():
     """Retorna datetime actual en Chile."""
@@ -48,12 +74,9 @@ def get_market_insights(comuna, tipo_propiedad):
     Implementa caché de 15 min para evitar agregaciones pesadas.
     """
     cache_key = f"{comuna}_{tipo_propiedad}"
-    now = get_chile_now()
-    
-    if cache_key in MARKET_STATS_CACHE:
-        cached_data, timestamp = MARKET_STATS_CACHE[cache_key]
-        if (now - timestamp).total_seconds() < 900: # 15 min
-            return cached_data
+    cached_stats = get_cached_value(cache_key)
+    if cached_stats:
+        return cached_stats
 
     db = get_db()
     
@@ -77,11 +100,13 @@ def get_market_insights(comuna, tipo_propiedad):
     total_market = stats[0]["count"] if stats else 0
 
     # 2. Popularidad (Leads vinculados en los últimos 90 días)
-    return {
+    res = {
         "avg_uf_m2": avg_uf_m2,
         "total_available": total_market,
         "demand_level": "Alta" if total_market > 50 else "Media" 
     }
+    set_cached_value(cache_key, res, expire_seconds=900) # 15 min
+    return res
 
 def calculate_lead_score_captacion(details, market_stats):
     price_uf = details.get("precio_uf")
@@ -257,20 +282,27 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
         query["gestion.ejecutivo_asignado"] = user_name
     
     if comuna_filter:
-        query["details.comuna"] = {"$regex": comuna_filter, "$options": "i"}
+        query["details.comuna_norm"] = normalize_commune(comuna_filter)
         
     if status_filter:
         query["gestion.estado"] = status_filter
 
-    # 1. CONTAR TOTAL
-    total_count = db["yapo_propiedades"].count_documents(query)
+    # 1. CONTAR TOTAL - CACHE 60s (Shared DB Cache - CTO Opt)
+    cache_key = f"count_{user_role}_{user_name}_{comuna_filter}_{status_filter}"
     
-    # 2. TRAER PAGINADOS DESDE MONGO
+    cached_count = get_cached_value(cache_key)
+    if cached_count is not None:
+        total_count = cached_count
+    else:
+        total_count = db["yapo_propiedades"].count_documents(query)
+        set_cached_value(cache_key, total_count, expire_seconds=60)
+    
+    # 2. TRAER PAGINADOS CON PROYECCIÓN (Omitir campos pesados)
     skip = (page - 1) * limit
-    cursor = db["yapo_propiedades"].find(query)\
-                                   .sort("score_captacion", -1)\
-                                   .skip(skip)\
-                                   .limit(limit)
+    cursor = db["yapo_propiedades"].find(
+        query, 
+        {"descripcion": 0, "enlaces_fotos": 0, "historial": 0} 
+    ).sort("score_captacion", -1).skip(skip).limit(limit)
     
     items_paginated = []
     for doc in cursor:
@@ -432,16 +464,12 @@ def get_captacion_detail(obj_id):
             
     intent_count = gestion.get("intent_count", 0)
 
-    # Matching Analysis (Demanda Real) - Movido arriba para usarlo en next_action
-    try:
-        ma = get_matching_leads_analysis(doc)
-    except Exception as e:
-        logger.error(f"Error in matching analysis: {e}")
-        ma = {
-            "exact": 0, "zone": 0, "broad": 0, 
-            "top_leads": [], "pitch_text": "", 
-            "active_recent": 0, "high_match": 0
-        }
+    # Matching Analysis (Demanda Real) - Desacoplado para carga vía AJAX (Senior Opt)
+    ma = {
+        "exact": 0, "zone": 0, "broad": 0, 
+        "top_leads": [], "pitch_text": "Cargando demanda real...", 
+        "active_recent": 0, "high_match": 0
+    }
 
     # IA Recomienda Siguiente Acción (Pasando Matching Data)
     next_action = get_next_action_recommendation(
@@ -963,14 +991,28 @@ def ensure_leads_indexes():
     """Asegura índices de performance sugeridos por Grok."""
     try:
         db = get_db()
-        # Índice compuesto para matching
-        db["leads"].create_index([
-            ("estado", 1), 
-            ("ultima_actualizacion_bi", -1), 
-            ("operacion", 1),
-            ("prospecto.presupuesto_uf", 1)
-        ], name="idx_leads_matching_optimized")
-        logger.info("Índices de leads optimizados.")
+        # Índices compuestos para yapo_propiedades (Performance Módulo Captación - CTO Opt)
+        db["yapo_propiedades"].create_index([
+            ("details.comuna_norm", 1), 
+            ("score_captacion", -1)
+        ], name="idx_yapo_comuna_score")
+        
+        db["yapo_propiedades"].create_index([
+            ("gestion.estado", 1),
+            ("details.comuna_norm", 1),
+            ("score_captacion", -1)
+        ], name="idx_yapo_estado_comuna_score")
+
+        db["yapo_propiedades"].create_index([
+            ("gestion.estado", 1),
+            ("gestion.ejecutivo_asignado", 1),
+            ("score_captacion", -1)
+        ], name="idx_yapo_gestion_ejecutivo_score")
+        
+        # Índice TTL para el sistema de caché persistente
+        db["system_cache"].create_index("expires_at", expireAfterSeconds=0)
+
+        logger.info("Índices de leads y propiedades optimizados.")
     except Exception as e:
         logger.error(f"Error creando indices: {e}")
 
@@ -1155,8 +1197,12 @@ def get_matching_leads_analysis(prop_data):
                 {"prospecto.precio": {"$gte": min_lead_price, "$lte": max_lead_price}}
             ]
 
-        # Query optimizada con limite y sort
-        all_active_leads = list(db["leads"].find(query).sort("ultima_actualizacion_bi", -1).limit(3000))
+        # Query optimizada con limite, sort y proyeccion (Grok/Senior Opt)
+        # Traemos un pool razonable de 500 para filtrar en Python, pero ordenados por recencia
+        all_active_leads = list(db["leads"].find(
+            query, 
+            {"chat_log": 0, "analisis_ia": 0, "recomendaciones": 0} 
+        ).sort("ultima_actualizacion_bi", -1).limit(500))
         result["debug"]["total"] = len(all_active_leads)
 
         valid_leads = []
@@ -1245,8 +1291,8 @@ def get_matching_leads_analysis(prop_data):
 
         result["debug"].update({"after_operation": c_op, "after_activity": c_act, "after_price": c_price})
         
-        # GLOBAL TOP LEADS
-        result["top_leads"] = sorted(valid_leads, key=lambda x: (x["days_old"], x["diff"]))[:10]
+        # GLOBAL TOP LEADS - ORDENADO Y LIMITADO (CTO Opt)
+        result["top_leads"] = sorted(valid_leads, key=lambda x: (x["days_old"], x["diff"]))[:20]
 
         # LÓGICA DE PITCH AUTOMÁTICA
         tipo_display = {"DEPTO": "departamentos", "CASA": "casas", "OFICINA": "oficinas", "LOCAL": "locales", "TERRENO": "terrenos"}.get(tipo_code, "propiedades")

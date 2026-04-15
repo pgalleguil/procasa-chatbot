@@ -1028,21 +1028,64 @@ async def view_captacion_detail_route(request: Request, obj_id: str):
         if assigned and user_name.lower() not in assigned.lower():
             return RedirectResponse(url="/captacion?error=no_asignada")
 
-    # Calcular leads coincidentes (Sistema Inteligente de 3 Capas)
-    from api_captacion import get_matching_leads_analysis
-    ma = get_matching_leads_analysis(data)
-
+    # Ya no calculamos el matching aquí (se hace vía AJAX)
+    
     return templates.TemplateResponse("captacion_detail.html", {
         "request": request,
         "prop": data,
-        "matching_leads_count": ma.get("exact", 0) + ma.get("zone", 0) + ma.get("broad", 0),
-        "matching_analysis": ma,
-        "ma": ma,
-        "zone_name": ma.get("zone_name", "Sin zona"),
-        "pitch_text": ma.get("pitch_text", ""),
         "user_name": user_name,
         "user_role": user.get("rol", "agente")
     })
+
+# --- PROTECCIÓN ANTI-SPAM PARA MATCHING ---
+PENDING_MATCHING_REQUESTS = {} # obj_id -> timestamp
+
+@app.get("/api/captacion/{obj_id}/matching")
+async def api_get_matching_leads(request: Request, obj_id: str):
+    await get_current_user(request)
+    
+    from api_captacion import get_captacion_detail, get_matching_leads_analysis, get_cached_value, set_cached_value
+    
+    # 1. Recuperar de Caché Persistente (DB - Multi-worker safe)
+    cache_key = f"matching_{obj_id}"
+    cached_data = get_cached_value(cache_key)
+    if cached_data:
+        return cached_data
+
+    # 2. Protección contra Requests Concurrentes (Spam/Throttling)
+    now = time.time()
+    if obj_id in PENDING_MATCHING_REQUESTS:
+        last_req = PENDING_MATCHING_REQUESTS[obj_id]
+        if now - last_req < 5: # No procesar la misma propiedad más de una vez cada 5s
+            return {"status": "processing", "message": "Ya se está calculando el matching. Por favor espere."}
+    
+    PENDING_MATCHING_REQUESTS[obj_id] = now
+
+    try:
+        data = get_captacion_detail(obj_id)
+        if not data:
+            raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+        
+        ma = get_matching_leads_analysis(data)
+        
+        response_data = {
+            "exact": ma.get("exact", 0),
+            "zone": ma.get("zone", 0),
+            "broad": ma.get("broad", 0),
+            "matching_analysis": ma,
+            "ma": ma,
+            "zone_name": ma.get("zone_name", "Sin zona"),
+            "pitch_text": ma.get("pitch_text", "")
+        }
+        
+        # 3. Guardar en Caché Persistente (TTL 5 min)
+        set_cached_value(cache_key, response_data, expire_seconds=300)
+        
+        return response_data
+    finally:
+        # Liberar el bloqueo de request pendiente
+        if obj_id in PENDING_MATCHING_REQUESTS:
+            del PENDING_MATCHING_REQUESTS[obj_id]
 
 @app.post("/api/captacion/update")
 async def api_update_captacion(request: Request):
@@ -1525,7 +1568,23 @@ def asegurar_indices_db():
         db = MongoClient(Config.MONGO_URI)[Config.DB_NAME]
         db["crm_tasks"].create_index([("status", 1), ("execute_at", 1)])
         db["crm_events"].create_index([("phone", 1), ("type", 1), ("timestamp", -1)])
-        logger.info("Índices de CRM asegurados.")
+        
+        # --- OPTIMIZACIÓN CAPTACIÓN ---
+        # Índice Compuesto para Lista (Estado + Ejecutivo + Score)
+        db["yapo_propiedades"].create_index([
+            ("gestion.estado", 1), 
+            ("gestion.ejecutivo_asignado", 1), 
+            ("score_captacion", -1)
+        ])
+        # Índice para Búsqueda por Comuna Normalizada + Score
+        db["yapo_propiedades"].create_index([
+            ("details.comuna_norm", 1), 
+            ("score_captacion", -1)
+        ])
+        # Índice para Market Insights
+        db["universo_cartera"].create_index([("comuna", 1), ("tipo", 1)])
+        
+        logger.info("Índices de CRM y Captación asegurados.")
     except Exception as e:
         logger.warning(f"Error creando índices: {e}")
 

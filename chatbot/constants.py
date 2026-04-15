@@ -65,6 +65,8 @@ class EventType(str, Enum):
     ALERT_SENT = "alert_sent"
     BOT_PAUSE = "bot_pause"
     BOT_RESUME = "bot_resume"
+    REGISTER_PHONE = "register_phone"
+    GESTION_CAPTACION = "gestion_captacion"
     
 # Mapping for legacy compatibility or frontend display
 STAGE_LABELS = {

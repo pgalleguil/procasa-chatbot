@@ -1792,9 +1792,9 @@ async def daily_report_loop():
                 "status": "running", 
                 "last_heartbeat": datetime.now(CHILE_TZ).isoformat()
             }
-            # Reporte 1: Leads críticos SLA (09:30)
+            # Reporte 1: Leads críticos SLA (09:30 AM)
             await check_and_run_daily_report()
-            # Reporte 2: Meta Diaria de Captaciones (19:00)
+            # Reporte 2: Meta Diaria de Captaciones (09:00 AM)
             await check_and_run_meta_diaria_report()
         except Exception as e:
             logger.error(f"[DAILY_REPORT] Error en loop: {e}")

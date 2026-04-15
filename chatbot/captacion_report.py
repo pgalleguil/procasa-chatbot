@@ -59,31 +59,66 @@ async def get_daily_progress_stats(target_date: datetime) -> dict:
             avance_list.append(name_title)
 
     # Contar gestiones
-    gestion_event_types = {"HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CLICK_PHONE_LEAD", "GESTION_LOG", "SEND_WA_OWNER"}
-    query = {"timestamp": {"$gte": start_utc, "$lte": end_utc}, "type": {"$in": list(gestion_event_types)}, "actor": {"$exists": True, "$ne": "system"}}
+    gestion_event_types = {
+        "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
+        "CLICK_PHONE_LEAD", "GESTION_LOG", "SEND_WA_OWNER", 
+        "msg_out", "register_phone", "gestion_captacion", "stage_change"
+    }
     
-    cursor = db["crm_events"].find(query, {"actor": 1})
-    counts = {}
+    # Query robusta que acepta strings (ISO) y objetos Datetime
+    iso_start = start_utc.isoformat()
+    iso_end = end_utc.isoformat()
+    
+    query = {
+        "$or": [
+            {"timestamp": {"$gte": start_utc, "$lte": end_utc}},
+            {"timestamp": {"$gte": iso_start, "$lte": iso_end}}
+        ],
+        "type": {"$in": list(gestion_event_types)},
+        "actor": {"$exists": True, "$ne": "system"}
+    }
+    
+    cursor = db["crm_events"].find(query, {"actor": 1, "phone": 1})
+    counts = {} # {actor: {total: X, phones: Y}}
+    users_cache = {}
+    
     for event in cursor:
         actor = event.get("actor", "").strip().title()
-        if actor: counts[actor] = counts.get(actor, 0) + 1
+        phone = event.get("phone")
+        ev_type = event.get("type")
+        
+        if actor in ["Agent", "Supervisor", "Sistema"] and phone:
+            if phone in users_cache:
+                actor = users_cache[phone]
+            else:
+                user = db["usuarios"].find_one({"telefono": {"$regex": phone}})
+                if user:
+                    actor = user.get("nombre", "").strip().title()
+                    users_cache[phone] = actor
+        
+        if actor and actor not in ["Bot", "User", "System"]:
+            if actor not in counts: counts[actor] = {"total": 0, "phones": 0}
+            counts[actor]["total"] += 1
+            if ev_type == "register_phone":
+                counts[actor]["phones"] += 1
 
     results = []
     for name in avance_list:
-        count = counts.get(name, 0)
-        percent = int((count / META_DIARIA) * 100)
-        results.append({"name": name, "count": count, "percent": percent})
-
+        stats = counts.get(name, {"total": 0, "phones": 0})
+        count = stats["total"]
+        results.append({
+            "name": name, 
+            "count": count
+        })
+    
+    # Ordenar por conteo
     results.sort(key=lambda x: x["count"], reverse=True)
-    best = results[0] if results else None
 
     return {
         "avance": results,
         "sin_turno": sorted(sin_turno_list),
         "en_configuracion": sorted(en_configuracion),
-        "date_label": target_date.strftime("%d/%m/%Y"),
-        "best_name": best["name"] if best and best["count"] >= META_DIARIA else None,
-        "under_min": all(r["count"] < MINIMO_ESPERADO for r in results) if results else False
+        "date_label": target_date.strftime("%d/%m/%Y")
     }
 
 async def send_meta_diaria_report(group_id: str, target_date: datetime) -> bool:
@@ -99,34 +134,24 @@ async def send_meta_diaria_report(group_id: str, target_date: datetime) -> bool:
         ""
     ]
     
-    medal_icons = ["🥇", "🥈", "🥉"]
-    for i, r in enumerate(data['avance']):
-        icon = medal_icons[i] if i < 3 else ""
-        sp = " " if icon else ""
-        # Semáforo: 🔴 <50%, 🟡 50-99%, 🟢 >=100%
-        semaforo = "🟢" if r['count'] >= META_DIARIA else "🟡" if r['count'] >= MINIMO_ESPERADO else "🔴"
-        lines.append(f"{icon}{sp}{r['name']}: {r['count']}/{META_DIARIA} ({r['percent']}%) {semaforo}")
+    for r in data['avance']:
+        lines.append(f"{r['name']}: {r['count']} contactos")
 
-    lines.extend(["", "━━━━━━━━━━━━", "⚪ *Sin turno*"])
+    lines.extend(["", "━━━━━━━━━━━━", "⚪ *Sin turno*", ""])
     if data['sin_turno']:
-        for n in data['sin_turno']: lines.append(f"- {n}")
-    else: lines.append("- (vacío)")
+        for n in data['sin_turno']: lines.append(f"{n}")
+    else: lines.append("(vacío)")
 
-    lines.extend(["", "━━━━━━━━━━━━", "🆕 *En configuración*"])
-    for n in data['en_configuracion']: lines.append(f"- {n}")
+    lines.extend(["", "━━━━━━━━━━━━", "🆕 *En configuración*", ""])
+    if data['en_configuracion']:
+        for n in data['en_configuracion']: lines.append(f"{n}")
+    else: lines.append("(vacío)")
 
-    msg_dinamico = f"🔥 {data['best_name']} cumplió la meta" if data['best_name'] else "📌 Bajo mínimo esperado" if data['under_min'] else ""
-    
     lines.extend([
         "",
         "━━━━━━━━━━━━",
-        "🎯 *Meta por ejecutivo*",
-        f"5 mínimo | 10 objetivo",
-        f"\n{msg_dinamico}" if msg_dinamico else "",
-        "",
-        "━━━━━━━━━━━━",
-        "⚡ *Hoy*",
-        "Meta: 10 contactos"
+        "🎯 *Meta*",
+        "10 contactos por ejecutivo"
     ])
     
     return await send_whatsapp_message(group_id, "\n".join(lines))
@@ -134,7 +159,7 @@ async def send_meta_diaria_report(group_id: str, target_date: datetime) -> bool:
 async def check_and_run_meta_diaria_report(force: bool = False):
     db = get_db()
     now_cl = datetime.now(CHILE_TZ)
-    if not force and (now_cl.weekday() >= 5 or now_cl.hour != 9 or now_cl.minute > 45): return
+    if not force and (now_cl.weekday() >= 5 or now_cl.hour != 9): return
     
     days_back = 3 if now_cl.weekday() == 0 else 1
     target_date = now_cl - timedelta(days=days_back)

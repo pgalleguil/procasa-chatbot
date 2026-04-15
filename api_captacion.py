@@ -6,7 +6,8 @@ import logging
 import uuid
 import re
 from bson import ObjectId
-from chatbot.storage import get_db
+from chatbot.storage import get_db, log_event
+from chatbot.constants import CHILE_TZ, EventType
 
 logger = logging.getLogger(__name__)
 
@@ -668,6 +669,17 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         update_captacion_metrics(db, obj_id)
     except: pass
 
+    # LOG EVENT CENTRAL: Cambio de Estado
+    try:
+        log_event(ObjectId(obj_id), EventType.STAGE_CHANGE, user_name, {
+            "old_stage": old_status,
+            "new_stage": status,
+            "notes": notes,
+            "source": "captacion"
+        })
+    except Exception as e:
+        logger.error(f"Error logging status change event: {e}")
+
     return True
 
 def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=None, user_name="Sistema"):
@@ -730,6 +742,17 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
             {"_id": ObjectId(obj_id)},
             update_params
         )
+        
+        # LOG EVENT CENTRAL: Registro de Teléfono
+        if telefono:
+            try:
+                log_event(ObjectId(obj_id), EventType.REGISTER_PHONE, user_name, {
+                    "phone_registered": telefono,
+                    "source": "captacion"
+                })
+            except Exception as e:
+                logger.error(f"Error logging register phone event: {e}")
+
     return True
 
 def log_captacion_activity(obj_id, user_name, action, channel, message, phone, result, template_used=None):
@@ -768,6 +791,20 @@ def log_captacion_activity(obj_id, user_name, action, channel, message, phone, r
             "gestion.notas": note_entry
         }, "$set": {"gestion.fecha_ultima_gestion": now}}
     )
+    
+    # LOG EVENT CENTRAL: Gestión de Captación
+    try:
+        log_event(ObjectId(obj_id), EventType.GESTION_CAPTACION, user_name, {
+            "action": action,
+            "channel": channel,
+            "result": result,
+            "message_summary": message[:100] if message else "",
+            "phone_target": phone,
+            "source": "captacion"
+        })
+    except Exception as e:
+        logger.error(f"Error logging captacion activity event: {e}")
+
     return True
 
 def normalize_commune(name):

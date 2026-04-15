@@ -1723,22 +1723,26 @@ async def reassign_unassigned_leads_loop():
             await asyncio.sleep(60)
 
 async def daily_report_loop():
-    """Loop de fondo para enviar el reporte de SLA una vez al día."""
-    logger.info("[DAILY_REPORT] Iniciando monitor de reporte diario...")
+    """Loop de fondo para enviar el reporte de SLA y Captaciones una vez al día."""
+    logger.info("[DAILY_REPORT] Iniciando monitor de reporte diario (SLA + Captaciones)...")
     from chatbot.daily_report import check_and_run_daily_report
+    from chatbot.captacion_report import check_and_run_meta_diaria_report
     while True:
         try:
             background_tasks_status["daily_report"] = {
                 "status": "running", 
                 "last_heartbeat": datetime.now(CHILE_TZ).isoformat()
             }
+            # Reporte 1: Leads críticos SLA (09:30)
             await check_and_run_daily_report()
+            # Reporte 2: Meta Diaria de Captaciones (19:00)
+            await check_and_run_meta_diaria_report()
         except Exception as e:
             logger.error(f"[DAILY_REPORT] Error en loop: {e}")
             if "daily_report" in background_tasks_status:
                 background_tasks_status["daily_report"]["status"] = f"error: {str(e)}"
         
-        # Revisar cada 5 minutos para asegurar que se envíe casi exactamente a las 9:30 AM
+        # Revisar cada 5 minutos
         await asyncio.sleep(300)
 
 if __name__ == "__main__":

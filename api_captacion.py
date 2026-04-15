@@ -671,7 +671,7 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
 
     # LOG EVENT CENTRAL: Cambio de Estado
     try:
-        log_event(ObjectId(obj_id), EventType.STAGE_CHANGE, user_name, {
+        log_event(str(obj_id), EventType.STAGE_CHANGE.value, user_name, {
             "old_stage": old_status,
             "new_stage": status,
             "notes": notes,
@@ -746,7 +746,7 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
         # LOG EVENT CENTRAL: Registro de Teléfono
         if telefono:
             try:
-                log_event(ObjectId(obj_id), EventType.REGISTER_PHONE, user_name, {
+                log_event(str(obj_id), EventType.REGISTER_PHONE.value, user_name, {
                     "phone_registered": telefono,
                     "source": "captacion"
                 })

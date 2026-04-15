@@ -58,7 +58,7 @@ async def get_daily_progress_stats(target_date: datetime) -> dict:
         else:
             avance_list.append(name_title)
 
-    # Contar gestiones
+    # Contar gestiones desde crm_events (legacy / genérico)
     gestion_event_types = {
         "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
         "CLICK_PHONE_LEAD", "GESTION_LOG", "SEND_WA_OWNER", 
@@ -102,6 +102,55 @@ async def get_daily_progress_stats(target_date: datetime) -> dict:
             if ev_type == "register_phone":
                 counts[actor]["phones"] += 1
 
+    # --- NUEVO: Extraer gestiones reales documentadas en yapo_propiedades ---
+    # Convertimos start/end a BSON datetime compatibles pasándolas a UTC explícito o tz-aware.
+    # Dado que los eventos de captacion se guardan con `get_chile_now()`, en Mongo se guardan como BSON datetime (UTC bajo el capó).
+    
+    yapo_start = start_of_day.astimezone(pytz.utc)
+    yapo_end = end_of_day.astimezone(pytz.utc)
+    
+    # Buscamos propiedades que hayan tenido ALGUN cambio recientemente
+    yapo_cursor = db["yapo_propiedades"].find({
+        "$or": [
+            {"gestion.fecha_ultima_gestion": {"$gte": yapo_start, "$lte": yapo_end}},
+            {"gestion.notas.timestamp": {"$gte": yapo_start, "$lte": yapo_end}},
+            {"audit.contact_changes.timestamp": {"$gte": yapo_start, "$lte": yapo_end}}
+        ]
+    }, {"gestion.notas": 1, "audit.contact_changes": 1})
+    
+    for doc in yapo_cursor:
+        # Analizar notas/gestiones
+        notas = doc.get("gestion", {}).get("notas", [])
+        for n in notas:
+            ts = n.get("timestamp")
+            actor = n.get("usuario", "").strip().title()
+            
+            # Chequear si cae en la fecha
+            if ts and isinstance(ts, datetime):
+                # Pymongo devuelve naive UTC, la localizamos
+                if ts.tzinfo is None: ts = ts.replace(tzinfo=pytz.utc)
+                if yapo_start <= ts <= yapo_end:
+                    if actor and actor not in ["Bot", "User", "Sistema", "System"]:
+                        if actor not in counts: counts[actor] = {"total": 0, "phones": 0}
+                        # Como los clics a veces graban nota y cambian estado, esto podría duplicar en el futuro si hay 2 notas a la vez, 
+                        # pero por simplicidad se cuenta cada log explícito como 1
+                        counts[actor]["total"] += 1
+                        
+        # Analizar cambios de contacto
+        audits = doc.get("audit", {}).get("contact_changes", [])
+        for a in audits:
+            ts = a.get("timestamp")
+            actor = a.get("user", "").strip().title()
+            
+            if ts and isinstance(ts, datetime):
+                if ts.tzinfo is None: ts = ts.replace(tzinfo=pytz.utc)
+                if yapo_start <= ts <= yapo_end:
+                    if actor and actor not in ["Bot", "User", "Sistema", "System"]:
+                        if actor not in counts: counts[actor] = {"total": 0, "phones": 0}
+                        counts[actor]["total"] += 1
+                        if a.get("field") == "telefono":
+                            counts[actor]["phones"] += 1
+
     results = []
     for name in avance_list:
         stats = counts.get(name, {"total": 0, "phones": 0})
@@ -127,7 +176,7 @@ async def send_meta_diaria_report(group_id: str, target_date: datetime) -> bool:
     
     lines = [
         "🏠 *REPORTE DE CAPTACIÓN*",
-        f"📅 {data['date_label']}",
+        f"🗓️ {data['date_label']}",
         "",
         "━━━━━━━━━━━━",
         "👥 *Avance*",

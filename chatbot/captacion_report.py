@@ -210,7 +210,7 @@ async def send_meta_diaria_report(group_id: str, target_date: datetime) -> bool:
 async def check_and_run_meta_diaria_report(force: bool = False):
     db = get_db()
     now_cl = datetime.now(CHILE_TZ)
-    if not force and (now_cl.weekday() >= 5 or now_cl.hour != 9): return
+    if not force and (now_cl.weekday() >= 5 or now_cl.hour < 9): return
     
     days_back = 3 if now_cl.weekday() == 0 else 1
     target_date = now_cl - timedelta(days=days_back)

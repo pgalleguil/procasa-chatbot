@@ -1763,7 +1763,7 @@
                                 btn.disabled = false;
                             }, 2000);
                         } else {
-                            throw new Error("Error en servidor");
+                            throw new Error(data.message || "Error en servidor");
                         }
                     } catch (e) {
                         alert("Error al guardar: " + e.message);
@@ -1799,7 +1799,7 @@
                                 window.location.reload();
                             }, 1000);
                         } else {
-                            throw new Error("Error en servidor");
+                            throw new Error(data.message || "Error en servidor");
                         }
                     } catch (e) {
                         alert("Error al actualizar: " + e.message);

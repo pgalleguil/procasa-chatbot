@@ -1089,56 +1089,66 @@ async def api_get_matching_leads(request: Request, obj_id: str):
 
 @app.post("/api/captacion/update")
 async def api_update_captacion(request: Request):
-    await get_current_user(request)
-    data = await request.json()
-    obj_id = data.get("id")
-    status = data.get("status")
-    notes = data.get("notes")
-    next_followup = data.get("next_followup")
-    channel = data.get("channel")
-    outcome = data.get("outcome")
-    user_name = data.get("user_name", "Sistema")
-    
-    if not obj_id or not status:
-        raise HTTPException(status_code=400, detail="Faltan datos")
+    try:
+        await get_current_user(request)
+        data = await request.json()
+        obj_id = data.get("id")
+        status = data.get("status")
+        notes = data.get("notes")
+        next_followup = data.get("next_followup")
+        channel = data.get("channel")
+        outcome = data.get("outcome")
+        user_name = data.get("user_name", "Sistema")
         
-    result = update_captacion_status(
-        obj_id, 
-        status, 
-        notes, 
-        channel=channel, 
-        outcome=outcome, 
-        user_name=user_name, 
-        next_followup=next_followup
-    )
-    return {"status": "ok"} if result else {"status": "error"}
+        if not obj_id or not status:
+            raise HTTPException(status_code=400, detail="Faltan datos")
+            
+        result = update_captacion_status(
+            obj_id, 
+            status, 
+            notes, 
+            channel=channel, 
+            outcome=outcome, 
+            user_name=user_name, 
+            next_followup=next_followup
+        )
+        return {"status": "ok"} if result else {"status": "error", "message": "Operación retornó falso"}
+    except Exception as e:
+        logger.error(f"Error updating captacion: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 @app.post("/api/captacion/contact")
 async def api_update_captacion_contact(request: Request):
-    await get_current_user(request)
-    data = await request.json()
-    obj_id = data.get("id")
-    if not obj_id:
-        raise HTTPException(status_code=400, detail="Falta ID")
-    
-    # Check user name in session or payload
-    user_name = data.get("user_name")
-    if not user_name:
-        username_str = await get_current_user(request)
-        client = MongoClient(Config.MONGO_URI)
-        db = client[Config.DB_NAME]
-        user_doc = db["usuarios"].find_one({"username": username_str})
-        user_name = user_doc.get("nombre", username_str) if user_doc else "Sistema"
-    
-    result = update_contact_info(
-        obj_id,
-        nombre=data.get("nombre"),
-        telefono=data.get("telefono"),
-        email=data.get("email"),
-        notas=data.get("notas"),
-        user_name=user_name
-    )
-    return {"status": "ok"} if result else {"status": "error"}
+    try:
+        await get_current_user(request)
+        data = await request.json()
+        obj_id = data.get("id")
+        if not obj_id:
+            raise HTTPException(status_code=400, detail="Falta ID")
+        
+        # Check user name in session or payload
+        user_name = data.get("user_name")
+        if not user_name:
+            username_str = await get_current_user(request)
+            client = MongoClient(Config.MONGO_URI)
+            db = client[Config.DB_NAME]
+            user_doc = db["usuarios"].find_one({"username": username_str})
+            user_name = user_doc.get("nombre", username_str) if user_doc else "Sistema"
+        
+        result = update_contact_info(
+            obj_id,
+            nombre=data.get("nombre"),
+            telefono=data.get("telefono"),
+            email=data.get("email"),
+            notas=data.get("notas"),
+            user_name=user_name
+        )
+        return {"status": "ok"} if result else {"status": "error", "message": "Operación retornó falso"}
+    except Exception as e:
+        logger.error(f"Error updating captacion contact: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 @app.post("/api/captacion/log_action")
 async def api_captacion_log_action(request: Request):

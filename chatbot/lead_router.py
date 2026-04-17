@@ -215,33 +215,40 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
         p_int = safe_int_conversion(property_code)
         logger.info(f"[ROUTER] Buscando responsable para propiedad: '{property_code}' (int: {p_int})")
         
-        # 1. Búsqueda Directa Robustecida
-        query = {
+        # 1. Búsqueda Directa Exacta (Prioridad 1)
+        exact_query = {
             "$or": [
                 {"codigo": property_code},
                 {"codigo": p_int},
-                {"codigo": f"'{property_code}'"},
                 {"codigo_pi": property_code},
                 {"codigo_pi": p_int},
-                {"codigo_pi": property_code.replace("MLC", "") if isinstance(property_code, str) else property_code},
-                {"publicaciones.portal_inmobiliario.codigo_pi": property_code},
-                {"publicaciones.portal_inmobiliario.url_pi": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                {"publicaciones.portal_inmobiliario.url_mercado_libre": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                {"publicaciones.toctoc.url_toctoc": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                {"publicaciones.toctoc.enlace": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                {"publicaciones.yapo.url_yapo": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                {"publicaciones.procasa.url_procasa": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                {"toctoc.enlace": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                {"url_yapo": {"$regex": re.escape(str(property_code)), "$options": "i"}},
                 {"codigo_mercadolibre": property_code},
                 {"codigo_mercadolibre": p_int},
                 {"codigo_yapo": property_code},
                 {"codigo_yapo": p_int}
             ]
         }
-        prop = db[Config.COLLECTION_NAME].find_one(query)
+        prop = db[Config.COLLECTION_NAME].find_one(exact_query)
 
-        # 2. Respaldo: Si property_code parece link, extraer IDs y re-buscar
+        # 2. Búsqueda por URL si no se encontró y si parece un ID largo o URL
+        if not prop and len(str(property_code)) >= 5:
+            url_query = {
+                "$or": [
+                    {"codigo_pi": property_code.replace("MLC", "") if isinstance(property_code, str) else property_code},
+                    {"publicaciones.portal_inmobiliario.codigo_pi": property_code},
+                    {"publicaciones.portal_inmobiliario.url_pi": {"$regex": re.escape(str(property_code)), "$options": "i"}},
+                    {"publicaciones.portal_inmobiliario.url_mercado_libre": {"$regex": re.escape(str(property_code)), "$options": "i"}},
+                    {"publicaciones.toctoc.url_toctoc": {"$regex": re.escape(str(property_code)), "$options": "i"}},
+                    {"publicaciones.toctoc.enlace": {"$regex": re.escape(str(property_code)), "$options": "i"}},
+                    {"publicaciones.yapo.url_yapo": {"$regex": re.escape(str(property_code)), "$options": "i"}},
+                    {"publicaciones.procasa.url_procasa": {"$regex": re.escape(str(property_code)), "$options": "i"}},
+                    {"toctoc.enlace": {"$regex": re.escape(str(property_code)), "$options": "i"}},
+                    {"url_yapo": {"$regex": re.escape(str(property_code)), "$options": "i"}}
+                ]
+            }
+            prop = db[Config.COLLECTION_NAME].find_one(url_query)
+
+        # 3. Respaldo: Si property_code parece link, extraer IDs y re-buscar
         if not prop and ("http" in str(property_code).lower() or ".cl" in str(property_code).lower()):
             from .link_extractor import extraer_codigo_yapo, extraer_codigo_mercadolibre
             potential_ids = []

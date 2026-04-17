@@ -21,9 +21,12 @@ def get_cached_value(key):
         db = get_db()
         doc = db["system_cache"].find_one({"_id": key})
         if doc:
-            # MongoDB se encarga del TTL, pero validamos por si acaso
-            if doc.get("expires_at") > datetime.now(timezone.utc):
-                return doc.get("value")
+            expires_at = doc.get("expires_at")
+            if expires_at:
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                if expires_at > datetime.now(timezone.utc):
+                    return doc.get("value")
     except Exception as e:
         logger.error(f"Error reading cache: {e}")
     return None
@@ -582,9 +585,17 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
     
     now = get_chile_now() # Store as Date object, not string
     
-    current_doc = db["yapo_propiedades"].find_one({"_id": ObjectId(obj_id)})
+    try:
+        query_id = ObjectId(obj_id)
+    except Exception:
+        query_id = str(obj_id)
+        
+    current_doc = db["yapo_propiedades"].find_one({"_id": query_id})
     if not current_doc:
-        return False
+        current_doc = db["yapo_propiedades"].find_one({"_id": str(obj_id)})
+        if not current_doc:
+            return False
+
         
     old_status = current_doc.get("gestion", {}).get("estado_captacion") or current_doc.get("gestion", {}).get("estado") or "NUEVO"
     
@@ -659,7 +670,7 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
     if push_fields: update_params["$push"] = push_fields
     
     db["yapo_propiedades"].update_one(
-        {"_id": ObjectId(obj_id)},
+        {"_id": current_doc["_id"]},
         update_params
     )
     
@@ -685,9 +696,16 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
 def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=None, user_name="Sistema"):
     db = get_db()
     
-    current_doc = db["yapo_propiedades"].find_one({"_id": ObjectId(obj_id)})
+    try:
+        query_id = ObjectId(obj_id)
+    except Exception:
+        query_id = str(obj_id)
+        
+    current_doc = db["yapo_propiedades"].find_one({"_id": query_id})
     if not current_doc:
-        return False
+        current_doc = db["yapo_propiedades"].find_one({"_id": str(obj_id)})
+        if not current_doc:
+            return False
         
     details = current_doc.get("details", {})
     
@@ -739,7 +757,7 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
         
     if update_params:
         db["yapo_propiedades"].update_one(
-            {"_id": ObjectId(obj_id)},
+            {"_id": current_doc["_id"]},
             update_params
         )
         

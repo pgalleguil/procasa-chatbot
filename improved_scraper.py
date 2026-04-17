@@ -37,20 +37,25 @@ CONFIG = {
     "networkidle_timeout": 10,
     "html_max_chars": 16000,
     "desc_max_chars": 8000,
-    #"base_url": "https://www.yapo.cl/bienes-raices-alquiler?regionslug=region-metropolitana-nunoa,region-metropolitana-providencia,region-metropolitana-macul,region-metropolitana-san-miguel,region-metropolitana-penalolen,region-metropolitana-la-florida&q=withcat.bienes-raices-alquiler-apartamentos,bienes-raices-alquiler-comercios,bienes-raices-alquiler-casas",
-    #"base_url": "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-la-florida,region-metropolitana-macul&q=withcat.bienes-raices-venta-de-propiedades-apartamentos,bienes-raices-venta-de-propiedades-casas|f_price.80000000-|f_currency.CLP",
-    #"base_url": "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-la-florida,region-metropolitana-macul&q=withcat.bienes-raices-venta-de-propiedades-apartamentos,bienes-raices-venta-de-propiedades-casas|f_price.80000000-|f_currency.CLP",
-    "base_url": "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=valparaiso-vina-del-mar,valparaiso-valparaiso&q=withcat.bienes-raices-venta-de-propiedades-apartamentos,bienes-raices-venta-de-propiedades-casas|f_price.80000000-|f_currency.CLP",
-    "max_retries_per_url": 3,
+    "discovery_force_on": True,   # Siempre busca links nuevos al encender el scraper
+    "search_urls": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=valparaiso-vina-del-mar,valparaiso-valparaiso&q=withcat.bienes-raices-venta-de-propiedades-apartamentos,bienes-raices-venta-de-propiedades-casas|f_price.80000000-|f_currency.CLP",
+        #"https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-la-florida,region-metropolitana-macul&q=withcat.bienes-raices-venta-de-propiedades-apartamentos,bienes-raices-venta-de-propiedades-casas|f_price.80000000-|f_currency.CLP"
+    ],
     "max_retries_per_url": 3,
     "hours_to_recheck": 12,
     "urls_per_session": 30,
+    "max_empty_pages_streak": 2,  # Detiene la búsqueda si pasan X páginas seguidas sin encontrar links nuevos
+    "max_queue_size": 1000,       # Tamaño máximo de cola para activar control de backlog
+    "priority_processing": True,  # Activa el sistema de Fresh-First
 }
 
 # ====================== GLOBAL STATE ======================
 PROXY_USAGE = defaultdict(int)
 PROXY_MB_USAGE = defaultdict(float)
 BURNED_PROXIES = {} # proxy -> cooldown_until (datetime)
+SUCCESSFUL_NO_PROXY = set() # cache de URLs exitosas sin proxy
+MAX_MB_PER_PROXY = 50.0 # Límite de ancho de banda por proxy
 
 # Excepciones personalizadas para manejo de proxies
 class ProxyBlockedError(Exception): pass
@@ -212,6 +217,31 @@ def generate_content_hash(title: str, description: str) -> str:
     # 5. Tomar una muestra significativa (ej: 800 chars) para el MD5
     return hashlib.md5(text[:800].encode('utf-8')).hexdigest()
 
+def calculate_priority(fecha_descubrimiento: datetime, broker_score_val: float = None, is_new: bool = False) -> float:
+    """Calcula el score de prioridad (Part 13)."""
+    now = datetime.now(timezone.utc)
+    # Recency
+    diff = now - fecha_descubrimiento
+    hours = diff.total_seconds() / 3600
+    
+    if hours < 24: recency = 1.0
+    elif hours < 72: recency = 0.7
+    elif hours < 168: recency = 0.4
+    else: recency = 0.1
+    
+    # Broker influence
+    broker_adj = 0.0
+    if broker_score_val is not None:
+        if broker_score_val < 0.2: broker_adj = 0.5
+        elif broker_score_val <= 0.5: broker_adj = 0.2
+        else: broker_adj = -1.0
+    
+    # Penalties (Duplicates handled separately in discovery/worker)
+    priority = recency + broker_adj
+    if is_new: priority += 0.2 # Bonus for explicitly being discovered in this run
+    
+    return round(priority, 2)
+
 def normalize_url(href: str) -> str:
     full = urljoin("https://www.yapo.cl", href)
     p = urlparse(full)
@@ -284,52 +314,57 @@ _BROKER_ABREVIATIONS = {"sa", "spa", "kw", "c21", "id", "p&g", "pgr", "m2", "sii
 # Caché en memoria para no clasificar a la misma corredora múltiples veces
 SELLER_CACHE = {} # { "nombre_normalizado": { "es_broker": bool, "timestamp": float } }
 
+def broker_score(seller_name: str, description: str, company_name: str = "N/A", seller_type: str = "N/A") -> float:
+    """Calcula un score (0.0 a 1.0) para determinar si es corredor basándose en nombre, empresa, descripción y tipo."""
+    score = 0.0
+    s_name = normalize_text(seller_name).lower()
+    c_name = normalize_text(company_name).lower()
+    full_text = normalize_text(f"{seller_name} {company_name} {description}").lower()
+    formatted_desc = normalize_text(description).lower()
+    
+    for kw in _BROKER_KEYWORDS:
+        if len(kw) <= 5 or kw in _BROKER_ABREVIATIONS:
+            if re.search(rf'\b{re.escape(kw)}\b', f"{s_name} {c_name}"):
+                score += 0.8
+        else:
+            if kw in s_name or kw in c_name:
+                score += 0.8
+                
+    if re.search(r'\by\s+cia\b|\bltda\b|\bs\.a\b|\bspa\b|\beirl\b|real estate|properties', s_name + " " + c_name):
+        score += 0.7
+        
+    commercial_terms = [
+        "comision", "honorarios", "corretaje", "orden de visita", 
+        "corredor de propiedades", "gestion de arriendo", "exclusividad",
+        "gastos comunes aprox", "metraje aproximado", "agendar visita", "plusvalia",
+        "sin pie", "compra sin pie", "subsidio", "gestionamos", "hipotecario", "financiamiento",
+        "inversión", "inversionista", "rentabilidad", "aprobacion", "excelente oportunidad", "agenda tu visita"
+    ]
+    for term in commercial_terms:
+        if term in formatted_desc:
+            score += 0.35
+            
+    s_type = normalize_text(seller_type).lower()
+    if s_type == "agente" or "inmobiliar" in s_type or "corredor" in s_type:
+        score += 0.5
+    elif s_type == "propietario" or s_type == "dueño":
+        score -= 0.5
+        
+    generic_names = ["agente", "vendedor"]
+    if any(gn == s_name for gn in generic_names):
+        context_clues = ["inmobiliario", "inmobiliaria", "propiedades", "oficina", "visita", "suf"]
+        for cc in context_clues:
+            if cc in formatted_desc:
+                score += 0.4
+                
+    return max(0.0, min(1.0, score))
+
 def is_likely_broker(seller_name: str, description: str, company_name: str = "N/A") -> bool:
     """Detecta si un vendedor es realmente un corredor basándose en nombre y descripción."""
-    # INSERT HERE (A-F Scoring System)
-    score = 0
-    full_text = f"{seller_name} {company_name} {description}".lower()
-
-    # -- A. SEÑALES FUERTES (+3) --
-    if any(k in full_text for k in [
-        "remax", "re/max", "century 21", "c21", "inmobiliaria", "propiedades",
-        "ltda", "spa", "eirl", "real estate", "corredora", "corretaje"
-    ]):
-        score += 3
-
-    # -- B. SEÑALES COMERCIALES (+2) --
-    if any(k in full_text for k in [
-        "comision", "honorarios", "corretaje", "subsidio", "financiamiento",
-        "credito hipotecario", "gestion", "evaluacion", "preaprobado"
-    ]):
-        score += 2
-
-    # -- C. PATRONES DE VENTA MASIVA (+2) --
-    if any(k in full_text for k in [
-        "agenda tu visita", "agendar visita", "plusvalia", "rentabilidad",
-        "compra sin pie", "sin pie", "inversionista", "oportunidad inversion"
-    ]):
-        score += 2
-
-    # -- D. SEÑALES DÉBILES (+1) --
-    if any(k in full_text for k in [
-        "agente", "asesor", "ejecutivo", "vendedor"
-    ]):
-        score += 1
-
-    # -- E. REGLA CRÍTICA (PRO) --
-    if company_name and company_name != "N/A":
-        score += 2
-
-    # -- F. DECISIÓN FINAL --
-    if score >= 3:
-        return True
-
     # 1. Normalizar textos
     s_name = normalize_text(seller_name).lower()
     c_name = normalize_text(company_name).lower()
-    full_text_norm = normalize_text(f"{seller_name} {company_name} {description}").lower()
-
+    full_text = normalize_text(f"{seller_name} {company_name} {description}").lower()
     
     # 2. Verificar palabras clave (Usando Regex \b para TODAS las palabras cortas o sospechosas)
     for kw in _BROKER_KEYWORDS:
@@ -369,91 +404,7 @@ def is_likely_broker(seller_name: str, description: str, company_name: str = "N/
                 
     return False
 
-async def discover_new_properties(page, db, max_pages=2, base_url=None):
-    """Obtiene URLs de propiedades nuevas desde los listados (máximo max_pages páginas o 50 URLs)."""
-    new_urls = []
-    MAX_URLS = 50
-    coll = db["yapo_propiedades"]
-    # Usar base_url pasada como parámetro (evita KeyError si CONFIG no está en scope)
-    _base_url = base_url or CONFIG.get("base_url", "")
-    if not _base_url:
-        logging.error("❌ discover_new_properties: base_url no configurada. Abortando discovery.")
-        return []
-
-    await block_resources(page, mode="discovery")
-
-    for page_num in range(1, max_pages + 1):
-        if len(new_urls) >= MAX_URLS:
-            break
-
-        if page_num == 1:
-            p_url = _base_url
-        else:
-            parsed = urlparse(_base_url)
-            new_path = f"{parsed.path}.{page_num}"
-            p_url = urlunparse((parsed.scheme, parsed.netloc, new_path, "", parsed.query, ""))
-
-        try:
-            logging.info(f"🔍 Discovery: Navegando a página {page_num} -> {p_url}")
-            await page.goto(p_url, timeout=40000, wait_until="domcontentloaded")
-            await asyncio.sleep(2) # Espera mínima para carga de JS
-            
-            # Extraer links usando la lógica existente (reutilizando fragmento de extract_links_with_scroll si fuera posible, 
-            # pero aquí lo hacemos directo para cumplir con la regla de NO modificar funciones existentes)
-            hrefs = await page.evaluate('''() => {
-                return Array.from(document.querySelectorAll('a[href]')).map(a => a.href);
-            }''')
-            
-            page_new_urls = []
-            for href in hrefs:
-                if len(new_urls) >= MAX_URLS: break
-                if re.search(r'[/_]\d{7,11}(?:\?|$)', href):
-                    if any(x in href for x in ["yapo.cl/comprar", "yapo.cl/vender", "ayuda.yapo.cl"]):
-                        continue
-                    url = normalize_url(href)
-                    
-                    # Validar contra colección final
-                    exists = await coll.find_one({"url": url}, {"_id": 1})
-                    if not exists and url not in new_urls:
-                        page_new_urls.append(url)
-                        new_urls.append(url)
-            
-            logging.info(f"📄 Pág {page_num}: {len(page_new_urls)} nuevas de {len(hrefs)} encontradas.")
-            
-            # Condición de corte: Si una página entera no tiene novedades, detenemos.
-            if not page_new_urls:
-                logging.info(f"🛑 Discovery: No hay propiedades nuevas en página {page_num}. Deteniendo.")
-                break
-                
-        except Exception as e:
-            logging.error(f"⚠️ Error en discovery pág {page_num}: {e}")
-            break
-
-    return new_urls
-
-async def get_properties_to_rescrape(db):
-    """Obtiene 30 propiedades antiguas o de baja calidad para re-scrapear."""
-    coll = db["yapo_propiedades"]
-    hours_ago = datetime.now(timezone.utc) - timedelta(hours=CONFIG.get("hours_to_recheck", 12))
-    
-    query = {
-        "fecha_scraping": {"$lt": hours_ago.isoformat()}
-    }
-    
-    # Prioridad: 1. quality_score bajo, 2. Sin lat/lon, 3. Sin m2_total
-    # Nota: MongoDB no permite sort por múltiples prioridades de forma tan granular en una sola query 
-    # sin agregaciones complejas, pero haremos un sort por quality_score (asc)
-    cursor = coll.find(query).sort("details.quality_score", 1).limit(30)
-    
-    rescrape_urls = []
-    async for doc in cursor:
-        rescrape_urls.append(doc["url"])
-        
-    logging.info(f"♻️ Fallback: {len(rescrape_urls)} propiedades detectadas para re-check.")
-    return rescrape_urls
-
 def save_html_locally(html_content: str, url: str) -> str:
-
     """Guarda el HTML en una carpeta local y retorna la ruta relativa."""
     if not html_content:
         return None
@@ -914,23 +865,6 @@ def _parse_html_fast(html: str) -> dict | None:
             publicador = data_layer["seller_name"]
             sources["seller_name"] = "data-layer"
 
-    # ── 5b. DETECCIÓN PRO DE YAPO (INSERT HERE) ─────────────────────────────
-    # Señal 1: Yapo etiqueta explícitamente a los profesionales con title="Profesional"
-    seller_is_pro = bool(re.search(r'title="Profesional"', html, re.IGNORECASE))
-
-    # Señal 2: El nombre del vendedor tiene hipervínculo (los dueños directos no tienen perfil)
-    # Buscamos un <a> dentro del contenedor del nombre o sidebar del vendedor
-    if not seller_is_pro:
-        seller_link_match = re.search(
-            r'class="[^"]*(?:contact_name|advertiser-name|d3-property-info__advertiser)[^"]*"[^>]*>\s*<a\s+href',
-            html, re.IGNORECASE
-        )
-        if seller_link_match:
-            seller_is_pro = True
-
-    if seller_is_pro:
-        sources["seller_is_pro"] = "html-pro-badge-or-link"
-
     # ── 6. QUALITY SCORING ───────────────────────────────────────────────────
     critical_fields = [(price_str!="N/A", 0.3), (m2_total_str!="N/A", 0.25), (dormitorios_str!="N/A", 0.15), (banos_str!="N/A", 0.15), (lat!="N/A", 0.15)]
     quality_score = sum(w for p, w in critical_fields if p)
@@ -939,17 +873,18 @@ def _parse_html_fast(html: str) -> dict | None:
         if "Página no encontrada" in html or "Oops!" in html: return None
         if quality_score < 0.15 and lat == "N/A": return None
 
+    has_pro_badge = bool(re.search(r'(_pro\.png|pro[-_]badge|icon[-_]pro)', html, re.IGNORECASE))
+
     return {
         "source": "fast_path",
-        "_metadata": {"sources": sources, "quality_score": round(quality_score, 2)},
+        "_metadata": {"sources": sources, "quality_score": round(quality_score, 2), "has_pro_badge": has_pro_badge},
         "region": region, "comuna": comuna, "sector": "N/A", "lat": lat, "lon": lon,
         "m2_total_str": m2_total_str, "m2_util_str": m2_util_str, "gastos_comunes_str": gastos_comunes_str,
         "dormitorios_str": dormitorios_str, "banos_str": banos_str, "estacionamientos_str": estacionamientos_str,
         "title": title, "price": price_str, "publicador": publicador, "raw_desc": descripcion_corta,
         "tipo_propiedad": tipo_propiedad, "list_time": fecha_pub, "seller_id": "N/A",
         "seller_type": seller_type, "company_name": company_name, "images_url": images,
-        "piscina_str": piscina_str, "direccion": direccion,
-        "seller_is_pro": seller_is_pro
+        "piscina_str": piscina_str, "direccion": direccion
     }
 
 
@@ -1195,75 +1130,58 @@ async def process_with_ai(raw_data: dict, grok_client, uf_value: float = None, c
     
     # Check Caché primero
     s_key = normalize_text(f"{publicador} {company_name}").lower()
-    if s_key in SELLER_CACHE:
-        cached = SELLER_CACHE[s_key]
-        known_broker = cached["is_broker"]
-        if known_broker:
-            logging.debug(f"🛑 [CACHE] Broker conocido: {publicador}")
-            # Si ya sabemos que es broker, solo llamamos IA si faltan datos críticos
-            # Si NO faltan datos, devolvemos directo
-            if has_critical:
-                precio_clp = clean_num(price)
-                precio_uf = round(precio_clp / uf_value, 2) if (precio_clp and uf_value) else None
-                return {
-                    "is_duplicate": False,
-                    "es_propietario_directo": False,
-                    "confianza": 1.0,
-                    "publicador": publicador,
-                    "company_name": company_name,
-                    "tipo_propiedad": raw_data["tipo_propiedad"],
-                    "comuna": comuna, "region": region, "sector": "N/A",
-                    "precio_clp": precio_clp, "precio_uf": precio_uf,
-                    "m2_total": clean_num(raw_data["m2_total_str"]),
-                    "dormitorios": clean_num(raw_data["dormitorios_str"]),
-                    "banos": clean_num(raw_data["banos_str"]),
-                    "resumen_limpio": f"Broker detectado (Cache): {publicador}",
-                    "content_hash": content_hash,
-                    "used_ai": False
-                }
+    if s_key not in SELLER_CACHE:
+        SELLER_CACHE[s_key] = {"is_broker": False, "count": 0, "ts": datetime.now().timestamp()}
+    
+    SELLER_CACHE[s_key]["count"] += 1
+
+    has_pro_badge = raw_data.get("_metadata", {}).get("has_pro_badge", False)
 
     # Check Blacklist Local (Sin IA)
-    is_broker_local = is_likely_broker(publicador, raw_desc, company_name)
-    if is_broker_local:
-        # Guardar en caché
-        SELLER_CACHE[s_key] = {"is_broker": True, "ts": datetime.now().timestamp()}
-        if has_critical:
-            logging.info(f"🚫 Saltando IA: Broker detectado localmente ({publicador[:20]})")
-            precio_clp = clean_num(price)
-            precio_uf = round(precio_clp / uf_value, 2) if (precio_clp and uf_value) else None
-            return {
-                "is_duplicate": False, 
-                "es_propietario_directo": False, 
-                "confianza": 1.0,
-                "publicador": publicador,
-                "company_name": company_name,
-                "tipo_propiedad": raw_data["tipo_propiedad"], "comuna": comuna, "region": region,
-                "precio_clp": precio_clp, "precio_uf": precio_uf,
-                "m2_total": clean_num(raw_data["m2_total_str"]),
-                "dormitorios": clean_num(raw_data["dormitorios_str"]), "banos": clean_num(raw_data["banos_str"]),
-                "resumen_limpio": f"Broker detectado por filtros locales: {publicador}",
-                "content_hash": content_hash,
-                "used_ai": False
-            }
+    seller_type = str(raw_data.get("seller_type", ""))
+    score = broker_score(publicador, raw_desc, company_name, seller_type)
+    
+    if has_pro_badge:
+        score = 1.0
+        SELLER_CACHE[s_key]["is_broker"] = True
+        
+    if SELLER_CACHE[s_key]["count"] > 3:
+        SELLER_CACHE[s_key]["is_broker"] = True
+        score = max(score, 0.8) # Forzar broker
 
-    if has_critical:
-        logging.info(f"⚡ Saltando IA: Datos técnicos completos para {title[:30]}...")
-        # Limpieza básica de precio para UF
+    # If >= 0.75 or already known broker -> ALWAYS SKIP listing (don't hit AI)
+    if score >= 0.75 or SELLER_CACHE[s_key]["is_broker"]:
+        SELLER_CACHE[s_key]["is_broker"] = True
+        logging.info(f"🚫 [SKIP] Broker/PRO Dominante (Score: {score:.2f}, Veces: {SELLER_CACHE[s_key]['count']}): {publicador[:20]}")
+        precio_clp = clean_num(price)
+        precio_uf = round(precio_clp / uf_value, 2) if (precio_clp and uf_value) else None
+        return {
+            "is_duplicate": False, 
+            "es_propietario_directo": False, 
+            "confianza": 1.0,
+            "publicador": publicador,
+            "company_name": company_name,
+            "tipo_propiedad": raw_data.get("tipo_propiedad", "N/A"), "comuna": comuna, "region": region,
+            "precio_clp": precio_clp, "precio_uf": precio_uf,
+            "m2_total": clean_num(raw_data.get("m2_total_str")),
+            "dormitorios": clean_num(raw_data.get("dormitorios_str")), "banos": clean_num(raw_data.get("banos_str")),
+            "resumen_limpio": f"Broker detectado (Score: {score:.2f}, Veces: {SELLER_CACHE[s_key]['count']}): {publicador}",
+            "content_hash": content_hash,
+            "used_ai": False
+        }
+
+    is_low_priority = (0.5 <= score < 0.75)
+    is_owner_local = (score < 0.5)
+    is_confident_classification = is_owner_local
+
+    if has_critical and is_confident_classification:
+        logging.info(f"⚡ Saltando IA: Datos completos y clasificación firme (Score: {score:.2f}) para {title[:30]}...")
         precio_clp = clean_num(price)
         precio_uf = round(precio_clp / uf_value, 2) if (precio_clp and uf_value) else None
         
-        # Detección de propietario directo: 
-        # Si no hay señales claras de corredor, asumimos que es dueño (incluyendo si el nombre es Agente/Vendedor)
-        is_broker = (
-            str(raw_data.get("seller_type", "")).lower() == "agente" or
-            is_likely_broker(publicador, raw_desc, raw_data.get("company_name", "N/A"))
-        )
-        is_direct = not is_broker
-        confianza_prop = 1.0 if is_broker else 0.95
+        is_direct = is_owner_local
+        confianza_prop = 1.0 if is_broker_local else 0.95
         
-        if is_broker:
-            logging.info(f"🚨 Broker detectado por semántica: {publicador} / {raw_data.get('company_name')}")
-
         return {
             "is_duplicate": False,
             "es_propietario_directo": is_direct,
@@ -1504,61 +1422,132 @@ async def main():
     await coll.create_index("url", unique=True)
     await coll.create_index("details.content_hash")
     await queue_coll.create_index("url", unique=True)
+    await queue_coll.create_index([("status", 1), ("priority", -1), ("retries", 1), ("fecha_descubrimiento", -1)])
+    await queue_coll.create_index("priority")
     await queue_coll.create_index("status")
 
-    # 1. ETAPA DE DESCUBRIMIENTO / FALLBACK (Discovery Layer)
-    now = datetime.now(timezone.utc)
-    urls_to_process = []
+    # === MIGRACIÓN DE COLA (HEALING) ===
+    # Si hay registros antiguos sin el campo 'priority', los inicializamos ahora
+    missing_prio = await queue_coll.count_documents({"priority": {"$exists": False}})
+    if missing_prio > 0:
+        logging.info(f"🔧 [MIGRATION] Inicializando prioridad para {missing_prio} items antiguos...")
+        # Procesar en bloques para no saturar
+        cursor = queue_coll.find({"priority": {"$exists": False}}).limit(5000)
+        async for doc in cursor:
+            f_desc = doc.get("fecha_descubrimiento", datetime.now(timezone.utc))
+            if isinstance(f_desc, str):
+                try: f_desc = datetime.fromisoformat(f_desc.replace('Z', '+00:00'))
+                except: f_desc = datetime.now(timezone.utc)
+            
+            prio = calculate_priority(f_desc, is_new=False)
+            await queue_coll.update_one({"_id": doc["_id"]}, {"$set": {"priority": prio}})
+        logging.info("✅ [MIGRATION] Priorización completada.")
 
-    async with async_playwright() as p_disc:
-        disc_browser = await p_disc.chromium.launch(headless=True)
-        disc_ctx = await disc_browser.new_context()
-        disc_page = await disc_ctx.new_page()
+    # 1. DESCUBRIMIENTO (Iteración sobre lista de búsqueda)
+    links_pending = await queue_coll.count_documents({"status": "pending"})
+    
+    # Decidir si ejecutar descubrimiento
+    should_discover = CONFIG.get("discovery_force_on", True) or links_pending == 0 or args.force_discovery
+    
+    if should_discover:
+        logging.info(f"🔍 ETAPA 1: Descubrimiento de enlaces activos...")
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=False)
+            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ctx = await browser.new_context(user_agent=ua)
+            page = await ctx.new_page()
+            try: await stealth(page)
+            except: pass
+            
+            await block_resources(page, mode="discovery")
+            
+            # Obtener lista de URLs a procesar
+            search_targets = CONFIG.get("search_urls", [])
+            if not search_targets and CONFIG.get("base_url"):
+                search_targets = [CONFIG["base_url"]]
+            
+            for base_url in search_targets:
+                logging.info(f"📍 Iniciando descubrimiento en: {base_url[:60]}...")
+                page_num = 0
+                empty_streak = 0
+                MAX_EMPTY_PAGES = CONFIG.get("max_empty_pages_streak", 3)
+                
+                while page_num < args.max_pages:
+                    page_num += 1
+                    if page_num == 1:
+                        p_url = base_url
+                    else:
+                        parsed = urlparse(base_url)
+                        new_path = f"{parsed.path}.{page_num}"
+                        p_url = urlunparse((parsed.scheme, parsed.netloc, new_path, "", parsed.query, ""))
 
-        # --- Discovery: buscar propiedades nuevas ---
-        logging.info("🔍 Iniciando Discovery Layer...")
-        # max_pages=2: si 2 páginas consecutivas no aportan novedades → pasa a Etapa 2
-        urls_to_process = await discover_new_properties(disc_page, db, max_pages=2, base_url=CONFIG.get("base_url", ""))
-        logging.info(f"🔍 Discovery: {len(urls_to_process)} nuevas propiedades encontradas")
+                    try:
+                        logging.info(f"📊 Navegando pág {page_num} de zona actual...")
+                        await page.goto(p_url, timeout=40000, wait_until="domcontentloaded")
+                        
+                        try: await page.wait_for_load_state('networkidle', timeout=6000)
+                        except: pass
+                        
+                        if page_num == 1:
+                            # Cerrar consentimientos
+                            for sel in ['button:has-text("Aceptar")', 'button:has-text("Acepto")', '[id*="cookie"] button']:
+                                try:
+                                    btn = await page.wait_for_selector(sel, timeout=1500)
+                                    if btn: await btn.click(); await asyncio.sleep(1); break
+                                except: continue
+                        
+                        try: await page.wait_for_selector('a[href*="/3"], a[href*="/2"]', timeout=5000)
+                        except: pass
+                        
+                        links = await extract_links_with_scroll(page, CONFIG["max_scrolls"], CONFIG["scroll_delay"])
+                        
+                        if len(links) == 0:
+                            logging.info(f"ℹ️ Fin de zona alcanzado (pág {page_num})")
+                            break
+                        
+                        new_inserted = 0
+                        for link in links:
+                            # PART 16 — DUPLICATE HARD FILTER (48h)
+                            processed_recently = await coll.find_one({
+                                "url": link,
+                                "fecha_scraping": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()}
+                            })
+                            if processed_recently:
+                                logging.debug(f"⏭️ [SKIPPED DUPLICATE] Procesado recientemente: {link[-25:]}")
+                                continue
 
-        if not urls_to_process:
-            # --- Fallback: re-scrapear propiedades antiguas/incompletas ---
-            logging.info("♻️ Fallback activado: buscando propiedades para re-check...")
-            urls_to_process = await get_properties_to_rescrape(db)
-            if urls_to_process:
-                logging.info(f"♻️ Fallback activado: {len(urls_to_process)} propiedades a re-scrapear")
-
-        await disc_browser.close()
-
-    # --- AJUSTE 3: Protección extra en cola ---
-    if not urls_to_process:
-        logging.info("⚠️ No hay URLs para procesar. Finalizando.")
-        client.close()
-        return
-
-    # Deduplicar
-    urls_to_process = list(set(urls_to_process))
-    # --- AJUSTE 4: Logging útil ---
-    logging.info(f"📦 URLs encoladas: {len(urls_to_process)}")
-
-    # --- INTEGRACIÓN SEGURA CON COLA (Versión Safe) ---
-    # Paso 1: Eliminar SOLO jobs pendientes con más de 1 hora de antigüedad
-    one_hour_ago = now - timedelta(hours=1)
-    del_res = await queue_coll.delete_many({
-        "status": "pending",
-        "created_at": {"$lt": one_hour_ago}
-    })
-    if del_res.deleted_count > 0:
-        logging.info(f"🗑️ Limpieza: {del_res.deleted_count} jobs pendientes antiguos eliminados.")
-
-    # Paso 2: Insertar nuevos jobs (ordered=False ignora duplicados si ya están en processing)
-    docs = [{"url": url, "status": "pending", "retries": 0, "created_at": now} for url in urls_to_process]
-    try:
-        await queue_coll.insert_many(docs, ordered=False)
-    except Exception:
-        # BulkWriteError esperado si alguna URL ya existe con otro estado — se ignora
-        pass
-
+                            init_priority = calculate_priority(datetime.now(timezone.utc), is_new=True)
+                            result = await queue_coll.update_one(
+                                {"url": link},
+                                {"$setOnInsert": {
+                                    "url": link, 
+                                    "status": "pending", 
+                                    "retries": 0, 
+                                    "priority": init_priority,
+                                    "fecha_descubrimiento": datetime.now(timezone.utc)
+                                }},
+                                upsert=True
+                            )
+                            if result.upserted_id: new_inserted += 1
+                        
+                        logging.info(f"✅ Pág {page_num} | {len(links)} links | +{new_inserted} nuevos")
+                        
+                        if new_inserted == 0:
+                            empty_streak += 1
+                            if empty_streak >= MAX_EMPTY_PAGES:
+                                logging.info(f"⏭️ Saltando zona: {MAX_EMPTY_PAGES} páginas sin novedades.")
+                                break
+                        else:
+                            empty_streak = 0
+                        
+                        await asyncio.sleep(random.uniform(1.0, 2.0))
+                    except Exception as e:
+                        logging.error(f"⚠️ Error discovery pág {page_num}: {e}")
+                        break # Siguiente zona si esta falla
+            
+            await browser.close()
+    else:
+        logging.info(f"⏭️ Descubrimiento omitido (Cola activa: {links_pending} links).")
 
     # 2. EXTRACCIÓN
     proxy_api_url = os.getenv("PROXY_API_URL")
@@ -1590,17 +1579,41 @@ async def main():
             ua = UserAgent()
             is_rotator = len(proxies) == 1
             while True:
-                # Polling atómico de la cola para obtener el proxy a usar en la sesión
-                # Prioridad: más recientes primero (created_at DESC), luego menos reintentos
+                # PART 15 — BACKLOG CONTROL
+                # Si hay demasiados pendientes, solo procesamos los top (prioridad alta)
+                pending_count = await queue_coll.count_documents({"status": "pending"})
+                query = {"status": "pending"}
+                
+                if pending_count > CONFIG["max_queue_size"]:
+                    logging.warning(f"⚠️ [BACKLOG CONTROL] Cola saturada ({pending_count}). Procesando solo los mejores candidatos.")
+                    # Dejamos que el SORT elija los mejores, pero limitaremos la sesión del worker.
+
+                # Polling atómico de la cola con prioridad Fresh-First
                 doc = await queue_coll.find_one_and_update(
-                    {"status": "pending"},
+                    query,
                     {"$set": {"status": "processing", "worker": worker_id}},
-                    sort=[("created_at", -1), ("retries", 1)],
+                    sort=[("priority", -1), ("retries", 1), ("fecha_descubrimiento", -1)],
                     return_document=True
                 )
                 if not doc: break
 
+                # Limite de seguridad para Backlog (Part 15)
+                # Si la cola era gigante, detenemos este worker tras procesar una porción razonable
+                # para no quedar atrapados en basura vieja infinitamente.
+                processed_this_session = stats.get("session_processed", 0)
+                if pending_count > CONFIG["max_queue_size"] and processed_this_session > (500 // args.concurrency):
+                    logging.info(f"🛑 [BACKLOG LIMIT] Alcanzado límite de 500 items del top. Ignorando el resto temporalmente.")
+                    break
+                stats["session_processed"] = processed_this_session + 1
+
                 url = doc["url"]
+                
+                # Log de prioridad
+                prio_val = doc.get("priority", 0)
+                if prio_val >= 1.0:
+                    logging.info(f"🚀 [HIGH PRIORITY (NEW)] Procesando: {url[-30:]} (Prio: {prio_val})")
+                else:
+                    logging.info(f"🔄 [NORMAL PRIORITY] Procesando: {url[-30:]} (Prio: {prio_val})")
                 
                 # Obtener un proxy que no esté en cooldown
                 proxy = None
@@ -1614,8 +1627,9 @@ async def main():
                             p = next(proxy_cycle)
                             cooldown_until = BURNED_PROXIES.get(p)
                             if not cooldown_until or datetime.now() > cooldown_until:
-                                proxy = p
-                                break
+                                if PROXY_MB_USAGE[p] < MAX_MB_PER_PROXY:
+                                    proxy = p
+                                    break
                     
                     if not proxy:
                         logging.error("❌ TODOS LOS PROXIES ESTÁN EN COOLDOWN. Esperando 15s...")
@@ -1629,6 +1643,10 @@ async def main():
 
                 # Reducir ruido: log de sesión a DEBUG
                 logging.debug(f"🌐 [W{worker_id}] Sesión batch({CONFIG['urls_per_session']}) | Proxy: {proxy or 'directo'}")
+                
+                # PART 14 — FRESH-FIRST EXECUTION
+                # Verificación de "New" (< 24h) para PAUSE backlog si es necesario
+                # (Ya manejado por el QUERY de find_one_and_update arriba)
                 
                 # Configuración de cliente HTTP ligero persistente
                 h_headers = {
@@ -1644,19 +1662,32 @@ async def main():
 
                 ctx = None
                 try:
-                    async with curl_requests.AsyncSession(headers=h_headers, proxies={"http": h_proxy, "https": h_proxy} if h_proxy else None, timeout=15.0, impersonate="chrome120") as h_client:
+                    # Usamos dos clientes: uno directo y uno con proxy
+                    async with curl_requests.AsyncSession(headers=h_headers, timeout=15.0, impersonate="chrome120") as h_client_direct:
+                     async with curl_requests.AsyncSession(headers=h_headers, proxies={"http": h_proxy, "https": h_proxy} if h_proxy else None, timeout=15.0, impersonate="chrome120") as h_client_proxy:
                         ctx = await browser.new_context(user_agent=ua.random, proxy=ctx_proxy)
                         for batch_i in range(CONFIG["urls_per_session"]):
                             if batch_i > 0:
-                                # Prioridad: más recientes primero (created_at DESC), luego menos reintentos
                                 doc = await queue_coll.find_one_and_update(
                                     {"status": "pending"},
                                     {"$set": {"status": "processing", "worker": worker_id}},
-                                    sort=[("created_at", -1), ("retries", 1)],
+                                    sort=[("retries", 1), ("fecha_descubrimiento", -1)],
                                     return_document=True
                                 )
                             if not doc: break
                             url = doc["url"]
+
+                            # PART 16 — DUPLICATE HARD FILTER (Re-check en worker)
+                            processed_recently = await coll.find_one({
+                                "url": url,
+                                "fecha_scraping": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()}
+                            })
+                            if processed_recently:
+                                logging.info(f"⏭️ [SKIPPED DUPLICATE] URL procesada en últimas 48h: {url[-25:]}")
+                                await queue_coll.update_one({"url": url}, {"$set": {"status": "completed"}})
+                                stats["duplicates"] += 1
+                                stats["processed"] += 1
+                                continue
 
                             # === PRE-CHECK: ¿Ya existe en DB? ===
                             exists = await coll.find_one({"url": url}, {"_id": 1})
@@ -1671,35 +1702,87 @@ async def main():
                             raw_data = None
                             try:
                                 # 1.1 INTENTO FAST PATH (~40KB)
-                                p_key = proxy or "directo"
-                                PROXY_USAGE[p_key] += 1
+                                # START PROXY OPTIMIZATION: Try WITHOUT proxy first
+                                p_key = "directo"
+                                PROXY_USAGE["directo"] += 1
+                                raw_data = None
+                                size_bytes = 0
                                 
                                 try:
-                                    raw_data, size_bytes = await extract_fast_path(url, h_client)
+                                    raw_data, size_bytes = await extract_fast_path(url, h_client_direct)
                                     if not raw_data:
-                                        logging.warning(f"⚠️ Fast Path sin datos (Posible 404 farsa). Verificando en Browser...")
+                                        logging.warning(f"⚠️ Fast Path directo sin datos. Verificando en Browser...")
                                     else:
-                                        PROXY_MB_USAGE[p_key] += (size_bytes / (1024 * 1024))
+                                        PROXY_MB_USAGE["directo"] += (size_bytes / (1024 * 1024))
+                                        SUCCESSFUL_NO_PROXY.add(url)
                                 except ProxyBlockedError:
-                                    if is_rotator:
-                                        wait_s = random.uniform(2, 5)
-                                        logging.warning(f"🔥 Bloqueo (Fast) -> Backoff {wait_s:.1f}s")
-                                        await asyncio.sleep(wait_s)
-                                    else:
-                                        logging.warning(f"🔥 Proxy en COOLDOWN (Fast Path): {p_key}. Rotando...")
-                                        BURNED_PROXIES[p_key] = datetime.now() + timedelta(seconds=60)
+                                    logging.warning(f"🔥 Bloqueo directo. Cambiando a Proxy para {url}...")
+                                    # Fallback to Proxy
+                                    if not proxy and proxies:
+                                        for prx in proxies:
+                                            if (not BURNED_PROXIES.get(prx) or datetime.now() > BURNED_PROXIES[prx]) and PROXY_MB_USAGE[prx] < MAX_MB_PER_PROXY:
+                                                proxy = prx
+                                                break
                                     
-                                    await queue_coll.update_one({"url": url}, {"$set": {"status": "pending"}})
-                                    raise # Relanzar para salir del batch
+                                    p_key = proxy
+                                    if p_key:
+                                        PROXY_USAGE[p_key] += 1
+                                        try:
+                                            # Using the proxy client
+                                            raw_data, size_bytes = await extract_fast_path(url, h_client_proxy)
+                                            if raw_data:
+                                                PROXY_MB_USAGE[p_key] += (size_bytes / (1024 * 1024))
+                                        except ProxyBlockedError:
+                                            if is_rotator:
+                                                wait_s = random.uniform(2, 5)
+                                                logging.warning(f"🔥 Bloqueo Proxy -> Backoff {wait_s:.1f}s")
+                                                await asyncio.sleep(wait_s)
+                                            else:
+                                                logging.warning(f"🔥 Proxy en COOLDOWN: {p_key}. Rotando...")
+                                                BURNED_PROXIES[p_key] = datetime.now() + timedelta(seconds=60)
+                                            await queue_coll.update_one({"url": url}, {"$set": {"status": "pending"}})
+                                            raise
+                                    else:
+                                        logging.warning("No hay proxies disponibles para el fallback.")
+                                        await queue_coll.update_one({"url": url}, {"$set": {"status": "pending"}})
+                                        raise ProxyBlockedError("Direct failed and no proxies available")
                                 
                                 mb_url = size_bytes / (1024 * 1024)
-                                # Log consolidado: URL + Proxy en una sola línea
-                                logging.info(f"🔗 [W{worker_id}] {url} | {p_key} | {mb_url:.3f}MB")
+                                logging.info(f"🔗 [W{worker_id}] {url} | {p_key[:15]}... | {mb_url:.3f}MB")
                                 
                                 # Si el Fast Path falla o es incompleto → Fallback
                                 # RELAXED: Solo vamos a browser si faltan datos CRÍTICOS (Precio O Dormitorios).
                                 # Si falta el título, no importa (la IA lo saca de la descripción).
-                                if not raw_data or (raw_data.get("price") == "N/A" and raw_data.get("dormitorios") == "N/A"):
+                                needs_browser = not raw_data or (raw_data.get("price") == "N/A" and raw_data.get("dormitorios") == "N/A")
+                                needs_browser = not raw_data or (raw_data.get("price") == "N/A" and raw_data.get("dormitorios") == "N/A")
+                                
+                                if needs_browser:
+                                    used_pct = (stats.get("playwright_used", 0) / max(1, stats["processed"]))
+                                    is_high_value = True
+                                    if raw_data:
+                                        ts_score = broker_score(raw_data.get("publicador", ""), raw_data.get("raw_desc", ""), raw_data.get("company_name", ""), raw_data.get("seller_type", ""))
+                                        has_contact = bool(re.search(r'(\+?56\s?9|\b\d{8}\b|@[\w\.-]+)', raw_data.get("raw_desc", "")))
+                                        if ts_score >= 0.2 or has_contact or raw_data.get("_metadata", {}).get("has_pro_badge", False):
+                                            is_high_value = False
+
+                                    if raw_data and not is_high_value:
+                                        logging.info(f"⏭️ Browser Skipped: No es candidato owner premium (Score>=0.2 o tiene contacto).")
+                                        needs_browser = False
+                                    elif used_pct >= 0.10:
+                                        logging.warning(f"📉 Browser limit reached ({used_pct*100:.1f}%), límite excedido. Skip browser preventivo. Continua sin usar Browser.")
+                                        needs_browser = False
+                                        if not raw_data:
+                                            raw_data = {
+                                                "source": "dummy_limit_fallback",
+                                                "title": "N/A", "price": "N/A", "dormitorios_str": "N/A", "banos_str": "N/A",
+                                                "publicador": "N/A", "raw_desc": "N/A", "region": "url_fallback", "comuna": "N/A", "tipo_propiedad": "N/A",
+                                                "m2_total_str": "N/A", "m2_util_str": "N/A", "gastos_comunes_str": "N/A",
+                                                "estacionamientos_str": "N/A", "piscina_str": "N/A", "lat": "N/A", "lon": "N/A"
+                                            }
+                                    else:
+                                        stats["playwright_used"] = stats.get("playwright_used", 0) + 1
+
+                                if needs_browser:
                                     if raw_data: logging.info(f"⚠️ Datos críticos faltantes ({raw_data.get('price')}/{raw_data.get('dormitorios')}). Browser Fallback...")
                                     
                                     if not page:
@@ -1770,89 +1853,9 @@ async def main():
                                     except: pass
                                     page = None
 
-                            # === FASE 2: PROCESAMIENTO IA (con Filtro Pre-IA) ===
+                            # === FASE 2: PROCESAMIENTO IA ===
                             try:
-                                # --- FILTRO PRE-IA (INSERT HERE) ---
-                                _publicador = raw_data.get("publicador", "N/A")
-                                _desc = raw_data.get("raw_desc", "N/A")
-                                _company = raw_data.get("company_name", "N/A")
-                                _price = raw_data.get("price", "N/A")
-                                _dorm = raw_data.get("dormitorios_str", "N/A")
-                                _banos = raw_data.get("banos_str", "N/A")
-                                _raw_available = (
-                                    raw_data.get("title", "N/A") != "N/A" and
-                                    _price != "N/A"
-                                )
-
-                                # PRIORIDAD 0: Badge Profesional de Yapo o vendedor con perfil (señal HTML directa)
-                                _seller_is_pro = raw_data.get("seller_is_pro", False)
-
-                                # PRIORIDAD 1: Broker detectado → SIEMPRE saltar IA
-                                if _seller_is_pro or is_likely_broker(_publicador, _desc, _company):
-                                    if _seller_is_pro:
-                                        logging.info(f"🚫 Broker detectado (pre-IA / PRO badge): {_publicador[:30]}")
-                                    logging.info(f"🚫 Broker detectado (pre-IA): {_publicador[:30]}")
-                                    details = {
-                                        "portal": CONFIG["portal_name"],
-                                        "titulo": raw_data.get("title", "N/A"),
-                                        "precio": _price,
-                                        "comuna": raw_data.get("comuna", "N/A"),
-                                        "region": raw_data.get("region", "N/A"),
-                                        "sector": raw_data.get("sector", "N/A"),
-                                        "lat": raw_data.get("lat", "N/A"),
-                                        "lon": raw_data.get("lon", "N/A"),
-                                        "tipo_propiedad": raw_data.get("tipo_propiedad", "N/A"),
-                                        "m2_total": clean_num(raw_data.get("m2_total_str")),
-                                        "dormitorios": clean_num(_dorm),
-                                        "banos": clean_num(_banos),
-                                        "es_propietario_directo": False,
-                                        "confianza_propietario": 0.0,  # NUNCA alta confianza a broker
-                                        "publicador": _publicador,
-                                        "company_name": _company,
-                                        "fecha_scraping": datetime.now(timezone.utc).isoformat(),
-                                        "used_ai": False,
-                                        "is_duplicate": False,
-                                    }
-
-                                # PRIORIDAD 2: Datos completos → saltar IA
-                                elif _price != "N/A" and _dorm != "N/A" and _banos != "N/A" and _raw_available:
-                                    logging.info(f"⚡ Saltando IA (datos completos): {raw_data.get('title','')[:30]}")
-                                    precio_clp = clean_num(_price)
-                                    precio_uf = round(precio_clp / uf_value, 2) if (precio_clp and uf_value) else None
-                                    is_brk = (
-                                        str(raw_data.get("seller_type", "")).lower() == "agente" or
-                                        is_likely_broker(_publicador, _desc, _company)
-                                    )
-                                    details = {
-                                        "portal": CONFIG["portal_name"],
-                                        "titulo": raw_data.get("title", "N/A"),
-                                        "precio": _price,
-                                        "precio_clp_raw": precio_clp,
-                                        "precio_uf": precio_uf,
-                                        "comuna": raw_data.get("comuna", "N/A"),
-                                        "region": raw_data.get("region", "N/A"),
-                                        "sector": raw_data.get("sector", "N/A"),
-                                        "lat": raw_data.get("lat", "N/A"),
-                                        "lon": raw_data.get("lon", "N/A"),
-                                        "tipo_propiedad": raw_data.get("tipo_propiedad", "N/A"),
-                                        "m2_total": clean_num(raw_data.get("m2_total_str")),
-                                        "m2_util": clean_num(raw_data.get("m2_util_str")),
-                                        "dormitorios": clean_num(_dorm),
-                                        "banos": clean_num(_banos),
-                                        "estacionamientos": clean_num(raw_data.get("estacionamientos_str")),
-                                        "es_propietario_directo": not is_brk,
-                                        "confianza_propietario": 0.0 if is_brk else 0.95,
-                                        "publicador": _publicador,
-                                        "company_name": _company,
-                                        "fecha_scraping": datetime.now(timezone.utc).isoformat(),
-                                        "used_ai": False,
-                                        "is_duplicate": False,
-                                    }
-
-                                # PRIORIDAD 3: Usar IA (caso base)
-                                else:
-                                    details = await process_with_ai(raw_data, grok_client, uf_value, coll)
-
+                                details = await process_with_ai(raw_data, grok_client, uf_value, coll)
                                 if details:
                                     if details.get("is_duplicate"):
                                         stats["duplicates"] += 1

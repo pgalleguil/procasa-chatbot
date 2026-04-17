@@ -120,7 +120,8 @@ async def get_daily_progress_stats(target_date: datetime) -> dict:
     
     for doc in yapo_cursor:
         # Analizar notas/gestiones
-        notas = doc.get("gestion", {}).get("notas", [])
+        gestion_data = doc.get("gestion") or {}
+        notas = gestion_data.get("notas") or []
         for n in notas:
             ts = n.get("timestamp")
             actor = n.get("usuario", "").strip().title()
@@ -137,7 +138,8 @@ async def get_daily_progress_stats(target_date: datetime) -> dict:
                         counts[actor]["total"] += 1
                         
         # Analizar cambios de contacto
-        audits = doc.get("audit", {}).get("contact_changes", [])
+        audit_data = doc.get("audit") or {}
+        audits = audit_data.get("contact_changes") or []
         for a in audits:
             ts = a.get("timestamp")
             actor = a.get("user", "").strip().title()

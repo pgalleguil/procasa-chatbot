@@ -39,11 +39,14 @@ CONFIG = {
     "desc_max_chars": 8000,
     #"base_url": "https://www.yapo.cl/bienes-raices-alquiler?regionslug=region-metropolitana-nunoa,region-metropolitana-providencia,region-metropolitana-macul,region-metropolitana-san-miguel,region-metropolitana-penalolen,region-metropolitana-la-florida&q=withcat.bienes-raices-alquiler-apartamentos,bienes-raices-alquiler-comercios,bienes-raices-alquiler-casas",
     #"base_url": "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-la-florida,region-metropolitana-macul&q=withcat.bienes-raices-venta-de-propiedades-apartamentos,bienes-raices-venta-de-propiedades-casas|f_price.80000000-|f_currency.CLP",
-    #"base_url": "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-la-florida,region-metropolitana-macul&q=withcat.bienes-raices-venta-de-propiedades-apartamentos,bienes-raices-venta-de-propiedades-casas|f_price.80000000-|f_currency.CLP",
     "base_url": "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=valparaiso-vina-del-mar,valparaiso-valparaiso&q=withcat.bienes-raices-venta-de-propiedades-apartamentos,bienes-raices-venta-de-propiedades-casas|f_price.80000000-|f_currency.CLP",
+    # ---- Discovery settings ----
+    "discovery_max_urls": 50,     # Límite total de URLs a encolar por ejecución
+    "discovery_max_pages": 1,     # Páginas máximas a revisar en discovery
+    "discovery_empty_stop": 1,    # Páginas consecutivas sin novedades antes de detenerse
+    # ---- Other ----
     "max_retries_per_url": 3,
-    "max_retries_per_url": 3,
-    "hours_to_recheck": 12,
+    "hours_to_recheck": 6,        # Horas antes de considerar una propiedad para re-scraping
     "urls_per_session": 30,
 }
 
@@ -370,20 +373,29 @@ def is_likely_broker(seller_name: str, description: str, company_name: str = "N/
     return False
 
 async def discover_new_properties(page, db, max_pages=2, base_url=None):
-    """Obtiene URLs de propiedades nuevas desde los listados (máximo max_pages páginas o 50 URLs)."""
-    new_urls = []
-    MAX_URLS = 50
+    """
+    [v2] Discovery con pre-clasificación de brokers desde las tarjetas del listado.
+    Retorna lista de dicts: [{"url": str, "is_pre_broker": bool}]
+    Límites configurables desde CONFIG:
+      discovery_max_urls    (default 50)
+      discovery_max_pages   (default 5)
+      discovery_empty_stop  (default 2 páginas consecutivas)
+    """
+    results = []  # [{"url": str, "is_pre_broker": bool}]
+    MAX_URLS    = CONFIG.get("discovery_max_urls", 50)
+    MAX_PAGES   = max_pages or CONFIG.get("discovery_max_pages", 5)
+    EMPTY_STOP  = CONFIG.get("discovery_empty_stop", 2)   # páginas consecutivas vacías antes de parar
     coll = db["yapo_propiedades"]
-    # Usar base_url pasada como parámetro (evita KeyError si CONFIG no está en scope)
     _base_url = base_url or CONFIG.get("base_url", "")
     if not _base_url:
         logging.error("❌ discover_new_properties: base_url no configurada. Abortando discovery.")
         return []
 
     await block_resources(page, mode="discovery")
+    consecutive_empty = 0
 
-    for page_num in range(1, max_pages + 1):
-        if len(new_urls) >= MAX_URLS:
+    for page_num in range(1, MAX_PAGES + 1):
+        if len(results) >= MAX_URLS:
             break
 
         if page_num == 1:
@@ -394,42 +406,60 @@ async def discover_new_properties(page, db, max_pages=2, base_url=None):
             p_url = urlunparse((parsed.scheme, parsed.netloc, new_path, "", parsed.query, ""))
 
         try:
-            logging.info(f"🔍 Discovery: Navegando a página {page_num} -> {p_url}")
-            await page.goto(p_url, timeout=40000, wait_until="domcontentloaded")
-            await asyncio.sleep(2) # Espera mínima para carga de JS
-            
-            # Extraer links usando la lógica existente (reutilizando fragmento de extract_links_with_scroll si fuera posible, 
-            # pero aquí lo hacemos directo para cumplir con la regla de NO modificar funciones existentes)
-            hrefs = await page.evaluate('''() => {
-                return Array.from(document.querySelectorAll('a[href]')).map(a => a.href);
-            }''')
-            
-            page_new_urls = []
-            for href in hrefs:
-                if len(new_urls) >= MAX_URLS: break
-                if re.search(r'[/_]\d{7,11}(?:\?|$)', href):
-                    if any(x in href for x in ["yapo.cl/comprar", "yapo.cl/vender", "ayuda.yapo.cl"]):
-                        continue
-                    url = normalize_url(href)
-                    
-                    # Validar contra colección final
-                    exists = await coll.find_one({"url": url}, {"_id": 1})
-                    if not exists and url not in new_urls:
-                        page_new_urls.append(url)
-                        new_urls.append(url)
-            
-            logging.info(f"📄 Pág {page_num}: {len(page_new_urls)} nuevas de {len(hrefs)} encontradas.")
-            
-            # Condición de corte: Si una página entera no tiene novedades, detenemos.
-            if not page_new_urls:
-                logging.info(f"🛑 Discovery: No hay propiedades nuevas en página {page_num}. Deteniendo.")
-                break
-                
+            logging.info(f"🔍 Discovery: Navegando a página {page_num}/{MAX_PAGES} -> {p_url}")
+            await page.goto(p_url, timeout=60000, wait_until="commit")
+            await asyncio.sleep(3)  # Espera para que el DOM cargue cards
+
+            # OPTIMIZACIÓN v2: Extraer URLs + señales de broker desde los cards del listado
+            # Usamos JS para leer de una sola vez: url + si tiene badge PRO + si tiene seller link
+            card_data = await page.evaluate(r'''
+            () => {
+                const cards = [];
+                document.querySelectorAll('a[href]').forEach(a => {
+                    const href = a.href || "";
+                    if (!/[/_]\d{7,11}(\?|$)/.test(href)) return;
+                    if (/yapo\.cl\/(comprar|vender)|ayuda\.yapo/.test(href)) return;
+                    const card = a.closest("article, li, .d3-ad-tile, [class*=ad-tile], [class*=listing]") || a.parentElement;
+                    const isPro = card ? (
+                        card.querySelector('[title="Profesional"]') !== null ||
+                        card.querySelector('[class*="pro-badge"], [class*="professional"]') !== null
+                    ) : false;
+                    cards.push({ url: href, isPro: isPro });
+                });
+                return cards;
+            }
+            ''')
+
+
+            page_new = []
+            seen_urls = {r["url"] for r in results}
+            for card in card_data:
+                if len(results) >= MAX_URLS: break
+                url = normalize_url(card["url"])
+                if url in seen_urls: continue
+                exists = await coll.find_one({"url": url}, {"_id": 1})
+                if not exists:
+                    entry = {"url": url, "is_pre_broker": card["isPro"]}
+                    page_new.append(entry)
+                    results.append(entry)
+                    seen_urls.add(url)
+
+            pre_broker_count = sum(1 for r in page_new if r["is_pre_broker"])
+            logging.info(f"📄 Pág {page_num}/{MAX_PAGES}: {len(page_new)} nuevas ({pre_broker_count} broker) | Total: {len(results)}/{MAX_URLS}")
+
+            if not page_new:
+                consecutive_empty += 1
+                logging.info(f"⚠️ Pág {page_num} sin novedades ({consecutive_empty}/{EMPTY_STOP} consecutivas). {'Deteniendo.' if consecutive_empty >= EMPTY_STOP else 'Continuando...'}")
+                if consecutive_empty >= EMPTY_STOP:
+                    break
+            else:
+                consecutive_empty = 0  # Reset al encontrar novedades
+
         except Exception as e:
             logging.error(f"⚠️ Error en discovery pág {page_num}: {e}")
             break
 
-    return new_urls
+    return results
 
 async def get_properties_to_rescrape(db):
     """Obtiene 30 propiedades antiguas o de baja calidad para re-scrapear."""
@@ -1015,33 +1045,52 @@ Retorna solo un JSON puro con los campos solicitados.
 
 async def extract_fast_path(url: str, client) -> tuple:
     """Intenta extraer datos usando el cliente curl_cffi persistente. Retorna (raw_data, size_bytes).
-    Usa JSON-LD + HTML regex (yapo.cl ya no usa __NEXT_DATA__)."""
-    try:
-        resp = await client.get(url)
+    [v2] Intenta primero SIN proxy (directo) para ahorrar ancho de banda de proxy.
+    """
+    async def _do_request(c):
+        resp = await c.get(url)
         size_bytes = len(resp.content)
-        
-        # Detección de bloqueo en el fast path (403, 429, o Reto de navegador)
         challenge_keywords = ["captcha", "access denied", "checking your browser", "please wait", "ray id"]
         if resp.status_code in [403, 429] or any(k in resp.text.lower() for k in challenge_keywords):
             raise ProxyBlockedError(f"Fast path bloqueado ({resp.status_code}/Challenge)")
-
         if resp.status_code != 200:
             return None, size_bytes
-
-        # Forzar decodificación UTF-8 para evitar problemas de acentos (baños -> banos)
         html = resp.content.decode('utf-8', 'ignore')
         res = _parse_html_fast(html)
         if res:
-            # OPTIMIZACIÓN: Guardamos HTML localmente, no en MongoDB
             html_path = save_html_locally(html, url)
             res["html_path"] = html_path
-            res["html_dump"] = html # Lo mantenemos temporalmente para la IA en este thread
+            res["html_dump"] = html
             return res, size_bytes
         return None, size_bytes
+
+    # [v2] INTENTO DIRECTO (sin proxy) — gratis
+    try:
+        ua = UserAgent()
+        h_direct = {
+            "User-Agent": ua.random,
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+            "Accept-Language": "es-CL,es;q=0.9",
+            "Referer": "https://www.yapo.cl/",
+        }
+        async with curl_requests.AsyncSession(headers=h_direct, timeout=8.0, impersonate="chrome120") as direct_client:
+            res, size = await _do_request(direct_client)
+            if res:
+                logging.debug(f"⚡ Fast path DIRECTO OK ({size/1024:.1f}KB): {url[-30:]}")
+                return res, size
+    except ProxyBlockedError:
+        pass  # Sitio bloqueó la IP directa → intentar con proxy
+    except Exception:
+        pass  # Timeout u otro error → intentar con proxy
+
+    # [v2] INTENTO CON PROXY (si el cliente de proxy está disponible)
+    try:
+        res, size = await _do_request(client)
+        return res, size
     except ProxyBlockedError as e:
         raise e
     except Exception as e:
-        logging.debug(f"Fast path falló: {e}")
+        logging.debug(f"Fast path (proxy) falló: {e}")
     return None, 0
 
 async def block_resources(page, mode="standard"):
@@ -1509,56 +1558,76 @@ async def main():
     # 1. ETAPA DE DESCUBRIMIENTO / FALLBACK (Discovery Layer)
     now = datetime.now(timezone.utc)
     urls_to_process = []
+    _DISC_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
     async with async_playwright() as p_disc:
-        disc_browser = await p_disc.chromium.launch(headless=True)
-        disc_ctx = await disc_browser.new_context()
+        disc_browser = await p_disc.chromium.launch(headless=False)  # headless=False evita deteccion
+        disc_ctx = await disc_browser.new_context(user_agent=_DISC_UA)
         disc_page = await disc_ctx.new_page()
+        # Aplicar stealth igual que el scraper original
+        try:
+            await apply_stealth(disc_page)
+        except Exception:
+            pass
 
         # --- Discovery: buscar propiedades nuevas ---
         logging.info("🔍 Iniciando Discovery Layer...")
-        # max_pages=2: si 2 páginas consecutivas no aportan novedades → pasa a Etapa 2
-        urls_to_process = await discover_new_properties(disc_page, db, max_pages=2, base_url=CONFIG.get("base_url", ""))
+        # max_pages=None → usa discovery_max_pages del CONFIG
+        urls_to_process = await discover_new_properties(disc_page, db, max_pages=None, base_url=CONFIG.get("base_url", ""))
         logging.info(f"🔍 Discovery: {len(urls_to_process)} nuevas propiedades encontradas")
 
+        # discover_new_properties v2 devuelve [{"url": str, "is_pre_broker": bool}]
         if not urls_to_process:
-            # --- Fallback: re-scrapear propiedades antiguas/incompletas ---
+            # Fallback: re-scrapear propiedades antiguas (devuelve lista de strings simple)
             logging.info("♻️ Fallback activado: buscando propiedades para re-check...")
-            urls_to_process = await get_properties_to_rescrape(db)
-            if urls_to_process:
-                logging.info(f"♻️ Fallback activado: {len(urls_to_process)} propiedades a re-scrapear")
+            fallback_urls = await get_properties_to_rescrape(db)
+            urls_to_process = [{"url": u, "is_pre_broker": False} for u in fallback_urls]
 
         await disc_browser.close()
 
-    # --- AJUSTE 3: Protección extra en cola ---
-    if not urls_to_process:
-        logging.info("⚠️ No hay URLs para procesar. Finalizando.")
+    # Verificar pendientes en cola
+    current_pending = await queue_coll.count_documents({"status": "pending"})
+
+    # Protección extra: si no hay nuevos descubrimientos ni pendientes, finalizar
+    if not urls_to_process and current_pending == 0:
+        logging.info("⚠️ No hay URLs nuevas descubiertas ni pendientes en cola. Finalizando.")
         client.close()
         return
 
-    # Deduplicar
-    urls_to_process = list(set(urls_to_process))
-    # --- AJUSTE 4: Logging útil ---
-    logging.info(f"📦 URLs encoladas: {len(urls_to_process)}")
+    if urls_to_process:
+        # Deduplicar por URL
+        seen = set()
+        deduped = []
+        for entry in urls_to_process:
+            if entry["url"] not in seen:
+                seen.add(entry["url"])
+                deduped.append(entry)
+        urls_to_process = deduped
 
-    # --- INTEGRACIÓN SEGURA CON COLA (Versión Safe) ---
-    # Paso 1: Eliminar SOLO jobs pendientes con más de 1 hora de antigüedad
-    one_hour_ago = now - timedelta(hours=1)
+        pre_broker_total = sum(1 for e in urls_to_process if e["is_pre_broker"])
+        logging.info(f"📦 URLs preparadas para encolar: {len(urls_to_process)} | Pre-broker: {pre_broker_total}")
+
+        # Insertar solo URLs nuevas, con flag is_pre_broker
+        docs = [{
+            "url": e["url"],
+            "status": "pending",
+            "retries": 0,
+            "created_at": now,
+            "is_pre_broker": e["is_pre_broker"]
+        } for e in urls_to_process]
+        try:
+            await queue_coll.insert_many(docs, ordered=False)
+        except Exception:
+            pass  # BulkWriteError esperado para duplicados
+
+    # --- INTEGRACIÓN CON COLA v2 (Purga inteligente 6h) ---
+    six_hours_ago = now - timedelta(hours=6)
     del_res = await queue_coll.delete_many({
         "status": "pending",
-        "created_at": {"$lt": one_hour_ago}
+        "created_at": {"$lt": six_hours_ago}
     })
     if del_res.deleted_count > 0:
-        logging.info(f"🗑️ Limpieza: {del_res.deleted_count} jobs pendientes antiguos eliminados.")
-
-    # Paso 2: Insertar nuevos jobs (ordered=False ignora duplicados si ya están en processing)
-    docs = [{"url": url, "status": "pending", "retries": 0, "created_at": now} for url in urls_to_process]
-    try:
-        await queue_coll.insert_many(docs, ordered=False)
-    except Exception:
-        # BulkWriteError esperado si alguna URL ya existe con otro estado — se ignora
-        pass
-
+        logging.info(f"🗑️ [v2] Purga inteligente: {del_res.deleted_count} pending eliminados (links viejos/muertos > 6h).")
 
     # 2. EXTRACCIÓN
     proxy_api_url = os.getenv("PROXY_API_URL")
@@ -1590,7 +1659,6 @@ async def main():
             ua = UserAgent()
             is_rotator = len(proxies) == 1
             while True:
-                # Polling atómico de la cola para obtener el proxy a usar en la sesión
                 # Prioridad: más recientes primero (created_at DESC), luego menos reintentos
                 doc = await queue_coll.find_one_and_update(
                     {"status": "pending"},
@@ -1599,6 +1667,39 @@ async def main():
                     return_document=True
                 )
                 if not doc: break
+
+                url = doc["url"]
+
+                # [v2] SKIP TOTAL para brokers pre-marcados en Discovery — 0 proxy, 0 IA
+                if doc.get("is_pre_broker"):
+                    logging.info(f"🚫 [W{worker_id}] Skip total (pre-broker): {url[-40:]}")
+                    broker_details = {
+                        "portal": CONFIG["portal_name"],
+                        "url": url,
+                        "titulo": "N/A",
+                        "precio": "N/A",
+                        "comuna": "N/A",
+                        "region": "N/A",
+                        "es_propietario_directo": False,
+                        "confianza_propietario": 0.0,
+                        "fecha_scraping": datetime.now(timezone.utc).isoformat(),
+                        "used_ai": False,
+                        "is_duplicate": False,
+                        "source": "pre_broker_skip"
+                    }
+                    await coll.update_one(
+                        {"url": url},
+                        {"$set": {"url": url, "details": broker_details, "origen": "yapo.cl",
+                                  "fecha_captura": datetime.now(timezone.utc)}},
+                        upsert=True
+                    )
+                    await queue_coll.update_one({"url": url}, {"$set": {"status": "completed"}})
+                    stats["brokers"] += 1
+                    stats["new"] += 1
+                    stats["processed"] += 1
+                    stats["skipped_ai"] += 1
+                    print_dashboard()
+                    continue
 
                 url = doc["url"]
                 

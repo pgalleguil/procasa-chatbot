@@ -301,7 +301,7 @@
                 </div>
                 <div class="modal-footer border-top-0">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary fw-bold" onclick="generateContract()">Generar y Preparar</button>
+                    <button type="button" id="btnGenerateContract" class="btn btn-primary fw-bold" onclick="generateContract()">Generar y Preparar</button>
                 </div>
             </div>
         </div>
@@ -327,6 +327,10 @@
                 return;
             }
 
+            const btn = document.getElementById('btnGenerateContract');
+            btn.disabled = true;
+            btn.innerText = "Procesando...";
+
             const data = {
                 cliente_nombre: form.cliente_nombre.value,
                 cliente_rut: form.cliente_rut.value,
@@ -347,9 +351,13 @@
                     window.location.reload();
                 } else {
                     alert('Error: ' + result.detail);
+                    btn.disabled = false;
+                    btn.innerText = "Generar y Preparar";
                 }
             } catch(e) {
                 alert('Error al generar contrato.');
+                btn.disabled = false;
+                btn.innerText = "Generar y Preparar";
             }
         }
 

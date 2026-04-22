@@ -32,21 +32,14 @@
             <!-- STEP 1: Revisión del Contrato -->
             <div id="step-1" class="step active">
                 <h2 class="text-xl font-semibold mb-4">Paso 1: Revisa tu Contrato</h2>
-                <div class="pdf-viewer text-sm text-gray-700" id="pdf-container">
-                    <p class="font-bold text-center mb-4">CONTRATO DE {{ contract.property_data.tipo | upper }}</p>
-                    <p>Por medio del presente documento, el Sr(a). <b>{{ contract.client_data.nombre }}</b>, RUT <b>{{ contract.client_data.rut }}</b> autoriza...</p>
-                    <p class="mt-4 text-gray-400"><i>(El texto completo del contrato se muestra aquí. Debes leer hasta el final para continuar.)</i></p>
-                    
-                    <!-- Simular contenido largo para forzar scroll -->
-                    <div style="height: 1200px;"></div>
-                    
-                    <p class="text-center font-bold" id="bottom-marker">-- FIN DEL DOCUMENTO --</p>
+                <div class="pdf-viewer p-0 overflow-hidden" id="pdf-container">
+                    <embed src="/contracts/api/download/{{ contract.contract_code }}" width="100%" height="100%" type="application/pdf" style="min-height: 60vh;">
                 </div>
 
                 <div class="mt-6 space-y-4">
                     <div class="flex items-start">
                         <div class="flex-shrink-0 mt-1">
-                            <input type="checkbox" id="check-intent" class="w-4 h-4 text-blue-600 rounded border-gray-300" disabled>
+                            <input type="checkbox" id="check-intent" class="w-4 h-4 text-blue-600 rounded border-gray-300">
                         </div>
                         <div class="ml-3">
                             <label for="check-intent" class="text-sm font-medium text-gray-700">
@@ -54,8 +47,6 @@
                             </label>
                         </div>
                     </div>
-                    
-                    <div class="text-xs text-red-500 font-medium" id="timer-msg">Debes leer el contrato durante al menos <span id="time-left">30</span> segundos y hacer scroll hasta el final.</div>
 
                     <button id="btn-request-otp" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition" disabled>
                         Solicitar Código de Firma (OTP)
@@ -90,8 +81,13 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
                 <h2 class="text-2xl font-bold text-gray-900 mb-2">Contrato Firmado Exitosamente</h2>
-                <p class="text-gray-600">Tu copia ha sido guardada de forma segura.</p>
-                <p class="text-sm text-gray-500 mt-4">Pronto un ejecutivo se pondrá en contacto contigo.</p>
+                <p class="text-gray-600">Tu copia ha sido guardada de forma segura con los sellos y evidencias de Ley.</p>
+                <div class="mt-6">
+                    <a id="btn-download-signed" href="#" target="_blank" class="inline-block bg-blue-100 text-blue-700 hover:bg-blue-200 font-semibold py-2 px-6 rounded-full transition">
+                        <i class="fa-solid fa-download mr-2"></i> Descargar Copia Firmada
+                    </a>
+                </div>
+                <p class="text-sm text-gray-500 mt-6">Pronto un ejecutivo se pondrá en contacto contigo.</p>
             </div>
 
         </div>
@@ -99,40 +95,11 @@
 
     <script>
         const TOKEN = "{{ token }}";
-        let hasScrolledToBottom = false;
-        let timeRemaining = 30; // 30 segundos
         let intentRegistered = false;
 
-        // Timer y Scroll logic
-        const timerMsg = document.getElementById('timer-msg');
-        const timeLeftSpan = document.getElementById('time-left');
         const checkIntent = document.getElementById('check-intent');
         const btnRequestOtp = document.getElementById('btn-request-otp');
         const pdfContainer = document.getElementById('pdf-container');
-
-        const timer = setInterval(() => {
-            timeRemaining--;
-            if (timeRemaining <= 0) {
-                clearInterval(timer);
-                checkEnableIntent();
-            } else {
-                timeLeftSpan.textContent = timeRemaining;
-            }
-        }, 1000);
-
-        pdfContainer.addEventListener('scroll', () => {
-            if (pdfContainer.scrollTop + pdfContainer.clientHeight >= pdfContainer.scrollHeight - 50) {
-                hasScrolledToBottom = true;
-                checkEnableIntent();
-            }
-        });
-
-        function checkEnableIntent() {
-            if (timeRemaining <= 0 && hasScrolledToBottom) {
-                checkIntent.disabled = false;
-                timerMsg.classList.add('hidden');
-            }
-        }
 
         checkIntent.addEventListener('change', async (e) => {
             if (e.target.checked && !intentRegistered) {
@@ -209,13 +176,17 @@
                 }
 
                 // 2. Accept
+                btnVerify.textContent = "Generando Sellos Legales..."; // Mensaje para que el cliente espere
                 const resAccept = await fetch(`/contracts/api/${TOKEN}/accept`, {
                     method: 'POST'
                 });
 
                 if (resAccept.ok) {
+                    const acceptData = await resAccept.json();
                     document.getElementById('step-2').classList.remove('active');
                     document.getElementById('step-3').classList.add('active');
+                    // Actualizar el link de descarga con el contract_code
+                    document.getElementById('btn-download-signed').href = `/contracts/api/download_signed/${acceptData.contract_code}`;
                 } else {
                     alert("Ocurrió un error finalizando el contrato.");
                     btnVerify.disabled = false;

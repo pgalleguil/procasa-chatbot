@@ -863,6 +863,19 @@ async def webhook(
             logger.info(f"[FILTER] Mensaje de EJECUTIVO ({user_found.get('nombre')}) detectado. Forzando modo manual.")
             from_me = True
 
+    # --- FILTRO PROPIETARIOS CON CONTRATO ---
+    from chatbot.database import get_db
+    _db = get_db()
+    phone_digits_check = "".join(filter(str.isdigit, phone))
+    if phone_digits_check and len(phone_digits_check) >= 8:
+        contract_active = _db.contracts.find_one({
+            "phone": {"$regex": phone_digits_check[-8:] + "$"}, 
+            "status": {"$in": ["created", "viewed", "accepted"]}
+        })
+        if contract_active:
+            logger.info(f"[WHATSAPP] Ignorando mensaje de {phone} porque tiene un contrato en proceso.")
+            return JSONResponse({"status": "contract owner ignored"}, status_code=200)
+
     # Si detectamos que es un grupo (@g.us), lo ignoramos
     if "@g.us" in (key.get("remoteJid") or ""):
          logger.info(f"[WHATSAPP] Ignorando mensaje de grupo")

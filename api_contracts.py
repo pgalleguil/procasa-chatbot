@@ -45,6 +45,7 @@ async def create_contract(request: Request):
         contract_code = str(uuid.uuid4())
         
         # 1. Generar PDF original
+        data['contract_code'] = contract_code
         pdf_bytes = PDFGenerator.generate_original_contract(data)
         original_hash = SecurityContracts.hash_document(pdf_bytes)
         
@@ -113,6 +114,23 @@ async def download_original_pdf(contract_code: str):
     return FileResponse(
         path=pdf_path, 
         filename=f"Convenio_{contract_code[:8]}.pdf",
+        media_type="application/pdf",
+        content_disposition_type="inline"
+    )
+
+@router.get("/api/download_signed/{contract_code}")
+async def download_signed_pdf(contract_code: str):
+    """Permite descargar o ver el PDF firmado"""
+    tmp_dir = BASE_DIR / "tmp" / "contracts" / contract_code
+    pdf_path = tmp_dir / "contrato_firmado.pdf"
+    
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="PDF firmado no encontrado")
+        
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        path=pdf_path, 
+        filename=f"Convenio_Firmado_{contract_code[:8]}.pdf",
         media_type="application/pdf",
         content_disposition_type="inline"
     )
@@ -419,7 +437,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     # 7. Notificar a CRM o Agente
     await send_whatsapp_message(contract["phone"], "¡Gracias! Hemos recibido tu aceptación conforme a la Ley 19.799. En breve un agente se comunicará contigo.")
     
-    return {"status": "ok"}
+    return {"status": "ok", "contract_code": contract_code}
     
 def sync_to_gdrive_task(contract_code: str, tmp_dir: Path):
     try:

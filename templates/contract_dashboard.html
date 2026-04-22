@@ -459,7 +459,7 @@
 
         // --- SMART INPUTS ---
         function capitalizeName(input) {
-            let val = input.value.toLowerCase();
+            let val = input.value.toLowerCase().replace(/\s+/g, ' ').trim();
             input.value = val.replace(/(^|\s)\S/g, l => l.toUpperCase());
         }
 

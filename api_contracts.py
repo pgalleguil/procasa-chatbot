@@ -122,7 +122,8 @@ async def create_contract(request: Request):
                 }
             ],
             "version": 1,
-            "created_at": datetime.now(CHILE_TZ)
+            "created_at": datetime.now(CHILE_TZ),
+            "created_at_local": datetime.now(CHILE_TZ).strftime('%Y-%m-%d %H:%M:%S')
         }
         
         if existing:

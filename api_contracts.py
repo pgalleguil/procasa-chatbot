@@ -35,14 +35,38 @@ def get_client_ip(request: Request) -> str:
         return forwarded.split(",")[0]
     return request.client.host if request.client else "unknown"
 
+@router.post("/api/preview")
+async def preview_contract(request: Request):
+    """Retorna un PDF generado en caliente para previsualización."""
+    try:
+        data = await request.json()
+        pdf_bytes = PDFGenerator.generate_original_contract(data)
+        return Response(content=pdf_bytes, media_type="application/pdf")
+    except Exception as e:
+        logger.error(f"Error generating preview: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/api/create")
 async def create_contract(request: Request):
-    """Crea un nuevo contrato (desde CRM)"""
+    """Crea o actualiza un contrato (desde CRM)"""
     try:
         data = await request.json()
         db = get_db()
         
-        contract_code = str(uuid.uuid4())
+        property_code = data.get("property_code", "").strip()
+        
+        # Verificar si existe contrato previo creado (no firmado) para evitar duplicados si tiene el mismo property_code
+        existing = None
+        if property_code:
+            existing = db["contracts"].find_one({
+                "property_code": property_code, 
+                "status": {"$in": ["created", "sent", "opened"]}
+            })
+            
+        if existing:
+            contract_code = existing["contract_code"]
+        else:
+            contract_code = str(uuid.uuid4())
         
         # 1. Generar PDF original
         data['contract_code'] = contract_code
@@ -59,15 +83,22 @@ async def create_contract(request: Request):
             
         contract_doc = {
             "contract_code": contract_code,
-            "lead_id": data.get("lead_id", ""),
+            "origen": data.get("origen", "Captación Interna"),
+            "property_code": property_code,
             "phone": data.get("phone", ""),
             "client_data": {
                 "nombre": data.get("cliente_nombre", ""),
-                "rut": data.get("cliente_rut", "")
+                "rut": data.get("cliente_rut", ""),
+                "email": data.get("email", "")
             },
             "property_data": {
                 "direccion": data.get("propiedad_direccion", ""),
-                "tipo": data.get("tipo", "Arriendo")
+                "comuna": data.get("comuna", ""),
+                "tipo": data.get("tipo", "Arriendo"),
+                "rol": data.get("rol", ""),
+                "vigencia": data.get("vigencia", "30"),
+                "precio": data.get("precio", ""),
+                "comision": data.get("comision", "")
             },
             "status": "created",
             "security": {
@@ -94,7 +125,18 @@ async def create_contract(request: Request):
             "created_at": datetime.now(CHILE_TZ)
         }
         
-        db["contracts"].insert_one(contract_doc)
+        if existing:
+            contract_doc["version"] = existing.get("version", 1) + 1
+            contract_doc["timeline"] = existing.get("timeline", []) + contract_doc["timeline"]
+            contract_doc["created_at"] = existing.get("created_at")
+            # Preservar tokens y estado
+            contract_doc["security"] = existing.get("security", contract_doc["security"])
+            contract_doc["status"] = existing.get("status", "created")
+            
+            db["contracts"].replace_one({"contract_code": contract_code}, contract_doc)
+        else:
+            db["contracts"].insert_one(contract_doc)
+            
         return {"status": "ok", "contract_code": contract_code}
         
     except Exception as e:
@@ -143,8 +185,19 @@ async def send_contract(contract_code: str, request: Request):
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
         
-    token = str(uuid.uuid4()).replace("-", "")
-    expiry = datetime.now(timezone.utc) + timedelta(hours=24)
+    # Reusar token si aún es válido
+    if contract.get("security", {}).get("token") and not contract["security"]["token_used"]:
+        expiry = contract["security"]["token_expiry"]
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) < expiry:
+            token = contract["security"]["token"]
+        else:
+            token = str(uuid.uuid4()).replace("-", "")
+            expiry = datetime.now(timezone.utc) + timedelta(hours=24)
+    else:
+        token = str(uuid.uuid4()).replace("-", "")
+        expiry = datetime.now(timezone.utc) + timedelta(hours=24)
     
     server_timestamp = SecurityContracts.generate_server_timestamp()
     ip = get_client_ip(request)
@@ -451,6 +504,18 @@ def sync_to_gdrive_task(contract_code: str, tmp_dir: Path):
     except Exception as e:
         logger.error(f"Error en tarea background GDrive: {e}")
 
+@router.delete("/api/delete/{contract_code}")
+async def delete_contract(contract_code: str):
+    """Permite eliminar un contrato lógicamente (soft delete)."""
+    db = get_db()
+    result = db["contracts"].update_one(
+        {"contract_code": contract_code},
+        {"$set": {"status": "deleted"}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Contrato no encontrado")
+    return {"status": "ok"}
+
 @router.get("/verify/{contract_code}", response_class=HTMLResponse)
 async def verify_contract(contract_code: str, request: Request):
     db = get_db()
@@ -467,8 +532,16 @@ async def verify_contract(contract_code: str, request: Request):
 async def contract_dashboard(request: Request):
     """Módulo principal para gestión y generación de convenios de corretaje"""
     db = get_db()
-    # Listar los últimos contratos
-    contracts = list(db["contracts"].find().sort("created_at", -1).limit(50))
+    # Listar los últimos contratos (excluir los eliminados o manejarlos en frontend)
+    contracts_cursor = db["contracts"].find({"status": {"$ne": "deleted"}}).sort("created_at", -1).limit(100)
+    contracts = []
+    for c in contracts_cursor:
+        if c.get("created_at"):
+            # PyMongo returns naive UTC, convert to CHILE_TZ
+            dt_utc = c["created_at"].replace(tzinfo=timezone.utc)
+            c["created_at"] = dt_utc.astimezone(CHILE_TZ)
+        contracts.append(c)
+        
     return templates.TemplateResponse("contract_dashboard.html", {
         "request": request,
         "contracts": contracts,

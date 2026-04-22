@@ -68,20 +68,30 @@ class PDFGenerator:
         nombre = contract_data.get('cliente_nombre', '')
         rut = contract_data.get('cliente_rut', '')
         direccion = contract_data.get('propiedad_direccion', '')
+        comuna = contract_data.get('comuna', '')
+        rol = contract_data.get('rol', '')
+        vigencia = contract_data.get('vigencia', '30')
+        precio = contract_data.get('precio', '')
+        comision = contract_data.get('comision', '')
+        codigo_prop = contract_data.get('property_code', '')
+        email = contract_data.get('email', '')
         
         op = "la venta de" if tipo == "Venta" else "en arriendo"
         
-        p1 = f"En Santiago de Chile, a {fecha}, yo <b>{nombre}</b>, rut <b>{rut}</b>, mediante la suscripción de la presente, autorizo a PROCASA S.A. y a sus franquiciados para ofrecer {op} mi propiedad ubicada en <b>{direccion}</b>; el nexo principal entre la franquicia master Procasa S.A. será el franquiciado INMOBILIARIA SUCRE SPA y el COMITENTE."
+        p1 = f"En Santiago de Chile, a {fecha}, yo <b>{nombre}</b>, rut <b>{rut}</b>, mediante la suscripción de la presente, autorizo a PROCASA S.A. y a sus franquiciados para ofrecer {op} mi propiedad ubicada en <b>{direccion}, comuna de {comuna}</b>, Rol de Avalúo <b>{rol}</b>, código interno <b>{codigo_prop}</b>; el nexo principal entre la franquicia master Procasa S.A. será el franquiciado INMOBILIARIA SUCRE SPA y el COMITENTE."
         Story.append(Paragraph(p1, normal_style))
         
-        p2 = "<b>ANTECEDENTES:</b> La presente autorización se otorga SIN exclusividad y tendrá una validez de (...) días hábiles bancarios a contar de esta fecha y se renovará, automática y sucesivamente, por períodos iguales. Asimismo el COMITENTE, autoriza expresamente a PROCASA S.A. y a sus franquiciados a extender órdenes de visita electrónicas, para mostrar la propiedad a posibles interesados, además el COMITENTE se compromete a pagar a PROCASA S.A. o a sus franquiciados por los servicios de corretaje para la venta o arriendo de la propiedad descrita."
+        precio_texto = f" al precio de <b>{precio}</b>" if precio else ""
+        p2 = f"<b>ANTECEDENTES:</b> La presente autorización se otorga SIN exclusividad{precio_texto} y tendrá una validez de <b>{vigencia}</b> días corridos a contar de esta fecha y se renovará, automática y sucesivamente, por períodos iguales. Asimismo el COMITENTE, autoriza expresamente a PROCASA S.A. y a sus franquiciados a extender órdenes de visita electrónicas, para mostrar la propiedad a posibles interesados, además el COMITENTE se compromete a pagar a PROCASA S.A. o a sus franquiciados por los servicios de corretaje para la venta o arriendo de la propiedad descrita."
         Story.append(Paragraph(p2, normal_style))
         
         if tipo == "Venta":
-            p3 = "<b>COMISIÓN:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al dos por ciento (2 %) del precio de venta más el I.V.A."
+            comision_text = comision if comision else "dos por ciento (2 %)"
+            p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> del precio de venta más el I.V.A."
             Story.append(Paragraph(p3, normal_style))
         else:
-            p3 = "<b>COMISIÓN:</b> En caso de formularse una oferta de arriendo respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente a (...) días de la renta mensual pactada más I.V.A. (comisión arriendo mínima de (...) más I.V.A). En los contratos de plazos superiores a 24 meses la comisión será de un dos por ciento (2 %) más IVA sobre el total de las rentas y con un límite de 60 meses."
+            comision_text = comision if comision else "50%"
+            p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de arriendo respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> de la renta mensual pactada más I.V.A. En los contratos de plazos superiores a 24 meses la comisión será de un dos por ciento (2 %) más IVA sobre el total de las rentas y con un límite de 60 meses."
             Story.append(Paragraph(p3, normal_style))
             
             if tipo == "Arriendo y Administración":
@@ -93,7 +103,7 @@ class PDFGenerator:
 
         Story.append(Spacer(1, 0.5 * inch))
         Story.append(Paragraph("<b>EL COMITENTE</b>", normal_style))
-        Story.append(Paragraph(f"{rut}<br/>{nombre}<br/>{contract_data.get('phone', '')}", normal_style))
+        Story.append(Paragraph(f"{rut}<br/>{nombre}<br/>{contract_data.get('phone', '')}<br/>{email}", normal_style))
         
         doc.build(Story)
         pdf_bytes = buffer.getvalue()

@@ -1,4 +1,6 @@
-<!DOCTYPE html>
+import json
+
+html_content = """<!DOCTYPE html>
 <html lang="es" data-theme="dark">
 
 <head>
@@ -627,3 +629,7 @@
     </script>
 </body>
 </html>
+"""
+
+with open("c:/Users/pgall/Desktop/Python/ChatBot_v4_Grok/templates/contract_dashboard.html", "w", encoding="utf-8") as f:
+    f.write(html_content)

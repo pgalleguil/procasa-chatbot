@@ -3,6 +3,7 @@ import io
 import qrcode
 from pathlib import Path
 from datetime import datetime, timezone
+from chatbot.constants import CHILE_TZ
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 from reportlab.lib.pagesizes import letter
@@ -43,8 +44,14 @@ class PDFGenerator:
         # Logo de Procasa
         logo_path = BASE_DIR / "static" / "logo.png"
         if logo_path.exists():
-            img = RLImage(str(logo_path), width=2*inch, height=0.5*inch)
-            img.hAlign = 'LEFT'
+            from reportlab.lib.utils import ImageReader
+            img_reader = ImageReader(str(logo_path))
+            iw, ih = img_reader.getSize()
+            aspect = ih / float(iw)
+            width = 2.5 * inch
+            height = width * aspect
+            img = RLImage(str(logo_path), width=width, height=height)
+            img.hAlign = 'CENTER'
             Story.append(img)
             Story.append(Spacer(1, 0.3 * inch))
         
@@ -53,7 +60,7 @@ class PDFGenerator:
         Story.append(Paragraph(f"AUTORIZACIÓN DE {tipo.upper()}", title_style))
         Story.append(Spacer(1, 0.2 * inch))
         
-        fecha = datetime.now().strftime('%d de %m de %Y').replace('de 01 de', 'de enero de').replace('de 02 de', 'de febrero de').replace('de 03 de', 'de marzo de').replace('de 04 de', 'de abril de').replace('de 05 de', 'de mayo de').replace('de 06 de', 'de junio de').replace('de 07 de', 'de julio de').replace('de 08 de', 'de agosto de').replace('de 09 de', 'de septiembre de').replace('de 10 de', 'de octubre de').replace('de 11 de', 'de noviembre de').replace('de 12 de', 'de diciembre de')
+        fecha = datetime.now(CHILE_TZ).strftime('%d de %m de %Y').replace('de 01 de', 'de enero de').replace('de 02 de', 'de febrero de').replace('de 03 de', 'de marzo de').replace('de 04 de', 'de abril de').replace('de 05 de', 'de mayo de').replace('de 06 de', 'de junio de').replace('de 07 de', 'de julio de').replace('de 08 de', 'de agosto de').replace('de 09 de', 'de septiembre de').replace('de 10 de', 'de octubre de').replace('de 11 de', 'de noviembre de').replace('de 12 de', 'de diciembre de')
         nombre = contract_data.get('cliente_nombre', '')
         rut = contract_data.get('cliente_rut', '')
         direccion = contract_data.get('propiedad_direccion', '')

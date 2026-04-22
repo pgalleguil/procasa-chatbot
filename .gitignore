@@ -29,6 +29,8 @@ yapo_contact_extractor.py
 audit_tasaciones.py
 cleanup_tasaciones.py
 recover_missing_leads.py
+propiteq_search.py
+test.py
 
 Autorización de Arriendo y Administración.pdf
 Autorización de Arriendo.pdf

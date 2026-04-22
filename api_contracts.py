@@ -113,7 +113,8 @@ async def download_original_pdf(contract_code: str):
     return FileResponse(
         path=pdf_path, 
         filename=f"Convenio_{contract_code[:8]}.pdf",
-        media_type="application/pdf"
+        media_type="application/pdf",
+        content_disposition_type="inline"
     )
 
 @router.post("/api/{contract_code}/send")

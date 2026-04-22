@@ -36,12 +36,16 @@
                         <h2 class="text-2xl font-semibold">Paso 1: Revisa tu Contrato</h2>
                         <p class="text-red-600 font-medium text-sm mt-1"><i class="fa-solid fa-circle-info"></i> Por favor revisa el contrato completo antes de continuar.</p>
                     </div>
-                    <a href="/contracts/api/download/{{ contract.contract_code }}" target="_blank" class="hidden md:inline-block bg-gray-100 text-gray-700 hover:bg-gray-200 font-semibold py-2 px-4 rounded transition text-sm">
-                        Abrir en pantalla completa
-                    </a>
                 </div>
                 
-                <div class="pdf-viewer p-0 overflow-hidden" id="pdf-container" style="height: 75vh; border: 2px solid #e5e7eb;">
+                <div class="mb-4">
+                    <a href="/contracts/api/download/{{ contract.contract_code }}" target="_blank" class="w-full block text-center bg-gray-800 text-white hover:bg-gray-700 font-bold py-3 px-4 rounded-lg transition shadow-md">
+                        <i class="fa-solid fa-file-pdf mr-2"></i> Descargar / Ver Documento Completo en PDF
+                    </a>
+                    <p class="text-xs text-gray-500 text-center mt-2">Recomendado para visualización en teléfonos móviles</p>
+                </div>
+                
+                <div class="pdf-viewer p-0 overflow-hidden hidden md:block" id="pdf-container" style="height: 75vh; border: 2px solid #e5e7eb;">
                     <embed id="pdf-embed" src="/contracts/api/download/{{ contract.contract_code }}#toolbar=0&navpanes=0" width="100%" height="100%" type="application/pdf">
                 </div>
 
@@ -64,29 +68,42 @@
                 </div>
             </div>
 
-            <!-- STEP 2: Validación OTP -->
+            <!-- STEP 2: Ingreso de RUT para solicitar OTP -->
             <div id="step-2" class="step">
-                <h2 class="text-xl font-semibold mb-2">Paso 2: Validación de Identidad</h2>
-                <p class="text-sm text-gray-600 mb-6">Hemos enviado un código de 6 dígitos a tu WhatsApp.</p>
-                
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">RUT (para confirmar)</label>
-                    <input type="text" id="input-rut" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="12345678-9">
-                </div>
+                <h2 class="text-xl font-semibold mb-2">Paso 2: Confirma tu Identidad</h2>
+                <p class="text-sm text-gray-600 mb-6">Para enviarte el código de firma segura por WhatsApp, por favor confirma tu RUT.</p>
                 
                 <div class="mb-6">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Código OTP</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Tu RUT (con guion)</label>
+                    <input type="text" id="input-rut-request" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="Ej: 12345678-9" oninput="formatRut(this)">
+                </div>
+
+                <button id="btn-submit-rut" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">
+                    Enviar Código a mi WhatsApp
+                </button>
+                <button id="btn-back-1" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg mt-3 transition">
+                    Volver a leer el contrato
+                </button>
+            </div>
+
+            <!-- STEP 3: Validación OTP -->
+            <div id="step-3" class="step">
+                <h2 class="text-xl font-semibold mb-2">Paso 3: Firma Electrónica</h2>
+                <p class="text-sm text-gray-600 mb-6">Hemos enviado un código de 6 dígitos a tu WhatsApp.</p>
+                
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Código de Firma (OTP)</label>
                     <input type="text" id="input-otp" class="w-full p-3 border border-gray-300 text-center text-2xl tracking-widest rounded-lg focus:ring-blue-500 focus:border-blue-500" maxlength="6" placeholder="------">
                 </div>
 
                 <button id="btn-verify-otp" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">
-                    Firmar Contrato
+                    Firmar Contrato Definitivamente
                 </button>
                 <div id="otp-error" class="text-red-500 text-sm mt-2 text-center hidden"></div>
             </div>
 
-            <!-- STEP 3: Éxito -->
-            <div id="step-3" class="step text-center py-8">
+            <!-- STEP 4: Éxito -->
+            <div id="step-4" class="step text-center py-8">
                 <svg class="mx-auto h-16 w-16 text-green-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
@@ -142,13 +159,44 @@
             }
         });
 
-        // Request OTP
-        btnRequestOtp.addEventListener('click', async () => {
-            const rut = prompt("Para continuar, por favor ingresa tu RUT (con guión):");
-            if (!rut) return;
+        let pageOpenTime = Date.now();
 
-            btnRequestOtp.disabled = true;
-            btnRequestOtp.textContent = "Enviando...";
+        function formatRut(input) {
+            let rut = input.value.replace(/[^0-9kK]/g, '').toUpperCase();
+            if (rut.length > 1) {
+                rut = rut.slice(0, -1) + '-' + rut.slice(-1);
+            }
+            if (rut.length > 5) {
+                rut = rut.slice(0, -5) + '.' + rut.slice(-5);
+            }
+            if (rut.length > 9) {
+                rut = rut.slice(0, -9) + '.' + rut.slice(-9);
+            }
+            input.value = rut;
+        }
+
+        // Request OTP
+        btnRequestOtp.addEventListener('click', () => {
+            document.getElementById('step-1').classList.remove('active');
+            document.getElementById('step-2').classList.add('active');
+            document.getElementById('input-rut-request').focus();
+        });
+
+        document.getElementById('btn-back-1').addEventListener('click', () => {
+            document.getElementById('step-2').classList.remove('active');
+            document.getElementById('step-1').classList.add('active');
+        });
+
+        document.getElementById('btn-submit-rut').addEventListener('click', async () => {
+            const rut = document.getElementById('input-rut-request').value;
+            if (!rut || rut.length < 8) {
+                alert("Por favor ingresa un RUT válido.");
+                return;
+            }
+
+            const btnSubmitRut = document.getElementById('btn-submit-rut');
+            btnSubmitRut.disabled = true;
+            btnSubmitRut.textContent = "Enviando...";
 
             try {
                 const res = await fetch(`/contracts/api/${TOKEN}/request-otp`, {
@@ -158,19 +206,19 @@
                 });
                 
                 if (res.ok) {
-                    document.getElementById('step-1').classList.remove('active');
-                    document.getElementById('step-2').classList.add('active');
-                    document.getElementById('input-rut').value = rut;
+                    document.getElementById('step-2').classList.remove('active');
+                    document.getElementById('step-3').classList.add('active');
+                    document.getElementById('input-otp').focus();
                 } else {
                     const data = await res.json();
                     alert(data.detail || "Error validando RUT.");
-                    btnRequestOtp.disabled = false;
-                    btnRequestOtp.textContent = "Solicitar Código de Firma (OTP)";
+                    btnSubmitRut.disabled = false;
+                    btnSubmitRut.textContent = "Enviar Código a mi WhatsApp";
                 }
             } catch (err) {
                 alert("Error de conexión");
-                btnRequestOtp.disabled = false;
-                btnRequestOtp.textContent = "Solicitar Código de Firma (OTP)";
+                btnSubmitRut.disabled = false;
+                btnSubmitRut.textContent = "Enviar Código a mi WhatsApp";
             }
         });
 
@@ -203,31 +251,33 @@
                     errorDiv.textContent = data.detail || "Código incorrecto.";
                     errorDiv.classList.remove('hidden');
                     btnVerify.disabled = false;
-                    btnVerify.textContent = "Firmar Contrato";
+                    btnVerify.textContent = "Firmar Contrato Definitivamente";
                     return;
                 }
 
                 // 2. Accept
-                btnVerify.textContent = "Generando Sellos Legales..."; // Mensaje para que el cliente espere
+                btnVerify.textContent = "Generando Sellos Legales (Espera un momento)...";
+                let timeSpent = Math.floor((Date.now() - pageOpenTime) / 1000);
                 const resAccept = await fetch(`/contracts/api/${TOKEN}/accept`, {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ read_time_seconds: timeSpent })
                 });
 
                 if (resAccept.ok) {
                     const acceptData = await resAccept.json();
-                    document.getElementById('step-2').classList.remove('active');
-                    document.getElementById('step-3').classList.add('active');
-                    // Actualizar el link de descarga con el contract_code
+                    document.getElementById('step-3').classList.remove('active');
+                    document.getElementById('step-4').classList.add('active');
                     document.getElementById('btn-download-signed').href = `/contracts/api/download_signed/${acceptData.contract_code}`;
                 } else {
                     alert("Ocurrió un error finalizando el contrato.");
                     btnVerify.disabled = false;
-                    btnVerify.textContent = "Firmar Contrato";
+                    btnVerify.textContent = "Firmar Contrato Definitivamente";
                 }
             } catch (err) {
                 alert("Error de conexión");
                 btnVerify.disabled = false;
-                btnVerify.textContent = "Firmar Contrato";
+                btnVerify.textContent = "Firmar Contrato Definitivamente";
             }
         });
     </script>

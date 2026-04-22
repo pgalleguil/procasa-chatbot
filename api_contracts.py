@@ -402,6 +402,12 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     if not contract or contract["status"] != "otp_verified" or contract["security"]["token_used"]:
         raise HTTPException(status_code=403, detail="Contrato no válido para aceptación")
         
+    try:
+        data = await request.json()
+        read_time = data.get("read_time_seconds", 0)
+    except:
+        read_time = 0
+        
     ip = get_client_ip(request)
     ua = request.headers.get("user-agent", "")
     server_timestamp = SecurityContracts.generate_server_timestamp()
@@ -415,7 +421,13 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
                 "status": "accepted", 
                 "security.token_used": True # Invalidar Token inmediatamente
             },
-            "$push": {"timeline": {"action": "contract_accepted", "server_timestamp": server_timestamp, "ip": ip, "user_agent": ua}}
+            "$push": {"timeline": {
+                "action": "contract_accepted", 
+                "server_timestamp": server_timestamp, 
+                "ip": ip, 
+                "user_agent": ua,
+                "read_time_seconds": read_time
+            }}
         }
     )
     
@@ -452,10 +464,9 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         "timeline_hash": timeline_hash
     }
     
-    # 3. Generar PDF Firmado
-    signed_pdf_bytes = PDFGenerator.generate_signed_contract(original_bytes, evidence_data, verify_url)
+    # 3. Generar PDF Firmado Completo
+    signed_pdf_bytes = PDFGenerator.generate_signed_contract(contract, evidence_data, verify_url)
     signed_hash = SecurityContracts.hash_document(signed_pdf_bytes)
-    evidence_data["signed_hash_placeholder"] = signed_hash # En un flujo de 2 pasos esto se actualiza, acá para prototipo lo dejamos así
     
     # Guardar en tmp
     with open(tmp_dir / "contrato_firmado.pdf", "wb") as f:

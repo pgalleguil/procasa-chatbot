@@ -110,6 +110,9 @@ app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+from api_contracts import router as contracts_router
+app.include_router(contracts_router)
+
 from chatbot.lead_router import should_send_now, format_whatsapp_template
 from chatbot.storage import (
     get_pending_notifications, 

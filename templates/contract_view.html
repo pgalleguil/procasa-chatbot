@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firma de Contrato - Procasa</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .pdf-viewer {
+            width: 100%;
+            height: 60vh;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            overflow-y: scroll;
+            background: #f9fafb;
+            padding: 1rem;
+        }
+        .step { display: none; }
+        .step.active { display: block; }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans text-gray-800 antialiased">
+    <div class="max-w-2xl mx-auto p-4 md:p-6 lg:p-8">
+        <!-- Encabezado -->
+        <div class="text-center mb-8">
+            <h1 class="text-2xl font-bold text-blue-900">Procasa Propiedades</h1>
+            <p class="text-sm text-gray-500">Sistema de Firma Electrónica Segura</p>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            
+            <!-- STEP 1: Revisión del Contrato -->
+            <div id="step-1" class="step active">
+                <h2 class="text-xl font-semibold mb-4">Paso 1: Revisa tu Contrato</h2>
+                <div class="pdf-viewer text-sm text-gray-700" id="pdf-container">
+                    <p class="font-bold text-center mb-4">CONTRATO DE {{ contract.property_data.tipo | upper }}</p>
+                    <p>Por medio del presente documento, el Sr(a). <b>{{ contract.client_data.nombre }}</b>, RUT <b>{{ contract.client_data.rut }}</b> autoriza...</p>
+                    <p class="mt-4 text-gray-400"><i>(El texto completo del contrato se muestra aquí. Debes leer hasta el final para continuar.)</i></p>
+                    
+                    <!-- Simular contenido largo para forzar scroll -->
+                    <div style="height: 1200px;"></div>
+                    
+                    <p class="text-center font-bold" id="bottom-marker">-- FIN DEL DOCUMENTO --</p>
+                </div>
+
+                <div class="mt-6 space-y-4">
+                    <div class="flex items-start">
+                        <div class="flex-shrink-0 mt-1">
+                            <input type="checkbox" id="check-intent" class="w-4 h-4 text-blue-600 rounded border-gray-300" disabled>
+                        </div>
+                        <div class="ml-3">
+                            <label for="check-intent" class="text-sm font-medium text-gray-700">
+                                <b>Intención Jurídica:</b> Declaro que he leído, comprendo y acepto este contrato de forma electrónica conforme a la Ley 19.799.
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="text-xs text-red-500 font-medium" id="timer-msg">Debes leer el contrato durante al menos <span id="time-left">30</span> segundos y hacer scroll hasta el final.</div>
+
+                    <button id="btn-request-otp" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition" disabled>
+                        Solicitar Código de Firma (OTP)
+                    </button>
+                </div>
+            </div>
+
+            <!-- STEP 2: Validación OTP -->
+            <div id="step-2" class="step">
+                <h2 class="text-xl font-semibold mb-2">Paso 2: Validación de Identidad</h2>
+                <p class="text-sm text-gray-600 mb-6">Hemos enviado un código de 6 dígitos a tu WhatsApp.</p>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">RUT (para confirmar)</label>
+                    <input type="text" id="input-rut" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="12345678-9">
+                </div>
+                
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Código OTP</label>
+                    <input type="text" id="input-otp" class="w-full p-3 border border-gray-300 text-center text-2xl tracking-widest rounded-lg focus:ring-blue-500 focus:border-blue-500" maxlength="6" placeholder="------">
+                </div>
+
+                <button id="btn-verify-otp" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">
+                    Firmar Contrato
+                </button>
+                <div id="otp-error" class="text-red-500 text-sm mt-2 text-center hidden"></div>
+            </div>
+
+            <!-- STEP 3: Éxito -->
+            <div id="step-3" class="step text-center py-8">
+                <svg class="mx-auto h-16 w-16 text-green-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">Contrato Firmado Exitosamente</h2>
+                <p class="text-gray-600">Tu copia ha sido guardada de forma segura.</p>
+                <p class="text-sm text-gray-500 mt-4">Pronto un ejecutivo se pondrá en contacto contigo.</p>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const TOKEN = "{{ token }}";
+        let hasScrolledToBottom = false;
+        let timeRemaining = 30; // 30 segundos
+        let intentRegistered = false;
+
+        // Timer y Scroll logic
+        const timerMsg = document.getElementById('timer-msg');
+        const timeLeftSpan = document.getElementById('time-left');
+        const checkIntent = document.getElementById('check-intent');
+        const btnRequestOtp = document.getElementById('btn-request-otp');
+        const pdfContainer = document.getElementById('pdf-container');
+
+        const timer = setInterval(() => {
+            timeRemaining--;
+            if (timeRemaining <= 0) {
+                clearInterval(timer);
+                checkEnableIntent();
+            } else {
+                timeLeftSpan.textContent = timeRemaining;
+            }
+        }, 1000);
+
+        pdfContainer.addEventListener('scroll', () => {
+            if (pdfContainer.scrollTop + pdfContainer.clientHeight >= pdfContainer.scrollHeight - 50) {
+                hasScrolledToBottom = true;
+                checkEnableIntent();
+            }
+        });
+
+        function checkEnableIntent() {
+            if (timeRemaining <= 0 && hasScrolledToBottom) {
+                checkIntent.disabled = false;
+                timerMsg.classList.add('hidden');
+            }
+        }
+
+        checkIntent.addEventListener('change', async (e) => {
+            if (e.target.checked && !intentRegistered) {
+                // Registrar intención en backend
+                await fetch(`/contracts/api/${TOKEN}/legal_intent`, { method: 'POST' });
+                intentRegistered = true;
+            }
+            btnRequestOtp.disabled = !e.target.checked;
+        });
+
+        // Request OTP
+        btnRequestOtp.addEventListener('click', async () => {
+            const rut = prompt("Para continuar, por favor ingresa tu RUT (con guión):");
+            if (!rut) return;
+
+            btnRequestOtp.disabled = true;
+            btnRequestOtp.textContent = "Enviando...";
+
+            try {
+                const res = await fetch(`/contracts/api/${TOKEN}/request-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rut: rut })
+                });
+                
+                if (res.ok) {
+                    document.getElementById('step-1').classList.remove('active');
+                    document.getElementById('step-2').classList.add('active');
+                    document.getElementById('input-rut').value = rut;
+                } else {
+                    const data = await res.json();
+                    alert(data.detail || "Error validando RUT.");
+                    btnRequestOtp.disabled = false;
+                    btnRequestOtp.textContent = "Solicitar Código de Firma (OTP)";
+                }
+            } catch (err) {
+                alert("Error de conexión");
+                btnRequestOtp.disabled = false;
+                btnRequestOtp.textContent = "Solicitar Código de Firma (OTP)";
+            }
+        });
+
+        // Verify OTP
+        const btnVerify = document.getElementById('btn-verify-otp');
+        btnVerify.addEventListener('click', async () => {
+            const otp = document.getElementById('input-otp').value;
+            const errorDiv = document.getElementById('otp-error');
+            
+            if (otp.length !== 6) {
+                errorDiv.textContent = "Ingresa los 6 dígitos.";
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            btnVerify.disabled = true;
+            btnVerify.textContent = "Verificando...";
+            errorDiv.classList.add('hidden');
+
+            try {
+                // 1. Verify OTP
+                const resOtp = await fetch(`/contracts/api/${TOKEN}/verify-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ otp: otp })
+                });
+
+                if (!resOtp.ok) {
+                    const data = await resOtp.json();
+                    errorDiv.textContent = data.detail || "Código incorrecto.";
+                    errorDiv.classList.remove('hidden');
+                    btnVerify.disabled = false;
+                    btnVerify.textContent = "Firmar Contrato";
+                    return;
+                }
+
+                // 2. Accept
+                const resAccept = await fetch(`/contracts/api/${TOKEN}/accept`, {
+                    method: 'POST'
+                });
+
+                if (resAccept.ok) {
+                    document.getElementById('step-2').classList.remove('active');
+                    document.getElementById('step-3').classList.add('active');
+                } else {
+                    alert("Ocurrió un error finalizando el contrato.");
+                    btnVerify.disabled = false;
+                    btnVerify.textContent = "Firmar Contrato";
+                }
+            } catch (err) {
+                alert("Error de conexión");
+                btnVerify.disabled = false;
+                btnVerify.textContent = "Firmar Contrato";
+            }
+        });
+    </script>
+</body>
+</html>

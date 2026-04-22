@@ -353,7 +353,7 @@ class LeadProcessingService:
                     "assignment_type": update_data.get("assignment_type", "N/A"),
                     "reason": "fallback_regional" if update_data.get("assignment_type") in ["COMMUNE_FALLBACK", "ZONE_FALLBACK"] else "property_match" if update_data.get("assignment_type") == "PROPERTY" else "low_score_or_handled"
                 }
-                logger.info(f"[PROCESS_SERVICE_DECISION] {json.dumps(decision_log)}")
+                logger.debug(f"[PROCESS_SERVICE_DECISION] {json.dumps(decision_log)}")
 
                 return True
             

@@ -26,14 +26,21 @@ scraping_yapo_proxys.py
 scraping_prop360_portales.py
 sync_convecta_master.py
 yapo_contact_extractor.py
+audit_tasaciones.py
+cleanup_tasaciones.py
+recover_missing_leads.py
 
+Autorización de Arriendo y Administración.pdf
+Autorización de Arriendo.pdf
+Autorización de Venta.pdf
+
+Procasa - Sistema prop360.mhtml
 # Scripts de prueba o locales (opcional, pero recomendado)
 test_*.py
 debug_*.py
 pruebas_*.py
 simular_*.py
 reporte*.py
-
 # Carpetas temporales
 temp/
 tmp/

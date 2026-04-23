@@ -107,10 +107,33 @@ class PDFGenerator:
         Story.append(Paragraph("<b>EL COMITENTE</b>", normal_style))
         Story.append(Paragraph(f"{rut}<br/>{nombre}<br/>{contract_data.get('phone', '')}<br/>{email}", normal_style))
         
-        doc.build(Story)
+        doc.contract_code = contract_data.get('contract_code', '')
+        doc.is_original = True
+        doc.build(Story, onFirstPage=PDFGenerator._add_footer, onLaterPages=PDFGenerator._add_footer)
         pdf_bytes = buffer.getvalue()
         buffer.close()
         return pdf_bytes
+
+    @staticmethod
+    def _add_footer(canvas, doc):
+        page_num = canvas.getPageNumber()
+        text = f"Página {page_num}"
+        canvas.saveState()
+        canvas.setFont('Helvetica', 8)
+        
+        # Textos legales
+        if hasattr(doc, 'is_original') and doc.is_original:
+            footer_text = ""
+        else:
+            footer_text = "Este documento incluye un certificado de firma electrónica y evidencia digital en la página final, el cual forma parte integrante del contrato."
+            
+        code_text = f"Código de Contrato: {doc.contract_code}" if hasattr(doc, 'contract_code') else ""
+        
+        # Dibujar pie de página
+        canvas.drawString(inch, 0.5 * inch, code_text)
+        canvas.drawCentredString(letter[0] / 2.0, 0.5 * inch, footer_text)
+        canvas.drawRightString(letter[0] - inch, 0.5 * inch, text)
+        canvas.restoreState()
 
     @staticmethod
     def generate_signed_contract(contract_data: dict, evidence_data: dict, verify_url: str) -> bytes:
@@ -204,22 +227,36 @@ class PDFGenerator:
         
         Story.append(Paragraph("DOCUMENTO FIRMADO ELECTRÓNICAMENTE", styles['Heading1']))
         Story.append(Spacer(1, 0.2 * inch))
-        Story.append(Paragraph("Este documento electrónico contiene el texto íntegro del contrato de corretaje y su respectivo certificado de firma digital y sellado criptográfico.", normal_style))
+        Story.append(Paragraph("<b>VINCULACIÓN LEGAL:</b> El presente certificado forma parte integrante del contrato contenido en las páginas anteriores de este documento, constituyendo ambas partes un único instrumento electrónico conforme a la Ley 19.799.", normal_style))
+        Story.append(Paragraph("<b>DECLARACIÓN LEGAL:</b> El firmante declara haber leído, comprendido y aceptado íntegramente el presente contrato de forma electrónica conforme a la Ley 19.799.", normal_style))
+        Story.append(Paragraph("<b>MÉTODO DE VERIFICACIÓN:</b> La aceptación fue realizada mediante verificación de identidad con código enviado al teléfono del firmante vía WhatsApp.", normal_style))
         Story.append(Paragraph("Este documento ha sido sellado digitalmente mediante mecanismos criptográficos que garantizan su integridad y no alteración (Ley 19.799).", normal_style))
         
         Story.append(Spacer(1, 0.3 * inch))
         Story.append(Paragraph("<b>CERTIFICADO DE FIRMA ELECTRÓNICA Y EVIDENCIA DIGITAL</b>", styles['Heading2']))
+        
+        # Convertir timestamp UTC a Chile TZ para mostrar
+        server_ts_utc = evidence_data.get('server_timestamp', '')
+        try:
+            dt_utc = datetime.fromisoformat(server_ts_utc)
+            chile_time = dt_utc.astimezone(CHILE_TZ).strftime('%d-%m-%Y %H:%M:%S')
+        except:
+            chile_time = server_ts_utc
+            
+        read_time = evidence_data.get('read_time_seconds', 'N/A')
         
         data = [
             ["Nombre del Firmante", nombre],
             ["RUT Firmante", rut],
             ["Teléfono Verificado", phone],
             ["ID Contrato", evidence_data.get('contract_code', '')],
-            ["Fecha/Hora Servidor (UTC)", evidence_data.get('server_timestamp', '')],
+            ["Fecha/Hora Servidor (Hora Chile)", chile_time],
+            ["Fecha/Hora Servidor (UTC)", server_ts_utc],
             ["IP del Firmante", evidence_data.get('ip', '')],
-            ["Hash Documento Original", evidence_data.get('original_hash', '')],
-            ["Hash de Evidencia (Timeline)", evidence_data.get('timeline_hash', '')],
-            ["Firma Lógica Servidor (HMAC)", evidence_data.get('server_hmac', '')]
+            ["Tiempo en página antes de aceptar", f"{read_time} segundos"],
+            ["Hash Documento Base (Contrato Prev. Firma)", evidence_data.get('original_hash', '')],
+            ["Hash de Evidencia (Timeline Inmutable)", evidence_data.get('timeline_hash', '')],
+            ["Firma Lógica Servidor (HMAC SHA-256)", evidence_data.get('server_hmac', '')]
         ]
         
         t = Table(data, colWidths=[2.5*inch, 4*inch])
@@ -239,9 +276,11 @@ class PDFGenerator:
         qr_buffer = PDFGenerator._create_qr(verify_url)
         qr_img = RLImage(qr_buffer, width=1.5*inch, height=1.5*inch)
         Story.append(qr_img)
-        Story.append(Paragraph(f"Verifique la autenticidad de este documento escaneando el código QR o visitando: <a href='{verify_url}'>{verify_url}</a>", normal_style))
+        Story.append(Paragraph(f"Este documento puede ser verificado escaneando el código QR o ingresando el código de contrato en el sistema de verificación: <a href='{verify_url}'>{verify_url}</a>", normal_style))
         
-        doc.build(Story)
+        doc.contract_code = evidence_data.get('contract_code', '')
+        doc.is_original = False
+        doc.build(Story, onFirstPage=PDFGenerator._add_footer, onLaterPages=PDFGenerator._add_footer)
         pdf_bytes = buffer.getvalue()
         buffer.close()
         return pdf_bytes

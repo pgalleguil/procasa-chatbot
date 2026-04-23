@@ -64,6 +64,8 @@ async def create_contract(request: Request):
             })
             
         if existing:
+            if existing.get("status") in ["otp_requested", "otp_verified", "accepted"]:
+                raise HTTPException(status_code=400, detail="Este contrato ya está en proceso de firma o ha sido firmado. No puede ser modificado.")
             contract_code = existing["contract_code"]
         else:
             contract_code = str(uuid.uuid4())
@@ -233,6 +235,16 @@ async def send_contract(contract_code: str, request: Request):
     mensaje = f"Hola {contract['client_data']['nombre']},\n\nAquí tienes tu contrato de corretaje ({contract['property_data']['tipo']}) para la propiedad en {contract['property_data']['direccion']}.\n\nPor favor, revísalo y fírmalo electrónicamente ingresando a este enlace (válido por 24 horas):\n{link}"
     
     await send_whatsapp_message(phone, mensaje)
+    
+    # WhatsApp Logging Collection
+    db["communications"].insert_one({
+        "contract_code": contract_code,
+        "phone": phone,
+        "message_content": mensaje,
+        "message_type": "contract_sent",
+        "timestamp_utc": datetime.now(timezone.utc)
+    })
+    
     return {"status": "ok", "message": "Enviado por WhatsApp"}
 
 
@@ -314,10 +326,20 @@ async def request_otp(token: str, request: Request):
             },
             "$push": {
                 "timeline": {
-                    "action": "otp_requested",
-                    "server_timestamp": server_timestamp,
-                    "ip": ip,
-                    "user_agent": ua
+                    "$each": [
+                        {
+                            "action": "rut_confirmed",
+                            "server_timestamp": server_timestamp,
+                            "ip": ip,
+                            "user_agent": ua
+                        },
+                        {
+                            "action": "otp_requested",
+                            "server_timestamp": server_timestamp,
+                            "ip": ip,
+                            "user_agent": ua
+                        }
+                    ]
                 }
             }
         }
@@ -325,6 +347,15 @@ async def request_otp(token: str, request: Request):
     
     mensaje = f"Tu código de verificación para firmar el contrato Procasa es: *{otp}*.\nVálido por 5 minutos."
     await send_whatsapp_message(contract["phone"], mensaje)
+    
+    # WhatsApp Logging
+    db["communications"].insert_one({
+        "contract_code": contract["contract_code"],
+        "phone": contract["phone"],
+        "message_content": mensaje,
+        "message_type": "otp_sent",
+        "timestamp_utc": datetime.now(timezone.utc)
+    })
     
     return {"status": "ok"}
 
@@ -461,7 +492,8 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         "ip": ip,
         "original_hash": original_hash,
         "server_hmac": server_hmac,
-        "timeline_hash": timeline_hash
+        "timeline_hash": timeline_hash,
+        "read_time_seconds": read_time
     }
     
     # 3. Generar PDF Firmado Completo

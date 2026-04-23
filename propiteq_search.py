@@ -39,7 +39,7 @@ def run_automation():
         query = {
             "disponible": True, 
             "oficina": "PROCASA SUCRE",
-            "operacion": "Venta",
+            "operacion": "Arriendo",
             "region": "Metropolitana",
             "codigo": {"$nin": codigos_ya_procesados}
         }

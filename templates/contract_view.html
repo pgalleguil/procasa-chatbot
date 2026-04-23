@@ -51,17 +51,18 @@
                 <div class="mb-4">
                     <a href="/contracts/api/download/{{ contract.contract_code }}" target="_blank"
                         class="w-full block text-center bg-gray-800 text-white hover:bg-gray-700 font-bold py-3 px-4 rounded-lg transition shadow-md">
-                        <i class="fa-solid fa-file-pdf mr-2"></i> Descargar / Ver Documento Completo en PDF
+                        <i class="fa-solid fa-file-pdf mr-2"></i> Descargar / Ampliar Documento PDF
                     </a>
-                    <p class="text-xs text-gray-500 text-center mt-2">Recomendado para visualización en teléfonos
-                        móviles</p>
                 </div>
 
-                <div class="pdf-viewer p-0 overflow-hidden hidden md:block" id="pdf-container"
-                    style="height: 75vh; border: 2px solid #e5e7eb;">
-                    <embed id="pdf-embed"
-                        src="/contracts/api/download/{{ contract.contract_code }}#toolbar=0&navpanes=0" width="100%"
-                        height="100%" type="application/pdf">
+                <div class="pdf-viewer p-0 w-full" id="pdf-container"
+                    style="height: 70vh; border: 2px solid #e5e7eb; -webkit-overflow-scrolling: touch; overflow-y: auto;">
+                    <object data="/contracts/api/download/{{ contract.contract_code }}#toolbar=0&navpanes=0" type="application/pdf" width="100%" height="100%">
+                        <iframe src="/contracts/api/download/{{ contract.contract_code }}#toolbar=0&navpanes=0" width="100%" height="100%" style="border: none;">
+                            <p class="p-4 text-center text-gray-500">Tu navegador no soporta la visualización integrada de PDFs. <br>
+                            <a href="/contracts/api/download/{{ contract.contract_code }}" class="text-blue-600 underline">Toca aquí para descargar y leer el contrato</a>.</p>
+                        </iframe>
+                    </object>
                 </div>
 
                 <div class="mt-6 space-y-4 bg-blue-50 p-4 rounded-lg border border-blue-100">
@@ -72,9 +73,8 @@
                         </div>
                         <div class="ml-3">
                             <label for="check-intent" class="text-sm font-medium text-gray-800">
-                                <b>Intención Jurídica:</b> Declaro que he leído, comprendido y acepto íntegramente este
-                                contrato, y que mi aceptación electrónica tiene la misma validez que una firma
-                                manuscrita conforme a la Ley 19.799.
+                                <b>Intención Jurídica:</b> Declaro que he leído, comprendido y acepto íntegramente este contrato,
+                                y que mi aceptación electrónica constituye una firma válida y vinculante.
                             </label>
                             <p id="timer-text" class="text-xs text-blue-600 mt-1 font-semibold">Obligatorio leer el
                                 documento (20s restantes)...</p>

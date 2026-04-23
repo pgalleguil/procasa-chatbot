@@ -155,8 +155,20 @@ async def download_original_pdf(contract_code: str):
     pdf_path = tmp_dir / "contrato_original.pdf"
     
     if not pdf_path.exists():
-        raise HTTPException(status_code=404, detail="PDF no encontrado o ya fue eliminado del servidor")
-        
+        db = get_db()
+        contract = db["contracts"].find_one({"contract_code": contract_code})
+        if not contract:
+            raise HTTPException(status_code=404, detail="Contrato no encontrado")
+            
+        try:
+            pdf_bytes = PDFGenerator.generate_original_contract(contract)
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            with open(pdf_path, "wb") as f:
+                f.write(pdf_bytes)
+        except Exception as e:
+            logger.error(f"Error regenerando PDF: {e}")
+            raise HTTPException(status_code=500, detail="Error al regenerar el documento PDF")
+
     db = get_db()
     contract = db["contracts"].find_one({"contract_code": contract_code})
     prop_code = contract.get('property_code', 'SD') if contract else 'SD'

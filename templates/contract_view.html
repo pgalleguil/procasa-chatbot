@@ -166,12 +166,25 @@
         let timeLeft = 35;
         let scrolledToBottom = false;
 
-        window.addEventListener('scroll', () => {
-            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 50) {
+        function checkScroll() {
+            if (document.body.offsetHeight <= window.innerHeight + 50) {
+                scrolledToBottom = true;
+                checkEnableCheckbox();
+            } else if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 50) {
                 scrolledToBottom = true;
                 checkEnableCheckbox();
             }
-        });
+        }
+
+        window.addEventListener('scroll', checkScroll);
+        
+        // Detectar interacciones con el PDF como actividad de lectura
+        const pdfContainer = document.getElementById('pdf-container');
+        pdfContainer.addEventListener('wheel', () => { scrolledToBottom = true; checkEnableCheckbox(); }, {passive: true});
+        pdfContainer.addEventListener('touchmove', () => { scrolledToBottom = true; checkEnableCheckbox(); }, {passive: true});
+        
+        // Comprobación inicial por si la pantalla es muy grande
+        setTimeout(checkScroll, 500);
 
         const timerInterval = setInterval(() => {
             timeLeft--;

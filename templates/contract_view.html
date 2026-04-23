@@ -226,7 +226,6 @@
         window.addEventListener('scroll', checkScroll);
         
         // Detectar interacciones con el PDF como actividad de lectura
-        const pdfContainer = document.getElementById('pdf-container');
         pdfContainer.addEventListener('wheel', () => { scrolledToBottom = true; checkEnableCheckbox(); }, {passive: true});
         pdfContainer.addEventListener('touchmove', () => { scrolledToBottom = true; checkEnableCheckbox(); }, {passive: true});
         

@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Firma de Contrato - Procasa Sucre</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <style>
         .pdf-viewer {
             width: 100%;
@@ -55,14 +56,17 @@
                     </a>
                 </div>
 
-                <div class="pdf-viewer p-0 w-full" id="pdf-container"
-                    style="height: 70vh; border: 2px solid #e5e7eb; -webkit-overflow-scrolling: touch; overflow-y: auto;">
-                    <object data="/contracts/api/download/{{ contract.contract_code }}#toolbar=0&navpanes=0" type="application/pdf" width="100%" height="100%">
-                        <iframe src="/contracts/api/download/{{ contract.contract_code }}#toolbar=0&navpanes=0" width="100%" height="100%" style="border: none;">
-                            <p class="p-4 text-center text-gray-500">Tu navegador no soporta la visualización integrada de PDFs. <br>
-                            <a href="/contracts/api/download/{{ contract.contract_code }}" class="text-blue-600 underline">Toca aquí para descargar y leer el contrato</a>.</p>
-                        </iframe>
-                    </object>
+                <div class="pdf-viewer p-0 w-full bg-white relative flex flex-col items-center" id="pdf-container"
+                    style="height: 70vh; border: 2px solid #e5e7eb; -webkit-overflow-scrolling: touch; overflow-y: auto; padding: 1rem;">
+                    
+                    <div id="pdf-loading" class="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
+                        <div class="text-center">
+                            <i class="fa-solid fa-spinner fa-spin text-3xl text-blue-600 mb-2"></i>
+                            <p class="text-gray-600 font-medium">Cargando documento...</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Los canvas del PDF se insertarán aquí por JavaScript -->
                 </div>
 
                 <div class="mt-6 space-y-4 bg-blue-50 p-4 rounded-lg border border-blue-100">
@@ -158,6 +162,49 @@
     <script>
         const TOKEN = "{{ token }}";
         let intentRegistered = false;
+
+        // Configurar PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+        
+        const pdfUrl = '/contracts/api/download/{{ contract.contract_code }}';
+        const pdfContainer = document.getElementById('pdf-container');
+        const pdfLoading = document.getElementById('pdf-loading');
+
+        // Renderizar el PDF
+        pdfjsLib.getDocument(pdfUrl).promise.then(pdf => {
+            pdfLoading.style.display = 'none'; // Ocultar spinner
+            
+            // Renderizar cada página
+            for(let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                pdf.getPage(pageNum).then(page => {
+                    // Ajustar escala para móviles
+                    const containerWidth = pdfContainer.clientWidth - 32; // 32px de padding
+                    const unscaledViewport = page.getViewport({ scale: 1.0 });
+                    const scale = Math.min(1.5, containerWidth / unscaledViewport.width);
+                    const viewport = page.getViewport({ scale: scale });
+
+                    const canvas = document.createElement('canvas');
+                    canvas.style.display = "block";
+                    canvas.style.marginBottom = "1rem";
+                    canvas.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)";
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    
+                    pdfContainer.appendChild(canvas);
+                    
+                    page.render({
+                        canvasContext: canvas.getContext('2d'),
+                        viewport: viewport
+                    });
+                });
+            }
+        }).catch(err => {
+            console.error('Error cargando PDF:', err);
+            pdfLoading.innerHTML = `<div class="p-4 text-center text-red-600 font-medium">
+                No se pudo cargar la vista previa. <br>
+                <a href="${pdfUrl}" class="text-blue-600 underline mt-2 inline-block">Toca aquí para descargar el contrato.</a>
+            </div>`;
+        });
 
         const checkIntent = document.getElementById('check-intent');
         const btnRequestOtp = document.getElementById('btn-request-otp');

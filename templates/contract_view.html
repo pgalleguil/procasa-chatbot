@@ -170,41 +170,88 @@
         const pdfContainer = document.getElementById('pdf-container');
         const pdfLoading = document.getElementById('pdf-loading');
 
-        // Renderizar el PDF
-        pdfjsLib.getDocument(pdfUrl).promise.then(pdf => {
-            pdfLoading.style.display = 'none'; // Ocultar spinner
-            
-            // Renderizar cada página
-            for(let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                pdf.getPage(pageNum).then(page => {
-                    // Ajustar escala para móviles
-                    const containerWidth = pdfContainer.clientWidth - 32; // 32px de padding
-                    const unscaledViewport = page.getViewport({ scale: 1.0 });
-                    const scale = Math.min(1.5, containerWidth / unscaledViewport.width);
-                    const viewport = page.getViewport({ scale: scale });
+        // Renderizar el PDF progresivamente y con alta calidad
+        async function renderPDF() {
+            try {
+                const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+                
+                // Configurar observador para lazy loading
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            const pageNum = parseInt(entry.target.dataset.pageNumber);
+                            if (!entry.target.dataset.rendered) {
+                                renderPage(pdf, pageNum, entry.target);
+                                entry.target.dataset.rendered = "true";
+                            }
+                        }
+                    });
+                }, { root: pdfContainer, rootMargin: '300px' });
 
+                for(let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
                     const canvas = document.createElement('canvas');
+                    canvas.dataset.pageNumber = pageNum;
                     canvas.style.display = "block";
-                    canvas.style.marginBottom = "1rem";
+                    canvas.style.margin = "0 auto 1rem auto";
                     canvas.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)";
-                    canvas.height = viewport.height;
-                    canvas.width = viewport.width;
+                    canvas.style.width = "100%"; // placeholder visual para evitar saltos
+                    canvas.style.minHeight = "400px";
+                    canvas.style.backgroundColor = "#fff";
                     
                     pdfContainer.appendChild(canvas);
                     
-                    page.render({
-                        canvasContext: canvas.getContext('2d'),
-                        viewport: viewport
-                    });
-                });
+                    if (pageNum === 1) {
+                        // Renderizar página 1 de forma inmediata
+                        await renderPage(pdf, pageNum, canvas);
+                        canvas.dataset.rendered = "true";
+                        pdfLoading.style.display = 'none'; // Ocultar spinner cuando cargue la pag 1
+                    } else {
+                        // Las demás se observan para lazy loading
+                        observer.observe(canvas);
+                    }
+                }
+            } catch (err) {
+                console.error('Error cargando PDF:', err);
+                pdfLoading.innerHTML = `<div class="p-4 text-center text-red-600 font-medium">
+                    No se pudo cargar la vista previa. <br>
+                    <a href="${pdfUrl}" class="text-blue-600 underline mt-2 inline-block">Toca aquí para descargar el contrato.</a>
+                </div>`;
             }
-        }).catch(err => {
-            console.error('Error cargando PDF:', err);
-            pdfLoading.innerHTML = `<div class="p-4 text-center text-red-600 font-medium">
-                No se pudo cargar la vista previa. <br>
-                <a href="${pdfUrl}" class="text-blue-600 underline mt-2 inline-block">Toca aquí para descargar el contrato.</a>
-            </div>`;
-        });
+        }
+
+        async function renderPage(pdf, pageNum, canvas) {
+            const page = await pdf.getPage(pageNum);
+            
+            const containerWidth = pdfContainer.clientWidth - 32; // 32px padding
+            const unscaledViewport = page.getViewport({ scale: 1.0 });
+            
+            // Requisito: scale dinámico ajustado, no menor a 2.0, máximo 2.2
+            let dynamicScale = containerWidth / unscaledViewport.width;
+            let scale = Math.max(2.0, Math.min(dynamicScale, 2.2));
+            
+            const viewport = page.getViewport({ scale: scale });
+            const pixelRatio = window.devicePixelRatio || 1;
+
+            // Soporte pantallas retina para evitar pixelación
+            canvas.width = viewport.width * pixelRatio;
+            canvas.height = viewport.height * pixelRatio;
+            canvas.style.width = viewport.width + "px";
+            canvas.style.height = viewport.height + "px";
+            
+            // Forzar adaptación visual en móviles sin afectar la resolución interna
+            canvas.style.maxWidth = "100%";
+            canvas.style.height = "auto";
+            
+            const context = canvas.getContext('2d');
+            context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
+            await page.render({
+                canvasContext: context,
+                viewport: viewport
+            }).promise;
+        }
+
+        renderPDF();
 
         const checkIntent = document.getElementById('check-intent');
         const btnRequestOtp = document.getElementById('btn-request-otp');

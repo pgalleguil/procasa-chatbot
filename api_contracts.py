@@ -178,7 +178,11 @@ async def download_original_pdf(contract_code: str):
         path=pdf_path, 
         filename=f"Contrato_{prop_code}_{contract_code}.pdf",
         media_type="application/pdf",
-        content_disposition_type="inline"
+        content_disposition_type="inline",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Accept-Ranges": "bytes"
+        }
     )
 
 @router.get("/api/download_signed/{contract_code}")
@@ -203,7 +207,11 @@ async def download_signed_pdf(contract_code: str):
         path=pdf_path,
         filename=filename,
         media_type="application/pdf",
-        content_disposition_type="inline"
+        content_disposition_type="inline",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Accept-Ranges": "bytes"
+        }
     )
 
 @router.post("/api/{contract_code}/send")

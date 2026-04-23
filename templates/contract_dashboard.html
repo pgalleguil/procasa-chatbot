@@ -44,7 +44,6 @@
             background-color: var(--bg-body);
             color: var(--text-primary);
             font-family: 'Outfit', sans-serif;
-            overflow-x: hidden;
             transition: background-color 0.3s, color 0.3s;
         }
 
@@ -209,6 +208,7 @@
         .status-otp_requested { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
         .status-otp_verified { background: rgba(14, 165, 233, 0.2); color: #0ea5e9; }
         .status-accepted { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+        .status-signed { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
         
         .pdf-preview-container {
             height: 100%;
@@ -298,7 +298,13 @@
                             </td>
                             <td>
                                 <span class="status-badge status-{{ c.status }}">
-                                    {{ c.status|replace('_', ' ')|title }}
+                                    {% if c.status == 'created' %}Creado
+                                    {% elif c.status == 'sent' %}Enviado
+                                    {% elif c.status == 'opened' %}Abierto
+                                    {% elif c.status == 'otp_requested' %}Código Solicitado
+                                    {% elif c.status == 'otp_verified' %}RUT Validado
+                                    {% elif c.status == 'signed' %}Firmado
+                                    {% else %}{{ c.status|title }}{% endif %}
                                 </span>
                             </td>
                             <td>
@@ -309,6 +315,14 @@
                                 <button class="btn btn-sm btn-success" onclick="sendContract('{{ c.contract_code }}')" title="Enviar por WhatsApp">
                                     <i class="fa-brands fa-whatsapp"></i>
                                 </button>
+                                {% endif %}
+                                {% if c.status == 'signed' %}
+                                <a href="/contracts/api/download_signed/{{ c.contract_code }}" target="_blank" class="btn btn-sm btn-success" title="Descargar Contrato Firmado">
+                                    <i class="fa-solid fa-file-circle-check"></i>
+                                </a>
+                                <a href="/contracts/verify/{{ c.contract_code }}" target="_blank" class="btn btn-sm btn-info" title="Verificar Evidencia">
+                                    <i class="fa-solid fa-shield-halved"></i>
+                                </a>
                                 {% endif %}
                                 {% if c.status == 'accepted' %}
                                 <a href="/contracts/verify/{{ c.contract_code }}" target="_blank" class="btn btn-sm btn-info" title="Verificar Evidencia">
@@ -339,8 +353,8 @@
                     <h5 class="modal-title fw-bold"><i class="fa-solid fa-file-signature text-accent me-2"></i> Generar Nuevo Convenio de Corretaje</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="row">
+                <div class="modal-body" style="overflow-x: hidden;">
+                    <div class="row g-3" style="overflow-x: hidden;">
                         <!-- Formulario -->
                         <div class="col-lg-6">
                             <form id="formNewContract" class="needs-validation" novalidate>

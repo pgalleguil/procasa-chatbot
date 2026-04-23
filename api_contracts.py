@@ -247,16 +247,21 @@ Para revisarlo y aceptarlo de forma electrónica, accede al siguiente enlace (v�
 
 Este proceso incluye verificación de identidad para tu seguridad."""
     
-    await send_whatsapp_message(phone, mensaje)
+    # Guardar mensaje dentro del mismo documento del contrato
+    try:
+        db["contracts"].update_one(
+            {"contract_code": contract_code},
+            {"$push": {"messages": {
+                "phone": phone,
+                "message_content": mensaje,
+                "message_type": "contract_sent",
+                "timestamp_utc": datetime.now(timezone.utc)
+            }}}
+        )
+    except Exception as e:
+        logger.error(f"[MSG_LOG] Error guardando mensaje: {e}")
     
-    # WhatsApp Logging Collection
-    db["communications"].insert_one({
-        "contract_code": contract_code,
-        "phone": phone,
-        "message_content": mensaje,
-        "message_type": "contract_sent",
-        "timestamp_utc": datetime.now(timezone.utc)
-    })
+    await send_whatsapp_message(phone, mensaje)
     
     return {"status": "ok", "message": "Enviado por WhatsApp"}
 
@@ -361,17 +366,22 @@ async def request_otp(token: str, request: Request):
     mensaje = f"""Tu código de verificación para firmar tu contrato es: *{otp}*
 
 Este código es personal, válido por 5 minutos y no debe compartirse con terceros."""
+    
+    # Guardar mensaje OTP dentro del mismo documento del contrato
+    try:
+        db["contracts"].update_one(
+            {"contract_code": contract["contract_code"]},
+            {"$push": {"messages": {
+                "phone": contract["phone"],
+                "message_content": mensaje,
+                "message_type": "otp_sent",
+                "timestamp_utc": datetime.now(timezone.utc)
+            }}}
+        )
+    except Exception as e:
+        logger.error(f"[MSG_LOG] Error guardando mensaje OTP: {e}")
+    
     await send_whatsapp_message(contract["phone"], mensaje)
-    
-    # WhatsApp Logging
-    db["communications"].insert_one({
-        "contract_code": contract["contract_code"],
-        "phone": contract["phone"],
-        "message_content": mensaje,
-        "message_type": "otp_sent",
-        "timestamp_utc": datetime.now(timezone.utc)
-    })
-    
     return {"status": "ok"}
 
 @router.post("/api/{token}/verify-otp")
@@ -475,8 +485,10 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     try:
         data = await request.json()
         read_time = data.get("read_time_seconds", 0)
+        scrolled_to_bottom = data.get("scrolled_to_bottom", False)
     except:
         read_time = 0
+        scrolled_to_bottom = False
         
     ip = get_client_ip(request)
     # Geolocalización simple
@@ -506,7 +518,8 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
                 "ip": ip, 
                 "geo_location": geo_info,
                 "user_agent": ua,
-                "read_time_seconds": read_time
+                "read_time_seconds": read_time,
+                "scrolled_to_bottom": scrolled_to_bottom
             }}
         }
     )
@@ -543,7 +556,8 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         "original_hash": original_hash,
         "server_hmac": server_hmac,
         "timeline_hash": timeline_hash,
-        "read_time_seconds": read_time
+        "read_time_seconds": read_time,
+        "scrolled_to_bottom": "Sí" if scrolled_to_bottom else "No"
     }
     
     # 3. Generar PDF Firmado Completo
@@ -578,43 +592,49 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         }
     )
     
-    # 6. Subida a Google Drive en Background
-    background_tasks.add_task(sync_to_gdrive_task, contract_code, tmp_dir)
-    
-    # Simular Sello de Tiempo Externo (TSA)
-    # En producción esto conectaría con E-Cert, Acepta u otra entidad acreditada
+    # TSA mock — estructura preparada para escalar a certificación externa
     tsa_response = f"TSA_MOCK_{datetime.now(timezone.utc).timestamp()}_SIGNED"
     db["contracts"].update_one({"contract_code": contract_code}, {"$set": {"security.tsa_stamp": tsa_response}})
     
-    # Simular Envío de Correo
-    # background_tasks.add_task(send_email_with_pdf, contract["email"], original_pdf_path)
-    db["communications"].insert_one({
-        "contract_code": contract_code,
-        "email": contract.get("email", ""),
-        "message_type": "email_signed_pdf_sent",
-        "timestamp_utc": datetime.now(timezone.utc)
-    })
+    # 6. Subida a Google Drive en Background
+    background_tasks.add_task(upload_to_gdrive_bg, contract_code, tmp_dir)
     
-    # 7. Notificar a CRM o Agente
+    # 7. Notificar al Cliente por WhatsApp — Log guardado en mismo documento
     mensaje_conf = """Confirmamos la aceptación electrónica de tu contrato conforme a la Ley 19.799.
 
 Se ha registrado la fecha, hora, dirección IP y verificación de identidad asociada a esta aceptación.
 
 En breve recibirás una copia del documento firmado."""
+    
+    try:
+        db["contracts"].update_one(
+            {"contract_code": contract_code},
+            {"$push": {"messages": {
+                "phone": contract["phone"],
+                "message_content": mensaje_conf,
+                "message_type": "confirmation_sent",
+                "timestamp_utc": datetime.now(timezone.utc)
+            }}}
+        )
+    except Exception as e:
+        logger.error(f"[MSG_LOG] Error guardando mensaje confirmación: {e}")
+    
     await send_whatsapp_message(contract["phone"], mensaje_conf)
     
-    # WhatsApp Logging
-    db["communications"].insert_one({
-        "contract_code": contract_code,
-        "phone": contract["phone"],
-        "message_content": mensaje_conf,
-        "message_type": "confirmation_sent",
-        "timestamp_utc": datetime.now(timezone.utc)
-    })
+    # 8. Enviar PDF firmado por correo en Background
+    client_email = contract.get("client_data", {}).get("email", contract.get("email", ""))
+    if client_email:
+        background_tasks.add_task(
+            send_signed_email_task,
+            contract_code,
+            client_email,
+            contract.get("client_data", {}).get("nombre", ""),
+            tmp_dir / "contrato_firmado.pdf"
+        )
     
     return {"status": "ok", "contract_code": contract_code}
     
-def sync_to_gdrive_task(contract_code: str, tmp_dir: Path):
+def upload_to_gdrive_bg(contract_code: str, tmp_dir: Path):
     try:
         folder_id = gdrive_sync.create_folder(f"Expediente_{contract_code}")
         for file_path in tmp_dir.glob("*.*"):
@@ -625,6 +645,72 @@ def sync_to_gdrive_task(contract_code: str, tmp_dir: Path):
         logger.info(f"Expediente {contract_code} subido a GDrive exitosamente.")
     except Exception as e:
         logger.error(f"Error en tarea background GDrive: {e}")
+
+def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_path: Path):
+    """Envía el PDF firmado al cliente por correo electrónico usando Gmail."""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.mime.base import MIMEBase
+    from email import encoders
+
+    try:
+        gmail_user = Config.GMAIL_USER
+        gmail_pass = Config.GMAIL_PASSWORD
+        if not gmail_user or not gmail_pass:
+            logger.warning("[EMAIL] Credenciales Gmail no configuradas, omitiendo envío.")
+            return
+
+        msg = MIMEMultipart()
+        msg["From"] = f"Procasa Propiedades <{gmail_user}>"
+        msg["To"] = email_to
+        msg["Subject"] = f"Su Contrato Firmado Electrónicamente – {contract_code}"
+
+        body = f"""Estimado/a {nombre},
+
+Adjunto encontrará el documento de su contrato de corretaje firmado electrónicamente conforme a la Ley 19.799.
+
+Este documento incluye:
+• Certificado de firma electrónica
+• Evidencia digital (IP, timestamp, hash criptográfico)
+• Código de verificación: {contract_code}
+
+Puede verificar la autenticidad del documento en: {Config.CRM_BASE_URL}/contracts/verify/{contract_code}
+
+Si tiene alguna duda, no dude en contactarnos.
+
+Saludos,
+Equipo Procasa Propiedades"""
+
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+
+        if pdf_path.exists():
+            with open(pdf_path, "rb") as f:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(f.read())
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f'attachment; filename="Contrato_Firmado_{contract_code}.pdf"')
+            msg.attach(part)
+        else:
+            logger.warning(f"[EMAIL] PDF no encontrado en {pdf_path}, enviando sin adjunto.")
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(gmail_user, gmail_pass)
+            server.sendmail(gmail_user, email_to, msg.as_string())
+
+        logger.info(f"[EMAIL] PDF firmado enviado a {email_to} para contrato {contract_code}")
+
+        db = get_db()
+        db["contracts"].update_one(
+            {"contract_code": contract_code},
+            {"$push": {"messages": {
+                "email": email_to,
+                "message_type": "email_signed_pdf_sent",
+                "timestamp_utc": datetime.now(timezone.utc)
+            }}}
+        )
+    except Exception as e:
+        logger.error(f"[EMAIL] Error enviando correo firmado a {email_to}: {e}")
 
 @router.delete("/api/delete/{contract_code}")
 async def delete_contract(contract_code: str):

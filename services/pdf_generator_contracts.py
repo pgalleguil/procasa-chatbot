@@ -48,12 +48,12 @@ class PDFGenerator:
             img_reader = ImageReader(str(logo_path))
             iw, ih = img_reader.getSize()
             aspect = ih / float(iw)
-            width = 2.5 * inch
+            width = 1.6 * inch
             height = width * aspect
             img = RLImage(str(logo_path), width=width, height=height)
             img.hAlign = 'CENTER'
             Story.append(img)
-            Story.append(Spacer(1, 0.3 * inch))
+            Story.append(Spacer(1, 0.1 * inch))
         
         tipo = contract_data.get("tipo", "Arriendo")
         
@@ -144,10 +144,14 @@ class PDFGenerator:
             
         code_text = f"Código de Contrato: {doc.contract_code}" if hasattr(doc, 'contract_code') else ""
         
-        # Dibujar pie de página
-        canvas.drawString(inch, 0.5 * inch, code_text)
-        canvas.drawCentredString(letter[0] / 2.0, 0.5 * inch, footer_text)
-        canvas.drawRightString(letter[0] - inch, 0.5 * inch, text)
+        # Dibujar pie de página (evitando sobreposición)
+        canvas.setFont('Helvetica', 8)
+        canvas.drawString(inch, 0.7 * inch, code_text)
+        canvas.drawRightString(letter[0] - inch, 0.7 * inch, text)
+        
+        canvas.setFont('Helvetica', 7)
+        canvas.drawCentredString(letter[0] / 2.0, 0.4 * inch, footer_text)
+        
         canvas.restoreState()
 
     @staticmethod
@@ -271,6 +275,7 @@ class PDFGenerator:
             ["IP del Firmante", evidence_data.get('ip', '')],
             ["Localización (GeoIP)", evidence_data.get('geo_info', 'Desconocido')],
             ["Tiempo en página antes de aceptar", f"{read_time} segundos"],
+            ["Confirmación de lectura (Scroll completo)", evidence_data.get('scrolled_to_bottom', 'Sí')],
             ["Hash Documento Base (Contrato Prev. Firma)", evidence_data.get('original_hash', '')],
             ["Hash de Evidencia (Timeline Inmutable)", evidence_data.get('timeline_hash', '')],
             ["Firma Lógica Servidor (HMAC SHA-256)", evidence_data.get('server_hmac', '')]

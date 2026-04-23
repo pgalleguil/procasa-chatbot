@@ -129,19 +129,40 @@
         const btnRequestOtp = document.getElementById('btn-request-otp');
         const timerText = document.getElementById('timer-text');
         
-        let timeLeft = 20;
+        let timeLeft = 35;
+        let scrolledToBottom = false;
+        
+        window.addEventListener('scroll', () => {
+            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 50) {
+                scrolledToBottom = true;
+                checkEnableCheckbox();
+            }
+        });
+
         const timerInterval = setInterval(() => {
             timeLeft--;
-            if (timeLeft > 0) {
-                timerText.textContent = `Lectura obligatoria (${timeLeft}s restantes)...`;
-            } else {
+            checkEnableCheckbox();
+            
+            if (timeLeft <= 0) {
                 clearInterval(timerInterval);
-                timerText.textContent = "Ya puedes marcar la casilla para aceptar.";
-                timerText.classList.remove('text-blue-600');
-                timerText.classList.add('text-green-600');
-                checkIntent.disabled = false;
             }
         }, 1000);
+        
+        function checkEnableCheckbox() {
+            if (timeLeft > 0) {
+                timerText.textContent = `Debes revisar el contrato completo antes de continuar (${timeLeft}s restantes)...`;
+                return;
+            }
+            if (!scrolledToBottom) {
+                timerText.textContent = `Desliza hasta el final de la página para confirmar lectura...`;
+                return;
+            }
+            
+            timerText.textContent = "✔️ Documento revisado completamente. Ya puedes marcar la casilla.";
+            timerText.classList.remove('text-blue-600');
+            timerText.classList.add('text-green-600');
+            checkIntent.disabled = false;
+        }
 
         checkIntent.addEventListener('change', async (e) => {
             if (e.target.checked && !intentRegistered) {
@@ -262,7 +283,7 @@
                 const resAccept = await fetch(`/contracts/api/${TOKEN}/accept`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ read_time_seconds: timeSpent })
+                    body: JSON.stringify({ read_time_seconds: timeSpent, scrolled_to_bottom: scrolledToBottom })
                 });
 
                 if (resAccept.ok) {

@@ -688,7 +688,7 @@ def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_p
         all_recipients = [email_to] + cc_recipients
 
         msg = MIMEMultipart()
-        msg["From"] = f"Procasa Propiedades <{gmail_user}>"
+        msg["From"] = f"Procasa Sucre <{gmail_user}>"
         msg["To"] = email_to
         msg["Cc"] = cc_str
         msg["Subject"] = asunto
@@ -707,7 +707,7 @@ Puede verificar la autenticidad del documento en:
 Si tiene alguna duda, no dude en contactarnos.
 
 Saludos,
-Equipo Procasa Propiedades"""
+Equipo Procasa Sucre"""
 
         msg.attach(MIMEText(body, "plain", "utf-8"))
 

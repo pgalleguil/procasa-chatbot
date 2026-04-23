@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Firma de Contrato - Procasa</title>
+    <title>Firma de Contrato - Procasa Sucre</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .pdf-viewer {
@@ -15,54 +16,74 @@
             background: #f9fafb;
             padding: 1rem;
         }
-        .step { display: none; }
-        .step.active { display: block; }
+
+        .step {
+            display: none;
+        }
+
+        .step.active {
+            display: block;
+        }
     </style>
 </head>
+
 <body class="bg-gray-50 font-sans text-gray-800 antialiased">
     <div class="max-w-5xl mx-auto p-4 md:p-6 lg:p-8">
         <!-- Encabezado -->
         <div class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-blue-900">Procasa Propiedades</h1>
+            <h1 class="text-3xl font-bold text-blue-900">Procasa Sucre</h1>
             <p class="text-md text-gray-500">Sistema de Firma Electrónica Segura (Ley 19.799)</p>
         </div>
 
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            
+
             <!-- STEP 1: Revisión del Contrato -->
             <div id="step-1" class="step active">
                 <div class="flex justify-between items-end mb-4">
                     <div>
                         <h2 class="text-2xl font-semibold">Paso 1: Revisa tu Contrato</h2>
-                        <p class="text-red-600 font-medium text-sm mt-1"><i class="fa-solid fa-circle-info"></i> Es importante que leas el contrato completo antes de continuar. La aceptación electrónica tiene validez legal conforme a la Ley 19.799.</p>
+                        <p class="text-red-600 font-medium text-sm mt-1"><i class="fa-solid fa-circle-info"></i> Es
+                            importante que leas el contrato completo antes de continuar. La aceptación electrónica tiene
+                            validez legal conforme a la Ley 19.799.</p>
                     </div>
                 </div>
-                
+
                 <div class="mb-4">
-                    <a href="/contracts/api/download/{{ contract.contract_code }}" target="_blank" class="w-full block text-center bg-gray-800 text-white hover:bg-gray-700 font-bold py-3 px-4 rounded-lg transition shadow-md">
+                    <a href="/contracts/api/download/{{ contract.contract_code }}" target="_blank"
+                        class="w-full block text-center bg-gray-800 text-white hover:bg-gray-700 font-bold py-3 px-4 rounded-lg transition shadow-md">
                         <i class="fa-solid fa-file-pdf mr-2"></i> Descargar / Ver Documento Completo en PDF
                     </a>
-                    <p class="text-xs text-gray-500 text-center mt-2">Recomendado para visualización en teléfonos móviles</p>
+                    <p class="text-xs text-gray-500 text-center mt-2">Recomendado para visualización en teléfonos
+                        móviles</p>
                 </div>
-                
-                <div class="pdf-viewer p-0 overflow-hidden hidden md:block" id="pdf-container" style="height: 75vh; border: 2px solid #e5e7eb;">
-                    <embed id="pdf-embed" src="/contracts/api/download/{{ contract.contract_code }}#toolbar=0&navpanes=0" width="100%" height="100%" type="application/pdf">
+
+                <div class="pdf-viewer p-0 overflow-hidden hidden md:block" id="pdf-container"
+                    style="height: 75vh; border: 2px solid #e5e7eb;">
+                    <embed id="pdf-embed"
+                        src="/contracts/api/download/{{ contract.contract_code }}#toolbar=0&navpanes=0" width="100%"
+                        height="100%" type="application/pdf">
                 </div>
 
                 <div class="mt-6 space-y-4 bg-blue-50 p-4 rounded-lg border border-blue-100">
                     <div class="flex items-start">
                         <div class="flex-shrink-0 mt-1">
-                            <input type="checkbox" id="check-intent" class="w-5 h-5 text-blue-600 rounded border-gray-300 disabled:opacity-50" disabled>
+                            <input type="checkbox" id="check-intent"
+                                class="w-5 h-5 text-blue-600 rounded border-gray-300 disabled:opacity-50" disabled>
                         </div>
                         <div class="ml-3">
                             <label for="check-intent" class="text-sm font-medium text-gray-800">
-                                <b>Intención Jurídica:</b> Declaro que he leído, comprendido y acepto íntegramente este contrato, y que mi aceptación electrónica tiene la misma validez que una firma manuscrita conforme a la Ley 19.799.
+                                <b>Intención Jurídica:</b> Declaro que he leído, comprendido y acepto íntegramente este
+                                contrato, y que mi aceptación electrónica tiene la misma validez que una firma
+                                manuscrita conforme a la Ley 19.799.
                             </label>
-                            <p id="timer-text" class="text-xs text-blue-600 mt-1 font-semibold">Obligatorio leer el documento (20s restantes)...</p>
+                            <p id="timer-text" class="text-xs text-blue-600 mt-1 font-semibold">Obligatorio leer el
+                                documento (20s restantes)...</p>
                         </div>
                     </div>
 
-                    <button id="btn-request-otp" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition" disabled>
+                    <button id="btn-request-otp"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+                        disabled>
                         Debe aceptar la Intención Jurídica primero
                     </button>
                 </div>
@@ -71,17 +92,22 @@
             <!-- STEP 2: Ingreso de RUT para solicitar OTP -->
             <div id="step-2" class="step">
                 <h2 class="text-xl font-semibold mb-2">Paso 2: Confirma tu Identidad</h2>
-                <p class="text-sm text-gray-600 mb-6">Para enviarte el código de firma segura por WhatsApp, por favor confirma tu RUT.</p>
-                
+                <p class="text-sm text-gray-600 mb-6">Para enviarte el código de firma segura por WhatsApp, por favor
+                    confirma tu RUT.</p>
+
                 <div class="mb-6">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Tu RUT (con guion)</label>
-                    <input type="text" id="input-rut-request" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="Ej: 12345678-9" oninput="formatRut(this)">
+                    <input type="text" id="input-rut-request"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Ej: 12345678-9" oninput="formatRut(this)">
                 </div>
 
-                <button id="btn-submit-rut" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">
+                <button id="btn-submit-rut"
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">
                     Enviar Código a mi WhatsApp
                 </button>
-                <button id="btn-back-1" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg mt-3 transition">
+                <button id="btn-back-1"
+                    class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg mt-3 transition">
                     Volver a leer el contrato
                 </button>
             </div>
@@ -90,28 +116,36 @@
             <div id="step-3" class="step">
                 <h2 class="text-xl font-semibold mb-2">Paso 3: Firma Electrónica</h2>
                 <p class="text-sm text-gray-600 mb-6">Hemos enviado un código de 6 dígitos a tu WhatsApp.</p>
-                
+
                 <div class="mb-6">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Código de Firma (OTP)</label>
-                    <input type="text" id="input-otp" class="w-full p-3 border border-gray-300 text-center text-2xl tracking-widest rounded-lg focus:ring-blue-500 focus:border-blue-500" maxlength="6" placeholder="------">
+                    <input type="text" id="input-otp"
+                        class="w-full p-3 border border-gray-300 text-center text-2xl tracking-widest rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                        maxlength="6" placeholder="------">
                 </div>
 
-                <button id="btn-verify-otp" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">
+                <button id="btn-verify-otp"
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">
                     Firmar Contrato Definitivamente
                 </button>
                 <div id="otp-error" class="text-red-500 text-sm mt-2 text-center hidden"></div>
-                <p class="text-xs text-gray-500 text-center mt-4">¿El código expiró o agotaste tus intentos? <a href="javascript:location.reload()" class="text-blue-600 hover:underline">Recarga la página para solicitar uno nuevo</a>.</p>
+                <p class="text-xs text-gray-500 text-center mt-4">¿El código expiró o agotaste tus intentos? <a
+                        href="javascript:location.reload()" class="text-blue-600 hover:underline">Recarga la página para
+                        solicitar uno nuevo</a>.</p>
             </div>
 
             <!-- STEP 4: Éxito -->
             <div id="step-4" class="step text-center py-8">
-                <svg class="mx-auto h-16 w-16 text-green-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class="mx-auto h-16 w-16 text-green-500 mb-4" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
                 <h2 class="text-2xl font-bold text-gray-900 mb-2">Contrato Firmado Exitosamente</h2>
-                <p class="text-gray-600">Tu copia ha sido guardada de forma segura con los sellos y evidencias de Ley.</p>
+                <p class="text-gray-600">Tu copia ha sido guardada de forma segura con los sellos y evidencias de Ley.
+                </p>
                 <div class="mt-6">
-                    <a id="btn-download-signed" href="#" target="_blank" class="inline-block bg-blue-100 text-blue-700 hover:bg-blue-200 font-semibold py-2 px-6 rounded-full transition">
+                    <a id="btn-download-signed" href="#" target="_blank"
+                        class="inline-block bg-blue-100 text-blue-700 hover:bg-blue-200 font-semibold py-2 px-6 rounded-full transition">
                         <i class="fa-solid fa-download mr-2"></i> Descargar Copia Firmada
                     </a>
                 </div>
@@ -128,10 +162,10 @@
         const checkIntent = document.getElementById('check-intent');
         const btnRequestOtp = document.getElementById('btn-request-otp');
         const timerText = document.getElementById('timer-text');
-        
+
         let timeLeft = 35;
         let scrolledToBottom = false;
-        
+
         window.addEventListener('scroll', () => {
             if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 50) {
                 scrolledToBottom = true;
@@ -142,12 +176,12 @@
         const timerInterval = setInterval(() => {
             timeLeft--;
             checkEnableCheckbox();
-            
+
             if (timeLeft <= 0) {
                 clearInterval(timerInterval);
             }
         }, 1000);
-        
+
         function checkEnableCheckbox() {
             if (timeLeft > 0) {
                 timerText.textContent = `Debes revisar el contrato completo antes de continuar (${timeLeft}s restantes)...`;
@@ -157,7 +191,7 @@
                 timerText.textContent = `Desliza hasta el final de la página para confirmar lectura...`;
                 return;
             }
-            
+
             timerText.textContent = "✔️ Documento revisado completamente. Ya puedes marcar la casilla.";
             timerText.classList.remove('text-blue-600');
             timerText.classList.add('text-green-600');
@@ -226,7 +260,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ rut: rut })
                 });
-                
+
                 if (res.ok) {
                     document.getElementById('step-2').classList.remove('active');
                     document.getElementById('step-3').classList.add('active');
@@ -249,7 +283,7 @@
         btnVerify.addEventListener('click', async () => {
             const otp = document.getElementById('input-otp').value;
             const errorDiv = document.getElementById('otp-error');
-            
+
             if (otp.length !== 6) {
                 errorDiv.textContent = "Ingresa los 6 dígitos.";
                 errorDiv.classList.remove('hidden');
@@ -304,4 +338,5 @@
         });
     </script>
 </body>
+
 </html>

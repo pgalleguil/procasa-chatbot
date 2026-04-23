@@ -45,7 +45,7 @@ def run_automation():
         }
         print(f"Modo: Procesando propiedades pendientes en RM (Venta). Omitiendo {len(codigos_ya_procesados)} ya procesadas.")
 
-    properties = list(universo.find(query).limit(2)) 
+    properties = list(universo.find(query).limit(40)) 
     print(f"Propiedades encontradas para procesar: {len(properties)}")
 
     if not properties:
@@ -55,49 +55,34 @@ def run_automation():
     with sync_playwright() as p:
         # headless=False para que puedas ver el proceso en tu pantalla
         browser = p.chromium.launch(headless=False)
-        state_file = "propiteq_session_state.json"
-        context_args = {}
-        if os.path.exists(state_file):
-            context_args["storage_state"] = state_file
-
-        context = browser.new_context(**context_args)
+        context = browser.new_context()
         page = context.new_page()
         
         if stealth_sync:
             stealth_sync(page)
 
-        # 1. Chequeo de Sesión Persistente o Login
+        # 1. Login obligatorio
         try:
-            print("Verificando si la sesión está activa y evitando re-logueos...")
-            # Primero intentamos ir directamente a búsqueda con la sesión (si existe)
+            print("Iniciando sesión manual en Propiteq...")
+            page.goto("https://www.propiteq.com/login")
+            time.sleep(random.uniform(1.0, 2.5))
+            page.locator('//*[@id="login-email"]').press_sequentially("referidosjpc@procasa.cl", delay=random.randint(50, 150))
+            time.sleep(random.uniform(0.5, 1.5))
+            page.locator('//*[@id="login-password"]').press_sequentially("Leoncarogalleguillos22305607929a$", delay=random.randint(50, 150))
+            time.sleep(random.uniform(0.5, 1.5))
+            page.click('//*[@id="__nuxt"]/div/div[3]/div/form[1]/div[3]/button')
+            
+            # Esperar a que la redirección tras el login se estabilice en el dashboard
+            page.wait_for_url("**/cliente/dashboard**", timeout=30000)
+            time.sleep(3)
+            
+            # Después del login nos metemos a búsqueda
+            print("Sesión iniciada. Dirigiendo a la página de búsqueda de tasación...")
             page.goto("https://www.propiteq.com/servicios/tasacion-online/busqueda", wait_until="commit")
             
-            # Chequeamos a donde nos lanza. Si nos redirige a login, entonces la sesión caducó o no hay.
-            time.sleep(5)
-            if "login" in page.url or "identificate" in page.url:
-                print("Sesión inexistente o expirada. Iniciando sesión manual en Propiteq...")
-                page.goto("https://www.propiteq.com/login")
-                time.sleep(random.uniform(1.0, 2.5))
-                page.locator('//*[@id="login-email"]').press_sequentially("referidosjpc@procasa.cl", delay=random.randint(50, 150))
-                time.sleep(random.uniform(0.5, 1.5))
-                page.locator('//*[@id="login-password"]').press_sequentially("Leoncarogalleguillos22305607929a$", delay=random.randint(50, 150))
-                time.sleep(random.uniform(0.5, 1.5))
-                page.click('//*[@id="__nuxt"]/div/div[3]/div/form[1]/div[3]/button')
-                
-                # Esperar a que la redirección tras el login se estabilice
-                page.wait_for_url("**/servicios/**", timeout=30000)
-                time.sleep(3)
-                
-                # Después del login nos metemos a búsqueda
-                print("Sesión iniciada. Guardando cookies y sesión para la próxima vez...")
-                page.goto("https://www.propiteq.com/servicios/tasacion-online/busqueda", wait_until="networkidle")
-                context.storage_state(path=state_file)
-            else:
-                # Ya estábamos logeados, así que la página goto a busqueda funcionó directo
-                print("====================================")
-                print("¡Sesión restaurada con éxito! Has evitado iniciar sesión nuevamente.")
-                print("====================================")
-                page.wait_for_load_state("networkidle")
+            # Esperamos específicamente que la interfaz de búsqueda esté lista
+            page.wait_for_load_state("domcontentloaded")
+            time.sleep(3)
 
         except Exception as e:
             print(f"Error fatal en login o inicio de contexto: {e}")
@@ -745,15 +730,25 @@ def run_automation():
                         except Exception:
                             pass
                         browser = p.chromium.launch(headless=False)
-                        context_args_nuevo = {}
-                        if os.path.exists(state_file):
-                            context_args_nuevo["storage_state"] = state_file
-                        context = browser.new_context(**context_args_nuevo)
+                        context = browser.new_context()
                         page = context.new_page()
                         if stealth_sync:
                             stealth_sync(page)
+                        
+                        print("Re-iniciando sesión manual tras error...")
+                        page.goto("https://www.propiteq.com/login")
+                        time.sleep(random.uniform(1.0, 2.5))
+                        page.locator('//*[@id="login-email"]').press_sequentially("referidosjpc@procasa.cl", delay=random.randint(50, 150))
+                        time.sleep(random.uniform(0.5, 1.5))
+                        page.locator('//*[@id="login-password"]').press_sequentially("Leoncarogalleguillos22305607929a$", delay=random.randint(50, 150))
+                        time.sleep(random.uniform(0.5, 1.5))
+                        page.click('//*[@id="__nuxt"]/div/div[3]/div/form[1]/div[3]/button')
+                        page.wait_for_url("**/cliente/dashboard**", timeout=30000)
+                        time.sleep(3)
+                        
                         page.goto("https://www.propiteq.com/servicios/tasacion-online/busqueda", wait_until="commit", timeout=20000)
-                        page.wait_for_load_state("networkidle", timeout=15000)
+                        page.wait_for_load_state("domcontentloaded")
+                        time.sleep(3)
                         print("Navegador relanzado exitosamente. Continuando con la siguiente propiedad...")
                         time.sleep(3)
                     except Exception as relaunch_err:

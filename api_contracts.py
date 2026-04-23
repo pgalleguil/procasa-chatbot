@@ -64,11 +64,13 @@ async def create_contract(request: Request):
             })
             
         if existing:
-            if existing.get("status") in ["otp_requested", "otp_verified", "accepted"]:
+            if existing.get("status") in ["otp_requested", "otp_verified", "signed"]:
                 raise HTTPException(status_code=400, detail="Este contrato ya está en proceso de firma o ha sido firmado. No puede ser modificado.")
             contract_code = existing["contract_code"]
         else:
-            contract_code = str(uuid.uuid4())
+            year = datetime.now().year
+            short_id = str(uuid.uuid4())[:4].upper()
+            contract_code = f"PROC-{year}-{short_id}"
         
         # 1. Generar PDF original
         data['contract_code'] = contract_code
@@ -232,7 +234,18 @@ async def send_contract(contract_code: str, request: Request):
     base_url = str(request.base_url).rstrip('/')
     link = f"{base_url}/contracts/view/{token}"
     
-    mensaje = f"Hola {contract['client_data']['nombre']},\n\nAquí tienes tu contrato de corretaje ({contract['property_data']['tipo']}) para la propiedad en {contract['property_data']['direccion']}.\n\nPor favor, revísalo y fírmalo electrónicamente ingresando a este enlace (válido por 24 horas):\n{link}"
+    nombre = contract.get('client_data', {}).get('nombre', contract.get('cliente_nombre', ''))
+    direccion = contract.get('property_data', {}).get('direccion', contract.get('propiedad_direccion', ''))
+    
+    mensaje = f"""Hola {nombre},
+
+Te enviamos tu contrato de corretaje para la propiedad {direccion}.
+
+Para revisarlo y aceptarlo de forma electrónica, accede al siguiente enlace (válido por 24 horas):
+
+{link}
+
+Este proceso incluye verificación de identidad para tu seguridad."""
     
     await send_whatsapp_message(phone, mensaje)
     
@@ -345,7 +358,9 @@ async def request_otp(token: str, request: Request):
         }
     )
     
-    mensaje = f"Tu código de verificación para firmar el contrato Procasa es: *{otp}*.\nVálido por 5 minutos."
+    mensaje = f"""Tu código de verificación para firmar tu contrato es: *{otp}*
+
+Este código es personal, válido por 5 minutos y no debe compartirse con terceros."""
     await send_whatsapp_message(contract["phone"], mensaje)
     
     # WhatsApp Logging
@@ -426,6 +441,30 @@ async def register_legal_intent(token: str, request: Request):
     )
     return {"status": "ok"}
 
+@router.post("/api/{token}/legal_intent")
+async def legal_intent(token: str, request: Request):
+    db = get_db()
+    contract = db["contracts"].find_one({"security.token": token})
+    if not contract:
+        raise HTTPException(status_code=404)
+        
+    ip = get_client_ip(request)
+    ua = request.headers.get("user-agent", "")
+    server_timestamp = SecurityContracts.generate_server_timestamp()
+    
+    db["contracts"].update_one(
+        {"contract_code": contract["contract_code"]},
+        {"$push": {
+            "timeline": {
+                "action": "legal_intent_confirmed",
+                "server_timestamp": server_timestamp,
+                "ip": ip,
+                "user_agent": ua
+            }
+        }}
+    )
+    return {"status": "ok"}
+
 @router.post("/api/{token}/accept")
 async def accept_contract(token: str, request: Request, background_tasks: BackgroundTasks):
     db = get_db()
@@ -440,6 +479,14 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         read_time = 0
         
     ip = get_client_ip(request)
+    # Geolocalización simple
+    import requests
+    try:
+        geo_res = requests.get(f"https://ipapi.co/{ip}/json/", timeout=2).json()
+        geo_info = f"{geo_res.get('city', 'Desconocido')}, {geo_res.get('country_name', 'Desconocido')}"
+    except:
+        geo_info = "Localización no disponible"
+        
     ua = request.headers.get("user-agent", "")
     server_timestamp = SecurityContracts.generate_server_timestamp()
     contract_code = contract["contract_code"]
@@ -449,13 +496,15 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         {"contract_code": contract_code},
         {
             "$set": {
-                "status": "accepted", 
-                "security.token_used": True # Invalidar Token inmediatamente
+                "status": "signed", 
+                "security.token_used": True,
+                "locked": True
             },
             "$push": {"timeline": {
-                "action": "contract_accepted", 
+                "action": "accepted", 
                 "server_timestamp": server_timestamp, 
                 "ip": ip, 
+                "geo_location": geo_info,
                 "user_agent": ua,
                 "read_time_seconds": read_time
             }}
@@ -490,6 +539,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         "contract_code": contract_code,
         "server_timestamp": server_timestamp,
         "ip": ip,
+        "geo_info": geo_info,
         "original_hash": original_hash,
         "server_hmac": server_hmac,
         "timeline_hash": timeline_hash,
@@ -531,8 +581,36 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     # 6. Subida a Google Drive en Background
     background_tasks.add_task(sync_to_gdrive_task, contract_code, tmp_dir)
     
+    # Simular Sello de Tiempo Externo (TSA)
+    # En producción esto conectaría con E-Cert, Acepta u otra entidad acreditada
+    tsa_response = f"TSA_MOCK_{datetime.now(timezone.utc).timestamp()}_SIGNED"
+    db["contracts"].update_one({"contract_code": contract_code}, {"$set": {"security.tsa_stamp": tsa_response}})
+    
+    # Simular Envío de Correo
+    # background_tasks.add_task(send_email_with_pdf, contract["email"], original_pdf_path)
+    db["communications"].insert_one({
+        "contract_code": contract_code,
+        "email": contract.get("email", ""),
+        "message_type": "email_signed_pdf_sent",
+        "timestamp_utc": datetime.now(timezone.utc)
+    })
+    
     # 7. Notificar a CRM o Agente
-    await send_whatsapp_message(contract["phone"], "¡Gracias! Hemos recibido tu aceptación conforme a la Ley 19.799. En breve un agente se comunicará contigo.")
+    mensaje_conf = """Confirmamos la aceptación electrónica de tu contrato conforme a la Ley 19.799.
+
+Se ha registrado la fecha, hora, dirección IP y verificación de identidad asociada a esta aceptación.
+
+En breve recibirás una copia del documento firmado."""
+    await send_whatsapp_message(contract["phone"], mensaje_conf)
+    
+    # WhatsApp Logging
+    db["communications"].insert_one({
+        "contract_code": contract_code,
+        "phone": contract["phone"],
+        "message_content": mensaje_conf,
+        "message_type": "confirmation_sent",
+        "timestamp_utc": datetime.now(timezone.utc)
+    })
     
     return {"status": "ok", "contract_code": contract_code}
     

@@ -34,7 +34,7 @@
                 <div class="flex justify-between items-end mb-4">
                     <div>
                         <h2 class="text-2xl font-semibold">Paso 1: Revisa tu Contrato</h2>
-                        <p class="text-red-600 font-medium text-sm mt-1"><i class="fa-solid fa-circle-info"></i> Por favor revisa el contrato completo antes de continuar.</p>
+                        <p class="text-red-600 font-medium text-sm mt-1"><i class="fa-solid fa-circle-info"></i> Es importante que leas el contrato completo antes de continuar. La aceptación electrónica tiene validez legal conforme a la Ley 19.799.</p>
                     </div>
                 </div>
                 
@@ -56,7 +56,7 @@
                         </div>
                         <div class="ml-3">
                             <label for="check-intent" class="text-sm font-medium text-gray-800">
-                                <b>Intención Jurídica:</b> Declaro que he leído, comprendo y acepto este contrato de forma electrónica conforme a la Ley 19.799.
+                                <b>Intención Jurídica:</b> Declaro que he leído, comprendido y acepto íntegramente este contrato, y que mi aceptación electrónica tiene la misma validez que una firma manuscrita conforme a la Ley 19.799.
                             </label>
                             <p id="timer-text" class="text-xs text-blue-600 mt-1 font-semibold">Obligatorio leer el documento (20s restantes)...</p>
                         </div>
@@ -100,6 +100,7 @@
                     Firmar Contrato Definitivamente
                 </button>
                 <div id="otp-error" class="text-red-500 text-sm mt-2 text-center hidden"></div>
+                <p class="text-xs text-gray-500 text-center mt-4">¿El código expiró o agotaste tus intentos? <a href="javascript:location.reload()" class="text-blue-600 hover:underline">Recarga la página para solicitar uno nuevo</a>.</p>
             </div>
 
             <!-- STEP 4: Éxito -->
@@ -149,7 +150,7 @@
             }
             btnRequestOtp.disabled = !e.target.checked;
             if (e.target.checked) {
-                btnRequestOtp.textContent = "Solicitar Código de Firma (OTP)";
+                btnRequestOtp.textContent = "Solicitar código de verificación por WhatsApp";
                 btnRequestOtp.classList.remove('bg-blue-600');
                 btnRequestOtp.classList.add('bg-green-600', 'hover:bg-green-700');
             } else {

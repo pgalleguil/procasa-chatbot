@@ -263,6 +263,11 @@
                 <i class="fa-solid fa-plus me-2"></i> Nuevo Convenio
             </button>
         </div>
+        
+        <!-- Global Error Banner for Dashboard if needed -->
+        <div id="globalErrorBanner" class="alert alert-danger d-none fw-bold shadow-sm">
+            <i class="fa-solid fa-triangle-exclamation me-2"></i> Faltan campos obligatorios o tienen errores. Revisa el formulario rojo.
+        </div>
 
         <div class="table-container">
             <div class="section-title">Convenios Emitidos Recientemente</div>
@@ -338,25 +343,30 @@
                     <div class="row">
                         <!-- Formulario -->
                         <div class="col-lg-6">
-                            <form id="formNewContract">
+                            <form id="formNewContract" class="needs-validation" novalidate>
+                                <div id="formErrors" class="alert alert-danger d-none mb-3 py-2 text-sm fw-bold"></div>
                                 <div class="row mb-3">
                                     <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Nombre Cliente <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="cliente_nombre" required onblur="capitalizeName(this); triggerPreview();">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del Cliente <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="cliente_nombre" placeholder="Ej: Juan Pérez" required onblur="capitalizeName(this); validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa el nombre completo.</div>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">RUT Cliente <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="cliente_rut" placeholder="12345678-9" required oninput="formatRut(this); triggerPreview();">
+                                        <input type="text" class="form-control" name="cliente_rut" placeholder="12345678-9" required oninput="formatRut(this)" onblur="validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa un RUT válido.</div>
                                     </div>
                                 </div>
                                 <div class="row mb-3">
                                     <div class="col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="phone" placeholder="+56912345678" required onblur="formatPhone(this); triggerPreview();">
+                                        <input type="text" class="form-control" name="phone" placeholder="+56912345678" required onblur="formatPhone(this); validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa un teléfono (ej: +569...).</div>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Email <span class="required-star">*</span></label>
-                                        <input type="email" class="form-control" name="email" required onblur="triggerPreview()">
+                                        <input type="email" class="form-control" name="email" required onblur="validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).</div>
                                     </div>
                                 </div>
                                 
@@ -396,15 +406,18 @@
                                 <div class="row mb-3">
                                     <div class="col-md-4">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Rol <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="rol" placeholder="Ej: 1234-5" required oninput="triggerPreview()">
+                                        <input type="text" class="form-control" name="rol" placeholder="Ej: 1234-5" required oninput="triggerPreview()" onblur="validateField(this)">
+                                        <div class="invalid-feedback">Requerido.</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Precio <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="precio" placeholder="Ej: 5.000 UF" required oninput="triggerPreview()">
+                                        <input type="text" class="form-control" name="precio" placeholder="Ej: 5.000 UF" required oninput="triggerPreview()" onblur="validateField(this, 'precio')">
+                                        <div class="invalid-feedback">Ingresa el precio con su unidad (UF, $, Pesos).</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Comisión <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="comision" placeholder="Ej: 2% o 50%" required oninput="triggerPreview()">
+                                        <input type="text" class="form-control" name="comision" placeholder="Ej: 2% o 50%" required oninput="triggerPreview()" onblur="validateField(this)">
+                                        <div class="invalid-feedback">Requerido.</div>
                                     </div>
                                 </div>
                                 
@@ -499,7 +512,41 @@
         function checkFormValidity() {
             const form = document.getElementById('formNewContract');
             const btn = document.getElementById('btnGenerateContract');
-            btn.disabled = !form.checkValidity();
+            const errorsDiv = document.getElementById('formErrors');
+            const globalErr = document.getElementById('globalErrorBanner');
+            
+            let isValid = true;
+            Array.from(form.elements).forEach(el => {
+                if(el.required && !el.value) isValid = false;
+                if(el.classList.contains('is-invalid')) isValid = false;
+            });
+            
+            btn.disabled = !isValid;
+            if(!isValid && form.classList.contains('was-validated')) {
+                errorsDiv.classList.remove('d-none');
+                errorsDiv.textContent = "Revisa los campos en rojo.";
+                globalErr.classList.remove('d-none');
+            } else {
+                errorsDiv.classList.add('d-none');
+                globalErr.classList.add('d-none');
+            }
+            return isValid;
+        }
+        
+        function validateField(input, type) {
+            let valid = input.checkValidity();
+            if(type === 'precio') {
+                const val = input.value.toUpperCase();
+                valid = valid && (val.includes('UF') || val.includes('$') || val.includes('PESO'));
+            }
+            if(!valid) {
+                input.classList.add('is-invalid');
+                input.classList.remove('is-valid');
+            } else {
+                input.classList.remove('is-invalid');
+                input.classList.add('is-valid');
+            }
+            checkFormValidity();
         }
 
         function triggerPreview() {

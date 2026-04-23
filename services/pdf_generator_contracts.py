@@ -61,7 +61,22 @@ class PDFGenerator:
         Story.append(Spacer(1, 0.2 * inch))
         
         if 'contract_code' in contract_data:
-            Story.append(Paragraph(f"<b>Código Único de Contrato:</b> {contract_data['contract_code']}", normal_style))
+            Story.append(Paragraph(f"<b>Código de Verificación de Contrato:</b> {contract_data['contract_code']}", normal_style))
+            Story.append(Paragraph(f"<b>Versión del contrato:</b> v{contract_data.get('version', '1.0')}", normal_style))
+            
+            fecha_emision = datetime.now(CHILE_TZ).strftime('%d/%m/%Y')
+            if 'created_at' in contract_data:
+                try:
+                    dt = contract_data['created_at']
+                    if isinstance(dt, str):
+                        dt = datetime.fromisoformat(dt)
+                    fecha_emision = dt.astimezone(CHILE_TZ).strftime('%d/%m/%Y')
+                except:
+                    pass
+            
+            Story.append(Paragraph(f"<b>Fecha de emisión:</b> {fecha_emision}", normal_style))
+            vigencia_dias = contract_data.get('property_data', {}).get('vigencia', contract_data.get('vigencia', '30'))
+            Story.append(Paragraph(f"<b>Vigencia:</b> {vigencia_dias} días", normal_style))
             Story.append(Spacer(1, 0.2 * inch))
         
         fecha = datetime.now(CHILE_TZ).strftime('%d de %m de %Y').replace('de 01 de', 'de enero de').replace('de 02 de', 'de febrero de').replace('de 03 de', 'de marzo de').replace('de 04 de', 'de abril de').replace('de 05 de', 'de mayo de').replace('de 06 de', 'de junio de').replace('de 07 de', 'de julio de').replace('de 08 de', 'de agosto de').replace('de 09 de', 'de septiembre de').replace('de 10 de', 'de octubre de').replace('de 11 de', 'de noviembre de').replace('de 12 de', 'de diciembre de')
@@ -230,6 +245,7 @@ class PDFGenerator:
         Story.append(Paragraph("<b>VINCULACIÓN LEGAL:</b> El presente certificado forma parte integrante del contrato contenido en las páginas anteriores de este documento, constituyendo ambas partes un único instrumento electrónico conforme a la Ley 19.799.", normal_style))
         Story.append(Paragraph("<b>DECLARACIÓN LEGAL:</b> El firmante declara haber leído, comprendido y aceptado íntegramente el presente contrato de forma electrónica conforme a la Ley 19.799.", normal_style))
         Story.append(Paragraph("<b>MÉTODO DE VERIFICACIÓN:</b> La aceptación fue realizada mediante verificación de identidad con código enviado al teléfono del firmante vía WhatsApp.", normal_style))
+        Story.append(Paragraph("<b>REGISTRO DE TIEMPO:</b> El presente documento incluye un registro de tiempo generado por el sistema al momento de su aceptación.", normal_style))
         Story.append(Paragraph("Este documento ha sido sellado digitalmente mediante mecanismos criptográficos que garantizan su integridad y no alteración (Ley 19.799).", normal_style))
         
         Story.append(Spacer(1, 0.3 * inch))
@@ -253,6 +269,7 @@ class PDFGenerator:
             ["Fecha/Hora Servidor (Hora Chile)", chile_time],
             ["Fecha/Hora Servidor (UTC)", server_ts_utc],
             ["IP del Firmante", evidence_data.get('ip', '')],
+            ["Localización (GeoIP)", evidence_data.get('geo_info', 'Desconocido')],
             ["Tiempo en página antes de aceptar", f"{read_time} segundos"],
             ["Hash Documento Base (Contrato Prev. Firma)", evidence_data.get('original_hash', '')],
             ["Hash de Evidencia (Timeline Inmutable)", evidence_data.get('timeline_hash', '')],

@@ -157,10 +157,14 @@ async def download_original_pdf(contract_code: str):
     if not pdf_path.exists():
         raise HTTPException(status_code=404, detail="PDF no encontrado o ya fue eliminado del servidor")
         
+    db = get_db()
+    contract = db["contracts"].find_one({"contract_code": contract_code})
+    prop_code = contract.get('property_code', 'SD') if contract else 'SD'
+    
     from fastapi.responses import FileResponse
     return FileResponse(
         path=pdf_path, 
-        filename=f"Convenio_{contract_code[:8]}.pdf",
+        filename=f"Contrato_{prop_code}_{contract_code}.pdf",
         media_type="application/pdf",
         content_disposition_type="inline"
     )
@@ -168,16 +172,24 @@ async def download_original_pdf(contract_code: str):
 @router.get("/api/download_signed/{contract_code}")
 async def download_signed_pdf(contract_code: str):
     """Permite descargar o ver el PDF firmado"""
+    db = get_db()
+    contract = db["contracts"].find_one({"contract_code": contract_code})
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contrato no encontrado")
+
     tmp_dir = BASE_DIR / "tmp" / "contracts" / contract_code
     pdf_path = tmp_dir / "contrato_firmado.pdf"
     
     if not pdf_path.exists():
         raise HTTPException(status_code=404, detail="PDF firmado no encontrado")
         
+    prop_code = contract.get('property_code', 'SD')
+    filename = f"Contrato_{prop_code}_{contract_code}.pdf"
+    
     from fastapi.responses import FileResponse
     return FileResponse(
-        path=pdf_path, 
-        filename=f"Convenio_Firmado_{contract_code[:8]}.pdf",
+        path=pdf_path,
+        filename=filename,
         media_type="application/pdf",
         content_disposition_type="inline"
     )
@@ -629,7 +641,8 @@ En breve recibirás una copia del documento firmado."""
             contract_code,
             client_email,
             contract.get("client_data", {}).get("nombre", ""),
-            tmp_dir / "contrato_firmado.pdf"
+            tmp_dir / "contrato_firmado.pdf",
+            contract.get("property_code", "")  # Pasamos el código de propiedad
         )
     
     return {"status": "ok", "contract_code": contract_code}
@@ -663,7 +676,7 @@ def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_p
 
         prop_label = property_code if property_code else contract_code
         asunto = f"Convenio Firmado – Propiedad {prop_label} – {nombre}"
-        pdf_filename = f"Convenio_Firmado_Propiedad_{prop_label}_{nombre.replace(' ', '_')}.pdf"
+        pdf_filename = f"Contrato_{prop_label}_{contract_code}.pdf"
         
         # Destinatarios CC (Desactivado temporalmente para pruebas)
         cc_recipients = [] 

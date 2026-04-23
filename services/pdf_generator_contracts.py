@@ -180,12 +180,12 @@ class PDFGenerator:
             img_reader = ImageReader(str(logo_path))
             iw, ih = img_reader.getSize()
             aspect = ih / float(iw)
-            width = 2.5 * inch
+            width = 1.6 * inch
             height = width * aspect
             img = RLImage(str(logo_path), width=width, height=height)
             img.hAlign = 'CENTER'
             Story.append(img)
-            Story.append(Spacer(1, 0.3 * inch))
+            Story.append(Spacer(1, 0.1 * inch))
         
         tipo = contract_data.get("tipo", "Arriendo")
         

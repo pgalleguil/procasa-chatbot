@@ -161,7 +161,24 @@ async def download_original_pdf(contract_code: str):
             raise HTTPException(status_code=404, detail="Contrato no encontrado")
             
         try:
-            pdf_bytes = PDFGenerator.generate_original_contract(contract)
+            from services.pdf_generator_contracts import PDFGenerator
+            data_payload = {
+                "contract_code": contract.get("contract_code"),
+                "origen": contract.get("origen", ""),
+                "property_code": contract.get("property_code", ""),
+                "phone": contract.get("phone", ""),
+                "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
+                "cliente_rut": contract.get("client_data", {}).get("rut", ""),
+                "email": contract.get("client_data", {}).get("email", ""),
+                "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
+                "comuna": contract.get("property_data", {}).get("comuna", ""),
+                "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
+                "rol": contract.get("property_data", {}).get("rol", ""),
+                "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
+                "precio": contract.get("property_data", {}).get("precio", ""),
+                "comision": contract.get("property_data", {}).get("comision", "")
+            }
+            pdf_bytes = PDFGenerator.generate_original_contract(data_payload)
             tmp_dir.mkdir(parents=True, exist_ok=True)
             with open(pdf_path, "wb") as f:
                 f.write(pdf_bytes)
@@ -570,7 +587,23 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
             original_bytes = f.read()
     else:
         # Fallback regenerando (los hashes pueden variar si cambian timestamps internos, idealmente se usa el archivo original guardado)
-        original_bytes = PDFGenerator.generate_original_contract(contract)
+        data_payload = {
+            "contract_code": contract.get("contract_code"),
+            "origen": contract.get("origen", ""),
+            "property_code": contract.get("property_code", ""),
+            "phone": contract.get("phone", ""),
+            "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
+            "cliente_rut": contract.get("client_data", {}).get("rut", ""),
+            "email": contract.get("client_data", {}).get("email", ""),
+            "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
+            "comuna": contract.get("property_data", {}).get("comuna", ""),
+            "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
+            "rol": contract.get("property_data", {}).get("rol", ""),
+            "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
+            "precio": contract.get("property_data", {}).get("precio", ""),
+            "comision": contract.get("property_data", {}).get("comision", "")
+        }
+        original_bytes = PDFGenerator.generate_original_contract(data_payload)
         
     original_hash = SecurityContracts.hash_document(original_bytes)
     

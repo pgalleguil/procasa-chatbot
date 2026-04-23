@@ -233,14 +233,16 @@
             const pixelRatio = window.devicePixelRatio || 1;
 
             // Soporte pantallas retina para evitar pixelación
-            canvas.width = viewport.width * pixelRatio;
-            canvas.height = viewport.height * pixelRatio;
-            canvas.style.width = viewport.width + "px";
-            canvas.style.height = viewport.height + "px";
+            canvas.width = Math.floor(viewport.width * pixelRatio);
+            canvas.height = Math.floor(viewport.height * pixelRatio);
             
-            // Forzar adaptación visual en móviles sin afectar la resolución interna
+            // Forzar adaptación visual manteniendo relación de aspecto matemáticamente
+            const cssWidth = Math.min(containerWidth, viewport.width);
+            const cssHeight = cssWidth * (viewport.height / viewport.width);
+            
+            canvas.style.width = cssWidth + "px";
+            canvas.style.height = cssHeight + "px";
             canvas.style.maxWidth = "100%";
-            canvas.style.height = "auto";
             
             const context = canvas.getContext('2d');
             context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);

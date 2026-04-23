@@ -598,7 +598,7 @@
                         const blob = await res.blob();
                         if(objectUrl) URL.revokeObjectURL(objectUrl);
                         objectUrl = URL.createObjectURL(blob);
-                        document.getElementById('pdfPreviewIframe').src = objectUrl + "#toolbar=0&navpanes=0&scrollbar=0";
+                        document.getElementById('pdfPreviewIframe').src = objectUrl + "#toolbar=0&navpanes=0&scrollbar=0&view=FitH";
                     }
                 } catch(e) {
                     console.error("Preview error", e);

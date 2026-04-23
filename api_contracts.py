@@ -646,8 +646,8 @@ def upload_to_gdrive_bg(contract_code: str, tmp_dir: Path):
     except Exception as e:
         logger.error(f"Error en tarea background GDrive: {e}")
 
-def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_path: Path):
-    """Envía el PDF firmado al cliente por correo electrónico usando Gmail."""
+def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_path: Path, property_code: str = "", cc_email: str = ""):
+    """Envía el PDF firmado al cliente y en copia al jefe y al ejecutivo CRM."""
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
@@ -661,21 +661,35 @@ def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_p
             logger.warning("[EMAIL] Credenciales Gmail no configuradas, omitiendo envío.")
             return
 
+        prop_label = property_code if property_code else contract_code
+        asunto = f"Convenio Firmado – Propiedad {prop_label} – {nombre}"
+        pdf_filename = f"Convenio_Firmado_Propiedad_{prop_label}_{nombre.replace(' ', '_')}.pdf"
+        
+        # Destinatarios CC (Desactivado temporalmente para pruebas)
+        cc_recipients = [] 
+        # cc_recipients = ["jpcaro@procasa.cl"]
+        if cc_email and cc_email != email_to and cc_email not in cc_recipients:
+            cc_recipients.append(cc_email)
+        cc_str = ", ".join(cc_recipients)
+        
+        all_recipients = [email_to] + cc_recipients
+
         msg = MIMEMultipart()
         msg["From"] = f"Procasa Propiedades <{gmail_user}>"
         msg["To"] = email_to
-        msg["Subject"] = f"Su Contrato Firmado Electrónicamente – {contract_code}"
+        msg["Cc"] = cc_str
+        msg["Subject"] = asunto
 
         body = f"""Estimado/a {nombre},
 
-Adjunto encontrará el documento de su contrato de corretaje firmado electrónicamente conforme a la Ley 19.799.
+Adjunto encontrará el documento de su convenio de corretaje firmado electrónicamente conforme a la Ley 19.799.
 
-Este documento incluye:
-• Certificado de firma electrónica
-• Evidencia digital (IP, timestamp, hash criptográfico)
+Detalles del convenio:
+• Propiedad: {prop_label}
 • Código de verificación: {contract_code}
 
-Puede verificar la autenticidad del documento en: {Config.CRM_BASE_URL}/contracts/verify/{contract_code}
+Puede verificar la autenticidad del documento en:
+{Config.CRM_BASE_URL}/contracts/verify/{contract_code}
 
 Si tiene alguna duda, no dude en contactarnos.
 
@@ -689,22 +703,23 @@ Equipo Procasa Propiedades"""
                 part = MIMEBase("application", "octet-stream")
                 part.set_payload(f.read())
             encoders.encode_base64(part)
-            part.add_header("Content-Disposition", f'attachment; filename="Contrato_Firmado_{contract_code}.pdf"')
+            part.add_header("Content-Disposition", f'attachment; filename="{pdf_filename}"')
             msg.attach(part)
         else:
             logger.warning(f"[EMAIL] PDF no encontrado en {pdf_path}, enviando sin adjunto.")
 
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(gmail_user, gmail_pass)
-            server.sendmail(gmail_user, email_to, msg.as_string())
+            server.sendmail(gmail_user, all_recipients, msg.as_string())
 
-        logger.info(f"[EMAIL] PDF firmado enviado a {email_to} para contrato {contract_code}")
+        logger.info(f"[EMAIL] PDF firmado enviado a {email_to} (CC: {cc_str}) para convenio {contract_code}")
 
         db = get_db()
         db["contracts"].update_one(
             {"contract_code": contract_code},
             {"$push": {"messages": {
                 "email": email_to,
+                "cc": cc_recipients,
                 "message_type": "email_signed_pdf_sent",
                 "timestamp_utc": datetime.now(timezone.utc)
             }}}

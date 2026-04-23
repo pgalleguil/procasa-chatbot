@@ -29,15 +29,17 @@ class PDFGenerator:
     def generate_original_contract(contract_data: dict) -> bytes:
         """Genera el contrato original en base a la data."""
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=36)
+        # Reducimos márgenes para maximizar espacio
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=36, bottomMargin=36)
         styles = getSampleStyleSheet()
         
         title_style = styles['Heading1']
         title_style.alignment = 1 # Center
         normal_style = styles['Normal']
-        normal_style.spaceAfter = 12
+        normal_style.spaceAfter = 8  # Reducido
         normal_style.alignment = 4 # Justify
-        normal_style.leading = 14
+        normal_style.leading = 12    # Reducido
+        normal_style.fontSize = 9    # Reducido
         
         Story = []
         
@@ -158,15 +160,16 @@ class PDFGenerator:
     def generate_signed_contract(contract_data: dict, evidence_data: dict, verify_url: str) -> bytes:
         """Genera el contrato FINAL, incluyendo el texto original y la hoja de firmas anexada."""
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=36)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=36, bottomMargin=36)
         styles = getSampleStyleSheet()
         
         title_style = styles['Heading1']
         title_style.alignment = 1 # Center
         normal_style = styles['Normal']
-        normal_style.spaceAfter = 12
+        normal_style.spaceAfter = 8
         normal_style.alignment = 4 # Justify
-        normal_style.leading = 14
+        normal_style.leading = 12
+        normal_style.fontSize = 9
         
         Story = []
         

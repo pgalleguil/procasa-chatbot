@@ -16,7 +16,7 @@
             <p class="text-sm text-gray-500">Sistema de Integridad Documental Procasa</p>
         </div>
 
-        {% if contract.status == "accepted" %}
+        {% if contract.status in ["accepted", "signed"] %}
         <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
             <div class="flex">
                 <div class="flex-shrink-0">
@@ -26,7 +26,7 @@
                 </div>
                 <div class="ml-3">
                     <p class="text-sm text-green-700 font-bold">
-                        Contrato Válido y Vigente
+                        ✅ Contrato Válido — Firmado Electrónicamente (Ley 19.799)
                     </p>
                 </div>
             </div>
@@ -35,7 +35,11 @@
         <div class="space-y-3 text-sm">
             <div class="flex justify-between border-b pb-2">
                 <span class="text-gray-500">Código de Contrato:</span>
-                <span class="font-mono font-medium text-gray-900">{{ contract.contract_code[:8] }}...</span>
+                <span class="font-mono font-medium text-gray-900">{{ contract.contract_code }}</span>
+            </div>
+            <div class="flex justify-between border-b pb-2">
+                <span class="text-gray-500">Propiedad:</span>
+                <span class="font-medium text-gray-900">{{ contract.property_data.direccion }}</span>
             </div>
             <div class="flex justify-between border-b pb-2">
                 <span class="text-gray-500">Titular:</span>

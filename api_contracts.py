@@ -467,11 +467,28 @@ async def verify_otp(token: str, request: Request):
         )
         raise HTTPException(status_code=403, detail="Máximo de intentos alcanzado. Solicita un nuevo código.")
         
-    # Check expiry
+    # Check expiry — reset estado para permitir nuevo OTP sin invalidar el documento
     expiry = contract["security"]["otp_expiry"]
     if expiry.tzinfo is None:
         expiry = expiry.replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) > expiry:
+        # Resetear a "opened" para que el usuario pueda pedir un nuevo código
+        db["contracts"].update_one(
+            {"contract_code": contract["contract_code"]},
+            {
+                "$set": {
+                    "status": "opened",
+                    "security.otp": None,
+                    "security.otp_attempts": 0
+                },
+                "$push": {"timeline": {
+                    "action": "otp_expired_reset",
+                    "server_timestamp": server_timestamp,
+                    "ip": ip,
+                    "user_agent": ua
+                }}
+            }
+        )
         raise HTTPException(status_code=400, detail="OTP_EXPIRED")
         
     # Validate
@@ -551,7 +568,17 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     if contract["status"] != "otp_verified":
         raise HTTPException(status_code=403, detail="Contrato no válido para aceptación")
 
-    # Timeout de sesión de firma (15 minutos desde que se verificó el OTP)
+    # 1. Verificar vigencia del documento (24 horas)
+    document_expiry = contract["security"].get("token_expiry")
+    if document_expiry:
+        if document_expiry.tzinfo is None:
+            document_expiry = document_expiry.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > document_expiry:
+            raise HTTPException(status_code=410, detail="DOCUMENT_EXPIRED")
+
+    # Timeout de sesión de firma (15 min desde OTP)
+    # La expiración de sesión NO invalida el documento (vigencia 24h)
+    # Solo resetea el estado para permitir nuevo OTP
     SIGNATURE_TIMEOUT_MINUTES = 15
     otp_expiry = contract["security"].get("otp_expiry")
     if otp_expiry:
@@ -559,6 +586,22 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
             otp_expiry = otp_expiry.replace(tzinfo=timezone.utc)
         session_deadline = otp_expiry + timedelta(minutes=SIGNATURE_TIMEOUT_MINUTES)
         if datetime.now(timezone.utc) > session_deadline:
+            # Resetear a "opened" — el usuario vuelve al Paso 2
+            db["contracts"].update_one(
+                {"contract_code": contract["contract_code"]},
+                {
+                    "$set": {
+                        "status": "opened",
+                        "security.otp": None,
+                        "security.otp_attempts": 0
+                    },
+                    "$push": {"timeline": {
+                        "action": "signature_session_expired_reset",
+                        "server_timestamp": SecurityContracts.generate_server_timestamp(),
+                        "ip": get_client_ip(request)
+                    }}
+                }
+            )
             raise HTTPException(status_code=400, detail="SIGNATURE_SESSION_EXPIRED")
         
     try:

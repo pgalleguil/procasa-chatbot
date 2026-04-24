@@ -490,6 +490,37 @@
         document.getElementById('input-rut-request').focus();
     });
 
+    // Volver al Paso 2 para re-solicitar OTP sin recargar la página ni regenerar el documento
+    function goToStep2(message) {
+        // Limpiar campo OTP
+        const otpInput = document.getElementById('input-otp');
+        if (otpInput) otpInput.value = '';
+        const errorDiv = document.getElementById('otp-error');
+        if (errorDiv) errorDiv.classList.add('hidden');
+        // Resetear botón de envio RUT
+        const btnRut = document.getElementById('btn-submit-rut');
+        if (btnRut) {
+            btnRut.disabled = false;
+            btnRut.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-300"></i> Enviar Código a mi WhatsApp';
+        }
+        // Ocultar step activo, mostrar step 2
+        document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+        document.getElementById('step-2').classList.add('active');
+        window.scrollTo(0, 0);
+        // Mostrar mensaje al inicio del step-2
+        if (message) {
+            let banner = document.getElementById('session-expired-banner');
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'session-expired-banner';
+                banner.className = 'bg-yellow-50 border border-yellow-300 rounded-lg p-3 mb-4 flex items-center text-yellow-800 text-sm font-semibold';
+                document.getElementById('step-2').prepend(banner);
+            }
+            banner.innerHTML = `<i class="fa-solid fa-clock-rotate-left mr-2"></i> ${message}`;
+            banner.style.display = 'flex';
+        }
+    }
+
     document.getElementById('btn-back-1').addEventListener('click', () => {
         document.getElementById('step-2').classList.remove('active');
         document.getElementById('step-1').classList.add('active');
@@ -546,9 +577,15 @@
                 const data = await resOtp.json().catch(() => ({}));
                 const detail = data.detail || '';
                 if (detail === 'OTP_EXPIRED') {
-                    errorDiv.innerHTML = '⏱ El código expiró. <a href="javascript:location.reload()" class="underline font-semibold">Solicita uno nuevo.</a>';
+                    goToStep2('⏱ El código expiró. Solicita uno nuevo.');
+                    btnVerify.disabled = false;
+                    btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
+                    return;
                 } else if (detail === 'SIGNATURE_SESSION_EXPIRED') {
-                    errorDiv.innerHTML = '⏱ La sesión de firma expiró. <a href="javascript:location.reload()" class="underline font-semibold">Inicia el proceso nuevamente.</a>';
+                    goToStep2('⏱ La sesión expiró. Solicita un nuevo código para continuar.');
+                    btnVerify.disabled = false;
+                    btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
+                    return;
                 } else if (detail === 'OTP_INVALID') {
                     errorDiv.textContent = 'El código ingresado es incorrecto. Verifícalo e intenta nuevamente.';
                 } else {
@@ -573,6 +610,16 @@
                 document.getElementById('btn-download-signed').href =
                     `/contracts/api/download_signed/${d.contract_code}`;
             } else {
+                const data = await resAccept.json().catch(() => ({}));
+                const detail = data.detail || '';
+                
+                if (detail === 'SIGNATURE_SESSION_EXPIRED') {
+                    goToStep2('⏱ La sesión expiró. Solicita un nuevo código para continuar.');
+                    btnVerify.disabled = false;
+                    btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
+                    return;
+                }
+
                 errorDiv.textContent = 'Error al generar el contrato firmado. Por favor intenta nuevamente en unos segundos.';
                 errorDiv.classList.remove('hidden');
                 btnVerify.disabled = false;

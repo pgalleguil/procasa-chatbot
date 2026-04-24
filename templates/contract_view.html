@@ -7,86 +7,125 @@
     <title>Firma de Contrato - Procasa Sucre</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        body {
+            background-color: #f8fafc;
+            background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
         .pdf-viewer {
             width: 100%;
-            height: 60vh;
-            border: 1px solid #e5e7eb;
-            border-radius: 0.5rem;
-            overflow-y: scroll;
-            background: #f9fafb;
+            height: 70vh;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            overflow-y: auto;
+            background: #f1f5f9;
             padding: 1rem;
+            -webkit-overflow-scrolling: touch;
         }
 
         .step {
             display: none;
+            animation: fadeIn 0.4s ease-in-out;
         }
 
         .step.active {
             display: block;
         }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Modern Loading Animation */
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #E2E8F0;
+            border-bottom-color: #2563EB;
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 
-<body class="bg-gray-50 font-sans text-gray-800 antialiased">
-    <div class="max-w-5xl mx-auto p-4 md:p-6 lg:p-8">
+<body class="font-sans text-gray-800 antialiased min-h-screen py-8">
+    <div class="max-w-4xl mx-auto p-4">
         <!-- Encabezado -->
         <div class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-blue-900">Procasa Sucre</h1>
-            <p class="text-md text-gray-500">Sistema de Firma Electrónica Segura (Ley 19.799)</p>
+            <h1 class="text-4xl font-extrabold text-blue-900 tracking-tight mb-4">Procasa Sucre</h1>
+            <span class="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide text-blue-600 bg-blue-50 border border-blue-200 uppercase">
+                Sistema de Firma Electrónica Segura (Ley 19.799)
+            </span>
         </div>
 
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div class="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 md:p-8">
 
             <!-- STEP 1: Revisión del Contrato -->
             <div id="step-1" class="step active">
-                <div class="flex justify-between items-end mb-4">
-                    <div>
-                        <h2 class="text-2xl font-semibold">Paso 1: Revisa tu Contrato</h2>
-                        <p class="text-red-600 font-medium text-sm mt-1"><i class="fa-solid fa-circle-info"></i> Es
-                            importante que leas el contrato completo antes de continuar. La aceptación electrónica tiene
-                            validez legal conforme a la Ley 19.799.</p>
+                
+                <div class="mb-6">
+                    <div class="border-l-4 border-blue-600 pl-4 mb-5">
+                        <h2 class="text-2xl font-bold text-gray-900">Paso 1: Revisa tu Contrato</h2>
+                    </div>
+                    
+                    <div class="bg-red-50 border border-red-100 rounded-xl p-4 flex items-start">
+                        <div class="flex-shrink-0 mt-0.5">
+                            <i class="fa-solid fa-circle-info text-red-500 text-lg"></i>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-red-800 font-medium text-sm leading-relaxed">
+                                Es importante que leas el contrato completo antes de continuar. La aceptación electrónica tiene validez legal conforme a la Ley 19.799.
+                            </p>
+                        </div>
                     </div>
                 </div>
 
-                <div class="mb-4">
+                <div class="mb-6">
                     <a href="/contracts/api/download/{{ contract.contract_code }}" target="_blank"
-                        class="w-full block text-center bg-gray-800 text-white hover:bg-gray-700 font-bold py-3 px-4 rounded-lg transition shadow-md">
-                        <i class="fa-solid fa-file-pdf mr-2"></i> Descargar / Ampliar Documento PDF
+                        class="w-full flex items-center justify-center bg-slate-800 text-white hover:bg-slate-700 font-bold py-3.5 px-4 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg">
+                        <i class="fa-solid fa-file-pdf text-red-400 mr-2.5 text-lg"></i> 
+                        <span>Descargar / Ampliar Documento PDF</span>
                     </a>
                 </div>
 
-                <div class="pdf-viewer p-0 w-full bg-white relative flex flex-col items-center" id="pdf-container"
-                    style="height: 70vh; border: 2px solid #e5e7eb; -webkit-overflow-scrolling: touch; overflow-y: auto; padding: 1rem;">
+                <div class="pdf-viewer relative flex flex-col items-center" id="pdf-container">
                     
-                    <div id="pdf-loading" class="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
-                        <div class="text-center">
-                            <i class="fa-solid fa-spinner fa-spin text-3xl text-blue-600 mb-2"></i>
-                            <p class="text-gray-600 font-medium">Cargando documento...</p>
-                        </div>
+                    <div id="pdf-loading" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/90 z-10 rounded-xl backdrop-blur-sm">
+                        <span class="loader mb-4"></span>
+                        <p class="text-slate-700 font-semibold text-lg">Generando documento seguro...</p>
+                        <p class="text-slate-500 text-sm mt-1">Por favor espera un momento</p>
                     </div>
                     
                     <!-- Los canvas del PDF se insertarán aquí por JavaScript -->
                 </div>
 
-                <div class="mt-6 space-y-4 bg-blue-50 p-4 rounded-lg border border-blue-100">
+                <div class="mt-8 space-y-5 bg-blue-50/50 p-5 rounded-xl border border-blue-100">
                     <div class="flex items-start">
                         <div class="flex-shrink-0 mt-1">
                             <input type="checkbox" id="check-intent"
-                                class="w-5 h-5 text-blue-600 rounded border-gray-300 disabled:opacity-50" disabled>
+                                class="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-50 cursor-pointer" disabled>
                         </div>
                         <div class="ml-3">
-                            <label for="check-intent" class="text-sm font-medium text-gray-800">
-                                <b>Intención Jurídica:</b> Declaro que he leído, comprendido y acepto íntegramente este contrato,
-                                y que mi aceptación electrónica constituye una firma válida y vinculante.
+                            <label for="check-intent" class="text-sm font-medium text-gray-800 cursor-pointer">
+                                <b>Intención Jurídica:</b> Declaro que he leído, comprendido y acepto íntegramente este contrato, y que mi aceptación electrónica constituye una firma válida y vinculante.
                             </label>
-                            <p id="timer-text" class="text-xs text-blue-600 mt-1 font-semibold">Obligatorio leer el
-                                documento (20s restantes)...</p>
+                            <p id="timer-text" class="text-xs text-blue-600 mt-1.5 font-semibold">Obligatorio leer el documento (35s restantes)...</p>
                         </div>
                     </div>
 
                     <button id="btn-request-otp"
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
                         disabled>
                         Debe aceptar la Intención Jurídica primero
                     </button>
@@ -95,65 +134,81 @@
 
             <!-- STEP 2: Ingreso de RUT para solicitar OTP -->
             <div id="step-2" class="step">
-                <h2 class="text-xl font-semibold mb-2">Paso 2: Confirma tu Identidad</h2>
-                <p class="text-sm text-gray-600 mb-6">Para enviarte el código de firma segura por WhatsApp, por favor
-                    confirma tu RUT.</p>
+                <div class="border-l-4 border-blue-600 pl-4 mb-6">
+                    <h2 class="text-2xl font-bold text-gray-900">Paso 2: Confirma tu Identidad</h2>
+                </div>
+                
+                <p class="text-gray-600 mb-6 bg-gray-50 p-4 rounded-lg border border-gray-100">
+                    Para enviarte el código de firma segura por WhatsApp, por favor confirma tu RUT.
+                </p>
 
                 <div class="mb-6">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Tu RUT (con guion)</label>
+                    <label class="block text-sm font-bold text-gray-700 mb-2">Tu RUT (con guion)</label>
                     <input type="text" id="input-rut-request"
-                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                        class="w-full p-3.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-lg"
                         placeholder="Ej: 12345678-9" oninput="formatRut(this)">
                 </div>
 
-                <button id="btn-submit-rut"
-                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">
-                    Enviar Código a mi WhatsApp
-                </button>
-                <button id="btn-back-1"
-                    class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg mt-3 transition">
-                    Volver a leer el contrato
-                </button>
+                <div class="space-y-3">
+                    <button id="btn-submit-rut"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-md">
+                        <i class="fa-brands fa-whatsapp mr-2 text-green-400"></i> Enviar Código a mi WhatsApp
+                    </button>
+                    <button id="btn-back-1"
+                        class="w-full bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-3 px-4 rounded-xl transition-all">
+                        Volver a leer el contrato
+                    </button>
+                </div>
             </div>
 
             <!-- STEP 3: Validación OTP -->
             <div id="step-3" class="step">
-                <h2 class="text-xl font-semibold mb-2">Paso 3: Firma Electrónica</h2>
-                <p class="text-sm text-gray-600 mb-6">Hemos enviado un código de 6 dígitos a tu WhatsApp.</p>
+                <div class="border-l-4 border-blue-600 pl-4 mb-6">
+                    <h2 class="text-2xl font-bold text-gray-900">Paso 3: Firma Electrónica</h2>
+                </div>
+                
+                <div class="bg-green-50 border border-green-100 rounded-xl p-4 mb-6 flex items-start">
+                    <i class="fa-solid fa-check-circle text-green-500 mt-0.5 mr-3"></i>
+                    <p class="text-green-800 text-sm font-medium">Hemos enviado un código de 6 dígitos a tu WhatsApp.</p>
+                </div>
 
-                <div class="mb-6">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Código de Firma (OTP)</label>
+                <div class="mb-8">
+                    <label class="block text-sm font-bold text-gray-700 mb-2 text-center">Código de Firma (OTP)</label>
                     <input type="text" id="input-otp"
-                        class="w-full p-3 border border-gray-300 text-center text-2xl tracking-widest rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                        class="w-full p-4 border-2 border-gray-300 text-center text-3xl font-mono tracking-[0.5em] rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                         maxlength="6" placeholder="------">
                 </div>
 
                 <button id="btn-verify-otp"
-                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">
-                    Firmar Contrato Definitivamente
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-xl transition-all shadow-md text-lg">
+                    <i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente
                 </button>
-                <div id="otp-error" class="text-red-500 text-sm mt-2 text-center hidden"></div>
-                <p class="text-xs text-gray-500 text-center mt-4">¿El código expiró o agotaste tus intentos? <a
-                        href="javascript:location.reload()" class="text-blue-600 hover:underline">Recarga la página para
-                        solicitar uno nuevo</a>.</p>
+                <div id="otp-error" class="text-red-500 text-sm mt-3 text-center font-medium hidden"></div>
+                
+                <p class="text-sm text-gray-500 text-center mt-6">
+                    ¿El código expiró o agotaste tus intentos?<br>
+                    <a href="javascript:location.reload()" class="text-blue-600 hover:underline font-semibold mt-1 inline-block">Recarga la página para solicitar uno nuevo</a>
+                </p>
             </div>
 
             <!-- STEP 4: Éxito -->
-            <div id="step-4" class="step text-center py-8">
-                <svg class="mx-auto h-16 w-16 text-green-500 mb-4" fill="none" viewBox="0 0 24 24"
-                    stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
-                <h2 class="text-2xl font-bold text-gray-900 mb-2">Contrato Firmado Exitosamente</h2>
-                <p class="text-gray-600">Tu copia ha sido guardada de forma segura con los sellos y evidencias de Ley.
-                </p>
-                <div class="mt-6">
+            <div id="step-4" class="step text-center py-10">
+                <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <svg class="h-10 w-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                    </svg>
+                </div>
+                <h2 class="text-3xl font-extrabold text-gray-900 mb-3">Contrato Firmado Exitosamente</h2>
+                <p class="text-gray-600 mb-8 max-w-md mx-auto">Tu copia ha sido guardada de forma segura con los sellos y evidencias de Ley.</p>
+                
+                <div class="space-y-4 max-w-sm mx-auto">
                     <a id="btn-download-signed" href="#" target="_blank"
-                        class="inline-block bg-blue-100 text-blue-700 hover:bg-blue-200 font-semibold py-2 px-6 rounded-full transition">
+                        class="block w-full bg-slate-800 text-white hover:bg-slate-700 font-bold py-3.5 px-6 rounded-xl transition-all shadow-md">
                         <i class="fa-solid fa-download mr-2"></i> Descargar Copia Firmada
                     </a>
                 </div>
-                <p class="text-sm text-gray-500 mt-6">Pronto un ejecutivo se pondrá en contacto contigo.</p>
+                
+                <p class="text-sm text-gray-500 mt-8 font-medium">Pronto un ejecutivo se pondrá en contacto contigo.</p>
             </div>
 
         </div>
@@ -194,27 +249,27 @@
                     canvas.style.display = "block";
                     canvas.style.margin = "0 auto 1rem auto";
                     canvas.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)";
-                    canvas.style.width = "100%"; // placeholder visual para evitar saltos
+                    canvas.style.width = "100%"; 
                     canvas.style.minHeight = "400px";
                     canvas.style.backgroundColor = "#fff";
+                    canvas.style.borderRadius = "4px";
                     
                     pdfContainer.appendChild(canvas);
                     
                     if (pageNum === 1) {
-                        // Renderizar página 1 de forma inmediata
                         await renderPage(pdf, pageNum, canvas);
                         canvas.dataset.rendered = "true";
-                        pdfLoading.style.display = 'none'; // Ocultar spinner cuando cargue la pag 1
+                        pdfLoading.style.display = 'none'; 
                     } else {
-                        // Las demás se observan para lazy loading
                         observer.observe(canvas);
                     }
                 }
             } catch (err) {
                 console.error('Error cargando PDF:', err);
-                pdfLoading.innerHTML = `<div class="p-4 text-center text-red-600 font-medium">
-                    No se pudo cargar la vista previa. <br>
-                    <a href="${pdfUrl}" class="text-blue-600 underline mt-2 inline-block">Toca aquí para descargar el contrato.</a>
+                pdfLoading.innerHTML = `<div class="p-5 text-center bg-red-50 rounded-xl border border-red-100 max-w-sm">
+                    <i class="fa-solid fa-triangle-exclamation text-red-500 text-3xl mb-3"></i>
+                    <p class="text-red-700 font-semibold">No se pudo cargar la vista previa.</p>
+                    <a href="${pdfUrl}" class="text-white bg-red-600 hover:bg-red-700 font-medium py-2 px-4 rounded-lg mt-4 inline-block transition-colors">Descargar Documento</a>
                 </div>`;
             }
         }
@@ -222,21 +277,20 @@
         async function renderPage(pdf, pageNum, canvas) {
             const page = await pdf.getPage(pageNum);
             
-            const containerWidth = pdfContainer.clientWidth - 32; // 32px padding
+            const containerWidth = pdfContainer.clientWidth - 32; 
             const unscaledViewport = page.getViewport({ scale: 1.0 });
             
-            // Requisito: scale dinámico ajustado, no menor a 2.0, máximo 2.2
             let dynamicScale = containerWidth / unscaledViewport.width;
-            let scale = Math.max(2.0, Math.min(dynamicScale, 2.2));
+            let scale = Math.max(2.0, Math.min(dynamicScale, 2.5));
             
             const viewport = page.getViewport({ scale: scale });
             const pixelRatio = window.devicePixelRatio || 1;
 
-            // Soporte pantallas retina para evitar pixelación
+            // Soporte pantallas retina
             canvas.width = Math.floor(viewport.width * pixelRatio);
             canvas.height = Math.floor(viewport.height * pixelRatio);
             
-            // Forzar adaptación visual manteniendo relación de aspecto matemáticamente
+            // Relación de aspecto perfecta
             const cssWidth = Math.min(containerWidth, viewport.width);
             const cssHeight = cssWidth * (viewport.height / viewport.width);
             
@@ -274,11 +328,9 @@
 
         window.addEventListener('scroll', checkScroll);
         
-        // Detectar interacciones con el PDF como actividad de lectura
         pdfContainer.addEventListener('wheel', () => { scrolledToBottom = true; checkEnableCheckbox(); }, {passive: true});
         pdfContainer.addEventListener('touchmove', () => { scrolledToBottom = true; checkEnableCheckbox(); }, {passive: true});
         
-        // Comprobación inicial por si la pantalla es muy grande
         setTimeout(checkScroll, 500);
 
         const timerInterval = setInterval(() => {
@@ -300,7 +352,7 @@
                 return;
             }
 
-            timerText.textContent = "✔️ Documento revisado completamente. Ya puedes marcar la casilla.";
+            timerText.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Documento revisado completamente. Ya puedes marcar la casilla.';
             timerText.classList.remove('text-blue-600');
             timerText.classList.add('text-green-600');
             checkIntent.disabled = false;
@@ -313,7 +365,7 @@
             }
             btnRequestOtp.disabled = !e.target.checked;
             if (e.target.checked) {
-                btnRequestOtp.textContent = "Solicitar código de verificación por WhatsApp";
+                btnRequestOtp.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-400"></i> Solicitar código de verificación';
                 btnRequestOtp.classList.remove('bg-blue-600');
                 btnRequestOtp.classList.add('bg-green-600', 'hover:bg-green-700');
             } else {
@@ -339,7 +391,6 @@
             input.value = rut;
         }
 
-        // Request OTP
         btnRequestOtp.addEventListener('click', () => {
             document.getElementById('step-1').classList.remove('active');
             document.getElementById('step-2').classList.add('active');
@@ -360,7 +411,7 @@
 
             const btnSubmitRut = document.getElementById('btn-submit-rut');
             btnSubmitRut.disabled = true;
-            btnSubmitRut.textContent = "Enviando...";
+            btnSubmitRut.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enviando...';
 
             try {
                 const res = await fetch(`/contracts/api/${TOKEN}/request-otp`, {
@@ -377,16 +428,15 @@
                     const data = await res.json();
                     alert(data.detail || "Error validando RUT.");
                     btnSubmitRut.disabled = false;
-                    btnSubmitRut.textContent = "Enviar Código a mi WhatsApp";
+                    btnSubmitRut.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-400"></i> Enviar Código a mi WhatsApp';
                 }
             } catch (err) {
                 alert("Error de conexión");
                 btnSubmitRut.disabled = false;
-                btnSubmitRut.textContent = "Enviar Código a mi WhatsApp";
+                btnSubmitRut.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-400"></i> Enviar Código a mi WhatsApp';
             }
         });
 
-        // Verify OTP
         const btnVerify = document.getElementById('btn-verify-otp');
         btnVerify.addEventListener('click', async () => {
             const otp = document.getElementById('input-otp').value;
@@ -399,11 +449,10 @@
             }
 
             btnVerify.disabled = true;
-            btnVerify.textContent = "Verificando...";
+            btnVerify.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Verificando...';
             errorDiv.classList.add('hidden');
 
             try {
-                // 1. Verify OTP
                 const resOtp = await fetch(`/contracts/api/${TOKEN}/verify-otp`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -415,12 +464,11 @@
                     errorDiv.textContent = data.detail || "Código incorrecto.";
                     errorDiv.classList.remove('hidden');
                     btnVerify.disabled = false;
-                    btnVerify.textContent = "Firmar Contrato Definitivamente";
+                    btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
                     return;
                 }
 
-                // 2. Accept
-                btnVerify.textContent = "Generando Sellos Legales (Espera un momento)...";
+                btnVerify.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Generando Sellos Legales...';
                 let timeSpent = Math.floor((Date.now() - pageOpenTime) / 1000);
                 const resAccept = await fetch(`/contracts/api/${TOKEN}/accept`, {
                     method: 'POST',
@@ -436,13 +484,18 @@
                 } else {
                     alert("Ocurrió un error finalizando el contrato.");
                     btnVerify.disabled = false;
-                    btnVerify.textContent = "Firmar Contrato Definitivamente";
+                    btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
                 }
             } catch (err) {
                 alert("Error de conexión");
                 btnVerify.disabled = false;
-                btnVerify.textContent = "Firmar Contrato Definitivamente";
+                btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
             }
+        });
+    </script>
+</body>
+
+</html>           }
         });
     </script>
 </body>

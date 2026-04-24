@@ -40,12 +40,11 @@ def run_automation():
             "disponible": True, 
             "oficina": "PROCASA SUCRE",
             "operacion": "Venta",
-            "region": "Valparaiso",
             "codigo": {"$nin": codigos_ya_procesados}
         }
         print(f"Modo: Procesando propiedades pendientes en RM (Venta). Omitiendo {len(codigos_ya_procesados)} ya procesadas.")
 
-    properties = list(universo.find(query).limit(40)) 
+    properties = list(universo.find(query).limit(400)) 
     print(f"Propiedades encontradas para procesar: {len(properties)}")
 
     if not properties:

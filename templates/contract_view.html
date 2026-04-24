@@ -130,6 +130,11 @@
         </span>
     </div>
 
+    <!-- Countdown Banner -->
+    <div id="expiry-countdown-banner" class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-5 text-sm font-semibold text-yellow-800 text-center flex justify-center items-center gap-2" style="display: none;">
+        <i class="fa-regular fa-clock"></i> Este documento es válido por: <span id="document-countdown">Calculando...</span>
+    </div>
+
     <div class="contract-card bg-white rounded-xl shadow-lg border border-gray-200 p-5">
 
         <!-- ── STEP 1 ── -->
@@ -266,6 +271,37 @@
 
 <script>
     const TOKEN = "{{ token }}";
+    const tokenExpiryIso = "{{ contract.security.token_expiry.isoformat() if contract.security.token_expiry else '' }}";
+
+    // ── Document Expiry Countdown ───────────────────────────────────────────
+    if (tokenExpiryIso) {
+        const expiryDate = new Date(tokenExpiryIso);
+        const countdownEl = document.getElementById('document-countdown');
+        const bannerEl = document.getElementById('expiry-countdown-banner');
+        bannerEl.style.display = 'flex';
+
+        function updateCountdown() {
+            const now = new Date();
+            const diff = expiryDate - now;
+            
+            if (diff <= 0) {
+                countdownEl.textContent = 'Expirado';
+                bannerEl.classList.remove('bg-yellow-50', 'border-yellow-200', 'text-yellow-800');
+                bannerEl.classList.add('bg-red-50', 'border-red-200', 'text-red-800');
+                return;
+            }
+
+            const h = Math.floor(diff / (1000 * 60 * 60));
+            const m = Math.floor((diff / 1000 / 60) % 60);
+            const s = Math.floor((diff / 1000) % 60);
+            
+            countdownEl.textContent = 
+                `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+        
+        updateCountdown();
+        setInterval(updateCountdown, 1000);
+    }
     let intentRegistered = false;
 
     // ── PDF.js ───────────────────────────────────────────────────────────────
@@ -586,6 +622,8 @@
                     btnVerify.disabled = false;
                     btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
                     return;
+                } else if (detail === 'TOO_MANY_OTP_ATTEMPTS') {
+                    errorDiv.textContent = 'Has excedido el número de intentos. Espera unos minutos antes de solicitar un nuevo código.';
                 } else if (detail === 'OTP_INVALID') {
                     errorDiv.textContent = 'El código ingresado es incorrecto. Verifícalo e intenta nuevamente.';
                 } else {

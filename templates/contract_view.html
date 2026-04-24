@@ -10,49 +10,57 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body {
-            background-color: #f8fafc;
-            background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
-            background-size: 20px 20px;
-        }
-
-        .pdf-viewer {
-            width: 100%;
-            height: 70vh;
-            border: 1px solid #e2e8f0;
-            border-radius: 0.75rem;
-            overflow-y: auto;
-            background: #f1f5f9;
-            padding: 1rem;
-            -webkit-overflow-scrolling: touch;
+            background-color: #f1f5f9;
         }
 
         .step {
             display: none;
-            animation: fadeIn 0.4s ease-in-out;
         }
 
         .step.active {
             display: block;
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+        #pdf-container {
+            width: 100%;
+            height: 70vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: #e8ecf0;
+            border-radius: 0.5rem;
+            border: 1px solid #cbd5e1;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 12px;
+            box-sizing: border-box;
+            -webkit-overflow-scrolling: touch;
         }
 
-        /* Modern Loading Animation */
+        #pdf-container canvas {
+            display: block;
+            /* El ancho lo controla JS, solo garantizamos que no desborde */
+            max-width: 100%;
+            height: auto !important; /* SIEMPRE auto para respetar aspecto */
+            margin: 0 auto 12px auto;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+            border-radius: 2px;
+            background: #fff;
+        }
+
         .loader {
-            width: 48px;
-            height: 48px;
-            border: 5px solid #E2E8F0;
+            width: 44px;
+            height: 44px;
+            border: 4px solid #dde3ec;
             border-bottom-color: #2563EB;
             border-radius: 50%;
             display: inline-block;
             box-sizing: border-box;
-            animation: rotation 1s linear infinite;
+            animation: spin 0.9s linear infinite;
         }
 
-        @keyframes rotation {
+        @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
@@ -60,62 +68,53 @@
 </head>
 
 <body class="font-sans text-gray-800 antialiased min-h-screen py-8">
-    <div class="max-w-4xl mx-auto p-4">
+    <div class="max-w-3xl mx-auto px-4">
+
         <!-- Encabezado -->
-        <div class="text-center mb-8">
-            <h1 class="text-4xl font-extrabold text-blue-900 tracking-tight mb-4">Procasa Sucre</h1>
-            <span class="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide text-blue-600 bg-blue-50 border border-blue-200 uppercase">
+        <div class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-blue-900 mb-2">Procasa Sucre</h1>
+            <span class="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide text-blue-700 bg-blue-100 border border-blue-200 uppercase">
                 Sistema de Firma Electrónica Segura (Ley 19.799)
             </span>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 md:p-8">
+        <div class="bg-white rounded-xl shadow-lg border border-gray-200 p-5 md:p-7">
 
-            <!-- STEP 1: Revisión del Contrato -->
+            <!-- STEP 1 -->
             <div id="step-1" class="step active">
-                
-                <div class="mb-6">
-                    <div class="border-l-4 border-blue-600 pl-4 mb-5">
-                        <h2 class="text-2xl font-bold text-gray-900">Paso 1: Revisa tu Contrato</h2>
-                    </div>
-                    
-                    <div class="bg-red-50 border border-red-100 rounded-xl p-4 flex items-start">
-                        <div class="flex-shrink-0 mt-0.5">
-                            <i class="fa-solid fa-circle-info text-red-500 text-lg"></i>
-                        </div>
-                        <div class="ml-3">
-                            <p class="text-red-800 font-medium text-sm leading-relaxed">
-                                Es importante que leas el contrato completo antes de continuar. La aceptación electrónica tiene validez legal conforme a la Ley 19.799.
-                            </p>
-                        </div>
-                    </div>
+                <div class="border-l-4 border-blue-600 pl-4 mb-5">
+                    <h2 class="text-xl font-bold text-gray-900">Paso 1: Revisa tu Contrato</h2>
                 </div>
 
-                <div class="mb-6">
+                <div class="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start mb-5">
+                    <i class="fa-solid fa-circle-info text-red-500 mt-0.5 mr-2.5 flex-shrink-0"></i>
+                    <p class="text-red-800 text-sm font-medium leading-relaxed">
+                        Es importante que leas el contrato completo antes de continuar. La aceptación electrónica tiene validez legal conforme a la Ley 19.799.
+                    </p>
+                </div>
+
+                <div class="mb-4">
                     <a href="/contracts/api/download/{{ contract.contract_code }}" target="_blank"
-                        class="w-full flex items-center justify-center bg-slate-800 text-white hover:bg-slate-700 font-bold py-3.5 px-4 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg">
-                        <i class="fa-solid fa-file-pdf text-red-400 mr-2.5 text-lg"></i> 
-                        <span>Descargar / Ampliar Documento PDF</span>
+                        class="w-full flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-200 shadow">
+                        <i class="fa-solid fa-file-pdf text-red-400 mr-2 text-base"></i>
+                        <span>Descargar / Ver en pantalla completa</span>
                     </a>
                 </div>
 
-                <div class="pdf-viewer relative flex flex-col items-center" id="pdf-container">
-                    
-                    <div id="pdf-loading" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/90 z-10 rounded-xl backdrop-blur-sm">
-                        <span class="loader mb-4"></span>
-                        <p class="text-slate-700 font-semibold text-lg">Generando documento seguro...</p>
+                <!-- Visor PDF -->
+                <div id="pdf-container">
+                    <div id="pdf-loading" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-100/95 z-10 rounded-lg">
+                        <span class="loader mb-3"></span>
+                        <p class="text-slate-700 font-semibold">Cargando documento...</p>
                         <p class="text-slate-500 text-sm mt-1">Por favor espera un momento</p>
                     </div>
-                    
-                    <!-- Los canvas del PDF se insertarán aquí por JavaScript -->
                 </div>
 
-                <div class="mt-8 space-y-5 bg-blue-50/50 p-5 rounded-xl border border-blue-100">
+                <!-- Aceptación -->
+                <div class="mt-6 bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-4">
                     <div class="flex items-start">
-                        <div class="flex-shrink-0 mt-1">
-                            <input type="checkbox" id="check-intent"
-                                class="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-50 cursor-pointer" disabled>
-                        </div>
+                        <input type="checkbox" id="check-intent"
+                            class="w-5 h-5 mt-0.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-40 flex-shrink-0 cursor-pointer" disabled>
                         <div class="ml-3">
                             <label for="check-intent" class="text-sm font-medium text-gray-800 cursor-pointer">
                                 <b>Intención Jurídica:</b> Declaro que he leído, comprendido y acepto íntegramente este contrato, y que mi aceptación electrónica constituye una firma válida y vinculante.
@@ -125,90 +124,76 @@
                     </div>
 
                     <button id="btn-request-otp"
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         disabled>
                         Debe aceptar la Intención Jurídica primero
                     </button>
                 </div>
             </div>
 
-            <!-- STEP 2: Ingreso de RUT para solicitar OTP -->
+            <!-- STEP 2 -->
             <div id="step-2" class="step">
-                <div class="border-l-4 border-blue-600 pl-4 mb-6">
-                    <h2 class="text-2xl font-bold text-gray-900">Paso 2: Confirma tu Identidad</h2>
+                <div class="border-l-4 border-blue-600 pl-4 mb-5">
+                    <h2 class="text-xl font-bold text-gray-900">Paso 2: Confirma tu Identidad</h2>
                 </div>
-                
-                <p class="text-gray-600 mb-6 bg-gray-50 p-4 rounded-lg border border-gray-100">
-                    Para enviarte el código de firma segura por WhatsApp, por favor confirma tu RUT.
+                <p class="text-gray-600 mb-5 text-sm bg-gray-50 p-3 rounded-lg border border-gray-200">
+                    Para enviarte el código de firma segura por WhatsApp, confirma tu RUT.
                 </p>
-
-                <div class="mb-6">
+                <div class="mb-5">
                     <label class="block text-sm font-bold text-gray-700 mb-2">Tu RUT (con guion)</label>
                     <input type="text" id="input-rut-request"
-                        class="w-full p-3.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-lg"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
                         placeholder="Ej: 12345678-9" oninput="formatRut(this)">
                 </div>
-
                 <div class="space-y-3">
                     <button id="btn-submit-rut"
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-md">
-                        <i class="fa-brands fa-whatsapp mr-2 text-green-400"></i> Enviar Código a mi WhatsApp
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-colors shadow">
+                        <i class="fa-brands fa-whatsapp mr-2 text-green-300"></i> Enviar Código a mi WhatsApp
                     </button>
                     <button id="btn-back-1"
-                        class="w-full bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-3 px-4 rounded-xl transition-all">
+                        class="w-full bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-2.5 px-4 rounded-lg transition-colors">
                         Volver a leer el contrato
                     </button>
                 </div>
             </div>
 
-            <!-- STEP 3: Validación OTP -->
+            <!-- STEP 3 -->
             <div id="step-3" class="step">
-                <div class="border-l-4 border-blue-600 pl-4 mb-6">
-                    <h2 class="text-2xl font-bold text-gray-900">Paso 3: Firma Electrónica</h2>
+                <div class="border-l-4 border-blue-600 pl-4 mb-5">
+                    <h2 class="text-xl font-bold text-gray-900">Paso 3: Firma Electrónica</h2>
                 </div>
-                
-                <div class="bg-green-50 border border-green-100 rounded-xl p-4 mb-6 flex items-start">
-                    <i class="fa-solid fa-check-circle text-green-500 mt-0.5 mr-3"></i>
+                <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-5 flex items-center">
+                    <i class="fa-solid fa-check-circle text-green-500 mr-2.5"></i>
                     <p class="text-green-800 text-sm font-medium">Hemos enviado un código de 6 dígitos a tu WhatsApp.</p>
                 </div>
-
-                <div class="mb-8">
+                <div class="mb-6">
                     <label class="block text-sm font-bold text-gray-700 mb-2 text-center">Código de Firma (OTP)</label>
                     <input type="text" id="input-otp"
-                        class="w-full p-4 border-2 border-gray-300 text-center text-3xl font-mono tracking-[0.5em] rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        class="w-full p-4 border-2 border-gray-300 text-center text-3xl font-mono tracking-[0.4em] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         maxlength="6" placeholder="------">
                 </div>
-
                 <button id="btn-verify-otp"
-                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-xl transition-all shadow-md text-lg">
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-lg transition-colors shadow text-base">
                     <i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente
                 </button>
                 <div id="otp-error" class="text-red-500 text-sm mt-3 text-center font-medium hidden"></div>
-                
-                <p class="text-sm text-gray-500 text-center mt-6">
-                    ¿El código expiró o agotaste tus intentos?<br>
-                    <a href="javascript:location.reload()" class="text-blue-600 hover:underline font-semibold mt-1 inline-block">Recarga la página para solicitar uno nuevo</a>
+                <p class="text-sm text-gray-500 text-center mt-5">
+                    ¿El código expiró? <a href="javascript:location.reload()" class="text-blue-600 hover:underline font-semibold">Recarga para solicitar uno nuevo</a>
                 </p>
             </div>
 
-            <!-- STEP 4: Éxito -->
+            <!-- STEP 4 -->
             <div id="step-4" class="step text-center py-10">
-                <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <svg class="h-10 w-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                    </svg>
+                <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
+                    <i class="fa-solid fa-check text-green-500 text-4xl"></i>
                 </div>
-                <h2 class="text-3xl font-extrabold text-gray-900 mb-3">Contrato Firmado Exitosamente</h2>
-                <p class="text-gray-600 mb-8 max-w-md mx-auto">Tu copia ha sido guardada de forma segura con los sellos y evidencias de Ley.</p>
-                
-                <div class="space-y-4 max-w-sm mx-auto">
-                    <a id="btn-download-signed" href="#" target="_blank"
-                        class="block w-full bg-slate-800 text-white hover:bg-slate-700 font-bold py-3.5 px-6 rounded-xl transition-all shadow-md">
-                        <i class="fa-solid fa-download mr-2"></i> Descargar Copia Firmada
-                    </a>
-                </div>
-                
-                <p class="text-sm text-gray-500 mt-8 font-medium">Pronto un ejecutivo se pondrá en contacto contigo.</p>
+                <h2 class="text-2xl font-extrabold text-gray-900 mb-3">Contrato Firmado Exitosamente</h2>
+                <p class="text-gray-500 mb-8 max-w-sm mx-auto text-sm">Tu copia ha sido guardada con los sellos legales y evidencias conforme a la Ley 19.799.</p>
+                <a id="btn-download-signed" href="#" target="_blank"
+                    class="inline-flex items-center bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-8 rounded-lg transition-colors shadow">
+                    <i class="fa-solid fa-download mr-2"></i> Descargar Copia Firmada
+                </a>
+                <p class="text-sm text-gray-400 mt-8">Pronto un ejecutivo se pondrá en contacto contigo.</p>
             </div>
 
         </div>
@@ -218,128 +203,114 @@
         const TOKEN = "{{ token }}";
         let intentRegistered = false;
 
-        // Configurar PDF.js
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-        
+        // ── PDF.js ──────────────────────────────────────────────────────────
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
         const pdfUrl = '/contracts/api/download/{{ contract.contract_code }}';
         const pdfContainer = document.getElementById('pdf-container');
-        const pdfLoading = document.getElementById('pdf-loading');
+        const pdfLoading   = document.getElementById('pdf-loading');
 
-        // Renderizar el PDF progresivamente y con alta calidad
         async function renderPDF() {
             try {
                 const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
-                
-                // Configurar observador para lazy loading
+
                 const observer = new IntersectionObserver((entries) => {
                     entries.forEach(entry => {
-                        if (entry.isIntersecting) {
-                            const pageNum = parseInt(entry.target.dataset.pageNumber);
-                            if (!entry.target.dataset.rendered) {
-                                renderPage(pdf, pageNum, entry.target);
-                                entry.target.dataset.rendered = "true";
-                            }
+                        if (entry.isIntersecting && !entry.target.dataset.rendered) {
+                            entry.target.dataset.rendered = "true";
+                            renderPage(pdf, parseInt(entry.target.dataset.page), entry.target);
                         }
                     });
-                }, { root: pdfContainer, rootMargin: '300px' });
+                }, { root: pdfContainer, rootMargin: '400px' });
 
-                for(let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                for (let p = 1; p <= pdf.numPages; p++) {
                     const canvas = document.createElement('canvas');
-                    canvas.dataset.pageNumber = pageNum;
-                    canvas.style.display = "block";
-                    canvas.style.margin = "0 auto 1rem auto";
-                    canvas.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)";
-                    canvas.style.width = "100%"; 
-                    canvas.style.minHeight = "400px";
-                    canvas.style.backgroundColor = "#fff";
-                    canvas.style.borderRadius = "4px";
-                    
+                    canvas.dataset.page = p;
                     pdfContainer.appendChild(canvas);
-                    
-                    if (pageNum === 1) {
-                        await renderPage(pdf, pageNum, canvas);
+
+                    if (p === 1) {
+                        await renderPage(pdf, 1, canvas);
                         canvas.dataset.rendered = "true";
-                        pdfLoading.style.display = 'none'; 
+                        pdfLoading.style.display = 'none';
                     } else {
                         observer.observe(canvas);
                     }
                 }
             } catch (err) {
-                console.error('Error cargando PDF:', err);
-                pdfLoading.innerHTML = `<div class="p-5 text-center bg-red-50 rounded-xl border border-red-100 max-w-sm">
-                    <i class="fa-solid fa-triangle-exclamation text-red-500 text-3xl mb-3"></i>
-                    <p class="text-red-700 font-semibold">No se pudo cargar la vista previa.</p>
-                    <a href="${pdfUrl}" class="text-white bg-red-600 hover:bg-red-700 font-medium py-2 px-4 rounded-lg mt-4 inline-block transition-colors">Descargar Documento</a>
-                </div>`;
+                console.error('PDF error:', err);
+                pdfLoading.innerHTML = `
+                    <div class="text-center p-6">
+                        <i class="fa-solid fa-triangle-exclamation text-red-400 text-4xl mb-3"></i>
+                        <p class="text-slate-700 font-semibold mb-4">No se pudo cargar la vista previa.</p>
+                        <a href="${pdfUrl}" class="bg-blue-600 text-white py-2 px-5 rounded-lg font-semibold">Descargar Documento</a>
+                    </div>`;
             }
         }
 
         async function renderPage(pdf, pageNum, canvas) {
             const page = await pdf.getPage(pageNum);
-            
-            const containerWidth = pdfContainer.clientWidth - 32; 
-            const unscaledViewport = page.getViewport({ scale: 1.0 });
-            
-            let dynamicScale = containerWidth / unscaledViewport.width;
-            let scale = Math.max(2.0, Math.min(dynamicScale, 2.5));
-            
-            const viewport = page.getViewport({ scale: scale });
-            const pixelRatio = window.devicePixelRatio || 1;
 
-            // Soporte pantallas retina
-            canvas.width = Math.floor(viewport.width * pixelRatio);
-            canvas.height = Math.floor(viewport.height * pixelRatio);
-            
-            // Relación de aspecto perfecta
-            const cssWidth = Math.min(containerWidth, viewport.width);
-            const cssHeight = cssWidth * (viewport.height / viewport.width);
-            
-            canvas.style.width = cssWidth + "px";
-            canvas.style.height = cssHeight + "px";
-            canvas.style.maxWidth = "100%";
-            
-            const context = canvas.getContext('2d');
-            context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+            // Ancho disponible sin padding (12px × 2 = 24px)
+            const containerWidth = pdfContainer.clientWidth - 24;
 
-            await page.render({
-                canvasContext: context,
-                viewport: viewport
-            }).promise;
+            const unscaled = page.getViewport({ scale: 1.0 });
+
+            // Escala para que el PDF ocupe el 100% del ancho del contenedor
+            const scale = containerWidth / unscaled.width;
+            const viewport = page.getViewport({ scale });
+
+            // Soporte Retina: aumentar resolución interna del canvas
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width  = Math.floor(viewport.width  * dpr);
+            canvas.height = Math.floor(viewport.height * dpr);
+
+            // CSS: el canvas ocupa el ancho del contenedor y la altura se calcula proporcionalmente
+            canvas.style.width  = containerWidth + 'px';
+            canvas.style.height = (containerWidth * (viewport.height / viewport.width)) + 'px';
+
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            await page.render({ canvasContext: ctx, viewport }).promise;
         }
 
         renderPDF();
 
-        const checkIntent = document.getElementById('check-intent');
+        // ── Timer + scroll ──────────────────────────────────────────────────
+        const checkIntent   = document.getElementById('check-intent');
         const btnRequestOtp = document.getElementById('btn-request-otp');
-        const timerText = document.getElementById('timer-text');
+        const timerText     = document.getElementById('timer-text');
 
-        let timeLeft = 35;
+        let timeLeft       = 35;
         let scrolledToBottom = false;
 
-        function checkScroll() {
-            if (document.body.offsetHeight <= window.innerHeight + 50) {
+        function evalScroll() {
+            // página entera
+            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 60) {
                 scrolledToBottom = true;
-                checkEnableCheckbox();
-            } else if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 50) {
-                scrolledToBottom = true;
-                checkEnableCheckbox();
             }
+            checkEnableCheckbox();
         }
+        window.addEventListener('scroll', evalScroll, { passive: true });
 
-        window.addEventListener('scroll', checkScroll);
-        
-        pdfContainer.addEventListener('wheel', () => { scrolledToBottom = true; checkEnableCheckbox(); }, {passive: true});
-        pdfContainer.addEventListener('touchmove', () => { scrolledToBottom = true; checkEnableCheckbox(); }, {passive: true});
-        
-        setTimeout(checkScroll, 500);
+        // Interacción dentro del visor cuenta como scroll
+        pdfContainer.addEventListener('scroll',    () => { scrolledToBottom = true; checkEnableCheckbox(); }, { passive: true });
+        pdfContainer.addEventListener('wheel',     () => { scrolledToBottom = true; checkEnableCheckbox(); }, { passive: true });
+        pdfContainer.addEventListener('touchmove', () => { scrolledToBottom = true; checkEnableCheckbox(); }, { passive: true });
+
+        // Si la pantalla es tan grande que no hay scroll, habilitamos de todas formas
+        setTimeout(() => {
+            if (document.body.offsetHeight <= window.innerHeight + 60) {
+                scrolledToBottom = true;
+            }
+            checkEnableCheckbox();
+        }, 600);
 
         const timerInterval = setInterval(() => {
             timeLeft--;
             checkEnableCheckbox();
-
-            if (timeLeft <= 0) {
-                clearInterval(timerInterval);
-            }
+            if (timeLeft <= 0) clearInterval(timerInterval);
         }, 1000);
 
         function checkEnableCheckbox() {
@@ -348,13 +319,11 @@
                 return;
             }
             if (!scrolledToBottom) {
-                timerText.textContent = `Desliza hasta el final de la página para confirmar lectura...`;
+                timerText.textContent = 'Desliza hasta el final para confirmar lectura...';
                 return;
             }
-
-            timerText.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Documento revisado completamente. Ya puedes marcar la casilla.';
-            timerText.classList.remove('text-blue-600');
-            timerText.classList.add('text-green-600');
+            timerText.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Documento revisado. Ya puedes marcar la casilla.';
+            timerText.classList.replace('text-blue-600', 'text-green-600');
             checkIntent.disabled = false;
         }
 
@@ -365,29 +334,22 @@
             }
             btnRequestOtp.disabled = !e.target.checked;
             if (e.target.checked) {
-                btnRequestOtp.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-400"></i> Solicitar código de verificación';
-                btnRequestOtp.classList.remove('bg-blue-600');
-                btnRequestOtp.classList.add('bg-green-600', 'hover:bg-green-700');
+                btnRequestOtp.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-300"></i> Solicitar código de verificación';
+                btnRequestOtp.classList.replace('bg-blue-600', 'bg-green-600');
             } else {
-                btnRequestOtp.textContent = "Debe aceptar la Intención Jurídica primero";
-                btnRequestOtp.classList.add('bg-blue-600');
-                btnRequestOtp.classList.remove('bg-green-600', 'hover:bg-green-700');
+                btnRequestOtp.textContent = 'Debe aceptar la Intención Jurídica primero';
+                btnRequestOtp.classList.replace('bg-green-600', 'bg-blue-600');
             }
         });
 
+        // ── Flujo pasos ─────────────────────────────────────────────────────
         let pageOpenTime = Date.now();
 
         function formatRut(input) {
             let rut = input.value.replace(/[^0-9kK]/g, '').toUpperCase();
-            if (rut.length > 1) {
-                rut = rut.slice(0, -1) + '-' + rut.slice(-1);
-            }
-            if (rut.length > 5) {
-                rut = rut.slice(0, -5) + '.' + rut.slice(-5);
-            }
-            if (rut.length > 9) {
-                rut = rut.slice(0, -9) + '.' + rut.slice(-9);
-            }
+            if (rut.length > 1) rut = rut.slice(0, -1) + '-' + rut.slice(-1);
+            if (rut.length > 5) rut = rut.slice(0, -5) + '.' + rut.slice(-5);
+            if (rut.length > 9) rut = rut.slice(0, -9) + '.' + rut.slice(-9);
             input.value = rut;
         }
 
@@ -404,46 +366,42 @@
 
         document.getElementById('btn-submit-rut').addEventListener('click', async () => {
             const rut = document.getElementById('input-rut-request').value;
-            if (!rut || rut.length < 8) {
-                alert("Por favor ingresa un RUT válido.");
-                return;
-            }
+            if (!rut || rut.length < 8) { alert('Por favor ingresa un RUT válido.'); return; }
 
-            const btnSubmitRut = document.getElementById('btn-submit-rut');
-            btnSubmitRut.disabled = true;
-            btnSubmitRut.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enviando...';
+            const btn = document.getElementById('btn-submit-rut');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enviando...';
 
             try {
                 const res = await fetch(`/contracts/api/${TOKEN}/request-otp`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ rut: rut })
+                    body: JSON.stringify({ rut })
                 });
-
                 if (res.ok) {
                     document.getElementById('step-2').classList.remove('active');
                     document.getElementById('step-3').classList.add('active');
                     document.getElementById('input-otp').focus();
                 } else {
                     const data = await res.json();
-                    alert(data.detail || "Error validando RUT.");
-                    btnSubmitRut.disabled = false;
-                    btnSubmitRut.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-400"></i> Enviar Código a mi WhatsApp';
+                    alert(data.detail || 'Error validando RUT.');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-300"></i> Enviar Código a mi WhatsApp';
                 }
-            } catch (err) {
-                alert("Error de conexión");
-                btnSubmitRut.disabled = false;
-                btnSubmitRut.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-400"></i> Enviar Código a mi WhatsApp';
+            } catch {
+                alert('Error de conexión');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-300"></i> Enviar Código a mi WhatsApp';
             }
         });
 
         const btnVerify = document.getElementById('btn-verify-otp');
         btnVerify.addEventListener('click', async () => {
-            const otp = document.getElementById('input-otp').value;
+            const otp      = document.getElementById('input-otp').value;
             const errorDiv = document.getElementById('otp-error');
 
             if (otp.length !== 6) {
-                errorDiv.textContent = "Ingresa los 6 dígitos.";
+                errorDiv.textContent = 'Ingresa los 6 dígitos.';
                 errorDiv.classList.remove('hidden');
                 return;
             }
@@ -456,12 +414,11 @@
                 const resOtp = await fetch(`/contracts/api/${TOKEN}/verify-otp`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ otp: otp })
+                    body: JSON.stringify({ otp })
                 });
-
                 if (!resOtp.ok) {
                     const data = await resOtp.json();
-                    errorDiv.textContent = data.detail || "Código incorrecto.";
+                    errorDiv.textContent = data.detail || 'Código incorrecto.';
                     errorDiv.classList.remove('hidden');
                     btnVerify.disabled = false;
                     btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
@@ -469,7 +426,7 @@
                 }
 
                 btnVerify.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Generando Sellos Legales...';
-                let timeSpent = Math.floor((Date.now() - pageOpenTime) / 1000);
+                const timeSpent = Math.floor((Date.now() - pageOpenTime) / 1000);
                 const resAccept = await fetch(`/contracts/api/${TOKEN}/accept`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -480,22 +437,18 @@
                     const acceptData = await resAccept.json();
                     document.getElementById('step-3').classList.remove('active');
                     document.getElementById('step-4').classList.add('active');
-                    document.getElementById('btn-download-signed').href = `/contracts/api/download_signed/${acceptData.contract_code}`;
+                    document.getElementById('btn-download-signed').href =
+                        `/contracts/api/download_signed/${acceptData.contract_code}`;
                 } else {
-                    alert("Ocurrió un error finalizando el contrato.");
+                    alert('Ocurrió un error finalizando el contrato.');
                     btnVerify.disabled = false;
                     btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
                 }
-            } catch (err) {
-                alert("Error de conexión");
+            } catch {
+                alert('Error de conexión');
                 btnVerify.disabled = false;
                 btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
             }
-        });
-    </script>
-</body>
-
-</html>           }
         });
     </script>
 </body>

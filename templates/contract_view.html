@@ -71,6 +71,26 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
+        /* Scroll-progress banner */
+        #read-banner {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #fffbeb;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            color: #92400e;
+            font-weight: 600;
+        }
+        #read-banner.done {
+            background: #f0fdf4;
+            border-color: #86efac;
+            color: #166534;
+        }
+
         #page-badge {
             display: none;
             background: rgba(0,0,0,0.5);
@@ -136,6 +156,12 @@
             </div>
 
             <!-- PDF renders inline — page scrolls naturally -->
+            <!-- Scroll-progress banner -->
+            <div id="read-banner">
+                <i class="fa-solid fa-arrow-down-long"></i>
+                <span id="read-banner-text">Desplázate hasta el final del contrato para habilitar la firma</span>
+            </div>
+
             <div id="page-badge">Página 1 de ?</div>
             <div id="pdf-container">
                 <div id="pdf-loading">
@@ -352,19 +378,34 @@
 
     let timeLeft         = 35;
     let scrolledToBottom = false;
+    let readRegistered   = false;
 
     function evalScroll() {
-        if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 80)
-            scrolledToBottom = true;
+        // Check if the bottom of the PDF container is within viewport
+        const rect = pdfContainer.getBoundingClientRect();
+        if (rect.bottom <= window.innerHeight + 60) {
+            if (!scrolledToBottom) {
+                scrolledToBottom = true;
+                // Register read-complete event on server (once)
+                if (!readRegistered) {
+                    readRegistered = true;
+                    fetch(`/contracts/api/${TOKEN}/legal_intent`, { method: 'POST' }).catch(() => {});
+                }
+            }
+        }
         checkEnableCheckbox();
     }
     window.addEventListener('scroll', evalScroll, { passive: true });
 
-    // No-scroll screens (large desktop)
+    // Large desktop: if PDF fits in viewport without scrolling, unlock immediately
     setTimeout(() => {
-        if (document.body.offsetHeight <= window.innerHeight + 80) scrolledToBottom = true;
+        const rect = pdfContainer.getBoundingClientRect();
+        if (rect.bottom <= window.innerHeight + 60) {
+            scrolledToBottom = true;
+            if (!readRegistered) { readRegistered = true; }
+        }
         checkEnableCheckbox();
-    }, 900);
+    }, 1200);
 
     const timerInterval = setInterval(() => {
         timeLeft--;
@@ -372,13 +413,23 @@
         if (timeLeft <= 0) clearInterval(timerInterval);
     }, 1000);
 
+    const readBanner     = document.getElementById('read-banner');
+    const readBannerText = document.getElementById('read-banner-text');
+
     function checkEnableCheckbox() {
+        // Update banner
+        if (scrolledToBottom) {
+            readBanner.classList.add('done');
+            readBanner.querySelector('i').className = 'fa-solid fa-check-circle';
+            readBannerText.textContent = 'Contrato revisado correctamente.';
+        }
+
         if (timeLeft > 0) {
             timerText.textContent = `Debes revisar el contrato completo (${timeLeft}s restantes)...`;
             return;
         }
         if (!scrolledToBottom) {
-            timerText.textContent = 'Desliza hasta el final para confirmar lectura...';
+            timerText.textContent = 'Desplázate hasta el final del documento para continuar...';
             return;
         }
         timerText.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Documento revisado. Ya puedes marcar la casilla.';

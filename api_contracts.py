@@ -284,7 +284,7 @@ async def download_original_pdf(contract_code: str):
 
 @router.get("/api/download_signed/{contract_code}")
 async def download_signed_pdf(contract_code: str):
-    """Permite descargar o ver el PDF firmado"""
+    """Permite descargar el PDF firmado (Forza descarga)"""
     db = get_db()
     contract = db["contracts"].find_one({"contract_code": contract_code})
     if not contract:
@@ -306,10 +306,43 @@ async def download_signed_pdf(contract_code: str):
         path=pdf_path,
         filename=filename,
         media_type="application/pdf",
-        content_disposition_type="inline",
+        content_disposition_type="attachment",
         headers={
-            "Cache-Control": "public, max-age=3600",
-            "Accept-Ranges": "bytes"
+            "Cache-Control": "public, max-age=3600"
+        }
+    )
+
+@router.get("/api/view_signed/{contract_code}")
+async def view_signed_pdf(contract_code: str):
+    """Permite visualizar el PDF firmado dentro del navegador"""
+    db = get_db()
+    contract = db["contracts"].find_one({"contract_code": contract_code})
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contrato no encontrado")
+
+    tmp_dir = BASE_DIR / "tmp" / "contracts" / contract_code
+    pdf_path = tmp_dir / "contrato_firmado.pdf"
+    
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="PDF firmado no encontrado")
+        
+    prop_code = contract.get('property_code', 'SD')
+    tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
+    tipo = tipo_raw.replace(" ", "_")
+    filename = f"Contrato_Autorizacion_{tipo}_{prop_code}_{contract_code}.pdf"
+    
+    from fastapi.responses import StreamingResponse
+    import io
+    
+    with open(pdf_path, "rb") as f:
+        pdf_bytes = f.read()
+        
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Content-Disposition": f'inline; filename="{filename}"'
         }
     )
 

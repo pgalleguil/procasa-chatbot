@@ -39,7 +39,7 @@ def run_automation():
         query = {
             "disponible": True, 
             "oficina": "PROCASA SUCRE",
-            "operacion": "Venta",
+            #"operacion": "Venta",
             "codigo": {"$nin": codigos_ya_procesados}
         }
         print(f"Modo: Procesando propiedades pendientes en RM (Venta). Omitiendo {len(codigos_ya_procesados)} ya procesadas.")

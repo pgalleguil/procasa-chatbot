@@ -1,6 +1,11 @@
 import os
 import uuid
 import logging
+import threading
+import psutil
+import time
+from collections import defaultdict
+from contextlib import contextmanager
 from fastapi import APIRouter, Request, HTTPException, Form, Depends, Header, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -22,6 +27,76 @@ router = APIRouter(prefix="/contracts", tags=["Contracts"])
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+active_signatures_lock = threading.Lock()
+ACTIVE_SIGNATURES = 0
+MAX_CONCURRENT_SIGNATURES = 100
+
+otp_rate_limit = defaultdict(list)
+verify_rate_limit = defaultdict(list)
+rate_limit_lock = threading.Lock()
+
+def check_rate_limit(ip: str, limit_dict: dict, max_requests: int, window_seconds: int = 60):
+    now = time.time()
+    with rate_limit_lock:
+        limit_dict[ip] = [t for t in limit_dict[ip] if now - t < window_seconds]
+        if len(limit_dict[ip]) >= max_requests:
+            raise HTTPException(status_code=429, detail="Demasiadas solicitudes. Intente nuevamente en unos minutos.")
+        limit_dict[ip].append(now)
+
+whatsapp_failures = 0
+whatsapp_breaker_time = 0
+whatsapp_breaker_lock = threading.Lock()
+
+async def send_whatsapp_circuit_breaker(phone: str, message: str):
+    global whatsapp_failures, whatsapp_breaker_time
+    with whatsapp_breaker_lock:
+        if time.time() < whatsapp_breaker_time:
+            logger.error("[CIRCUIT_BREAKER] whatsapp_service_unavailable activado")
+            raise Exception("whatsapp_service_unavailable")
+            
+    try:
+        await send_whatsapp_message(phone, message)
+        with whatsapp_breaker_lock:
+            whatsapp_failures = 0
+    except Exception as e:
+        with whatsapp_breaker_lock:
+            whatsapp_failures += 1
+            if whatsapp_failures >= 5:
+                whatsapp_breaker_time = time.time() + 60
+                logger.error("[CIRCUIT_BREAKER] whatsapp_service_unavailable activado debido a 5 fallos consecutivos")
+        raise e
+
+@contextmanager
+def signature_concurrency():
+    global ACTIVE_SIGNATURES
+    with active_signatures_lock:
+        if ACTIVE_SIGNATURES >= MAX_CONCURRENT_SIGNATURES:
+            logger.error("[SERVER_ERROR] Concurrency limit exceeded")
+            raise HTTPException(status_code=503, detail="El sistema está procesando demasiadas firmas. Intente nuevamente en unos minutos.")
+        ACTIVE_SIGNATURES += 1
+    try:
+        yield
+    finally:
+        with active_signatures_lock:
+            ACTIVE_SIGNATURES -= 1
+
+@router.get("/api/health")
+async def health_check():
+    db = get_db()
+    status_dict = {"status": "ok", "db": "ok", "memory": "ok", "concurrency": ACTIVE_SIGNATURES}
+    try:
+        db.command("ping")
+    except Exception as e:
+        logger.error(f"[SERVER_ERROR] Healthcheck DB failed: {e}")
+        status_dict["db"] = "failed"
+        status_dict["status"] = "error"
+    
+    if psutil.virtual_memory().percent > 95:
+        logger.warning("[SERVER_ERROR] High memory usage detected")
+        status_dict["memory"] = "warning"
+        
+    return JSONResponse(status_dict, status_code=200 if status_dict["status"] == "ok" else 503)
 
 gdrive_sync = GDriveSync()
 
@@ -190,15 +265,20 @@ async def download_original_pdf(contract_code: str):
     contract = db["contracts"].find_one({"contract_code": contract_code})
     prop_code = contract.get('property_code', 'SD') if contract else 'SD'
     
-    from fastapi.responses import FileResponse
-    return FileResponse(
-        path=pdf_path, 
-        filename=f"Contrato_{prop_code}_{contract_code}.pdf",
+    from fastapi.responses import StreamingResponse
+    import io
+    
+    with open(pdf_path, "rb") as f:
+        pdf_bytes = f.read()
+        
+    tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo') if contract else 'Arriendo'
+    tipo = tipo_raw.replace(" ", "_")
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        content_disposition_type="inline",
         headers={
-            "Cache-Control": "public, max-age=3600",
-            "Accept-Ranges": "bytes"
+            "Cache-Control": "public, max-age=86400",
+            "Content-Disposition": f"inline; filename=Contrato_Autorizacion_{tipo}_{prop_code}_{contract_code}.pdf"
         }
     )
 
@@ -217,7 +297,9 @@ async def download_signed_pdf(contract_code: str):
         raise HTTPException(status_code=404, detail="PDF firmado no encontrado")
         
     prop_code = contract.get('property_code', 'SD')
-    filename = f"Contrato_{prop_code}_{contract_code}.pdf"
+    tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
+    tipo = tipo_raw.replace(" ", "_")
+    filename = f"Contrato_Autorizacion_{tipo}_{prop_code}_{contract_code}.pdf"
     
     from fastapi.responses import FileResponse
     return FileResponse(
@@ -343,6 +425,8 @@ async def view_contract_public(token: str, request: Request):
     if contract["security"].get("token_used"):
         return HTMLResponse("<h1>Este enlace ya ha sido utilizado o ha expirado.</h1>", status_code=403)
         
+    logger.info(f"[METRIC] contracts_started: {contract['contract_code']}")
+        
     # Registrar acceso
     ip = get_client_ip(request)
     ua = request.headers.get("user-agent", "")
@@ -375,6 +459,9 @@ async def request_otp(token: str, request: Request):
     """Genera OTP y lo envía por WA"""
     data = await request.json()
     rut_ingresado = data.get("rut", "").strip()
+    
+    ip = get_client_ip(request)
+    check_rate_limit(ip, otp_rate_limit, 5, window_seconds=60)
     
     db = get_db()
     contract = db["contracts"].find_one({"security.token": token})
@@ -456,13 +543,25 @@ Este código es personal, válido por 5 minutos y no debe compartirse con tercer
     except Exception as e:
         logger.error(f"[MSG_LOG] Error guardando mensaje OTP: {e}")
     
-    await send_whatsapp_message(contract["phone"], mensaje)
+    try:
+        await send_whatsapp_circuit_breaker(contract["phone"], mensaje)
+    except Exception as e:
+        logger.error(f"[OTP_FAILED] Error enviando WhatsApp al {contract['phone']}: {e}")
+        db["contracts"].update_one(
+            {"contract_code": contract["contract_code"]},
+            {"$push": {"timeline": {"action": "otp_delivery_failed", "server_timestamp": server_timestamp, "ip": ip, "user_agent": ua, "error": str(e)}}}
+        )
+        raise HTTPException(status_code=500, detail="Error enviando el código por WhatsApp. Intente nuevamente.")
+    
     return {"status": "ok"}
 
 @router.post("/api/{token}/verify-otp")
 async def verify_otp(token: str, request: Request):
     data = await request.json()
     otp_ingresado = data.get("otp", "").strip()
+    
+    ip = get_client_ip(request)
+    check_rate_limit(ip, verify_rate_limit, 10, window_seconds=60)
     
     db = get_db()
     contract = db["contracts"].find_one({"security.token": token})
@@ -556,12 +655,13 @@ async def legal_intent(token: str, request: Request):
     )
     return {"status": "ok"}
 
-@router.post("/api/{token}/accept")
+@router.post("/api/{token}/accept", dependencies=[Depends(signature_concurrency)])
 async def accept_contract(token: str, request: Request, background_tasks: BackgroundTasks):
     import shutil
     db = get_db()
     contract = db["contracts"].find_one({"security.token": token})
     if not contract:
+        logger.error(f"[SERVER_ERROR] Token inválido intentado para {token}")
         raise HTTPException(status_code=403, detail="Token inválido")
 
     ensure_document_valid(contract)
@@ -584,7 +684,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
             otp_expiry = otp_expiry.replace(tzinfo=timezone.utc)
         session_deadline = otp_expiry + timedelta(minutes=SIGNATURE_TIMEOUT_MINUTES)
         if datetime.now(timezone.utc) > session_deadline:
-            logger.info(f"[USER_RETURNED_TO_STEP2] contract_code={contract['contract_code']} reason=SIGNATURE_SESSION_EXPIRED timestamp={datetime.now(timezone.utc)}")
+            logger.error(f"[DOCUMENT_EXPIRED] contract_code={contract['contract_code']} reason=SIGNATURE_SESSION_EXPIRED timestamp={datetime.now(timezone.utc)}")
             raise HTTPException(status_code=400, detail="SIGNATURE_SESSION_EXPIRED")
         
     try:
@@ -628,6 +728,8 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
             }}
         }
     )
+    
+    logger.info(f"[METRIC] contracts_signed: {contract_code}")
     
     # Refrescar documento para tener el timeline completo
     contract = db["contracts"].find_one({"contract_code": contract_code})
@@ -816,7 +918,12 @@ def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_b
 
         prop_label = property_code if property_code else contract_code
         asunto = f"Convenio Firmado – Propiedad {prop_label} – {nombre}"
-        pdf_filename = f"Contrato_{prop_label}_{contract_code}.pdf"
+        
+        db = get_db()
+        contract = db["contracts"].find_one({"contract_code": contract_code})
+        tipo_raw = contract.get("property_data", {}).get("tipo", "Arriendo") if contract else "Arriendo"
+        tipo = tipo_raw.replace(" ", "_")
+        pdf_filename = f"Contrato_Autorizacion_{tipo}_{prop_label}_{contract_code}.pdf"
         
         # Destinatarios CC (Desactivado temporalmente para pruebas)
         cc_recipients = [] 

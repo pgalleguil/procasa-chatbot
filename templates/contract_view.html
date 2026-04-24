@@ -2,12 +2,16 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
     <title>Firma de Contrato - Procasa Sucre</title>
+    <link rel="preload" as="fetch" crossorigin="anonymous" href="/contracts/api/download/{{ contract.contract_code }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        html {
+            scroll-behavior: smooth;
+        }
         html, body {
             margin: 0;
             padding: 0;
@@ -23,10 +27,13 @@
             width: 100%;
             box-sizing: border-box;
             background: #dde3ea;
-            border-radius: 6px;
-            border: 1px solid #cbd5e1;
-            position: relative;
-            padding: 8px 8px 0 8px;
+            border-radius: 8px;
+            overflow: visible;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            touch-action: pinch-zoom;
         }
 
         .pdf-page-wrapper {
@@ -171,8 +178,11 @@
             <div id="pdf-container">
                 <div id="pdf-loading">
                     <span class="loader mb-3"></span>
-                    <p class="text-slate-700 font-semibold mt-1">Cargando contrato...</p>
-                    <p class="text-slate-500 text-xs mt-1">Esto puede tardar unos segundos</p>
+                    <p id="pdf-progress-text" class="text-slate-700 font-semibold mt-1">Cargando documento...</p>
+                    <div class="w-48 bg-gray-200 rounded-full h-1.5 mt-2 mx-auto overflow-hidden">
+                        <div id="pdf-progress-bar" class="bg-blue-600 h-1.5 rounded-full" style="width: 0%"></div>
+                    </div>
+                    <p class="text-slate-500 text-xs mt-2">Esto puede tardar unos segundos</p>
                 </div>
             </div>
 
@@ -214,9 +224,9 @@
             </div>
             <div class="space-y-3">
                 <button id="btn-submit-rut"
-                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-colors shadow"
+                    class="w-full bg-[#25D366] hover:bg-[#1EBE5D] text-white font-bold py-3 px-4 rounded-lg transition-colors shadow"
                     style="min-height:48px;font-size:16px;">
-                    <i class="fa-brands fa-whatsapp mr-2 text-green-300"></i> Enviar Código a mi WhatsApp
+                    <i class="fa-brands fa-whatsapp mr-2"></i> Enviar código a mi WhatsApp
                 </button>
                 <button id="btn-back-1"
                     class="w-full bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-2.5 px-4 rounded-lg transition-colors"
@@ -248,7 +258,7 @@
             </button>
             <div id="otp-error" class="text-red-500 text-sm mt-3 text-center font-medium hidden"></div>
             <p class="text-sm text-gray-500 text-center mt-5">
-                ¿El código expiró? <a href="javascript:location.reload()" class="text-blue-600 hover:underline font-semibold">Recarga para solicitar uno nuevo</a>
+                ¿El código expiró? <a href="#" onclick="requestNewOTP(); return false;" class="text-blue-600 hover:underline font-semibold">Solicitar uno nuevo</a>
             </p>
         </div>
 
@@ -300,9 +310,28 @@
         }
         
         updateCountdown();
-        setInterval(updateCountdown, 1000);
+        window.countdownInterval = setInterval(updateCountdown, 1000);
     }
     let intentRegistered = false;
+
+    async function fetchWithRetry(url, options, retries = 3, interval = 2000, timeoutMs = 10000) {
+        for (let i = 0; i < retries; i++) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const res = await fetch(url, { ...options, signal: controller.signal });
+                clearTimeout(timeoutId);
+                return res;
+            } catch (err) {
+                clearTimeout(timeoutId);
+                if (i === retries - 1) {
+                    if (err.name === 'AbortError') throw new Error('TIMEOUT');
+                    throw err;
+                }
+                await new Promise(r => setTimeout(r, interval));
+            }
+        }
+    }
 
     // ── PDF.js ───────────────────────────────────────────────────────────────
     pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -330,7 +359,17 @@
 
     async function renderPDF() {
         try {
-            const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+            const loadingTask = pdfjsLib.getDocument(pdfUrl);
+            loadingTask.onProgress = function(progress) {
+                if (progress.total > 0) {
+                    const percent = Math.round((progress.loaded / progress.total) * 100);
+                    const progressText = document.getElementById('pdf-progress-text');
+                    const progressBar = document.getElementById('pdf-progress-bar');
+                    if (progressText) progressText.textContent = `Cargando documento... ${percent}%`;
+                    if (progressBar) progressBar.style.width = `${percent}%`;
+                }
+            };
+            const pdf = await loadingTask.promise;
             totalPages = pdf.numPages;
             pageBadge.textContent = `Página 1 de ${totalPages}`;
             pageBadge.style.display = 'block';
@@ -494,17 +533,20 @@
     }
 
     checkIntent.addEventListener('change', async (e) => {
-        if (e.target.checked && !intentRegistered) {
-            await fetch(`/contracts/api/${TOKEN}/legal_intent`, { method: 'POST' });
-            intentRegistered = true;
-        }
         btnRequestOtp.disabled = !e.target.checked;
         if (e.target.checked) {
-            btnRequestOtp.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-300"></i> Solicitar código de verificación';
-            btnRequestOtp.classList.replace('bg-blue-600', 'bg-green-600');
+            btnRequestOtp.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-white"></i> Solicitar código de verificación';
+            btnRequestOtp.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            btnRequestOtp.classList.add('bg-[#25D366]', 'hover:bg-[#1EBE5D]');
         } else {
             btnRequestOtp.textContent = 'Debe aceptar la Intención Jurídica primero';
-            btnRequestOtp.classList.replace('bg-green-600', 'bg-blue-600');
+            btnRequestOtp.classList.remove('bg-[#25D366]', 'hover:bg-[#1EBE5D]');
+            btnRequestOtp.classList.add('bg-blue-600', 'hover:bg-blue-700');
+        }
+
+        if (e.target.checked && !intentRegistered) {
+            await fetch(`/contracts/api/${TOKEN}/legal_intent`, { method: 'POST' }).catch(()=>null);
+            intentRegistered = true;
         }
     });
 
@@ -563,14 +605,31 @@
         window.scrollTo(0, 0);
     });
 
-    document.getElementById('btn-submit-rut').addEventListener('click', async () => {
+    function isValidRUT(rutStr) {
+        const cleanRut = rutStr.replace(/[^0-9kK]/g, '');
+        if (cleanRut.length < 8) return false;
+        let t = parseInt(cleanRut.slice(0, -1), 10);
+        let m = 0, s = 1;
+        while (t > 0) {
+            s = (s + t % 10 * (9 - m++ % 6)) % 11;
+            t = Math.floor(t / 10);
+        }
+        let v = s > 0 ? '' + (s - 1) : 'K';
+        return v === cleanRut.slice(-1).toUpperCase();
+    }
+
+    async function requestNewOTP() {
         const rut = document.getElementById('input-rut-request').value;
-        if (!rut || rut.length < 8) { alert('Por favor ingresa un RUT válido.'); return; }
+        if (!rut || !isValidRUT(rut)) {
+            goToStep2('Por favor confirma tu RUT para solicitar un código.');
+            return;
+        }
         const btn = document.getElementById('btn-submit-rut');
         btn.disabled = true;
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enviando...';
+        
         try {
-            const res = await fetch(`/contracts/api/${TOKEN}/request-otp`, {
+            const res = await fetchWithRetry(`/contracts/api/${TOKEN}/request-otp`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ rut })
             });
@@ -578,7 +637,23 @@
                 document.getElementById('step-2').classList.remove('active');
                 document.getElementById('step-3').classList.add('active');
                 window.scrollTo(0, 0);
-                document.getElementById('input-otp').focus();
+                
+                const otpInput = document.getElementById('input-otp');
+                otpInput.value = '';
+                otpInput.focus();
+                
+                document.getElementById('btn-verify-otp').innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
+                
+                let banner = document.getElementById('session-expired-banner');
+                if (!banner) {
+                    banner = document.createElement('div');
+                    banner.id = 'session-expired-banner';
+                    document.getElementById('step-3').prepend(banner);
+                }
+                banner.className = 'bg-green-50 border border-green-300 rounded-lg p-3 mb-4 flex items-center text-green-800 text-sm font-semibold';
+                banner.innerHTML = `<i class="fa-solid fa-check-circle mr-2"></i> Se ha enviado un nuevo código a tu teléfono.`;
+                banner.style.display = 'flex';
+                setTimeout(() => banner.style.display = 'none', 6000);
             } else {
                 const data = await res.json().catch(() => ({}));
                 if (data.detail === 'DOCUMENT_EXPIRED') {
@@ -586,16 +661,26 @@
                     location.reload();
                     return;
                 }
-                alert(data.detail || 'Error validando RUT.');
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-300"></i> Enviar Código a mi WhatsApp';
+                goToStep2(data.detail || 'Error al solicitar código.');
             }
-        } catch {
-            alert('Error de conexión');
+        } catch (err) {
+            if (err.message === 'TIMEOUT') {
+                goToStep2('La conexión está tardando más de lo normal. Intente nuevamente.');
+            } else {
+                goToStep2('Error de conexión.');
+            }
+        } finally {
             btn.disabled = false;
-            btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-300"></i> Enviar Código a mi WhatsApp';
+            btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2"></i> Enviar código a mi WhatsApp';
         }
+    }
+
+    document.getElementById('btn-submit-rut').addEventListener('click', () => {
+        const rut = document.getElementById('input-rut-request').value;
+        if (!rut || !isValidRUT(rut)) { alert('Por favor ingresa un RUT válido.'); return; }
+        requestNewOTP();
     });
+
 
     const btnVerify = document.getElementById('btn-verify-otp');
     btnVerify.addEventListener('click', async () => {
@@ -610,7 +695,7 @@
         btnVerify.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Verificando...';
         errorDiv.classList.add('hidden');
         try {
-            const resOtp = await fetch(`/contracts/api/${TOKEN}/verify-otp`, {
+            const resOtp = await fetchWithRetry(`/contracts/api/${TOKEN}/verify-otp`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ otp })
             });
@@ -622,9 +707,7 @@
                     location.reload();
                     return;
                 } else if (detail === 'OTP_EXPIRED') {
-                    goToStep2('⏱ El código expiró. Solicita uno nuevo.');
-                    btnVerify.disabled = false;
-                    btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
+                    await requestNewOTP();
                     return;
                 } else if (detail === 'SIGNATURE_SESSION_EXPIRED') {
                     goToStep2('⏱ La sesión expiró. Solicita un nuevo código para continuar.');
@@ -654,6 +737,11 @@
                 document.getElementById('step-3').classList.remove('active');
                 document.getElementById('step-4').classList.add('active');
                 window.scrollTo(0, 0);
+                
+                if (window.countdownInterval) clearInterval(window.countdownInterval);
+                const bannerEl = document.getElementById('expiry-countdown-banner');
+                if (bannerEl) bannerEl.style.display = 'none';
+
                 document.getElementById('btn-download-signed').href =
                     `/contracts/api/download_signed/${d.contract_code}`;
             } else {
@@ -676,8 +764,12 @@
                 btnVerify.disabled = false;
                 btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
             }
-        } catch {
-            alert('Error de conexión');
+        } catch (err) {
+            if (err.message === 'TIMEOUT') {
+                alert('La conexión está tardando más de lo normal. Intente nuevamente.');
+            } else {
+                alert('Error de conexión');
+            }
             btnVerify.disabled = false;
             btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
         }

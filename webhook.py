@@ -160,8 +160,14 @@ def create_access_token(data: dict):
 # --- MIDDLEWARE DE SESIÓN SLIDING (SOLUCIÓN TIMEOUT) ---
 @app.middleware("http")
 async def slide_session_middleware(request: Request, call_next):
+    start_time = time.time()
+    
     # 1. Ejecutar la petición primero
     response = await call_next(request)
+    
+    process_time = time.time() - start_time
+    if process_time > 3.0:
+        logger.warning(f"[LATENCY_ALERT] {request.method} {request.url.path} tardó {process_time:.3f}s")
     
     # 2. Rutas exentas
     if request.url.path.startswith("/static") or request.url.path in ["/logout", "/webhook", "/auth/google/callback"]:

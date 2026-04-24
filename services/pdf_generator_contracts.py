@@ -29,14 +29,14 @@ class PDFGenerator:
     def generate_original_contract(contract_data: dict) -> bytes:
         """Genera el contrato original en base a la data."""
         buffer = io.BytesIO()
-        # Reducimos márgenes para maximizar espacio
-        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=36, bottomMargin=36)
+        # Reducimos márgenes para maximizar espacio (2cm = 56.7 pt)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=56.7, leftMargin=56.7, topMargin=56.7, bottomMargin=56.7)
         styles = getSampleStyleSheet()
         
         title_style = styles['Heading1']
         title_style.alignment = 1 # Center
         normal_style = styles['Normal']
-        normal_style.spaceAfter = 8  # Reducido
+        normal_style.spaceAfter = 12  # Espaciado entre párrafos 12pt
         normal_style.alignment = 4 # Justify
         normal_style.leading = 12    # Reducido
         normal_style.fontSize = 9    # Reducido
@@ -121,8 +121,9 @@ class PDFGenerator:
                 Story.append(Paragraph(p5, normal_style))
 
         Story.append(Spacer(1, 0.5 * inch))
+        Story.append(Paragraph("________________________________________________", normal_style))
         Story.append(Paragraph("<b>EL COMITENTE</b>", normal_style))
-        Story.append(Paragraph(f"{rut}<br/>{nombre}<br/>{contract_data.get('phone', '')}<br/>{email}", normal_style))
+        Story.append(Paragraph(f"Nombre: {nombre}<br/>RUT: {rut}<br/>Teléfono: {contract_data.get('phone', '')}<br/>Correo electrónico: <a href='mailto:{email}'>{email}</a>", normal_style))
         
         doc.contract_code = contract_data.get('contract_code', '')
         doc.is_original = True
@@ -134,25 +135,12 @@ class PDFGenerator:
     @staticmethod
     def _add_footer(canvas, doc):
         page_num = canvas.getPageNumber()
-        text = f"Página {page_num}"
+        text = f"Página {page_num} de 2"
         canvas.saveState()
+        
+        # Dibujar pie de página centrado
         canvas.setFont('Helvetica', 8)
-        
-        # Textos legales
-        if hasattr(doc, 'is_original') and doc.is_original:
-            footer_text = ""
-        else:
-            footer_text = "Este documento incluye un certificado de firma electrónica y evidencia digital en la página final, el cual forma parte integrante del contrato."
-            
-        code_text = f"Código de Contrato: {doc.contract_code}" if hasattr(doc, 'contract_code') else ""
-        
-        # Dibujar pie de página (evitando sobreposición)
-        canvas.setFont('Helvetica', 8)
-        canvas.drawString(inch, 0.7 * inch, code_text)
-        canvas.drawRightString(letter[0] - inch, 0.7 * inch, text)
-        
-        canvas.setFont('Helvetica', 7)
-        canvas.drawCentredString(letter[0] / 2.0, 0.4 * inch, footer_text)
+        canvas.drawCentredString(letter[0] / 2.0, 0.5 * inch, text)
         
         canvas.restoreState()
 
@@ -160,13 +148,13 @@ class PDFGenerator:
     def generate_signed_contract(contract_data: dict, evidence_data: dict, verify_url: str) -> bytes:
         """Genera el contrato FINAL, incluyendo el texto original y la hoja de firmas anexada."""
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=36, bottomMargin=36)
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=56.7, leftMargin=56.7, topMargin=56.7, bottomMargin=56.7)
         styles = getSampleStyleSheet()
         
         title_style = styles['Heading1']
         title_style.alignment = 1 # Center
         normal_style = styles['Normal']
-        normal_style.spaceAfter = 8
+        normal_style.spaceAfter = 12
         normal_style.alignment = 4 # Justify
         normal_style.leading = 12
         normal_style.fontSize = 9
@@ -239,69 +227,19 @@ class PDFGenerator:
                 Story.append(Paragraph(p5, normal_style))
 
         Story.append(Spacer(1, 0.5 * inch))
+        Story.append(Paragraph("________________________________________________", normal_style))
         Story.append(Paragraph("<b>EL COMITENTE</b>", normal_style))
-        Story.append(Paragraph(f"{rut}<br/>{nombre}<br/>{phone}<br/>{email}", normal_style))
-        
-        # ----------------------------------------------------
-        # AGREGAR HOJA DE FIRMA AL FINAL DEL DOCUMENTO
-        # ----------------------------------------------------
-        Story.append(PageBreak())
-        
-        Story.append(Paragraph("DOCUMENTO FIRMADO ELECTRÓNICAMENTE", styles['Heading1']))
-        Story.append(Spacer(1, 0.2 * inch))
-        Story.append(Paragraph("<b>VINCULACIÓN LEGAL:</b> El presente certificado forma parte integrante del contrato contenido en las páginas anteriores de este documento, constituyendo ambas partes un único instrumento electrónico conforme a la Ley 19.799.", normal_style))
-        Story.append(Paragraph("<b>DECLARACIÓN LEGAL:</b> El firmante declara haber leído, comprendido y aceptado íntegramente el presente contrato de forma electrónica conforme a la Ley 19.799.", normal_style))
-        Story.append(Paragraph("<b>MÉTODO DE VERIFICACIÓN:</b> La aceptación fue realizada mediante verificación de identidad con código enviado al teléfono del firmante vía WhatsApp.", normal_style))
-        Story.append(Paragraph("<b>REGISTRO DE TIEMPO:</b> El presente documento incluye un registro de tiempo generado por el sistema al momento de su aceptación.", normal_style))
-        Story.append(Paragraph("Este documento ha sido sellado digitalmente mediante mecanismos criptográficos que garantizan su integridad y no alteración (Ley 19.799).", normal_style))
-        
-        Story.append(Spacer(1, 0.3 * inch))
-        Story.append(Paragraph("<b>CERTIFICADO DE FIRMA ELECTRÓNICA Y EVIDENCIA DIGITAL</b>", styles['Heading2']))
-        
-        # Convertir timestamp UTC a Chile TZ para mostrar
-        server_ts_utc = evidence_data.get('server_timestamp', '')
-        try:
-            dt_utc = datetime.fromisoformat(server_ts_utc)
-            chile_time = dt_utc.astimezone(CHILE_TZ).strftime('%d-%m-%Y %H:%M:%S')
-        except:
-            chile_time = server_ts_utc
-            
-        read_time = evidence_data.get('read_time_seconds', 'N/A')
-        
-        data = [
-            ["Nombre del Firmante", nombre],
-            ["RUT Firmante", rut],
-            ["Teléfono Verificado", phone],
-            ["ID Contrato", evidence_data.get('contract_code', '')],
-            ["Fecha/Hora Servidor (Hora Chile)", chile_time],
-            ["Fecha/Hora Servidor (UTC)", server_ts_utc],
-            ["IP del Firmante", evidence_data.get('ip', '')],
-            ["Localización (GeoIP)", evidence_data.get('geo_info', 'Desconocido')],
-            ["Tiempo en página antes de aceptar", f"{read_time} segundos"],
-            ["Confirmación de lectura (Scroll completo)", evidence_data.get('scrolled_to_bottom', 'Sí')],
-            ["Hash Documento Base (Contrato Prev. Firma)", evidence_data.get('original_hash', '')],
-            ["Hash de Evidencia (Timeline Inmutable)", evidence_data.get('timeline_hash', '')],
-            ["Firma Lógica Servidor (HMAC SHA-256)", evidence_data.get('server_hmac', '')]
-        ]
-        
-        t = Table(data, colWidths=[2.5*inch, 4*inch])
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
-            ('TEXTCOLOR', (0,0), (-1,-1), colors.black),
-            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-            ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
-            ('FONTNAME', (1,0), (1,-1), 'Helvetica'),
-            ('FONTSIZE', (0,0), (-1,-1), 8),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-            ('GRID', (0,0), (-1,-1), 1, colors.black)
-        ]))
-        Story.append(t)
+        Story.append(Paragraph(f"Nombre: {nombre}<br/>RUT: {rut}<br/>Teléfono: {phone}<br/>Correo electrónico: <a href='mailto:{email}'>{email}</a>", normal_style))
         
         Story.append(Spacer(1, 0.5 * inch))
         qr_buffer = PDFGenerator._create_qr(verify_url)
-        qr_img = RLImage(qr_buffer, width=1.5*inch, height=1.5*inch)
+        qr_img = RLImage(qr_buffer, width=1.18*inch, height=1.18*inch)
+        qr_img.hAlign = 'CENTER'
         Story.append(qr_img)
-        Story.append(Paragraph(f"Este documento puede ser verificado escaneando el código QR o ingresando el código de contrato en el sistema de verificación: <a href='{verify_url}'>{verify_url}</a>", normal_style))
+        
+        msg_style = ParagraphStyle('Msg', parent=normal_style, alignment=1, fontName='Helvetica-Bold', fontSize=10)
+        Story.append(Spacer(1, 0.1 * inch))
+        Story.append(Paragraph("Este documento fue firmado electrónicamente conforme a la Ley 19.799.", msg_style))
         
         doc.contract_code = evidence_data.get('contract_code', '')
         doc.is_original = False

@@ -580,7 +580,12 @@
                 window.scrollTo(0, 0);
                 document.getElementById('input-otp').focus();
             } else {
-                const data = await res.json();
+                const data = await res.json().catch(() => ({}));
+                if (data.detail === 'DOCUMENT_EXPIRED') {
+                    alert('Este documento ha expirado. Solicita un nuevo convenio.');
+                    location.reload();
+                    return;
+                }
                 alert(data.detail || 'Error validando RUT.');
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-green-300"></i> Enviar Código a mi WhatsApp';
@@ -612,7 +617,11 @@
             if (!resOtp.ok) {
                 const data = await resOtp.json().catch(() => ({}));
                 const detail = data.detail || '';
-                if (detail === 'OTP_EXPIRED') {
+                if (detail === 'DOCUMENT_EXPIRED') {
+                    alert('Este documento ha expirado. Solicita un nuevo convenio.');
+                    location.reload();
+                    return;
+                } else if (detail === 'OTP_EXPIRED') {
                     goToStep2('⏱ El código expiró. Solicita uno nuevo.');
                     btnVerify.disabled = false;
                     btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
@@ -651,7 +660,11 @@
                 const data = await resAccept.json().catch(() => ({}));
                 const detail = data.detail || '';
                 
-                if (detail === 'SIGNATURE_SESSION_EXPIRED') {
+                if (detail === 'DOCUMENT_EXPIRED') {
+                    alert('Este documento ha expirado. Solicita un nuevo convenio.');
+                    location.reload();
+                    return;
+                } else if (detail === 'SIGNATURE_SESSION_EXPIRED') {
                     goToStep2('⏱ La sesión expiró. Solicita un nuevo código para continuar.');
                     btnVerify.disabled = false;
                     btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';

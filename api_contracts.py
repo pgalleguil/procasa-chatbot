@@ -375,8 +375,18 @@ async def request_otp(token: str, request: Request):
     if rut_ingresado.replace(".", "").replace("-", "").upper() != contract["client_data"]["rut"].replace(".", "").replace("-", "").upper():
         raise HTTPException(status_code=400, detail="RUT no coincide con el registrado.")
         
+    # Rate limiting: bloquear si se solicitó OTP hace menos de 30 segundos
+    now = datetime.now(timezone.utc)
+    last_request = contract["security"].get("last_otp_request")
+    if last_request:
+        if last_request.tzinfo is None:
+            last_request = last_request.replace(tzinfo=timezone.utc)
+        seconds_elapsed = (now - last_request).total_seconds()
+        if seconds_elapsed < 30:
+            raise HTTPException(status_code=429, detail="Debes esperar unos segundos antes de solicitar un nuevo código.")
+
     otp = SecurityContracts.generate_otp(6)
-    otp_expiry = datetime.now(timezone.utc) + timedelta(minutes=5)
+    otp_expiry = now + timedelta(minutes=5)
     
     ip = get_client_ip(request)
     ua = request.headers.get("user-agent", "")
@@ -389,7 +399,8 @@ async def request_otp(token: str, request: Request):
                 "status": "otp_requested",
                 "security.otp": otp,
                 "security.otp_expiry": otp_expiry,
-                "security.otp_attempts": 0
+                "security.otp_attempts": 0,
+                "security.last_otp_request": now
             },
             "$push": {
                 "timeline": {
@@ -461,7 +472,7 @@ async def verify_otp(token: str, request: Request):
     if expiry.tzinfo is None:
         expiry = expiry.replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) > expiry:
-        raise HTTPException(status_code=400, detail="Código expirado.")
+        raise HTTPException(status_code=400, detail="OTP_EXPIRED")
         
     # Validate
     if otp_ingresado != contract["security"]["otp"]:
@@ -472,7 +483,7 @@ async def verify_otp(token: str, request: Request):
                 "$push": {"timeline": {"action": "otp_failed_attempt", "server_timestamp": server_timestamp, "ip": ip, "user_agent": ua, "details": "OTP incorrecto"}}
             }
         )
-        raise HTTPException(status_code=400, detail="Código incorrecto.")
+        raise HTTPException(status_code=400, detail="OTP_INVALID")
         
     # Success
     db["contracts"].update_one(
@@ -526,10 +537,29 @@ async def legal_intent(token: str, request: Request):
 
 @router.post("/api/{token}/accept")
 async def accept_contract(token: str, request: Request, background_tasks: BackgroundTasks):
+    import shutil
     db = get_db()
     contract = db["contracts"].find_one({"security.token": token})
-    if not contract or contract["status"] != "otp_verified" or contract["security"]["token_used"]:
+    if not contract:
+        raise HTTPException(status_code=403, detail="Token inválido")
+
+    # Idempotencia: si ya fue firmado, retornar éxito sin reprocessar
+    if contract.get("status") == "signed" or contract["security"].get("token_used"):
+        logger.info(f"[CONTRACT_SIGNED] Idempotente — contrato {contract['contract_code']} ya firmado.")
+        return JSONResponse(status_code=200, content={"status": "already_signed", "contract_code": contract["contract_code"]})
+
+    if contract["status"] != "otp_verified":
         raise HTTPException(status_code=403, detail="Contrato no válido para aceptación")
+
+    # Timeout de sesión de firma (15 minutos desde que se verificó el OTP)
+    SIGNATURE_TIMEOUT_MINUTES = 15
+    otp_expiry = contract["security"].get("otp_expiry")
+    if otp_expiry:
+        if otp_expiry.tzinfo is None:
+            otp_expiry = otp_expiry.replace(tzinfo=timezone.utc)
+        session_deadline = otp_expiry + timedelta(minutes=SIGNATURE_TIMEOUT_MINUTES)
+        if datetime.now(timezone.utc) > session_deadline:
+            raise HTTPException(status_code=400, detail="SIGNATURE_SESSION_EXPIRED")
         
     try:
         data = await request.json()
@@ -579,141 +609,172 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     
     # 2. Generar Firma HMAC del Servidor y Hash del Timeline
     timeline_hash = SecurityContracts.hash_timeline(timeline)
-    # Re-leer el PDF original guardado en tmp (o regenerarlo)
     tmp_dir = BASE_DIR / "tmp" / "contracts" / contract_code
-    original_pdf_path = tmp_dir / "contrato_original.pdf"
-    if original_pdf_path.exists():
-        with open(original_pdf_path, "rb") as f:
-            original_bytes = f.read()
-    else:
-        # Fallback regenerando (los hashes pueden variar si cambian timestamps internos, idealmente se usa el archivo original guardado)
-        data_payload = {
-            "contract_code": contract.get("contract_code"),
-            "origen": contract.get("origen", ""),
-            "property_code": contract.get("property_code", ""),
-            "phone": contract.get("phone", ""),
-            "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
-            "cliente_rut": contract.get("client_data", {}).get("rut", ""),
-            "email": contract.get("client_data", {}).get("email", ""),
-            "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
-            "comuna": contract.get("property_data", {}).get("comuna", ""),
-            "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
-            "rol": contract.get("property_data", {}).get("rol", ""),
-            "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
-            "precio": contract.get("property_data", {}).get("precio", ""),
-            "comision": contract.get("property_data", {}).get("comision", "")
+    try:
+        original_pdf_path = tmp_dir / "contrato_original.pdf"
+        if original_pdf_path.exists():
+            with open(original_pdf_path, "rb") as f:
+                original_bytes = f.read()
+        else:
+            data_payload = {
+                "contract_code": contract.get("contract_code"),
+                "origen": contract.get("origen", ""),
+                "property_code": contract.get("property_code", ""),
+                "phone": contract.get("phone", ""),
+                "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
+                "cliente_rut": contract.get("client_data", {}).get("rut", ""),
+                "email": contract.get("client_data", {}).get("email", ""),
+                "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
+                "comuna": contract.get("property_data", {}).get("comuna", ""),
+                "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
+                "rol": contract.get("property_data", {}).get("rol", ""),
+                "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
+                "precio": contract.get("property_data", {}).get("precio", ""),
+                "comision": contract.get("property_data", {}).get("comision", "")
+            }
+            original_bytes = PDFGenerator.generate_original_contract(data_payload)
+
+        original_hash = SecurityContracts.hash_document(original_bytes)
+        secret_key = getattr(Config, "SECRET_KEY", "default_secret")
+        server_hmac = SecurityContracts.generate_server_hmac(contract_code, original_hash, server_timestamp, secret_key)
+        base_url = str(request.base_url).rstrip('/')
+        verify_url = f"{base_url}/contracts/verify/{contract_code}"
+
+        evidence_data = {
+            "contract_code": contract_code,
+            "server_timestamp": server_timestamp,
+            "ip": ip,
+            "geo_info": geo_info,
+            "original_hash": original_hash,
+            "server_hmac": server_hmac,
+            "timeline_hash": timeline_hash,
+            "read_time_seconds": read_time,
+            "scrolled_to_bottom": "Sí" if scrolled_to_bottom else "No"
         }
-        original_bytes = PDFGenerator.generate_original_contract(data_payload)
-        
-    original_hash = SecurityContracts.hash_document(original_bytes)
-    
-    secret_key = getattr(Config, "SECRET_KEY", "default_secret")
-    server_hmac = SecurityContracts.generate_server_hmac(contract_code, original_hash, server_timestamp, secret_key)
-    
-    base_url = str(request.base_url).rstrip('/')
-    verify_url = f"{base_url}/contracts/verify/{contract_code}"
-    
-    evidence_data = {
-        "contract_code": contract_code,
-        "server_timestamp": server_timestamp,
-        "ip": ip,
-        "geo_info": geo_info,
-        "original_hash": original_hash,
-        "server_hmac": server_hmac,
-        "timeline_hash": timeline_hash,
-        "read_time_seconds": read_time,
-        "scrolled_to_bottom": "Sí" if scrolled_to_bottom else "No"
-    }
-    
-    # 3. Generar PDF Firmado Completo
-    signed_pdf_bytes = PDFGenerator.generate_signed_contract(contract, evidence_data, verify_url)
-    signed_hash = SecurityContracts.hash_document(signed_pdf_bytes)
-    
-    # Guardar en tmp
-    with open(tmp_dir / "contrato_firmado.pdf", "wb") as f:
-        f.write(signed_pdf_bytes)
-        
-    # 4. Generar Informe Legal
-    legal_report_bytes = PDFGenerator.generate_legal_report(contract, evidence_data, timeline)
-    with open(tmp_dir / "informe_legal.pdf", "wb") as f:
-        f.write(legal_report_bytes)
-        
-    import json
-    with open(tmp_dir / "hash.txt", "w") as f:
-        f.write(f"Original Hash: {original_hash}\nSigned Hash: {signed_hash}\nTimeline Hash: {timeline_hash}\nHMAC: {server_hmac}")
-    
-    with open(tmp_dir / "timeline.json", "w") as f:
-        json.dump(timeline, f, indent=4)
-        
-    # 5. Guardar Hashes finales en DB
-    db["contracts"].update_one(
-        {"contract_code": contract_code},
-        {
-            "$set": {
+
+        # 3. Generar PDF Firmado Completo
+        signed_pdf_bytes = PDFGenerator.generate_signed_contract(contract, evidence_data, verify_url)
+        signed_hash = SecurityContracts.hash_document(signed_pdf_bytes)
+
+        # Guardar archivos en tmp — garantizar directorio (crítico en Render)
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        with open(tmp_dir / "contrato_firmado.pdf", "wb") as f:
+            f.write(signed_pdf_bytes)
+
+        # 4. Generar Informe Legal
+        legal_report_bytes = PDFGenerator.generate_legal_report(contract, evidence_data, timeline)
+        with open(tmp_dir / "informe_legal.pdf", "wb") as f:
+            f.write(legal_report_bytes)
+
+        import json
+        with open(tmp_dir / "hash.txt", "w") as f:
+            f.write(f"Original Hash: {original_hash}\nSigned Hash: {signed_hash}\nTimeline Hash: {timeline_hash}\nHMAC: {server_hmac}")
+        with open(tmp_dir / "timeline.json", "w") as f:
+            json.dump(timeline, f, indent=4)
+
+        # 5. Guardar Hashes finales en DB
+        db["contracts"].update_one(
+            {"contract_code": contract_code},
+            {"$set": {
                 "security.signed_hash": signed_hash,
                 "security.server_hmac": server_hmac,
                 "security.timeline_hash": timeline_hash
+            }}
+        )
+
+        # TSA mock
+        tsa_response = f"TSA_MOCK_{datetime.now(timezone.utc).timestamp()}_SIGNED"
+        db["contracts"].update_one({"contract_code": contract_code}, {"$set": {"security.tsa_stamp": tsa_response}})
+
+        # 6. Subida a Google Drive en Background — pasar bytes, no Path
+        background_tasks.add_task(
+            upload_to_gdrive_bg,
+            contract_code,
+            {
+                "contrato_firmado.pdf": signed_pdf_bytes,
+                "informe_legal.pdf": legal_report_bytes,
+                "hash.txt": f"Original Hash: {original_hash}\nSigned Hash: {signed_hash}\nTimeline Hash: {timeline_hash}\nHMAC: {server_hmac}".encode(),
             }
-        }
-    )
-    
-    # TSA mock — estructura preparada para escalar a certificación externa
-    tsa_response = f"TSA_MOCK_{datetime.now(timezone.utc).timestamp()}_SIGNED"
-    db["contracts"].update_one({"contract_code": contract_code}, {"$set": {"security.tsa_stamp": tsa_response}})
-    
-    # 6. Subida a Google Drive en Background
-    background_tasks.add_task(upload_to_gdrive_bg, contract_code, tmp_dir)
-    
-    # 7. Notificar al Cliente por WhatsApp — Log guardado en mismo documento
-    mensaje_conf = """Confirmamos la aceptación electrónica de tu contrato conforme a la Ley 19.799.
+        )
+
+        # 7. Notificar al Cliente — exactly-once delivery
+        if not contract.get("notifications_sent"):
+            mensaje_conf = """Confirmamos la aceptación electrónica de tu contrato conforme a la Ley 19.799.
 
 Se ha registrado la fecha, hora, dirección IP y verificación de identidad asociada a esta aceptación.
 
 En breve recibirás una copia del documento firmado."""
-    
-    try:
-        db["contracts"].update_one(
-            {"contract_code": contract_code},
-            {"$push": {"messages": {
-                "phone": contract["phone"],
-                "message_content": mensaje_conf,
-                "message_type": "confirmation_sent",
-                "timestamp_utc": datetime.now(timezone.utc)
-            }}}
+            try:
+                db["contracts"].update_one(
+                    {"contract_code": contract_code},
+                    {
+                        "$push": {"messages": {
+                            "phone": contract["phone"],
+                            "message_content": mensaje_conf,
+                            "message_type": "confirmation_sent",
+                            "timestamp_utc": datetime.now(timezone.utc)
+                        }},
+                        "$set": {"notifications_sent": True}
+                    }
+                )
+            except Exception as e:
+                logger.error(f"[MSG_LOG] Error guardando mensaje confirmación: {e}")
+            await send_whatsapp_message(contract["phone"], mensaje_conf)
+
+            # 8. Enviar PDF firmado por correo en Background — pasar bytes, no Path
+            client_email = contract.get("client_data", {}).get("email", contract.get("email", ""))
+            if client_email:
+                background_tasks.add_task(
+                    send_signed_email_task,
+                    contract_code,
+                    client_email,
+                    contract.get("client_data", {}).get("nombre", ""),
+                    signed_pdf_bytes,          # bytes, no Path
+                    contract.get("property_code", "")
+                )
+        else:
+            logger.info(f"[CONTRACT_SIGNED] Notificaciones ya enviadas para {contract_code} — saltando.")
+
+        # Log de auditoría legal estructurado
+        logger.info(
+            f"[CONTRACT_SIGNED] contract_code={contract_code} "
+            f"rut={contract.get('client_data', {}).get('rut', 'N/A')} "
+            f"ip={ip} timestamp={server_timestamp} "
+            f"read_time={read_time}s scrolled={scrolled_to_bottom}"
         )
-    except Exception as e:
-        logger.error(f"[MSG_LOG] Error guardando mensaje confirmación: {e}")
+
+        return {"status": "ok", "contract_code": contract_code}
+
+    finally:
+        # Limpieza del directorio temporal (siempre, incluso en caso de error)
+        # Los archivos ya fueron subidos a GDrive y enviados por email antes de llegar aquí
+        shutil.rmtree(tmp_dir, ignore_errors=True)
     
-    await send_whatsapp_message(contract["phone"], mensaje_conf)
-    
-    # 8. Enviar PDF firmado por correo en Background
-    client_email = contract.get("client_data", {}).get("email", contract.get("email", ""))
-    if client_email:
-        background_tasks.add_task(
-            send_signed_email_task,
-            contract_code,
-            client_email,
-            contract.get("client_data", {}).get("nombre", ""),
-            tmp_dir / "contrato_firmado.pdf",
-            contract.get("property_code", "")  # Pasamos el código de propiedad
-        )
-    
-    return {"status": "ok", "contract_code": contract_code}
-    
-def upload_to_gdrive_bg(contract_code: str, tmp_dir: Path):
+def upload_to_gdrive_bg(contract_code: str, files: dict):
+    """Sube archivos a GDrive recibiendo bytes en memoria, sin depender del filesystem."""
     try:
         folder_id = gdrive_sync.create_folder(f"Expediente_{contract_code}")
-        for file_path in tmp_dir.glob("*.*"):
-            with open(file_path, "rb") as f:
-                content = f.read()
-                mime = "application/pdf" if file_path.suffix == ".pdf" else "text/plain"
-                gdrive_sync.upload_file(folder_id, file_path.name, content, mime)
-        logger.info(f"Expediente {contract_code} subido a GDrive exitosamente.")
+        signed_file_id = None
+        for filename, content in files.items():
+            if isinstance(content, str):
+                content = content.encode()
+            mime = "application/pdf" if filename.endswith(".pdf") else "text/plain"
+            file_id = gdrive_sync.upload_file(folder_id, filename, content, mime)
+            if filename == "contrato_firmado.pdf":
+                signed_file_id = file_id
+        # Guardar el file_id del contrato firmado en DB para trazabilidad documental
+        if signed_file_id:
+            db = get_db()
+            db["contracts"].update_one(
+                {"contract_code": contract_code},
+                {"$set": {"security.signed_pdf_drive_id": signed_file_id}}
+            )
+        logger.info(f"[GDRIVE] Expediente {contract_code} subido. signed_pdf_id={signed_file_id}")
     except Exception as e:
-        logger.error(f"Error en tarea background GDrive: {e}")
+        logger.error(f"[GDRIVE] Error subiendo expediente {contract_code}: {e}")
 
-def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_path: Path, property_code: str = "", cc_email: str = ""):
-    """Envía el PDF firmado al cliente y en copia al jefe y al ejecutivo CRM."""
+def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_bytes: bytes, property_code: str = "", cc_email: str = ""):
+    """Envía el PDF firmado al cliente. Recibe bytes en memoria, sin depender del filesystem."""
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
@@ -764,15 +825,11 @@ Equipo Procasa Sucre"""
 
         msg.attach(MIMEText(body, "plain", "utf-8"))
 
-        if pdf_path.exists():
-            with open(pdf_path, "rb") as f:
-                part = MIMEBase("application", "octet-stream")
-                part.set_payload(f.read())
-            encoders.encode_base64(part)
-            part.add_header("Content-Disposition", f'attachment; filename="{pdf_filename}"')
-            msg.attach(part)
-        else:
-            logger.warning(f"[EMAIL] PDF no encontrado en {pdf_path}, enviando sin adjunto.")
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(pdf_bytes)
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f'attachment; filename="{pdf_filename}"')
+        msg.attach(part)
 
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(gmail_user, gmail_pass)

@@ -335,8 +335,10 @@
                 }
             }
             updateBadge();
-            // Verificar si el documento no requiere scroll (pantalla grande)
-            setTimeout(checkIfScrollIsNeeded, 500);
+
+            // Marcar PDF como completamente renderizado y verificar si se necesita scroll
+            pdfFullyRendered = true;
+            checkIfScrollIsNeeded();
         } catch (err) {
             console.error('PDF error:', err);
             pdfLoading.innerHTML = `
@@ -378,9 +380,10 @@
     const btnRequestOtp = document.getElementById('btn-request-otp');
     const timerText     = document.getElementById('timer-text');
 
-    let timeLeft        = 35;
-    let scrolledToBottom = false;
-    let readRegistered   = false;
+    let timeLeft         = 35;
+    let scrolledToBottom  = false;
+    let pdfFullyRendered  = false;
+    let readRegistered    = false;
 
     function notifyBackendRead() {
         if (!readRegistered) {
@@ -389,7 +392,15 @@
         }
     }
 
+    function registerReadIfNeeded() {
+        if (readRegistered) return;
+        readRegistered = true;
+        notifyBackendRead();
+        checkEnableCheckbox();
+    }
+
     function hasReachedBottom() {
+        if (!pdfFullyRendered) return false;
         const scrollTop      = window.scrollY || document.documentElement.scrollTop;
         const viewportHeight = window.innerHeight;
         const documentHeight = document.documentElement.scrollHeight;
@@ -398,21 +409,21 @@
 
     window.addEventListener('scroll', function () {
         if (scrolledToBottom) return;
+        if (!pdfFullyRendered) return;
         if (hasReachedBottom()) {
             scrolledToBottom = true;
-            notifyBackendRead();
-            checkEnableCheckbox();
+            registerReadIfNeeded();
         }
     }, { passive: true });
 
     function checkIfScrollIsNeeded() {
+        if (!pdfFullyRendered) return;
         if (scrolledToBottom) return;
         const documentHeight = document.documentElement.scrollHeight;
         const viewportHeight = window.innerHeight;
         if (documentHeight <= viewportHeight + 5) {
             scrolledToBottom = true;
-            notifyBackendRead();
-            checkEnableCheckbox();
+            registerReadIfNeeded();
         }
     }
 
@@ -532,8 +543,17 @@
                 body: JSON.stringify({ otp })
             });
             if (!resOtp.ok) {
-                const data = await resOtp.json();
-                errorDiv.textContent = data.detail || 'Código incorrecto.';
+                const data = await resOtp.json().catch(() => ({}));
+                const detail = data.detail || '';
+                if (detail === 'OTP_EXPIRED') {
+                    errorDiv.innerHTML = '⏱ El código expiró. <a href="javascript:location.reload()" class="underline font-semibold">Solicita uno nuevo.</a>';
+                } else if (detail === 'SIGNATURE_SESSION_EXPIRED') {
+                    errorDiv.innerHTML = '⏱ La sesión de firma expiró. <a href="javascript:location.reload()" class="underline font-semibold">Inicia el proceso nuevamente.</a>';
+                } else if (detail === 'OTP_INVALID') {
+                    errorDiv.textContent = 'El código ingresado es incorrecto. Verifícalo e intenta nuevamente.';
+                } else {
+                    errorDiv.textContent = detail || 'No se pudo validar el código. Intenta nuevamente.';
+                }
                 errorDiv.classList.remove('hidden');
                 btnVerify.disabled = false;
                 btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
@@ -553,7 +573,8 @@
                 document.getElementById('btn-download-signed').href =
                     `/contracts/api/download_signed/${d.contract_code}`;
             } else {
-                alert('Ocurrió un error finalizando el contrato.');
+                errorDiv.textContent = 'Error al generar el contrato firmado. Por favor intenta nuevamente en unos segundos.';
+                errorDiv.classList.remove('hidden');
                 btnVerify.disabled = false;
                 btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
             }

@@ -335,6 +335,8 @@
                 }
             }
             updateBadge();
+            // Verificar si el documento no requiere scroll (pantalla grande)
+            setTimeout(checkIfScrollIsNeeded, 500);
         } catch (err) {
             console.error('PDF error:', err);
             pdfLoading.innerHTML = `
@@ -376,36 +378,43 @@
     const btnRequestOtp = document.getElementById('btn-request-otp');
     const timerText     = document.getElementById('timer-text');
 
-    let timeLeft         = 35;
+    let timeLeft        = 35;
     let scrolledToBottom = false;
     let readRegistered   = false;
 
-    function evalScroll() {
-        // Check if the bottom of the PDF container is within viewport
-        const rect = pdfContainer.getBoundingClientRect();
-        if (rect.bottom <= window.innerHeight + 60) {
-            if (!scrolledToBottom) {
-                scrolledToBottom = true;
-                // Register read-complete event on server (once)
-                if (!readRegistered) {
-                    readRegistered = true;
-                    fetch(`/contracts/api/${TOKEN}/legal_intent`, { method: 'POST' }).catch(() => {});
-                }
-            }
+    function notifyBackendRead() {
+        if (!readRegistered) {
+            readRegistered = true;
+            fetch(`/contracts/api/${TOKEN}/legal_intent`, { method: 'POST' }).catch(() => {});
         }
-        checkEnableCheckbox();
     }
-    window.addEventListener('scroll', evalScroll, { passive: true });
 
-    // Large desktop: if PDF fits in viewport without scrolling, unlock immediately
-    setTimeout(() => {
-        const rect = pdfContainer.getBoundingClientRect();
-        if (rect.bottom <= window.innerHeight + 60) {
+    function hasReachedBottom() {
+        const scrollTop      = window.scrollY || document.documentElement.scrollTop;
+        const viewportHeight = window.innerHeight;
+        const documentHeight = document.documentElement.scrollHeight;
+        return (scrollTop + viewportHeight) >= (documentHeight - 10);
+    }
+
+    window.addEventListener('scroll', function () {
+        if (scrolledToBottom) return;
+        if (hasReachedBottom()) {
             scrolledToBottom = true;
-            if (!readRegistered) { readRegistered = true; }
+            notifyBackendRead();
+            checkEnableCheckbox();
         }
-        checkEnableCheckbox();
-    }, 1200);
+    }, { passive: true });
+
+    function checkIfScrollIsNeeded() {
+        if (scrolledToBottom) return;
+        const documentHeight = document.documentElement.scrollHeight;
+        const viewportHeight = window.innerHeight;
+        if (documentHeight <= viewportHeight + 5) {
+            scrolledToBottom = true;
+            notifyBackendRead();
+            checkEnableCheckbox();
+        }
+    }
 
     const timerInterval = setInterval(() => {
         timeLeft--;

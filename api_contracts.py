@@ -290,25 +290,29 @@ async def download_signed_pdf(contract_code: str):
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
 
-    tmp_dir = BASE_DIR / "tmp" / "contracts" / contract_code
-    pdf_path = tmp_dir / "contrato_firmado.pdf"
+    file_id = contract.get("security", {}).get("signed_pdf_drive_id")
+    if not file_id:
+        raise HTTPException(status_code=404, detail="Documento firmado no disponible")
     
-    if not pdf_path.exists():
-        raise HTTPException(status_code=404, detail="PDF firmado no encontrado")
+    gdrive = GDriveSync()
+    pdf_bytes = gdrive.download_file(file_id)
+    if not pdf_bytes:
+        raise HTTPException(status_code=404, detail="Documento firmado no disponible")
         
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
     tipo = tipo_raw.replace(" ", "_")
     filename = f"Contrato_Autorizacion_{tipo}_{prop_code}_{contract_code}.pdf"
     
-    from fastapi.responses import FileResponse
-    return FileResponse(
-        path=pdf_path,
-        filename=filename,
+    from fastapi.responses import StreamingResponse
+    import io
+    
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        content_disposition_type="attachment",
         headers={
-            "Cache-Control": "public, max-age=3600"
+            "Cache-Control": "public, max-age=3600",
+            "Content-Disposition": f'attachment; filename="{filename}"'
         }
     )
 
@@ -320,11 +324,14 @@ async def view_signed_pdf(contract_code: str):
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
 
-    tmp_dir = BASE_DIR / "tmp" / "contracts" / contract_code
-    pdf_path = tmp_dir / "contrato_firmado.pdf"
+    file_id = contract.get("security", {}).get("signed_pdf_drive_id")
+    if not file_id:
+        raise HTTPException(status_code=404, detail="Documento firmado no disponible")
     
-    if not pdf_path.exists():
-        raise HTTPException(status_code=404, detail="PDF firmado no encontrado")
+    gdrive = GDriveSync()
+    pdf_bytes = gdrive.download_file(file_id)
+    if not pdf_bytes:
+        raise HTTPException(status_code=404, detail="Documento firmado no disponible")
         
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
@@ -333,9 +340,6 @@ async def view_signed_pdf(contract_code: str):
     
     from fastapi.responses import StreamingResponse
     import io
-    
-    with open(pdf_path, "rb") as f:
-        pdf_bytes = f.read()
         
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
@@ -513,7 +517,17 @@ async def request_otp(token: str, request: Request):
     # Rate limiting: bloquear si se solicitó OTP hace menos de 30 segundos
     now = datetime.now(timezone.utc)
     last_request = contract["security"].get("last_otp_request")
-    if last_request:
+    otp_expiry = contract["security"].get("otp_expiry")
+    
+    if otp_expiry and otp_expiry.tzinfo is None:
+        otp_expiry = otp_expiry.replace(tzinfo=timezone.utc)
+        
+    if otp_expiry and now > otp_expiry:
+        # El OTP anterior expiró, permitimos solicitar uno nuevo inmediatamente y limpiamos el IP limit
+        with rate_limit_lock:
+            if ip in otp_rate_limit:
+                otp_rate_limit[ip] = []
+    elif last_request:
         if last_request.tzinfo is None:
             last_request = last_request.replace(tzinfo=timezone.utc)
         seconds_elapsed = (now - last_request).total_seconds()

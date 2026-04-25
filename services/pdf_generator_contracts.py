@@ -231,6 +231,39 @@ class PDFGenerator:
         Story.append(Paragraph("<b>EL COMITENTE</b>", normal_style))
         Story.append(Paragraph(f"Nombre: {nombre}<br/>RUT: {rut}<br/>Teléfono: {phone}<br/>Correo electrónico: <a href='mailto:{email}'>{email}</a>", normal_style))
         
+        Story.append(PageBreak())
+        Story.append(Paragraph("REGISTRO DE FIRMA ELECTRÓNICA", styles['Heading1']))
+        Story.append(Spacer(1, 0.2 * inch))
+        
+        server_ts_utc = evidence_data.get('server_timestamp', '')
+        try:
+            dt_utc = datetime.fromisoformat(server_ts_utc)
+            chile_time = dt_utc.astimezone(CHILE_TZ).strftime('%d-%m-%Y %H:%M:%S')
+        except:
+            chile_time = server_ts_utc
+            
+        data = [
+            ["Código de contrato:", evidence_data.get('contract_code', '')],
+            ["Fecha de firma:", chile_time],
+            ["IP:", evidence_data.get('ip', '')],
+            ["RUT:", rut],
+            ["Método:", "OTP WhatsApp"],
+            ["Hash SHA256:", evidence_data.get('timeline_hash', '')]
+        ]
+        
+        t = Table(data, colWidths=[2.5*inch, 4*inch])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
+            ('TEXTCOLOR', (0,0), (-1,-1), colors.black),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
+            ('FONTNAME', (1,0), (1,-1), 'Helvetica'),
+            ('FONTSIZE', (0,0), (-1,-1), 8),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('GRID', (0,0), (-1,-1), 1, colors.black)
+        ]))
+        Story.append(t)
+        
         Story.append(Spacer(1, 0.5 * inch))
         qr_buffer = PDFGenerator._create_qr(verify_url)
         qr_img = RLImage(qr_buffer, width=1.18*inch, height=1.18*inch)

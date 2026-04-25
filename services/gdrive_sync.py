@@ -63,3 +63,22 @@ class GDriveSync:
         except Exception as e:
             logger.error(f"Error subiendo {file_name} a GDrive: {e}")
             return "mock_file_id"
+
+    def download_file(self, file_id: str) -> bytes:
+        """Descarga un archivo desde GDrive por su ID y retorna los bytes."""
+        if not self.service or file_id == "mock_file_id":
+            logger.info(f"[MOCK GDRIVE] Simulación de descarga fallida para {file_id}")
+            return None
+            
+        try:
+            from googleapiclient.http import MediaIoBaseDownload
+            request = self.service.files().get_media(fileId=file_id)
+            file_stream = io.BytesIO()
+            downloader = MediaIoBaseDownload(file_stream, request)
+            done = False
+            while done is False:
+                status, done = downloader.next_chunk()
+            return file_stream.getvalue()
+        except Exception as e:
+            logger.error(f"Error descargando archivo {file_id} desde GDrive: {e}")
+            return None

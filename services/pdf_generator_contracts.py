@@ -1,4 +1,4 @@
-﻿import os
+import os
 import io
 import qrcode
 from pathlib import Path
@@ -61,6 +61,16 @@ class PDFGenerator:
         Story.append(Spacer(1, 0.08 * inch))
         
         if 'contract_code' in contract_data:
+            fecha_emision = datetime.now(CHILE_TZ).strftime('%d/%m/%Y')
+            if 'created_at' in contract_data:
+                try:
+                    dt = contract_data['created_at']
+                    if isinstance(dt, str):
+                        dt = datetime.fromisoformat(dt)
+                    fecha_emision = dt.astimezone(CHILE_TZ).strftime('%d/%m/%Y')
+                except:
+                    pass
+            vigencia_dias = contract_data.get('property_data', {}).get('vigencia', contract_data.get('vigencia', '30'))
             Story.append(Paragraph(f"<b>Código de Verificación:</b> {contract_data['contract_code']} &nbsp;&nbsp; <b>Versión:</b> v{contract_data.get('version', '1.0')} &nbsp;&nbsp; <b>Fecha:</b> {fecha_emision} &nbsp;&nbsp; <b>Vigencia:</b> {vigencia_dias} días", normal_style))
             Story.append(Spacer(1, 0.06 * inch))
         

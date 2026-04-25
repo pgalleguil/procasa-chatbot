@@ -270,13 +270,20 @@
             </div>
             <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-5 flex items-center">
                 <i class="fa-solid fa-check-circle text-green-500 mr-2.5"></i>
-                <p class="text-green-800 text-sm font-medium">Hemos enviado un código de 6 dígitos a tu WhatsApp.</p>
+                <p class="text-green-800 text-sm font-medium">Hemos enviado un código de 4 dígitos a tu WhatsApp.</p>
             </div>
+            
+            <div id="block-banner" class="bg-red-50 border border-red-200 rounded-lg p-4 mb-5 hidden">
+                <p class="text-red-800 text-sm font-semibold mb-2">Has superado el número máximo de intentos.</p>
+                <p class="text-red-700 text-sm mb-2">Por seguridad, el sistema se ha bloqueado temporalmente. Podrás intentar nuevamente en:</p>
+                <div class="text-center text-red-600 font-mono text-2xl font-bold" id="block-timer">00:60</div>
+            </div>
+
             <div class="mb-6">
                 <label class="block text-sm font-bold text-gray-700 mb-2 text-center">Código de Firma (OTP)</label>
                 <input type="text" id="input-otp" inputmode="numeric" pattern="[0-9]*"
-                    class="w-full p-4 border-2 border-gray-300 text-center text-3xl font-mono tracking-[0.4em] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    maxlength="6" placeholder="------">
+                    class="w-full p-4 border-2 border-gray-300 text-center text-4xl font-mono tracking-[0.5em] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:opacity-50 transition-colors"
+                    maxlength="4" placeholder="----">
             </div>
             <button id="btn-verify-otp"
                 class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-lg transition-colors shadow text-base"
@@ -754,12 +761,50 @@
     });
 
 
+    let blockInterval = null;
+    function startBlockTimer(seconds) {
+        const inputOtp = document.getElementById('input-otp');
+        const btnVerify = document.getElementById('btn-verify-otp');
+        const errorDiv = document.getElementById('otp-error');
+        const blockBanner = document.getElementById('block-banner');
+        const blockTimer = document.getElementById('block-timer');
+        
+        // Hide previous errors, show banner
+        errorDiv.classList.add('hidden');
+        blockBanner.classList.remove('hidden');
+        
+        // Disable inputs
+        inputOtp.disabled = true;
+        btnVerify.disabled = true;
+        btnVerify.innerHTML = '<i class="fa-solid fa-lock mr-2"></i> Sistema Bloqueado';
+        
+        if (blockInterval) clearInterval(blockInterval);
+        
+        let remaining = seconds;
+        blockTimer.textContent = `00:${remaining.toString().padStart(2, '0')}`;
+        
+        blockInterval = setInterval(() => {
+            remaining--;
+            if (remaining <= 0) {
+                clearInterval(blockInterval);
+                blockBanner.classList.add('hidden');
+                inputOtp.disabled = false;
+                btnVerify.disabled = false;
+                btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
+                inputOtp.value = '';
+                inputOtp.focus();
+            } else {
+                blockTimer.textContent = `00:${remaining.toString().padStart(2, '0')}`;
+            }
+        }, 1000);
+    }
+
     const btnVerify = document.getElementById('btn-verify-otp');
     btnVerify.addEventListener('click', async () => {
         const otp      = document.getElementById('input-otp').value;
         const errorDiv = document.getElementById('otp-error');
-        if (otp.length !== 6) {
-            errorDiv.textContent = 'Ingresa los 6 dígitos.';
+        if (otp.length !== 4) {
+            errorDiv.textContent = 'Ingresa los 4 dígitos.';
             errorDiv.classList.remove('hidden');
             return;
         }
@@ -774,25 +819,38 @@
             if (!resOtp.ok) {
                 const data = await resOtp.json().catch(() => ({}));
                 const detail = data.detail || '';
-                if (detail === 'DOCUMENT_EXPIRED') {
+                
+                if (detail.startsWith('OTP_BLOCKED')) {
+                    const waitSecs = parseInt(detail.split('|')[1]) || 60;
+                    startBlockTimer(waitSecs);
+                    return;
+                } else if (detail.startsWith('OTP_INVALID')) {
+                    const remaining = parseInt(detail.split('|')[1]) || 0;
+                    if (remaining === 1) {
+                        errorDiv.textContent = 'El código ingresado no es válido. Te queda 1 intento antes de que el sistema se bloquee temporalmente.';
+                    } else {
+                        errorDiv.textContent = `El código ingresado no es válido. Te quedan ${remaining} intentos.`;
+                    }
+                } else if (detail === 'DOCUMENT_EXPIRED') {
                     alert('Este documento ha expirado. Solicita un nuevo convenio.');
                     location.reload();
                     return;
                 } else if (detail === 'OTP_EXPIRED') {
-                    await requestNewOTP();
-                    return;
+                    errorDiv.textContent = 'Este código ha expirado. Solicita uno nuevo para continuar.';
+                    const btnRetry = document.createElement('button');
+                    btnRetry.className = 'w-full mt-3 bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-2 px-4 rounded-lg transition-colors';
+                    btnRetry.innerHTML = '<i class="fa-solid fa-rotate-right mr-2"></i> Solicitar nuevo código';
+                    btnRetry.onclick = (e) => { e.preventDefault(); requestNewOTP(); };
+                    errorDiv.appendChild(btnRetry);
                 } else if (detail === 'SIGNATURE_SESSION_EXPIRED') {
                     goToStep2('⏱ La sesión expiró. Solicita un nuevo código para continuar.');
                     btnVerify.disabled = false;
                     btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
                     return;
-                } else if (detail === 'TOO_MANY_OTP_ATTEMPTS') {
-                    errorDiv.textContent = 'Has excedido el número de intentos. Espera unos minutos antes de solicitar un nuevo código.';
-                } else if (detail === 'OTP_INVALID') {
-                    errorDiv.textContent = 'El código ingresado es incorrecto. Verifícalo e intenta nuevamente.';
                 } else {
                     errorDiv.textContent = detail || 'No se pudo validar el código. Intenta nuevamente.';
                 }
+                
                 errorDiv.classList.remove('hidden');
                 btnVerify.disabled = false;
                 btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';

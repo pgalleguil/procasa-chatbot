@@ -537,6 +537,15 @@ async def request_otp(token: str, request: Request):
     if contract.get("status") == "signed" or contract["security"].get("token_used"):
         return JSONResponse(status_code=200, content={"status": "already_signed"})
         
+    now = datetime.now(timezone.utc)
+    blocked_until = contract["security"].get("blocked_until")
+    if blocked_until:
+        if blocked_until.tzinfo is None:
+            blocked_until = blocked_until.replace(tzinfo=timezone.utc)
+        if now < blocked_until:
+            wait_seconds = int((blocked_until - now).total_seconds())
+            raise HTTPException(status_code=429, detail=f"El sistema está bloqueado temporalmente. Por favor espera {wait_seconds} segundos.")
+            
     # Validar RUT de forma simple (en producción usar validador real)
     if rut_ingresado.replace(".", "").replace("-", "").upper() != contract["client_data"]["rut"].replace(".", "").replace("-", "").upper():
         raise HTTPException(status_code=400, detail="RUT no coincide con el registrado.")
@@ -559,9 +568,9 @@ async def request_otp(token: str, request: Request):
             last_request = last_request.replace(tzinfo=timezone.utc)
         seconds_elapsed = (now - last_request).total_seconds()
         if seconds_elapsed < 30:
-            raise HTTPException(status_code=429, detail="Debes esperar unos segundos antes de solicitar un nuevo código.")
+            raise HTTPException(status_code=429, detail="Has solicitado demasiados códigos en poco tiempo. Por favor espera unos segundos antes de intentar nuevamente.")
 
-    otp = SecurityContracts.generate_otp(6)
+    otp = SecurityContracts.generate_otp(4)
     otp_expiry = now + timedelta(minutes=5)
     
     ip = get_client_ip(request)
@@ -576,7 +585,8 @@ async def request_otp(token: str, request: Request):
                 "security.otp": otp,
                 "security.otp_expiry": otp_expiry,
                 "security.otp_attempts": 0,
-                "security.last_otp_request": now
+                "security.last_otp_request": now,
+                "security.blocked_until": None
             },
             "$push": {
                 "timeline": {
@@ -651,33 +661,45 @@ async def verify_otp(token: str, request: Request):
     ua = request.headers.get("user-agent", "")
     server_timestamp = SecurityContracts.generate_server_timestamp()
     
+    # Check blocks
+    now = datetime.now(timezone.utc)
+    blocked_until = contract["security"].get("blocked_until")
+    if blocked_until:
+        if blocked_until.tzinfo is None:
+            blocked_until = blocked_until.replace(tzinfo=timezone.utc)
+        if now < blocked_until:
+            wait_seconds = int((blocked_until - now).total_seconds())
+            raise HTTPException(status_code=429, detail=f"OTP_BLOCKED|{wait_seconds}")
+            
     # Check attempts
-    if contract["security"].get("otp_attempts", 0) >= 5:
-        # Registrar fallo crítico
-        db["contracts"].update_one(
-            {"contract_code": contract["contract_code"]},
-            {"$push": {"timeline": {"action": "otp_blocked_max_attempts", "server_timestamp": server_timestamp, "ip": ip, "user_agent": ua}}}
-        )
-        raise HTTPException(status_code=429, detail="TOO_MANY_OTP_ATTEMPTS")
+    attempts = contract["security"].get("otp_attempts", 0)
         
-    # Check expiry — NO resetear estado para no perder el contrato, solo devolver error para que Frontend mande al paso 2
+    # Check expiry
     expiry = contract["security"]["otp_expiry"]
     if expiry.tzinfo is None:
         expiry = expiry.replace(tzinfo=timezone.utc)
-    if datetime.now(timezone.utc) > expiry:
-        logger.info(f"[USER_RETURNED_TO_STEP2] contract_code={contract['contract_code']} reason=OTP_EXPIRED timestamp={datetime.now(timezone.utc)}")
+    if now > expiry:
+        logger.info(f"[USER_RETURNED_TO_STEP2] contract_code={contract['contract_code']} reason=OTP_EXPIRED timestamp={now}")
         raise HTTPException(status_code=400, detail="OTP_EXPIRED")
         
     # Validate
     if otp_ingresado != contract["security"]["otp"]:
-        db["contracts"].update_one(
-            {"contract_code": contract["contract_code"]},
-            {
-                "$inc": {"security.otp_attempts": 1},
-                "$push": {"timeline": {"action": "otp_failed_attempt", "server_timestamp": server_timestamp, "ip": ip, "user_agent": ua, "details": "OTP incorrecto"}}
-            }
-        )
-        raise HTTPException(status_code=400, detail="OTP_INVALID")
+        attempts += 1
+        update_doc = {
+            "$set": {"security.otp_attempts": attempts},
+            "$push": {"timeline": {"action": "otp_failed_attempt", "server_timestamp": server_timestamp, "ip": ip, "user_agent": ua, "details": "OTP incorrecto"}}
+        }
+        
+        if attempts >= 5:
+            blocked_until_new = now + timedelta(seconds=60)
+            update_doc["$set"]["security.blocked_until"] = blocked_until_new
+            update_doc["$push"]["timeline"] = {"action": "otp_blocked_max_attempts", "server_timestamp": server_timestamp, "ip": ip, "user_agent": ua}
+            db["contracts"].update_one({"contract_code": contract["contract_code"]}, update_doc)
+            raise HTTPException(status_code=429, detail="OTP_BLOCKED|60")
+        else:
+            db["contracts"].update_one({"contract_code": contract["contract_code"]}, update_doc)
+            remaining = 5 - attempts
+            raise HTTPException(status_code=400, detail=f"OTP_INVALID|{remaining}")
         
     # Success
     db["contracts"].update_one(

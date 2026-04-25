@@ -120,6 +120,14 @@ class PDFGenerator:
                 p5 = f"Por el desempeño de la administración, INMOBILIARIA SUCRE SPA, percibirá un honorario mensual de {admin_honorarios}% + IVA de la renta de arrendamiento que será descontado de ésta. La duración de la administración será de {admin_duracion} meses a contar de la fecha del contrato de arriendo, y se renovará automáticamente por periodos iguales y sucesivos si no mediare carta certificada de aviso de no renovación y correo electrónico de término del contrato, de cualquiera de las dos partes, con una anticipación de, a lo menos, 60 (sesenta) días corridos contados hacia atrás respecto de la fecha de vencimiento del periodo respectivo."
                 Story.append(Paragraph(p5, normal_style))
 
+        # Cláusulas Legales Obligatorias
+        Story.append(Spacer(1, 0.1 * inch))
+        Story.append(Paragraph("<b>CLÁUSULA — FIRMA ELECTRÓNICA:</b> Las partes acuerdan que la firma electrónica utilizada en este instrumento, conforme a la Ley 19.799, tendrá el mismo valor legal que una firma manuscrita, obligando plenamente a las partes.", normal_style))
+        Story.append(Paragraph("<b>CLÁUSULA — CONTROL DEL MEDIO:</b> El firmante declara que el número telefónico y correo electrónico proporcionados son de su exclusivo uso y control, siendo responsable de cualquier acción realizada mediante dichos medios.", normal_style))
+        Story.append(Paragraph("<b>CLÁUSULA — NO REPUDIO:</b> El firmante renuncia expresamente a desconocer la validez del presente contrato por el uso de medios electrónicos, incluyendo el acceso al enlace enviado, la autenticación mediante código de verificación (OTP) y la aceptación digital del documento.", normal_style))
+        Story.append(Paragraph("<b>CLÁUSULA — SISTEMA DE FIRMA:</b> El acceso al enlace único enviado al número telefónico del firmante, junto con la autenticación mediante código de verificación (OTP), el registro de dirección IP, fecha, hora y demás antecedentes técnicos, constituirá prueba suficiente de identidad y consentimiento del firmante.", normal_style))
+        Story.append(Paragraph("<b>CLÁUSULA — INTEGRIDAD DEL DOCUMENTO:</b> El documento firmado electrónicamente incorpora mecanismos de seguridad tales como hash criptográfico y registro de eventos, garantizando su integridad y la imposibilidad de alteración posterior a la firma.", normal_style))
+
         Story.append(Spacer(1, 0.5 * inch))
         Story.append(Paragraph("________________________________________________", normal_style))
         Story.append(Paragraph("<b>EL COMITENTE</b>", normal_style))
@@ -226,6 +234,14 @@ class PDFGenerator:
                 admin_duracion = vigencia if vigencia else "12"
                 p5 = f"Por el desempeño de la administración, INMOBILIARIA SUCRE SPA, percibirá un honorario mensual de {admin_honorarios}% + IVA de la renta de arrendamiento que será descontado de ésta. La duración de la administración será de {admin_duracion} meses a contar de la fecha del contrato de arriendo, y se renovará automáticamente por periodos iguales y sucesivos si no mediare carta certificada de aviso de no renovación y correo electrónico de término del contrato, de cualquiera de las dos partes, con una anticipación de, a lo menos, 60 (sesenta) días corridos contados hacia atrás respecto de la fecha de vencimiento del periodo respectivo."
                 Story.append(Paragraph(p5, normal_style))
+
+        # Cláusulas Legales Obligatorias
+        Story.append(Spacer(1, 0.1 * inch))
+        Story.append(Paragraph("<b>CLÁUSULA — FIRMA ELECTRÓNICA:</b> Las partes acuerdan que la firma electrónica utilizada en este instrumento, conforme a la Ley 19.799, tendrá el mismo valor legal que una firma manuscrita, obligando plenamente a las partes.", normal_style))
+        Story.append(Paragraph("<b>CLÁUSULA — CONTROL DEL MEDIO:</b> El firmante declara que el número telefónico y correo electrónico proporcionados son de su exclusivo uso y control, siendo responsable de cualquier acción realizada mediante dichos medios.", normal_style))
+        Story.append(Paragraph("<b>CLÁUSULA — NO REPUDIO:</b> El firmante renuncia expresamente a desconocer la validez del presente contrato por el uso de medios electrónicos, incluyendo el acceso al enlace enviado, la autenticación mediante código de verificación (OTP) y la aceptación digital del documento.", normal_style))
+        Story.append(Paragraph("<b>CLÁUSULA — SISTEMA DE FIRMA:</b> El acceso al enlace único enviado al número telefónico del firmante, junto con la autenticación mediante código de verificación (OTP), el registro de dirección IP, fecha, hora y demás antecedentes técnicos, constituirá prueba suficiente de identidad y consentimiento del firmante.", normal_style))
+        Story.append(Paragraph("<b>CLÁUSULA — INTEGRIDAD DEL DOCUMENTO:</b> El documento firmado electrónicamente incorpora mecanismos de seguridad tales como hash criptográfico y registro de eventos, garantizando su integridad y la imposibilidad de alteración posterior a la firma.", normal_style))
 
         Story.append(Spacer(1, 0.5 * inch))
         Story.append(Paragraph("________________________________________________", normal_style))

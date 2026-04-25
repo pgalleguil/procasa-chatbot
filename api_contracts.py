@@ -421,15 +421,14 @@ async def send_contract(contract_code: str, request: Request):
     nombre = contract.get('client_data', {}).get('nombre', contract.get('cliente_nombre', ''))
     direccion = contract.get('property_data', {}).get('direccion', contract.get('propiedad_direccion', ''))
     
-    mensaje = f"""Hola {nombre},
+    mensaje = f"""Hola, este enlace es personal, confidencial e intransferible.
 
-Te enviamos tu contrato de corretaje para la propiedad {direccion}.
+Al acceder y firmar el documento, usted declara ser el titular del número telefónico al que fue enviado este mensaje y acepta el contrato asociado a su propiedad.
 
-Para revisarlo y aceptarlo de forma electrónica, accede al siguiente enlace (válido por 24 horas):
+Este proceso utiliza firma electrónica conforme a la Ley 19.799.
 
-{link}
-
-Este proceso incluye verificación de identidad para tu seguridad."""
+👉 Ingrese aquí para revisar y firmar:
+{link}"""
     
     # Guardar mensaje dentro del mismo documento del contrato
     try:
@@ -469,15 +468,14 @@ async def view_contract_public(token: str, request: Request):
     if not contract:
         return HTMLResponse("<h1>Enlace inválido o expirado.</h1>", status_code=404)
         
-    # Verificar expiración (24h)
-    try:
-        ensure_document_valid(contract)
-    except HTTPException:
-        return HTMLResponse("<h1>Enlace inválido o expirado.</h1>", status_code=404)
-        
-    if contract["security"].get("token_used"):
-        return HTMLResponse("<h1>Este enlace ya ha sido utilizado o ha expirado.</h1>", status_code=403)
-        
+    is_signed = contract["security"].get("token_used", False)
+    
+    # Solo expira a las 24h si NO está firmado. Si ya se firmó, el acceso es permanente.
+    if not is_signed:
+        try:
+            ensure_document_valid(contract)
+        except HTTPException:
+            return HTMLResponse("<h1>Enlace inválido o expirado.</h1>", status_code=404)
     logger.info(f"[METRIC] contracts_started: {contract['contract_code']}")
         
     # Registrar acceso
@@ -516,7 +514,8 @@ async def view_contract_public(token: str, request: Request):
         "request": request,
         "contract": contract,
         "token": token,
-        "token_expiry_iso": token_expiry_iso
+        "token_expiry_iso": token_expiry_iso,
+        "is_signed": is_signed
     })
 
 @router.post("/api/{token}/request-otp")
@@ -690,8 +689,8 @@ async def verify_otp(token: str, request: Request):
     )
     return {"status": "ok"}
 
-@router.post("/api/{token}/legal_intent")
-async def register_legal_intent(token: str, request: Request):
+@router.post("/api/{token}/accept_terms")
+async def accept_terms(token: str, request: Request):
     db = get_db()
     contract = db["contracts"].find_one({"security.token": token})
     if not contract: return {"status": "error"}
@@ -700,33 +699,18 @@ async def register_legal_intent(token: str, request: Request):
     ua = request.headers.get("user-agent", "")
     server_timestamp = SecurityContracts.generate_server_timestamp()
     
-    db["contracts"].update_one(
-        {"contract_code": contract["contract_code"]},
-        {"$push": {"timeline": {"action": "explicit_legal_intent_checked", "server_timestamp": server_timestamp, "ip": ip, "user_agent": ua}}}
-    )
-    return {"status": "ok"}
-
-@router.post("/api/{token}/legal_intent")
-async def legal_intent(token: str, request: Request):
-    db = get_db()
-    contract = db["contracts"].find_one({"security.token": token})
-    if not contract:
-        raise HTTPException(status_code=404)
-        
-    ip = get_client_ip(request)
-    ua = request.headers.get("user-agent", "")
-    server_timestamp = SecurityContracts.generate_server_timestamp()
+    data = await request.json()
+    checkbox_state = data.get("accepted", False)
     
     db["contracts"].update_one(
         {"contract_code": contract["contract_code"]},
-        {"$push": {
-            "timeline": {
-                "action": "legal_intent_confirmed",
-                "server_timestamp": server_timestamp,
-                "ip": ip,
-                "user_agent": ua
-            }
-        }}
+        {"$push": {"timeline": {
+            "action": "terms_accepted", 
+            "server_timestamp": server_timestamp, 
+            "ip": ip, 
+            "user_agent": ua,
+            "checkbox_state": checkbox_state
+        }}}
     )
     return {"status": "ok"}
 

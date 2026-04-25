@@ -144,8 +144,35 @@
 
     <div class="contract-card bg-white rounded-xl shadow-lg border border-gray-200 p-5">
 
+        <!-- ── STEP 0 ── -->
+        <div id="step-0" class="step active text-center py-6">
+            <i class="fa-solid fa-lock text-gray-400 text-5xl mb-4"></i>
+            <h2 class="text-xl font-bold text-gray-900 mb-2">Acceso Confidencial</h2>
+            <p class="text-gray-600 mb-6 text-sm max-w-sm mx-auto">
+                Este documento es personal e intransferible. Para continuar, debes confirmar que eres el titular del número celular al cual fue enviado el enlace.
+            </p>
+            
+            <div class="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-6 text-left">
+                <div class="flex items-start">
+                    <input type="checkbox" id="check-step0"
+                        class="w-5 h-5 mt-0.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 flex-shrink-0 cursor-pointer">
+                    <div class="ml-3">
+                        <label for="check-step0" class="text-sm font-medium text-gray-800 cursor-pointer">
+                            Declaro ser el titular del número telefónico asignado a este contrato y acepto revisar el documento de forma electrónica.
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <button id="btn-continue-step0"
+                class="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 px-4 rounded-lg transition-colors shadow opacity-50 cursor-not-allowed"
+                disabled style="min-height:52px;font-size:16px;">
+                Continuar al documento
+            </button>
+        </div>
+
         <!-- ── STEP 1 ── -->
-        <div id="step-1" class="step active">
+        <div id="step-1" class="step">
 
             <div class="border-l-4 border-blue-600 pl-4 mb-4">
                 <h2 class="text-lg font-bold text-gray-900">Paso 1: Revisa tu Contrato</h2>
@@ -283,8 +310,20 @@
     const TOKEN = "{{ token }}";
     const tokenExpiryIso = "{{ token_expiry_iso }}";
 
+    const isSigned = {{ 'true' if is_signed else 'false' }};
+    const CONTRACT_CODE = "{{ contract.contract_code }}";
+
+    if (isSigned) {
+        document.getElementById('step-0').classList.remove('active');
+        document.getElementById('step-1').classList.remove('active');
+        document.getElementById('step-2').classList.remove('active');
+        document.getElementById('step-3').classList.remove('active');
+        document.getElementById('step-4').classList.add('active');
+        document.getElementById('btn-download-signed').href = `/contracts/api/download_signed/${CONTRACT_CODE}`;
+    }
+
     // ── Document Expiry Countdown ───────────────────────────────────────────
-    if (tokenExpiryIso) {
+    if (tokenExpiryIso && !isSigned) {
         const expiryDate = new Date(tokenExpiryIso);
         const countdownEl = document.getElementById('document-countdown');
         const bannerEl = document.getElementById('expiry-countdown-banner');
@@ -448,8 +487,8 @@
         await page.render({ canvasContext: ctx, viewport }).promise;
     }
 
-    renderPDF();
-
+    // renderPDF() is now called after step-0 is accepted
+    
     // ── Timer & reading check ────────────────────────────────────────────────
     const checkIntent   = document.getElementById('check-intent');
     const btnRequestOtp = document.getElementById('btn-request-otp');
@@ -548,6 +587,39 @@
             await fetch(`/contracts/api/${TOKEN}/legal_intent`, { method: 'POST' }).catch(()=>null);
             intentRegistered = true;
         }
+    });
+
+    // ── Step 0 logic ─────────────────────────────────────────────────────────
+    const checkStep0 = document.getElementById('check-step0');
+    const btnContinueStep0 = document.getElementById('btn-continue-step0');
+    let termsAccepted = false;
+
+    checkStep0.addEventListener('change', (e) => {
+        btnContinueStep0.disabled = !e.target.checked;
+        if (e.target.checked) {
+            btnContinueStep0.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-slate-800', 'hover:bg-slate-700');
+            btnContinueStep0.classList.add('bg-blue-600', 'hover:bg-blue-700');
+        } else {
+            btnContinueStep0.classList.add('opacity-50', 'cursor-not-allowed', 'bg-slate-800', 'hover:bg-slate-700');
+            btnContinueStep0.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        }
+    });
+
+    btnContinueStep0.addEventListener('click', async () => {
+        if (!termsAccepted) {
+            await fetch(`/contracts/api/${TOKEN}/accept_terms`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ accepted: true })
+            }).catch(()=>null);
+            termsAccepted = true;
+            
+            // Start PDF loading only after step 0 is accepted
+            renderPDF();
+        }
+        document.getElementById('step-0').classList.remove('active');
+        document.getElementById('step-1').classList.add('active');
+        window.scrollTo(0, 0);
     });
 
     // ── Step navigation ──────────────────────────────────────────────────────

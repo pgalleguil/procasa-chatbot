@@ -1,4 +1,4 @@
-import os
+﻿import os
 import io
 import qrcode
 from pathlib import Path
@@ -30,56 +30,39 @@ class PDFGenerator:
         """Genera el contrato original en base a la data."""
         buffer = io.BytesIO()
         # Reducimos márgenes para maximizar espacio (2cm = 56.7 pt)
-        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=56.7, leftMargin=56.7, topMargin=56.7, bottomMargin=56.7)
+        doc = SimpleDocTemplate(buffer, pagesize=letter,
+            rightMargin=42.5, leftMargin=42.5, topMargin=42.5, bottomMargin=42.5)
         styles = getSampleStyleSheet()
         
-        title_style = styles['Heading1']
-        title_style.alignment = 1 # Center
-        normal_style = styles['Normal']
-        normal_style.spaceAfter = 12  # Espaciado entre párrafos 12pt
-        normal_style.alignment = 4 # Justify
-        normal_style.leading = 12    # Reducido
-        normal_style.fontSize = 9    # Reducido
+        title_style = ParagraphStyle('ContractTitle', parent=styles['Heading1'],
+            alignment=1, fontSize=12, spaceAfter=4, spaceBefore=0)
+        normal_style = ParagraphStyle('ContractNormal', parent=styles['Normal'],
+            spaceAfter=6, alignment=4, leading=13, fontSize=10)
         
         Story = []
         
-        # Logo de Procasa
+        # Logo de Procasa — esquina superior izquierda
         logo_path = BASE_DIR / "static" / "logo.png"
         if logo_path.exists():
             from reportlab.lib.utils import ImageReader
             img_reader = ImageReader(str(logo_path))
             iw, ih = img_reader.getSize()
             aspect = ih / float(iw)
-            width = 1.6 * inch
+            width = 1.4 * inch
             height = width * aspect
             img = RLImage(str(logo_path), width=width, height=height)
-            img.hAlign = 'CENTER'
+            img.hAlign = 'LEFT'
             Story.append(img)
-            Story.append(Spacer(1, 0.1 * inch))
+            Story.append(Spacer(1, 0.05 * inch))
         
         tipo = contract_data.get("tipo", "Arriendo")
         
         Story.append(Paragraph(f"AUTORIZACIÓN DE {tipo.upper()}", title_style))
-        Story.append(Spacer(1, 0.2 * inch))
+        Story.append(Spacer(1, 0.08 * inch))
         
         if 'contract_code' in contract_data:
-            Story.append(Paragraph(f"<b>Código de Verificación de Contrato:</b> {contract_data['contract_code']}", normal_style))
-            Story.append(Paragraph(f"<b>Versión del contrato:</b> v{contract_data.get('version', '1.0')}", normal_style))
-            
-            fecha_emision = datetime.now(CHILE_TZ).strftime('%d/%m/%Y')
-            if 'created_at' in contract_data:
-                try:
-                    dt = contract_data['created_at']
-                    if isinstance(dt, str):
-                        dt = datetime.fromisoformat(dt)
-                    fecha_emision = dt.astimezone(CHILE_TZ).strftime('%d/%m/%Y')
-                except:
-                    pass
-            
-            Story.append(Paragraph(f"<b>Fecha de emisión:</b> {fecha_emision}", normal_style))
-            vigencia_dias = contract_data.get('property_data', {}).get('vigencia', contract_data.get('vigencia', '30'))
-            Story.append(Paragraph(f"<b>Vigencia:</b> {vigencia_dias} días", normal_style))
-            Story.append(Spacer(1, 0.2 * inch))
+            Story.append(Paragraph(f"<b>Código de Verificación:</b> {contract_data['contract_code']} &nbsp;&nbsp; <b>Versión:</b> v{contract_data.get('version', '1.0')} &nbsp;&nbsp; <b>Fecha:</b> {fecha_emision} &nbsp;&nbsp; <b>Vigencia:</b> {vigencia_dias} días", normal_style))
+            Story.append(Spacer(1, 0.06 * inch))
         
         fecha = datetime.now(CHILE_TZ).strftime('%d de %m de %Y').replace('de 01 de', 'de enero de').replace('de 02 de', 'de febrero de').replace('de 03 de', 'de marzo de').replace('de 04 de', 'de abril de').replace('de 05 de', 'de mayo de').replace('de 06 de', 'de junio de').replace('de 07 de', 'de julio de').replace('de 08 de', 'de agosto de').replace('de 09 de', 'de septiembre de').replace('de 10 de', 'de octubre de').replace('de 11 de', 'de noviembre de').replace('de 12 de', 'de diciembre de')
         nombre = contract_data.get('cliente_nombre', '')
@@ -120,18 +103,18 @@ class PDFGenerator:
                 p5 = f"Por el desempeño de la administración, INMOBILIARIA SUCRE SPA, percibirá un honorario mensual de {admin_honorarios}% + IVA de la renta de arrendamiento que será descontado de ésta. La duración de la administración será de {admin_duracion} meses a contar de la fecha del contrato de arriendo, y se renovará automáticamente por periodos iguales y sucesivos si no mediare carta certificada de aviso de no renovación y correo electrónico de término del contrato, de cualquiera de las dos partes, con una anticipación de, a lo menos, 60 (sesenta) días corridos contados hacia atrás respecto de la fecha de vencimiento del periodo respectivo."
                 Story.append(Paragraph(p5, normal_style))
 
-        # Cláusulas Legales Obligatorias
+        # DISPOSICIONES SOBRE FIRMA ELECTRONICA (3 clausulas)
         Story.append(Spacer(1, 0.1 * inch))
-        Story.append(Paragraph("<b>CLÁUSULA — FIRMA ELECTRÓNICA:</b> Las partes acuerdan que la firma electrónica utilizada en este instrumento, conforme a la Ley 19.799, tendrá el mismo valor legal que una firma manuscrita, obligando plenamente a las partes.", normal_style))
-        Story.append(Paragraph("<b>CLÁUSULA — CONTROL DEL MEDIO:</b> El firmante declara que el número telefónico y correo electrónico proporcionados son de su exclusivo uso y control, siendo responsable de cualquier acción realizada mediante dichos medios.", normal_style))
-        Story.append(Paragraph("<b>CLÁUSULA — NO REPUDIO:</b> El firmante renuncia expresamente a desconocer la validez del presente contrato por el uso de medios electrónicos, incluyendo el acceso al enlace enviado, la autenticación mediante código de verificación (OTP) y la aceptación digital del documento.", normal_style))
-        Story.append(Paragraph("<b>CLÁUSULA — SISTEMA DE FIRMA:</b> El acceso al enlace único enviado al número telefónico del firmante, junto con la autenticación mediante código de verificación (OTP), el registro de dirección IP, fecha, hora y demás antecedentes técnicos, constituirá prueba suficiente de identidad y consentimiento del firmante.", normal_style))
-        Story.append(Paragraph("<b>CLÁUSULA — INTEGRIDAD DEL DOCUMENTO:</b> El documento firmado electrónicamente incorpora mecanismos de seguridad tales como hash criptográfico y registro de eventos, garantizando su integridad y la imposibilidad de alteración posterior a la firma.", normal_style))
+        legal_section_style = ParagraphStyle('LegalTitle', parent=normal_style, fontName='Helvetica-Bold', fontSize=9, spaceAfter=4)
+        Story.append(Paragraph('DISPOSICIONES SOBRE FIRMA ELECTRONICA', legal_section_style))
+        Story.append(Paragraph('<b>CLAUSULA - FIRMA ELECTRONICA:</b> Las partes acuerdan que la firma electronica utilizada en este instrumento, conforme a la Ley 19.799, tendra el mismo valor legal que una firma manuscrita.', normal_style))
+        Story.append(Paragraph('<b>CLAUSULA - USO DE MEDIOS ELECTRONICOS:</b> El firmante declara que el numero telefonico y correo electronico proporcionados son de su exclusivo uso y control, aceptando la utilizacion de dichos medios para la suscripcion del presente instrumento.', normal_style))
+        Story.append(Paragraph('<b>CLAUSULA - VALIDEZ DEL PROCESO DE FIRMA:</b> El acceso al enlace enviado, la autenticacion mediante codigo de verificacion (OTP) y el registro de antecedentes tecnicos del sistema constituiran evidencia de la aceptacion y consentimiento del firmante.', normal_style))
 
-        Story.append(Spacer(1, 0.5 * inch))
+        Story.append(Spacer(1, 0.2 * inch))
         Story.append(Paragraph("________________________________________________", normal_style))
         Story.append(Paragraph("<b>EL COMITENTE</b>", normal_style))
-        Story.append(Paragraph(f"Nombre: {nombre}<br/>RUT: {rut}<br/>Teléfono: {contract_data.get('phone', '')}<br/>Correo electrónico: <a href='mailto:{email}'>{email}</a>", normal_style))
+        Story.append(Paragraph(f"Nombre: {nombre} &nbsp;&nbsp; RUT: {rut}<br/>Teléfono: {contract_data.get('phone', '')} &nbsp;&nbsp; Correo: <a href='mailto:{email}'>{email}</a>", normal_style))
         
         doc.contract_code = contract_data.get('contract_code', '')
         doc.is_original = True
@@ -157,16 +140,14 @@ class PDFGenerator:
     def generate_signed_contract(contract_data: dict, evidence_data: dict, verify_url: str) -> bytes:
         """Genera el contrato FINAL, incluyendo el texto original y la hoja de firmas anexada."""
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=56.7, leftMargin=56.7, topMargin=56.7, bottomMargin=56.7)
+        doc = SimpleDocTemplate(buffer, pagesize=letter,
+            rightMargin=42.5, leftMargin=42.5, topMargin=42.5, bottomMargin=42.5)
         styles = getSampleStyleSheet()
         
-        title_style = styles['Heading1']
-        title_style.alignment = 1 # Center
-        normal_style = styles['Normal']
-        normal_style.spaceAfter = 12
-        normal_style.alignment = 4 # Justify
-        normal_style.leading = 12
-        normal_style.fontSize = 9
+        title_style = ParagraphStyle('ContractTitleS', parent=styles['Heading1'],
+            alignment=1, fontSize=12, spaceAfter=4, spaceBefore=0)
+        normal_style = ParagraphStyle('ContractNormalS', parent=styles['Normal'],
+            spaceAfter=6, alignment=4, leading=13, fontSize=10)
         
         Story = []
         

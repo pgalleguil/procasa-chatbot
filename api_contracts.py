@@ -290,31 +290,39 @@ async def download_signed_pdf(contract_code: str):
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
 
-    file_id = contract.get("security", {}).get("signed_pdf_drive_id")
-    if not file_id:
-        raise HTTPException(status_code=404, detail="Documento firmado no disponible")
-    
-    gdrive = GDriveSync()
-    pdf_bytes = gdrive.download_file(file_id)
-    if not pdf_bytes:
-        raise HTTPException(status_code=404, detail="Documento firmado no disponible")
-        
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
     tipo = tipo_raw.replace(" ", "_")
     filename = f"Contrato_Autorizacion_{tipo}_{prop_code}_{contract_code}.pdf"
-    
-    from fastapi.responses import StreamingResponse
-    import io
-    
-    return StreamingResponse(
-        io.BytesIO(pdf_bytes),
-        media_type="application/pdf",
-        headers={
-            "Cache-Control": "public, max-age=3600",
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        }
-    )
+
+    local_path = contract.get("security", {}).get("signed_pdf_path")
+    if local_path and os.path.exists(local_path):
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            path=local_path,
+            filename=filename,
+            media_type="application/pdf",
+            content_disposition_type="attachment",
+            headers={"Cache-Control": "public, max-age=3600"}
+        )
+
+    file_id = contract.get("security", {}).get("signed_pdf_drive_id")
+    if file_id:
+        gdrive = GDriveSync()
+        pdf_bytes = gdrive.download_file(file_id)
+        if pdf_bytes:
+            from fastapi.responses import StreamingResponse
+            import io
+            return StreamingResponse(
+                io.BytesIO(pdf_bytes),
+                media_type="application/pdf",
+                headers={
+                    "Cache-Control": "public, max-age=3600",
+                    "Content-Disposition": f'attachment; filename="{filename}"'
+                }
+            )
+            
+    raise HTTPException(status_code=404, detail="Documento firmado no disponible")
 
 @router.get("/api/view_signed/{contract_code}")
 async def view_signed_pdf(contract_code: str):
@@ -324,31 +332,39 @@ async def view_signed_pdf(contract_code: str):
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
 
-    file_id = contract.get("security", {}).get("signed_pdf_drive_id")
-    if not file_id:
-        raise HTTPException(status_code=404, detail="Documento firmado no disponible")
-    
-    gdrive = GDriveSync()
-    pdf_bytes = gdrive.download_file(file_id)
-    if not pdf_bytes:
-        raise HTTPException(status_code=404, detail="Documento firmado no disponible")
-        
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
     tipo = tipo_raw.replace(" ", "_")
     filename = f"Contrato_Autorizacion_{tipo}_{prop_code}_{contract_code}.pdf"
-    
-    from fastapi.responses import StreamingResponse
-    import io
-        
-    return StreamingResponse(
-        io.BytesIO(pdf_bytes),
-        media_type="application/pdf",
-        headers={
-            "Cache-Control": "public, max-age=86400",
-            "Content-Disposition": f'inline; filename="{filename}"'
-        }
-    )
+
+    local_path = contract.get("security", {}).get("signed_pdf_path")
+    if local_path and os.path.exists(local_path):
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            path=local_path,
+            filename=filename,
+            media_type="application/pdf",
+            content_disposition_type="inline",
+            headers={"Cache-Control": "public, max-age=86400"}
+        )
+
+    file_id = contract.get("security", {}).get("signed_pdf_drive_id")
+    if file_id:
+        gdrive = GDriveSync()
+        pdf_bytes = gdrive.download_file(file_id)
+        if pdf_bytes:
+            from fastapi.responses import StreamingResponse
+            import io
+            return StreamingResponse(
+                io.BytesIO(pdf_bytes),
+                media_type="application/pdf",
+                headers={
+                    "Cache-Control": "public, max-age=86400",
+                    "Content-Disposition": f'inline; filename="{filename}"'
+                }
+            )
+            
+    raise HTTPException(status_code=404, detail="Documento firmado no disponible")
 
 @router.post("/api/{contract_code}/send")
 async def send_contract(contract_code: str, request: Request):
@@ -485,10 +501,22 @@ async def view_contract_public(token: str, request: Request):
         }
     )
     
+    # Obtener token_expiry exacto en America/Santiago para evitar el bug de las 27 horas
+    expiry = contract["security"].get("token_expiry")
+    token_expiry_iso = ""
+    if expiry:
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        import pytz
+        chile_tz = pytz.timezone('America/Santiago')
+        expiry_chile = expiry.astimezone(chile_tz)
+        token_expiry_iso = expiry_chile.isoformat()
+        
     return templates.TemplateResponse("contract_view.html", {
         "request": request,
         "contract": contract,
-        "token": token
+        "token": token,
+        "token_expiry_iso": token_expiry_iso
     })
 
 @router.post("/api/{token}/request-otp")
@@ -813,10 +841,12 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         secret_key = getattr(Config, "SECRET_KEY", "default_secret")
         server_hmac = SecurityContracts.generate_server_hmac(contract_code, original_hash, server_timestamp, secret_key)
         base_url = str(request.base_url).rstrip('/')
-        verify_url = f"{base_url}/contracts/verify/{contract_code}"
+        verify_token = str(uuid.uuid4()).replace("-", "")
+        verify_url = f"{base_url}/contracts/verify/{verify_token}"
 
         evidence_data = {
             "contract_code": contract_code,
+            "verify_token": verify_token,
             "server_timestamp": server_timestamp,
             "ip": ip,
             "geo_info": geo_info,
@@ -831,9 +861,16 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         signed_pdf_bytes = PDFGenerator.generate_signed_contract(contract, evidence_data, verify_url)
         signed_hash = SecurityContracts.hash_document(signed_pdf_bytes)
 
-        # Guardar archivos en tmp — garantizar directorio (crítico en Render)
+        # Guardar archivos en tmp (para subida a drive)
         tmp_dir.mkdir(parents=True, exist_ok=True)
         with open(tmp_dir / "contrato_firmado.pdf", "wb") as f:
+            f.write(signed_pdf_bytes)
+            
+        # Guardar localmente permanente como respaldo por si Drive no funciona
+        perm_dir = BASE_DIR / "contracts_pdf"
+        perm_dir.mkdir(parents=True, exist_ok=True)
+        local_pdf_path = perm_dir / f"{contract_code}_firmado.pdf"
+        with open(local_pdf_path, "wb") as f:
             f.write(signed_pdf_bytes)
 
         # 4. Generar Informe Legal
@@ -847,13 +884,15 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         with open(tmp_dir / "timeline.json", "w") as f:
             json.dump(timeline, f, indent=4)
 
-        # 5. Guardar Hashes finales en DB
+        # 5. Guardar Hashes finales y ruta local en DB
         db["contracts"].update_one(
             {"contract_code": contract_code},
             {"$set": {
                 "security.signed_hash": signed_hash,
                 "security.server_hmac": server_hmac,
-                "security.timeline_hash": timeline_hash
+                "security.timeline_hash": timeline_hash,
+                "security.signed_pdf_path": str(local_pdf_path),
+                "security.verify_token": verify_token
             }}
         )
 

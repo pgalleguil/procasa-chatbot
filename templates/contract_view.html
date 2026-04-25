@@ -281,7 +281,7 @@
 
 <script>
     const TOKEN = "{{ token }}";
-    const tokenExpiryIso = "{{ contract.security.token_expiry.isoformat() if contract.security.token_expiry else '' }}";
+    const tokenExpiryIso = "{{ token_expiry_iso }}";
 
     // ── Document Expiry Countdown ───────────────────────────────────────────
     if (tokenExpiryIso) {

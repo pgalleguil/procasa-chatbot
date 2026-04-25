@@ -135,7 +135,8 @@ class PDFGenerator:
     @staticmethod
     def _add_footer(canvas, doc):
         page_num = canvas.getPageNumber()
-        text = f"Página {page_num} de 2"
+        total = 1 if getattr(doc, 'is_original', False) else 2
+        text = f"Página {page_num} de {total}"
         canvas.saveState()
         
         # Dibujar pie de página centrado
@@ -243,12 +244,18 @@ class PDFGenerator:
             chile_time = server_ts_utc
             
         data = [
-            ["Código de contrato:", evidence_data.get('contract_code', '')],
-            ["Fecha de firma:", chile_time],
-            ["IP:", evidence_data.get('ip', '')],
+            ["Código único del contrato:", evidence_data.get('contract_code', '')],
+            ["Nombre completo:", nombre],
             ["RUT:", rut],
-            ["Método:", "OTP WhatsApp"],
-            ["Hash SHA256:", evidence_data.get('timeline_hash', '')]
+            ["Correo electrónico:", email],
+            ["Teléfono:", phone],
+            ["Dirección IP:", evidence_data.get('ip', '')],
+            ["Fecha y hora exacta:", chile_time],
+            ["Zona horaria:", "America/Santiago"],
+            ["Método de autenticación:", "Autenticación OTP WhatsApp"],
+            ["Tiempo de lectura del documento:", f"{evidence_data.get('read_time_seconds', 0)} segundos"],
+            ["Confirmación de visualización completa:", evidence_data.get('scrolled_to_bottom', 'Sí')],
+            ["Hash SHA256 del documento:", str(evidence_data.get('timeline_hash', ''))[:12] + "..."]
         ]
         
         t = Table(data, colWidths=[2.5*inch, 4*inch])
@@ -272,7 +279,13 @@ class PDFGenerator:
         
         msg_style = ParagraphStyle('Msg', parent=normal_style, alignment=1, fontName='Helvetica-Bold', fontSize=10)
         Story.append(Spacer(1, 0.1 * inch))
-        Story.append(Paragraph("Este documento fue firmado electrónicamente conforme a la Ley 19.799.", msg_style))
+        legal_text = """El firmante declara haber leído íntegramente el documento,
+comprendido su contenido y manifestado su consentimiento
+expreso mediante autenticación OTP enviada a su número
+de teléfono registrado.<br/><br/>
+El documento fue firmado electrónicamente conforme a la
+Ley 19.799."""
+        Story.append(Paragraph(legal_text, msg_style))
         
         doc.contract_code = evidence_data.get('contract_code', '')
         doc.is_original = False

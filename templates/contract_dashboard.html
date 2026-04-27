@@ -379,7 +379,9 @@
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Email <span class="required-star">*</span></label>
-                                        <input type="email" class="form-control" name="email" required onblur="validateField(this); triggerPreview();">
+                                        <input type="email" class="form-control" name="email" required
+                                            oninput="this.value=this.value.toLowerCase()"
+                                            onblur="this.value=this.value.trim().toLowerCase(); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).</div>
                                     </div>
                                 </div>
@@ -409,31 +411,45 @@
                                 <div class="row mb-3">
                                     <div class="col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Dirección Propiedad <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="propiedad_direccion" placeholder="Calle, Número" required oninput="triggerPreview()">
+                                        <input type="text" class="form-control" name="propiedad_direccion" placeholder="Calle, Número" required
+                                            oninput="triggerPreview()"
+                                            onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa la dirección.</div>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Comuna <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="comuna" placeholder="Ej: Santiago" required oninput="triggerPreview()">
+                                        <input type="text" class="form-control" name="comuna" placeholder="Ej: Santiago" required
+                                            oninput="triggerPreview()"
+                                            onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa la comuna.</div>
                                     </div>
                                 </div>
-                                
-                                <div class="row mb-3">
+                                      <div class="row mb-3">
                                     <div class="col-md-4">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Rol <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="rol" placeholder="Ej: 1234-5" required oninput="triggerPreview()" onblur="validateField(this)">
-                                        <div class="invalid-feedback">Requerido.</div>
+                                        <input type="text" class="form-control" name="rol" placeholder="Ej: 223-12 → 00223-012" required
+                                            oninput="this.value=this.value.replace(/[^0-9\-]/g,''); triggerPreview();"
+                                            onblur="formatRol(this); validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Solo números y un guión (Ej: 223-12).</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Precio <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="precio" placeholder="Ej: 5.000 UF" required oninput="triggerPreview()" onblur="validateField(this, 'precio')">
-                                        <div class="invalid-feedback">Ingresa el precio con su unidad (UF, $, Pesos).</div>
+                                        <input type="text" class="form-control" name="precio" placeholder="Ej: 5000" required
+                                            oninput="this.value=this.value.replace(/[^0-9\.\,]/g,''); triggerPreview();"
+                                            onblur="formatPrecio(this); validateField(this, 'precio'); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa el monto (se agregará UF automáticamente).</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Comisión <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="comision" placeholder="Ej: 2% o 50%" required oninput="triggerPreview()" onblur="validateField(this)">
+                                        <input type="text" class="form-control" name="comision" placeholder="Ej: 2" required
+                                            oninput="this.value=this.value.replace(/[^0-9\.]/g,''); triggerPreview();"
+                                            onblur="formatComision(this); validateField(this); triggerPreview();">
+                                        <div class="form-text text-secondary" style="font-size:0.75rem">Solo el número. Se agrega % automáticamente.</div>
                                         <div class="invalid-feedback">Requerido.</div>
                                     </div>
                                 </div>
+
+                             </div>
                                 
                                 <div class="row mb-3">
                                     <div class="col-md-6">
@@ -462,10 +478,14 @@
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer border-top-0">
+                <div class="modal-footer border-top-0 align-items-center">
+                    <div id="missingFieldsMsg" class="text-danger small fw-bold d-none me-auto">
+                        <i class="fa-solid fa-circle-exclamation me-1"></i>
+                        <span id="missingFieldsList">Faltan campos obligatorios.</span>
+                    </div>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
                     <button type="button" id="btnGenerateContract" class="btn btn-primary fw-bold" onclick="generateContract()" disabled>
-                        Generar y Preparar
+                        <i class="fa-solid fa-file-signature me-2"></i>Crear Documento
                     </button>
                 </div>
             </div>
@@ -490,27 +510,45 @@
             input.value = val.replace(/(^|\s)\S/g, l => l.toUpperCase());
         }
 
+        function toTitleCase(str) {
+            return str.toLowerCase().replace(/(^|\s)\S/g, l => l.toUpperCase()).trim();
+        }
+
         function formatRut(input) {
             let rut = input.value.replace(/[^0-9kK]/g, '').toUpperCase();
-            if (rut.length > 1) {
-                rut = rut.slice(0, -1) + '-' + rut.slice(-1);
-            }
-            if (rut.length > 5) {
-                rut = rut.slice(0, -5) + '.' + rut.slice(-5);
-            }
-            if (rut.length > 9) {
-                rut = rut.slice(0, -9) + '.' + rut.slice(-9);
-            }
+            if (rut.length > 1) rut = rut.slice(0, -1) + '-' + rut.slice(-1);
+            if (rut.length > 5) rut = rut.slice(0, -5) + '.' + rut.slice(-5);
+            if (rut.length > 9) rut = rut.slice(0, -9) + '.' + rut.slice(-9);
             input.value = rut;
+        }
+
+        function formatRol(input) {
+            const raw = input.value.replace(/[^0-9\-]/g, '').trim();
+            if (!raw.includes('-')) return; // no formatear si no hay guión
+            const parts = raw.split('-');
+            const manzana = parts[0].padStart(5, '0').slice(0, 5);
+            const predio  = (parts[1] || '').padStart(3, '0').slice(0, 3);
+            input.value = `${manzana}-${predio}`;
+        }
+
+        function formatPrecio(input) {
+            let v = input.value.replace(/[^0-9\.\,]/g, '').trim();
+            if (!v) return;
+            // Si ya termina en UF (no debería porque el oninput lo limpia, pero por si acaso)
+            input.value = v + ' UF';
+        }
+
+        function formatComision(input) {
+            let v = input.value.replace(/[^0-9\.]/g, '').trim();
+            if (!v) return;
+            input.value = v + '%';
         }
 
         function formatPhone(input) {
             let val = input.value.replace(/[^0-9+]/g, '');
-            // Extraer 8 ultimos
             let nums = val.replace(/[^0-9]/g, '');
             if(nums.length >= 8) {
                 let last8 = nums.slice(-8);
-                // Asumimos Chile por defecto si no tiene codigo internacional
                 if(!val.startsWith('+') || val.startsWith('+56')) {
                     input.value = '+569' + last8;
                 } else {
@@ -519,6 +557,7 @@
             }
         }
 
+
         // --- PREVIEW LOGIC ---
         let previewTimeout = null;
         let objectUrl = null;
@@ -526,34 +565,54 @@
         function checkFormValidity() {
             const form = document.getElementById('formNewContract');
             const btn = document.getElementById('btnGenerateContract');
-            const errorsDiv = document.getElementById('formErrors');
-            const globalErr = document.getElementById('globalErrorBanner');
-            
+            const msgDiv = document.getElementById('missingFieldsMsg');
+            const msgList = document.getElementById('missingFieldsList');
+
+            const FIELD_LABELS = {
+                cliente_nombre: 'Nombre',
+                cliente_rut: 'RUT',
+                phone: 'Teléfono',
+                email: 'Email',
+                propiedad_direccion: 'Dirección',
+                comuna: 'Comuna',
+                rol: 'ROL',
+                precio: 'Precio',
+                comision: 'Comisión'
+            };
+
+            const missing = [];
             let isValid = true;
             Array.from(form.elements).forEach(el => {
-                if(el.required && !el.value) isValid = false;
-                if(el.classList.contains('is-invalid')) isValid = false;
+                if (el.required && !el.value.trim()) {
+                    isValid = false;
+                    const label = FIELD_LABELS[el.name] || el.name;
+                    missing.push(label);
+                }
+                if (el.classList.contains('is-invalid')) isValid = false;
             });
-            
+
             btn.disabled = !isValid;
-            if(!isValid && form.classList.contains('was-validated')) {
-                errorsDiv.classList.remove('d-none');
-                errorsDiv.textContent = "Revisa los campos en rojo.";
-                globalErr.classList.remove('d-none');
+
+            if (!isValid && missing.length > 0) {
+                msgDiv.classList.remove('d-none');
+                msgList.textContent = 'Faltan: ' + missing.join(', ');
+            } else if (!isValid) {
+                msgDiv.classList.remove('d-none');
+                msgList.textContent = 'Revisa los campos en rojo.';
             } else {
-                errorsDiv.classList.add('d-none');
-                globalErr.classList.add('d-none');
+                msgDiv.classList.add('d-none');
             }
             return isValid;
         }
+
         
         function validateField(input, type) {
-            let valid = input.checkValidity();
-            if(type === 'precio') {
+            let valid = input.value.trim() !== '' && input.checkValidity();
+            if (type === 'precio') {
                 const val = input.value.toUpperCase();
-                valid = valid && (val.includes('UF') || val.includes('$') || val.includes('PESO'));
+                valid = valid && val.includes('UF');
             }
-            if(!valid) {
+            if (!valid) {
                 input.classList.add('is-invalid');
                 input.classList.remove('is-valid');
             } else {
@@ -598,7 +657,7 @@
                         const blob = await res.blob();
                         if(objectUrl) URL.revokeObjectURL(objectUrl);
                         objectUrl = URL.createObjectURL(blob);
-                        document.getElementById('pdfPreviewIframe').src = objectUrl + "#toolbar=0&navpanes=0&scrollbar=0&view=FitH";
+                        document.getElementById('pdfPreviewIframe').src = objectUrl + '#toolbar=0&navpanes=0&scrollbar=0&view=FitH&zoom=page-width';
                     }
                 } catch(e) {
                     console.error("Preview error", e);

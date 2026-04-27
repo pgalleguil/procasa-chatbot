@@ -128,9 +128,42 @@ async def create_contract(request: Request):
         data = await request.json()
         db = get_db()
         
+        # ── Normalizar campos antes de guardar y generar PDF ─────────────────
+        def normalize_fields(d: dict) -> dict:
+            # Email → minúsculas
+            if d.get("email"):
+                d["email"] = d["email"].strip().lower()
+            # Dirección → Title Case
+            if d.get("propiedad_direccion"):
+                d["propiedad_direccion"] = d["propiedad_direccion"].strip().title()
+            # Comuna → Title Case
+            if d.get("comuna"):
+                d["comuna"] = d["comuna"].strip().title()
+            # ROL → 00000-000
+            if d.get("rol"):
+                rol_raw = d["rol"].strip().replace(" ", "")
+                if "-" in rol_raw:
+                    parts = rol_raw.split("-", 1)
+                    manzana = parts[0].zfill(5)[:5]
+                    predio  = parts[1].zfill(3)[:3]
+                    d["rol"] = f"{manzana}-{predio}"
+            # Precio → asegurar UF en mayúsculas
+            if d.get("precio"):
+                precio = d["precio"].strip()
+                precio = precio.replace(" uf", " UF").replace(" Uf", " UF").replace(" uF", " UF")
+                if precio and not precio.upper().endswith("UF"):
+                    precio = precio + " UF"
+                d["precio"] = precio
+            # Comisión → agregar % si falta
+            if d.get("comision"):
+                comision = str(d["comision"]).strip().replace("%", "")
+                d["comision"] = comision + "%"
+            return d
+
+        data = normalize_fields(data)
         property_code = data.get("property_code", "").strip()
         
-        # Verificar si existe contrato previo creado (no firmado) para evitar duplicados si tiene el mismo property_code
+        # Verificar si existe contrato previo creado (no firmado)
         existing = None
         if property_code:
             existing = db["contracts"].find_one({
@@ -152,10 +185,16 @@ async def create_contract(request: Request):
         pdf_bytes = PDFGenerator.generate_original_contract(data)
         original_hash = SecurityContracts.hash_document(pdf_bytes)
         
-        # Guardar archivo temporal (en Render se perderá, pero GDrive es el respaldo)
+        # Guardar en tmp (caché efímera) Y en directorio permanente
         tmp_dir = BASE_DIR / "tmp" / "contracts" / contract_code
         tmp_dir.mkdir(parents=True, exist_ok=True)
         with open(tmp_dir / "contrato_original.pdf", "wb") as f:
+            f.write(pdf_bytes)
+
+        perm_dir = BASE_DIR / "contracts_pdf"
+        perm_dir.mkdir(parents=True, exist_ok=True)
+        perm_original_path = perm_dir / f"{contract_code}_original.pdf"
+        with open(perm_original_path, "wb") as f:
             f.write(pdf_bytes)
             
         server_timestamp = SecurityContracts.generate_server_timestamp()
@@ -182,6 +221,7 @@ async def create_contract(request: Request):
             "status": "created",
             "security": {
                 "original_hash": original_hash,
+                "original_pdf_path": str(perm_original_path),
                 "token": None,
                 "token_expiry": None,
                 "token_used": False,
@@ -209,8 +249,11 @@ async def create_contract(request: Request):
             contract_doc["version"] = existing.get("version", 1) + 1
             contract_doc["timeline"] = existing.get("timeline", []) + contract_doc["timeline"]
             contract_doc["created_at"] = existing.get("created_at")
-            # Preservar tokens y estado
-            contract_doc["security"] = existing.get("security", contract_doc["security"])
+            # Preservar tokens y estado de seguridad (excepto hash y ruta del nuevo original)
+            old_security = existing.get("security", {})
+            old_security["original_hash"] = original_hash
+            old_security["original_pdf_path"] = str(perm_original_path)
+            contract_doc["security"] = old_security
             contract_doc["status"] = existing.get("status", "created")
             
             db["contracts"].replace_one({"contract_code": contract_code}, contract_doc)
@@ -225,60 +268,75 @@ async def create_contract(request: Request):
 
 @router.get("/api/download/{contract_code}")
 async def download_original_pdf(contract_code: str):
-    """Permite descargar o ver el PDF generado antes de enviarlo"""
-    tmp_dir = BASE_DIR / "tmp" / "contracts" / contract_code
-    pdf_path = tmp_dir / "contrato_original.pdf"
-    
-    if not pdf_path.exists():
-        db = get_db()
-        contract = db["contracts"].find_one({"contract_code": contract_code})
-        if not contract:
-            raise HTTPException(status_code=404, detail="Contrato no encontrado")
-            
-        try:
-            from services.pdf_generator_contracts import PDFGenerator
-            data_payload = {
-                "contract_code": contract.get("contract_code"),
-                "origen": contract.get("origen", ""),
-                "property_code": contract.get("property_code", ""),
-                "phone": contract.get("phone", ""),
-                "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
-                "cliente_rut": contract.get("client_data", {}).get("rut", ""),
-                "email": contract.get("client_data", {}).get("email", ""),
-                "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
-                "comuna": contract.get("property_data", {}).get("comuna", ""),
-                "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
-                "rol": contract.get("property_data", {}).get("rol", ""),
-                "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
-                "precio": contract.get("property_data", {}).get("precio", ""),
-                "comision": contract.get("property_data", {}).get("comision", "")
-            }
-            pdf_bytes = PDFGenerator.generate_original_contract(data_payload)
-            tmp_dir.mkdir(parents=True, exist_ok=True)
-            with open(pdf_path, "wb") as f:
-                f.write(pdf_bytes)
-        except Exception as e:
-            logger.error(f"Error regenerando PDF: {e}")
-            raise HTTPException(status_code=500, detail="Error al regenerar el documento PDF")
-
+    """Permite descargar o ver el PDF original"""
     db = get_db()
     contract = db["contracts"].find_one({"contract_code": contract_code})
-    prop_code = contract.get('property_code', 'SD') if contract else 'SD'
-    
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contrato no encontrado")
+
+    # Prioridad 1: ruta permanente guardada en DB
+    perm_path_str = contract.get("security", {}).get("original_pdf_path")
+    if perm_path_str and os.path.exists(perm_path_str):
+        pdf_path = Path(perm_path_str)
+    else:
+        # Prioridad 2: directorio permanente por convención
+        perm_path_conv = BASE_DIR / "contracts_pdf" / f"{contract_code}_original.pdf"
+        if perm_path_conv.exists():
+            pdf_path = perm_path_conv
+        else:
+            # Prioridad 3: tmp (efímero)
+            tmp_path = BASE_DIR / "tmp" / "contracts" / contract_code / "contrato_original.pdf"
+            if tmp_path.exists():
+                pdf_path = tmp_path
+            else:
+                # Último recurso: regenerar desde DB (mismo código que el original)
+                try:
+                    data_payload = {
+                        "contract_code": contract.get("contract_code"),
+                        "origen": contract.get("origen", ""),
+                        "property_code": contract.get("property_code", ""),
+                        "phone": contract.get("phone", ""),
+                        "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
+                        "cliente_rut": contract.get("client_data", {}).get("rut", ""),
+                        "email": contract.get("client_data", {}).get("email", ""),
+                        "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
+                        "comuna": contract.get("property_data", {}).get("comuna", ""),
+                        "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
+                        "rol": contract.get("property_data", {}).get("rol", ""),
+                        "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
+                        "precio": contract.get("property_data", {}).get("precio", ""),
+                        "comision": contract.get("property_data", {}).get("comision", ""),
+                        "created_at": contract.get("created_at"),
+                    }
+                    pdf_bytes_regen = PDFGenerator.generate_original_contract(data_payload)
+                    perm_dir = BASE_DIR / "contracts_pdf"
+                    perm_dir.mkdir(parents=True, exist_ok=True)
+                    pdf_path = perm_dir / f"{contract_code}_original.pdf"
+                    with open(pdf_path, "wb") as f:
+                        f.write(pdf_bytes_regen)
+                    # Actualizar ruta en DB
+                    db["contracts"].update_one(
+                        {"contract_code": contract_code},
+                        {"$set": {"security.original_pdf_path": str(pdf_path)}}
+                    )
+                except Exception as e:
+                    logger.error(f"Error regenerando PDF: {e}")
+                    raise HTTPException(status_code=500, detail="Error al regenerar el documento PDF")
+
+    prop_code = contract.get('property_code', 'SD')
+    tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
+    tipo = tipo_raw.replace(" ", "_")
+
     from fastapi.responses import StreamingResponse
     import io
-    
     with open(pdf_path, "rb") as f:
         pdf_bytes = f.read()
-        
-    tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo') if contract else 'Arriendo'
-    tipo = tipo_raw.replace(" ", "_")
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={
-            "Cache-Control": "public, max-age=86400",
-            "Content-Disposition": f"inline; filename=Contrato_Autorizacion_{tipo}_{prop_code}_{contract_code}.pdf"
+            "Cache-Control": "no-cache",
+            "Content-Disposition": f"inline; filename=Contrato_{tipo}_{prop_code}_{contract_code}.pdf"
         }
     )
 

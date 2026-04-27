@@ -160,7 +160,7 @@ async def get_critical_leads_summary():
     
     # Exclusión explícita solicitada: Maria Paz no debe recibir esta alerta
     for exec_name, data in summary.items():
-        is_excluded = any(x in exec_name for x in ["Paz Galleguillos", "Raquel Cheneaux"])
+        is_excluded = exec_name and any(x in exec_name for x in ["Paz Galleguillos", "Raquel Cheneaux"])
         if data["count"] > 0 and exec_name != UNASSIGNED_LABEL and not is_excluded:
             sorted_summary.append({
                 "name": exec_name,

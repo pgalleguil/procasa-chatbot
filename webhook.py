@@ -845,7 +845,8 @@ async def webhook(
             # Logger de diagnóstico
             logger.info(f"[DEBUG TIMESTAMP] Msg TS: {ts_int} | Now: {now_ts} | Diff: {diff}s")
 
-            if diff > 43200: 
+            # Aumentado a 5 días (432000s) para permitir procesar mensajes acumulados del fin de semana
+            if diff > 432000: 
                 logger.warning(f"[SAFETY] Ignorando mensaje MUY antiguo de {diff}s (Remitente: {phone}).")
                 return JSONResponse({"status": "very old message ignored", "diff": diff}, status_code=200)
             
@@ -1609,16 +1610,36 @@ def asegurar_indices_db():
         
         # --- OPTIMIZACIÓN CAPTACIÓN ---
         # Índice Compuesto para Lista (Estado + Ejecutivo + Score)
-        db["yapo_propiedades"].create_index([
-            ("gestion.estado", 1), 
-            ("gestion.ejecutivo_asignado", 1), 
-            ("score_captacion", -1)
-        ])
+        try:
+            db["yapo_propiedades"].create_index([
+                ("gestion.estado", 1), 
+                ("gestion.ejecutivo_asignado", 1), 
+                ("score_captacion", -1)
+            ], name="idx_yapo_gestion_ejecutivo_score")
+        except Exception as idx_e:
+            if "IndexOptionsConflict" in str(idx_e):
+                logger.warning("IndexOptionsConflict detectado. Eliminando índice antiguo...")
+                try:
+                    db["yapo_propiedades"].drop_index("idx_yapo_gestion_ejecutivo_score")
+                    db["yapo_propiedades"].drop_index("gestion.estado_1_gestion.ejecutivo_asignado_1_score_captacion_-1")
+                except:
+                    pass
+                db["yapo_propiedades"].create_index([
+                    ("gestion.estado", 1), 
+                    ("gestion.ejecutivo_asignado", 1), 
+                    ("score_captacion", -1)
+                ], name="idx_yapo_gestion_ejecutivo_score")
+            else:
+                logger.warning(f"Error creando índice yapo_propiedades: {idx_e}")
+                
         # Índice para Búsqueda por Comuna Normalizada + Score
-        db["yapo_propiedades"].create_index([
-            ("details.comuna_norm", 1), 
-            ("score_captacion", -1)
-        ])
+        try:
+            db["yapo_propiedades"].create_index([
+                ("details.comuna_norm", 1), 
+                ("score_captacion", -1)
+            ])
+        except Exception as e:
+            logger.warning(f"Error creando índice comuna_norm: {e}")
         # Índice para Market Insights
         db["universo_cartera"].create_index([("comuna", 1), ("tipo", 1)])
         
@@ -1830,8 +1851,8 @@ async def daily_report_loop():
                 "status": "running", 
                 "last_heartbeat": datetime.now(CHILE_TZ).isoformat()
             }
-            # Reporte 1: Leads críticos SLA (09:30 AM)
-            await check_and_run_daily_report()
+            # Reporte 1: Leads críticos SLA (09:30 AM) - DESACTIVADO TEMPORALMENTE A PETICIÓN DEL USUARIO
+            # await check_and_run_daily_report()
             # Reporte 2: Meta Diaria de Captaciones (09:00 AM)
             await check_and_run_meta_diaria_report()
         except Exception as e:

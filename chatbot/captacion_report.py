@@ -20,7 +20,7 @@ META_DIARIA = 10
 MINIMO_ESPERADO = 5
 
 def is_executive_unavailable_on_date(name: str, dt: datetime) -> bool:
-    """Verifica si el ejecutivo no tiene turno por vacaciones o reglas específicas."""
+    if not name: return False
     if name in EXECUTIVES_ON_VACATION:
         return True
     if "Raquel" in name and dt.weekday() in [0, 2]: # Lunes y Miércoles

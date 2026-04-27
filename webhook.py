@@ -877,7 +877,7 @@ async def webhook(
             from_me = True
 
     # --- FILTRO PROPIETARIOS CON CONTRATO ---
-    from chatbot.database import get_db
+    from chatbot.storage import get_db
     _db = get_db()
     phone_digits_check = "".join(filter(str.isdigit, phone))
     if phone_digits_check and len(phone_digits_check) >= 8:

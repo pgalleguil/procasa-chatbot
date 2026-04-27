@@ -212,7 +212,7 @@
         
         .pdf-preview-container {
             height: 100%;
-            min-height: 70vh;
+            min-height: 500px;
             border: 1px solid var(--border-color);
             border-radius: 12px;
             background: #fff;
@@ -225,7 +225,7 @@
             width: 100%;
             height: 100%;
             border: none;
-            min-height: 70vh;
+            min-height: 500px;
         }
 
         /* ── Mobile: hamburger + sidebar overlay ────────────────── */
@@ -270,9 +270,8 @@
             .sidebar .nav-link span { opacity: 1 !important; transform: translateX(0) !important; }
             .main-content { margin-left: 0 !important; padding: 15px; }
             .hamburger-mobile { display: flex !important; }
-            /* PDF viewer en móvil: altura fija */
-            .pdf-preview-container { min-height: 50vh; }
-            #pdfPreviewIframe { min-height: 50vh; }
+            /* Ocultar PDF en móvil - no tiene sentido en pantalla pequeña */
+            .pdf-col-mobile-hidden { display: none !important; }
         }
 
         .required-star { color: var(--danger-color); }
@@ -409,8 +408,8 @@
                 </div>
                 <div class="modal-body" style="overflow-x: hidden;">
                     <div class="row g-3" style="overflow-x: hidden;">
-                        <!-- Formulario -->
-                        <div class="col-lg-6">
+                        <!-- Formulario: ocupa todo el ancho en móvil, la mitad en desktop -->
+                        <div class="col-12 col-lg-6">
                             <form id="formNewContract" class="needs-validation" novalidate>
                                 <div id="formErrors" class="alert alert-danger d-none mb-3 py-2 text-sm fw-bold"></div>
                                 <div class="row mb-3">
@@ -521,8 +520,8 @@
                             </form>
                         </div>
                         
-                        <!-- Vista Previa PDF -->
-                        <div class="col-lg-6">
+                        <!-- Vista Previa PDF: solo visible en desktop (lg+) -->
+                        <div class="col-lg-6 d-none d-lg-block pdf-col-mobile-hidden">
                             <div class="pdf-preview-container">
                                 <iframe id="pdfPreviewIframe" src="about:blank"></iframe>
                             </div>

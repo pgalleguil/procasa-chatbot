@@ -625,27 +625,45 @@
 
     function hasReachedBottom() {
         if (!pdfFullyRendered) return false;
-        const scrollTop      = window.scrollY || document.documentElement.scrollTop;
-        const viewportHeight = window.innerHeight;
-        const documentHeight = document.documentElement.scrollHeight;
-        return (scrollTop + viewportHeight) >= (documentHeight - 10);
+        const pdfContainer = document.getElementById('pdf-container');
+        if (!pdfContainer) return false;
+        
+        const scrollTop = pdfContainer.scrollTop;
+        const viewportHeight = pdfContainer.clientHeight;
+        const scrollHeight = pdfContainer.scrollHeight;
+        
+        // Also check window scroll just in case (mobile might use body scroll depending on layout)
+        const winScrollTop = window.scrollY || document.documentElement.scrollTop;
+        const winHeight = window.innerHeight;
+        const docHeight = document.documentElement.scrollHeight;
+        
+        const containerReached = (scrollTop + viewportHeight) >= (scrollHeight - 10);
+        const windowReached = (winScrollTop + winHeight) >= (docHeight - 10);
+        
+        return containerReached || windowReached;
     }
 
-    window.addEventListener('scroll', function () {
+    // Bind to both window and pdf-container
+    function onScrollCheck() {
         if (scrolledToBottom) return;
         if (!pdfFullyRendered) return;
         if (hasReachedBottom()) {
             scrolledToBottom = true;
             registerReadIfNeeded();
         }
-    }, { passive: true });
+    }
+    
+    window.addEventListener('scroll', onScrollCheck, { passive: true });
+    document.getElementById('pdf-container').addEventListener('scroll', onScrollCheck, { passive: true });
 
     function checkIfScrollIsNeeded() {
         if (!pdfFullyRendered) return;
         if (scrolledToBottom) return;
-        const documentHeight = document.documentElement.scrollHeight;
-        const viewportHeight = window.innerHeight;
-        if (documentHeight <= viewportHeight + 5) {
+        const pdfContainer = document.getElementById('pdf-container');
+        if (!pdfContainer) return;
+        
+        if (pdfContainer.scrollHeight <= pdfContainer.clientHeight + 5 || 
+            document.documentElement.scrollHeight <= window.innerHeight + 5) {
             scrolledToBottom = true;
             registerReadIfNeeded();
         }
@@ -756,7 +774,7 @@
     document.getElementById('btn-back-1').addEventListener('click', () => showStep('step-1'));
 
     // Step-2 Validate RUT → Step-3 (Send OTP)
-    document.getElementById('btn-validate-rut').addEventListener('click', () => {
+    document.getElementById('btn-validate-rut').addEventListener('click', async () => {
         const rut = document.getElementById('input-rut-request').value;
         const rutErrorEl = document.getElementById('rut-error');
         if (!rut || !isValidRUT(rut)) {
@@ -764,8 +782,33 @@
             rutErrorEl.classList.remove('hidden');
             return;
         }
+        
+        const btnValidate = document.getElementById('btn-validate-rut');
+        btnValidate.disabled = true;
+        btnValidate.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Verificando...';
         rutErrorEl.classList.add('hidden');
-        showStep('step-3');
+        
+        try {
+            const res = await fetch(`/contracts/api/${TOKEN}/validate-rut`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rut })
+            });
+            
+            if (res.ok) {
+                // RUT valid and matches contract
+                showStep('step-3');
+            } else {
+                const data = await res.json().catch(() => ({}));
+                rutErrorEl.textContent = data.detail || 'RUT no coincide con el registrado.';
+                rutErrorEl.classList.remove('hidden');
+            }
+        } catch (err) {
+            rutErrorEl.textContent = 'Error de conexión al verificar RUT.';
+            rutErrorEl.classList.remove('hidden');
+        } finally {
+            btnValidate.disabled = false;
+            btnValidate.innerHTML = 'Verificar y Continuar';
+        }
     });
 
     // Step-3 Back → Step-2

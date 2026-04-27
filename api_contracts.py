@@ -545,6 +545,26 @@ async def view_contract_public(token: str, request: Request):
         "is_signed": is_signed
     })
 
+@router.post("/api/{token}/validate-rut")
+async def validate_rut(token: str, request: Request):
+    """Valida el RUT contra el contrato antes de solicitar el OTP (sin enviarlo)"""
+    data = await request.json()
+    rut_ingresado = data.get("rut", "").strip()
+    
+    db = get_db()
+    contract = db["contracts"].find_one({"security.token": token})
+    if not contract:
+        raise HTTPException(status_code=403, detail="DOCUMENT_EXPIRED")
+        
+    contract_rut = contract.get("client_data", {}).get("rut", "").strip()
+    if not contract_rut:
+        contract_rut = contract.get("cliente_rut", "").strip()
+
+    if contract_rut and contract_rut.upper() != rut_ingresado.upper():
+        raise HTTPException(status_code=400, detail="RUT no coincide con el registrado.")
+        
+    return {"status": "ok"}
+
 @router.post("/api/{token}/request-otp")
 async def request_otp(token: str, request: Request):
     """Genera OTP y lo envía por WA"""
@@ -890,7 +910,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         }
 
         # 3. Generar PDF Firmado Completo
-        signed_pdf_bytes = PDFGenerator.generate_signed_contract(contract, evidence_data, verify_url)
+        signed_pdf_bytes = PDFGenerator.generate_signed_contract(original_bytes, contract, evidence_data, verify_url)
         signed_hash = SecurityContracts.hash_document(signed_pdf_bytes)
 
         # Guardar archivos en tmp (para subida a drive)

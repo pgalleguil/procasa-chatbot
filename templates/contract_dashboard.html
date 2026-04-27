@@ -279,6 +279,30 @@
             width: 95vw;
         }
 
+        /* --- NEW LAYOUT MODAL --- */
+        .contract-layout {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 24px;
+            align-items: start;
+        }
+
+        .form-section {
+            overflow-y: auto;
+        }
+
+        .pdf-viewer-section {
+            position: sticky;
+            top: 0;
+            height: calc(100vh - 120px);
+        }
+
+        @media (max-width: 768px) {
+            .contract-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
         .required-star { color: var(--danger-color); }
     </style>
 </head>
@@ -412,9 +436,9 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" style="overflow-x: hidden;">
-                    <div class="row g-3" style="overflow-x: hidden;">
-                        <!-- Formulario: ocupa todo el ancho en móvil, la mitad en desktop -->
-                        <div class="col-12 col-lg-6">
+                    <div class="contract-layout">
+                        <!-- Formulario -->
+                        <div class="form-section">
                             <form id="formNewContract" class="needs-validation" novalidate>
                                 <div id="formErrors" class="alert alert-danger d-none mb-3 py-2 text-sm fw-bold"></div>
                                 <div class="row mb-3">
@@ -526,15 +550,15 @@
                         </div>
                         
                         <!-- Vista Previa PDF: solo visible en desktop (lg+) -->
-                        <div class="col-lg-6 d-none d-lg-block pdf-col-mobile-hidden">
-                            <div class="pdf-preview-container">
+                        <div class="pdf-viewer-section d-none d-lg-block pdf-col-mobile-hidden">
+                            <div class="pdf-preview-container" style="height: 100%;">
                                 <iframe id="pdfPreviewIframe" src="about:blank"></iframe>
                             </div>
                             <div class="text-center mt-2 text-secondary small">
                                 <i class="fa-solid fa-eye"></i> Vista Previa en Tiempo Real
                             </div>
                         </div>
-                    </div>
+                    </div> <!-- /contract-layout -->
                 </div>
                 <div class="modal-footer border-top-0 align-items-center">
                     <div id="missingFieldsMsg" class="text-danger small fw-bold d-none me-auto">

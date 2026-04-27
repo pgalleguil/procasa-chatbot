@@ -218,21 +218,70 @@
             background: #fff;
             overflow: hidden;
             display: flex;
-            align-items: center;
-            justify-content: center;
+            align-items: stretch;
         }
         
         #pdfPreviewIframe {
             width: 100%;
             height: 100%;
             border: none;
+            min-height: 70vh;
         }
-        
+
+        /* ── Mobile: hamburger + sidebar overlay ────────────────── */
+        .hamburger-mobile {
+            display: none;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+
+        #sidebarOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.55);
+            z-index: 1100;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                left: -260px;
+                width: 260px;
+                transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .sidebar:hover { width: 260px; box-shadow: none; }
+            .sidebar.mobile-open {
+                left: 0;
+                box-shadow: 10px 0 30px rgba(0,0,0,0.8);
+                z-index: 1200;
+            }
+            .sidebar.mobile-open:hover { width: 260px; }
+            .sidebar .brand span,
+            .sidebar .nav-link span { opacity: 1 !important; transform: translateX(0) !important; }
+            .main-content { margin-left: 0 !important; padding: 15px; }
+            .hamburger-mobile { display: flex !important; }
+            /* PDF viewer en móvil: altura fija */
+            .pdf-preview-container { min-height: 50vh; }
+            #pdfPreviewIframe { min-height: 50vh; }
+        }
+
         .required-star { color: var(--danger-color); }
     </style>
 </head>
 
 <body>
+    <!-- Overlay para cerrar sidebar en móvil -->
+    <div id="sidebarOverlay" onclick="toggleMobileMenu()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;"></div>
     <!-- Sidebar -->
     <nav class="sidebar" id="sidebar">
         <div class="brand">
@@ -258,7 +307,12 @@
 
     <div class="main-content">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h4 class="m-0 fw-bold">Módulo de Convenios (Ley 19.799)</h4>
+            <div class="d-flex align-items-center">
+                <div class="hamburger-mobile" onclick="toggleMobileMenu()">
+                    <i class="fa-solid fa-bars"></i>
+                </div>
+                <h4 class="m-0 fw-bold">Módulo de Convenios (Ley 19.799)</h4>
+            </div>
             <button class="btn btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#modalNewContract">
                 <i class="fa-solid fa-plus me-2"></i> Nuevo Convenio
             </button>
@@ -502,6 +556,19 @@
             localStorage.setItem('theme', next);
         }
 
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.toggle('mobile-open');
+            overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
+        }
+
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth <= 768) toggleMobileMenu();
+            });
+        });
+
         if(localStorage.getItem('theme') === 'light') toggleTheme();
 
         // --- SMART INPUTS ---
@@ -657,7 +724,7 @@
                         const blob = await res.blob();
                         if(objectUrl) URL.revokeObjectURL(objectUrl);
                         objectUrl = URL.createObjectURL(blob);
-                        document.getElementById('pdfPreviewIframe').src = objectUrl + '#toolbar=0&navpanes=0&scrollbar=0&view=FitH&zoom=page-width';
+                        document.getElementById('pdfPreviewIframe').src = objectUrl + '#toolbar=0&navpanes=0&scrollbar=0&view=FitH';
                     }
                 } catch(e) {
                     console.error("Preview error", e);

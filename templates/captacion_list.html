@@ -697,10 +697,32 @@
             animation: fadeInUp 0.5s ease 0.2s forwards;
             opacity: 0;
         }
+        @media (max-width: 768px) {
+            .sidebar {
+                left: -260px;
+                width: 260px;
+                transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .sidebar:hover { width: 260px; box-shadow: none; }
+            .sidebar.mobile-open {
+                left: 0;
+                box-shadow: 10px 0 30px rgba(0,0,0,0.8);
+                z-index: 1200;
+            }
+            .sidebar.mobile-open:hover { width: 260px; }
+            .sidebar .brand span,
+            .sidebar .nav-link span { opacity: 1 !important; transform: translateX(0) !important; }
+            .main-content { margin-left: 0 !important; padding: 15px; }
+            .hamburger-mobile { display: flex !important; }
+            .page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+            .kpi-grid { grid-template-columns: repeat(2,1fr); }
+            .pagination-container { flex-direction: column; text-align: center; }
+        }
     </style>
 </head>
 
 <body>
+    <div id="sidebarOverlay" onclick="toggleMobileMenu()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;"></div>
     <!-- SIDEBAR (Mismo menú, sin cambios en estructura) -->
     <nav class="sidebar" id="sidebar">
         <div class="brand">
@@ -737,8 +759,15 @@
     <div class="main-content">
         <div class="page-header">
             <div>
-                <h2>Captaciones</h2>
-                <p>Propiedades detectadas para prospección</p>
+                <div class="d-flex align-items-center">
+                    <div class="hamburger-mobile" onclick="toggleMobileMenu()" style="margin-right:12px;">
+                        <i class="fa-solid fa-bars"></i>
+                    </div>
+                    <div>
+                        <h2>Captaciones</h2>
+                        <p>Propiedades detectadas para prospección</p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -903,6 +932,19 @@
                 }
             }
         }
+
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.toggle('mobile-open');
+            overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
+        }
+
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth <= 768) toggleMobileMenu();
+            });
+        });
 
         document.addEventListener('DOMContentLoaded', () => {
             const saved = localStorage.getItem('theme');

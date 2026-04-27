@@ -552,7 +552,7 @@ async def request_otp(token: str, request: Request):
     rut_ingresado = data.get("rut", "").strip()
     
     ip = get_client_ip(request)
-    check_rate_limit(ip, otp_rate_limit, 5, window_seconds=60)
+    check_rate_limit(ip, otp_rate_limit, 3, window_seconds=10)
     
     db = get_db()
     contract = db["contracts"].find_one({"security.token": token})
@@ -594,8 +594,8 @@ async def request_otp(token: str, request: Request):
         if last_request.tzinfo is None:
             last_request = last_request.replace(tzinfo=timezone.utc)
         seconds_elapsed = (now - last_request).total_seconds()
-        if seconds_elapsed < 30:
-            raise HTTPException(status_code=429, detail="Has solicitado demasiados códigos en poco tiempo. Por favor espera unos segundos antes de intentar nuevamente.")
+        if seconds_elapsed < 10:
+            raise HTTPException(status_code=429, detail="Espera unos segundos antes de solicitar un nuevo código.")
 
     otp = SecurityContracts.generate_otp(4)
     otp_expiry = now + timedelta(minutes=5)

@@ -241,20 +241,29 @@
 
             <div id="page-badge">Página 1 de ?</div>
 
-            <!-- Legal checkbox -->
-            <div class="mt-5 bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-4">
+            <!-- Legal checkbox (PARTE 1: 2 checks obligatorios) -->
+            <div class="mt-5 bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-3">
+                <div class="flex items-start">
+                    <input type="checkbox" id="check-titular"
+                        class="w-5 h-5 mt-0.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-40 flex-shrink-0 cursor-pointer" disabled>
+                    <div class="ml-3">
+                        <label for="check-titular" class="text-sm font-medium text-gray-800 cursor-pointer">
+                            Declaro ser el titular del número telefónico asignado a este contrato.
+                        </label>
+                    </div>
+                </div>
                 <div class="flex items-start">
                     <input type="checkbox" id="check-intent"
                         class="w-5 h-5 mt-0.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-40 flex-shrink-0 cursor-pointer" disabled>
                     <div class="ml-3">
                         <label for="check-intent" class="text-sm font-medium text-gray-800 cursor-pointer">
-                            Declaro ser el titular del número telefónico asignado a este contrato y acepto revisar el documento de forma electrónica.
+                            Acepto revisar el documento de forma electrónica y reconozco que mi aceptación constituye una firma válida conforme a la Ley 19.799.
                         </label>
-                        <p id="timer-text" class="text-xs text-blue-600 mt-1.5 font-semibold">
-                            Obligatorio leer el documento (35s restantes)...
-                        </p>
                     </div>
                 </div>
+                <p id="timer-text" class="text-xs text-blue-600 font-semibold">
+                    Obligatorio leer el documento (35s restantes)...
+                </p>
                 <button id="btn-request-otp"
                     class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     style="min-height:48px;font-size:16px;" disabled>
@@ -277,6 +286,7 @@
                 <input type="text" id="input-rut-request" inputmode="text"
                     class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
                     placeholder="Ej: 12345678-9" oninput="formatRut(this)">
+                <p id="rut-error" class="text-red-500 text-sm mt-2 font-medium hidden"></p>
             </div>
             <div class="space-y-3">
                 <button id="btn-submit-rut"
@@ -547,12 +557,15 @@
         await page.render({ canvasContext: ctx, viewport }).promise;
     }
 
+    console.time("page load");
+
     // Cargar el PDF de forma diferida al terminar de cargar el DOM
-    window.onload = function() {
+    window.addEventListener('load', function() {
+        console.timeEnd("page load");
         if (!isSigned) {
             setTimeout(renderPDF, 100);
         }
-    };
+    });
     
     // ── Timer & reading check ────────────────────────────────────────────────
     const checkIntent   = document.getElementById('check-intent');
@@ -564,17 +577,11 @@
     let pdfFullyRendered  = false;
     let readRegistered    = false;
 
-    function notifyBackendRead() {
-        if (!readRegistered) {
-            readRegistered = true;
-            fetch(`/contracts/api/${TOKEN}/legal_intent`, { method: 'POST' }).catch(() => {});
-        }
-    }
+    // (legal_intent endpoint does not exist — removed to avoid 404)
 
     function registerReadIfNeeded() {
         if (readRegistered) return;
         readRegistered = true;
-        notifyBackendRead();
         checkEnableCheckbox();
     }
 
@@ -631,28 +638,32 @@
             timerText.textContent = 'Desplázate hasta el final del documento para continuar...';
             return;
         }
-        timerText.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Documento revisado. Ya puedes marcar la casilla.';
+        timerText.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Documento revisado. Ya puedes marcar las casillas.';
         timerText.classList.replace('text-blue-600', 'text-green-600');
+        // Enable both checkboxes
+        const checkTitular = document.getElementById('check-titular');
+        if (checkTitular) checkTitular.disabled = false;
         checkIntent.disabled = false;
     }
 
-    checkIntent.addEventListener('change', async (e) => {
-        btnRequestOtp.disabled = !e.target.checked;
-        if (e.target.checked) {
+    // Both checkboxes must be ticked to enable the button
+    function updateOtpButton() {
+        const checkTitular = document.getElementById('check-titular');
+        const bothChecked = checkTitular && checkTitular.checked && checkIntent.checked;
+        btnRequestOtp.disabled = !bothChecked;
+        if (bothChecked) {
             btnRequestOtp.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-white"></i> Solicitar código de verificación';
             btnRequestOtp.classList.remove('bg-blue-600', 'hover:bg-blue-700');
             btnRequestOtp.classList.add('bg-[#25D366]', 'hover:bg-[#1EBE5D]');
         } else {
-            btnRequestOtp.textContent = 'Debe leer el documento completo primero';
+            btnRequestOtp.textContent = 'Debe leer el documento y marcar ambas casillas';
             btnRequestOtp.classList.remove('bg-[#25D366]', 'hover:bg-[#1EBE5D]');
             btnRequestOtp.classList.add('bg-blue-600', 'hover:bg-blue-700');
         }
+    }
 
-        if (e.target.checked && !intentRegistered) {
-            await fetch(`/contracts/api/${TOKEN}/legal_intent`, { method: 'POST' }).catch(()=>null);
-            intentRegistered = true;
-        }
-    });
+    document.getElementById('check-titular')?.addEventListener('change', updateOtpButton);
+    checkIntent.addEventListener('change', updateOtpButton);
 
     // ── Progress bar ─────────────────────────────────────────────────────────
     // Mapping: internal step-id → visible step (1,2)
@@ -691,6 +702,7 @@
         input.value = rut;
     }
 
+    // Clicking the OTP button moves to step-2 (RUT entry)
     btnRequestOtp.addEventListener('click', () => {
         showStep('step-2');
         document.getElementById('input-rut-request').focus();
@@ -752,7 +764,8 @@
         }
         const btn = document.getElementById('btn-submit-rut');
         btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enviando...';
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enviando código...';
+        console.time("OTP request");
         
         try {
             const res = await fetchWithRetry(`/contracts/api/${TOKEN}/request-otp`, {
@@ -760,6 +773,7 @@
                 body: JSON.stringify({ rut })
             });
             if (res.ok) {
+                console.timeEnd("OTP request");
                 showStep('step-3');
                 window.scrollTo(0, 0);
                 
@@ -786,9 +800,12 @@
                     location.reload();
                     return;
                 }
-                goToStep2(data.detail || 'Error al solicitar código.');
+                // Show 429 (rate limit or cooldown) inline instead of alert
+                const msg = data.detail || 'Error al solicitar código.';
+                goToStep2(msg);
             }
         } catch (err) {
+            console.timeEnd("OTP request");
             if (err.message === 'TIMEOUT') {
                 goToStep2('La conexión está tardando más de lo normal. Intente nuevamente.');
             } else {
@@ -802,7 +819,13 @@
 
     document.getElementById('btn-submit-rut').addEventListener('click', () => {
         const rut = document.getElementById('input-rut-request').value;
-        if (!rut || !isValidRUT(rut)) { alert('Por favor ingresa un RUT válido.'); return; }
+        const rutErrorEl = document.getElementById('rut-error');
+        if (!rut || !isValidRUT(rut)) {
+            if (rutErrorEl) { rutErrorEl.textContent = 'Ingresa un RUT válido (Ej: 12345678-9)'; rutErrorEl.classList.remove('hidden'); }
+            else alert('Por favor ingresa un RUT válido.');
+            return;
+        }
+        if (rutErrorEl) rutErrorEl.classList.add('hidden');
         requestNewOTP();
     });
 

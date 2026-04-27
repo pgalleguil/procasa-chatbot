@@ -289,39 +289,8 @@ async def download_original_pdf(contract_code: str):
             if tmp_path.exists():
                 pdf_path = tmp_path
             else:
-                # Último recurso: regenerar desde DB (mismo código que el original)
-                try:
-                    data_payload = {
-                        "contract_code": contract.get("contract_code"),
-                        "origen": contract.get("origen", ""),
-                        "property_code": contract.get("property_code", ""),
-                        "phone": contract.get("phone", ""),
-                        "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
-                        "cliente_rut": contract.get("client_data", {}).get("rut", ""),
-                        "email": contract.get("client_data", {}).get("email", ""),
-                        "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
-                        "comuna": contract.get("property_data", {}).get("comuna", ""),
-                        "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
-                        "rol": contract.get("property_data", {}).get("rol", ""),
-                        "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
-                        "precio": contract.get("property_data", {}).get("precio", ""),
-                        "comision": contract.get("property_data", {}).get("comision", ""),
-                        "created_at": contract.get("created_at"),
-                    }
-                    pdf_bytes_regen = PDFGenerator.generate_original_contract(data_payload)
-                    perm_dir = BASE_DIR / "contracts_pdf"
-                    perm_dir.mkdir(parents=True, exist_ok=True)
-                    pdf_path = perm_dir / f"{contract_code}_original.pdf"
-                    with open(pdf_path, "wb") as f:
-                        f.write(pdf_bytes_regen)
-                    # Actualizar ruta en DB
-                    db["contracts"].update_one(
-                        {"contract_code": contract_code},
-                        {"$set": {"security.original_pdf_path": str(pdf_path)}}
-                    )
-                except Exception as e:
-                    logger.error(f"Error regenerando PDF: {e}")
-                    raise HTTPException(status_code=500, detail="Error al regenerar el documento PDF")
+                logger.error(f"El documento original para el contrato {contract_code} no se encuentra en caché temporal ni permanente.")
+                raise HTTPException(status_code=404, detail="El documento PDF no está disponible. Solo se genera al crear el contrato.")
 
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
@@ -335,7 +304,7 @@ async def download_original_pdf(contract_code: str):
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "public, max-age=86400",
             "Content-Disposition": f"inline; filename=Contrato_{tipo}_{prop_code}_{contract_code}.pdf"
         }
     )

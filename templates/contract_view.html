@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
     <title>Firma de Contrato - Procasa Sucre</title>
-    <link rel="preload" as="fetch" crossorigin="anonymous" href="/contracts/api/download/{{ contract.contract_code }}">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -480,6 +480,7 @@
     }
 
     async function renderPDF() {
+        console.time("PDF load");
         try {
             const loadingTask = pdfjsLib.getDocument(pdfUrl);
             loadingTask.onProgress = function(progress) {
@@ -538,6 +539,7 @@
             // Marcar PDF como completamente renderizado y verificar si se necesita scroll
             pdfFullyRendered = true;
             checkIfScrollIsNeeded();
+            console.timeEnd("PDF load");
         } catch (err) {
             console.error('PDF error:', err);
             pdfLoading.innerHTML = `
@@ -699,8 +701,8 @@
             }).catch(()=>null);
             termsAccepted = true;
             
-            // Start PDF loading only after step 0 is accepted
-            renderPDF();
+            // Start PDF loading using lazy load (deferred)
+            setTimeout(renderPDF, 100);
         }
         showStep('step-1');
     });

@@ -72,6 +72,7 @@
         .pdf-page-wrapper canvas {
             display: block;
             width: 100% !important;
+            max-width: 100%;
             height: auto !important;
             box-shadow: 0 2px 10px rgba(0,0,0,0.20);
             border-radius: 2px;
@@ -197,48 +198,20 @@
         <!-- ── PROGRESS BAR (shared, always visible) ── -->
         <div id="progress-bar-wrap" class="mb-6">
             <div class="flex items-center justify-between mb-2">
-                <span id="progress-label" class="text-sm font-bold text-gray-700">Paso 1 de 3 — Verifica tu teléfono</span>
-                <span id="progress-fraction" class="text-xs font-semibold text-blue-600">1 / 3</span>
+                <span id="progress-label" class="text-sm font-bold text-gray-700">Paso 1 de 2 — Revisa tu contrato</span>
+                <span id="progress-fraction" class="text-xs font-semibold text-blue-600">1 / 2</span>
             </div>
             <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                <div id="progress-fill" class="bg-blue-600 h-2 rounded-full transition-all duration-500" style="width: 33.3%"></div>
+                <div id="progress-fill" class="bg-blue-600 h-2 rounded-full transition-all duration-500" style="width: 50%"></div>
             </div>
             <div class="flex justify-between mt-1.5">
-                <span class="text-xs text-gray-400">Verifica tu teléfono</span>
                 <span class="text-xs text-gray-400">Revisa el contrato</span>
                 <span class="text-xs text-gray-400">Confirma y firma</span>
             </div>
         </div>
 
-        <!-- ── STEP 0 — Visible: Paso 1 · Verifica tu teléfono ── -->
-        <div id="step-0" class="step active text-center py-6">
-            <i class="fa-solid fa-mobile-screen-button text-blue-500 text-5xl mb-4 block"></i>
-            <h2 class="text-xl font-bold text-gray-900 mb-2">Verifica tu teléfono</h2>
-            <p class="text-gray-600 mb-6 text-sm max-w-sm mx-auto">
-                Este enlace es personal e intransferible. Confirma que eres el titular del número al que fue enviado.
-            </p>
-
-            <div class="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-6 text-left">
-                <div class="flex items-start">
-                    <input type="checkbox" id="check-step0"
-                        class="w-5 h-5 mt-0.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 flex-shrink-0 cursor-pointer">
-                    <div class="ml-3">
-                        <label for="check-step0" class="text-sm font-medium text-gray-800 cursor-pointer">
-                            Declaro ser el titular del número telefónico asignado a este contrato y acepto revisar el documento de forma electrónica.
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <button id="btn-continue-step0"
-                class="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 px-4 rounded-lg transition-colors shadow opacity-50 cursor-not-allowed"
-                disabled style="min-height:52px;font-size:16px;">
-                Continuar al documento
-            </button>
-        </div>
-
-        <!-- ── STEP 1 — Visible: Paso 2 · Revisa tu contrato ── -->
-        <div id="step-1" class="step">
+        <!-- ── STEP 1 — Visible: Paso 1 · Revisa tu contrato ── -->
+        <div id="step-1" class="step active py-2">
 
             <div class="border-l-4 border-blue-600 pl-4 mb-4">
                 <h2 class="text-lg font-bold text-gray-900">Revisa tu Contrato</h2>
@@ -253,7 +226,7 @@
             </div>
 
             <div class="mb-4">
-                <a href="/contracts/api/download/{{ contract.contract_code }}" target="_blank"
+                <a href="/contracts_pdf/{{ contract.contract_code }}_original.pdf" target="_blank"
                     class="w-full flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors shadow text-sm">
                     <i class="fa-solid fa-file-pdf text-red-400 mr-2"></i>
                     Descargar / Ver en pantalla completa
@@ -275,7 +248,7 @@
                         class="w-5 h-5 mt-0.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-40 flex-shrink-0 cursor-pointer" disabled>
                     <div class="ml-3">
                         <label for="check-intent" class="text-sm font-medium text-gray-800 cursor-pointer">
-                            <b>Intención Jurídica:</b> Declaro que he leído, comprendido y acepto íntegramente este contrato, y que mi aceptación electrónica constituye una firma válida y vinculante.
+                            Declaro ser el titular del número telefónico asignado a este contrato y acepto revisar el documento de forma electrónica.
                         </label>
                         <p id="timer-text" class="text-xs text-blue-600 mt-1.5 font-semibold">
                             Obligatorio leer el documento (35s restantes)...
@@ -285,7 +258,7 @@
                 <button id="btn-request-otp"
                     class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     style="min-height:48px;font-size:16px;" disabled>
-                    Debe aceptar la Intención Jurídica primero
+                    Debe leer el documento completo primero
                 </button>
             </div>
         </div>
@@ -399,8 +372,8 @@
         document.getElementById('step-4').classList.add('active');
         document.getElementById('btn-download-signed').href = `/contracts/api/download_signed/${CONTRACT_CODE}`;
         // Update progress bar to completed
-        document.getElementById('progress-label').textContent    = 'Paso 3 de 3 — ¡Firmado!';
-        document.getElementById('progress-fraction').textContent = '3 / 3';
+        document.getElementById('progress-label').textContent    = 'Paso 2 de 2 — ¡Firmado!';
+        document.getElementById('progress-fraction').textContent = '2 / 2';
         document.getElementById('progress-fill').style.width     = '100%';
         document.getElementById('progress-fill').classList.replace('bg-blue-600', 'bg-green-500');
     }
@@ -459,7 +432,7 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
         'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-    const pdfUrl       = '/contracts/api/download/{{ contract.contract_code }}';
+    const pdfUrl       = '/contracts_pdf/{{ contract.contract_code }}_original.pdf';
     const pdfContainer = document.getElementById('pdf-container');
     const pdfLoading   = document.getElementById('pdf-loading');
     const pageBadge    = document.getElementById('page-badge');
@@ -574,7 +547,12 @@
         await page.render({ canvasContext: ctx, viewport }).promise;
     }
 
-    // renderPDF() is now called after step-0 is accepted
+    // Cargar el PDF de forma diferida al terminar de cargar el DOM
+    window.onload = function() {
+        if (!isSigned) {
+            setTimeout(renderPDF, 100);
+        }
+    };
     
     // ── Timer & reading check ────────────────────────────────────────────────
     const checkIntent   = document.getElementById('check-intent');
@@ -665,7 +643,7 @@
             btnRequestOtp.classList.remove('bg-blue-600', 'hover:bg-blue-700');
             btnRequestOtp.classList.add('bg-[#25D366]', 'hover:bg-[#1EBE5D]');
         } else {
-            btnRequestOtp.textContent = 'Debe aceptar la Intención Jurídica primero';
+            btnRequestOtp.textContent = 'Debe leer el documento completo primero';
             btnRequestOtp.classList.remove('bg-[#25D366]', 'hover:bg-[#1EBE5D]');
             btnRequestOtp.classList.add('bg-blue-600', 'hover:bg-blue-700');
         }
@@ -676,45 +654,13 @@
         }
     });
 
-    // ── Step 0 logic ─────────────────────────────────────────────────────────
-    const checkStep0 = document.getElementById('check-step0');
-    const btnContinueStep0 = document.getElementById('btn-continue-step0');
-    let termsAccepted = false;
-
-    checkStep0.addEventListener('change', (e) => {
-        btnContinueStep0.disabled = !e.target.checked;
-        if (e.target.checked) {
-            btnContinueStep0.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-slate-800', 'hover:bg-slate-700');
-            btnContinueStep0.classList.add('bg-blue-600', 'hover:bg-blue-700');
-        } else {
-            btnContinueStep0.classList.add('opacity-50', 'cursor-not-allowed', 'bg-slate-800', 'hover:bg-slate-700');
-            btnContinueStep0.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-        }
-    });
-
-    btnContinueStep0.addEventListener('click', async () => {
-        if (!termsAccepted) {
-            await fetch(`/contracts/api/${TOKEN}/accept_terms`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ accepted: true })
-            }).catch(()=>null);
-            termsAccepted = true;
-            
-            // Start PDF loading using lazy load (deferred)
-            setTimeout(renderPDF, 100);
-        }
-        showStep('step-1');
-    });
-
     // ── Progress bar ─────────────────────────────────────────────────────────
-    // Mapping: internal step-id → visible step (1,2,3)
+    // Mapping: internal step-id → visible step (1,2)
     const STEP_PROGRESS = {
-        'step-0': { n: 1, label: 'Paso 1 de 3 — Verifica tu teléfono',  pct: '33.3%' },
-        'step-1': { n: 2, label: 'Paso 2 de 3 — Revisa tu contrato',    pct: '66.6%' },
-        'step-2': { n: 3, label: 'Paso 3 de 3 — Confirma y firma',      pct: '100%'  },
-        'step-3': { n: 3, label: 'Paso 3 de 3 — Confirma y firma',      pct: '100%'  },
-        'step-4': { n: 3, label: 'Paso 3 de 3 — ¡Firmado!',             pct: '100%'  },
+        'step-1': { n: 1, label: 'Paso 1 de 2 — Revisa tu contrato',    pct: '50%' },
+        'step-2': { n: 2, label: 'Paso 2 de 2 — Confirma y firma',      pct: '100%'  },
+        'step-3': { n: 2, label: 'Paso 2 de 2 — Confirma y firma',      pct: '100%'  },
+        'step-4': { n: 2, label: 'Paso 2 de 2 — ¡Firmado!',             pct: '100%'  },
     };
 
     function showStep(targetId) {
@@ -725,7 +671,7 @@
         const p = STEP_PROGRESS[targetId];
         if (p) {
             document.getElementById('progress-label').textContent   = p.label;
-            document.getElementById('progress-fraction').textContent = p.n + ' / 3';
+            document.getElementById('progress-fraction').textContent = p.n + ' / 2';
             document.getElementById('progress-fill').style.width    = p.pct;
             // Hide bar on completion
             if (targetId === 'step-4') {

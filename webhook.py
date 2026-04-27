@@ -108,6 +108,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Mount contracts_pdf to serve PDFs statically and fast
+CONTRACTS_PDF_DIR = BASE_DIR / "contracts_pdf"
+CONTRACTS_PDF_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/contracts_pdf", StaticFiles(directory=CONTRACTS_PDF_DIR), name="contracts_pdf")
+
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 from api_contracts import router as contracts_router

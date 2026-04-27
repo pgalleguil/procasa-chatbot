@@ -289,6 +289,7 @@
 
         .form-section {
             overflow-y: auto;
+            overflow-x: hidden;
         }
 
         .pdf-viewer-section {
@@ -516,10 +517,10 @@
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Precio <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="precio" placeholder="Ej: 5000" required
-                                            oninput="this.value=this.value.replace(/[^0-9\.\,]/g,''); triggerPreview();"
-                                            onblur="formatPrecio(this); validateField(this, 'precio'); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa el monto (se agregará UF automáticamente).</div>
+                                        <input type="text" class="form-control" name="precio" placeholder="Ej: 5000 UF o $5.000.000" required
+                                            oninput="this.value=this.value.replace(/[^0-9\.\,\$\sUuFfCcLlPp]/g,''); triggerPreview();"
+                                            onblur="validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa el monto.</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Comisión <span class="required-star">*</span></label>
@@ -533,8 +534,11 @@
                                 
                                 <div class="row mb-3">
                                     <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Cód Propiedad (Convecta)</label>
-                                        <input type="text" class="form-control" name="property_code" placeholder="Ej: 15482" oninput="triggerPreview()">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Cód Propiedad (Convecta) <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="property_code" placeholder="Ej: 15482" required
+                                            oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();"
+                                            onblur="validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Requerido (solo números).</div>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Origen</label>
@@ -625,10 +629,7 @@
         }
 
         function formatPrecio(input) {
-            let v = input.value.replace(/[^0-9\.\,]/g, '').trim();
-            if (!v) return;
-            // Si ya termina en UF (no debería porque el oninput lo limpia, pero por si acaso)
-            input.value = v + ' UF';
+            // Logic removed to allow $, UF, CLP natively
         }
 
         function formatComision(input) {
@@ -701,10 +702,7 @@
         
         function validateField(input, type) {
             let valid = input.value.trim() !== '' && input.checkValidity();
-            if (type === 'precio') {
-                const val = input.value.toUpperCase();
-                valid = valid && val.includes('UF');
-            }
+            // Removed specific validation for 'precio' to allow $, UF, CLP
             if (!valid) {
                 input.classList.add('is-invalid');
                 input.classList.remove('is-valid');

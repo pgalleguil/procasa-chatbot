@@ -25,8 +25,9 @@
         /* --- NEW LAYOUT --- */
         .contract-layout {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1.2fr 1fr;
             gap: 24px;
+            align-items: start;
             height: 100vh;
         }
 
@@ -38,7 +39,7 @@
         .pdf-viewer-section {
             position: sticky;
             top: 0;
-            height: 100vh;
+            height: calc(100vh - 120px);
             padding: 20px 20px 20px 0;
         }
 
@@ -139,8 +140,7 @@
         @media (max-width: 768px) {
             body { padding: 0; }
             .contract-layout {
-                display: flex;
-                flex-direction: column;
+                grid-template-columns: 1fr;
                 height: auto;
                 gap: 0;
             }

@@ -548,6 +548,7 @@ async def view_contract_public(token: str, request: Request):
 @router.post("/api/{token}/request-otp")
 async def request_otp(token: str, request: Request):
     """Genera OTP y lo envía por WA"""
+    t_otp_start = time.time()
     data = await request.json()
     rut_ingresado = data.get("rut", "").strip()
     
@@ -664,6 +665,8 @@ Este código es personal, válido por 5 minutos y no debe compartirse con tercer
         )
         raise HTTPException(status_code=500, detail="Error enviando el código por WhatsApp. Intente nuevamente.")
     
+    t_otp_elapsed = time.time() - t_otp_start
+    logger.info(f"[TIMING] request_otp: contract_code={contract['contract_code']} response_time={t_otp_elapsed:.3f}s")
     return {"status": "ok"}
 
 @router.post("/api/{token}/verify-otp")
@@ -804,17 +807,13 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         scrolled_to_bottom = False
         
     ip = get_client_ip(request)
-    # Geolocalización simple
-    import requests
-    try:
-        geo_res = requests.get(f"https://ipapi.co/{ip}/json/", timeout=2).json()
-        geo_info = f"{geo_res.get('city', 'Desconocido')}, {geo_res.get('country_name', 'Desconocido')}"
-    except:
-        geo_info = "Localización no disponible"
+    # Geolocalización: NO bloqueante — se pasa al background task
+    geo_info = "Localización no disponible"  # default; background task actualizará DB
         
     ua = request.headers.get("user-agent", "")
     server_timestamp = SecurityContracts.generate_server_timestamp()
     contract_code = contract["contract_code"]
+    t_sign_start = time.time()
     
     # 1. Registrar aceptación
     db["contracts"].update_one(
@@ -841,7 +840,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     
     # Refrescar documento para tener el timeline completo
     contract = db["contracts"].find_one({"contract_code": contract_code})
-    timeline = contract["timeline"]
+    timeline = contract.get("timeline") or []  # Fix: guard against NoneType
     
     # 2. Generar Firma HMAC del Servidor y Hash del Timeline
     timeline_hash = SecurityContracts.hash_timeline(timeline)
@@ -933,7 +932,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         tsa_response = f"TSA_MOCK_{datetime.now(timezone.utc).timestamp()}_SIGNED"
         db["contracts"].update_one({"contract_code": contract_code}, {"$set": {"security.tsa_stamp": tsa_response}})
 
-        # 6. Subida a Google Drive en Background — pasar bytes, no Path
+        # 6. Subida a Google Drive en Background
         background_tasks.add_task(
             upload_to_gdrive_bg,
             contract_code,
@@ -944,45 +943,23 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
             }
         )
 
-        # 7. Notificar al Cliente — exactly-once delivery
-        if not contract.get("notifications_sent"):
-            mensaje_conf = """Confirmamos la aceptación electrónica de tu contrato conforme a la Ley 19.799.
+        # 7. Notificar al Cliente y enviar email — BACKGROUND (no bloquear respuesta)
+        client_email = contract.get("client_data", {}).get("email", contract.get("email", ""))
+        background_tasks.add_task(
+            notify_client_bg,
+            contract_code,
+            contract.get("phone", ""),
+            client_email,
+            contract.get("client_data", {}).get("nombre", ""),
+            signed_pdf_bytes,
+            contract.get("property_code", "")
+        )
 
-Se ha registrado la fecha, hora, dirección IP y verificación de identidad asociada a esta aceptación.
-
-En breve recibirás una copia del documento firmado."""
-            try:
-                db["contracts"].update_one(
-                    {"contract_code": contract_code},
-                    {
-                        "$push": {"messages": {
-                            "phone": contract["phone"],
-                            "message_content": mensaje_conf,
-                            "message_type": "confirmation_sent",
-                            "timestamp_utc": datetime.now(timezone.utc)
-                        }},
-                        "$set": {"notifications_sent": True}
-                    }
-                )
-            except Exception as e:
-                logger.error(f"[MSG_LOG] Error guardando mensaje confirmación: {e}")
-            await send_whatsapp_message(contract["phone"], mensaje_conf)
-
-            # 8. Enviar PDF firmado por correo en Background — pasar bytes, no Path
-            client_email = contract.get("client_data", {}).get("email", contract.get("email", ""))
-            if client_email:
-                background_tasks.add_task(
-                    send_signed_email_task,
-                    contract_code,
-                    client_email,
-                    contract.get("client_data", {}).get("nombre", ""),
-                    signed_pdf_bytes,          # bytes, no Path
-                    contract.get("property_code", "")
-                )
-        else:
-            logger.info(f"[CONTRACT_SIGNED] Notificaciones ya enviadas para {contract_code} — saltando.")
-
-        # Log de auditoría legal estructurado
+        t_sign_elapsed = time.time() - t_sign_start
+        logger.info(
+            f"[TIMING] accept_contract: contract_code={contract_code} "
+            f"response_time={t_sign_elapsed:.3f}s ip={ip} timestamp={server_timestamp}"
+        )
         logger.info(
             f"[CONTRACT_SIGNED] contract_code={contract_code} "
             f"rut={contract.get('client_data', {}).get('rut', 'N/A')} "
@@ -1019,6 +996,53 @@ def upload_to_gdrive_bg(contract_code: str, files: dict):
         logger.info(f"[GDRIVE] Expediente {contract_code} subido. signed_pdf_id={signed_file_id}")
     except Exception as e:
         logger.error(f"[GDRIVE] Error subiendo expediente {contract_code}: {e}")
+
+def notify_client_bg(contract_code: str, phone: str, client_email: str, nombre: str, signed_pdf_bytes: bytes, property_code: str = ""):
+    """Background task: sends WhatsApp confirmation + email. Runs after response is returned."""
+    import asyncio
+    db = get_db()
+    contract = db["contracts"].find_one({"contract_code": contract_code})
+    if not contract:
+        logger.error(f"[NOTIFY_BG] Contract {contract_code} not found for notification")
+        return
+
+    # Exactly-once guard
+    if contract.get("notifications_sent"):
+        logger.info(f"[NOTIFY_BG] Notifications already sent for {contract_code} — skipping")
+        return
+
+    # Mark as sent immediately to prevent duplicates
+    db["contracts"].update_one(
+        {"contract_code": contract_code},
+        {"$set": {"notifications_sent": True}}
+    )
+
+    # WhatsApp confirmation
+    mensaje_conf = """Confirmamos la aceptación electrónica de tu contrato conforme a la Ley 19.799.
+
+Se ha registrado la fecha, hora, dirección IP y verificación de identidad asociada a esta aceptación.
+
+En breve recibirás una copia del documento firmado."""
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(send_whatsapp_message(phone, mensaje_conf))
+        loop.close()
+        db["contracts"].update_one(
+            {"contract_code": contract_code},
+            {"$push": {"messages": {
+                "phone": phone,
+                "message_content": mensaje_conf,
+                "message_type": "confirmation_sent",
+                "timestamp_utc": datetime.now(timezone.utc)
+            }}}
+        )
+    except Exception as e:
+        logger.error(f"[NOTIFY_BG] WhatsApp error for {contract_code}: {e}")
+
+    # Email delivery
+    if client_email and signed_pdf_bytes:
+        send_signed_email_task(contract_code, client_email, nombre, signed_pdf_bytes, property_code)
 
 def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_bytes: bytes, property_code: str = "", cc_email: str = ""):
     """Envía el PDF firmado al cliente. Recibe bytes en memoria, sin depender del filesystem."""

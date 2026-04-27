@@ -22,18 +22,24 @@
         .step { display: none; }
         .step.active { display: block; }
 
-        /* PDF renders inline — no internal scroll container */
+        /* PDF container — scroll inside, no overflow outside */
         #pdf-container {
             width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+            max-height: 70vh;
+            overflow-y: auto;
+            overflow-x: hidden;
             box-sizing: border-box;
             background: #dde3ea;
-            border-radius: 8px;
-            overflow: visible;
-            padding: 8px;
+            border-radius: 10px;
+            padding: 12px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            touch-action: pinch-zoom;
+            touch-action: pan-y pinch-zoom;
+            /* Scroll suave en iOS */
+            -webkit-overflow-scrolling: touch;
         }
 
         .pdf-page-wrapper {
@@ -109,7 +115,7 @@
             margin-bottom: 6px;
         }
 
-        /* Mobile: full width, remove card padding */
+        /* Mobile */
         @media (max-width: 768px) {
             body { padding: 0; }
             .contract-card {
@@ -121,6 +127,9 @@
             }
             .page-wrap {
                 padding: 0 !important;
+            }
+            #pdf-container {
+                max-height: 60vh;
             }
         }
     </style>

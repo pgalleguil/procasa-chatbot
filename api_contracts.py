@@ -560,8 +560,11 @@ async def validate_rut(token: str, request: Request):
     if not contract_rut:
         contract_rut = contract.get("cliente_rut", "").strip()
 
-    if contract_rut and contract_rut.upper() != rut_ingresado.upper():
-        raise HTTPException(status_code=400, detail="RUT no coincide con el registrado.")
+    if contract_rut:
+        rut_clean = ''.join(filter(str.isalnum, rut_ingresado)).upper()
+        contract_rut_clean = ''.join(filter(str.isalnum, contract_rut)).upper()
+        if contract_rut_clean != rut_clean:
+            raise HTTPException(status_code=400, detail="RUT no coincide con el registrado.")
         
     return {"status": "ok"}
 
@@ -594,10 +597,15 @@ async def request_otp(token: str, request: Request):
             wait_seconds = int((blocked_until - now).total_seconds())
             raise HTTPException(status_code=429, detail=f"El sistema está bloqueado temporalmente. Por favor espera {wait_seconds} segundos.")
             
-    # Validar RUT de forma simple (en producción usar validador real)
-    if rut_ingresado.replace(".", "").replace("-", "").upper() != contract["client_data"]["rut"].replace(".", "").replace("-", "").upper():
-        raise HTTPException(status_code=400, detail="RUT no coincide con el registrado.")
-        
+    contract_rut = contract.get("client_data", {}).get("rut", "").strip()
+    if not contract_rut:
+        contract_rut = contract.get("cliente_rut", "").strip()
+
+    if contract_rut:
+        rut_clean = ''.join(filter(str.isalnum, rut_ingresado)).upper()
+        contract_rut_clean = ''.join(filter(str.isalnum, contract_rut)).upper()
+        if contract_rut_clean != rut_clean:
+            raise HTTPException(status_code=400, detail="RUT no coincide con el registrado.")
     # Rate limiting: bloquear si se solicitó OTP hace menos de 30 segundos
     now = datetime.now(timezone.utc)
     last_request = contract["security"].get("last_otp_request")

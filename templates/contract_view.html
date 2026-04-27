@@ -40,7 +40,7 @@
         .pdf-viewer-section {
             position: sticky;
             top: 0;
-            height: calc(100vh - 120px);
+            height: 100vh;
             overflow: hidden;
             padding: 20px 20px 20px 0;
             display: none;
@@ -662,8 +662,8 @@
         const pdfContainer = document.getElementById('pdf-container');
         if (!pdfContainer) return;
         
-        if (pdfContainer.scrollHeight <= pdfContainer.clientHeight + 5 || 
-            document.documentElement.scrollHeight <= window.innerHeight + 5) {
+        // If the entire PDF content fits within the visible container, mark as read
+        if (pdfContainer.scrollHeight <= pdfContainer.clientHeight + 10) {
             scrolledToBottom = true;
             registerReadIfNeeded();
         }

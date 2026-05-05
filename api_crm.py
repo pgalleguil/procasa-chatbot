@@ -136,7 +136,9 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
     db["crm_tasks"].insert_one(task)
 
 # --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
-async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad", user_role="agente", user_name="", ejecutivo_filter=None, page=1, limit=10):
+async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad",
+                             user_role="agente", user_name="", ejecutivo_filter=None,
+                             page=1, limit=10, cursor_last_event_at=None):
     from chatbot.storage import get_async_db
     db = get_async_db()
     query_parts = []
@@ -233,20 +235,58 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     global_search_total = await db["leads"].count_documents(base_kpi_query)
     kpi_counts["total"] = global_search_total
 
-    # 3. TRAER LEADS PAGINADOS DESDE MONGO
-    skip = (page - 1) * limit
-    
-    # Define sorting
+    # ------------------------------------------------------------------
+    # 3. TRAER LEADS DESDE MONGO — CURSOR-BASED PURO (O(1))
+    # ------------------------------------------------------------------
+    # No hay skip. La página se simula en el frontend con total_count.
+    # El cursor es el valor de last_event_at del último item visible.
+    #
+    # Primer carga (cursor_last_event_at=None): trae los más recientes.
+    # Carga siguiente: trae los que tienen last_event_at < cursor.
+    # ------------------------------------------------------------------
     if ordenar_por == "prioridad":
         sort_criteria = [("priority_score", -1), ("last_event_at", -1)]
+        cursor_field = "priority_score"
     else:
         sort_criteria = [("last_event_at", -1)]
-        
-    leads_cursor = db["leads"].find(query_with_state, {"messages": 0, "stage_history": 0})\
+        cursor_field = "last_event_at"
+
+    # Proyección mínima — solo campos necesarios para el listado
+    PROJECTION = {
+        "phone": 1,
+        "prospecto.nombre": 1,
+        "prospecto.ejecutivo": 1,
+        "prospecto.codigo": 1,
+        "prospecto.codigo_yapo": 1,
+        "prospecto.codigo_mercadolibre": 1,
+        "prospecto.ultimo_mensaje": 1,
+        "pipeline_stage": 1,
+        "stage": 1,
+        "crm_estado": 1,
+        "ejecutivo_asignado": 1,
+        "last_event_at": 1,
+        "last_action_label": 1,
+        "priority_score": 1,
+        "sla_status": 1,
+        "lifecycle": 1,
+        "created_at": 1,
+        "fecha_asignacion": 1,
+        "datos_propiedad.codigo": 1,
+    }
+
+    paginated_query = query_with_state.copy()
+    if cursor_last_event_at:
+        try:
+            cursor_dt = datetime.fromisoformat(cursor_last_event_at.replace("Z", "+00:00"))
+            # Añade filtro: trae solo leads más antiguos que el cursor (siguiente página)
+            paginated_query["last_event_at"] = {"$lt": cursor_dt}
+        except Exception as e:
+            logger.warning(f"CRM: cursor inválido ignorado: {e}")
+            # Si el cursor es inválido, arranca desde el principio (seguro)
+
+    leads_cursor = db["leads"].find(paginated_query, PROJECTION)\
                               .sort(sort_criteria)\
-                              .skip(skip)\
                               .limit(limit)
-    
     leads_list = await leads_cursor.to_list(length=limit)
 
     leads_procesados = []

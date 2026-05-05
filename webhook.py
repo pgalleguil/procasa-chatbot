@@ -1308,7 +1308,7 @@ async def view_crm_list(
     busqueda: str = None, 
     orden: str = "fecha", 
     ejecutivo: str = None,
-    page: int = Query(1, ge=1)
+    cursor: str = Query(None, description="ISO timestamp del último lead visto (cursor-based pagination)")
 ):
     username = await get_current_user(request)
     from chatbot.storage import get_async_db
@@ -1321,7 +1321,7 @@ async def view_crm_list(
     user_role = user.get("rol", "agente")
     user_name = user.get("nombre", "")
 
-    limit = 10
+    limit = 15  # Aumentado a 15 (sin skip, el costo es O(1))
     leads, kpis, total_count = await get_crm_leads_list(
         filtro_estado=estado, 
         busqueda=busqueda, 
@@ -1329,11 +1329,21 @@ async def view_crm_list(
         user_role=user_role,
         user_name=user_name,
         ejecutivo_filter=ejecutivo,
-        page=page,
-        limit=limit
+        limit=limit,
+        cursor_last_event_at=cursor
     )
-    
-    total_pages = (total_count + limit - 1) // limit
+
+    # next_cursor: el last_event_at del último lead de esta página
+    # El frontend usa este valor para pedir la siguiente tanda
+    next_cursor = None
+    if leads and len(leads) == limit:
+        last_ts = leads[-1].get("real_timestamp")
+        if last_ts:
+            try:
+                next_cursor = last_ts.isoformat() if hasattr(last_ts, "isoformat") else str(last_ts)
+            except Exception:
+                next_cursor = None
+
     executives = get_unique_executives() if user_role in ["admin", "supervisor"] else []
 
     return templates.TemplateResponse("crm_leads_list.html", {
@@ -1345,11 +1355,10 @@ async def view_crm_list(
         "executives": executives,
         "current_ejecutivo": ejecutivo or "Todos",
         "pagination": {
-            "current_page": page,
-            "total_pages": total_pages,
             "total_count": total_count,
-            "has_next": page < total_pages,
-            "has_prev": page > 1,
+            "has_more": len(leads) == limit,
+            "has_prev": cursor is not None,
+            "next_cursor": next_cursor,
             "limit": limit
         }
     })

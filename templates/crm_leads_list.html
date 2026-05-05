@@ -1152,45 +1152,39 @@
                 </table>
             </div>
 
-            <!-- PAGINACIÓN -->
-            {% if pagination.total_pages > 1 %}
+            <!-- PAGINACIÓN (cursor-based) -->
+            {% if pagination.total_count > 0 %}
             <div class="pagination-container">
                 <div class="pagination-info">
-                    Mostrando {{ (pagination.current_page - 1) * pagination.limit + 1 }} -
-                    {{ [pagination.current_page * pagination.limit, pagination.total_count]|min }}
-                    de {{ pagination.total_count }} leads
+                    {{ pagination.total_count }} leads en total
+                    {% if not pagination.has_prev %}&middot; Mostrando los m&aacute;s recientes{% endif %}
                 </div>
                 <div class="pagination-controls">
                     {% set base_url = "/crm?" %}
-                    {% if request.query_params.get('estado') %}{% set base_url = base_url ~ "estado=" ~
-                    request.query_params.get('estado') ~ "&" %}{% endif %}
-                    {% if request.query_params.get('busqueda') %}{% set base_url = base_url ~ "busqueda=" ~
-                    request.query_params.get('busqueda') ~ "&" %}{% endif %}
-                    {% if request.query_params.get('orden') %}{% set base_url = base_url ~ "orden=" ~
-                    request.query_params.get('orden') ~ "&" %}{% endif %}
-                    {% if request.query_params.get('ejecutivo') %}{% set base_url = base_url ~ "ejecutivo=" ~
-                    request.query_params.get('ejecutivo') ~ "&" %}{% endif %}
+                    {% if request.query_params.get('estado') %}{% set base_url = base_url ~ "estado=" ~ request.query_params.get('estado') ~ "&" %}{% endif %}
+                    {% if request.query_params.get('busqueda') %}{% set base_url = base_url ~ "busqueda=" ~ request.query_params.get('busqueda') ~ "&" %}{% endif %}
+                    {% if request.query_params.get('orden') %}{% set base_url = base_url ~ "orden=" ~ request.query_params.get('orden') ~ "&" %}{% endif %}
+                    {% if request.query_params.get('ejecutivo') %}{% set base_url = base_url ~ "ejecutivo=" ~ request.query_params.get('ejecutivo') ~ "&" %}{% endif %}
 
-                    <a href="{{ base_url }}page={{ pagination.current_page - 1 }}"
-                        class="page-btn {{ 'disabled' if not pagination.has_prev }}">
-                        <i class="fa-solid fa-chevron-left"></i>
+                    {% if pagination.has_prev %}
+                    <a href="{{ base_url[:-1] }}" class="page-btn">
+                        <i class="fa-solid fa-chevron-left"></i> Recientes
                     </a>
+                    {% else %}
+                    <span class="page-btn disabled">
+                        <i class="fa-solid fa-chevron-left"></i> Recientes
+                    </span>
+                    {% endif %}
 
-                    {% for p in range(1, pagination.total_pages + 1) %}
-                    {% if p == 1 or p == pagination.total_pages or (p >= pagination.current_page - 2 and p <=
-                        pagination.current_page + 2) %} <a href="{{ base_url }}page={{ p }}"
-                        class="page-btn {{ 'active' if p == pagination.current_page }}">
-                        {{ p }}
-                        </a>
-                        {% elif p == 2 or p == pagination.total_pages - 1 %}
-                        <span class="page-btn disabled">...</span>
-                        {% endif %}
-                        {% endfor %}
-
-                        <a href="{{ base_url }}page={{ pagination.current_page + 1 }}"
-                            class="page-btn {{ 'disabled' if not pagination.has_next }}">
-                            <i class="fa-solid fa-chevron-right"></i>
-                        </a>
+                    {% if pagination.has_more and pagination.next_cursor %}
+                    <a href="{{ base_url }}cursor={{ pagination.next_cursor | urlencode }}" class="page-btn">
+                        Anteriores <i class="fa-solid fa-chevron-right"></i>
+                    </a>
+                    {% else %}
+                    <span class="page-btn disabled">
+                        Anteriores <i class="fa-solid fa-chevron-right"></i>
+                    </span>
+                    {% endif %}
                 </div>
             </div>
             {% endif %}

@@ -1285,7 +1285,7 @@ async def view_crm_list(
     request: Request, 
     estado: str = None, 
     busqueda: str = None, 
-    orden: str = "prioridad", 
+    orden: str = "fecha", 
     ejecutivo: str = None,
     page: int = Query(1, ge=1)
 ):

@@ -336,7 +336,7 @@ def run_automation():
                 
                 print(f"Campos completados: {list(detalles_enviados.keys())}")
                 time.sleep(1)  # Pausa final para que Vue/React procese los cambios
-
+                
                 # --- Lógica de Calcular Valor / Recalcular / Generar Informe ---
                 btn_calcular_xpath = '//*[@id="__nuxt"]/div[1]/main/div[3]/div[2]/div[3]/button'
                 btn_recalcular_xpath = '//*[@id="__nuxt"]/div[1]/main/div[3]/div[2]/div[3]/div/button[2]'
@@ -661,7 +661,7 @@ def run_automation():
                             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
                         })
                         print("Registro guardado en MongoDB.")
-
+ 
                     else:
                         print("El botón 'Generar informe' sigue deshabilitado.")
                         status = "error_boton_deshabilitado"

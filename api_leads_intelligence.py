@@ -104,7 +104,7 @@ def get_leads_executive_report():
         # Traemos leads ordenados por fecha descendente
         documentos = list(
             db["leads"]
-            .find({})
+            .find({}, {"messages.content": 0, "stage_history": 0, "embeddings": 0})
             .sort("_id", -1)
             .limit(2000)
         )

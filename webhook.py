@@ -107,6 +107,27 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error apagando tareas: {e}")
 
 app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025", lifespan=lifespan)
+
+# ========================= MIDDLEWARE DE OBSERVABILIDAD =========================
+import time
+
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    start_time = time.time()
+    try:
+        response = await call_next(request)
+        duration_ms = (time.time() - start_time) * 1000
+        
+        # Ignorar rutas de archivos estáticos para no saturar los logs
+        if not request.url.path.startswith("/static/"):
+            logger.info(f"PERF_METRIC | {request.method} {request.url.path} | Status: {response.status_code} | Duration: {duration_ms:.2f}ms")
+            
+        response.headers["X-Process-Time"] = str(duration_ms)
+        return response
+    except Exception as e:
+        duration_ms = (time.time() - start_time) * 1000
+        logger.error(f"PERF_METRIC_ERROR | {request.method} {request.url.path} | Error: {str(e)} | Duration: {duration_ms:.2f}ms")
+        raise e
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Mount contracts_pdf to serve PDFs statically and fast
@@ -246,8 +267,8 @@ async def renew_session(user_name: str = Depends(get_current_user)):
 
 def crear_admin_si_no_existe():
     try:
-        client = MongoClient(Config.MONGO_URI)
-        db = client[Config.DB_NAME]
+        from chatbot.storage import get_db
+        db = get_db()
         usuarios = db["usuarios"]
         if usuarios.count_documents({"username": "admin"}) == 0:
             hashed = get_password_hash("procasa2025")
@@ -318,12 +339,12 @@ async def auth_google_callback(request: Request, code: str):
 
         email = user_info.get("email")
         
-        # 3. Guardar o Buscar en MongoDB
-        client = MongoClient(Config.MONGO_URI)
-        db = client[Config.DB_NAME]
-        usuarios = db["usuarios"]
+        # 3. Guardar o Buscar en MongoDB (Google OAuth - async route)
+        from chatbot.storage import get_async_db as _gadb
+        _adb = _gadb()
+        usuarios = _adb["usuarios"]
         
-        user = usuarios.find_one({
+        user = await usuarios.find_one({
             "$or": [
                 {"email": email}, 
                 {"username": email}
@@ -385,10 +406,10 @@ async def login_get(request: Request):
 @app.post("/login")
 async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
     try:
-        client = MongoClient(Config.MONGO_URI)
-        db = client[Config.DB_NAME]
+        from chatbot.storage import get_async_db
+        db = get_async_db()
         usuarios = db["usuarios"]
-        user = usuarios.find_one({"username": username})
+        user = await usuarios.find_one({"username": username})
         
         if user and verify_password(password, user.get("hashed_password", "")):
             user_rol = user.get("rol", "agente")
@@ -450,9 +471,9 @@ async def leads_intelligence_endpoint():
 @app.get("/leads-dashboard", response_class=HTMLResponse)
 async def ver_leads(request: Request):
     username = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user = db["usuarios"].find_one({"username": username})
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    user = await adb["usuarios"].find_one({"username": username})
     
     if not user or user.get("rol") not in ["admin", "supervisor"]:
         return RedirectResponse(url="/crm?error=acceso_denegado")
@@ -481,9 +502,9 @@ async def ver_detalle_chat(request: Request, phone: str):
 @app.get("/manual-lead-entry", response_class=HTMLResponse)
 async def view_manual_lead_entry(request: Request):
     username = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user = db["usuarios"].find_one({"username": username})
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    user = await adb["usuarios"].find_one({"username": username})
     
     if not user or user.get("rol") not in ["admin", "supervisor"]:
         return RedirectResponse(url="/crm?error=acceso_denegado")
@@ -509,9 +530,9 @@ async def api_check_duplicate(request: Request, phone: str = Query(None), proper
 @app.post("/api/leads/manual")
 async def api_create_manual_lead(request: Request):
     username = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user = db["usuarios"].find_one({"username": username})
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    user = await adb["usuarios"].find_one({"username": username})
     
     if not user or user.get("rol") not in ["admin", "supervisor"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
@@ -532,9 +553,9 @@ async def api_create_manual_lead(request: Request):
 @app.get("/crm/lead/{phone}", response_class=HTMLResponse)
 async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None)):
     username = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user = db["usuarios"].find_one({"username": username})
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    user = await adb["usuarios"].find_one({"username": username})
     
     data = get_lead_detail_data(phone, property_code=codigo)
     if not data: 
@@ -974,9 +995,9 @@ async def view_captaciones(
     page: int = Query(1, ge=1)
 ):
     username = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user = db["usuarios"].find_one({"username": username})
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    user = await adb["usuarios"].find_one({"username": username})
     
     if not user:
         return RedirectResponse(url="/?error=sesion_invalida")
@@ -1007,8 +1028,8 @@ async def view_captaciones(
     elif ejecutivo and ejecutivo != "Todos":
         base_query["gestion.ejecutivo_asignado"] = ejecutivo
 
-    in_gestion_count = db["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "GESTION"})
-    captados_count = db["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"})
+    in_gestion_count = await adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "GESTION"})
+    captados_count = await adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"})
     total_pages = (total_count + limit - 1) // limit
 
     return templates.TemplateResponse("captacion_list.html", {
@@ -1034,9 +1055,9 @@ async def view_captaciones(
 @app.get("/captacion/{obj_id}", response_class=HTMLResponse)
 async def view_captacion_detail_route(request: Request, obj_id: str):
     username = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user = db["usuarios"].find_one({"username": username})
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    user = await adb["usuarios"].find_one({"username": username})
     
     if not user:
         return RedirectResponse(url="/?error=sesion_invalida")
@@ -1160,9 +1181,9 @@ async def api_update_captacion_contact(request: Request):
         user_name = data.get("user_name")
         if not user_name:
             username_str = await get_current_user(request)
-            client = MongoClient(Config.MONGO_URI)
-            db = client[Config.DB_NAME]
-            user_doc = db["usuarios"].find_one({"username": username_str})
+            from chatbot.storage import get_async_db
+            _adb = get_async_db()
+            user_doc = await _adb["usuarios"].find_one({"username": username_str})
             user_name = user_doc.get("nombre", username_str) if user_doc else "Sistema"
         
         result = update_contact_info(
@@ -1182,9 +1203,9 @@ async def api_update_captacion_contact(request: Request):
 @app.post("/api/captacion/log_action")
 async def api_captacion_log_action(request: Request):
     username_str = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user_doc = db["usuarios"].find_one({"username": username_str})
+    from chatbot.storage import get_async_db
+    _adb = get_async_db()
+    user_doc = await _adb["usuarios"].find_one({"username": username_str})
     actual_name = user_doc.get("nombre", username_str) if user_doc else "Sistema"
     
     data = await request.json()
@@ -1210,9 +1231,9 @@ async def api_captacion_log_action(request: Request):
 @app.get("/api/captacion/templates/personal")
 async def api_get_personal_templates(request: Request):
     username_str = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user_doc = db["usuarios"].find_one({"username": username_str})
+    from chatbot.storage import get_async_db
+    _adb = get_async_db()
+    user_doc = await _adb["usuarios"].find_one({"username": username_str})
     actual_name = user_doc.get("nombre", username_str) if user_doc else username_str
     
     return get_personal_templates(actual_name)
@@ -1220,9 +1241,9 @@ async def api_get_personal_templates(request: Request):
 @app.post("/api/captacion/templates/personal")
 async def api_save_personal_template(request: Request):
     username_str = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user_doc = db["usuarios"].find_one({"username": username_str})
+    from chatbot.storage import get_async_db
+    _adb = get_async_db()
+    user_doc = await _adb["usuarios"].find_one({"username": username_str})
     actual_name = user_doc.get("nombre", username_str) if user_doc else username_str
     
     data = await request.json()
@@ -1232,9 +1253,9 @@ async def api_save_personal_template(request: Request):
 @app.delete("/api/captacion/templates/personal")
 async def api_delete_personal_template(request: Request):
     username_str = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user_doc = db["usuarios"].find_one({"username": username_str})
+    from chatbot.storage import get_async_db
+    _adb = get_async_db()
+    user_doc = await _adb["usuarios"].find_one({"username": username_str})
     actual_name = user_doc.get("nombre", username_str) if user_doc else username_str
     
     data = await request.json()
@@ -1248,9 +1269,9 @@ async def api_delete_personal_template(request: Request):
 @app.post("/api/captacion/distribute")
 async def api_distribute_captacion(request: Request):
     username = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user = db["usuarios"].find_one({"username": username})
+    from chatbot.storage import get_async_db
+    _adb = get_async_db()
+    user = await _adb["usuarios"].find_one({"username": username})
     
     if user.get("rol") not in ["admin", "supervisor"]:
         raise HTTPException(status_code=403, detail="No autorizado")
@@ -1290,9 +1311,9 @@ async def view_crm_list(
     page: int = Query(1, ge=1)
 ):
     username = await get_current_user(request)
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    user = db["usuarios"].find_one({"username": username})
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    user = await adb["usuarios"].find_one({"username": username})
     
     if not user:
         return RedirectResponse(url="/?error=sesion_invalida")
@@ -1301,7 +1322,7 @@ async def view_crm_list(
     user_name = user.get("nombre", "")
 
     limit = 10
-    leads, kpis, total_count = get_crm_leads_list(
+    leads, kpis, total_count = await get_crm_leads_list(
         filtro_estado=estado, 
         busqueda=busqueda, 
         ordenar_por=orden,
@@ -1340,9 +1361,9 @@ async def marcar_gestionado(request: Request):
     gestionado = data.get("gestionado", False)
     if not email:
         return {"error": "Falta email"}
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    col = db[Config.COLLECTION_CONTACTOS]
+    from chatbot.storage import get_db as _gdb
+    _db = _gdb()
+    col = _db[Config.COLLECTION_CONTACTOS]
     result = col.update_one(
         {"email_propietario": email.lower()},
         {"$set": {"gestionado": gestionado}}
@@ -1604,7 +1625,8 @@ async def sla_monitor_loop():
 
 def asegurar_indices_db():
     try:
-        db = MongoClient(Config.MONGO_URI)[Config.DB_NAME]
+        from chatbot.storage import get_db
+        db = get_db()
         db["crm_tasks"].create_index([("status", 1), ("execute_at", 1)])
         db["crm_events"].create_index([("phone", 1), ("type", 1), ("timestamp", -1)])
         

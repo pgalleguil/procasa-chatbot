@@ -17,6 +17,22 @@ def get_db():
         _mongo_client = MongoClient(Config.MONGO_URI, serverSelectionTimeoutMS=10000)
     return _mongo_client[Config.DB_NAME]
 
+# --- ASYNC MOTOR INFRASTRUCTURE ---
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient
+except ImportError:
+    pass
+
+_async_mongo_client = None
+
+def get_async_db():
+    """Retorna la base de datos asíncrona usando motor. Solo debe llamarse en rutas async."""
+    global _async_mongo_client
+    if _async_mongo_client is None:
+        from motor.motor_asyncio import AsyncIOMotorClient
+        _async_mongo_client = AsyncIOMotorClient(Config.MONGO_URI, serverSelectionTimeoutMS=10000)
+    return _async_mongo_client[Config.DB_NAME]
+
 COLLECTION_CONVERSATIONS = "leads"
 COLLECTION_PENDING_NOTIFICATIONS = "pending_notifications"
 

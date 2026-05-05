@@ -30,3 +30,4 @@ google-auth-httplib2>=0.1.1
 google-auth-oauthlib>=1.1.0
 --only-binary=all
 psutil>=5.9.0
+motor

@@ -136,8 +136,9 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
     db["crm_tasks"].insert_one(task)
 
 # --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
-def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad", user_role="agente", user_name="", ejecutivo_filter=None, page=1, limit=10):
-    db = get_db()
+async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad", user_role="agente", user_name="", ejecutivo_filter=None, page=1, limit=10):
+    from chatbot.storage import get_async_db
+    db = get_async_db()
     query_parts = []
     
     # --- FILTRO DE SEGURIDAD (ROL) ---
@@ -199,7 +200,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             query_with_state["pipeline_stage"] = state_db_value
 
     # 1. CONTAR TOTAL PARA PAGINACIÓN (Basado en el filtro de estado)
-    total_count = db["leads"].count_documents(query_with_state)
+    total_count = await db["leads"].count_documents(query_with_state)
     
     kpi_counts = {"total": total_count, "nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0, "sin_asignar": 0}
     
@@ -207,29 +208,29 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     unassigned_filter = {"$or": [{"ejecutivo_asignado": {"$in": UNASSIGNED_VALUES}}, {"ejecutivo_asignado": {"$exists": False}}]}
     
     # 1. SIN ASIGNAR (Nuevo y sin ejecutivo)
-    kpi_counts["sin_asignar"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, unassigned_filter]})
+    kpi_counts["sin_asignar"] = await db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, unassigned_filter]})
 
     # 2. SIN ATENDER (Etapa NEW y ASIGNADO)
-    kpi_counts["nuevo"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, assigned_filter]})
+    kpi_counts["nuevo"] = await db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, assigned_filter]})
 
     # 3. EN GESTIÓN (CONTACTED, INTERESTED, OFFER, NEGOTIATION)
-    kpi_counts["gestion"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
+    kpi_counts["gestion"] = await db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
         PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER, PipelineStage.NEGOTIATION,
         "gestion", "contacted"
     ]}}]})
 
     # 4. VISITAS (Agendadas o Realizadas)
-    kpi_counts["visita"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
+    kpi_counts["visita"] = await db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
         PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE, "visita"
     ]}}]})
 
     # 5. CERRADOS (Ganados o Perdidos)
-    kpi_counts["cerrado"] = db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
+    kpi_counts["cerrado"] = await db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
         PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST, "cerrado"
     ]}}]})
     
     # Coherencia del total global para la búsqueda
-    global_search_total = db["leads"].count_documents(base_kpi_query)
+    global_search_total = await db["leads"].count_documents(base_kpi_query)
     kpi_counts["total"] = global_search_total
 
     # 3. TRAER LEADS PAGINADOS DESDE MONGO
@@ -246,7 +247,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
                               .skip(skip)\
                               .limit(limit)
     
-    leads_list = list(leads_cursor)
+    leads_list = await leads_cursor.to_list(length=limit)
 
     leads_procesados = []
     # (KPI counts are already calculated via optimized MongoDB queries above)
@@ -263,8 +264,9 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
         {"phone": {"$in": page_phones}, "type": {"$in": management_types}},
         sort=[("timestamp", -1)]
     )
+    events_list = await events_cursor.to_list(length=200)
     events_map = {}
-    for ev in events_cursor:
+    for ev in events_list:
         phone_ev = ev.get("phone", "")
         if phone_ev not in events_map:
             events_map[phone_ev] = ev

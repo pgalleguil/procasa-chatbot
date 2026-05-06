@@ -294,19 +294,49 @@ async def download_original_pdf(contract_code: str):
     perm_path_str = contract.get("security", {}).get("original_pdf_path")
     if perm_path_str and os.path.exists(perm_path_str):
         pdf_path = Path(perm_path_str)
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
     else:
         # Prioridad 2: directorio permanente por convención
         perm_path_conv = BASE_DIR / "contracts_pdf" / f"{contract_code}_original.pdf"
         if perm_path_conv.exists():
-            pdf_path = perm_path_conv
+            with open(perm_path_conv, "rb") as f:
+                pdf_bytes = f.read()
         else:
             # Prioridad 3: tmp (efímero)
             tmp_path = BASE_DIR / "tmp" / "contracts" / contract_code / "contrato_original.pdf"
             if tmp_path.exists():
-                pdf_path = tmp_path
+                with open(tmp_path, "rb") as f:
+                    pdf_bytes = f.read()
             else:
-                logger.error(f"El documento original para el contrato {contract_code} no se encuentra en caché temporal ni permanente.")
-                raise HTTPException(status_code=404, detail="El documento PDF no está disponible. Solo se genera al crear el contrato.")
+                # Prioridad 4: Regenerar dinámicamente si el servidor se reinició (Render)
+                logger.info(f"Regenerando PDF original para {contract_code} dinámicamente...")
+                data_payload = {
+                    "contract_code": contract.get("contract_code"),
+                    "origen": contract.get("origen", ""),
+                    "property_code": contract.get("property_code", ""),
+                    "phone": contract.get("phone", ""),
+                    "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
+                    "cliente_rut": contract.get("client_data", {}).get("rut", ""),
+                    "email": contract.get("client_data", {}).get("email", ""),
+                    "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
+                    "comuna": contract.get("property_data", {}).get("comuna", ""),
+                    "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
+                    "rol": contract.get("property_data", {}).get("rol", ""),
+                    "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
+                    "precio": contract.get("property_data", {}).get("precio", ""),
+                    "comision": contract.get("property_data", {}).get("comision", ""),
+                    "created_at": contract.get("created_at"),
+                    "version": contract.get("version", 1)
+                }
+                pdf_bytes = PDFGenerator.generate_original_contract(data_payload)
+                # Opcional: Guardar en tmp_path para futuras llamadas rápidas
+                try:
+                    tmp_path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(tmp_path, "wb") as f:
+                        f.write(pdf_bytes)
+                except Exception:
+                    pass
 
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
@@ -314,8 +344,6 @@ async def download_original_pdf(contract_code: str):
 
     from fastapi.responses import StreamingResponse
     import io
-    with open(pdf_path, "rb") as f:
-        pdf_bytes = f.read()
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",

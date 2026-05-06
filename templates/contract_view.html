@@ -214,14 +214,14 @@
 
     <div class="contract-card bg-white rounded-xl shadow-lg border border-gray-200 p-5">
 
-        <!-- ── PROGRESS BAR (4 steps) ── -->
+        <!-- ── PROGRESS BAR (3 steps) ── -->
         <div id="progress-bar-wrap" class="mb-6">
             <div class="flex items-center justify-between mb-2">
-                <span id="progress-label" class="text-sm font-bold text-gray-700">Paso 1 de 4 — Revisa tu contrato</span>
-                <span id="progress-fraction" class="text-xs font-semibold text-blue-600">1 / 4</span>
+                <h3 id="progress-label" class="text-sm font-bold text-gray-800">Paso 1 de 3 — Revisa tu contrato</h3>
+                <span id="progress-fraction" class="text-xs font-bold text-blue-600 bg-blue-100 py-1 px-2 rounded-full">1 / 3</span>
             </div>
-            <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                <div id="progress-fill" class="bg-blue-600 h-2 rounded-full transition-all duration-500" style="width: 25%"></div>
+            <div class="w-full bg-gray-200 rounded-full h-2 mb-6 mt-1">
+                <div id="progress-fill" class="bg-blue-600 h-2 rounded-full transition-all duration-500" style="width: 33%"></div>
             </div>
         </div>
 
@@ -705,13 +705,11 @@
     checkIntent.addEventListener('change', updateOtpButton);
 
     // ── Progress bar ─────────────────────────────────────────────────────────
-    // Mapping: internal step-id → visible step (1–4)
     const STEP_PROGRESS = {
-        'step-1': { n: 1, label: 'Paso 1 de 4 — Revisa el contrato',    pct: '25%'  },
-        'step-2': { n: 2, label: 'Paso 2 de 4 — Verifica tu identidad', pct: '50%'  },
-        'step-3': { n: 3, label: 'Paso 3 de 4 — Solicita el código',    pct: '75%'  },
-        'step-4': { n: 4, label: 'Paso 4 de 4 — Confirma y firma',       pct: '100%' },
-        'step-5': { n: 4, label: '¡Proceso completado!',                   pct: '100%' },
+        'step-1': { n: 1, label: 'Paso 1 de 3 — Revisa el contrato',    pct: '33%'  },
+        'step-2': { n: 2, label: 'Paso 2 de 3 — Verifica tu identidad', pct: '66%'  },
+        'step-4': { n: 3, label: 'Paso 3 de 3 — Confirma y firma',      pct: '100%' },
+        'step-5': { n: 3, label: '¡Proceso completado!',                pct: '100%' },
     };
 
     function showStep(targetId) {
@@ -728,7 +726,7 @@
         const p = STEP_PROGRESS[targetId];
         if (p) {
             document.getElementById('progress-label').textContent    = p.label;
-            document.getElementById('progress-fraction').textContent = p.n + ' / 4';
+            document.getElementById('progress-fraction').textContent = p.n + ' / 3';
             document.getElementById('progress-fill').style.width     = p.pct;
             if (targetId === 'step-5') {
                 document.getElementById('progress-fill').classList.replace('bg-blue-600', 'bg-green-500');

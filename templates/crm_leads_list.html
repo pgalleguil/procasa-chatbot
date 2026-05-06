@@ -1036,11 +1036,8 @@
                 {% endif %}
 
                 <select style="margin-left: auto;" name="orden" onchange="this.form.submit()">
-                    <option value="prioridad" {% if request.query_params.get('orden')=='prioridad' %}selected{% endif
-                        %}>
-                        Prioridad (Semáforo)</option>
-                    <option value="fecha" {% if request.query_params.get('orden')=='fecha' %}selected{% endif %}>Más
-                        Recientes</option>
+                    <option value="fecha" {% if not request.query_params.get('orden') or request.query_params.get('orden')=='fecha' %}selected{% endif %}>M\u00e1s Recientes</option>
+                    <option value="prioridad" {% if request.query_params.get('orden')=='prioridad' %}selected{% endif %}>Prioridad (Sem\u00e1foro)</option>
                 </select>
                 <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
             </form>

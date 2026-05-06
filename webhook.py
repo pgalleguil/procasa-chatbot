@@ -1704,13 +1704,32 @@ async def inactive_lead_nudge_loop():
                 "Sin Asignar", "Sin asignar", "N/A", "", None
             }
 
+            now_cl = datetime.now(CHILE_TZ)
+            today_str = now_cl.strftime("%Y-%m-%d")
+
+            # --- COOLDOWN: max 1 nudge/día, mínimo 6h entre nudges ---
+            NUDGE_COOLDOWN_HOURS   = 6    # mínimo entre envios al mismo lead
+            NUDGE_MAX_PER_DAY     = 1    # máximo nudges por lead por día
+            NUDGE_MAX_TOTAL       = 3    # máximo nudges históricos por lead (abandona después)
+
             query = {
                 "stage": {"$nin": ["ARCHIVED", "REJECTED", "CLOSED_LOST", "CLOSED_WON", "OFFER", "NEGOTIATION", "VISIT_DONE", "VISIT_SCHEDULED"]},
-                "nudge_status": {"$exists": False},
+                # Solo leads que: no alcanzaron el máximo de nudges históricos
+                "$or": [
+                    {"nudge_count": {"$exists": False}},
+                    {"nudge_count": {"$lt": NUDGE_MAX_TOTAL}}
+                ],
+                # Y no han tenido nudge HOY
+                "nudge_last_date": {"$ne": today_str},
                 "messages.0": {"$exists": True}
             }
-            
-            leads = list(db["leads"].find(query))
+
+            leads = list(db["leads"].find(query, {
+                "phone": 1, "messages": 1, "stage": 1,
+                "ejecutivo_asignado": 1, "prospecto": 1,
+                "nudge_count": 1, "nudge_sent_at": 1, "nudge_last_date": 1,
+                "last_intent": 1, "lifecycle": 1
+            }))
             
             for lead in leads:
                 messages = lead.get("messages", [])
@@ -1779,28 +1798,39 @@ async def inactive_lead_nudge_loop():
                 threshold_mins = 60 if user_msgs_count <= 1 else 45
 
                 if time_diff_mins >= threshold_mins:
+                    # --- COOLDOWN: m\u00ednimo 6h entre nudges al mismo lead ---
+                    nudge_sent_at_str = lead.get("nudge_sent_at")
+                    if nudge_sent_at_str:
+                        try:
+                            last_nudge_dt = datetime.fromisoformat(str(nudge_sent_at_str).replace("Z", "+00:00")).astimezone(pytz.utc).replace(tzinfo=None)
+                            hours_since = (now_utc - last_nudge_dt).total_seconds() / 3600
+                            if hours_since < NUDGE_COOLDOWN_HOURS:
+                                logger.debug(f"[NUDGE] Cooldown activo {lead.get('phone')}: \u00faltimo hace {hours_since:.1f}h (m\u00edn {NUDGE_COOLDOWN_HOURS}h)")
+                                continue
+                        except Exception:
+                            pass
+
                     # Re-validar en tiempo real antes de enviar
                     fresh_lead = db["leads"].find_one({"_id": lead["_id"]})
-                    fresh_msgs = fresh_lead.get("messages", [])
+                    fresh_msgs = (fresh_lead.get("messages", []) or []) if fresh_lead else []
                     if fresh_msgs and fresh_msgs[-1].get("role") == "user":
-                        logger.info(f"[NUDGE] Cancelado para {lead.get('phone')} (Respondió justo ahora).")
+                        logger.info(f"[NUDGE] Cancelado para {lead.get('phone')} (Respondi\u00f3 justo ahora).")
                         continue
 
                     phone = lead.get("phone")
-                    # Texto neutro — no menciona ejecutivos porque el lead no está asignado
+                    nudge_count = (lead.get("nudge_count") or 0) + 1
                     nudge_text = (
-                        "Hola 🙂 Solo quería saber si tienes alguna pregunta adicional "
-                        "sobre la propiedad. Estoy aquí para ayudarte. "
-                        "Si no es buen momento, no hay problema. 👍"
+                        "Hola \U0001f642 Solo quer\u00eda saber si tienes alguna pregunta adicional "
+                        "sobre la propiedad. Estoy aqu\u00ed para ayudarte. "
+                        "Si no es buen momento, no hay problema. \U0001f44d"
                     )
 
-                    logger.info(f"[NUDGE] Enviando reactivación a {phone} (Inactivo {int(time_diff_mins)} min, Umbral: {threshold_mins})")
+                    logger.info(f"[NUDGE] Enviando reactivaci\u00f3n #{nudge_count} a {phone} (Inactivo {int(time_diff_mins)} min, Umbral: {threshold_mins})")
                     sent = await send_whatsapp_message(phone, nudge_text)
 
                     if sent:
                         from chatbot.storage import guardar_mensaje
                         now_cl_str = datetime.now(CHILE_TZ).isoformat()
-                        # ── Guardar en historial del lead para trazabilidad ──
                         guardar_mensaje(phone, "assistant", nudge_text, {
                             "tipo": "nudge_reactivacion",
                             "intencion": "reactivacion_automatica"
@@ -1808,11 +1838,12 @@ async def inactive_lead_nudge_loop():
                         db["leads"].update_one(
                             {"_id": lead["_id"]},
                             {"$set": {
-                                "nudge_status": "sent",
-                                "nudge_sent_at": now_cl_str
+                                "nudge_sent_at": now_cl_str,
+                                "nudge_last_date": today_str,
+                                "nudge_count": nudge_count
                             }}
                         )
-                        await asyncio.sleep(5) # Throttling ligero
+                        await asyncio.sleep(5)  # Throttling ligero
                         
         except asyncio.CancelledError:
             break
@@ -1821,7 +1852,7 @@ async def inactive_lead_nudge_loop():
             if "nudge_loop" in background_tasks_status:
                 background_tasks_status["nudge_loop"]["status"] = f"error: {str(e)}"
         
-        await asyncio.sleep(120)  # Chequear cada 2 minutos
+        await asyncio.sleep(300)  # Chequear cada 5 minutos (antes era 2min)
 
 async def reassign_unassigned_leads_loop():
     logger.info("[BACKGROUND] Iniciando loop de procesamiento de leads (Clasificación/Asignación)...")
@@ -1885,7 +1916,7 @@ async def daily_report_loop():
             # Reporte 1: Leads críticos SLA (09:30 AM) - DESACTIVADO TEMPORALMENTE A PETICIÓN DEL USUARIO
             # await check_and_run_daily_report()
             # Reporte 2: Meta Diaria de Captaciones (09:00 AM)
-            await check_and_run_meta_diaria_report()
+            # await check_and_run_meta_diaria_report()  # DESACTIVADO A PETICIÓN DEL USUARIO
         except Exception as e:
             logger.error(f"[DAILY_REPORT] Error en loop: {e}")
             if "daily_report" in background_tasks_status:

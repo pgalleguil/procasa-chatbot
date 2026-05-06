@@ -268,10 +268,49 @@
             .sidebar.mobile-open:hover { width: 260px; }
             .sidebar .brand span,
             .sidebar .nav-link span { opacity: 1 !important; transform: translateX(0) !important; }
-            .main-content { margin-left: 0 !important; padding: 15px; }
+            .main-content { margin-left: 0 !important; padding: 12px; }
             .hamburger-mobile { display: flex !important; }
             /* Ocultar PDF en móvil - no tiene sentido en pantalla pequeña */
             .pdf-col-mobile-hidden { display: none !important; }
+
+            /* TABLA → CARDS en móvil */
+            .table-responsive { overflow-x: visible; }
+            .prop-table thead { display: none; }
+            .prop-table, .prop-table tbody, .prop-table tr, .prop-table td {
+                display: block;
+                width: 100%;
+            }
+            .prop-table tbody tr {
+                background: var(--bg-card);
+                border: 1px solid var(--border-color);
+                border-radius: 14px;
+                margin-bottom: 12px;
+                padding: 14px 16px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            }
+            .prop-table td {
+                border: none !important;
+                box-shadow: none !important;
+                padding: 6px 0;
+                background: transparent !important;
+                font-size: 0.88rem;
+                border-radius: 0 !important;
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                text-align: left;
+            }
+            /* Etiqueta antes de cada celda */
+            .prop-table td[data-label]::before {
+                content: attr(data-label);
+                font-weight: 700;
+                color: var(--text-secondary);
+                font-size: 0.75rem;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                margin-bottom: 4px;
+                display: block;
+            }
         }
 
         #modalNewContract .modal-dialog {
@@ -369,28 +408,29 @@
                     <tbody>
                         {% for c in contracts %}
                         <tr>
-                            <td>{{ c.created_at.strftime('%d/%m/%Y %H:%M') if c.created_at else '---' }}</td>
-                            <td class="font-monospace text-accent">{{ c.property_code or c.contract_code[:8] }}</td>
-                            <td>
+                            <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y %H:%M') if c.created_at else '---' }}</td>
+                            <td data-label="C\u00f3digo Interno" class="font-monospace text-accent">{{ c.property_code or c.contract_code[:8] }}</td>
+                            <td data-label="Cliente">
                                 <b>{{ c.client_data.nombre }}</b><br>
                                 <small class="text-secondary">{{ c.client_data.rut }} | {{ c.client_data.email }}</small>
                             </td>
-                            <td>
+                            <td data-label="Propiedad / Rol">
                                 {{ c.property_data.direccion }}<br>
                                 <small class="text-secondary">{{ c.property_data.tipo }} | Rol: {{ c.property_data.rol }}</small>
                             </td>
-                            <td>
+                            <td data-label="Estado">
                                 <span class="status-badge status-{{ c.status }}">
                                     {% if c.status == 'created' %}Creado
                                     {% elif c.status == 'sent' %}Enviado
                                     {% elif c.status == 'opened' %}Abierto
-                                    {% elif c.status == 'otp_requested' %}Código Solicitado
+                                    {% elif c.status == 'otp_requested' %}C\u00f3digo Solicitado
                                     {% elif c.status == 'otp_verified' %}RUT Validado
                                     {% elif c.status == 'signed' %}Firmado
                                     {% else %}{{ c.status|title }}{% endif %}
                                 </span>
                             </td>
-                            <td>
+                            <td data-label="Acciones">
+                                <div class="d-flex flex-wrap gap-2 mt-2 mt-md-0">
                                 {% if c.status == 'created' %}
                                 <a href="/contracts/api/download/{{ c.contract_code }}" target="_blank" class="btn btn-sm btn-secondary" title="Ver PDF Generado">
                                     <i class="fa-solid fa-file-pdf"></i>
@@ -415,6 +455,7 @@
                                 <button class="btn btn-sm btn-danger ms-2" onclick="deleteContract('{{ c.contract_code }}')" title="Eliminar Contrato">
                                     <i class="fa-solid fa-trash"></i>
                                 </button>
+                                </div>
                             </td>
                         </tr>
                         {% else %}

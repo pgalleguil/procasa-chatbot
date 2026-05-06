@@ -712,11 +712,62 @@
             .sidebar.mobile-open:hover { width: 260px; }
             .sidebar .brand span,
             .sidebar .nav-link span { opacity: 1 !important; transform: translateX(0) !important; }
-            .main-content { margin-left: 0 !important; padding: 15px; }
+            .main-content { margin-left: 0 !important; padding: 12px; }
             .hamburger-mobile { display: flex !important; }
-            .page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
-            .kpi-grid { grid-template-columns: repeat(2,1fr); }
+            .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+            .kpi-grid { grid-template-columns: repeat(2,1fr); gap: 10px; }
             .pagination-container { flex-direction: column; text-align: center; }
+
+            /* TABLA → CARDS en móvil */
+            .table-responsive { overflow-x: visible; }
+            .prop-table thead { display: none; }
+            .prop-table, .prop-table tbody, .prop-table tr, .prop-table td {
+                display: block;
+                width: 100%;
+            }
+            .prop-table tbody tr {
+                background: var(--bg-card);
+                border: 1px solid var(--border-color);
+                border-radius: 14px;
+                margin-bottom: 12px;
+                padding: 14px 16px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                cursor: pointer;
+                transition: transform 0.2s, box-shadow 0.2s;
+            }
+            .prop-table tbody tr:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+            }
+            .prop-table td {
+                border: none !important;
+                box-shadow: none !important;
+                padding: 4px 0;
+                background: transparent !important;
+                font-size: 0.88rem;
+                border-radius: 0 !important;
+            }
+            /* Etiqueta antes de cada celda */
+            .prop-table td[data-label]::before {
+                content: attr(data-label) " ";
+                font-weight: 700;
+                color: var(--text-secondary);
+                font-size: 0.75rem;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                display: inline;
+            }
+            /* Filtros: stack vertical */
+            .filter-bar {
+                flex-direction: column;
+                gap: 8px;
+            }
+            .filter-bar .search-box,
+            .filter-bar select,
+            .filter-bar .btn-filter {
+                width: 100% !important;
+                min-width: unset;
+            }
         }
     </style>
 </head>
@@ -842,15 +893,15 @@
                     <tbody>
                         {% for item in items %}
                         <tr onclick="location.href='/captacion/{{ item.id }}'">
-                            <td><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</td>
-                            <td>
+                            <td data-label="Comuna"><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</td>
+                            <td data-label="Operación">
                                 {% if 'VEN' in item.operacion %}
                                 <span class="badge-custom" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2);">VENTA</span>
                                 {% else %}
                                 <span class="badge-custom" style="background: rgba(99, 102, 241, 0.1); color: var(--accent); border: 1px solid rgba(99, 102, 241, 0.2);">ARRIENDO</span>
                                 {% endif %}
                             </td>
-                            <td class="text-center">
+                            <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}
                                     UF {{ "%.1f"|format(item.precio_uf|float) }}
@@ -862,11 +913,11 @@
                                 <div class="small text-secondary">{{ item.precio }}</div>
                                 {% endif %}
                             </td>
-                            <td class="text-center">
+                            <td class="text-center" data-label="Estado">
                                 <span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span>
                             </td>
-                            <td class="text-center">
-                                <div class="small fw-bold">Hace {{ item.dias_en_portal }} días</div>
+                            <td class="text-center" data-label="Antiguedad">
+                                <div class="small fw-bold">Hace {{ item.dias_en_portal }} d\u00edas</div>
                                 <div class="small text-secondary" style="font-size: 0.75rem;">{{ item.fecha_str }}</div>
                             </td>
                         </tr>

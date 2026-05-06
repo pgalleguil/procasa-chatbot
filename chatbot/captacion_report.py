@@ -40,8 +40,10 @@ async def get_daily_progress_stats(target_date: datetime) -> dict:
     active_stock_execs = db["yapo_propiedades"].distinct("gestion.ejecutivo_asignado", {"details.es_propietario_directo": True})
     active_stock_names = {name.strip().title() for name in active_stock_execs if name and name.strip()}
     
-    # Lista maestra de captación
-    master_team = list(set(list(active_stock_names) + ROUND_ROBIN_TEAM))
+    # Lista maestra de captación — defensiva: None guard en ambas fuentes
+    round_robin = list(ROUND_ROBIN_TEAM) if ROUND_ROBIN_TEAM else []
+    stock_names_list = list(active_stock_names) if active_stock_names else []
+    master_team = list(set(stock_names_list + round_robin))
     # Ejecutivos "En configuración" (los que tú mencionaste/otros nuevos sin stock)
     en_configuracion = ["Paula Morales", "Rocío Aliaga"]
     

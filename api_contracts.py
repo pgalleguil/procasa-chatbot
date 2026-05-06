@@ -715,6 +715,9 @@ async def verify_otp(token: str, request: Request):
     if contract.get("status") == "signed" or contract["security"].get("token_used"):
         return JSONResponse(status_code=200, content={"status": "already_signed"})
         
+    if contract.get("status") == "otp_verified":
+        return {"status": "ok"}
+        
     ip = get_client_ip(request)
     ua = request.headers.get("user-agent", "")
     server_timestamp = SecurityContracts.generate_server_timestamp()

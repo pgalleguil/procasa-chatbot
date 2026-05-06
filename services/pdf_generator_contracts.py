@@ -136,8 +136,11 @@ class PDFGenerator:
     @staticmethod
     def _add_footer(canvas, doc):
         page_num = canvas.getPageNumber()
-        total = 1 if getattr(doc, 'is_original', False) else 2
-        text = f"Página {page_num} de {total}"
+        if getattr(doc, 'is_original', True):
+            text = f"P\u00e1gina {page_num}"
+        else:
+            text = "Certificado de Firma Electr\u00f3nica"
+            
         canvas.saveState()
         
         # Dibujar pie de página centrado

@@ -46,7 +46,8 @@
             display: none;
         }
         body.pdf-step .pdf-viewer-section {
-            display: block;
+            display: flex;
+            flex-direction: column;
         }
         body.pdf-step .contract-layout {
             grid-template-columns: 1.2fr 1fr;
@@ -167,7 +168,8 @@
             }
             /* On mobile step-1: show PDF below the form */
             body.pdf-step .pdf-viewer-section {
-                display: block;
+                display: flex;
+                flex-direction: column;
                 position: relative;
                 height: auto;
                 padding: 10px;
@@ -238,13 +240,7 @@
                 </p>
             </div>
 
-            <div class="mb-4">
-                <a href="/contracts_pdf/{{ contract.contract_code }}_original.pdf" target="_blank"
-                    class="w-full flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-lg transition-colors shadow text-sm">
-                    <i class="fa-solid fa-file-pdf text-red-400 mr-2"></i>
-                    Descargar / Ver en pantalla completa
-                </a>
-            </div>
+
 
             <!-- Scroll-progress banner -->
             <div id="read-banner">
@@ -292,7 +288,7 @@
                 <p class="text-xs text-gray-500 mt-0.5">Ingresa tu RUT para confirmar tu identidad</p>
             </div>
             <p class="text-gray-600 mb-4 text-sm bg-gray-50 p-3 rounded-lg border border-gray-200">
-                Tu RUT ser\u00e1 verificado contra el titular del contrato y te enviaremos un c\u00f3digo SMS/WhatsApp para firmar.
+                Tu RUT será verificado contra el titular del contrato y te enviaremos un código SMS/WhatsApp para firmar.
             </p>
             <div class="mb-5">
                 <label class="block text-sm font-bold text-gray-700 mb-2">Tu RUT (con guion)</label>
@@ -305,7 +301,7 @@
                 <button id="btn-validate-rut"
                     class="w-full bg-[#25D366] hover:bg-[#1EBE5D] text-white font-bold py-3 px-4 rounded-lg transition-colors shadow"
                     style="min-height:48px;font-size:16px;">
-                    <i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir c\u00f3digo
+                    <i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir código
                 </button>
                 <button id="btn-back-1"
                     class="w-full bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-2.5 px-4 rounded-lg transition-colors"
@@ -367,7 +363,7 @@
     </div> <!-- form-section -->
 
     <!-- LADO DERECHO: Visor PDF -->
-    <div class="pdf-viewer-section flex flex-col relative">
+    <div class="pdf-viewer-section flex-col relative">
         <div class="sticky top-0 z-50 bg-[#f1f5f9] pb-3 mb-1 flex gap-2 w-full max-w-[900px] mx-auto">
             <a href="/api/download/{{ contract.contract_code }}" target="_blank" 
                class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center transition-colors shadow-sm text-sm">
@@ -823,17 +819,17 @@
                     location.reload();
                     return;
                 }
-                goToStep2(data.detail || 'Error al solicitar c\u00f3digo. Verifica tu RUT.');
+                goToStep2(data.detail || 'Error al solicitar código. Verifica tu RUT.');
             }
         } catch (err) {
             console.timeEnd("OTP request");
             if (err.message === 'TIMEOUT') {
-                goToStep2('La conexi\u00f3n est\u00e1 tardando m\u00e1s de lo normal. Intente nuevamente.');
+                goToStep2('La conexión está tardando más de lo normal. Intente nuevamente.');
             } else {
-                goToStep2('Error de conexi\u00f3n.');
+                goToStep2('Error de conexión.');
             }
         } finally {
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir c\u00f3digo'; }
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir código'; }
         }
     }
 

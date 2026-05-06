@@ -1184,16 +1184,17 @@ async def verify_contract(contract_code: str, request: Request):
 @router.get("/dashboard", response_class=HTMLResponse)
 async def contract_dashboard(request: Request):
     """Módulo principal para gestión y generación de convenios de corretaje"""
-    db = get_db()
-    # Listar los últimos contratos (excluir los eliminados o manejarlos en frontend)
-    contracts_cursor = db["contracts"].find({"status": {"$ne": "deleted"}}).sort("created_at", -1).limit(100)
-    contracts = []
-    for c in contracts_cursor:
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    # Listar los \u00faltimos contratos (excluir los eliminados o manejarlos en frontend)
+    contracts_cursor = adb["contracts"].find({"status": {"$ne": "deleted"}}).sort("created_at", -1).limit(100)
+    contracts = await contracts_cursor.to_list(length=100)
+    
+    for c in contracts:
         if c.get("created_at"):
             # PyMongo returns naive UTC, convert to CHILE_TZ
             dt_utc = c["created_at"].replace(tzinfo=timezone.utc)
             c["created_at"] = dt_utc.astimezone(CHILE_TZ)
-        contracts.append(c)
         
     return templates.TemplateResponse("contract_dashboard.html", {
         "request": request,

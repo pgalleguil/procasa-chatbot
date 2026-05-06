@@ -409,7 +409,7 @@
                         {% for c in contracts %}
                         <tr>
                             <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y %H:%M') if c.created_at else '---' }}</td>
-                            <td data-label="C\u00f3digo Interno" class="font-monospace text-accent">{{ c.property_code or c.contract_code[:8] }}</td>
+                            <td data-label="Código Interno" class="font-monospace text-accent">{{ c.property_code or c.contract_code[:8] }}</td>
                             <td data-label="Cliente">
                                 <b>{{ c.client_data.nombre }}</b><br>
                                 <small class="text-secondary">{{ c.client_data.rut }} | {{ c.client_data.email }}</small>
@@ -423,7 +423,7 @@
                                     {% if c.status == 'created' %}Creado
                                     {% elif c.status == 'sent' %}Enviado
                                     {% elif c.status == 'opened' %}Abierto
-                                    {% elif c.status == 'otp_requested' %}C\u00f3digo Solicitado
+                                    {% elif c.status == 'otp_requested' %}Código Solicitado
                                     {% elif c.status == 'otp_verified' %}RUT Validado
                                     {% elif c.status == 'signed' %}Firmado
                                     {% else %}{{ c.status|title }}{% endif %}

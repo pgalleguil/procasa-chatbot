@@ -248,8 +248,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         sort_criteria = [("priority_score", -1), ("last_event_at", -1)]
         cursor_field = "priority_score"
     else:
-        sort_criteria = [("last_event_at", -1)]
-        cursor_field = "last_event_at"
+        sort_criteria = [("created_at", -1)]
+        cursor_field = "created_at"
 
     # Proyección mínima — solo campos necesarios para el listado
     PROJECTION = {
@@ -278,8 +278,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     if cursor_last_event_at:
         try:
             cursor_dt = datetime.fromisoformat(cursor_last_event_at.replace("Z", "+00:00"))
-            # Añade filtro: trae solo leads más antiguos que el cursor (siguiente página)
-            paginated_query["last_event_at"] = {"$lt": cursor_dt}
+            # A\u00f1ade filtro: trae solo leads m\u00e1s antiguos que el cursor (siguiente p\u00e1gina)
+            paginated_query[cursor_field] = {"$lt": cursor_dt}
         except Exception as e:
             logger.warning(f"CRM: cursor inválido ignorado: {e}")
             # Si el cursor es inválido, arranca desde el principio (seguro)

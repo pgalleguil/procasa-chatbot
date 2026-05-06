@@ -269,7 +269,8 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
 
         background_tasks.add_task(generate_original_pdf_bg, data, contract_code, perm_original_path)
             
-        url_firma = f"{Config.WEBHOOK_URL}/contracts/view/{contract_code}"
+        base_url = str(request.base_url).rstrip('/')
+        url_firma = f"{base_url}/contracts/view/{contract_code}"
         
         return {
             "status": "success",

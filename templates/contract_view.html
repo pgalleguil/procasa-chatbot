@@ -365,7 +365,7 @@
     <!-- LADO DERECHO: Visor PDF -->
     <div class="pdf-viewer-section flex-col relative">
         <div class="sticky top-0 z-50 bg-[#f1f5f9] pb-3 mb-1 flex gap-2 w-full max-w-[900px] mx-auto">
-            <a href="/api/download/{{ contract.contract_code }}" target="_blank" 
+            <a href="/contracts/api/download/{{ contract.contract_code }}" target="_blank" 
                class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center transition-colors shadow-sm text-sm">
                 <i class="fa-solid fa-download mr-2"></i> Descargar contrato
             </a>
@@ -463,7 +463,7 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc =
         'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-    const pdfUrl       = '/contracts_pdf/{{ contract.contract_code }}_original.pdf';
+    const pdfUrl       = '/contracts/api/download/{{ contract.contract_code }}';
     const pdfContainer = document.getElementById('pdf-container');
     const pdfLoading   = document.getElementById('pdf-loading');
     const pageBadge    = document.getElementById('page-badge');
@@ -550,7 +550,7 @@
                 <div class="text-center p-6">
                     <i class="fa-solid fa-triangle-exclamation text-red-400 text-4xl mb-3"></i>
                     <p class="text-slate-700 font-semibold mb-4">No se pudo cargar la vista previa.</p>
-                    <a href="${pdfUrl}" class="bg-blue-600 text-white py-2 px-5 rounded-lg font-semibold text-sm">Descargar Documento</a>
+                    <a href="/contracts/api/download/{{ contract.contract_code }}" class="bg-blue-600 text-white py-2 px-5 rounded-lg font-semibold text-sm">Descargar Documento</a>
                 </div>`;
         }
     }

@@ -379,21 +379,85 @@ async def download_signed_pdf(contract_code: str):
 
     file_id = contract.get("security", {}).get("signed_pdf_drive_id")
     if file_id:
-        gdrive = GDriveSync()
-        pdf_bytes = gdrive.download_file(file_id)
-        if pdf_bytes:
-            from fastapi.responses import StreamingResponse
-            import io
-            return StreamingResponse(
-                io.BytesIO(pdf_bytes),
-                media_type="application/pdf",
-                headers={
-                    "Cache-Control": "public, max-age=3600",
-                    "Content-Disposition": f'attachment; filename="{filename}"'
-                }
-            )
-            
-    raise HTTPException(status_code=404, detail="Documento firmado no disponible")
+        try:
+            gdrive = GDriveSync()
+            pdf_bytes = gdrive.download_file(file_id)
+            if pdf_bytes:
+                from fastapi.responses import StreamingResponse
+                import io
+                return StreamingResponse(
+                    io.BytesIO(pdf_bytes),
+                    media_type="application/pdf",
+                    headers={
+                        "Cache-Control": "public, max-age=3600",
+                        "Content-Disposition": f'attachment; filename="{filename}"'
+                    }
+                )
+        except Exception as e:
+            logger.error(f"Error downloading from GDrive: {e}")
+
+    # Si llegamos aquí, no está en local ni en Drive (o Drive falló/no configurado).
+    # REGENERAMOS el PDF firmado dinámicamente:
+    logger.info(f"Regenerando PDF firmado para {contract_code} dinámicamente...")
+    
+    # 1. Regenerar el original
+    data_payload = {
+        "contract_code": contract.get("contract_code"),
+        "origen": contract.get("origen", ""),
+        "property_code": contract.get("property_code", ""),
+        "phone": contract.get("phone", ""),
+        "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
+        "cliente_rut": contract.get("client_data", {}).get("rut", ""),
+        "email": contract.get("client_data", {}).get("email", ""),
+        "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
+        "comuna": contract.get("property_data", {}).get("comuna", ""),
+        "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
+        "rol": contract.get("property_data", {}).get("rol", ""),
+        "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
+        "precio": contract.get("property_data", {}).get("precio", ""),
+        "comision": contract.get("property_data", {}).get("comision", ""),
+        "created_at": contract.get("created_at"),
+        "version": contract.get("version", 1)
+    }
+    original_bytes = PDFGenerator.generate_original_contract(data_payload)
+    
+    # 2. Reconstruir la evidencia desde la DB
+    timeline = contract.get("timeline", [])
+    accepted_event = next((evt for evt in timeline if evt.get("action") == "accepted"), {})
+    
+    evidence_data = {
+        "contract_code": contract_code,
+        "verify_token": contract.get("security", {}).get("verify_token", ""),
+        "server_timestamp": accepted_event.get("server_timestamp", ""),
+        "ip": accepted_event.get("ip", ""),
+        "geo_info": accepted_event.get("geo_location", "Localización no disponible"),
+        "timezone": accepted_event.get("timezone", "America/Santiago (CLT)"),
+        "user_agent": accepted_event.get("user_agent", ""),
+        "original_hash": contract.get("security", {}).get("original_hash", ""),
+        "server_hmac": contract.get("security", {}).get("server_hmac", ""),
+        "timeline_hash": contract.get("security", {}).get("timeline_hash", ""),
+        "read_time_seconds": accepted_event.get("read_time_seconds", 0),
+        "scrolled_to_bottom": "Sí" if accepted_event.get("scrolled_to_bottom") else "No",
+        "read_method": accepted_event.get("read_method", "scroll")
+    }
+    
+    # Evitar fallar si faltan datos en contratos antiguos
+    from fastapi import Request
+    base_url = "https://procasa.cl" # default fallback
+    verify_url = f"{base_url}/contracts/verify/{evidence_data['verify_token']}"
+    
+    signed_pdf_bytes = PDFGenerator.generate_signed_contract(original_bytes, contract, evidence_data, verify_url)
+    
+    from fastapi.responses import StreamingResponse
+    import io
+    return StreamingResponse(
+        io.BytesIO(signed_pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
 
 @router.get("/api/view_signed/{contract_code}")
 async def view_signed_pdf(contract_code: str):
@@ -421,21 +485,85 @@ async def view_signed_pdf(contract_code: str):
 
     file_id = contract.get("security", {}).get("signed_pdf_drive_id")
     if file_id:
-        gdrive = GDriveSync()
-        pdf_bytes = gdrive.download_file(file_id)
-        if pdf_bytes:
-            from fastapi.responses import StreamingResponse
-            import io
-            return StreamingResponse(
-                io.BytesIO(pdf_bytes),
-                media_type="application/pdf",
-                headers={
-                    "Cache-Control": "public, max-age=86400",
-                    "Content-Disposition": f'inline; filename="{filename}"'
-                }
-            )
+        try:
+            gdrive = GDriveSync()
+            pdf_bytes = gdrive.download_file(file_id)
+            if pdf_bytes:
+                from fastapi.responses import StreamingResponse
+                import io
+                return StreamingResponse(
+                    io.BytesIO(pdf_bytes),
+                    media_type="application/pdf",
+                    headers={
+                        "Cache-Control": "public, max-age=86400",
+                        "Content-Disposition": f'inline; filename="{filename}"'
+                    }
+                )
+        except Exception as e:
+            logger.error(f"Error downloading from GDrive: {e}")
             
-    raise HTTPException(status_code=404, detail="Documento firmado no disponible")
+    # Si llegamos aquí, no está en local ni en Drive (o Drive falló/no configurado).
+    # REGENERAMOS el PDF firmado dinámicamente:
+    logger.info(f"Regenerando PDF firmado para {contract_code} dinámicamente...")
+    
+    # 1. Regenerar el original
+    data_payload = {
+        "contract_code": contract.get("contract_code"),
+        "origen": contract.get("origen", ""),
+        "property_code": contract.get("property_code", ""),
+        "phone": contract.get("phone", ""),
+        "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
+        "cliente_rut": contract.get("client_data", {}).get("rut", ""),
+        "email": contract.get("client_data", {}).get("email", ""),
+        "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
+        "comuna": contract.get("property_data", {}).get("comuna", ""),
+        "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
+        "rol": contract.get("property_data", {}).get("rol", ""),
+        "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
+        "precio": contract.get("property_data", {}).get("precio", ""),
+        "comision": contract.get("property_data", {}).get("comision", ""),
+        "created_at": contract.get("created_at"),
+        "version": contract.get("version", 1)
+    }
+    original_bytes = PDFGenerator.generate_original_contract(data_payload)
+    
+    # 2. Reconstruir la evidencia desde la DB
+    timeline = contract.get("timeline", [])
+    accepted_event = next((evt for evt in timeline if evt.get("action") == "accepted"), {})
+    
+    evidence_data = {
+        "contract_code": contract_code,
+        "verify_token": contract.get("security", {}).get("verify_token", ""),
+        "server_timestamp": accepted_event.get("server_timestamp", ""),
+        "ip": accepted_event.get("ip", ""),
+        "geo_info": accepted_event.get("geo_location", "Localización no disponible"),
+        "timezone": accepted_event.get("timezone", "America/Santiago (CLT)"),
+        "user_agent": accepted_event.get("user_agent", ""),
+        "original_hash": contract.get("security", {}).get("original_hash", ""),
+        "server_hmac": contract.get("security", {}).get("server_hmac", ""),
+        "timeline_hash": contract.get("security", {}).get("timeline_hash", ""),
+        "read_time_seconds": accepted_event.get("read_time_seconds", 0),
+        "scrolled_to_bottom": "Sí" if accepted_event.get("scrolled_to_bottom") else "No",
+        "read_method": accepted_event.get("read_method", "scroll")
+    }
+    
+    # Evitar fallar si faltan datos en contratos antiguos
+    from fastapi import Request
+    base_url = "https://procasa.cl" # default fallback
+    verify_url = f"{base_url}/contracts/verify/{evidence_data['verify_token']}"
+    
+    signed_pdf_bytes = PDFGenerator.generate_signed_contract(original_bytes, contract, evidence_data, verify_url)
+    
+    from fastapi.responses import StreamingResponse
+    import io
+    return StreamingResponse(
+        io.BytesIO(signed_pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Content-Disposition": f'inline; filename="{filename}"'
+        }
+    )
 
 @router.post("/api/{contract_code}/send")
 async def send_contract(contract_code: str, request: Request):

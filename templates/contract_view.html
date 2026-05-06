@@ -285,14 +285,14 @@
             </div>
         </div>
 
-        <!-- ── STEP 2 — Ingresa tu RUT ── -->
+        <!-- \u2500\u2500 STEP 2 \u2014 Ingresa tu RUT \u2500\u2500 -->
         <div id="step-2" class="step">
             <div class="border-l-4 border-blue-600 pl-4 mb-5">
                 <h2 class="text-lg font-bold text-gray-900">Verifica tu Identidad</h2>
                 <p class="text-xs text-gray-500 mt-0.5">Ingresa tu RUT para confirmar tu identidad</p>
             </div>
             <p class="text-gray-600 mb-4 text-sm bg-gray-50 p-3 rounded-lg border border-gray-200">
-                Tu RUT será verificado contra el titular del contrato antes de continuar.
+                Tu RUT ser\u00e1 verificado contra el titular del contrato y te enviaremos un c\u00f3digo SMS/WhatsApp para firmar.
             </p>
             <div class="mb-5">
                 <label class="block text-sm font-bold text-gray-700 mb-2">Tu RUT (con guion)</label>
@@ -303,37 +303,14 @@
             </div>
             <div class="space-y-3">
                 <button id="btn-validate-rut"
-                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-colors shadow"
+                    class="w-full bg-[#25D366] hover:bg-[#1EBE5D] text-white font-bold py-3 px-4 rounded-lg transition-colors shadow"
                     style="min-height:48px;font-size:16px;">
-                    Verificar y Continuar
+                    <i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir c\u00f3digo
                 </button>
                 <button id="btn-back-1"
                     class="w-full bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-2.5 px-4 rounded-lg transition-colors"
                     style="min-height:48px;">
                     Volver al contrato
-                </button>
-            </div>
-        </div>
-
-        <!-- ── STEP 3 — Solicitar OTP ── -->
-        <div id="step-3" class="step">
-            <div class="border-l-4 border-blue-600 pl-4 mb-5">
-                <h2 class="text-lg font-bold text-gray-900">Solicitar Código de Firma</h2>
-                <p class="text-xs text-gray-500 mt-0.5">Enviaremos un código de 4 dígitos a tu WhatsApp</p>
-            </div>
-            <div id="otp-send-status" class="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-5 text-sm text-blue-800 font-medium">
-                <i class="fa-brands fa-whatsapp mr-2 text-green-500"></i>Listo para enviar el código a tu WhatsApp.
-            </div>
-            <div class="space-y-3">
-                <button id="btn-send-otp"
-                    class="w-full bg-[#25D366] hover:bg-[#1EBE5D] text-white font-bold py-3 px-4 rounded-lg transition-colors shadow"
-                    style="min-height:48px;font-size:16px;">
-                    <i class="fa-brands fa-whatsapp mr-2"></i> Enviar código a mi WhatsApp
-                </button>
-                <button id="btn-back-2"
-                    class="w-full bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-2.5 px-4 rounded-lg transition-colors"
-                    style="min-height:48px;">
-                    Volver
                 </button>
             </div>
         </div>
@@ -390,7 +367,17 @@
     </div> <!-- form-section -->
 
     <!-- LADO DERECHO: Visor PDF -->
-    <div class="pdf-viewer-section">
+    <div class="pdf-viewer-section flex flex-col relative">
+        <div class="sticky top-0 z-50 bg-[#f1f5f9] pb-3 mb-1 flex gap-2 w-full max-w-[900px] mx-auto">
+            <a href="/api/download/{{ contract.contract_code }}" target="_blank" 
+               class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center transition-colors shadow-sm text-sm">
+                <i class="fa-solid fa-download mr-2"></i> Descargar contrato
+            </a>
+            <button onclick="document.getElementById('pdf-container').requestFullscreen()" 
+               class="flex-1 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold py-2.5 px-4 rounded-lg flex items-center justify-center transition-colors shadow-sm text-sm">
+                <i class="fa-solid fa-expand mr-2"></i> Ver en pantalla completa
+            </button>
+        </div>
         <div id="pdf-container">
             <div id="pdf-loading">
                 <span class="loader mb-3"></span>
@@ -770,69 +757,23 @@
         document.getElementById('input-rut-request').focus();
     });
 
-    // Step-2 Back → Step-1
+    // Step-2 Back \u2192 Step-1
     document.getElementById('btn-back-1').addEventListener('click', () => showStep('step-1'));
 
-    // Step-2 Validate RUT → Step-3 (Send OTP)
-    document.getElementById('btn-validate-rut').addEventListener('click', async () => {
-        const rut = document.getElementById('input-rut-request').value;
-        const rutErrorEl = document.getElementById('rut-error');
-        if (!rut || !isValidRUT(rut)) {
-            rutErrorEl.textContent = 'Ingresa un RUT válido (Ej: 12345678-9)';
-            rutErrorEl.classList.remove('hidden');
-            return;
-        }
-        
-        const btnValidate = document.getElementById('btn-validate-rut');
-        btnValidate.disabled = true;
-        btnValidate.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Verificando...';
-        rutErrorEl.classList.add('hidden');
-        
-        try {
-            const res = await fetch(`/contracts/api/${TOKEN}/validate-rut`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rut })
-            });
-            
-            if (res.ok) {
-                // RUT valid and matches contract
-                showStep('step-3');
-            } else {
-                const data = await res.json().catch(() => ({}));
-                rutErrorEl.textContent = data.detail || 'RUT no coincide con el registrado.';
-                rutErrorEl.classList.remove('hidden');
-            }
-        } catch (err) {
-            rutErrorEl.textContent = 'Error de conexión al verificar RUT.';
-            rutErrorEl.classList.remove('hidden');
-        } finally {
-            btnValidate.disabled = false;
-            btnValidate.innerHTML = 'Verificar y Continuar';
-        }
-    });
-
-    // Step-3 Back → Step-2
-    document.getElementById('btn-back-2').addEventListener('click', () => showStep('step-2'));
-
-    // Step-3 Send OTP button
-    document.getElementById('btn-send-otp').addEventListener('click', () => requestNewOTP());
+    // Step-2 Validate RUT & Request OTP \u2192 Step-4
+    document.getElementById('btn-validate-rut').addEventListener('click', () => requestNewOTP());
 
     function goToStep2(message) {
         const otpInput = document.getElementById('input-otp');
         if (otpInput) otpInput.value = '';
         const errorDiv = document.getElementById('otp-error');
         if (errorDiv) errorDiv.classList.add('hidden');
-        const btnSend = document.getElementById('btn-send-otp');
-        if (btnSend) {
-            btnSend.disabled = false;
-            btnSend.innerHTML = '<i class="fa-brands fa-whatsapp mr-2"></i> Enviar código a mi WhatsApp';
-        }
-        showStep('step-3');
+        showStep('step-2');
         if (message) {
-            const statusDiv = document.getElementById('otp-send-status');
-            if (statusDiv) {
-                statusDiv.className = 'bg-yellow-50 border border-yellow-300 rounded-lg p-4 mb-5 text-sm text-yellow-800 font-semibold';
-                statusDiv.innerHTML = `<i class="fa-solid fa-clock-rotate-left mr-2"></i> ${message}`;
+            const errorEl = document.getElementById('rut-error');
+            if (errorEl) {
+                errorEl.textContent = message;
+                errorEl.classList.remove('hidden');
             }
         }
     }
@@ -852,13 +793,18 @@
 
     async function requestNewOTP() {
         const rut = document.getElementById('input-rut-request').value;
-        if (!rut || !isValidRUT(rut)) { showStep('step-2'); return; }
-        const btn = document.getElementById('btn-send-otp');
-        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enviando código...'; }
-        const statusDiv = document.getElementById('otp-send-status');
-        if (statusDiv) { statusDiv.className = 'bg-blue-50 border border-blue-200 rounded-lg p-4 mb-5 text-sm text-blue-700 font-medium'; statusDiv.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Enviando código de verificación...'; }
-        console.time("OTP request");
+        const rutErrorEl = document.getElementById('rut-error');
+        if (!rut || !isValidRUT(rut)) { 
+            rutErrorEl.textContent = 'Ingresa un RUT v\u00e1lido (Ej: 12345678-9)';
+            rutErrorEl.classList.remove('hidden');
+            return; 
+        }
+        rutErrorEl.classList.add('hidden');
         
+        const btn = document.getElementById('btn-validate-rut');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Procesando...'; }
+        
+        console.time("OTP request");
         try {
             const res = await fetchWithRetry(`/contracts/api/${TOKEN}/request-otp`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -877,20 +823,17 @@
                     location.reload();
                     return;
                 }
-                // Show 429 (rate limit or cooldown) inline instead of alert
-                const msg = data.detail || 'Error al solicitar código.';
-                goToStep2(msg);
+                goToStep2(data.detail || 'Error al solicitar c\u00f3digo. Verifica tu RUT.');
             }
         } catch (err) {
             console.timeEnd("OTP request");
             if (err.message === 'TIMEOUT') {
-                goToStep2('La conexión está tardando más de lo normal. Intente nuevamente.');
+                goToStep2('La conexi\u00f3n est\u00e1 tardando m\u00e1s de lo normal. Intente nuevamente.');
             } else {
-                goToStep2('Error de conexión.');
+                goToStep2('Error de conexi\u00f3n.');
             }
         } finally {
-            const sendBtn = document.getElementById('btn-send-otp');
-            if (sendBtn) { sendBtn.disabled = false; sendBtn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2"></i> Enviar código a mi WhatsApp'; }
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir c\u00f3digo'; }
         }
     }
 
@@ -995,9 +938,10 @@
             }
             btnVerify.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Generando Sellos Legales...';
             const timeSpent = pageOpenTime ? Math.floor((Date.now() - pageOpenTime) / 1000) : 0;
+            const readMethod = scrolledToBottom ? "scroll" : "time";
             const resAccept = await fetch(`/contracts/api/${TOKEN}/accept`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ read_time_seconds: timeSpent, scrolled_to_bottom: scrolledToBottom })
+                body: JSON.stringify({ read_time_seconds: timeSpent, scrolled_to_bottom: scrolledToBottom, read_method: readMethod })
             });
             if (resAccept.ok) {
                 const d = await resAccept.json();

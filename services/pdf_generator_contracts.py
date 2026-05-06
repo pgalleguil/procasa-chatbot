@@ -11,6 +11,39 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RL
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
+from reportlab.pdfgen import canvas
+
+class NumberedCanvas(canvas.Canvas):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_number(num_pages)
+            canvas.Canvas.showPage(self)
+        canvas.Canvas.save(self)
+
+    def draw_page_number(self, page_count):
+        self.saveState()
+        self.setFont("Helvetica", 8)
+        
+        code = getattr(self, 'contract_code', '')
+        is_original = getattr(self, 'is_original', True)
+        
+        if is_original:
+            text = f"Página {self._pageNumber} de {page_count} | Código: {code}"
+        else:
+            text = f"Certificado de Firma Electrónica | Código: {code}"
+            
+        self.drawCentredString(letter[0] / 2.0, 0.5 * inch, text)
+        self.restoreState()
 
 class PDFGenerator:
     
@@ -128,28 +161,18 @@ class PDFGenerator:
         
         doc.contract_code = contract_data.get('contract_code', '')
         doc.is_original = True
-        doc.build(Story, onFirstPage=PDFGenerator._add_footer, onLaterPages=PDFGenerator._add_footer)
+        
+        def make_canvas(*args, **kwargs):
+            c = NumberedCanvas(*args, **kwargs)
+            c.contract_code = doc.contract_code
+            c.is_original = doc.is_original
+            return c
+            
+        doc.build(Story, canvasmaker=make_canvas)
         pdf_bytes = buffer.getvalue()
         buffer.close()
         return pdf_bytes
 
-    @staticmethod
-    def _add_footer(canvas, doc):
-        page_num = canvas.getPageNumber()
-        if getattr(doc, 'is_original', True):
-            text = f"P\u00e1gina {page_num}"
-        else:
-            text = "Certificado de Firma Electr\u00f3nica"
-            
-        canvas.saveState()
-        
-        # Dibujar pie de página centrado
-        canvas.setFont('Helvetica', 8)
-        canvas.drawCentredString(letter[0] / 2.0, 0.5 * inch, text)
-        
-        canvas.restoreState()
-
-    @staticmethod
     @staticmethod
     def generate_signed_contract(original_pdf_bytes: bytes, contract_data: dict, evidence_data: dict, verify_url: str) -> bytes:
         """Genera el contrato FINAL, anexando la hoja de firmas al PDF original."""
@@ -164,7 +187,7 @@ class PDFGenerator:
             spaceAfter=6, alignment=4, leading=13, fontSize=10)
             
         Story = []
-        Story.append(Paragraph("REGISTRO DE FIRMA ELECTRÓNICA", styles['Heading1']))
+        Story.append(Paragraph("--- ANEXO: CERTIFICADO DE FIRMA ELECTR\u00d3NICA ---", styles['Heading1']))
         Story.append(Spacer(1, 0.2 * inch))
         
         nombre = contract_data.get('client_data', {}).get('nombre', contract_data.get('cliente_nombre', ''))
@@ -180,17 +203,18 @@ class PDFGenerator:
             chile_time = server_ts_utc
             
         data = [
-            ["Código único del contrato:", evidence_data.get('contract_code', '')],
+            ["C\u00f3digo \u00fanico del contrato:", evidence_data.get('contract_code', '')],
             ["Nombre completo:", nombre],
             ["RUT:", rut],
-            ["Correo electrónico:", email],
-            ["Teléfono:", phone],
-            ["Dirección IP:", evidence_data.get('ip', '')],
+            ["Correo electr\u00f3nico:", email],
+            ["Tel\u00e9fono:", phone],
+            ["Direcci\u00f3n IP:", evidence_data.get('ip', '')],
             ["Fecha y hora exacta:", chile_time],
-            ["Zona horaria:", "America/Santiago"],
-            ["Método de autenticación:", "Autenticación OTP WhatsApp"],
+            ["Zona horaria:", evidence_data.get('timezone', "America/Santiago (CLT)")],
+            ["Dispositivo/Navegador:", evidence_data.get('user_agent', '')[:60]],
+            ["M\u00e9todo de lectura:", evidence_data.get('read_method', 'scroll')],
             ["Tiempo de lectura del documento:", f"{evidence_data.get('read_time_seconds', 0)} segundos"],
-            ["Confirmación de visualización completa:", evidence_data.get('scrolled_to_bottom', 'Sí')],
+            ["Confirmaci\u00f3n de visualizaci\u00f3n completa:", evidence_data.get('scrolled_to_bottom', 'S\u00ed')],
             ["Hash SHA256 del documento:", str(evidence_data.get('timeline_hash', ''))[:12] + "..."]
         ]
         
@@ -225,7 +249,14 @@ Ley 19.799."""
         
         doc.contract_code = evidence_data.get('contract_code', '')
         doc.is_original = False
-        doc.build(Story, onFirstPage=PDFGenerator._add_footer, onLaterPages=PDFGenerator._add_footer)
+        
+        def make_canvas_signed(*args, **kwargs):
+            c = NumberedCanvas(*args, **kwargs)
+            c.contract_code = doc.contract_code
+            c.is_original = doc.is_original
+            return c
+            
+        doc.build(Story, canvasmaker=make_canvas_signed)
         sig_page_bytes = buffer.getvalue()
         buffer.close()
 

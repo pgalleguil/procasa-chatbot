@@ -122,11 +122,12 @@ async def preview_contract(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/api/create")
-async def create_contract(request: Request):
+async def create_contract(request: Request, background_tasks: BackgroundTasks):
     """Crea o actualiza un contrato (desde CRM)"""
     try:
         data = await request.json()
-        db = get_db()
+        from chatbot.storage import get_async_db
+        adb = get_async_db()
         
         # ── Normalizar campos antes de guardar y generar PDF ─────────────────
         def normalize_fields(d: dict) -> dict:
@@ -166,7 +167,7 @@ async def create_contract(request: Request):
         # Verificar si existe contrato previo creado (no firmado)
         existing = None
         if property_code:
-            existing = db["contracts"].find_one({
+            existing = await adb["contracts"].find_one({
                 "property_code": property_code, 
                 "status": {"$in": ["created", "sent", "opened"]}
             })
@@ -179,23 +180,11 @@ async def create_contract(request: Request):
             year = datetime.now().year
             short_id = str(uuid.uuid4())[:4].upper()
             contract_code = f"PROC-{year}-{short_id}"
-        
-        # 1. Generar PDF original
+        # 1. Preparar rutas (PDF se generar\u00e1 as\u00edncronamente)
         data['contract_code'] = contract_code
-        pdf_bytes = PDFGenerator.generate_original_contract(data)
-        original_hash = SecurityContracts.hash_document(pdf_bytes)
-        
-        # Guardar en tmp (caché efímera) Y en directorio permanente
-        tmp_dir = BASE_DIR / "tmp" / "contracts" / contract_code
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-        with open(tmp_dir / "contrato_original.pdf", "wb") as f:
-            f.write(pdf_bytes)
-
         perm_dir = BASE_DIR / "contracts_pdf"
         perm_dir.mkdir(parents=True, exist_ok=True)
         perm_original_path = perm_dir / f"{contract_code}_original.pdf"
-        with open(perm_original_path, "wb") as f:
-            f.write(pdf_bytes)
             
         server_timestamp = SecurityContracts.generate_server_timestamp()
             
@@ -220,7 +209,7 @@ async def create_contract(request: Request):
             },
             "status": "created",
             "security": {
-                "original_hash": original_hash,
+                "original_hash": None, # Calculado en background
                 "original_pdf_path": str(perm_original_path),
                 "token": None,
                 "token_expiry": None,
@@ -249,21 +238,47 @@ async def create_contract(request: Request):
             contract_doc["version"] = existing.get("version", 1) + 1
             contract_doc["timeline"] = existing.get("timeline", []) + contract_doc["timeline"]
             contract_doc["created_at"] = existing.get("created_at")
-            # Preservar tokens y estado de seguridad (excepto hash y ruta del nuevo original)
             old_security = existing.get("security", {})
-            old_security["original_hash"] = original_hash
+            old_security["original_hash"] = None
             old_security["original_pdf_path"] = str(perm_original_path)
             contract_doc["security"] = old_security
             contract_doc["status"] = existing.get("status", "created")
             
-            db["contracts"].replace_one({"contract_code": contract_code}, contract_doc)
+            await adb["contracts"].replace_one({"contract_code": contract_code}, contract_doc)
         else:
-            db["contracts"].insert_one(contract_doc)
+            await adb["contracts"].insert_one(contract_doc)
+
+        def generate_original_pdf_bg(data_dict, p_code, p_path):
+            try:
+                from chatbot.storage import get_db
+                local_db = get_db()
+                pdf_b = PDFGenerator.generate_original_contract(data_dict)
+                orig_hash = SecurityContracts.hash_document(pdf_b)
+                t_dir = BASE_DIR / "tmp" / "contracts" / p_code
+                t_dir.mkdir(parents=True, exist_ok=True)
+                with open(t_dir / "contrato_original.pdf", "wb") as f:
+                    f.write(pdf_b)
+                with open(p_path, "wb") as f:
+                    f.write(pdf_b)
+                local_db["contracts"].update_one(
+                    {"contract_code": p_code},
+                    {"$set": {"security.original_hash": orig_hash}}
+                )
+            except Exception as e:
+                logger.error(f"[BG TASK] Error generando original: {e}")
+
+        background_tasks.add_task(generate_original_pdf_bg, data, contract_code, perm_original_path)
             
-        return {"status": "ok", "contract_code": contract_code}
+        url_firma = f"{Config.WEBHOOK_URL}/contracts/view/{contract_code}"
+        
+        return {
+            "status": "success",
+            "contract_code": contract_code,
+            "url_firma": url_firma
+        }
         
     except Exception as e:
-        logger.error(f"Error creating contract: {e}")
+        logger.error(f"Error en /api/create: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/api/download/{contract_code}")
@@ -569,8 +584,8 @@ async def validate_rut(token: str, request: Request):
     return {"status": "ok"}
 
 @router.post("/api/{token}/request-otp")
-async def request_otp(token: str, request: Request):
-    """Genera OTP y lo envía por WA"""
+async def request_otp(token: str, request: Request, background_tasks: BackgroundTasks):
+    """Genera OTP y lo env\u00eda por WA en background"""
     t_otp_start = time.time()
     data = await request.json()
     rut_ingresado = data.get("rut", "").strip()
@@ -578,10 +593,11 @@ async def request_otp(token: str, request: Request):
     ip = get_client_ip(request)
     check_rate_limit(ip, otp_rate_limit, 3, window_seconds=10)
     
-    db = get_db()
-    contract = db["contracts"].find_one({"security.token": token})
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    contract = await adb["contracts"].find_one({"security.token": token})
     if not contract:
-        raise HTTPException(status_code=404, detail="Token inválido")
+        raise HTTPException(status_code=404, detail="Token inv\u00e1lido")
         
     ensure_document_valid(contract)
     
@@ -595,7 +611,7 @@ async def request_otp(token: str, request: Request):
             blocked_until = blocked_until.replace(tzinfo=timezone.utc)
         if now < blocked_until:
             wait_seconds = int((blocked_until - now).total_seconds())
-            raise HTTPException(status_code=429, detail=f"El sistema está bloqueado temporalmente. Por favor espera {wait_seconds} segundos.")
+            raise HTTPException(status_code=429, detail=f"El sistema est\u00e1 bloqueado temporalmente. Por favor espera {wait_seconds} segundos.")
             
     contract_rut = contract.get("client_data", {}).get("rut", "").strip()
     if not contract_rut:
@@ -606,7 +622,7 @@ async def request_otp(token: str, request: Request):
         contract_rut_clean = ''.join(filter(str.isalnum, contract_rut)).upper()
         if contract_rut_clean != rut_clean:
             raise HTTPException(status_code=400, detail="RUT no coincide con el registrado.")
-    # Rate limiting: bloquear si se solicitó OTP hace menos de 30 segundos
+    # Rate limiting: bloquear si se solicit\u00f3 OTP hace menos de 30 segundos
     now = datetime.now(timezone.utc)
     last_request = contract["security"].get("last_otp_request")
     otp_expiry = contract["security"].get("otp_expiry")
@@ -615,7 +631,7 @@ async def request_otp(token: str, request: Request):
         otp_expiry = otp_expiry.replace(tzinfo=timezone.utc)
         
     if otp_expiry and now > otp_expiry:
-        # El OTP anterior expiró, permitimos solicitar uno nuevo inmediatamente y limpiamos el IP limit
+        # El OTP anterior expir\u00f3, permitimos solicitar uno nuevo inmediatamente y limpiamos el IP limit
         with rate_limit_lock:
             if ip in otp_rate_limit:
                 otp_rate_limit[ip] = []
@@ -624,7 +640,7 @@ async def request_otp(token: str, request: Request):
             last_request = last_request.replace(tzinfo=timezone.utc)
         seconds_elapsed = (now - last_request).total_seconds()
         if seconds_elapsed < 10:
-            raise HTTPException(status_code=429, detail="Espera unos segundos antes de solicitar un nuevo código.")
+            raise HTTPException(status_code=429, detail="Espera unos segundos antes de solicitar un nuevo c\u00f3digo.")
 
     otp = SecurityContracts.generate_otp(4)
     otp_expiry = now + timedelta(minutes=5)
@@ -633,7 +649,7 @@ async def request_otp(token: str, request: Request):
     ua = request.headers.get("user-agent", "")
     server_timestamp = SecurityContracts.generate_server_timestamp()
     
-    db["contracts"].update_one(
+    await adb["contracts"].update_one(
         {"contract_code": contract["contract_code"]},
         {
             "$set": {
@@ -665,13 +681,12 @@ async def request_otp(token: str, request: Request):
         }
     )
     
-    mensaje = f"""Tu código de verificación para firmar tu contrato es: *{otp}*
+    mensaje = f"""Tu c\u00f3digo de verificaci\u00f3n para firmar tu contrato es: *{otp}*
 
-Este código es personal, válido por 5 minutos y no debe compartirse con terceros."""
+Este c\u00f3digo es personal, v\u00e1lido por 5 minutos y no debe compartirse con terceros."""
     
-    # Guardar mensaje OTP dentro del mismo documento del contrato
     try:
-        db["contracts"].update_one(
+        await adb["contracts"].update_one(
             {"contract_code": contract["contract_code"]},
             {"$push": {"messages": {
                 "phone": contract["phone"],
@@ -682,16 +697,21 @@ Este código es personal, válido por 5 minutos y no debe compartirse con tercer
         )
     except Exception as e:
         logger.error(f"[MSG_LOG] Error guardando mensaje OTP: {e}")
-    
-    try:
-        await send_whatsapp_circuit_breaker(contract["phone"], mensaje)
-    except Exception as e:
-        logger.error(f"[OTP_FAILED] Error enviando WhatsApp al {contract['phone']}: {e}")
-        db["contracts"].update_one(
-            {"contract_code": contract["contract_code"]},
-            {"$push": {"timeline": {"action": "otp_delivery_failed", "server_timestamp": server_timestamp, "ip": ip, "user_agent": ua, "error": str(e)}}}
-        )
-        raise HTTPException(status_code=500, detail="Error enviando el código por WhatsApp. Intente nuevamente.")
+
+    # Enviar WhatsApp en background
+    async def send_wa_bg_task(phone, msg, c_code):
+        try:
+            await send_whatsapp_circuit_breaker(phone, msg)
+        except Exception as e:
+            logger.error(f"[OTP_FAILED] Error enviando WhatsApp al {phone}: {e}")
+            from chatbot.storage import get_async_db
+            local_adb = get_async_db()
+            await local_adb["contracts"].update_one(
+                {"contract_code": c_code},
+                {"$push": {"timeline": {"action": "otp_delivery_failed", "server_timestamp": server_timestamp, "ip": ip, "user_agent": ua, "error": str(e)}}}
+            )
+
+    background_tasks.add_task(send_wa_bg_task, contract["phone"], mensaje, contract["contract_code"])
     
     t_otp_elapsed = time.time() - t_otp_start
     logger.info(f"[TIMING] request_otp: contract_code={contract['contract_code']} response_time={t_otp_elapsed:.3f}s")
@@ -833,20 +853,24 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         data = await request.json()
         read_time = data.get("read_time_seconds", 0)
         scrolled_to_bottom = data.get("scrolled_to_bottom", False)
+        read_method = data.get("read_method", "scroll")
     except:
         read_time = 0
         scrolled_to_bottom = False
+        read_method = "scroll"
         
     ip = get_client_ip(request)
-    # Geolocalización: NO bloqueante — se pasa al background task
-    geo_info = "Localización no disponible"  # default; background task actualizará DB
+    # Geolocalizaci\u00f3n: NO bloqueante \u2014 se pasa al background task
+    geo_info = "Localizaci\u00f3n no disponible"  # default; background task actualizar\u00e1 DB
         
     ua = request.headers.get("user-agent", "")
     server_timestamp = SecurityContracts.generate_server_timestamp()
     contract_code = contract["contract_code"]
     t_sign_start = time.time()
     
-    # 1. Registrar aceptación
+    timezone_info = "America/Santiago (CLT)"
+    
+    # 1. Registrar aceptaci\u00f3n
     db["contracts"].update_one(
         {"contract_code": contract_code},
         {
@@ -860,9 +884,11 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
                 "server_timestamp": server_timestamp, 
                 "ip": ip, 
                 "geo_location": geo_info,
+                "timezone": timezone_info,
                 "user_agent": ua,
                 "read_time_seconds": read_time,
-                "scrolled_to_bottom": scrolled_to_bottom
+                "scrolled_to_bottom": scrolled_to_bottom,
+                "read_method": read_method
             }}
         }
     )
@@ -913,11 +939,14 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
             "server_timestamp": server_timestamp,
             "ip": ip,
             "geo_info": geo_info,
+            "timezone": timezone_info,
+            "user_agent": ua,
             "original_hash": original_hash,
             "server_hmac": server_hmac,
             "timeline_hash": timeline_hash,
             "read_time_seconds": read_time,
-            "scrolled_to_bottom": "Sí" if scrolled_to_bottom else "No"
+            "scrolled_to_bottom": "S\u00ed" if scrolled_to_bottom else "No",
+            "read_method": read_method
         }
 
         # 3. Generar PDF Firmado Completo
@@ -935,11 +964,6 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         local_pdf_path = perm_dir / f"{contract_code}_firmado.pdf"
         with open(local_pdf_path, "wb") as f:
             f.write(signed_pdf_bytes)
-
-        # 4. Generar Informe Legal
-        legal_report_bytes = PDFGenerator.generate_legal_report(contract, evidence_data, timeline)
-        with open(tmp_dir / "informe_legal.pdf", "wb") as f:
-            f.write(legal_report_bytes)
 
         import json
         with open(tmp_dir / "hash.txt", "w") as f:
@@ -963,15 +987,32 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         tsa_response = f"TSA_MOCK_{datetime.now(timezone.utc).timestamp()}_SIGNED"
         db["contracts"].update_one({"contract_code": contract_code}, {"$set": {"security.tsa_stamp": tsa_response}})
 
-        # 6. Subida a Google Drive en Background
+        # 6. Generar Informe Legal y Subida a Google Drive en Background
+        def finalize_bg_task(c_code, c_doc, e_data, t_line, s_pdf_bytes, o_hash, s_hash, t_hash, s_hmac):
+            try:
+                # Import din\u00e1mico
+                from services.pdf_generator_contracts import PDFGenerator
+                l_report_bytes = PDFGenerator.generate_legal_report(c_doc, e_data, t_line)
+                
+                t_dir = BASE_DIR / "tmp" / "contracts" / c_code
+                with open(t_dir / "informe_legal.pdf", "wb") as f:
+                    f.write(l_report_bytes)
+                    
+                upload_to_gdrive_bg(
+                    c_code,
+                    {
+                        "contrato_firmado.pdf": s_pdf_bytes,
+                        "informe_legal.pdf": l_report_bytes,
+                        "hash.txt": f"Original Hash: {o_hash}\nSigned Hash: {s_hash}\nTimeline Hash: {t_hash}\nHMAC: {s_hmac}".encode(),
+                    }
+                )
+            except Exception as e:
+                logger.error(f"[BG TASK] Error finalizando contrato {c_code}: {e}")
+
         background_tasks.add_task(
-            upload_to_gdrive_bg,
-            contract_code,
-            {
-                "contrato_firmado.pdf": signed_pdf_bytes,
-                "informe_legal.pdf": legal_report_bytes,
-                "hash.txt": f"Original Hash: {original_hash}\nSigned Hash: {signed_hash}\nTimeline Hash: {timeline_hash}\nHMAC: {server_hmac}".encode(),
-            }
+            finalize_bg_task,
+            contract_code, contract, evidence_data, timeline, 
+            signed_pdf_bytes, original_hash, signed_hash, timeline_hash, server_hmac
         )
 
         # 7. Notificar al Cliente y enviar email — BACKGROUND (no bloquear respuesta)

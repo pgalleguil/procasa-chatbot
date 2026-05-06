@@ -1333,11 +1333,10 @@ async def view_crm_list(
         cursor_last_event_at=cursor
     )
 
-    # next_cursor: el last_event_at del último lead de esta página
-    # El frontend usa este valor para pedir la siguiente tanda
+    # next_cursor: el created_at del \u00faltimo lead de esta p\u00e1gina
     next_cursor = None
     if leads and len(leads) == limit:
-        last_ts = leads[-1].get("real_timestamp")
+        last_ts = leads[-1].get("created_timestamp")
         if last_ts:
             try:
                 next_cursor = last_ts.isoformat() if hasattr(last_ts, "isoformat") else str(last_ts)

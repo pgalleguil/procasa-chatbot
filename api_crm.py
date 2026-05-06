@@ -244,12 +244,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     # Primer carga (cursor_last_event_at=None): trae los más recientes.
     # Carga siguiente: trae los que tienen last_event_at < cursor.
     # ------------------------------------------------------------------
-    if ordenar_por == "prioridad":
-        sort_criteria = [("priority_score", -1), ("last_event_at", -1)]
-        cursor_field = "priority_score"
-    else:
-        sort_criteria = [("created_at", -1)]
-        cursor_field = "created_at"
+    # Siempre usamos created_at como cursor principal porque el usuario quiere orden por asignaci\u00f3n m\u00e1s reciente
+    sort_criteria = [("created_at", -1)]
+    cursor_field = "created_at"
 
     # Proyección mínima — solo campos necesarios para el listado
     PROJECTION = {
@@ -483,6 +480,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             "led_class": config_estado["led"],
             "tiempo_relativo": format_relative_time(last_ts_obj),
             "real_timestamp": last_ts_obj,
+            "created_timestamp": lead.get("created_at"),
             "priority_score": config_estado["priority"],
             "codigo_propiedad": detect_property_code(lead) or "S/N",
             "url_propiedad": f"https://www.procasa.cl/propiedad/{detect_property_code(lead)}" if detect_property_code(lead) else "#",

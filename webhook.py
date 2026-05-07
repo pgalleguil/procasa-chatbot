@@ -613,7 +613,9 @@ async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None
     adb = get_async_db()
     user = await adb["usuarios"].find_one({"username": username})
     
-    data = get_lead_detail_data(phone, property_code=codigo)
+    loop = asyncio.get_running_loop()
+    from chatbot.constants import _THREAD_POOL
+    data = await loop.run_in_executor(_THREAD_POOL, lambda: get_lead_detail_data(phone, property_code=codigo))
     if not data: 
         return HTMLResponse("Lead no encontrado")
     
@@ -1064,17 +1066,22 @@ async def view_captaciones(
     # Lista de ejecutivos para el filtro (solo admin/supervisor)
     executives = []
     if user_role in ["admin", "supervisor"]:
-        executives = get_unique_executives()
+        executives = await get_unique_executives()
     
     limit = 10
-    items, total_count = get_captacion_list(
-        user_role=user_role,
-        user_name=user_name,
-        page=page,
-        limit=limit,
-        comuna_filter=comuna,
-        status_filter=estado,
-        executive_filter=ejecutivo
+    loop = asyncio.get_running_loop()
+    from chatbot.constants import _THREAD_POOL
+    items, total_count = await loop.run_in_executor(
+        _THREAD_POOL,
+        lambda: get_captacion_list(
+            user_role=user_role,
+            user_name=user_name,
+            page=page,
+            limit=limit,
+            comuna_filter=comuna,
+            status_filter=estado,
+            executive_filter=ejecutivo
+        )
     )
     
     # KPIs adicionales para el resumen (basados en el ejecutivo/permisos, no en los filtros actuales de lista)
@@ -1123,7 +1130,9 @@ async def view_captacion_detail_route(request: Request, obj_id: str):
 
 
 
-    data = get_captacion_detail(obj_id)
+    loop = asyncio.get_running_loop()
+    from chatbot.constants import _THREAD_POOL
+    data = await loop.run_in_executor(_THREAD_POOL, lambda: get_captacion_detail(obj_id))
     if not data:
         return HTMLResponse("Propiedad no encontrada")
 
@@ -1399,7 +1408,7 @@ async def view_crm_list(
             except Exception:
                 next_cursor = None
 
-    executives = get_unique_executives() if user_role in ["admin", "supervisor"] else []
+    executives = await get_unique_executives() if user_role in ["admin", "supervisor"] else []
 
     return templates.TemplateResponse("crm_leads_list.html", {
         "request": request, 

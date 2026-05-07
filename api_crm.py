@@ -529,16 +529,26 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     # 5. RETORNAR RESULTADOS
     return leads_procesados, kpi_counts, total_count
 
-def get_unique_executives():
-    """Retorna lista de nombres únicos de ejecutivos que tienen leads asignados."""
-    db = get_db()
-    # Buscamos en ambos campos posibles por legibilidad/historia
-    execs_1 = db["leads"].distinct("ejecutivo_asignado")
-    execs_2 = db["leads"].distinct("prospecto.ejecutivo")
+import time
+_executives_cache = {"data": [], "expires_at": 0}
+
+async def get_unique_executives():
+    """Retorna lista de nombres únicos de ejecutivos que tienen leads asignados. Cacheado por 5 minutos."""
+    global _executives_cache
+    if time.time() < _executives_cache["expires_at"]:
+        return _executives_cache["data"]
+
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    import asyncio
+    execs_1, execs_2 = await asyncio.gather(
+        adb["leads"].distinct("ejecutivo_asignado"),
+        adb["leads"].distinct("prospecto.ejecutivo")
+    )
     
     all_execs = set([e for e in execs_1 if e] + [e for e in execs_2 if e])
     
-    # Limpieza para que el filtro no muestre "Raquel Cheneaux" y "Raquel Cheneaux Valz" duplicado
+    # Limpieza para que el filtro no muestre duplicados
     cleaned_execs = set()
     for e in all_execs:
         words = str(e).strip().split()
@@ -547,7 +557,10 @@ def get_unique_executives():
         else:
             cleaned_execs.add(str(e).strip())
             
-    return sorted(list(cleaned_execs))
+    result = sorted(list(cleaned_execs))
+    _executives_cache["data"] = result
+    _executives_cache["expires_at"] = time.time() + 300
+    return result
 
 # --- 2. DETALLE DEL LEAD ---
 def get_lead_detail_data(phone, property_code=None):

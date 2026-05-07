@@ -614,7 +614,6 @@ async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None
     user = await adb["usuarios"].find_one({"username": username})
     
     loop = asyncio.get_running_loop()
-    from chatbot.constants import _THREAD_POOL
     data = await loop.run_in_executor(_THREAD_POOL, lambda: get_lead_detail_data(phone, property_code=codigo))
     if not data: 
         return HTMLResponse("Lead no encontrado")
@@ -1070,7 +1069,6 @@ async def view_captaciones(
     
     limit = 10
     loop = asyncio.get_running_loop()
-    from chatbot.constants import _THREAD_POOL
     items, total_count = await loop.run_in_executor(
         _THREAD_POOL,
         lambda: get_captacion_list(
@@ -1131,7 +1129,6 @@ async def view_captacion_detail_route(request: Request, obj_id: str):
 
 
     loop = asyncio.get_running_loop()
-    from chatbot.constants import _THREAD_POOL
     data = await loop.run_in_executor(_THREAD_POOL, lambda: get_captacion_detail(obj_id))
     if not data:
         return HTMLResponse("Propiedad no encontrada")

@@ -201,49 +201,63 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             elif filtro_estado == "cerrado": state_db_value = PipelineStage.CLOSED_WON
             query_with_state["pipeline_stage"] = state_db_value
 
-    # 1. EJECUCION EN PARALELO DE KPIs (O(1) roundtrip)
+    # 1. EJECUCION DE KPIs OPTIMIZADA CON $FACET (1 solo roundtrip a MongoDB)
     import time
     t_kpis = time.perf_counter()
     
     assigned_filter = {"ejecutivo_asignado": {"$nin": UNASSIGNED_VALUES, "$exists": True}}
     unassigned_filter = {"$or": [{"ejecutivo_asignado": {"$in": UNASSIGNED_VALUES}}, {"ejecutivo_asignado": {"$exists": False}}]}
 
-    # Pre-build queries
-    q_sin_asignar = {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, unassigned_filter]}
-    q_nuevo       = {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, assigned_filter]}
-    q_gestion     = {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
-        PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER, PipelineStage.NEGOTIATION, "gestion", "contacted"
-    ]}}]}
-    q_visita      = {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
-        PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE, "visita"
-    ]}}]}
-    q_cerrado     = {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
-        PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST, "cerrado"
-    ]}}]}
+    # Pipeline de $facet consolida los 7 queries en 1 sola operación en el motor de base de datos
+    facet_pipeline = [
+        {"$match": base_kpi_query},
+        {"$facet": {
+            "global_total": [{"$count": "count"}],
+            "total_pagina": [{"$match": query_with_state}, {"$count": "count"}],
+            "sin_asignar": [
+                {"$match": {"$and": [{"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, unassigned_filter]}},
+                {"$count": "count"}
+            ],
+            "nuevo": [
+                {"$match": {"$and": [{"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, assigned_filter]}},
+                {"$count": "count"}
+            ],
+            "gestion": [
+                {"$match": {"pipeline_stage": {"$in": [PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER, PipelineStage.NEGOTIATION, "gestion", "contacted"]}}},
+                {"$count": "count"}
+            ],
+            "visita": [
+                {"$match": {"pipeline_stage": {"$in": [PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE, "visita"]}}},
+                {"$count": "count"}
+            ],
+            "cerrado": [
+                {"$match": {"pipeline_stage": {"$in": [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST, "cerrado"]}}},
+                {"$count": "count"}
+            ]
+        }}
+    ]
 
     import asyncio
-    # Ejecutar conteos en paralelo en Motor (Asíncrono real)
-    results = await asyncio.gather(
-        db["leads"].count_documents(query_with_state),  # total para la pagina
-        db["leads"].count_documents(q_sin_asignar),
-        db["leads"].count_documents(q_nuevo),
-        db["leads"].count_documents(q_gestion),
-        db["leads"].count_documents(q_visita),
-        db["leads"].count_documents(q_cerrado),
-        db["leads"].count_documents(base_kpi_query)     # global_search_total
-    )
+    # Ejecutamos el pipeline asíncronamente
+    facet_cursor = db["leads"].aggregate(facet_pipeline)
+    facet_results = await facet_cursor.to_list(length=1)
+    
+    facet_res = facet_results[0] if facet_results else {}
+    
+    def get_facet_count(key):
+        return facet_res.get(key, [{"count": 0}])[0]["count"] if facet_res.get(key) else 0
 
-    total_count, c_sin_asignar, c_nuevo, c_gestion, c_visita, c_cerrado, global_search_total = results
+    total_count = get_facet_count("total_pagina")
     
     kpi_counts = {
-        "total": global_search_total, 
-        "nuevo": c_nuevo, 
-        "gestion": c_gestion, 
-        "visita": c_visita, 
-        "cerrado": c_cerrado, 
-        "sin_asignar": c_sin_asignar
+        "total": get_facet_count("global_total"), 
+        "nuevo": get_facet_count("nuevo"), 
+        "gestion": get_facet_count("gestion"), 
+        "visita": get_facet_count("visita"), 
+        "cerrado": get_facet_count("cerrado"), 
+        "sin_asignar": get_facet_count("sin_asignar")
     }
-    logger.info(f"[PERF] get_crm_leads_list -> gather(6x KPIs): {(time.perf_counter()-t_kpis)*1000:.1f}ms")
+    logger.info(f"[PERF] get_crm_leads_list -> $facet(7x KPIs): {(time.perf_counter()-t_kpis)*1000:.1f}ms")
 
     # ------------------------------------------------------------------
     # 3. TRAER LEADS DESDE MONGO — CURSOR-BASED PURO (O(1))

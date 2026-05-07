@@ -75,25 +75,33 @@ background_tasks_status = {
     "lead_processing": {"status": "starting", "last_heartbeat": None}
 }
 
+# --- NUEVA ARQUITECTURA DE COLA (PRODUCER/CONSUMER) ---
+lead_processing_queue = None  # Se inicializará en lifespan
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic
     logger.info("Bot PRO Iniciando (Lifespan Startup)...")
 
-    # Configurar ThreadPoolExecutor controlado como executor por defecto del event loop
-    loop = asyncio.get_running_loop()
-    loop.set_default_executor(_THREAD_POOL)
-    logger.info(f"ThreadPoolExecutor configurado: max_workers=5")
+    # FIX CRÍTICO: NO sobreescribir el default_executor del loop.
+    # El _THREAD_POOL se usará EXCLUSIVAMENTE para process_lead en los workers.
+    logger.info(f"ThreadPoolExecutor configurado en background: max_workers=5")
     
+    global lead_processing_queue
+    lead_processing_queue = asyncio.Queue()
+
     # Iniciar tareas de fondo
     n_task = asyncio.create_task(process_pending_leads_loop())
     s_task = asyncio.create_task(sla_monitor_loop())
     t_task = asyncio.create_task(check_scheduled_tasks_loop())
     c_task = asyncio.create_task(captacion_distribution_loop())
-    r_task = asyncio.create_task(reassign_unassigned_leads_loop())
+    r_task = asyncio.create_task(reassign_unassigned_leads_loop()) # Ahora es Productor
     d_task = asyncio.create_task(daily_report_loop())
     nudge_task = asyncio.create_task(inactive_lead_nudge_loop())
     w_task = asyncio.create_task(cache_prewarmer_loop())  # PRE-WARMING de cache
+    
+    # Iniciar Consumers
+    c1_task = asyncio.create_task(lead_consumer_worker(1))
+    c2_task = asyncio.create_task(lead_consumer_worker(2))
     
     # Crear admin y asegurar índices
     crear_admin_si_no_existe()
@@ -114,9 +122,11 @@ async def lifespan(app: FastAPI):
     d_task.cancel()
     nudge_task.cancel()
     w_task.cancel()
+    c1_task.cancel()
+    c2_task.cancel()
     try:
         await asyncio.gather(
-            n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, w_task,
+            n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, w_task, c1_task, c2_task,
             return_exceptions=True
         )
     except Exception as e:
@@ -552,7 +562,7 @@ async def api_check_duplicate(request: Request, phone: str = Query(None), proper
     return {"status": status, "exists": status != "not_found", "assigned_to": executive}
 
 @app.post("/api/leads/manual")
-async def api_create_manual_lead(request: Request, background_tasks: BackgroundTasks):
+async def api_create_manual_lead(request: Request):
     import time as _time
     _t0 = _time.perf_counter()
     username = await get_current_user(request)
@@ -574,11 +584,16 @@ async def api_create_manual_lead(request: Request, background_tasks: BackgroundT
 
     # [PERF] create_manual_lead (sync: duplicate check + DB insert + executive lookup)
     _tc = _time.perf_counter()
-    result = create_manual_lead(data, background_tasks)
+    result = create_manual_lead(data)
     logger.info(f"[PERF] /api/leads/manual create_manual_lead: {(_time.perf_counter()-_tc)*1000:.1f}ms")
 
     if result.get("status") != "ok":
         raise HTTPException(status_code=400, detail=result.get("message"))
+
+    # Encolar para procesamiento en background (evita saturar anyio y el default thread pool)
+    lead_id_obj = result.get("lead_id")
+    if lead_id_obj:
+        await lead_processing_queue.put(lead_id_obj)
 
     logger.info(
         f"[PERF] /api/leads/manual TOTAL_BEFORE_RESPONSE: {(_time.perf_counter()-_t0)*1000:.1f}ms "
@@ -1894,17 +1909,38 @@ async def inactive_lead_nudge_loop():
         
         await asyncio.sleep(300)  # Chequear cada 5 minutos (antes era 2min)
 
+async def lead_consumer_worker(worker_id: int):
+    """
+    Consumidor aislado. Toma leads de la cola y los procesa usando el _THREAD_POOL.
+    Mantiene el ritmo estable y no satura el event loop ni el default executor.
+    """
+    logger.info(f"[CONSUMER-{worker_id}] Worker iniciado y escuchando cola...")
+    loop = asyncio.get_running_loop()
+    while True:
+        try:
+            lead_id = await lead_processing_queue.get()
+            try:
+                t0 = time.time()
+                # Se usa _THREAD_POOL explícitamente, aislando el trabajo pesado
+                await loop.run_in_executor(_THREAD_POOL, LeadProcessingService.process_lead, lead_id)
+                elapsed_ms = (time.time() - t0) * 1000
+                logger.debug(f"[CONSUMER-{worker_id}] Lead {lead_id} procesado en {elapsed_ms:.0f}ms")
+            except Exception as le:
+                logger.error(f"[CONSUMER-{worker_id}] Error procesando lead {lead_id}: {le}")
+            finally:
+                lead_processing_queue.task_done()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"[CONSUMER-{worker_id}] Error crítico en worker: {e}")
+            await asyncio.sleep(5)
+
 async def reassign_unassigned_leads_loop():
     """
-    FIX CRÍTICO: LeadProcessingService.process_lead() es SÍNCRONA.
-    Antes corría directamente dentro del async def → bloqueaba el event loop ~55s cada 5min.
-    Ahora corre en run_in_executor con Semaphore(5) para concurrencia controlada.
-    El event loop NUNCA se bloquea mientras corre el batch.
+    PRODUCTOR: Busca leads pendientes en Mongo cada 5 minutos y los encola.
+    Ya no procesa nada por su cuenta ni agrupa en batches pesados.
     """
-    logger.info("[BACKGROUND] Iniciando loop de procesamiento de leads (non-blocking con executor)...")
-    # Semáforo: máximo 5 leads procesándose simultáneamente en el thread pool
-    _batch_sem = asyncio.Semaphore(5)
-
+    logger.info("[PRODUCER] Iniciando scanner de leads pendientes en background...")
     while True:
         try:
             background_tasks_status["lead_processing"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
@@ -1918,7 +1954,6 @@ async def reassign_unassigned_leads_loop():
             from chatbot.constants import UNASSIGNED_LABEL
             unassigned_labels = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
             
-            # Query optimizada: Solo los que necesitan algo (Idempotencia) y NO están en estados terminales
             query = {
                 "stage": {"$nin": ["ARCHIVED", "REJECTED", "CLOSED_LOST", "CLOSED_WON"]},
                 "$or": [
@@ -1931,53 +1966,13 @@ async def reassign_unassigned_leads_loop():
                 ]
             }
             
-            # Proyección mínima: solo el _id para no traer documentos pesados al batch
             leads = list(db["leads"].find(query, {"_id": 1}).limit(20))
-            
             if leads:
-                batch_size = len(leads)
-                logger.info(f"[BACKGROUND] Procesando batch de {batch_size} leads... (non-blocking executor)")
-                batch_start = time.time()
-
-                loop = asyncio.get_running_loop()
-
-                async def _process_one_non_blocking(lead_id):
-                    """Corre process_lead en thread pool sin bloquear el event loop."""
-                    async with _batch_sem:
-                        try:
-                            t0 = time.time()
-                            await loop.run_in_executor(
-                                _THREAD_POOL,
-                                LeadProcessingService.process_lead,
-                                lead_id
-                            )
-                            elapsed_ms = (time.time() - t0) * 1000
-                            logger.debug(f"[BACKGROUND] Lead {lead_id} procesado en {elapsed_ms:.0f}ms")
-                        except Exception as le:
-                            logger.error(f"[BACKGROUND] Error procesando lead {lead_id}: {le}")
-
-                # gather: todos los leads corren en paralelo (hasta 5 concurrentes por el Semaphore)
-                # return_exceptions=True: un error en un lead no aborta el resto del batch
-                await asyncio.gather(
-                    *[_process_one_non_blocking(lead["_id"]) for lead in leads],
-                    return_exceptions=True
-                )
-
-                batch_elapsed = time.time() - batch_start
-                avg_ms = (batch_elapsed / batch_size) * 1000
-                logger.info(
-                    f"[BACKGROUND] Batch completado: {batch_size} leads en {batch_elapsed:.2f}s "
-                    f"(prom {avg_ms:.0f}ms/lead) — event loop libre durante todo el proceso"
-                )
-                background_tasks_status["lead_processing"]["last_batch"] = {
-                    "leads": batch_size,
-                    "duration_s": round(batch_elapsed, 2),
-                    "avg_ms_per_lead": round(avg_ms, 0)
-                }
-            else:
-                logger.debug("[BACKGROUND] No hay leads pendientes de procesar.")
+                logger.info(f"[PRODUCER] Encontró {len(leads)} leads pendientes. Encolando...")
+                for lead in leads:
+                    await lead_processing_queue.put(lead["_id"])
             
-            # Intervalo saludable (5 min)
+            await asyncio.sleep(300)
             await asyncio.sleep(300)
         except asyncio.CancelledError:
             break

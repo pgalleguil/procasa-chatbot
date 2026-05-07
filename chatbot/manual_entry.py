@@ -66,9 +66,7 @@ def check_lead_duplicate(phone: Optional[str], property_code: str, email: Option
 
     return "not_found", None
 
-from fastapi import BackgroundTasks
-
-def create_manual_lead(data: Dict[str, Any], background_tasks: Optional[BackgroundTasks] = None) -> Dict[str, Any]:
+def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Orchestrates the creation of a manual lead.
     Expected data: phone (optional), property_code, name, email, origen

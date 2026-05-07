@@ -28,7 +28,7 @@ import httpx
 from urllib.parse import urlencode
 
 import requests
-from fastapi import FastAPI, Cookie, Request, HTTPException, Depends, status, Form, Header, Query
+from fastapi import FastAPI, Cookie, Request, HTTPException, Depends, status, Form, Header, Query, BackgroundTasks
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles

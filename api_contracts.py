@@ -1399,3 +1399,4 @@ async def contract_dashboard(request: Request):
         "contracts": contracts,
         "user_role": "admin" # O tomar de la sesión si es necesario
     })
+    })

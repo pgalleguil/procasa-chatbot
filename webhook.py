@@ -10,12 +10,18 @@ import hashlib
 from typing import Dict, Any
 import re
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 from pymongo import MongoClient
 from datetime import datetime, timedelta
 from pathlib import Path
 import uvicorn
 import json
 import pytz # Importante para la hora local
+
+# ========================= THREAD POOL CONTROLADO =========================
+# Pool acotado de 5 workers para tareas sincrónicas en background.
+# Evita crecimiento descontrolado de threads bajo carga.
+_THREAD_POOL = ThreadPoolExecutor(max_workers=5, thread_name_prefix="procasa_worker")
 
 # === NUEVAS IMPORTACIONES PARA GOOGLE ===
 import httpx 
@@ -73,6 +79,11 @@ background_tasks_status = {
 async def lifespan(app: FastAPI):
     # Startup logic
     logger.info("Bot PRO Iniciando (Lifespan Startup)...")
+
+    # Configurar ThreadPoolExecutor controlado como executor por defecto del event loop
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(_THREAD_POOL)
+    logger.info(f"ThreadPoolExecutor configurado: max_workers=5")
     
     # Iniciar tareas de fondo
     n_task = asyncio.create_task(process_pending_leads_loop())
@@ -82,6 +93,7 @@ async def lifespan(app: FastAPI):
     r_task = asyncio.create_task(reassign_unassigned_leads_loop())
     d_task = asyncio.create_task(daily_report_loop())
     nudge_task = asyncio.create_task(inactive_lead_nudge_loop())
+    w_task = asyncio.create_task(cache_prewarmer_loop())  # PRE-WARMING de cache
     
     # Crear admin y asegurar índices
     crear_admin_si_no_existe()
@@ -101,10 +113,17 @@ async def lifespan(app: FastAPI):
     r_task.cancel()
     d_task.cancel()
     nudge_task.cancel()
+    w_task.cancel()
     try:
-        await asyncio.gather(n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, return_exceptions=True)
+        await asyncio.gather(
+            n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, w_task,
+            return_exceptions=True
+        )
     except Exception as e:
         logger.error(f"Error apagando tareas: {e}")
+    finally:
+        _THREAD_POOL.shutdown(wait=False)
+        logger.info("ThreadPoolExecutor cerrado.")
 
 app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025", lifespan=lifespan)
 
@@ -193,7 +212,7 @@ async def slide_session_middleware(request: Request, call_next):
     response = await call_next(request)
     
     process_time = time.time() - start_time
-    if process_time > 3.0:
+    if process_time > 1.0:  # Umbral reducido de 3.0 → 1.0 para detectar regresiones antes
         logger.warning(f"[LATENCY_ALERT] {request.method} {request.url.path} tardó {process_time:.3f}s")
     
     # 2. Rutas exentas
@@ -462,11 +481,16 @@ async def api_leads_reporte(request: Request):
     token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(status_code=401, detail="No autorizado")
-    return get_leads_executive_report()
+    # FIX: run_in_executor evita bloquear el event loop durante cache miss
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, get_leads_executive_report)
 
 @app.get("/api/leads-intelligence")
 async def leads_intelligence_endpoint():
-    return get_leads_executive_report()
+    # FIX: get_leads_executive_report() es síncrona (pymongo). Sin executor bloqueaba
+    # el event loop completo durante ~1.6s en cada cache miss (cada 5 min).
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, get_leads_executive_report)
 
 @app.get("/leads-dashboard", response_class=HTMLResponse)
 async def ver_leads(request: Request):
@@ -1854,7 +1878,16 @@ async def inactive_lead_nudge_loop():
         await asyncio.sleep(300)  # Chequear cada 5 minutos (antes era 2min)
 
 async def reassign_unassigned_leads_loop():
-    logger.info("[BACKGROUND] Iniciando loop de procesamiento de leads (Clasificación/Asignación)...")
+    """
+    FIX CRÍTICO: LeadProcessingService.process_lead() es SÍNCRONA.
+    Antes corría directamente dentro del async def → bloqueaba el event loop ~55s cada 5min.
+    Ahora corre en run_in_executor con Semaphore(5) para concurrencia controlada.
+    El event loop NUNCA se bloquea mientras corre el batch.
+    """
+    logger.info("[BACKGROUND] Iniciando loop de procesamiento de leads (non-blocking con executor)...")
+    # Semáforo: máximo 5 leads procesándose simultáneamente en el thread pool
+    _batch_sem = asyncio.Semaphore(5)
+
     while True:
         try:
             background_tasks_status["lead_processing"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
@@ -1881,16 +1914,51 @@ async def reassign_unassigned_leads_loop():
                 ]
             }
             
-            # Procesar por lotes (Batch processing de 20 para no bloquear ni agotar RAM)
-            leads = list(db["leads"].find(query).limit(20))
+            # Proyección mínima: solo el _id para no traer documentos pesados al batch
+            leads = list(db["leads"].find(query, {"_id": 1}).limit(20))
             
             if leads:
-                logger.info(f"[BACKGROUND] Procesando batch de {len(leads)} leads...")
-                for lead in leads:
-                    try:
-                        LeadProcessingService.process_lead(lead["_id"])
-                    except Exception as le:
-                        logger.error(f"[BACKGROUND] Error procesando lead {lead.get('_id')}: {le}")
+                batch_size = len(leads)
+                logger.info(f"[BACKGROUND] Procesando batch de {batch_size} leads... (non-blocking executor)")
+                batch_start = time.time()
+
+                loop = asyncio.get_running_loop()
+
+                async def _process_one_non_blocking(lead_id):
+                    """Corre process_lead en thread pool sin bloquear el event loop."""
+                    async with _batch_sem:
+                        try:
+                            t0 = time.time()
+                            await loop.run_in_executor(
+                                None,  # usa el default executor (ThreadPoolExecutor acotado)
+                                LeadProcessingService.process_lead,
+                                lead_id
+                            )
+                            elapsed_ms = (time.time() - t0) * 1000
+                            logger.debug(f"[BACKGROUND] Lead {lead_id} procesado en {elapsed_ms:.0f}ms")
+                        except Exception as le:
+                            logger.error(f"[BACKGROUND] Error procesando lead {lead_id}: {le}")
+
+                # gather: todos los leads corren en paralelo (hasta 5 concurrentes por el Semaphore)
+                # return_exceptions=True: un error en un lead no aborta el resto del batch
+                await asyncio.gather(
+                    *[_process_one_non_blocking(lead["_id"]) for lead in leads],
+                    return_exceptions=True
+                )
+
+                batch_elapsed = time.time() - batch_start
+                avg_ms = (batch_elapsed / batch_size) * 1000
+                logger.info(
+                    f"[BACKGROUND] Batch completado: {batch_size} leads en {batch_elapsed:.2f}s "
+                    f"(prom {avg_ms:.0f}ms/lead) — event loop libre durante todo el proceso"
+                )
+                background_tasks_status["lead_processing"]["last_batch"] = {
+                    "leads": batch_size,
+                    "duration_s": round(batch_elapsed, 2),
+                    "avg_ms_per_lead": round(avg_ms, 0)
+                }
+            else:
+                logger.debug("[BACKGROUND] No hay leads pendientes de procesar.")
             
             # Intervalo saludable (5 min)
             await asyncio.sleep(300)
@@ -1900,6 +1968,29 @@ async def reassign_unassigned_leads_loop():
             background_tasks_status["lead_processing"]["status"] = f"error: {str(e)}"
             logger.error(f"[BACKGROUND] Error en loop de procesamiento de leads: {e}")
             await asyncio.sleep(60)
+
+async def cache_prewarmer_loop():
+    """
+    PRE-WARMING DE CACHE: Refresca get_leads_executive_report() cada 4.5 minutos
+    en background (en executor), garantizando que NUNCA haya un cache miss
+    durante un request HTTP real.
+    El cache TTL es 5 min; este loop refresca a 4.5 min → siempre hay datos frescos.
+    """
+    logger.info("[CACHE_WARMER] Iniciando pre-warming de cache leads-intelligence (cada 270s)...")
+    # Espera inicial para no competir con el startup
+    await asyncio.sleep(30)
+    while True:
+        try:
+            loop = asyncio.get_running_loop()
+            t0 = time.time()
+            await loop.run_in_executor(None, get_leads_executive_report)
+            elapsed_ms = (time.time() - t0) * 1000
+            logger.info(f"[CACHE_WARMER] LEADS_INTELLIGENCE: cache pre-warmed en {elapsed_ms:.0f}ms")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning(f"[CACHE_WARMER] Error al pre-warm cache: {e}")
+        await asyncio.sleep(270)  # 4.5 minutos (TTL cache = 5 min)
 
 async def daily_report_loop():
     """Loop de fondo para enviar el reporte de SLA y Captaciones una vez al día."""

@@ -285,8 +285,19 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     if cursor_last_event_at:
         try:
             cursor_dt = datetime.fromisoformat(cursor_last_event_at.replace("Z", "+00:00"))
-            # A\u00f1ade filtro: trae solo leads m\u00e1s antiguos que el cursor (siguiente p\u00e1gina)
-            paginated_query[cursor_field] = {"$lt": cursor_dt}
+            # El cursor puede estar guardado como Datetime o como String ISO en la base de datos
+            cursor_condition = {
+                "$or": [
+                    {cursor_field: {"$lt": cursor_dt}},
+                    {cursor_field: {"$lt": cursor_last_event_at}}
+                ]
+            }
+            if "$and" in paginated_query:
+                # Hacer una copia superficial de la lista $and para no mutar el dict original
+                paginated_query["$and"] = list(paginated_query["$and"])
+                paginated_query["$and"].append(cursor_condition)
+            else:
+                paginated_query["$and"] = [cursor_condition]
         except Exception as e:
             logger.warning(f"CRM: cursor inválido ignorado: {e}")
             # Si el cursor es inválido, arranca desde el principio (seguro)

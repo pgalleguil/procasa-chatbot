@@ -483,14 +483,14 @@ async def api_leads_reporte(request: Request):
         raise HTTPException(status_code=401, detail="No autorizado")
     # FIX: run_in_executor evita bloquear el event loop durante cache miss
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, get_leads_executive_report)
+    return await loop.run_in_executor(_THREAD_POOL, get_leads_executive_report)
 
 @app.get("/api/leads-intelligence")
 async def leads_intelligence_endpoint():
     # FIX: get_leads_executive_report() es síncrona (pymongo). Sin executor bloqueaba
     # el event loop completo durante ~1.6s en cada cache miss (cada 5 min).
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, get_leads_executive_report)
+    return await loop.run_in_executor(_THREAD_POOL, get_leads_executive_report)
 
 @app.get("/leads-dashboard", response_class=HTMLResponse)
 async def ver_leads(request: Request):
@@ -1947,7 +1947,7 @@ async def reassign_unassigned_leads_loop():
                         try:
                             t0 = time.time()
                             await loop.run_in_executor(
-                                None,  # usa el default executor (ThreadPoolExecutor acotado)
+                                _THREAD_POOL,
                                 LeadProcessingService.process_lead,
                                 lead_id
                             )
@@ -2000,7 +2000,7 @@ async def cache_prewarmer_loop():
         try:
             loop = asyncio.get_running_loop()
             t0 = time.time()
-            await loop.run_in_executor(None, get_leads_executive_report)
+            await loop.run_in_executor(_THREAD_POOL, get_leads_executive_report)
             elapsed_ms = (time.time() - t0) * 1000
             logger.info(f"[CACHE_WARMER] LEADS_INTELLIGENCE: cache pre-warmed en {elapsed_ms:.0f}ms")
         except asyncio.CancelledError:

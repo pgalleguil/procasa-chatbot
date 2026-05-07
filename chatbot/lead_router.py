@@ -155,6 +155,8 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
 
 from .constants import UNASSIGNED_LABEL
 
+_EXECUTIVES_USERS_CACHE = {"data": None, "expires_at": 0}
+
 def get_executive_phone(executive_name: str) -> Optional[str]:
     """
     Look up executive phone in 'usuarios' collection (field 'telefono' or 'movil').
@@ -163,6 +165,7 @@ def get_executive_phone(executive_name: str) -> Optional[str]:
     if not executive_name or executive_name == UNASSIGNED_LABEL:
         return None
 
+    import time
     db = get_db()
     # 1. Intento directo exacto
     user = db["usuarios"].find_one({"nombre": executive_name})
@@ -170,8 +173,14 @@ def get_executive_phone(executive_name: str) -> Optional[str]:
     # 2. Si falla, búsqueda robusta por normalización
     if not user:
         norm_target = normalize_text(executive_name)
-        all_users = list(db["usuarios"].find({}, {"nombre": 1, "telefono": 1, "tel": 1, "movil": 1}))
-        for candidate in all_users:
+        
+        now = time.time()
+        if _EXECUTIVES_USERS_CACHE["data"] is None or now > _EXECUTIVES_USERS_CACHE["expires_at"]:
+            all_users = list(db["usuarios"].find({}, {"nombre": 1, "telefono": 1, "tel": 1, "movil": 1}))
+            _EXECUTIVES_USERS_CACHE["data"] = all_users
+            _EXECUTIVES_USERS_CACHE["expires_at"] = now + 300 # 5 min
+            
+        for candidate in _EXECUTIVES_USERS_CACHE["data"]:
             norm_candidate = normalize_text(candidate.get("nombre"))
             # Match exacto normalizado
             if norm_candidate == norm_target:

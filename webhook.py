@@ -1978,8 +1978,7 @@ async def reassign_unassigned_leads_loop():
                 for lead in leads:
                     await lead_processing_queue.put(lead["_id"])
             
-            await asyncio.sleep(300)
-            await asyncio.sleep(300)
+            await asyncio.sleep(3600)  # Revisar cada 1 hora en lugar de 5 minutos
         except asyncio.CancelledError:
             break
         except Exception as e:

@@ -205,6 +205,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     import time
     t_kpis = time.perf_counter()
     
+    assigned_filter = {"ejecutivo_asignado": {"$nin": UNASSIGNED_VALUES, "$exists": True}}
+    unassigned_filter = {"$or": [{"ejecutivo_asignado": {"$in": UNASSIGNED_VALUES}}, {"ejecutivo_asignado": {"$exists": False}}]}
+
     # Pre-build queries
     q_sin_asignar = {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, unassigned_filter]}
     q_nuevo       = {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, assigned_filter]}

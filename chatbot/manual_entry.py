@@ -66,7 +66,9 @@ def check_lead_duplicate(phone: Optional[str], property_code: str, email: Option
 
     return "not_found", None
 
-def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
+from fastapi import BackgroundTasks
+
+def create_manual_lead(data: Dict[str, Any], background_tasks: Optional[BackgroundTasks] = None) -> Dict[str, Any]:
     """
     Orchestrates the creation of a manual lead.
     Expected data: phone (optional), property_code, name, email, origen
@@ -222,13 +224,20 @@ def create_manual_lead(data: Dict[str, Any]) -> Dict[str, Any]:
                 logger.info(f"[MANUAL] Lead sin ejecutivo previo. Asignando a dueño de ficha: {exec_name}")
 
             db["leads"].update_one({"_id": existing_lead["_id"]}, update_payload)
-            LeadProcessingService.process_lead(existing_lead["_id"])
+            lead_id = str(existing_lead["_id"])
+            if background_tasks:
+                background_tasks.add_task(LeadProcessingService.process_lead, existing_lead["_id"])
+            else:
+                LeadProcessingService.process_lead(existing_lead["_id"])
             
         else:
             # Insert brand new lead
             result = db["leads"].insert_one(lead_doc)
             lead_id = str(result.inserted_id)
-            LeadProcessingService.process_lead(result.inserted_id)
+            if background_tasks:
+                background_tasks.add_task(LeadProcessingService.process_lead, result.inserted_id)
+            else:
+                LeadProcessingService.process_lead(result.inserted_id)
             
         # 5. Log Event
         log_event(phone or email, InteractionType.ASSIGNMENT, "supervisor", {

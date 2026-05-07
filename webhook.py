@@ -552,22 +552,39 @@ async def api_check_duplicate(request: Request, phone: str = Query(None), proper
     return {"status": status, "exists": status != "not_found", "assigned_to": executive}
 
 @app.post("/api/leads/manual")
-async def api_create_manual_lead(request: Request):
+async def api_create_manual_lead(request: Request, background_tasks: BackgroundTasks):
+    import time as _time
+    _t0 = _time.perf_counter()
     username = await get_current_user(request)
+
+    # [PERF] user lookup
+    _tu = _time.perf_counter()
     from chatbot.storage import get_async_db
     adb = get_async_db()
     user = await adb["usuarios"].find_one({"username": username})
-    
+    logger.info(f"[PERF] /api/leads/manual user_lookup: {(_time.perf_counter()-_tu)*1000:.1f}ms")
+
     if not user or user.get("rol") not in ["admin", "supervisor"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
-    
+
+    # [PERF] json parse
+    _tj = _time.perf_counter()
     data = await request.json()
-    result = create_manual_lead(data)
-    
-    if result.get("status") == "ok":
-        return result
-    else:
+    logger.info(f"[PERF] /api/leads/manual json_parse: {(_time.perf_counter()-_tj)*1000:.1f}ms")
+
+    # [PERF] create_manual_lead (sync: duplicate check + DB insert + executive lookup)
+    _tc = _time.perf_counter()
+    result = create_manual_lead(data, background_tasks)
+    logger.info(f"[PERF] /api/leads/manual create_manual_lead: {(_time.perf_counter()-_tc)*1000:.1f}ms")
+
+    if result.get("status") != "ok":
         raise HTTPException(status_code=400, detail=result.get("message"))
+
+    logger.info(
+        f"[PERF] /api/leads/manual TOTAL_BEFORE_RESPONSE: {(_time.perf_counter()-_t0)*1000:.1f}ms "
+        f"lead_id={result.get('lead_id')} assigned_to={result.get('assigned_to')}"
+    )
+    return result
 
 
 # ========================= 11. DETALLE Y GESTIÓN CRM =========================

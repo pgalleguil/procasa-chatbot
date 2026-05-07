@@ -201,39 +201,46 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             elif filtro_estado == "cerrado": state_db_value = PipelineStage.CLOSED_WON
             query_with_state["pipeline_stage"] = state_db_value
 
-    # 1. CONTAR TOTAL PARA PAGINACIÓN (Basado en el filtro de estado)
-    total_count = await db["leads"].count_documents(query_with_state)
+    # 1. EJECUCION EN PARALELO DE KPIs (O(1) roundtrip)
+    import time
+    t_kpis = time.perf_counter()
     
-    kpi_counts = {"total": total_count, "nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0, "sin_asignar": 0}
-    
-    assigned_filter = {"ejecutivo_asignado": {"$nin": UNASSIGNED_VALUES, "$exists": True}}
-    unassigned_filter = {"$or": [{"ejecutivo_asignado": {"$in": UNASSIGNED_VALUES}}, {"ejecutivo_asignado": {"$exists": False}}]}
-    
-    # 1. SIN ASIGNAR (Nuevo y sin ejecutivo)
-    kpi_counts["sin_asignar"] = await db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, unassigned_filter]})
-
-    # 2. SIN ATENDER (Etapa NEW y ASIGNADO)
-    kpi_counts["nuevo"] = await db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, assigned_filter]})
-
-    # 3. EN GESTIÓN (CONTACTED, INTERESTED, OFFER, NEGOTIATION)
-    kpi_counts["gestion"] = await db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
-        PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER, PipelineStage.NEGOTIATION,
-        "gestion", "contacted"
-    ]}}]})
-
-    # 4. VISITAS (Agendadas o Realizadas)
-    kpi_counts["visita"] = await db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
+    # Pre-build queries
+    q_sin_asignar = {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, unassigned_filter]}
+    q_nuevo       = {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, assigned_filter]}
+    q_gestion     = {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
+        PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER, PipelineStage.NEGOTIATION, "gestion", "contacted"
+    ]}}]}
+    q_visita      = {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
         PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE, "visita"
-    ]}}]})
-
-    # 5. CERRADOS (Ganados o Perdidos)
-    kpi_counts["cerrado"] = await db["leads"].count_documents({"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
+    ]}}]}
+    q_cerrado     = {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [
         PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST, "cerrado"
-    ]}}]})
+    ]}}]}
+
+    import asyncio
+    # Ejecutar conteos en paralelo en Motor (Asíncrono real)
+    results = await asyncio.gather(
+        db["leads"].count_documents(query_with_state),  # total para la pagina
+        db["leads"].count_documents(q_sin_asignar),
+        db["leads"].count_documents(q_nuevo),
+        db["leads"].count_documents(q_gestion),
+        db["leads"].count_documents(q_visita),
+        db["leads"].count_documents(q_cerrado),
+        db["leads"].count_documents(base_kpi_query)     # global_search_total
+    )
+
+    total_count, c_sin_asignar, c_nuevo, c_gestion, c_visita, c_cerrado, global_search_total = results
     
-    # Coherencia del total global para la búsqueda
-    global_search_total = await db["leads"].count_documents(base_kpi_query)
-    kpi_counts["total"] = global_search_total
+    kpi_counts = {
+        "total": global_search_total, 
+        "nuevo": c_nuevo, 
+        "gestion": c_gestion, 
+        "visita": c_visita, 
+        "cerrado": c_cerrado, 
+        "sin_asignar": c_sin_asignar
+    }
+    logger.info(f"[PERF] get_crm_leads_list -> gather(6x KPIs): {(time.perf_counter()-t_kpis)*1000:.1f}ms")
 
     # ------------------------------------------------------------------
     # 3. TRAER LEADS DESDE MONGO — CURSOR-BASED PURO (O(1))

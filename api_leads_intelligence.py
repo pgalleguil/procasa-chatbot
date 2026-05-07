@@ -145,105 +145,91 @@ def get_leads_executive_report():
         logger.info("LEADS_INTELLIGENCE: cache hit")
         return cached
 
-    t_start = time.time()
+    import time
+    t_start = time.perf_counter()
     try:
         db = get_db()
 
         # ----------------------------------------------------------------
-        # PIPELINE 1: KPIs agregados (todo en MongoDB, O(1) en Python)
-        # ----------------------------------------------------------------
-        kpi_pipeline = [
-            {"$match": {}},
-            {"$group": {
-                "_id": None,
-                "total_leads": {"$sum": 1},
-                "con_email": {"$sum": {"$cond": [{"$gt": ["$prospecto.email", None]}, 1, 0]}},
-                "con_rut": {"$sum": {"$cond": [{"$gt": ["$prospecto.rut", None]}, 1, 0]}},
-            }}
-        ]
-        kpi_raw = list(db["leads"].aggregate(kpi_pipeline))
-        total_leads = kpi_raw[0]["total_leads"] if kpi_raw else 0
-
-        # ----------------------------------------------------------------
-        # PIPELINE 2: Distribución por origen/fuente
-        # ----------------------------------------------------------------
-        fuentes_pipeline = [
-            {"$group": {"_id": {"$ifNull": ["$prospecto.origen", "Directo"]}, "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 10}
-        ]
-        fuentes_data = list(db["leads"].aggregate(fuentes_pipeline))
-        fuentes_labels = [d["_id"] for d in fuentes_data]
-        fuentes_values = [d["count"] for d in fuentes_data]
-
-        # ----------------------------------------------------------------
-        # PIPELINE 3: Distribución por operación (venta/arriendo)
-        # ----------------------------------------------------------------
-        ops_pipeline = [
-            {"$group": {"_id": {"$ifNull": ["$prospecto.operacion", "Venta"]}, "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}}
-        ]
-        ops_data = list(db["leads"].aggregate(ops_pipeline))
-
-        # ----------------------------------------------------------------
-        # PIPELINE 4: Distribución por tipo (casa/departamento)
-        # ----------------------------------------------------------------
-        tipos_pipeline = [
-            {"$group": {"_id": {"$ifNull": ["$prospecto.tipo", "Departamento"]}, "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}}
-        ]
-        tipos_data = list(db["leads"].aggregate(tipos_pipeline))
-
-        # ----------------------------------------------------------------
-        # PIPELINE 5: Distribución por comuna (top 15)
-        # ----------------------------------------------------------------
-        comunas_pipeline = [
-            {"$group": {"_id": {"$ifNull": ["$prospecto.comuna", "Sin Comuna"]}, "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 15}
-        ]
-        comunas_data = list(db["leads"].aggregate(comunas_pipeline))
-
-        # ----------------------------------------------------------------
-        # PIPELINE 6: Distribución por BI intención/resultado/recuperabilidad
-        # ----------------------------------------------------------------
-        bi_pipeline = [
-            {"$match": {"bi_analytics_global": {"$exists": True, "$ne": {}}}},
-            {"$group": {
-                "_id": None,
-                "intenciones": {"$push": "$bi_analytics_global.INTENCION_CLIENTE"},
-                "resultados": {"$push": "$bi_analytics_global.RESULTADO_CHAT"},
-                "recuperabilidades": {"$push": "$bi_analytics_global.RECUPERABILIDAD"},
-            }}
-        ]
-        bi_raw = list(db["leads"].aggregate(bi_pipeline))
-
-        if bi_raw:
-            bi_intenciones = Counter(x for x in bi_raw[0].get("intenciones", []) if x)
-            bi_resultados = Counter(x for x in bi_raw[0].get("resultados", []) if x)
-            bi_recuperabilidad = Counter(x for x in bi_raw[0].get("recuperabilidades", []) if x)
-        else:
-            bi_intenciones = Counter()
-            bi_resultados = Counter()
-            bi_recuperabilidad = Counter()
-
-        # ----------------------------------------------------------------
-        # PIPELINE 7: Temporal diario (últimos 90 días)
+        # PIPELINE CONSOLIDADO: 7 queries en 1 (Motor MongoDB via $facet)
+        # O(1) viaje de red, conteo en C++ (Mongo) en lugar de Python memory.
         # ----------------------------------------------------------------
         ninety_days_ago = datetime.utcnow() - timedelta(days=90)
-        temporal_pipeline = [
-            {"$match": {"_id": {"$gt": __import__('bson').ObjectId.from_datetime(ninety_days_ago)}}},
-            {"$group": {
-                "_id": {
-                    "year": {"$year": "$_id"},
-                    "month": {"$month": "$_id"},
-                    "day": {"$dayOfMonth": "$_id"}
-                },
-                "count": {"$sum": 1}
-            }},
-            {"$sort": {"_id": 1}}
+        
+        facet_pipeline = [
+            {"$facet": {
+                "kpis": [
+                    {"$group": {
+                        "_id": None,
+                        "total_leads": {"$sum": 1},
+                        "con_email": {"$sum": {"$cond": [{"$gt": ["$prospecto.email", None]}, 1, 0]}},
+                        "con_rut": {"$sum": {"$cond": [{"$gt": ["$prospecto.rut", None]}, 1, 0]}}
+                    }}
+                ],
+                "fuentes": [
+                    {"$group": {"_id": {"$ifNull": ["$prospecto.origen", "Directo"]}, "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 10}
+                ],
+                "operaciones": [
+                    {"$group": {"_id": {"$ifNull": ["$prospecto.operacion", "Venta"]}, "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}}
+                ],
+                "tipos": [
+                    {"$group": {"_id": {"$ifNull": ["$prospecto.tipo", "Departamento"]}, "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}}
+                ],
+                "comunas": [
+                    {"$group": {"_id": {"$ifNull": ["$prospecto.comuna", "Sin Comuna"]}, "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 15}
+                ],
+                "bi_intenciones": [
+                    {"$match": {"bi_analytics_global.INTENCION_CLIENTE": {"$exists": True, "$ne": None}}},
+                    {"$group": {"_id": "$bi_analytics_global.INTENCION_CLIENTE", "count": {"$sum": 1}}}
+                ],
+                "bi_resultados": [
+                    {"$match": {"bi_analytics_global.RESULTADO_CHAT": {"$exists": True, "$ne": None}}},
+                    {"$group": {"_id": "$bi_analytics_global.RESULTADO_CHAT", "count": {"$sum": 1}}}
+                ],
+                "bi_recuperabilidad": [
+                    {"$match": {"bi_analytics_global.RECUPERABILIDAD": {"$exists": True, "$ne": None}}},
+                    {"$group": {"_id": "$bi_analytics_global.RECUPERABILIDAD", "count": {"$sum": 1}}}
+                ],
+                "temporal": [
+                    {"$match": {"_id": {"$gt": __import__('bson').ObjectId.from_datetime(ninety_days_ago)}}},
+                    {"$group": {
+                        "_id": {
+                            "year": {"$year": "$_id"},
+                            "month": {"$month": "$_id"},
+                            "day": {"$dayOfMonth": "$_id"}
+                        },
+                        "count": {"$sum": 1}
+                    }},
+                    {"$sort": {"_id": 1}}
+                ]
+            }}
         ]
-        temporal_data = list(db["leads"].aggregate(temporal_pipeline))
+        
+        facet_result = list(db["leads"].aggregate(facet_pipeline))[0]
+        
+        # Procesar Facets
+        kpi_raw = facet_result.get("kpis", [])
+        total_leads = kpi_raw[0]["total_leads"] if kpi_raw else 0
+        
+        fuentes_data = facet_result.get("fuentes", [])
+        fuentes_labels = [d["_id"] for d in fuentes_data]
+        fuentes_values = [d["count"] for d in fuentes_data]
+        
+        ops_data = facet_result.get("operaciones", [])
+        tipos_data = facet_result.get("tipos", [])
+        comunas_data = facet_result.get("comunas", [])
+        
+        bi_intenciones = {str(d["_id"]): d["count"] for d in facet_result.get("bi_intenciones", [])}
+        bi_resultados = {str(d["_id"]): d["count"] for d in facet_result.get("bi_resultados", [])}
+        bi_recuperabilidad = {str(d["_id"]): d["count"] for d in facet_result.get("bi_recuperabilidad", [])}
+        
+        temporal_data = facet_result.get("temporal", [])
         temporal_diario = {}
         for d in temporal_data:
             label = f"{d['_id']['year']:04d}-{d['_id']['month']:02d}-{d['_id']['day']:02d}"
@@ -405,8 +391,8 @@ def get_leads_executive_report():
             "leads": leads_table
         }
 
-        elapsed = (time.time() - t_start) * 1000
-        logger.info(f"LEADS_INTELLIGENCE: computed in {elapsed:.1f}ms (cache miss), caching for 5min")
+        t_end = time.perf_counter()
+        logger.info(f"[PERF] LEADS_INTELLIGENCE: computed via $facet in {(t_end - t_start)*1000:.1f}ms (cache miss), caching for 5min")
         _set_cached("leads_executive_report", result)
         return result
 

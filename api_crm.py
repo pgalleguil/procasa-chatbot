@@ -193,7 +193,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             # Mapeo invertido para buscar por el valor del Enum o string legacy en la DB
             state_db_value = filtro_estado
             if filtro_estado in ["nuevo", "NEW"]: 
-                state_db_value = PipelineStage.NEW
+                state_db_value = {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}
                 # IMPORTANTE: Para el listado "Sin Atender", también excluimos los no asignados
                 query_with_state["ejecutivo_asignado"] = {"$nin": UNASSIGNED_VALUES, "$exists": True}
             elif filtro_estado == "visita": state_db_value = PipelineStage.VISIT_SCHEDULED
@@ -896,3 +896,4 @@ def log_recommendation_sent(phone: str, selected_properties: list, user_email: s
     except Exception as e:
         logger.error(f"[SEMANTIC] Error registrando recomendación: {e}", exc_info=True)
         return {"status": "error", "detail": str(e)}
+

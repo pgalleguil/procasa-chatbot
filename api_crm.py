@@ -432,9 +432,13 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         }
         has_management = last_action_text in MANAGEMENT_LABELS
         
-        # Eliminada promocion visual para mantener consistencia estricta con los contadores de las tarjetas (KPIs)
-        # if estado_final == PipelineStage.NEW and has_management:
-        #     estado_final = PipelineStage.CONTACTED
+        # Si hay gestión real registrada, ya no debe mostrarse como "Sin Atender".
+        if estado_final == PipelineStage.NEW and has_management:
+            estado_final = PipelineStage.CONTACTED
+
+        # En filtro NEW/Sin Atender excluimos del listado los que ya tuvieron gestión.
+        if filtro_estado in ["NEW", "nuevo"] and has_management:
+            continue
 
         
         # Identificar ejecutivo y timestamp real para visualización

@@ -301,7 +301,13 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
         total_count = db["yapo_propiedades"].count_documents(query)
         set_cached_value(cache_key, total_count, expire_seconds=60)
     
-    # 2. TRAER PAGINADOS CON PROYECCIÓN (Omitir campos pesados)
+    # 2. TRAER PAGINADOS CON CACHE CORTO (mejora navegación/filtros repetidos)
+    list_cache_key = f"list_{user_role}_{user_name}_{comuna_filter}_{status_filter}_{executive_filter}_{page}_{limit}"
+    cached_list = get_cached_value(list_cache_key)
+    if cached_list is not None:
+        return cached_list, total_count
+
+    # 3. TRAER PAGINADOS CON PROYECCIÓN (Omitir campos pesados)
     skip = (page - 1) * limit
     cursor = db["yapo_propiedades"].find(
         query, 
@@ -359,6 +365,7 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
             "fecha_str": fecha_str
         })
     
+    set_cached_value(list_cache_key, items_paginated, expire_seconds=45)
     return items_paginated, total_count
 
 def get_captacion_detail(obj_id):

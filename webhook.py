@@ -78,6 +78,7 @@ background_tasks_status = {
     "captacion_distributor": {"status": "starting", "last_heartbeat": None},
     "lead_processing": {"status": "starting", "last_heartbeat": None}
 }
+_OAUTH_HTTP_CLIENT = None
 
 # --- NUEVA ARQUITECTURA DE COLA (PRODUCER/CONSUMER) ---
 lead_processing_queue = None  # Se inicializará en lifespan
@@ -88,8 +89,20 @@ async def lifespan(app: FastAPI):
 
     logger.info("ThreadPoolExecutor configurado: web=8, worker=5, warmer=1")
     
-    global lead_processing_queue
+    global lead_processing_queue, _OAUTH_HTTP_CLIENT
     lead_processing_queue = asyncio.Queue()
+
+    # Preconectar DB para reducir latencia del primer login/request.
+    try:
+        from chatbot.storage import get_db, get_async_db
+        get_db().command("ping")
+        await get_async_db().command("ping")
+        logger.info("MongoDB preconnect: OK")
+    except Exception as e:
+        logger.warning(f"MongoDB preconnect warning: {e}")
+
+    # Cliente HTTP compartido para OAuth (evita crear conexión por callback).
+    _OAUTH_HTTP_CLIENT = httpx.AsyncClient(timeout=10.0)
 
     # Iniciar tareas de fondo
     n_task = asyncio.create_task(process_pending_leads_loop())
@@ -134,6 +147,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error apagando tareas: {e}")
     finally:
+        if _OAUTH_HTTP_CLIENT is not None:
+            try:
+                await _OAUTH_HTTP_CLIENT.aclose()
+            except Exception:
+                pass
+            _OAUTH_HTTP_CLIENT = None
         _WEB_THREAD_POOL.shutdown(wait=False)
         _WORKER_THREAD_POOL.shutdown(wait=False)
         _WARMER_THREAD_POOL.shutdown(wait=False)
@@ -217,32 +236,25 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, Config.SECRET_KEY, algorithm="HS256")
 
-# --- MIDDLEWARE DE SESIÓN SLIDING (SOLUCIÓN TIMEOUT) ---
+# --- MIDDLEWARE DE SESION SLIDING (SOLUCION TIMEOUT) ---
 @app.middleware("http")
 async def slide_session_middleware(request: Request, call_next):
     start_time = time.time()
-    
-    # 1. Ejecutar la petición primero
     response = await call_next(request)
-    
+
     process_time = time.time() - start_time
-    if process_time > 1.0:  # Umbral reducido de 3.0 → 1.0 para detectar regresiones antes
-        logger.warning(f"[LATENCY_ALERT] {request.method} {request.url.path} tardó {process_time:.3f}s")
-    
-    # 2. Rutas exentas
+    if process_time > 1.0:
+        logger.warning(f"[LATENCY_ALERT] {request.method} {request.url.path} tardo {process_time:.3f}s")
+
     if request.url.path.startswith("/static") or request.url.path in ["/logout", "/webhook", "/auth/google/callback"]:
         return response
 
-    # 3. Lógica de Sliding Session (JWT)
     token = request.cookies.get("access_token")
     if token:
         try:
             payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
             username = payload.get("sub")
-            
             if username:
-                # Optimización: renovar solo si falta <= 30 min para expirar.
-                # Evita firmar JWT + set-cookie en cada request.
                 exp_ts = payload.get("exp")
                 should_renew = True
                 if exp_ts:
@@ -262,16 +274,8 @@ async def slide_session_middleware(request: Request, call_next):
                         max_age=7200,
                         path="/"
                     )
-                    if time.time() % 30 < 5:
-                        logger.info(f"[SESSION_RENEW] Sesión renovada para {username} (2h de margen)")
-        except JWTError as e:
-            # Solo logueamos si no es una simple expiración (para detectar ataques o desajustes de clave)
-            if "expired" not in str(e).lower():
-                logger.warning(f"[SESSION_ERROR] Error validando token: {e}")
+        except JWTError:
             pass
-            
-        return response
-
     return response
 
 async def get_current_user(request: Request):
@@ -280,11 +284,9 @@ async def get_current_user(request: Request):
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
-    
     if not token:
         logger.warning("Intento de acceso sin token")
         raise HTTPException(status_code=401, detail="No autenticado")
-        
     try:
         payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
         username = payload.get("sub")
@@ -292,10 +294,9 @@ async def get_current_user(request: Request):
             raise HTTPException(status_code=401, detail="Token sin usuario")
         return username
     except JWTError:
-        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+        raise HTTPException(status_code=401, detail="Token invalido o expirado")
 
 async def get_current_user_doc(request: Request):
-    """Obtiene y cachea el usuario actual en request.state para evitar lookups repetidos."""
     cached = getattr(request.state, "current_user_doc", None)
     if cached is not None:
         return cached
@@ -309,44 +310,14 @@ async def get_current_user_doc(request: Request):
     request.state.current_user_doc = user
     return user
 
-# --- ENDPOINT ESPECIAL PARA RENOVACIÓN DE SESIÓN (HEARTBEAT) ---
 @app.post("/api/session/renew")
 async def renew_session(user_name: str = Depends(get_current_user)):
-    """
-    Endpoint ligero llamado por el frontend para mantener la sesión viva.
-    El middleware 'slide_session_middleware' interceptará esta llamada
-    y renovará la cookie automáticamente si el token es válido.
-    """
-    return {"status": "renewed", "user": user_name}
-    
-
-def crear_admin_si_no_existe():
-    try:
-        from chatbot.storage import get_db
-        db = get_db()
-        usuarios = db["usuarios"]
-        if usuarios.count_documents({"username": "admin"}) == 0:
-            hashed = get_password_hash("procasa2025")
-            usuarios.insert_one({
-                "username": "admin",
-                "hashed_password": hashed,
-                "nombre": "Administrador",
-                "is_active": True,
-                "created_at": datetime.now(CHILE_TZ)
-            })
-            logger.info("Usuario 'admin' creado → contraseña: procasa2025")
-        else:
-            logger.info("Usuario 'admin' ya existe")
-    except Exception as e:
-        logger.error(f"Error creando admin: {e}")
-
-crear_admin_si_no_existe()
+    return {"status": "ok", "user": user_name}
 
 # ========================= 3. LOGIN CON GOOGLE =========================
 
 @app.get("/login/google")
 async def login_google():
-    """Inicia el flujo de OAuth2 con Google"""
     params = {
         "client_id": Config.GOOGLE_CLIENT_ID,
         "response_type": "code",
@@ -361,12 +332,14 @@ async def login_google():
 
 @app.get("/auth/google/callback")
 async def auth_google_callback(request: Request, code: str):
-    """Recibe el código de Google y obtiene el token y datos del usuario"""
     try:
-        # 1. Canjear código por token
         token_url = "https://oauth2.googleapis.com/token"
-        # Compatibilidad Render: no forzar http2 porque el runtime no trae h2.
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        client = _OAUTH_HTTP_CLIENT
+        owns_client = False
+        if client is None:
+            client = httpx.AsyncClient(timeout=10.0)
+            owns_client = True
+        try:
             token_resp = await client.post(token_url, data={
                 "client_id": Config.GOOGLE_CLIENT_ID,
                 "client_secret": Config.GOOGLE_CLIENT_SECRET,
@@ -375,74 +348,39 @@ async def auth_google_callback(request: Request, code: str):
                 "redirect_uri": Config.GOOGLE_REDIRECT_URI,
             })
             token_data = token_resp.json()
-        
             if "error" in token_data:
                 logger.error(f"Error Token Google: {token_data}")
-                return templates.TemplateResponse("login.html", {
-                    "request": request, "images": get_images(), 
-                    "error": "Error al conectar con Google (Token)"
-                })
+                return templates.TemplateResponse("login.html", {"request": request, "images": get_images(), "error": "Error al conectar con Google (Token)"})
 
             access_token = token_data.get("access_token")
-
-            # 2. Obtener datos del usuario
             user_info_url = "https://www.googleapis.com/oauth2/v1/userinfo"
-            user_resp = await client.get(user_info_url, headers={
-                "Authorization": f"Bearer {access_token}"
-            })
+            user_resp = await client.get(user_info_url, headers={"Authorization": f"Bearer {access_token}"})
             user_info = user_resp.json()
+        finally:
+            if owns_client:
+                await client.aclose()
 
         email = user_info.get("email")
-        
-        # 3. Guardar o Buscar en MongoDB (Google OAuth - async route)
         from chatbot.storage import get_async_db as _gadb
         _adb = _gadb()
         usuarios = _adb["usuarios"]
-        
-        user = await usuarios.find_one({
-            "$or": [
-                {"email": email}, 
-                {"username": email}
-            ]
-        }, {"username": 1, "rol": 1, "email": 1})
-
+        user = await usuarios.find_one({"$or": [{"email": email}, {"username": email}]}, {"username": 1, "rol": 1, "email": 1})
         if not user:
             logger.warning(f"Intento de acceso denegado: {email}")
-            return templates.TemplateResponse("login.html", {
-                "request": request, 
-                "images": get_images(), 
-                "error": f"Acceso Denegado: El correo {email} no tiene permisos."
-            })
-        
+            return templates.TemplateResponse("login.html", {"request": request, "images": get_images(), "error": f"Acceso Denegado: El correo {email} no tiene permisos."})
+
         user_sub = user["username"]
         user_rol = user.get("rol", "agente")
         target_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
-
-        SESSION_TIME = 1800 
-        
         access_token_jwt = create_access_token({"sub": user_sub})
-        
         response = RedirectResponse(target_url, status_code=303)
-        
-        response.set_cookie(
-            key="access_token", 
-            value=access_token_jwt,
-            httponly=True, 
-            secure=True,    # Cambiado a True para Render (HTTPS)
-            samesite="lax", 
-            max_age=SESSION_TIME 
-        )
-
-        logger.info("Conexión a MongoDB exitosa")
-        logger.info(f"Sesión iniciada para {email} (Rol: {user_rol})")
+        response.set_cookie(key="access_token", value=access_token_jwt, httponly=True, secure=True, samesite="lax", max_age=1800)
+        logger.info("Conexion a MongoDB exitosa")
+        logger.info(f"Sesion iniciada para {email} (Rol: {user_rol})")
         return response
-
     except Exception as e:
         logger.error(f"Error Google Auth Critical: {e}")
-        return templates.TemplateResponse("login.html", {
-            "request": request, "images": get_images(), 
-            "error": f"Error interno: {str(e)}"
-        })
+        return templates.TemplateResponse("login.html", {"request": request, "images": get_images(), "error": f"Error interno: {str(e)}"})
 
 # ========================= 4. RUTAS DE LOGIN TRADICIONAL =========================
 
@@ -2110,5 +2048,7 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     logger.info(f"Bot PRO iniciado → http://localhost:{port}")
     uvicorn.run(f"{module_name}:app", host="0.0.0.0", port=port, reload=True, log_level="info")
+
+
 
 

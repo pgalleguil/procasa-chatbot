@@ -208,19 +208,8 @@
 
 <body>
 
-    <!-- FONDO ANIMADO -->
-    <div class="background-slider">
-        {% if images %}
-        <div class="slide active">
-            <img src="/static/{{ images[0] }}" alt="Background" fetchpriority="high">
-        </div>
-        {% else %}
-        <div class="slide active">
-            <img src="https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=1973&auto=format&fit=crop"
-                alt="Default">
-        </div>
-        {% endif %}
-    </div>
+    <!-- FONDO LIVIANO (sin descargas de imagen pesadas en login) -->
+    <div class="background-slider" style="background: radial-gradient(circle at 20% 20%, #22345a 0%, #10192f 45%, #0b1326 100%);"></div>
 
     <!-- CONTENEDOR LOGIN -->
     <div class="login-wrapper">

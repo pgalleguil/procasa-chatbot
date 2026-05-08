@@ -105,6 +105,8 @@ async def lifespan(app: FastAPI):
     _OAUTH_HTTP_CLIENT = httpx.AsyncClient(timeout=10.0)
 
     # Iniciar tareas de fondo
+
+    # Iniciar tareas de fondo
     n_task = asyncio.create_task(process_pending_leads_loop())
     s_task = asyncio.create_task(sla_monitor_loop())
     t_task = asyncio.create_task(check_scheduled_tasks_loop())
@@ -113,6 +115,7 @@ async def lifespan(app: FastAPI):
     d_task = asyncio.create_task(daily_report_loop())
     nudge_task = asyncio.create_task(inactive_lead_nudge_loop())
     w_task = asyncio.create_task(cache_prewarmer_loop())  # PRE-WARMING de cache
+    el_task = asyncio.create_task(event_loop_monitor_loop()) # MONITOR EVENT LOOP
     
     # Iniciar Consumers
     c1_task = asyncio.create_task(lead_consumer_worker(1))
@@ -137,11 +140,12 @@ async def lifespan(app: FastAPI):
     d_task.cancel()
     nudge_task.cancel()
     w_task.cancel()
+    el_task.cancel()
     c1_task.cancel()
     c2_task.cancel()
     try:
         await asyncio.gather(
-            n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, w_task, c1_task, c2_task,
+            n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, w_task, el_task, c1_task, c2_task,
             return_exceptions=True
         )
     except Exception as e:
@@ -162,24 +166,47 @@ app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025", lifespan=lifespan)
 
 # ========================= MIDDLEWARE DE OBSERVABILIDAD =========================
 import time
+import uuid
 
 @app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
+async def advanced_perf_middleware(request: Request, call_next):
+    request_id = str(uuid.uuid4())[:8]
     start_time = time.time()
+    
+    # Extract user if available (lightweight estimation)
+    user = "anon"
+    token = request.cookies.get("procasa_token")
+    if token:
+        try:
+            from jose import jwt
+            # Only decode without verifying signature to save CPU in middleware, just for logging
+            payload = jwt.decode(token, options={"verify_signature": False})
+            user = payload.get("sub", "anon").split("@")[0] # keep it short
+        except:
+            pass
+
     try:
         response = await call_next(request)
         duration_ms = (time.time() - start_time) * 1000
         
-        # Ignorar rutas de archivos estáticos para no saturar los logs
-        if not request.url.path.startswith("/static/"):
-            logger.info(f"PERF_METRIC | {request.method} {request.url.path} | Status: {response.status_code} | Duration: {duration_ms:.2f}ms")
+        if not request.url.path.startswith("/static/") and not request.url.path.startswith("/contracts_pdf/"):
+            content_length = response.headers.get("content-length", "unknown")
+            log_str = f"[HTTP_PERF] request_id={request_id} user={user} method={request.method} path={request.url.path} total={duration_ms:.0f}ms status={response.status_code} size={content_length}"
+            logger.info(log_str)
             
+            if duration_ms > 3000:
+                logger.error(f"[SLOW_REQUEST] ERROR: request_id={request_id} path={request.url.path} duration={duration_ms:.0f}ms")
+            elif duration_ms > 1000:
+                logger.warning(f"[SLOW_REQUEST] WARNING: request_id={request_id} path={request.url.path} duration={duration_ms:.0f}ms")
+                
         response.headers["X-Process-Time"] = str(duration_ms)
+        response.headers["X-Request-ID"] = request_id
         return response
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
-        logger.error(f"PERF_METRIC_ERROR | {request.method} {request.url.path} | Error: {str(e)} | Duration: {duration_ms:.2f}ms")
+        logger.error(f"[HTTP_PERF] request_id={request_id} user={user} method={request.method} path={request.url.path} ERROR={str(e)} total={duration_ms:.0f}ms")
         raise e
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # Mount contracts_pdf to serve PDFs statically and fast
@@ -2048,6 +2075,28 @@ async def cache_prewarmer_loop():
         finally:
             local_warm_in_progress = False
         await asyncio.sleep(60)
+
+async def event_loop_monitor_loop():
+    """
+    Monitor global del event loop. Mide el lag real para detectar operaciones bloqueantes.
+    """
+    logger.info("[EVENT_LOOP_MONITOR] Iniciando monitor de lag...")
+    while True:
+        try:
+            start = time.time()
+            await asyncio.sleep(1.0)
+            duration = time.time() - start
+            lag_ms = (duration - 1.0) * 1000
+            
+            if lag_ms > 1000:
+                logger.error(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
+            elif lag_ms > 250:
+                logger.warning(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"[EVENT_LOOP_MONITOR] Error: {e}")
+            await asyncio.sleep(5)
 
 async def daily_report_loop():
     """Loop de fondo para enviar el reporte de SLA y Captaciones una vez al día."""

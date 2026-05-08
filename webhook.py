@@ -12,6 +12,7 @@ import re
 import secrets
 from concurrent.futures import ThreadPoolExecutor
 from pymongo import MongoClient
+from pymongo import ReturnDocument
 from datetime import datetime, timedelta
 from pathlib import Path
 import uvicorn
@@ -2009,22 +2010,76 @@ async def cache_prewarmer_loop():
     durante un request HTTP real.
     El cache TTL es 5 min; este loop refresca a 4.5 min → siempre hay datos frescos.
     """
-    logger.info("[CACHE_WARMER] Iniciando pre-warming de cache leads-intelligence (cada 270s)...")
+    logger.info("[CACHE_WARMER] Iniciando pre-warming de cache leads-intelligence (smart mode)...")
     # Espera inicial para no competir con el startup
     await asyncio.sleep(30)
+    local_warm_in_progress = False
+    cache_key = "leads_executive_report_v2"
+    lock_key = "lock_cache_prewarm_leads_intel_v1"
     while True:
         try:
+            # Evitar solapes locales de warm si el ciclo previo no cerró aún.
+            if local_warm_in_progress:
+                await asyncio.sleep(30)
+                continue
+
+            from chatbot.storage import get_db
+            from datetime import timezone
+            db = get_db()
+            now_utc = datetime.now(timezone.utc)
+
+            # 1) Skip inteligente: si cache aún tiene >120s de vida, no recalcular.
+            cache_doc = db["cache_store"].find_one({"_id": cache_key}, {"expires_at": 1})
+            expires_at = cache_doc.get("expires_at") if cache_doc else None
+            if expires_at:
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                ttl_left = (expires_at - now_utc).total_seconds()
+                if ttl_left > 120:
+                    logger.info(f"[CACHE_WARMER] Skip: cache vigente ({ttl_left:.0f}s restantes)")
+                    await asyncio.sleep(60)
+                    continue
+
+            # 2) Lock distribuido: evita prewarm simultáneo entre instancias/restarts.
+            lock_until = now_utc + timedelta(seconds=90)
+            lock_doc = db["cache_locks"].find_one_and_update(
+                {
+                    "_id": lock_key,
+                    "$or": [
+                        {"expires_at": {"$exists": False}},
+                        {"expires_at": {"$lte": now_utc}}
+                    ]
+                },
+                {"$set": {"expires_at": lock_until, "updated_at": now_utc}},
+                upsert=True,
+                return_document=ReturnDocument.AFTER
+            )
+            if not lock_doc:
+                logger.info("[CACHE_WARMER] Skip: lock activo en otra instancia")
+                await asyncio.sleep(60)
+                continue
+
+            local_warm_in_progress = True
             loop = asyncio.get_running_loop()
             t0 = time.time()
             # Warmer pool dedicado: evita competir con workers de procesamiento.
-            await loop.run_in_executor(_WARMER_THREAD_POOL, get_leads_executive_report)
+            await asyncio.wait_for(
+                loop.run_in_executor(_WARMER_THREAD_POOL, get_leads_executive_report),
+                timeout=8.0
+            )
             elapsed_ms = (time.time() - t0) * 1000
             logger.info(f"[CACHE_WARMER] LEADS_INTELLIGENCE: cache pre-warmed en {elapsed_ms:.0f}ms")
+            # Liberar lock explícitamente tras warm exitoso.
+            db["cache_locks"].update_one({"_id": lock_key}, {"$set": {"expires_at": now_utc}})
+        except asyncio.TimeoutError:
+            logger.warning("[CACHE_WARMER] Timeout >8s; se omite este ciclo para evitar jitter")
         except asyncio.CancelledError:
             break
         except Exception as e:
             logger.warning(f"[CACHE_WARMER] Error al pre-warm cache: {e}")
-        await asyncio.sleep(270)  # 4.5 minutos (TTL cache = 5 min)
+        finally:
+            local_warm_in_progress = False
+        await asyncio.sleep(60)
 
 async def daily_report_loop():
     """Loop de fondo para enviar el reporte de SLA y Captaciones una vez al día."""

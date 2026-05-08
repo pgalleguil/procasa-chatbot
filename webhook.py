@@ -236,6 +236,36 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, Config.SECRET_KEY, algorithm="HS256")
 
+def crear_admin_si_no_existe():
+    """Asegura usuario admin de emergencia para acceso operativo."""
+    try:
+        from chatbot.storage import get_db
+        db = get_db()
+        usuarios = db["usuarios"]
+
+        admin_user = os.getenv("ADMIN_USERNAME", "admin")
+        admin_pass = os.getenv("ADMIN_PASSWORD", "admin12345")
+        admin_email = os.getenv("ADMIN_EMAIL", "admin@procasa.cl")
+        admin_nombre = os.getenv("ADMIN_NOMBRE", "Administrador")
+
+        exists = usuarios.find_one({"username": admin_user}, {"_id": 1})
+        if exists:
+            logger.info("Usuario 'admin' ya existe")
+            return
+
+        usuarios.insert_one({
+            "username": admin_user,
+            "email": admin_email,
+            "nombre": admin_nombre,
+            "rol": "admin",
+            "hashed_password": get_password_hash(admin_pass),
+            "activo": True,
+            "created_at": datetime.now(CHILE_TZ).isoformat()
+        })
+        logger.info("Usuario 'admin' creado correctamente")
+    except Exception as e:
+        logger.error(f"Error creando admin: {e}")
+
 # --- MIDDLEWARE DE SESION SLIDING (SOLUCION TIMEOUT) ---
 @app.middleware("http")
 async def slide_session_middleware(request: Request, call_next):

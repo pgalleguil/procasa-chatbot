@@ -23,6 +23,8 @@ import pytz # Importante para la hora local
 _WEB_THREAD_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="procasa_web")
 # Pool separado para workers de procesamiento de leads.
 _WORKER_THREAD_POOL = ThreadPoolExecutor(max_workers=5, thread_name_prefix="procasa_worker")
+# Pool dedicado para tareas periódicas (cache warmer) para evitar competir con workers.
+_WARMER_THREAD_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="procasa_warmer")
 
 # === NUEVAS IMPORTACIONES PARA GOOGLE ===
 import httpx 
@@ -83,7 +85,7 @@ async def lifespan(app: FastAPI):
     # Startup logic
     logger.info("Bot PRO Iniciando (Lifespan Startup)...")
 
-    logger.info("ThreadPoolExecutor configurado: web=8, worker=5")
+    logger.info("ThreadPoolExecutor configurado: web=8, worker=5, warmer=1")
     
     global lead_processing_queue
     lead_processing_queue = asyncio.Queue()
@@ -133,6 +135,7 @@ async def lifespan(app: FastAPI):
     finally:
         _WEB_THREAD_POOL.shutdown(wait=False)
         _WORKER_THREAD_POOL.shutdown(wait=False)
+        _WARMER_THREAD_POOL.shutdown(wait=False)
         logger.info("ThreadPoolExecutors cerrados.")
 
 app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025", lifespan=lifespan)
@@ -361,7 +364,8 @@ async def auth_google_callback(request: Request, code: str):
     try:
         # 1. Canjear código por token
         token_url = "https://oauth2.googleapis.com/token"
-        async with httpx.AsyncClient(timeout=10.0, http2=True) as client:
+        # Compatibilidad Render: no forzar http2 porque el runtime no trae h2.
+        async with httpx.AsyncClient(timeout=10.0) as client:
             token_resp = await client.post(token_url, data={
                 "client_id": Config.GOOGLE_CLIENT_ID,
                 "client_secret": Config.GOOGLE_CLIENT_SECRET,
@@ -2012,8 +2016,8 @@ async def cache_prewarmer_loop():
         try:
             loop = asyncio.get_running_loop()
             t0 = time.time()
-            # El prewarm corre fuera del pool web para no introducir jitter en requests.
-            await loop.run_in_executor(_WORKER_THREAD_POOL, get_leads_executive_report)
+            # Warmer pool dedicado: evita competir con workers de procesamiento.
+            await loop.run_in_executor(_WARMER_THREAD_POOL, get_leads_executive_report)
             elapsed_ms = (time.time() - t0) * 1000
             logger.info(f"[CACHE_WARMER] LEADS_INTELLIGENCE: cache pre-warmed en {elapsed_ms:.0f}ms")
         except asyncio.CancelledError:

@@ -290,6 +290,21 @@ async def get_current_user(request: Request):
     except JWTError:
         raise HTTPException(status_code=401, detail="Token inválido o expirado")
 
+async def get_current_user_doc(request: Request):
+    """Obtiene y cachea el usuario actual en request.state para evitar lookups repetidos."""
+    cached = getattr(request.state, "current_user_doc", None)
+    if cached is not None:
+        return cached
+    username = await get_current_user(request)
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    user = await adb["usuarios"].find_one(
+        {"username": username},
+        {"username": 1, "nombre": 1, "rol": 1, "email": 1}
+    )
+    request.state.current_user_doc = user
+    return user
+
 # --- ENDPOINT ESPECIAL PARA RENOVACIÓN DE SESIÓN (HEARTBEAT) ---
 @app.post("/api/session/renew")
 async def renew_session(user_name: str = Depends(get_current_user)):
@@ -346,7 +361,7 @@ async def auth_google_callback(request: Request, code: str):
     try:
         # 1. Canjear código por token
         token_url = "https://oauth2.googleapis.com/token"
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0, http2=True) as client:
             token_resp = await client.post(token_url, data={
                 "client_id": Config.GOOGLE_CLIENT_ID,
                 "client_secret": Config.GOOGLE_CLIENT_SECRET,
@@ -356,18 +371,17 @@ async def auth_google_callback(request: Request, code: str):
             })
             token_data = token_resp.json()
         
-        if "error" in token_data:
-            logger.error(f"Error Token Google: {token_data}")
-            return templates.TemplateResponse("login.html", {
-                "request": request, "images": get_images(), 
-                "error": "Error al conectar con Google (Token)"
-            })
+            if "error" in token_data:
+                logger.error(f"Error Token Google: {token_data}")
+                return templates.TemplateResponse("login.html", {
+                    "request": request, "images": get_images(), 
+                    "error": "Error al conectar con Google (Token)"
+                })
 
-        access_token = token_data.get("access_token")
+            access_token = token_data.get("access_token")
 
-        # 2. Obtener datos del usuario
-        user_info_url = "https://www.googleapis.com/oauth2/v1/userinfo"
-        async with httpx.AsyncClient() as client:
+            # 2. Obtener datos del usuario
+            user_info_url = "https://www.googleapis.com/oauth2/v1/userinfo"
             user_resp = await client.get(user_info_url, headers={
                 "Authorization": f"Bearer {access_token}"
             })
@@ -385,7 +399,7 @@ async def auth_google_callback(request: Request, code: str):
                 {"email": email}, 
                 {"username": email}
             ]
-        })
+        }, {"username": 1, "rol": 1, "email": 1})
 
         if not user:
             logger.warning(f"Intento de acceso denegado: {email}")
@@ -511,10 +525,7 @@ async def leads_intelligence_endpoint():
 
 @app.get("/leads-dashboard", response_class=HTMLResponse)
 async def ver_leads(request: Request):
-    username = await get_current_user(request)
-    from chatbot.storage import get_async_db
-    adb = get_async_db()
-    user = await adb["usuarios"].find_one({"username": username})
+    user = await get_current_user_doc(request)
     
     if not user or user.get("rol") not in ["admin", "supervisor"]:
         return RedirectResponse(url="/crm?error=acceso_denegado")
@@ -528,10 +539,11 @@ async def ver_leads(request: Request):
 @app.get("/chat-detail/{phone}", response_class=HTMLResponse)
 async def ver_detalle_chat(request: Request, phone: str):
     phone_clean = phone.replace(" ", "").replace("+", "")
-    chat_data = get_specific_lead_chat(phone_clean)
+    loop = asyncio.get_running_loop()
+    chat_data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_specific_lead_chat(phone_clean))
     
     if not chat_data:
-        chat_data = get_specific_lead_chat(phone)
+        chat_data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_specific_lead_chat(phone))
         
     return templates.TemplateResponse("chat_detail.html", {
         "request": request, 
@@ -542,10 +554,7 @@ async def ver_detalle_chat(request: Request, phone: str):
 # --- RUTAS DE INGRESO MANUAL ---
 @app.get("/manual-lead-entry", response_class=HTMLResponse)
 async def view_manual_lead_entry(request: Request):
-    username = await get_current_user(request)
-    from chatbot.storage import get_async_db
-    adb = get_async_db()
-    user = await adb["usuarios"].find_one({"username": username})
+    user = await get_current_user_doc(request)
     
     if not user or user.get("rol") not in ["admin", "supervisor"]:
         return RedirectResponse(url="/crm?error=acceso_denegado")
@@ -565,20 +574,20 @@ async def view_manual_lead_entry(request: Request):
 async def api_check_duplicate(request: Request, phone: str = Query(None), property_code: str = Query(...), email: str = Query(None)):
     # Seguridad básica
     await get_current_user(request)
-    status, executive = check_lead_duplicate(phone, property_code, email)
+    loop = asyncio.get_running_loop()
+    status, executive = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: check_lead_duplicate(phone, property_code, email)
+    )
     return {"status": status, "exists": status != "not_found", "assigned_to": executive}
 
 @app.post("/api/leads/manual")
 async def api_create_manual_lead(request: Request):
     import time as _time
     _t0 = _time.perf_counter()
-    username = await get_current_user(request)
-
     # [PERF] user lookup
     _tu = _time.perf_counter()
-    from chatbot.storage import get_async_db
-    adb = get_async_db()
-    user = await adb["usuarios"].find_one({"username": username})
+    user = await get_current_user_doc(request)
     logger.info(f"[PERF] /api/leads/manual user_lookup: {(_time.perf_counter()-_tu)*1000:.1f}ms")
 
     if not user or user.get("rol") not in ["admin", "supervisor"]:
@@ -591,7 +600,8 @@ async def api_create_manual_lead(request: Request):
 
     # [PERF] create_manual_lead (sync: duplicate check + DB insert + executive lookup)
     _tc = _time.perf_counter()
-    result = create_manual_lead(data)
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: create_manual_lead(data))
     logger.info(f"[PERF] /api/leads/manual create_manual_lead: {(_time.perf_counter()-_tc)*1000:.1f}ms")
 
     if result.get("status") != "ok":
@@ -615,10 +625,7 @@ async def api_create_manual_lead(request: Request):
 
 @app.get("/crm/lead/{phone}", response_class=HTMLResponse)
 async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None)):
-    username = await get_current_user(request)
-    from chatbot.storage import get_async_db
-    adb = get_async_db()
-    user = await adb["usuarios"].find_one({"username": username})
+    user = await get_current_user_doc(request)
     
     loop = asyncio.get_running_loop()
     data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_lead_detail_data(phone, property_code=codigo))
@@ -734,7 +741,8 @@ async def api_crm_notes(request: Request):
             # Añadimos timestamp ISO para ordenamiento backend
             note_data["timestamp_iso"] = now_cl.isoformat()
 
-        result = manage_crm_notes(phone, note_data, action)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: manage_crm_notes(phone, note_data, action))
         if result:
             return {"status": "ok", "note": result}
         return {"status": "error"}
@@ -755,7 +763,11 @@ async def api_crm_recommendations(request: Request):
         if not query or len(query.strip()) < 5:
             raise HTTPException(status_code=400, detail="Query muy corta")
         
-        result = get_semantic_recommendations(query, exclude_codes=exclude, limit=limit, scope=scope, include_neighbors=include_neighbors)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: get_semantic_recommendations(query, exclude_codes=exclude, limit=limit, scope=scope, include_neighbors=include_neighbors)
+        )
         return result
     except HTTPException:
         raise
@@ -776,7 +788,8 @@ async def api_crm_send_recommendation(request: Request):
         if not phone or not properties:
             raise HTTPException(status_code=400, detail="Faltan datos")
         
-        result = log_recommendation_sent(phone, properties, user_email)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: log_recommendation_sent(phone, properties, user_email))
         return result
     except HTTPException:
         raise
@@ -1054,10 +1067,9 @@ async def view_captaciones(
     ejecutivo: str = Query(None),
     page: int = Query(1, ge=1)
 ):
-    username = await get_current_user(request)
     from chatbot.storage import get_async_db
     adb = get_async_db()
-    user = await adb["usuarios"].find_one({"username": username})
+    user = await get_current_user_doc(request)
     
     if not user:
         return RedirectResponse(url="/?error=sesion_invalida")
@@ -1065,14 +1077,9 @@ async def view_captaciones(
     user_role = user.get("rol", "agente")
     user_name = user.get("nombre", "")
     
-    # Lista de ejecutivos para el filtro (solo admin/supervisor)
-    executives = []
-    if user_role in ["admin", "supervisor"]:
-        executives = await get_unique_executives()
-    
     limit = 10
     loop = asyncio.get_running_loop()
-    items, total_count = await loop.run_in_executor(
+    list_task = loop.run_in_executor(
         _WEB_THREAD_POOL,
         lambda: get_captacion_list(
             user_role=user_role,
@@ -1084,6 +1091,9 @@ async def view_captaciones(
             executive_filter=ejecutivo
         )
     )
+    exec_task = get_unique_executives() if user_role in ["admin", "supervisor"] else asyncio.sleep(0, result=[])
+    items_total, executives = await asyncio.gather(list_task, exec_task)
+    items, total_count = items_total
     
     # KPIs adicionales para el resumen (basados en el ejecutivo/permisos, no en los filtros actuales de lista)
     base_query = {"details.es_propietario_directo": True}
@@ -1092,8 +1102,10 @@ async def view_captaciones(
     elif ejecutivo and ejecutivo != "Todos":
         base_query["gestion.ejecutivo_asignado"] = ejecutivo
 
-    in_gestion_count = await adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "GESTION"})
-    captados_count = await adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"})
+    in_gestion_count, captados_count = await asyncio.gather(
+        adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "GESTION"}),
+        adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"})
+    )
     total_pages = (total_count + limit - 1) // limit
 
     return templates.TemplateResponse("captacion_list.html", {
@@ -1118,10 +1130,7 @@ async def view_captaciones(
 
 @app.get("/captacion/{obj_id}", response_class=HTMLResponse)
 async def view_captacion_detail_route(request: Request, obj_id: str):
-    username = await get_current_user(request)
-    from chatbot.storage import get_async_db
-    adb = get_async_db()
-    user = await adb["usuarios"].find_one({"username": username})
+    user = await get_current_user_doc(request)
     
     if not user:
         return RedirectResponse(url="/?error=sesion_invalida")
@@ -1215,14 +1224,18 @@ async def api_update_captacion(request: Request):
         if not obj_id or not status:
             raise HTTPException(status_code=400, detail="Faltan datos")
             
-        result = update_captacion_status(
-            obj_id, 
-            status, 
-            notes, 
-            channel=channel, 
-            outcome=outcome, 
-            user_name=user_name, 
-            next_followup=next_followup
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: update_captacion_status(
+                obj_id,
+                status,
+                notes,
+                channel=channel,
+                outcome=outcome,
+                user_name=user_name,
+                next_followup=next_followup
+            )
         )
         return {"status": "ok"} if result else {"status": "error", "message": "Operación retornó falso"}
     except Exception as e:
@@ -1242,19 +1255,20 @@ async def api_update_captacion_contact(request: Request):
         # Check user name in session or payload
         user_name = data.get("user_name")
         if not user_name:
-            username_str = await get_current_user(request)
-            from chatbot.storage import get_async_db
-            _adb = get_async_db()
-            user_doc = await _adb["usuarios"].find_one({"username": username_str})
-            user_name = user_doc.get("nombre", username_str) if user_doc else "Sistema"
+            user_doc = await get_current_user_doc(request)
+            user_name = user_doc.get("nombre", user_doc.get("username", "Sistema")) if user_doc else "Sistema"
         
-        result = update_contact_info(
-            obj_id,
-            nombre=data.get("nombre"),
-            telefono=data.get("telefono"),
-            email=data.get("email"),
-            notas=data.get("notas"),
-            user_name=user_name
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: update_contact_info(
+                obj_id,
+                nombre=data.get("nombre"),
+                telefono=data.get("telefono"),
+                email=data.get("email"),
+                notas=data.get("notas"),
+                user_name=user_name
+            )
         )
         return {"status": "ok"} if result else {"status": "error", "message": "Operación retornó falso"}
     except Exception as e:
@@ -1265,9 +1279,7 @@ async def api_update_captacion_contact(request: Request):
 @app.post("/api/captacion/log_action")
 async def api_captacion_log_action(request: Request):
     username_str = await get_current_user(request)
-    from chatbot.storage import get_async_db
-    _adb = get_async_db()
-    user_doc = await _adb["usuarios"].find_one({"username": username_str})
+    user_doc = await get_current_user_doc(request)
     actual_name = user_doc.get("nombre", username_str) if user_doc else "Sistema"
     
     data = await request.json()
@@ -1284,7 +1296,11 @@ async def api_captacion_log_action(request: Request):
         
     try:
         from api_captacion import log_captacion_activity
-        success = log_captacion_activity(obj_id, actual_name, action, channel, message, phone, result, template_used)
+        loop = asyncio.get_running_loop()
+        success = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: log_captacion_activity(obj_id, actual_name, action, channel, message, phone, result, template_used)
+        )
         return {"status": "ok"} if success else {"status": "error"}
     except Exception as e:
         logger.error(f"Error logging captacion action: {e}")
@@ -1293,31 +1309,26 @@ async def api_captacion_log_action(request: Request):
 @app.get("/api/captacion/templates/personal")
 async def api_get_personal_templates(request: Request):
     username_str = await get_current_user(request)
-    from chatbot.storage import get_async_db
-    _adb = get_async_db()
-    user_doc = await _adb["usuarios"].find_one({"username": username_str})
+    user_doc = await get_current_user_doc(request)
     actual_name = user_doc.get("nombre", username_str) if user_doc else username_str
-    
-    return get_personal_templates(actual_name)
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_personal_templates(actual_name))
 
 @app.post("/api/captacion/templates/personal")
 async def api_save_personal_template(request: Request):
     username_str = await get_current_user(request)
-    from chatbot.storage import get_async_db
-    _adb = get_async_db()
-    user_doc = await _adb["usuarios"].find_one({"username": username_str})
+    user_doc = await get_current_user_doc(request)
     actual_name = user_doc.get("nombre", username_str) if user_doc else username_str
     
     data = await request.json()
-    tid = save_personal_template(actual_name, data)
+    loop = asyncio.get_running_loop()
+    tid = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: save_personal_template(actual_name, data))
     return {"status": "ok", "id": tid}
 
 @app.delete("/api/captacion/templates/personal")
 async def api_delete_personal_template(request: Request):
     username_str = await get_current_user(request)
-    from chatbot.storage import get_async_db
-    _adb = get_async_db()
-    user_doc = await _adb["usuarios"].find_one({"username": username_str})
+    user_doc = await get_current_user_doc(request)
     actual_name = user_doc.get("nombre", username_str) if user_doc else username_str
     
     data = await request.json()
@@ -1325,20 +1336,19 @@ async def api_delete_personal_template(request: Request):
     if not tid:
         raise HTTPException(status_code=400, detail="Falta ID")
         
-    success = delete_personal_template(tid, actual_name)
+    loop = asyncio.get_running_loop()
+    success = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: delete_personal_template(tid, actual_name))
     return {"status": "ok"} if success else {"status": "error"}
 
 @app.post("/api/captacion/distribute")
 async def api_distribute_captacion(request: Request):
-    username = await get_current_user(request)
-    from chatbot.storage import get_async_db
-    _adb = get_async_db()
-    user = await _adb["usuarios"].find_one({"username": username})
+    user = await get_current_user_doc(request)
     
     if user.get("rol") not in ["admin", "supervisor"]:
         raise HTTPException(status_code=403, detail="No autorizado")
         
-    count = distribute_sourced_leads()
+    loop = asyncio.get_running_loop()
+    count = await loop.run_in_executor(_WORKER_THREAD_POOL, distribute_sourced_leads)
     return {"status": "ok", "assigned": count}
 
 async def captacion_distribution_loop():
@@ -1348,7 +1358,8 @@ async def captacion_distribution_loop():
             background_tasks_status["captacion_distributor"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
             background_tasks_status["captacion_distributor"]["status"] = "running"
             
-            count = distribute_sourced_leads()
+            loop = asyncio.get_running_loop()
+            count = await loop.run_in_executor(_WORKER_THREAD_POOL, distribute_sourced_leads)
             if count > 0:
                 logger.info(f"[BACKGROUND] Se asignaron {count} nuevas captaciones automáticamente.")
                 
@@ -1384,9 +1395,9 @@ async def view_crm_list(
     user_name = user.get("nombre", "")
 
     limit = 15  # Aumentado a 15 (sin skip, el costo es O(1))
-    leads, kpis, total_count = await get_crm_leads_list(
-        filtro_estado=estado, 
-        busqueda=busqueda, 
+    leads_task = get_crm_leads_list(
+        filtro_estado=estado,
+        busqueda=busqueda,
         ordenar_por=orden,
         user_role=user_role,
         user_name=user_name,
@@ -1394,6 +1405,9 @@ async def view_crm_list(
         limit=limit,
         cursor_last_event_at=cursor
     )
+    exec_task = get_unique_executives() if user_role in ["admin", "supervisor"] else asyncio.sleep(0, result=[])
+    leads_payload, executives = await asyncio.gather(leads_task, exec_task)
+    leads, kpis, total_count = leads_payload
 
     # next_cursor: el created_at del \u00faltimo lead de esta p\u00e1gina
     next_cursor = None
@@ -1404,8 +1418,6 @@ async def view_crm_list(
                 next_cursor = last_ts.isoformat() if hasattr(last_ts, "isoformat") else str(last_ts)
             except Exception:
                 next_cursor = None
-
-    executives = await get_unique_executives() if user_role in ["admin", "supervisor"] else []
 
     return templates.TemplateResponse("crm_leads_list.html", {
         "request": request, 

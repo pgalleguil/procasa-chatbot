@@ -102,7 +102,6 @@ def process_chat_timeline(messages):
 # --- REGISTRO DE EVENTOS (Delegado a storage) ---
 from chatbot.storage import log_event # Usamos el logger centralizado
 from chatbot.crm_service import CrmService
-from chatbot.utils import calculate_business_minutes
 from chatbot.constants import PipelineStage, InteractionType, UNASSIGNED_LABEL
 
 # log_crm_event se mantiene como alias por compatibilidad pero usa storage
@@ -453,40 +452,33 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         # (SaaS Performance: Metrics are precomputed in lead doc)
         config_estado = state_map.get(estado_final, state_map[PipelineStage.CONTACTED])
 
-        # 5. SLA / TIEMPO DE RESPUESTA (Dinámico para tiempo real)
+        # 5. SLA / TIEMPO DE RESPUESTA
+        # Optimización: evitar recalcular minutos hábiles por cada lead en cada request.
+        # Se prioriza `sla_status` precomputado en DB y solo se hace fallback O(1).
         sla_status = lead.get("sla_status", "good")
-        
-        # Un lead también se considera gestionado (fulfilled) si tiene eventos de gestión recientes
         if estado_final == PipelineStage.NEW and not has_management:
-            # Calcular SLA en tiempo real midiendo desde la ASIGNACIÓN (Sincronizado con Reporte SLA)
-            start_time = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
-            if start_time:
-                now_cl = datetime.now(CHILE_TZ)
-                try:
-                    if isinstance(start_time, str):
-                        dt_start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                    else:
-                        dt_start = start_time
-                    if dt_start.tzinfo is None:
-                        dt_start = CHILE_TZ.localize(dt_start)
-                    else:
-                        dt_start = dt_start.astimezone(CHILE_TZ)
-                        
-                    # Contamos minutos hábiles para ser justos con los fines de semana/noches
-                    mins = calculate_business_minutes(dt_start, now_cl)
-                    sla_hours = mins / 60.0
-
-                    if sla_hours <= 1.5:
+            if not sla_status:
+                start_time = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
+                if start_time:
+                    try:
+                        if isinstance(start_time, str):
+                            dt_start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                        else:
+                            dt_start = start_time
+                        if dt_start.tzinfo is None:
+                            dt_start = CHILE_TZ.localize(dt_start)
+                        else:
+                            dt_start = dt_start.astimezone(CHILE_TZ)
+                        elapsed_hours = (datetime.now(CHILE_TZ) - dt_start).total_seconds() / 3600.0
+                        if elapsed_hours <= 1.5:
+                            sla_status = "good"
+                        elif elapsed_hours < 3.0:
+                            sla_status = "near_critical"
+                        else:
+                            sla_status = "critical"
+                    except Exception:
                         sla_status = "good"
-                    elif sla_hours < 3.0: # 3.0 horas hábiles es el threshold del reporte crítico
-                        sla_status = "near_critical"
-                    else:
-                        sla_status = "critical"
-                except Exception as eval_e:
-                    logger.error(f"Error evaluando metricas de SLA en tarjeta: {eval_e}")
-                    pass
         else:
-            # Override visual para leads que ya están en gestión
             sla_status = "fulfilled"
             
         sla_labels_map = {
@@ -540,13 +532,20 @@ async def get_unique_executives():
 
     from chatbot.storage import get_async_db
     adb = get_async_db()
-    import asyncio
-    execs_1, execs_2 = await asyncio.gather(
-        adb["leads"].distinct("ejecutivo_asignado"),
-        adb["leads"].distinct("prospecto.ejecutivo")
-    )
-    
-    all_execs = set([e for e in execs_1 if e] + [e for e in execs_2 if e])
+    # Fast-path: usar colección usuarios (mucho menor que leads).
+    users = await adb["usuarios"].find(
+        {"rol": {"$in": ["agente", "supervisor", "admin"]}},
+        {"nombre": 1}
+    ).to_list(length=500)
+    all_execs = set(str(u.get("nombre", "")).strip() for u in users if u.get("nombre"))
+    # Fallback si usuarios viene vacío.
+    if not all_execs:
+        import asyncio
+        execs_1, execs_2 = await asyncio.gather(
+            adb["leads"].distinct("ejecutivo_asignado"),
+            adb["leads"].distinct("prospecto.ejecutivo")
+        )
+        all_execs = set([e for e in execs_1 if e] + [e for e in execs_2 if e])
     
     # Limpieza para que el filtro no muestre duplicados
     cleaned_execs = set()

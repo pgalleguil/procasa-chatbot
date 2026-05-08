@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------
 _CACHE_TTL_SECONDS = 300  # 5 minutos
 _cache_index_ensured = False
+_REPORT_CACHE_KEY = "leads_executive_report_v2"
 
 def _ensure_cache_index():
     """Crea el TTL index la primera vez. Es idempotente."""
@@ -140,7 +141,7 @@ def get_leads_executive_report():
     - Tabla de leads: top 500 más recientes, proyección mínima
     - Cache: 5 minutos en memoria (evita recalcular en cada request)
     """
-    cached = _get_cached("leads_executive_report")
+    cached = _get_cached(_REPORT_CACHE_KEY)
     if cached:
         logger.info("LEADS_INTELLIGENCE: cache hit")
         return cached
@@ -252,7 +253,7 @@ def get_leads_executive_report():
         pct_delta_total_week = ((leads_hoy - leads_week) / leads_week * 100) if leads_week > 0 else 0
 
         # ----------------------------------------------------------------
-        # TABLA DE LEADS — proyección mínima, solo top 500 más recientes
+        # TABLA DE LEADS — proyección mínima, solo top 200 más recientes
         # ----------------------------------------------------------------
         projection = {
             "phone": 1,
@@ -264,12 +265,16 @@ def get_leads_executive_report():
             "prospecto.tipo": 1,
             "prospecto.comuna": 1,
             "prospecto.precio_uf": 1,
-            "bi_analytics_global": 1,
+            "bi_analytics_global.RESULTADO_CHAT": 1,
+            "bi_analytics_global.RECUPERABILIDAD": 1,
+            "bi_analytics_global.URGENCIA": 1,
+            "bi_analytics_global.TIPO_CONTACTO": 1,
+            "bi_analytics_global.ALERTA_CRITICA": 1,
             "pipeline_stage": 1,
             "created_at": 1,
         }
 
-        docs_cursor = db["leads"].find({}, projection).sort("_id", -1).limit(500)
+        docs_cursor = db["leads"].find({}, projection).sort("_id", -1).limit(200)
         leads_table = []
         leads_calientes = 0
         leads_calientes_con_datos = 0
@@ -393,7 +398,7 @@ def get_leads_executive_report():
 
         t_end = time.perf_counter()
         logger.info(f"[PERF] LEADS_INTELLIGENCE: computed via $facet in {(t_end - t_start)*1000:.1f}ms (cache miss), caching for 5min")
-        _set_cached("leads_executive_report", result)
+        _set_cached(_REPORT_CACHE_KEY, result)
         return result
 
     except Exception as e:

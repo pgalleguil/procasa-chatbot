@@ -102,6 +102,7 @@ def process_chat_timeline(messages):
 # --- REGISTRO DE EVENTOS (Delegado a storage) ---
 from chatbot.storage import log_event # Usamos el logger centralizado
 from chatbot.crm_service import CrmService
+from chatbot.utils import calculate_business_minutes
 from chatbot.constants import PipelineStage, InteractionType, UNASSIGNED_LABEL
 
 # log_crm_event se mantiene como alias por compatibilidad pero usa storage
@@ -453,31 +454,35 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         config_estado = state_map.get(estado_final, state_map[PipelineStage.CONTACTED])
 
         # 5. SLA / TIEMPO DE RESPUESTA
-        # Optimización: evitar recalcular minutos hábiles por cada lead en cada request.
-        # Se prioriza `sla_status` precomputado en DB y solo se hace fallback O(1).
+        # Corrección funcional: para "Sin Atender" priorizamos SIEMPRE el cálculo real
+        # con minutos hábiles desde asignación para no mostrar falsos "En tiempo".
         sla_status = lead.get("sla_status", "good")
-        if estado_final == PipelineStage.NEW and not has_management:
-            if not sla_status:
-                start_time = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
-                if start_time:
-                    try:
-                        if isinstance(start_time, str):
-                            dt_start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                        else:
-                            dt_start = start_time
-                        if dt_start.tzinfo is None:
-                            dt_start = CHILE_TZ.localize(dt_start)
-                        else:
-                            dt_start = dt_start.astimezone(CHILE_TZ)
-                        elapsed_hours = (datetime.now(CHILE_TZ) - dt_start).total_seconds() / 3600.0
-                        if elapsed_hours <= 1.5:
-                            sla_status = "good"
-                        elif elapsed_hours < 3.0:
-                            sla_status = "near_critical"
-                        else:
-                            sla_status = "critical"
-                    except Exception:
+        if estado_final == PipelineStage.NEW:
+            start_time = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
+            if start_time:
+                try:
+                    if isinstance(start_time, str):
+                        dt_start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    else:
+                        dt_start = start_time
+                    if dt_start.tzinfo is None:
+                        dt_start = CHILE_TZ.localize(dt_start)
+                    else:
+                        dt_start = dt_start.astimezone(CHILE_TZ)
+
+                    mins = calculate_business_minutes(dt_start, datetime.now(CHILE_TZ))
+                    sla_hours = mins / 60.0
+
+                    if sla_hours <= 1.5:
                         sla_status = "good"
+                    elif sla_hours < 3.0:
+                        sla_status = "near_critical"
+                    else:
+                        sla_status = "critical"
+                except Exception:
+                    sla_status = lead.get("sla_status", "good")
+            else:
+                sla_status = "good"
         else:
             sla_status = "fulfilled"
             

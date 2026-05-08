@@ -1751,6 +1751,33 @@ def asegurar_indices_db():
     except Exception as e:
         logger.warning(f"Error creando índices: {e}")
 
+import functools
+
+async def run_db(operation_name: str, fn, *args, **kwargs):
+    """
+    Ejecuta operaciones síncronas de PyMongo en el _WORKER_THREAD_POOL.
+    Evita congelamientos del Event Loop de FastAPI por timeouts de red de Mongo.
+    """
+    loop = asyncio.get_running_loop()
+    t0 = time.time()
+    try:
+        if kwargs or args:
+            func = functools.partial(fn, *args, **kwargs)
+        else:
+            func = fn
+            
+        result = await loop.run_in_executor(_WORKER_THREAD_POOL, func)
+        duration_ms = (time.time() - t0) * 1000
+        
+        # Log solo de operaciones lentas > 2000ms
+        if duration_ms > 2000:
+            logger.warning(f"[BG_MONGO] loop=background operation={operation_name} duration={duration_ms:.0f}ms")
+            
+        return result
+    except Exception as e:
+        logger.error(f"[BG_MONGO] ERROR en {operation_name}: {e}")
+        raise e
+
 async def inactive_lead_nudge_loop():
     logger.info("[NUDGE_LOOP] Iniciando monitor de reactivación (Nudge) de leads inactivos...")
     while True:
@@ -1797,12 +1824,14 @@ async def inactive_lead_nudge_loop():
                 "messages.0": {"$exists": True}
             }
 
-            leads = list(db["leads"].find(query, {
-                "phone": 1, "messages": 1, "stage": 1,
-                "ejecutivo_asignado": 1, "prospecto": 1,
-                "nudge_count": 1, "nudge_sent_at": 1, "nudge_last_date": 1,
-                "last_intent": 1, "lifecycle": 1
-            }))
+            def _fetch_nudge_leads():
+                return list(db["leads"].find(query, {
+                    "phone": 1, "messages": 1, "stage": 1,
+                    "ejecutivo_asignado": 1, "prospecto": 1,
+                    "nudge_count": 1, "nudge_sent_at": 1, "nudge_last_date": 1,
+                    "last_intent": 1, "lifecycle": 1
+                }))
+            leads = await run_db("nudge_loop_find", _fetch_nudge_leads)
             
             for lead in leads:
                 messages = lead.get("messages", [])
@@ -1816,20 +1845,16 @@ async def inactive_lead_nudge_loop():
                 )
                 if ejecutivo not in UNASSIGNED_LABELS:
                     logger.debug(f"[NUDGE] Omitido {lead.get('phone')}: ya asignado a {ejecutivo}.")
-                    db["leads"].update_one(
-                        {"_id": lead["_id"]},
-                        {"$set": {"nudge_status": "skipped_has_executive"}}
-                    )
+                    _lead_id = lead["_id"]
+                    await run_db("nudge_skip_executive", lambda: db["leads"].update_one({"_id": _lead_id}, {"$set": {"nudge_status": "skipped_has_executive"}}))
                     continue
 
                 # ─── FILTRO 2: intención avanzada (visita, oferta, negociación) ───
                 last_intent = lead.get("last_intent") or lead.get("prospecto", {}).get("last_intent", "")
                 if str(last_intent).upper() in INTENTS_NO_NUDGE:
                     logger.debug(f"[NUDGE] Omitido {lead.get('phone')}: intención avanzada '{last_intent}'.")
-                    db["leads"].update_one(
-                        {"_id": lead["_id"]},
-                        {"$set": {"nudge_status": "skipped_advanced_intent"}}
-                    )
+                    _lead_id = lead["_id"]
+                    await run_db("nudge_skip_intent", lambda: db["leads"].update_one({"_id": _lead_id}, {"$set": {"nudge_status": "skipped_advanced_intent"}}))
                     continue
 
                 last_msg = messages[-1]
@@ -1845,10 +1870,8 @@ async def inactive_lead_nudge_loop():
                 # la conversación ya está en marcha — NO mandar nudge genérico.
                 if user_msgs_count >= 2 and bot_msgs_count >= 3:
                     logger.debug(f"[NUDGE] Omitido {lead.get('phone')}: conversación activa ({user_msgs_count}u/{bot_msgs_count}b msgs).")
-                    db["leads"].update_one(
-                        {"_id": lead["_id"]},
-                        {"$set": {"nudge_status": "skipped_active_conversation"}}
-                    )
+                    _lead_id = lead["_id"]
+                    await run_db("nudge_skip_active", lambda: db["leads"].update_one({"_id": _lead_id}, {"$set": {"nudge_status": "skipped_active_conversation"}}))
                     continue
 
                 # Ver cuándo fue el último mensaje
@@ -1883,8 +1906,9 @@ async def inactive_lead_nudge_loop():
                         except Exception:
                             pass
 
-                    # Re-validar en tiempo real antes de enviar
-                    fresh_lead = db["leads"].find_one({"_id": lead["_id"]})
+                    # Re-validar en tiempo real antes de enviar (async)
+                    _lead_id = lead["_id"]
+                    fresh_lead = await run_db("nudge_prevalidate", lambda: db["leads"].find_one({"_id": _lead_id}))
                     fresh_msgs = (fresh_lead.get("messages", []) or []) if fresh_lead else []
                     if fresh_msgs and fresh_msgs[-1].get("role") == "user":
                         logger.info(f"[NUDGE] Cancelado para {lead.get('phone')} (Respondi\u00f3 justo ahora).")
@@ -1908,14 +1932,9 @@ async def inactive_lead_nudge_loop():
                             "tipo": "nudge_reactivacion",
                             "intencion": "reactivacion_automatica"
                         })
-                        db["leads"].update_one(
-                            {"_id": lead["_id"]},
-                            {"$set": {
-                                "nudge_sent_at": now_cl_str,
-                                "nudge_last_date": today_str,
-                                "nudge_count": nudge_count
-                            }}
-                        )
+                        _lead_id = lead["_id"]
+                        _update = {"$set": {"nudge_sent_at": now_cl_str, "nudge_last_date": today_str, "nudge_count": nudge_count}}
+                        await run_db("nudge_update", lambda: db["leads"].update_one({"_id": _lead_id}, _update))
                         await asyncio.sleep(5)  # Throttling ligero
                         
         except asyncio.CancelledError:
@@ -1984,7 +2003,9 @@ async def reassign_unassigned_leads_loop():
                 ]
             }
             
-            leads = list(db["leads"].find(query, {"_id": 1}).limit(20))
+            def _find_unassigned():
+                return list(db["leads"].find(query, {"_id": 1}).limit(20))
+            leads = await run_db("reassign_producer_find", _find_unassigned)
             if leads:
                 logger.info(f"[PRODUCER] Encontró {len(leads)} leads pendientes. Encolando...")
                 for lead in leads:
@@ -2024,7 +2045,11 @@ async def cache_prewarmer_loop():
             now_utc = datetime.now(timezone.utc)
 
             # 1) Skip inteligente: si cache aún tiene >120s de vida, no recalcular.
-            cache_doc = db["cache_store"].find_one({"_id": cache_key}, {"expires_at": 1})
+            loop_ref = asyncio.get_running_loop()
+            cache_doc = await loop_ref.run_in_executor(
+                _WORKER_THREAD_POOL,
+                lambda: db["cache_store"].find_one({"_id": cache_key}, {"expires_at": 1})
+            )
             expires_at = cache_doc.get("expires_at") if cache_doc else None
             if expires_at:
                 if expires_at.tzinfo is None:
@@ -2037,18 +2062,13 @@ async def cache_prewarmer_loop():
 
             # 2) Lock distribuido: evita prewarm simultáneo entre instancias/restarts.
             lock_until = now_utc + timedelta(seconds=90)
-            lock_doc = db["cache_locks"].find_one_and_update(
-                {
-                    "_id": lock_key,
-                    "$or": [
-                        {"expires_at": {"$exists": False}},
-                        {"expires_at": {"$lte": now_utc}}
-                    ]
-                },
-                {"$set": {"expires_at": lock_until, "updated_at": now_utc}},
-                upsert=True,
-                return_document=ReturnDocument.AFTER
-            )
+            def _acquire_lock():
+                return db["cache_locks"].find_one_and_update(
+                    {"_id": lock_key, "$or": [{"expires_at": {"$exists": False}}, {"expires_at": {"$lte": now_utc}}]},
+                    {"$set": {"expires_at": lock_until, "updated_at": now_utc}},
+                    upsert=True, return_document=ReturnDocument.AFTER
+                )
+            lock_doc = await loop_ref.run_in_executor(_WORKER_THREAD_POOL, _acquire_lock)
             if not lock_doc:
                 logger.info("[CACHE_WARMER] Skip: lock activo en otra instancia")
                 await asyncio.sleep(60)
@@ -2065,7 +2085,7 @@ async def cache_prewarmer_loop():
             elapsed_ms = (time.time() - t0) * 1000
             logger.info(f"[CACHE_WARMER] LEADS_INTELLIGENCE: cache pre-warmed en {elapsed_ms:.0f}ms")
             # Liberar lock explícitamente tras warm exitoso.
-            db["cache_locks"].update_one({"_id": lock_key}, {"$set": {"expires_at": now_utc}})
+            await loop_ref.run_in_executor(_WORKER_THREAD_POOL, lambda: db["cache_locks"].update_one({"_id": lock_key}, {"$set": {"expires_at": now_utc}}))
         except asyncio.TimeoutError:
             logger.warning("[CACHE_WARMER] Timeout >8s; se omite este ciclo para evitar jitter")
         except asyncio.CancelledError:

@@ -14,7 +14,16 @@ _mongo_client = None
 def get_db():
     global _mongo_client
     if _mongo_client is None:
-        _mongo_client = MongoClient(Config.MONGO_URI, serverSelectionTimeoutMS=10000)
+        # Timeouts defensivos para Render: evita freezes de 60s por conexiones TCP muertas
+        # socketTimeoutMS: max wait para respuesta de una operacion en progreso
+        # connectTimeoutMS: max espera al establecer una nueva conexion
+        # serverSelectionTimeoutMS: max espera para encontrar un servidor Mongo disponible
+        _mongo_client = MongoClient(
+            Config.MONGO_URI,
+            socketTimeoutMS=8000,
+            connectTimeoutMS=5000,
+            serverSelectionTimeoutMS=10000,
+        )
     return _mongo_client[Config.DB_NAME]
 
 # --- ASYNC MOTOR INFRASTRUCTURE ---

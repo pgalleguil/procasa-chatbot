@@ -19,9 +19,10 @@ import json
 import pytz # Importante para la hora local
 
 # ========================= THREAD POOL CONTROLADO =========================
-# Pool acotado de 5 workers para tareas sincrónicas en background.
-# Evita crecimiento descontrolado de threads bajo carga.
-_THREAD_POOL = ThreadPoolExecutor(max_workers=5, thread_name_prefix="procasa_worker")
+# Pool separado para request web (evita que tareas batch bloqueen respuestas HTTP).
+_WEB_THREAD_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="procasa_web")
+# Pool separado para workers de procesamiento de leads.
+_WORKER_THREAD_POOL = ThreadPoolExecutor(max_workers=5, thread_name_prefix="procasa_worker")
 
 # === NUEVAS IMPORTACIONES PARA GOOGLE ===
 import httpx 
@@ -82,9 +83,7 @@ async def lifespan(app: FastAPI):
     # Startup logic
     logger.info("Bot PRO Iniciando (Lifespan Startup)...")
 
-    # FIX CRÍTICO: NO sobreescribir el default_executor del loop.
-    # El _THREAD_POOL se usará EXCLUSIVAMENTE para process_lead en los workers.
-    logger.info(f"ThreadPoolExecutor configurado en background: max_workers=5")
+    logger.info("ThreadPoolExecutor configurado: web=8, worker=5")
     
     global lead_processing_queue
     lead_processing_queue = asyncio.Queue()
@@ -132,8 +131,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error apagando tareas: {e}")
     finally:
-        _THREAD_POOL.shutdown(wait=False)
-        logger.info("ThreadPoolExecutor cerrado.")
+        _WEB_THREAD_POOL.shutdown(wait=False)
+        _WORKER_THREAD_POOL.shutdown(wait=False)
+        logger.info("ThreadPoolExecutors cerrados.")
 
 app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025", lifespan=lifespan)
 
@@ -237,22 +237,29 @@ async def slide_session_middleware(request: Request, call_next):
             username = payload.get("sub")
             
             if username:
-                # Renovación automática con cada interacción (Sliding Session)
-                new_token = create_access_token({"sub": username})
-                
-                # Seteamos la nueva cookie con 2 HORAS (7200 segundos)
-                response.set_cookie(
-                    key="access_token",
-                    value=new_token,
-                    httponly=True,
-                    secure=True,
-                    samesite="lax",
-                    max_age=7200,       # 120 minutos / 2 horas
-                    path="/"
-                )
-                # Log ocasional para no saturar, pero útil para diagnóstico
-                if time.time() % 30 < 5: # Log aproximadamente cada 30s de actividad
-                    logger.info(f"[SESSION_RENEW] Sesión renovada para {username} (2h de margen)")
+                # Optimización: renovar solo si falta <= 30 min para expirar.
+                # Evita firmar JWT + set-cookie en cada request.
+                exp_ts = payload.get("exp")
+                should_renew = True
+                if exp_ts:
+                    try:
+                        now_ts = datetime.now(pytz.utc).timestamp()
+                        should_renew = (float(exp_ts) - now_ts) <= 1800
+                    except Exception:
+                        should_renew = True
+                if should_renew:
+                    new_token = create_access_token({"sub": username})
+                    response.set_cookie(
+                        key="access_token",
+                        value=new_token,
+                        httponly=True,
+                        secure=True,
+                        samesite="lax",
+                        max_age=7200,
+                        path="/"
+                    )
+                    if time.time() % 30 < 5:
+                        logger.info(f"[SESSION_RENEW] Sesión renovada para {username} (2h de margen)")
         except JWTError as e:
             # Solo logueamos si no es una simple expiración (para detectar ataques o desajustes de clave)
             if "expired" not in str(e).lower():
@@ -493,14 +500,14 @@ async def api_leads_reporte(request: Request):
         raise HTTPException(status_code=401, detail="No autorizado")
     # FIX: run_in_executor evita bloquear el event loop durante cache miss
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_THREAD_POOL, get_leads_executive_report)
+    return await loop.run_in_executor(_WEB_THREAD_POOL, get_leads_executive_report)
 
 @app.get("/api/leads-intelligence")
 async def leads_intelligence_endpoint():
     # FIX: get_leads_executive_report() es síncrona (pymongo). Sin executor bloqueaba
     # el event loop completo durante ~1.6s en cada cache miss (cada 5 min).
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_THREAD_POOL, get_leads_executive_report)
+    return await loop.run_in_executor(_WEB_THREAD_POOL, get_leads_executive_report)
 
 @app.get("/leads-dashboard", response_class=HTMLResponse)
 async def ver_leads(request: Request):
@@ -614,7 +621,7 @@ async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None
     user = await adb["usuarios"].find_one({"username": username})
     
     loop = asyncio.get_running_loop()
-    data = await loop.run_in_executor(_THREAD_POOL, lambda: get_lead_detail_data(phone, property_code=codigo))
+    data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_lead_detail_data(phone, property_code=codigo))
     if not data: 
         return HTMLResponse("Lead no encontrado")
     
@@ -649,50 +656,46 @@ async def api_crm_log_action(request: Request):
         phone = data.get("phone")
         payload = data.get("data", {})
         event_type = payload.get("type")
-        
-        # INYECTAR HORA DE CHILE EN EL METADATA
+
         now_cl = datetime.now(CHILE_TZ)
         if "meta" not in payload:
             payload["meta"] = {}
         payload["meta"]["server_time_cl"] = now_cl.strftime("%Y-%m-%d %H:%M:%S")
-        
-        # 1) Auto-Promoción de estado si estaba "Sin Atender"
-        from chatbot.storage import get_db
-        db = get_db()
-        phone_clean = str(phone).replace("+", "").strip()
-        lead = db["leads"].find_one({"phone": {"$regex": f"^{phone_clean}"}})
-        
-        if lead:
-            current_stage = lead.get("stage") or lead.get("pipeline_stage")
-            from chatbot.constants import PipelineStage
-            if str(current_stage).lower() in ["nuevo", "new"] or current_stage == PipelineStage.NEW:
-                MANAGEMENT_EVENTS = [
-                    "SEND_WA_OWNER", "CLICK_WHATSAPP_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER",
-                    "CLICK_WHATSAPP_LEAD", "CLICK_PHONE_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD"
-                ]
-                if event_type in MANAGEMENT_EVENTS:
-                    from chatbot.crm_service import CrmService
-                    try:
-                        CrmService.update_stage(
-                            phone_clean,
-                            PipelineStage.CONTACTED,
-                            actor="agent",
-                            notes=f"Auto-promoción por acción rapida: {event_type}"
-                        )
-                    except Exception as prom_err:
-                        logger.error(f"Error auto-promoviendo lead tras gestión: {prom_err}")
 
-        # 2) Guardar el evento
-        log_crm_event(
-            phone=phone, 
-            event_type=event_type, 
-            meta_data=payload.get("meta")
-        )
+        def _sync_log_action():
+            from chatbot.storage import get_db
+            db = get_db()
+            phone_clean = str(phone).replace("+", "").strip()
+            lead = db["leads"].find_one({"phone": {"$regex": f"^{phone_clean}"}})
+
+            if lead:
+                current_stage = lead.get("stage") or lead.get("pipeline_stage")
+                from chatbot.constants import PipelineStage
+                if str(current_stage).lower() in ["nuevo", "new"] or current_stage == PipelineStage.NEW:
+                    management_events = [
+                        "SEND_WA_OWNER", "CLICK_WHATSAPP_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER",
+                        "CLICK_WHATSAPP_LEAD", "CLICK_PHONE_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD"
+                    ]
+                    if event_type in management_events:
+                        from chatbot.crm_service import CrmService
+                        try:
+                            CrmService.update_stage(
+                                phone_clean,
+                                PipelineStage.CONTACTED,
+                                actor="agent",
+                                notes=f"Auto-promocion por accion rapida: {event_type}"
+                            )
+                        except Exception as prom_err:
+                            logger.error(f"Error auto-promoviendo lead tras gestion: {prom_err}")
+
+            log_crm_event(phone=phone, event_type=event_type, meta_data=payload.get("meta"))
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(_WEB_THREAD_POOL, _sync_log_action)
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"Error logging CRM action: {e}")
         return {"status": "error"}
-
 @app.post("/api/crm/update")
 async def api_crm_update_lead(request: Request):
     try:
@@ -1070,7 +1073,7 @@ async def view_captaciones(
     limit = 10
     loop = asyncio.get_running_loop()
     items, total_count = await loop.run_in_executor(
-        _THREAD_POOL,
+        _WEB_THREAD_POOL,
         lambda: get_captacion_list(
             user_role=user_role,
             user_name=user_name,
@@ -1129,7 +1132,7 @@ async def view_captacion_detail_route(request: Request, obj_id: str):
 
 
     loop = asyncio.get_running_loop()
-    data = await loop.run_in_executor(_THREAD_POOL, lambda: get_captacion_detail(obj_id))
+    data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_captacion_detail(obj_id))
     if not data:
         return HTMLResponse("Propiedad no encontrada")
 
@@ -1155,31 +1158,31 @@ PENDING_MATCHING_REQUESTS = {} # obj_id -> timestamp
 @app.get("/api/captacion/{obj_id}/matching")
 async def api_get_matching_leads(request: Request, obj_id: str):
     await get_current_user(request)
-    
+
     from api_captacion import get_captacion_detail, get_matching_leads_analysis, get_cached_value, set_cached_value
-    
-    # 1. Recuperar de Caché Persistente (DB - Multi-worker safe)
+
+    loop = asyncio.get_running_loop()
+
     cache_key = f"matching_{obj_id}"
-    cached_data = get_cached_value(cache_key)
+    cached_data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_cached_value(cache_key))
     if cached_data:
         return cached_data
 
-    # 2. Protección contra Requests Concurrentes (Spam/Throttling)
     now = time.time()
     if obj_id in PENDING_MATCHING_REQUESTS:
         last_req = PENDING_MATCHING_REQUESTS[obj_id]
-        if now - last_req < 5: # No procesar la misma propiedad más de una vez cada 5s
-            return {"status": "processing", "message": "Ya se está calculando el matching. Por favor espere."}
-    
+        if now - last_req < 5:
+            return {"status": "processing", "message": "Ya se esta calculando el matching. Por favor espere."}
+
     PENDING_MATCHING_REQUESTS[obj_id] = now
 
     try:
-        data = get_captacion_detail(obj_id)
+        data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_captacion_detail(obj_id))
         if not data:
             raise HTTPException(status_code=404, detail="Propiedad no encontrada")
-        
-        ma = get_matching_leads_analysis(data)
-        
+
+        ma = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_matching_leads_analysis(data))
+
         response_data = {
             "exact": ma.get("exact", 0),
             "zone": ma.get("zone", 0),
@@ -1189,16 +1192,13 @@ async def api_get_matching_leads(request: Request, obj_id: str):
             "zone_name": ma.get("zone_name", "Sin zona"),
             "pitch_text": ma.get("pitch_text", "")
         }
-        
-        # 3. Guardar en Caché Persistente (TTL 5 min)
-        set_cached_value(cache_key, response_data, expire_seconds=300)
-        
+
+        await loop.run_in_executor(_WEB_THREAD_POOL, lambda: set_cached_value(cache_key, response_data, expire_seconds=300))
+
         return response_data
     finally:
-        # Liberar el bloqueo de request pendiente
         if obj_id in PENDING_MATCHING_REQUESTS:
             del PENDING_MATCHING_REQUESTS[obj_id]
-
 @app.post("/api/captacion/update")
 async def api_update_captacion(request: Request):
     try:
@@ -1917,7 +1917,7 @@ async def inactive_lead_nudge_loop():
 
 async def lead_consumer_worker(worker_id: int):
     """
-    Consumidor aislado. Toma leads de la cola y los procesa usando el _THREAD_POOL.
+    Consumidor aislado. Toma leads de la cola y los procesa usando el _WORKER_THREAD_POOL.
     Mantiene el ritmo estable y no satura el event loop ni el default executor.
     """
     logger.info(f"[CONSUMER-{worker_id}] Worker iniciado y escuchando cola...")
@@ -1927,8 +1927,8 @@ async def lead_consumer_worker(worker_id: int):
             lead_id = await lead_processing_queue.get()
             try:
                 t0 = time.time()
-                # Se usa _THREAD_POOL explícitamente, aislando el trabajo pesado
-                await loop.run_in_executor(_THREAD_POOL, LeadProcessingService.process_lead, lead_id)
+                # Worker pool dedicado: evita interferencia con requests HTTP.
+                await loop.run_in_executor(_WORKER_THREAD_POOL, LeadProcessingService.process_lead, lead_id)
                 elapsed_ms = (time.time() - t0) * 1000
                 logger.debug(f"[CONSUMER-{worker_id}] Lead {lead_id} procesado en {elapsed_ms:.0f}ms")
             except Exception as le:
@@ -2000,7 +2000,8 @@ async def cache_prewarmer_loop():
         try:
             loop = asyncio.get_running_loop()
             t0 = time.time()
-            await loop.run_in_executor(_THREAD_POOL, get_leads_executive_report)
+            # El prewarm corre fuera del pool web para no introducir jitter en requests.
+            await loop.run_in_executor(_WORKER_THREAD_POOL, get_leads_executive_report)
             elapsed_ms = (time.time() - t0) * 1000
             logger.info(f"[CACHE_WARMER] LEADS_INTELLIGENCE: cache pre-warmed en {elapsed_ms:.0f}ms")
         except asyncio.CancelledError:
@@ -2038,3 +2039,5 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     logger.info(f"Bot PRO iniciado → http://localhost:{port}")
     uvicorn.run(f"{module_name}:app", host="0.0.0.0", port=port, reload=True, log_level="info")
+
+

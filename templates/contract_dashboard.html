@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
-    <title>Procasa | MÃ³dulo de Convenios</title>
+    <title>Procasa | Módulo de Convenios</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -278,7 +278,7 @@
                 margin-top: 12px;
             }
 
-            /* TABLA â†’ CARDS en mÃ³vil */
+            /* TABLA â†’ CARDS en móvil */
             .table-responsive { overflow-x: visible; }
             .prop-table thead { display: none; }
             .prop-table, .prop-table tbody, .prop-table tr, .prop-table td {
@@ -353,14 +353,14 @@
 </head>
 
 <body>
-    <!-- Overlay para cerrar sidebar en mÃ³vil -->
+    <!-- Overlay para cerrar sidebar en móvil -->
     <div id="sidebarOverlay" onclick="toggleMobileMenu()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;"></div>
     <!-- Sidebar -->
     <nav class="sidebar" id="sidebar">
         <div class="brand">
             <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
                 style="max-height: 30px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
-                onerror="this.style.display='none'"> <span>MENÃš</span>
+                onerror="this.style.display='none'"> <span>MENÚ</span>
         </div>
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
         {% if user_role in ['supervisor', 'admin'] %}
@@ -374,7 +374,7 @@
             <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
         </a>
         <a href="/logout" class="nav-link logout" style="margin-top:5px">
-            <i class="fa-solid fa-power-off"></i> <span>Cerrar SesiÃ³n</span>
+            <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
         </a>
     </nav>
 
@@ -384,7 +384,7 @@
                 <div class="hamburger-mobile" onclick="toggleMobileMenu()">
                     <i class="fa-solid fa-bars"></i>
                 </div>
-                <h4 class="m-0 fw-bold">MÃ³dulo de Convenios (Ley 19.799)</h4>
+                <h4 class="m-0 fw-bold">Módulo de Convenios (Ley 19.799)</h4>
             </div>
             <button class="btn btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#modalNewContract">
                 <i class="fa-solid fa-plus me-2"></i> Nuevo Convenio
@@ -403,7 +403,7 @@
                     <thead>
                         <tr>
                             <th>Fecha</th>
-                            <th>CÃ³digo Interno</th>
+                            <th>Código Interno</th>
                             <th>Cliente</th>
                             <th>Propiedad / Rol</th>
                             <th>Estado</th>
@@ -414,7 +414,7 @@
                         {% for c in contracts %}
                         <tr>
                             <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y %H:%M') if c.created_at else '---' }}</td>
-                            <td data-label="CÃ³digo Interno" class="font-monospace text-accent">{{ c.property_code or c.contract_code[:8] }}</td>
+                            <td data-label="Código Interno" class="font-monospace text-accent">{{ c.property_code or c.contract_code[:8] }}</td>
                             <td data-label="Cliente">
                                 <b>{{ c.client_data.nombre }}</b><br>
                                 <small class="text-secondary">{{ c.client_data.rut }} | {{ c.client_data.email }}</small>
@@ -428,7 +428,7 @@
                                     {% if c.status == 'created' %}Creado
                                     {% elif c.status == 'sent' %}Enviado
                                     {% elif c.status == 'opened' %}Abierto
-                                    {% elif c.status == 'otp_requested' %}CÃ³digo Solicitado
+                                    {% elif c.status == 'otp_requested' %}Código Solicitado
                                     {% elif c.status == 'otp_verified' %}RUT Validado
                                     {% elif c.status == 'signed' %}Firmado
                                     {% else %}{{ c.status|title }}{% endif %}
@@ -474,7 +474,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="6" class="text-center text-secondary py-4">No hay convenios generados aÃºn.</td>
+                            <td colspan="6" class="text-center text-secondary py-4">No hay convenios generados aún.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -484,24 +484,24 @@
     </div>
 
     <datalist id="comunasChileList">
-        <option value="Santiago"><option value="Providencia"><option value="Las Condes"><option value="Ã‘uÃ±oa"><option value="MaipÃº">
-        <option value="Puente Alto"><option value="La Florida"><option value="San Miguel"><option value="EstaciÃ³n Central"><option value="Quilicura">
-        <option value="Pudahuel"><option value="San Bernardo"><option value="Vitacura"><option value="La Reina"><option value="PeÃ±alolÃ©n">
-        <option value="Lo Barnechea"><option value="ConchalÃ­"><option value="Independencia"><option value="Recoleta"><option value="Renca">
+        <option value="Santiago"><option value="Providencia"><option value="Las Condes"><option value="Ñuñoa"><option value="Maipú">
+        <option value="Puente Alto"><option value="La Florida"><option value="San Miguel"><option value="Estación Central"><option value="Quilicura">
+        <option value="Pudahuel"><option value="San Bernardo"><option value="Vitacura"><option value="La Reina"><option value="Peñalolén">
+        <option value="Lo Barnechea"><option value="Conchalí"><option value="Independencia"><option value="Recoleta"><option value="Renca">
         <option value="Cerrillos"><option value="Cerro Navia"><option value="Huechuraba"><option value="Lo Prado"><option value="Macul">
         <option value="Pedro Aguirre Cerda"><option value="Quinta Normal"><option value="Lo Espejo"><option value="La Cisterna"><option value="La Granja">
-        <option value="El Bosque"><option value="San RamÃ³n"><option value="La Pintana"><option value="Buin"><option value="Calera de Tango">
+        <option value="El Bosque"><option value="San Ramón"><option value="La Pintana"><option value="Buin"><option value="Calera de Tango">
         <option value="Colina"><option value="Lampa"><option value="Tiltil"><option value="Melipilla"><option value="Talagante">
-        <option value="Isla de Maipo"><option value="PeÃ±aflor"><option value="Padre Hurtado"><option value="El Monte"><option value="Pirque">
-        <option value="ViÃ±a del Mar"><option value="ValparaÃ­so"><option value="ConcÃ³n"><option value="QuilpuÃ©"><option value="Villa Alemana">
+        <option value="Isla de Maipo"><option value="Peñaflor"><option value="Padre Hurtado"><option value="El Monte"><option value="Pirque">
+        <option value="Viña del Mar"><option value="Valparaíso"><option value="Concón"><option value="Quilpué"><option value="Villa Alemana">
         <option value="San Antonio"><option value="Quillota"><option value="Los Andes"><option value="San Felipe"><option value="La Calera">
-        <option value="Rancagua"><option value="MachalÃ­"><option value="San Fernando"><option value="Pichilemu"><option value="CuricÃ³">
-        <option value="Talca"><option value="Linares"><option value="ConstituciÃ³n"><option value="ChillÃ¡n"><option value="ChillÃ¡n Viejo">
-        <option value="Los Ãngeles"><option value="ConcepciÃ³n"><option value="Talcahuano"><option value="San Pedro de la Paz"><option value="Coronel">
-        <option value="HualpÃ©n"><option value="Chiguayante"><option value="Temuco"><option value="Padre Las Casas"><option value="Villarrica">
-        <option value="PucÃ³n"><option value="Valdivia"><option value="Osorno"><option value="Puerto Montt"><option value="Puerto Varas">
+        <option value="Rancagua"><option value="Machalí"><option value="San Fernando"><option value="Pichilemu"><option value="Curicó">
+        <option value="Talca"><option value="Linares"><option value="Constitución"><option value="Chillán"><option value="Chillán Viejo">
+        <option value="Los íngeles"><option value="Concepción"><option value="Talcahuano"><option value="San Pedro de la Paz"><option value="Coronel">
+        <option value="Hualpén"><option value="Chiguayante"><option value="Temuco"><option value="Padre Las Casas"><option value="Villarrica">
+        <option value="Pucón"><option value="Valdivia"><option value="Osorno"><option value="Puerto Montt"><option value="Puerto Varas">
         <option value="Castro"><option value="Ancud"><option value="Coyhaique"><option value="Punta Arenas"><option value="Arica">
-        <option value="Iquique"><option value="Alto Hospicio"><option value="Antofagasta"><option value="Calama"><option value="CopiapÃ³">
+        <option value="Iquique"><option value="Alto Hospicio"><option value="Antofagasta"><option value="Calama"><option value="Copiapó">
         <option value="La Serena"><option value="Coquimbo">
     </datalist>
 
@@ -522,37 +522,37 @@
                                 <div class="row mb-3">
                                     <div class="col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del Cliente <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="cliente_nombre" placeholder="Ej: Juan PÃ©rez" required onblur="capitalizeName(this); validateField(this); triggerPreview();">
+                                        <input type="text" class="form-control" name="cliente_nombre" placeholder="Ej: Juan Pérez" required onblur="capitalizeName(this); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa el nombre completo.</div>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">RUT Cliente <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="cliente_rut" placeholder="12345678-9" required oninput="formatRut(this)" onblur="validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa un RUT vÃ¡lido.</div>
+                                        <div class="invalid-feedback">Ingresa un RUT válido.</div>
                                     </div>
                                 </div>
                                 <div class="row mb-3">
                                     <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">TelÃ©fono <span class="required-star">*</span></label>
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span class="required-star">*</span></label>
                                         <div class="input-group">
-                                            <select class="form-select" name="phone_country" style="max-width: 170px" onchange="updatePhonePrefix(); triggerPreview();">
-                                                <option value="+56" selected>CL +56</option>
-                                                <option value="+54">AR +54</option>
-                                                <option value="+57">CO +57</option>
-                                                <option value="+51">PE +51</option>
-                                                <option value="+1">US +1</option>
-                                                <option value="+34">ES +34</option>
+                                            <select class="form-select" name="phone_country" style="max-width: 110px" onchange="updatePhonePrefix(); triggerPreview();">
+                                                <option value="+56" selected>🇨🇱 +56</option>
+                                                <option value="+54">🇦🇷 +54</option>
+                                                <option value="+57">🇨🇴 +57</option>
+                                                <option value="+51">🇵🇪 +51</option>
+                                                <option value="+1">🇺🇸 +1</option>
+                                                <option value="+34">🇪🇸 +34</option>
                                             </select>
                                             <input type="text" class="form-control" name="phone" placeholder="912345678" required oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();" onblur="formatPhone(this); validateField(this); triggerPreview();">
                                         </div>
-                                        <div class="invalid-feedback">Ingresa un telÃ©fono (ej: +569...).</div>
+                                        <div class="invalid-feedback">Ingresa un teléfono (ej: +569...).</div>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Email <span class="required-star">*</span></label>
                                         <input type="email" class="form-control" name="email" required
                                             oninput="this.value=this.value.toLowerCase()"
                                             onblur="this.value=this.value.trim().toLowerCase(); validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa un correo electrÃ³nico vÃ¡lido (con @).</div>
+                                        <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).</div>
                                     </div>
                                 </div>
                                 
@@ -560,26 +560,26 @@
                                 
                                 <div class="row mb-3">
                                     <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Tipo de OperaciÃ³n <span class="required-star">*</span></label>
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Tipo de Operación <span class="required-star">*</span></label>
                                         <select class="form-select" name="tipo" onchange="triggerPreview()">
-                                            <option value="Venta">AutorizaciÃ³n de Venta</option>
-                                            <option value="Venta Exclusiva">AutorizaciÃ³n de Venta Exclusiva</option>
-                                            <option value="Arriendo">AutorizaciÃ³n de Arriendo</option>
-                                            <option value="Arriendo y AdministraciÃ³n">AutorizaciÃ³n de Arriendo y AdministraciÃ³n</option>
+                                            <option value="Venta">Autorización de Venta</option>
+                                            <option value="Venta Exclusiva">Autorización de Venta Exclusiva</option>
+                                            <option value="Arriendo">Autorización de Arriendo</option>
+                                            <option value="Arriendo y Administración">Autorización de Arriendo y Administración</option>
                                         </select>
                                     </div>
                                     <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Vigencia (DÃ­as) <span class="required-star">*</span></label>
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Vigencia (Días) <span class="required-star">*</span></label>
                                         <input type="number" min="30" max="720" step="1" class="form-control" name="vigencia" value="120" required oninput="triggerPreview()" onblur="validateField(this); triggerPreview();">
                                     </div>
                                 </div>
                                 <div class="row mb-3">
                                     <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">DirecciÃ³n Propiedad <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="propiedad_direccion" placeholder="Calle, NÃºmero" required
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Dirección Propiedad <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="propiedad_direccion" placeholder="Calle, Número" required
                                             oninput="triggerPreview()"
                                             onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa la direcciÃ³n.</div>
+                                        <div class="invalid-feedback">Ingresa la dirección.</div>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Comuna <span class="required-star">*</span></label>
@@ -595,7 +595,7 @@
                                         <input type="text" class="form-control" name="rol" placeholder="Ej: 223-12 â†’ 00223-012" required
                                             oninput="this.value=this.value.replace(/[^0-9\-]/g,''); triggerPreview();"
                                             onblur="formatRol(this); validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Solo nÃºmeros y un guiÃ³n (Ej: 223-12).</div>
+                                        <div class="invalid-feedback">Solo números y un guión (Ej: 223-12).</div>
                                     </div>
                                     <div class="col-md-4">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Precio <span class="required-star">*</span></label>
@@ -610,34 +610,34 @@
                                         </div>
                                         <input type="hidden" name="precio" value="">
                                         <input type="hidden" name="price_currency" value="UF">
-                                        <div class="form-text text-secondary" style="font-size:0.75rem">Se guardarÃ¡ como â€œvalor + monedaâ€ (UF o CLP).</div>
+                                        <div class="form-text text-secondary" style="font-size:0.75rem">Se guardará como "valor + monedaâ€ (UF o CLP).</div>
                                         <div class="invalid-feedback">Ingresa el monto.</div>
                                     </div>
                                     <div class="col-md-4">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">ComisiÃ³n <span class="required-star">*</span></label>
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comisión <span class="required-star">*</span></label>
                                         <select class="form-select" name="comision" required onchange="validateField(this); triggerPreview();">
                                             <option value="1%">1%</option>
                                             <option value="1.5%">1.5%</option>
                                             <option value="2%" selected>2%</option>
                                         </select>
-                                        <div class="form-text text-secondary" style="font-size:0.75rem">Este porcentaje quedarÃ¡ escrito en el convenio.</div>
+                                        <div class="form-text text-secondary" style="font-size:0.75rem">Este porcentaje quedará escrito en el convenio.</div>
                                         <div class="invalid-feedback">Requerido.</div>
                                     </div>
                                 </div>
                                 
                                 <div class="row mb-3">
                                     <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">CÃ³d Propiedad (Convecta) <span class="required-star">*</span></label>
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Cód Propiedad (Convecta) <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="property_code" placeholder="Ej: 15482" required
                                             oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();"
                                             onblur="validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Requerido (solo nÃºmeros).</div>
+                                        <div class="invalid-feedback">Requerido (solo números).</div>
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Origen</label>
                                         <select class="form-select" name="origen">
-                                            <option value="CaptaciÃ³n Interna">CaptaciÃ³n Interna</option>
-                                            <option value="CaptaciÃ³n Externa">CaptaciÃ³n Externa</option>
+                                            <option value="Captación Interna">Captación Interna</option>
+                                            <option value="Captación Externa">Captación Externa</option>
                                         </select>
                                     </div>
                                 </div>
@@ -714,7 +714,7 @@
 
         function formatRol(input) {
             const raw = input.value.replace(/[^0-9\-]/g, '').trim();
-            if (!raw.includes('-')) return; // no formatear si no hay guiÃ³n
+            if (!raw.includes('-')) return; // no formatear si no hay guión
             const parts = raw.split('-');
             const manzana = parts[0].padStart(5, '0').slice(0, 5);
             const predio  = (parts[1] || '').padStart(3, '0').slice(0, 3);
@@ -753,13 +753,13 @@
             const FIELD_LABELS = {
                 cliente_nombre: 'Nombre',
                 cliente_rut: 'RUT',
-                phone: 'TelÃ©fono',
+                phone: 'Teléfono',
                 email: 'Email',
-                propiedad_direccion: 'DirecciÃ³n',
+                propiedad_direccion: 'Dirección',
                 comuna: 'Comuna',
                 rol: 'ROL',
                 precio_valor: 'Precio',
-                comision: 'ComisiÃ³n'
+                comision: 'Comisión'
             };
 
             const missing = [];
@@ -913,7 +913,7 @@
         }
         
         async function deleteContract(code) {
-            if(!confirm('Â¿EstÃ¡s seguro de eliminar este contrato de la base de datos? Esto no se puede deshacer.')) return;
+            if(!confirm('Â¿Estás seguro de eliminar este contrato de la base de datos? Esto no se puede deshacer.')) return;
             try {
                 const res = await fetch(`/contracts/api/delete/${code}`, { method: 'DELETE' });
                 if(res.ok) {
@@ -922,7 +922,7 @@
                     alert('Error eliminando contrato.');
                 }
             } catch(e) {
-                alert('Error de conexiÃ³n.');
+                alert('Error de conexión.');
             }
         }
     </script>

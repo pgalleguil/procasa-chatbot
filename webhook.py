@@ -10,6 +10,10 @@ import hashlib
 from typing import Dict, Any
 import re
 import secrets
+import traceback
+import threading
+import subprocess
+import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 from pymongo import MongoClient
 from pymongo import ReturnDocument
@@ -61,6 +65,37 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger("procasa-full")
+
+# --- BLOCKING DETECTOR (temporal forensics) ---
+_ORIG_TIME_SLEEP = time.sleep
+_ORIG_SUBPROCESS_RUN = subprocess.run
+_ORIG_FUTURE_RESULT = concurrent.futures.Future.result
+
+def _in_event_loop_thread() -> bool:
+    try:
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
+
+def _forensic_sleep(seconds):
+    if _in_event_loop_thread():
+        logger.warning(f"[BLOCKING_DETECTOR] time.sleep({seconds}) llamado dentro de async/event loop")
+    return _ORIG_TIME_SLEEP(seconds)
+
+def _forensic_subprocess_run(*args, **kwargs):
+    if _in_event_loop_thread():
+        logger.warning("[BLOCKING_DETECTOR] subprocess.run llamado dentro de async/event loop")
+    return _ORIG_SUBPROCESS_RUN(*args, **kwargs)
+
+def _forensic_future_result(self, *args, **kwargs):
+    if _in_event_loop_thread():
+        logger.warning("[BLOCKING_DETECTOR] Future.result() llamado dentro de async/event loop")
+    return _ORIG_FUTURE_RESULT(self, *args, **kwargs)
+
+time.sleep = _forensic_sleep
+subprocess.run = _forensic_subprocess_run
+concurrent.futures.Future.result = _forensic_future_result
 
 # CONFIGURACIÓN ZONA HORARIA CHILE
 from chatbot.constants import CHILE_TZ
@@ -116,6 +151,7 @@ async def lifespan(app: FastAPI):
     nudge_task = asyncio.create_task(inactive_lead_nudge_loop())
     w_task = asyncio.create_task(cache_prewarmer_loop())  # PRE-WARMING de cache
     el_task = asyncio.create_task(event_loop_monitor_loop()) # MONITOR EVENT LOOP
+    tp_task = asyncio.create_task(threadpool_forensics_loop()) # MONITOR THREAD POOLS
     
     # Iniciar Consumers
     c1_task = asyncio.create_task(lead_consumer_worker(1))
@@ -141,11 +177,12 @@ async def lifespan(app: FastAPI):
     nudge_task.cancel()
     w_task.cancel()
     el_task.cancel()
+    tp_task.cancel()
     c1_task.cancel()
     c2_task.cancel()
     try:
         await asyncio.gather(
-            n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, w_task, el_task, c1_task, c2_task,
+            n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, c1_task, c2_task,
             return_exceptions=True
         )
     except Exception as e:
@@ -2110,6 +2147,22 @@ async def event_loop_monitor_loop():
             
             if lag_ms > 1000:
                 logger.error(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
+                # Forensics: dump de tasks activas + stack resumido
+                now = time.time()
+                for task in asyncio.all_tasks():
+                    if task.done():
+                        continue
+                    coro = task.get_coro()
+                    task_name = task.get_name()
+                    state = "cancelled" if task.cancelled() else "pending"
+                    stack_frames = task.get_stack(limit=8)
+                    stack_text = ""
+                    if stack_frames:
+                        stack_text = "".join(traceback.format_list(traceback.extract_stack(stack_frames[-1])))
+                    logger.error(
+                        f"[EVENT_LOOP_TASK_DUMP] name={task_name} coro={getattr(coro, '__qualname__', str(coro))} "
+                        f"state={state} ts={now:.3f} stack={stack_text[:1200]}"
+                    )
             elif lag_ms > 250:
                 logger.warning(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
         except asyncio.CancelledError:
@@ -2117,6 +2170,35 @@ async def event_loop_monitor_loop():
         except Exception as e:
             logger.error(f"[EVENT_LOOP_MONITOR] Error: {e}")
             await asyncio.sleep(5)
+
+async def threadpool_forensics_loop():
+    """Forensics de threadpools: tamaño, ocupación aproximada y cola."""
+    logger.info("[THREADPOOL_MONITOR] Iniciando monitor de threadpools...")
+    while True:
+        try:
+            pools = [
+                ("WEB", _WEB_THREAD_POOL),
+                ("WORKER", _WORKER_THREAD_POOL),
+                ("WARMER", _WARMER_THREAD_POOL),
+            ]
+            for name, pool in pools:
+                max_workers = getattr(pool, "_max_workers", -1)
+                threads = getattr(pool, "_threads", set())
+                active_threads = len([t for t in threads if t.is_alive()])
+                q = getattr(pool, "_work_queue", None)
+                queued = q.qsize() if q is not None and hasattr(q, "qsize") else -1
+                logger.info(
+                    f"[THREADPOOL_FORENSICS] pool={name} active={active_threads} max={max_workers} queued={queued}"
+                )
+                if queued >= max_workers and max_workers > 0:
+                    logger.warning(
+                        f"[THREADPOOL_SATURATED] pool={name} queued={queued} active={active_threads} max={max_workers}"
+                    )
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"[THREADPOOL_MONITOR] Error: {e}")
+        await asyncio.sleep(5)
 
 async def daily_report_loop():
     """Loop de fondo para enviar el reporte de SLA y Captaciones una vez al día."""

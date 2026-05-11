@@ -1,5 +1,9 @@
 # chatbot/storage.py
 from pymongo import MongoClient
+import time
+import threading
+import inspect
+import asyncio
 from datetime import datetime
 import pytz
 from config import Config
@@ -10,6 +14,57 @@ import logging
 logger = logging.getLogger(__name__)
 
 _mongo_client = None
+_mongo_forensics_patched = False
+
+def _patch_mongo_forensics():
+    """Instrumentación temporal forense para operaciones sync de PyMongo."""
+    global _mongo_forensics_patched
+    if _mongo_forensics_patched:
+        return
+    try:
+        from pymongo.collection import Collection
+        op_names = ["find", "find_one", "aggregate", "update_one", "find_one_and_update", "insert_one"]
+        for op in op_names:
+            original = getattr(Collection, op, None)
+            if not original or getattr(original, "__forensics_wrapped__", False):
+                continue
+
+            def _make_wrapper(name, fn):
+                def _wrapped(self, *args, **kwargs):
+                    t0 = time.perf_counter()
+                    thread_id = threading.get_ident()
+                    thread_name = threading.current_thread().name
+                    stack = inspect.stack()
+                    caller = stack[1].function if len(stack) > 1 else "unknown"
+                    stack_hint = " > ".join(f"{s.function}:{s.lineno}" for s in stack[1:5])
+                    in_event_loop = False
+                    try:
+                        asyncio.get_running_loop()
+                        in_event_loop = True
+                    except RuntimeError:
+                        in_event_loop = False
+                    if in_event_loop:
+                        logger.error(
+                            f"[MONGO_SYNC_ON_EVENT_LOOP] op={name} col={self.name} caller={caller} "
+                            f"thread={thread_name}:{thread_id} stack={stack_hint}"
+                        )
+                    try:
+                        return fn(self, *args, **kwargs)
+                    finally:
+                        dt_ms = (time.perf_counter() - t0) * 1000
+                        logger.info(
+                            f"[MONGO_OP] op={name} col={self.name} dur={dt_ms:.1f}ms "
+                            f"thread={thread_name}:{thread_id} caller={caller} stack={stack_hint} "
+                            f"in_event_loop={str(in_event_loop).lower()}"
+                        )
+                _wrapped.__forensics_wrapped__ = True
+                return _wrapped
+
+            setattr(Collection, op, _make_wrapper(op, original))
+        _mongo_forensics_patched = True
+        logger.info("[MONGO_FORENSICS] wrappers activos para operaciones sync")
+    except Exception as e:
+        logger.warning(f"[MONGO_FORENSICS] no se pudo activar wrappers: {e}")
 
 def get_db():
     global _mongo_client
@@ -23,7 +78,9 @@ def get_db():
             socketTimeoutMS=8000,
             connectTimeoutMS=5000,
             serverSelectionTimeoutMS=10000,
+            maxIdleTimeMS=45000,
         )
+        _patch_mongo_forensics()
     return _mongo_client[Config.DB_NAME]
 
 # --- ASYNC MOTOR INFRASTRUCTURE ---
@@ -39,7 +96,13 @@ def get_async_db():
     global _async_mongo_client
     if _async_mongo_client is None:
         from motor.motor_asyncio import AsyncIOMotorClient
-        _async_mongo_client = AsyncIOMotorClient(Config.MONGO_URI, serverSelectionTimeoutMS=10000)
+        _async_mongo_client = AsyncIOMotorClient(
+            Config.MONGO_URI,
+            socketTimeoutMS=8000,
+            connectTimeoutMS=5000,
+            serverSelectionTimeoutMS=10000,
+            maxIdleTimeMS=45000,
+        )
     return _async_mongo_client[Config.DB_NAME]
 
 COLLECTION_CONVERSATIONS = "leads"

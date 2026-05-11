@@ -1639,7 +1639,14 @@ async def process_pending_leads_loop():
                             prop_code = lead_data.get("property_code")
                             
                             logger.info(f"[BACKGROUND] Enviando lead individual {lead_phone} a {target_name}")
-                            msg = format_whatsapp_template(lead_data, target_name, prop_code, is_new_assignment=True)
+                            msg = await run_db(
+                                "lead_router.format_whatsapp_template",
+                                format_whatsapp_template,
+                                lead_data,
+                                target_name,
+                                prop_code,
+                                True
+                            )
                             
                             if lead_phone:
                                 try:
@@ -2208,7 +2215,7 @@ async def event_loop_monitor_loop():
             if lag_ms > 1000:
                 logger.error(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
                 # Dump completo solo en bloqueos severos para evitar ruido excesivo.
-                if lag_ms > 3000:
+                if lag_ms > 5000:
                     now = time.time()
                     for task in asyncio.all_tasks():
                         if task.done():

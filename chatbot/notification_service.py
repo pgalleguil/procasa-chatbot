@@ -37,7 +37,6 @@ class NotificationService:
             bool: True si se envió (o ya estaba enviado recientemente), False si falló.
         """
         try:
-            db = get_db()
             phone_clean = phone.replace("+", "").replace(" ", "").strip()
             
             # 1. VERIFICACIÓN DE IDEMPOTENCIA (Anti-Rebote)
@@ -57,7 +56,12 @@ class NotificationService:
             if lead_phone_hint:
                 dedup_query["meta.lead_phone"] = lead_phone_hint
 
-            existing_event = db["crm_events"].find_one(dedup_query)
+            # Evitar PyMongo sync sobre event loop: resolver en thread worker.
+            def _find_existing():
+                db = get_db()
+                return db["crm_events"].find_one(dedup_query)
+
+            existing_event = await asyncio.to_thread(_find_existing)
             
             if existing_event:
                 logger.warning(f"[NOTIFICATION] Bloqueado duplicado '{alert_type}' para {phone_clean} (Lead: {lead_phone_hint or 'N/A'}). Enviado previamente a las {existing_event.get('timestamp')}")
@@ -72,11 +76,13 @@ class NotificationService:
                 log_meta["type"] = alert_type # Clave para la búsqueda futura
                 log_meta["content_snippet"] = message[:50]
                 
-                log_event(
-                    phone=phone_clean,
-                    event_type=EventType.ALERT_SENT, # Usamos el tipo estándar
-                    actor="system",
-                    meta=log_meta
+                # log_event es sync y hace write + métricas; mover a thread para no bloquear loop.
+                await asyncio.to_thread(
+                    log_event,
+                    phone_clean,
+                    EventType.ALERT_SENT,
+                    "system",
+                    log_meta
                 )
                 logger.info(f"[NOTIFICATION] Enviado '{alert_type}' a {phone_clean}")
                 return True

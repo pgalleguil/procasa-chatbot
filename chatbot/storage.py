@@ -15,6 +15,15 @@ logger = logging.getLogger(__name__)
 
 _mongo_client = None
 _mongo_forensics_patched = False
+_mongo_log_last_ts = {}
+
+def _should_rate_log(key: str, every_seconds: float) -> bool:
+    now = time.time()
+    last = _mongo_log_last_ts.get(key, 0.0)
+    if now - last >= every_seconds:
+        _mongo_log_last_ts[key] = now
+        return True
+    return False
 
 def _patch_mongo_forensics():
     """Instrumentación temporal forense para operaciones sync de PyMongo."""
@@ -37,13 +46,15 @@ def _patch_mongo_forensics():
                     stack = inspect.stack()
                     caller = stack[1].function if len(stack) > 1 else "unknown"
                     stack_hint = " > ".join(f"{s.function}:{s.lineno}" for s in stack[1:5])
+                    file_hint = " > ".join((s.filename or "") for s in stack[1:8])
+                    from_motor = ("\\motor\\" in file_hint) or ("/motor/" in file_hint)
                     in_event_loop = False
                     try:
                         asyncio.get_running_loop()
                         in_event_loop = True
                     except RuntimeError:
                         in_event_loop = False
-                    if in_event_loop:
+                    if in_event_loop and (not from_motor):
                         logger.error(
                             f"[MONGO_SYNC_ON_EVENT_LOOP] op={name} col={self.name} caller={caller} "
                             f"thread={thread_name}:{thread_id} stack={stack_hint}"
@@ -52,11 +63,18 @@ def _patch_mongo_forensics():
                         return fn(self, *args, **kwargs)
                     finally:
                         dt_ms = (time.perf_counter() - t0) * 1000
-                        logger.info(
-                            f"[MONGO_OP] op={name} col={self.name} dur={dt_ms:.1f}ms "
-                            f"thread={thread_name}:{thread_id} caller={caller} stack={stack_hint} "
-                            f"in_event_loop={str(in_event_loop).lower()}"
-                        )
+                        # Reducir ruido: loggear siempre lo anómalo, y muestrear lo normal.
+                        # 1) Siempre: operaciones lentas >=120ms
+                        # 2) Siempre: sync real en event loop (no motor)
+                        # 3) Muestreo: 1 log/30s por firma para rápidas normales
+                        is_anomalous = (dt_ms >= 120.0) or (in_event_loop and not from_motor)
+                        key = f"{name}:{self.name}:{caller}:{thread_name}:{str(in_event_loop).lower()}:{str(from_motor).lower()}"
+                        if is_anomalous or _should_rate_log(key, 30.0):
+                            logger.info(
+                                f"[MONGO_OP] op={name} col={self.name} dur={dt_ms:.1f}ms "
+                                f"thread={thread_name}:{thread_id} caller={caller} stack={stack_hint} "
+                                f"in_event_loop={str(in_event_loop).lower()} from_motor={str(from_motor).lower()}"
+                            )
                 _wrapped.__forensics_wrapped__ = True
                 return _wrapped
 

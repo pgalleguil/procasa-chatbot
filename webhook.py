@@ -2228,6 +2228,8 @@ async def event_loop_monitor_loop():
 async def threadpool_forensics_loop():
     """Forensics de threadpools: tamaño, ocupación aproximada y cola."""
     logger.info("[THREADPOOL_MONITOR] Iniciando monitor de threadpools...")
+    last_snapshot = {}
+    last_heartbeat_log = 0.0
     while True:
         try:
             pools = [
@@ -2241,13 +2243,22 @@ async def threadpool_forensics_loop():
                 active_threads = len([t for t in threads if t.is_alive()])
                 q = getattr(pool, "_work_queue", None)
                 queued = q.qsize() if q is not None and hasattr(q, "qsize") else -1
-                logger.info(
-                    f"[THREADPOOL_FORENSICS] pool={name} active={active_threads} max={max_workers} queued={queued}"
-                )
-                if queued >= max_workers and max_workers > 0:
+                snapshot = (active_threads, max_workers, queued)
+                prev = last_snapshot.get(name)
+                now = time.time()
+                # Reducir ruido: log solo cuando cambia estado o cada 60s como heartbeat.
+                if prev != snapshot or (now - last_heartbeat_log) >= 60:
+                    logger.info(
+                        f"[THREADPOOL_FORENSICS] pool={name} active={active_threads} max={max_workers} queued={queued}"
+                    )
+                    last_snapshot[name] = snapshot
+                # Saturación real: cola acumulada (no solo active=max)
+                if queued > 0 and max_workers > 0 and active_threads >= max_workers:
                     logger.warning(
                         f"[THREADPOOL_SATURATED] pool={name} queued={queued} active={active_threads} max={max_workers}"
                     )
+                if (now - last_heartbeat_log) >= 60:
+                    last_heartbeat_log = now
         except asyncio.CancelledError:
             break
         except Exception as e:

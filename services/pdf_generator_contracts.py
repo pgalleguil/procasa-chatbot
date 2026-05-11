@@ -81,16 +81,19 @@ class PDFGenerator:
             img_reader = ImageReader(str(logo_path))
             iw, ih = img_reader.getSize()
             aspect = ih / float(iw)
-            width = 1.4 * inch
+            width = 2.0 * inch
             height = width * aspect
             img = RLImage(str(logo_path), width=width, height=height)
-            img.hAlign = 'LEFT'
+            img.hAlign = 'CENTER'
             Story.append(img)
             Story.append(Spacer(1, 0.05 * inch))
         
         tipo = contract_data.get("tipo", "Arriendo")
         
-        Story.append(Paragraph(f"AUTORIZACIÓN DE {tipo.upper()}", title_style))
+        if tipo == "Venta Exclusiva":
+            Story.append(Paragraph("AUTORIZACIÓN DE CORRETAJE DE VENTA EXCLUSIVA", title_style))
+        else:
+            Story.append(Paragraph(f"AUTORIZACIÓN DE {tipo.upper()}", title_style))
         Story.append(Spacer(1, 0.08 * inch))
         
         if 'contract_code' in contract_data:
@@ -104,7 +107,7 @@ class PDFGenerator:
                 except:
                     pass
             vigencia_dias = contract_data.get('property_data', {}).get('vigencia', contract_data.get('vigencia', '30'))
-            Story.append(Paragraph(f"<b>Código de Verificación:</b> {contract_data['contract_code']} &nbsp;&nbsp; <b>Versión:</b> v{contract_data.get('version', '1.0')} &nbsp;&nbsp; <b>Fecha:</b> {fecha_emision} &nbsp;&nbsp; <b>Vigencia:</b> {vigencia_dias} días", normal_style))
+            Story.append(Paragraph(f"<b>Código de Verificación:</b> {contract_data['contract_code']} &nbsp;&nbsp; <b>Fecha:</b> {fecha_emision} &nbsp;&nbsp; <b>Vigencia:</b> {vigencia_dias} días", normal_style))
             Story.append(Spacer(1, 0.06 * inch))
         
         fecha = datetime.now(CHILE_TZ).strftime('%d de %m de %Y').replace('de 01 de', 'de enero de').replace('de 02 de', 'de febrero de').replace('de 03 de', 'de marzo de').replace('de 04 de', 'de abril de').replace('de 05 de', 'de mayo de').replace('de 06 de', 'de junio de').replace('de 07 de', 'de julio de').replace('de 08 de', 'de agosto de').replace('de 09 de', 'de septiembre de').replace('de 10 de', 'de octubre de').replace('de 11 de', 'de noviembre de').replace('de 12 de', 'de diciembre de')
@@ -119,19 +122,28 @@ class PDFGenerator:
         codigo_prop = contract_data.get('property_code', '')
         email = contract_data.get('email', '')
         
-        op = "la venta de" if tipo == "Venta" else "en arriendo"
+        op = "la venta de" if tipo in ["Venta", "Venta Exclusiva"] else "en arriendo"
         
         p1 = f"En Santiago de Chile, a {fecha}, yo <b>{nombre}</b>, rut <b>{rut}</b>, mediante la suscripción de la presente, autorizo a PROCASA S.A. y a sus franquiciados para ofrecer {op} mi propiedad ubicada en <b>{direccion}, comuna de {comuna}</b>, Rol de Avalúo <b>{rol}</b>, código interno <b>{codigo_prop}</b>; el nexo principal entre la franquicia master Procasa S.A. será el franquiciado INMOBILIARIA SUCRE SPA y el COMITENTE."
         Story.append(Paragraph(p1, normal_style))
         
         precio_texto = f" al precio de <b>{precio}</b>" if precio else ""
-        p2 = f"<b>ANTECEDENTES:</b> La presente autorización se otorga SIN exclusividad{precio_texto} y tendrá una validez de <b>{vigencia}</b> días corridos a contar de esta fecha y se renovará, automática y sucesivamente, por períodos iguales. Asimismo el COMITENTE, autoriza expresamente a PROCASA S.A. y a sus franquiciados a extender órdenes de visita electrónicas, para mostrar la propiedad a posibles interesados, además el COMITENTE se compromete a pagar a PROCASA S.A. o a sus franquiciados por los servicios de corretaje para la venta o arriendo de la propiedad descrita."
+        if tipo == "Venta Exclusiva":
+            p2 = f"<b>ANTECEDENTES:</b> La presente autorización se otorga con carácter de <b>EXCLUSIVIDAD</b>{precio_texto} y tendrá una validez de <b>{vigencia}</b> días corridos a contar de esta fecha, renovable por períodos iguales. Durante su vigencia, EL COMITENTE se obliga a trabajar exclusivamente con PROCASA S.A. y/o sus franquiciados para la comercialización del inmueble."
+        else:
+            p2 = f"<b>ANTECEDENTES:</b> La presente autorización se otorga SIN exclusividad{precio_texto} y tendrá una validez de <b>{vigencia}</b> días corridos a contar de esta fecha y se renovará, automática y sucesivamente, por períodos iguales. Asimismo el COMITENTE, autoriza expresamente a PROCASA S.A. y a sus franquiciados a extender órdenes de visita electrónicas, para mostrar la propiedad a posibles interesados, además el COMITENTE se compromete a pagar a PROCASA S.A. o a sus franquiciados por los servicios de corretaje para la venta o arriendo de la propiedad descrita."
         Story.append(Paragraph(p2, normal_style))
         
-        if tipo == "Venta":
+        if tipo in ["Venta", "Venta Exclusiva"]:
             comision_text = comision if comision else "dos por ciento (2 %)"
-            p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> del precio de venta más el I.V.A."
-            Story.append(Paragraph(p3, normal_style))
+            if tipo == "Venta Exclusiva":
+                p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por EL COMITENTE, se devengará en favor de PROCASA S.A. y/o sus franquiciados una comisión equivalente al <b>{comision_text}</b> del precio de venta más I.V.A. Esta comisión también aplicará si EL COMITENTE vende directamente o por terceros no autorizados durante la vigencia, respecto de clientes presentados o gestionados por PROCASA."
+                p4 = "<b>PROTECCIÓN DE CLIENTES PRESENTADOS:</b> EL COMITENTE reconoce protección comercial sobre los clientes presentados por PROCASA S.A. y/o sus franquiciados durante la vigencia del presente instrumento."
+                Story.append(Paragraph(p3, normal_style))
+                Story.append(Paragraph(p4, normal_style))
+            else:
+                p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> del precio de venta más el I.V.A."
+                Story.append(Paragraph(p3, normal_style))
         else:
             comision_text = comision if comision else "50%"
             p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de arriendo respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> de la renta mensual pactada más I.V.A. En los contratos de plazos superiores a 24 meses la comisión será de un dos por ciento (2 %) más IVA sobre el total de las rentas y con un límite de 60 meses."
@@ -187,6 +199,18 @@ class PDFGenerator:
             spaceAfter=6, alignment=4, leading=13, fontSize=10)
             
         Story = []
+        logo_path = BASE_DIR / "static" / "logo.png"
+        if logo_path.exists():
+            from reportlab.lib.utils import ImageReader
+            img_reader = ImageReader(str(logo_path))
+            iw, ih = img_reader.getSize()
+            aspect = ih / float(iw)
+            width = 2.0 * inch
+            height = width * aspect
+            img = RLImage(str(logo_path), width=width, height=height)
+            img.hAlign = 'CENTER'
+            Story.append(img)
+            Story.append(Spacer(1, 0.08 * inch))
         Story.append(Paragraph("--- ANEXO: CERTIFICADO DE FIRMA ELECTR\u00d3NICA ---", styles['Heading1']))
         Story.append(Spacer(1, 0.2 * inch))
         

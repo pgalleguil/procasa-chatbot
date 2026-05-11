@@ -1,4 +1,4 @@
-import os
+﻿import os
 import uuid
 import logging
 import threading
@@ -110,11 +110,48 @@ def get_client_ip(request: Request) -> str:
         return forwarded.split(",")[0]
     return request.client.host if request.client else "unknown"
 
+def _normalize_contract_fields(d: dict) -> dict:
+    if d.get("email"):
+        d["email"] = d["email"].strip().lower()
+    if d.get("propiedad_direccion"):
+        d["propiedad_direccion"] = d["propiedad_direccion"].strip().title()
+    if d.get("comuna"):
+        d["comuna"] = d["comuna"].strip().title()
+    if d.get("rol"):
+        rol_raw = str(d["rol"]).strip().replace(" ", "")
+        if "-" in rol_raw:
+            parts = rol_raw.split("-", 1)
+            manzana = "".join(ch for ch in parts[0] if ch.isdigit()).zfill(5)[:5]
+            predio = "".join(ch for ch in (parts[1] if len(parts) > 1 else "") if ch.isdigit()).zfill(3)[:3]
+            d["rol"] = f"{manzana}-{predio}"
+    try:
+        vig = int(str(d.get("vigencia", "90")).strip())
+    except Exception:
+        vig = 90
+    d["vigencia"] = str(max(30, min(vig, 720)))
+    tipo = str(d.get("tipo", "Arriendo")).strip()
+    valid_tipos = {"Venta", "Venta Exclusiva", "Arriendo", "Arriendo y Administración"}
+    d["tipo"] = tipo if tipo in valid_tipos else "Arriendo"
+    comision_raw = str(d.get("comision", "2")).replace("%", "").replace(",", ".").strip()
+    if comision_raw not in {"1", "1.0", "1.5", "2", "2.0"}:
+        comision_raw = "2"
+    if comision_raw in {"1.0", "2.0"}:
+        comision_raw = comision_raw.split(".")[0]
+    d["comision"] = f"{comision_raw}%"
+    moneda = str(d.get("moneda", "UF")).upper().strip()
+    d["moneda"] = moneda if moneda in {"UF", "CLP"} else "UF"
+    precio_valor = str(d.get("precio_valor", "")).strip()
+    if precio_valor:
+        precio_valor = "".join(ch for ch in precio_valor if ch.isdigit() or ch in [".", ","])
+    precio_input = str(d.get("precio", "")).strip()
+    d["precio"] = f"{precio_valor} {d['moneda']}" if precio_valor else precio_input
+    return d
+
 @router.post("/api/preview")
 async def preview_contract(request: Request):
     """Retorna un PDF generado en caliente para previsualización."""
     try:
-        data = await request.json()
+        data = _normalize_contract_fields(await request.json())
         pdf_bytes = PDFGenerator.generate_original_contract(data)
         return Response(content=pdf_bytes, media_type="application/pdf")
     except Exception as e:
@@ -125,43 +162,9 @@ async def preview_contract(request: Request):
 async def create_contract(request: Request, background_tasks: BackgroundTasks):
     """Crea o actualiza un contrato (desde CRM)"""
     try:
-        data = await request.json()
+        data = _normalize_contract_fields(await request.json())
         from chatbot.storage import get_async_db
         adb = get_async_db()
-        
-        # ── Normalizar campos antes de guardar y generar PDF ─────────────────
-        def normalize_fields(d: dict) -> dict:
-            # Email → minúsculas
-            if d.get("email"):
-                d["email"] = d["email"].strip().lower()
-            # Dirección → Title Case
-            if d.get("propiedad_direccion"):
-                d["propiedad_direccion"] = d["propiedad_direccion"].strip().title()
-            # Comuna → Title Case
-            if d.get("comuna"):
-                d["comuna"] = d["comuna"].strip().title()
-            # ROL → 00000-000
-            if d.get("rol"):
-                rol_raw = d["rol"].strip().replace(" ", "")
-                if "-" in rol_raw:
-                    parts = rol_raw.split("-", 1)
-                    manzana = parts[0].zfill(5)[:5]
-                    predio  = parts[1].zfill(3)[:3]
-                    d["rol"] = f"{manzana}-{predio}"
-            # Precio → asegurar UF en mayúsculas
-            if d.get("precio"):
-                precio = d["precio"].strip()
-                precio = precio.replace(" uf", " UF").replace(" Uf", " UF").replace(" uF", " UF")
-                if precio and not precio.upper().endswith("UF"):
-                    precio = precio + " UF"
-                d["precio"] = precio
-            # Comisión → agregar % si falta
-            if d.get("comision"):
-                comision = str(d["comision"]).strip().replace("%", "")
-                d["comision"] = comision + "%"
-            return d
-
-        data = normalize_fields(data)
         property_code = data.get("property_code", "").strip()
         
         # Verificar si existe contrato previo creado (no firmado)
@@ -205,6 +208,7 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                 "rol": data.get("rol", ""),
                 "vigencia": data.get("vigencia", "30"),
                 "precio": data.get("precio", ""),
+                "moneda": data.get("moneda", "UF"),
                 "comision": data.get("comision", "")
             },
             "status": "created",
@@ -1397,5 +1401,5 @@ async def contract_dashboard(request: Request):
     return templates.TemplateResponse("contract_dashboard.html", {
         "request": request,
         "contracts": contracts,
-        "user_role": "admin" # O tomar de la sesión si es necesario
+        "user_role": (request.session.get("user", {}) or {}).get("rol", "agente")
     })

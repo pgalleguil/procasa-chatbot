@@ -325,7 +325,16 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
         return cached_response.get("items", []), cached_response.get("total_count", 0)
 
     # 2) Miss: contar + traer paginados
-    total_count = db["yapo_propiedades"].count_documents(query)
+    # Count se cachea por filtro (no por página) para evitar contar en cada navegación.
+    count_cache_key = (
+        f"captacion_count_{user_role}_{user_name}_{comuna_filter}_{status_filter}_{executive_filter}"
+    )
+    cached_count = get_cached_value(count_cache_key)
+    if cached_count is not None:
+        total_count = cached_count
+    else:
+        total_count = db["yapo_propiedades"].count_documents(query)
+        set_cached_value(count_cache_key, total_count, expire_seconds=180)
     skip = (page - 1) * limit
     cursor = db["yapo_propiedades"].find(
         query, 

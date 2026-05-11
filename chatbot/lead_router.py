@@ -410,12 +410,24 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
     """
     Formats the WhatsApp message to be sent to the executive.
     """
-    db = get_db()
-    prop = db[Config.COLLECTION_NAME].find_one({"codigo": property_code}) or {}
-    
-    comuna = prop.get("comuna", "N/D")
-    region = prop.get("region", "N/D")
-    operacion = prop.get("operacion", "Operación no especificada")
+    # Importante: esta función puede llamarse desde contextos async.
+    # Evitamos cualquier acceso sync a Mongo aquí para no bloquear event loop.
+    prop_inline = lead_data.get("property_data", {}) if isinstance(lead_data, dict) else {}
+    comuna = (
+        lead_data.get("comuna")
+        or prop_inline.get("comuna")
+        or "N/D"
+    )
+    region = (
+        lead_data.get("region")
+        or prop_inline.get("region")
+        or "N/D"
+    )
+    operacion = (
+        lead_data.get("operacion")
+        or prop_inline.get("operacion")
+        or "Operación no especificada"
+    )
     
     nombre_cliente = lead_data.get("nombre", "Cliente Desconocido")
     fono_cliente = lead_data.get("phone", "No disponible")

@@ -764,7 +764,13 @@ async def api_crm_update_lead(request: Request):
         # Aseguramos que se guarde la hora de actualización en CL
         data["updated_at_cl"] = datetime.now(CHILE_TZ).isoformat()
 
-        result = update_lead_crm_data(phone, data)
+        # CRITICO: update_lead_crm_data usa PyMongo sync + log_event/update_metrics sync.
+        # Debe ejecutarse fuera del event loop para evitar bloqueos y MONGO_SYNC_ON_EVENT_LOOP.
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: update_lead_crm_data(phone, data)
+        )
         if result and isinstance(result, dict) and result.get("status") == "ok":
             return result
         elif result is True: # Fallback just in case
@@ -2201,22 +2207,23 @@ async def event_loop_monitor_loop():
             
             if lag_ms > 1000:
                 logger.error(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
-                # Forensics: dump de tasks activas + stack resumido
-                now = time.time()
-                for task in asyncio.all_tasks():
-                    if task.done():
-                        continue
-                    coro = task.get_coro()
-                    task_name = task.get_name()
-                    state = "cancelled" if task.cancelled() else "pending"
-                    stack_frames = task.get_stack(limit=8)
-                    stack_text = ""
-                    if stack_frames:
-                        stack_text = "".join(traceback.format_list(traceback.extract_stack(stack_frames[-1])))
-                    logger.error(
-                        f"[EVENT_LOOP_TASK_DUMP] name={task_name} coro={getattr(coro, '__qualname__', str(coro))} "
-                        f"state={state} ts={now:.3f} stack={stack_text[:1200]}"
-                    )
+                # Dump completo solo en bloqueos severos para evitar ruido excesivo.
+                if lag_ms > 3000:
+                    now = time.time()
+                    for task in asyncio.all_tasks():
+                        if task.done():
+                            continue
+                        coro = task.get_coro()
+                        task_name = task.get_name()
+                        state = "cancelled" if task.cancelled() else "pending"
+                        stack_frames = task.get_stack(limit=8)
+                        stack_text = ""
+                        if stack_frames:
+                            stack_text = "".join(traceback.format_list(traceback.extract_stack(stack_frames[-1])))
+                        logger.error(
+                            f"[EVENT_LOOP_TASK_DUMP] name={task_name} coro={getattr(coro, '__qualname__', str(coro))} "
+                            f"state={state} ts={now:.3f} stack={stack_text[:1200]}"
+                        )
             elif lag_ms > 250:
                 logger.warning(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
         except asyncio.CancelledError:

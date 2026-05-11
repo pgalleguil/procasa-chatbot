@@ -64,10 +64,10 @@ def _patch_mongo_forensics():
                     finally:
                         dt_ms = (time.perf_counter() - t0) * 1000
                         # Reducir ruido: loggear siempre lo anómalo, y muestrear lo normal.
-                        # 1) Siempre: operaciones lentas >=120ms
+                        # 1) Siempre: operaciones lentas >=400ms
                         # 2) Siempre: sync real en event loop (no motor)
                         # 3) Muestreo: 1 log/30s por firma para rápidas normales
-                        is_anomalous = (dt_ms >= 120.0) or (in_event_loop and not from_motor)
+                        is_anomalous = (dt_ms >= 400.0) or (in_event_loop and not from_motor)
                         key = f"{name}:{self.name}:{caller}:{thread_name}:{str(in_event_loop).lower()}:{str(from_motor).lower()}"
                         if is_anomalous or _should_rate_log(key, 30.0):
                             logger.info(

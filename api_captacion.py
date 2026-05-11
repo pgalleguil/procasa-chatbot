@@ -14,19 +14,41 @@ logger = logging.getLogger(__name__)
 # --- CONFIGURACION CENTRALIZADA ---
 # CHILE_TZ is imported from chatbot.constants
 MARKET_STATS_CACHE = {} # Legacy - Now using shared_cache in DB
+_LOCAL_CACHE_L1 = {}
+
+def _l1_get(key):
+    rec = _LOCAL_CACHE_L1.get(key)
+    if not rec:
+        return None
+    expires_at = rec.get("expires_at")
+    if not expires_at or expires_at <= datetime.now(timezone.utc):
+        _LOCAL_CACHE_L1.pop(key, None)
+        return None
+    return rec.get("value")
+
+def _l1_set(key, value, expire_seconds):
+    _LOCAL_CACHE_L1[key] = {
+        "value": value,
+        "expires_at": datetime.now(timezone.utc) + timedelta(seconds=expire_seconds),
+    }
 
 def get_cached_value(key):
     """Obtiene un valor del caché persistente en MongoDB."""
+    l1 = _l1_get(key)
+    if l1 is not None:
+        return l1
     try:
         db = get_db()
-        doc = db["system_cache"].find_one({"_id": key})
+        doc = db["system_cache"].find_one({"_id": key}, {"value": 1, "expires_at": 1})
         if doc:
             expires_at = doc.get("expires_at")
             if expires_at:
                 if expires_at.tzinfo is None:
                     expires_at = expires_at.replace(tzinfo=timezone.utc)
                 if expires_at > datetime.now(timezone.utc):
-                    return doc.get("value")
+                    value = doc.get("value")
+                    _LOCAL_CACHE_L1[key] = {"value": value, "expires_at": expires_at}
+                    return value
     except Exception as e:
         logger.error(f"Error reading cache: {e}")
     return None
@@ -41,6 +63,7 @@ def set_cached_value(key, value, expire_seconds=300):
             {"$set": {"value": value, "expires_at": expires_at}},
             upsert=True
         )
+        _l1_set(key, value, expire_seconds)
     except Exception as e:
         logger.error(f"Error writing cache: {e}")
 
@@ -291,23 +314,18 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
     if status_filter:
         query["gestion.estado"] = status_filter
 
-    # 1. CONTAR TOTAL - CACHE 60s (Shared DB Cache - CTO Opt)
-    cache_key = f"count_{user_role}_{user_name}_{comuna_filter}_{status_filter}"
-    
-    cached_count = get_cached_value(cache_key)
-    if cached_count is not None:
-        total_count = cached_count
-    else:
-        total_count = db["yapo_propiedades"].count_documents(query)
-        set_cached_value(cache_key, total_count, expire_seconds=60)
-    
-    # 2. TRAER PAGINADOS CON CACHE CORTO (mejora navegación/filtros repetidos)
-    list_cache_key = f"list_{user_role}_{user_name}_{comuna_filter}_{status_filter}_{executive_filter}_{page}_{limit}"
-    cached_list = get_cached_value(list_cache_key)
-    if cached_list is not None:
-        return cached_list, total_count
+    # 1) CACHE COMBINADO por respuesta completa para evitar doble roundtrip de cache
+    # (antes: read count cache + read list cache por request)
+    response_cache_key = (
+        f"captacion_resp_{user_role}_{user_name}_{comuna_filter}_{status_filter}_"
+        f"{executive_filter}_{page}_{limit}"
+    )
+    cached_response = get_cached_value(response_cache_key)
+    if cached_response is not None:
+        return cached_response.get("items", []), cached_response.get("total_count", 0)
 
-    # 3. TRAER PAGINADOS CON PROYECCIÓN (Omitir campos pesados)
+    # 2) Miss: contar + traer paginados
+    total_count = db["yapo_propiedades"].count_documents(query)
     skip = (page - 1) * limit
     cursor = db["yapo_propiedades"].find(
         query, 
@@ -365,7 +383,12 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
             "fecha_str": fecha_str
         })
     
-    set_cached_value(list_cache_key, items_paginated, expire_seconds=45)
+    # TTL corto para navegación y filtros repetidos, con un único objeto.
+    set_cached_value(
+        response_cache_key,
+        {"items": items_paginated, "total_count": total_count},
+        expire_seconds=45
+    )
     return items_paginated, total_count
 
 def get_captacion_detail(obj_id):

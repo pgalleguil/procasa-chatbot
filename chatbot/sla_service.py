@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from datetime import datetime, timedelta
-from .storage import get_db, log_event
+from .storage import get_async_db, log_event
 from .constants import CHILE_TZ, PipelineStage, EventType
 from .notification_service import NotificationService
 from .lead_router import get_executive_phone, should_send_now
@@ -20,7 +20,7 @@ async def monitor_sla_thresholds():
         return
 
     from .constants import UNASSIGNED_LABEL
-    db = get_db()
+    db = get_async_db()
     
     # 1. Búsqueda Robusta de Leads en etapas iniciales
     # Incluimos leads donde el stage es NEW, CONTACTED o simplemente NO existe/es null.
@@ -41,7 +41,7 @@ async def monitor_sla_thresholds():
         "ejecutivo_asignado": {"$exists": True, "$nin": unassigned_patterns}
     }
     
-    leads = list(db["leads"].find(query, {"messages": 0, "stage_history": 0}))
+    leads = await db["leads"].find(query, {"messages": 0, "stage_history": 0}).to_list(length=2000)
     if not leads:
         return
 
@@ -58,7 +58,16 @@ async def monitor_sla_thresholds():
             lead_by_phone[pc] = l
 
     # 1. Obtener todas las advertencias existentes de una vez
-    existing_warnings = set(db["crm_sla_warnings"].distinct("phone", {"phone": {"$in": phones_clean}}))
+    existing_warnings = set(await db["crm_sla_warnings"].distinct("phone", {"phone": {"$in": phones_clean}}))
+    warnings_docs = await db["crm_sla_warnings"].find({"phone": {"$in": phones_clean}}).to_list(length=5000)
+    warnings_by_phone = {}
+    for w in warnings_docs:
+        ph = w.get("phone")
+        if not ph:
+            continue
+        if ph not in warnings_by_phone:
+            warnings_by_phone[ph] = []
+        warnings_by_phone[ph].append(w)
 
     # 2. Obtener eventos relevantes (notificaciones iniciales y gestiones) para todos
     relevant_event_types = ["alert_sent", "ALERT", "ASSIGNMENT"] + [
@@ -69,7 +78,7 @@ async def monitor_sla_thresholds():
     
     events_by_phone = {}
     cursor = db["crm_events"].find({"phone": {"$in": phones_clean}, "type": {"$in": relevant_event_types}})
-    for evt in cursor:
+    for evt in await cursor.to_list(length=20000):
         ph = evt["phone"]
         if ph not in events_by_phone: events_by_phone[ph] = []
         events_by_phone[ph].append(evt)
@@ -108,7 +117,7 @@ async def monitor_sla_thresholds():
             except: continue
 
             # 2. Cargar advertencias existentes para este lead específico
-            existing = list(db["crm_sla_warnings"].find({"phone": phone_clean}))
+            existing = warnings_by_phone.get(phone_clean, [])
             has_red_warning = any(w.get("level") == "critical" for w in existing)
             has_orange_warning = any(w.get("level") == "near_critical" for w in existing)
             
@@ -135,7 +144,7 @@ async def monitor_sla_thresholds():
             # 4. CRITERIO DE EXCLUSIÓN: Si ya tiene gestión (incluso pre-asignación), NO ALERTAR.
             if has_management_ever:
                 if not any(w.get("status") == "ignored_already_managed" for w in existing):
-                    db["crm_sla_warnings"].insert_one({
+                    await db["crm_sla_warnings"].insert_one({
                         "phone": phone_clean,
                         "status": "ignored_already_managed",
                         "reason": "proactive_management_detected",
@@ -182,7 +191,7 @@ async def monitor_sla_thresholds():
                 )
 
                 if sent:
-                    db["crm_sla_warnings"].insert_one({
+                    await db["crm_sla_warnings"].insert_one({
                         "phone": phone_clean,
                         "executive": ejecutivo,
                         "executive_phone": exec_phone,

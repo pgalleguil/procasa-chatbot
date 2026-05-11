@@ -14,6 +14,7 @@ import traceback
 import threading
 import subprocess
 import concurrent.futures
+import inspect
 from concurrent.futures import ThreadPoolExecutor
 from pymongo import MongoClient
 from pymongo import ReturnDocument
@@ -90,7 +91,19 @@ def _forensic_subprocess_run(*args, **kwargs):
 
 def _forensic_future_result(self, *args, **kwargs):
     if _in_event_loop_thread():
-        logger.warning("[BLOCKING_DETECTOR] Future.result() llamado dentro de async/event loop")
+        try:
+            stack = inspect.stack()
+            project_frames = [
+                fr for fr in stack
+                if fr.filename and ("\\ChatBot_v4_Grok\\" in fr.filename or "/ChatBot_v4_Grok/" in fr.filename)
+            ]
+            if project_frames:
+                short = " > ".join(
+                    f"{os.path.basename(fr.filename)}:{fr.function}:{fr.lineno}" for fr in project_frames[:4]
+                )
+                logger.warning(f"[BLOCKING_DETECTOR] Future.result() llamado dentro de async/event loop stack={short}")
+        except Exception:
+            logger.warning("[BLOCKING_DETECTOR] Future.result() llamado dentro de async/event loop")
     return _ORIG_FUTURE_RESULT(self, *args, **kwargs)
 
 time.sleep = _forensic_sleep
@@ -1523,7 +1536,7 @@ async def process_pending_leads_loop():
             background_tasks_status["notifications_loop"]["status"] = "running"
             
             if should_send_now():
-                pending = get_pending_notifications()
+                pending = await run_db("pending_notifications.find", get_pending_notifications)
                 if pending:
                     logger.info(f"[BACKGROUND] Analizando {len(pending)} envíos pendientes...")
                     
@@ -1556,7 +1569,7 @@ async def process_pending_leads_loop():
                         if not target_phone or target_phone == "+56900000000":
                             # Si después de re-enrutar sigue mal, lo marcamos para no ciclar eternamente
                             logger.warning(f"[BACKGROUND] Skipped: No se pudo encontrar destino válido para lead {lead_data.get('phone')}")
-                            mark_notification_sent(p["_id"])
+                            await run_db("pending_notifications.mark_sent", mark_notification_sent, p["_id"])
                             continue
                             
                         if target_phone not in by_executive:
@@ -1583,12 +1596,21 @@ async def process_pending_leads_loop():
                                 lead_phone = item.get("lead_data", {}).get("phone")
                                 if lead_phone:
                                     try:
-                                        lead_db = CrmService._db()["leads"].find_one({"phone": lead_phone}) if hasattr(CrmService, '_db') else None
+                                        lead_db = await run_db(
+                                            "leads.find_one",
+                                            (lambda: CrmService._db()["leads"].find_one({"phone": lead_phone}))
+                                        ) if hasattr(CrmService, '_db') else None
                                         existing_exec = (lead_db or {}).get("ejecutivo_asignado") if lead_db else None
                                         from chatbot.constants import UNASSIGNED_LABEL
                                         unassigned = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
                                         if not existing_exec or existing_exec in unassigned:
-                                            CrmService.assign_executive(lead_phone, target_name, method="LeadRouter")
+                                            await run_db(
+                                                "crm.assign_executive",
+                                                CrmService.assign_executive,
+                                                lead_phone,
+                                                target_name,
+                                                "LeadRouter"
+                                            )
                                     except: pass
                             
                             success = await NotificationService.send_notification(
@@ -1600,7 +1622,8 @@ async def process_pending_leads_loop():
                             )
                             
                             if success:
-                                for item in items: mark_notification_sent(item["_id"])
+                                for item in items:
+                                    await run_db("pending_notifications.mark_sent", mark_notification_sent, item["_id"])
 
                         # Si es solo uno, enviamos el template normal
                         else:
@@ -1615,12 +1638,21 @@ async def process_pending_leads_loop():
                             if lead_phone:
                                 try:
                                     from chatbot.storage import get_db as _get_db
-                                    _lead_db = _get_db()["leads"].find_one({"phone": lead_phone})
+                                    _lead_db = await run_db(
+                                        "leads.find_one",
+                                        (lambda: _get_db()["leads"].find_one({"phone": lead_phone}))
+                                    )
                                     existing_exec = (_lead_db or {}).get("ejecutivo_asignado")
                                     from chatbot.constants import UNASSIGNED_LABEL
                                     unassigned = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
                                     if not existing_exec or existing_exec in unassigned:
-                                        CrmService.assign_executive(lead_phone, target_name, method="LeadRouter")
+                                        await run_db(
+                                            "crm.assign_executive",
+                                            CrmService.assign_executive,
+                                            lead_phone,
+                                            target_name,
+                                            "LeadRouter"
+                                        )
                                 except: pass
                                 
                             success = await NotificationService.send_notification(
@@ -1630,7 +1662,8 @@ async def process_pending_leads_loop():
                                 meta={"to": target_name, "lead_phone": lead_phone},
                                 dedup_window_minutes=5
                             )
-                            if success: mark_notification_sent(p["_id"])
+                            if success:
+                                await run_db("pending_notifications.mark_sent", mark_notification_sent, p["_id"])
 
                         # Throttling Anti-Spam: 30 segundos entre ejecutivos (Aumentado por precaución de Meta)
                         logger.info(f"[BACKGROUND] Pausa anti-spam (30s) para siguiente destinatario...")
@@ -1657,10 +1690,10 @@ async def check_scheduled_tasks_loop():
             db = get_db()
             now = datetime.now(CHILE_TZ)
             
-            tasks = list(db["crm_tasks"].find({
-                "status": "pending",
-                "execute_at": {"$lte": now}
-            }))
+            tasks = await run_db(
+                "crm_tasks.find_due",
+                lambda: list(db["crm_tasks"].find({"status": "pending", "execute_at": {"$lte": now}}))
+            )
             
             if tasks:
                 logger.info(f"[TASK_MONITOR] Procesando {len(tasks)} tareas vencidas...")
@@ -1672,17 +1705,35 @@ async def check_scheduled_tasks_loop():
                         is_captacion = task.get("lead_type") == "captacion"
                         if is_captacion:
                             from bson import ObjectId
-                            lead = db["yapo_propiedades"].find_one({"_id": ObjectId(task.get("obj_id"))})
+                            lead = await run_db(
+                                "yapo_propiedades.find_one",
+                                lambda: db["yapo_propiedades"].find_one({"_id": ObjectId(task.get("obj_id"))})
+                            )
                             if not lead:
-                                db["crm_tasks"].update_one({"_id": task["_id"]}, {"$set": {"status": "error", "error": "captacion_not_found"}})
+                                await run_db(
+                                    "crm_tasks.update_error_captacion_not_found",
+                                    lambda: db["crm_tasks"].update_one(
+                                        {"_id": task["_id"]},
+                                        {"$set": {"status": "error", "error": "captacion_not_found"}}
+                                    )
+                                )
                                 continue
                             ejecutivo = lead.get("gestion", {}).get("ejecutivo_asignado")
                             lead_name = lead.get("details", {}).get("publicador", "Cliente")
                             crm_link = f"https://www.procasa.cl/captacion/{task.get('obj_id')}"
                         else:
-                            lead = db["leads"].find_one({"phone": phone})
+                            lead = await run_db(
+                                "leads.find_one",
+                                lambda: db["leads"].find_one({"phone": phone})
+                            )
                             if not lead:
-                                db["crm_tasks"].update_one({"_id": task["_id"]}, {"$set": {"status": "error", "error": "lead_not_found"}})
+                                await run_db(
+                                    "crm_tasks.update_error_lead_not_found",
+                                    lambda: db["crm_tasks"].update_one(
+                                        {"_id": task["_id"]},
+                                        {"$set": {"status": "error", "error": "lead_not_found"}}
+                                    )
+                                )
                                 continue
                             ejecutivo = lead.get("ejecutivo_asignado")
                             lead_name = lead.get("prospecto", {}).get("nombre", "Cliente")
@@ -1711,9 +1762,12 @@ async def check_scheduled_tasks_loop():
                         )
                         
                         if sent:
-                            db["crm_tasks"].update_one(
-                                {"_id": task["_id"]}, 
-                                {"$set": {"status": "notified", "notified_at": now.isoformat(), "notification_sent_to": ejecutivo}}
+                            await run_db(
+                                "crm_tasks.update_notified",
+                                lambda: db["crm_tasks"].update_one(
+                                    {"_id": task["_id"]},
+                                    {"$set": {"status": "notified", "notified_at": now.isoformat(), "notification_sent_to": ejecutivo}}
+                                )
                             )
                             # Sleep breve para tareas
                             await asyncio.sleep(6)

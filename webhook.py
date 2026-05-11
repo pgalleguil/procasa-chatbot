@@ -2244,6 +2244,7 @@ async def threadpool_forensics_loop():
     logger.info("[THREADPOOL_MONITOR] Iniciando monitor de threadpools...")
     last_snapshot = {}
     last_heartbeat_log = 0.0
+    saturation_streak = {"WEB": 0, "WORKER": 0, "WARMER": 0}
     while True:
         try:
             pools = [
@@ -2266,8 +2267,19 @@ async def threadpool_forensics_loop():
                         f"[THREADPOOL_FORENSICS] pool={name} active={active_threads} max={max_workers} queued={queued}"
                     )
                     last_snapshot[name] = snapshot
-                # Saturación real: cola acumulada (no solo active=max)
-                if queued > 0 and max_workers > 0 and active_threads >= max_workers:
+                # Saturación real sostenida: evitar alertas por picos breves de cola=1.
+                is_saturated_now = (
+                    queued >= 3 and
+                    max_workers > 0 and
+                    active_threads >= max_workers
+                )
+                if is_saturated_now:
+                    saturation_streak[name] = saturation_streak.get(name, 0) + 1
+                else:
+                    saturation_streak[name] = 0
+
+                # Alertar solo si se mantiene en al menos 2 ciclos consecutivos (~10s).
+                if saturation_streak[name] >= 2:
                     logger.warning(
                         f"[THREADPOOL_SATURATED] pool={name} queued={queued} active={active_threads} max={max_workers}"
                     )

@@ -1,4 +1,4 @@
-﻿import os
+import os
 import uuid
 import logging
 import threading
@@ -1398,8 +1398,24 @@ async def contract_dashboard(request: Request):
             dt_utc = c["created_at"].replace(tzinfo=timezone.utc)
             c["created_at"] = dt_utc.astimezone(CHILE_TZ)
         
+    # Extraer el usuario desde el JWT para el rol
+    user_role = "agente"
+    token = request.cookies.get("access_token")
+    if token:
+        try:
+            from jose import jwt
+            from config import Config
+            payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
+            username = payload.get("sub")
+            if username:
+                user_doc = await adb["usuarios"].find_one({"username": username})
+                if user_doc:
+                    user_role = user_doc.get("rol", "agente")
+        except Exception as e:
+            logger.error(f"Error decodificando JWT en contract_dashboard: {e}")
+        
     return templates.TemplateResponse("contract_dashboard.html", {
         "request": request,
         "contracts": contracts,
-        "user_role": (request.session.get("user", {}) or {}).get("rol", "agente")
+        "user_role": user_role
     })

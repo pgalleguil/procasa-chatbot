@@ -220,6 +220,21 @@
             color: #ef4444;
         }
 
+        .hamburger-mobile {
+            display: none;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-right: 12px;
+        }
+
         /* MAIN CONTENT */
         .main-content {
             margin-left: var(--sidebar-width-collapsed);
@@ -249,6 +264,72 @@
 
             .main-content {
                 padding: 20px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                left: -260px;
+                width: 260px;
+                transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+
+            .sidebar:hover {
+                width: 260px;
+                box-shadow: none;
+            }
+
+            .sidebar.mobile-open {
+                left: 0;
+                z-index: 1200;
+                box-shadow: 10px 0 30px rgba(0, 0, 0, 0.8);
+            }
+
+            .sidebar.mobile-open:hover {
+                width: 260px;
+            }
+
+            .sidebar .brand span,
+            .sidebar .nav-link span {
+                opacity: 1 !important;
+                transform: translateX(0) !important;
+            }
+
+            .main-content {
+                margin-left: 0 !important;
+                padding: 12px;
+            }
+
+            .hamburger-mobile {
+                display: flex !important;
+            }
+
+            .detail-header {
+                flex-direction: column;
+                align-items: flex-start !important;
+                gap: 10px;
+            }
+
+            .detail-header-right {
+                width: 100%;
+                justify-content: flex-start !important;
+                flex-wrap: wrap;
+                gap: 8px !important;
+            }
+
+            .card-custom {
+                padding: 16px;
+                border-radius: 20px;
+                margin-bottom: 16px;
+            }
+
+            .hero-card {
+                border-radius: 20px;
+            }
+
+            .section-title {
+                font-size: 1rem;
+                margin-bottom: 14px;
             }
         }
 
@@ -929,6 +1010,9 @@
 </head>
 
 <body>
+    <div id="sidebarOverlay"
+        style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;"
+        onclick="toggleMobileMenu()"></div>
     <!-- SIDEBAR (Mismo menú, sin cambios en estructura) -->
     <nav class="sidebar" id="sidebar">
         <div class="brand">
@@ -969,9 +1053,14 @@
     <div class="main-content">
 
         <!-- HEADER ROW: EJECUTIVO ASIGNADO -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h4 class="text-white m-0 fw-bold">Detalle de Captación</h4>
-            <div class="d-flex align-items-center gap-3">
+        <div class="d-flex justify-content-between align-items-center mb-4 detail-header">
+            <div class="d-flex align-items-center">
+                <div class="hamburger-mobile" onclick="toggleMobileMenu()">
+                    <i class="fa-solid fa-bars"></i>
+                </div>
+                <h4 class="text-white m-0 fw-bold">Detalle de Captación</h4>
+            </div>
+            <div class="d-flex align-items-center gap-3 detail-header-right">
                 <span class="info-label m-0">Ejecutivo Asignado:</span>
                 <span class="badge"
                     style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); font-size: 0.9rem; padding: 6px 12px; border-radius: 8px;">
@@ -2758,6 +2847,24 @@
                     }
                     document.getElementById('leadVerificationModal').style.display = 'block';
                 }
+
+                function toggleMobileMenu() {
+                    const sidebar = document.getElementById('sidebar');
+                    const overlay = document.getElementById('sidebarOverlay');
+                    sidebar.classList.toggle('mobile-open');
+                    overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
+                }
+
+                document.querySelectorAll('.nav-link').forEach(link => {
+                    link.addEventListener('click', () => {
+                        if (window.innerWidth <= 768) {
+                            const sidebar = document.getElementById('sidebar');
+                            if (sidebar.classList.contains('mobile-open')) {
+                                toggleMobileMenu();
+                            }
+                        }
+                    });
+                });
 
                 function closeLeadModal() {
                     document.getElementById('leadVerificationModal').style.display = 'none';

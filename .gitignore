@@ -49,6 +49,7 @@ temp/
 tmp/
 __temp__/
 html_dumps/
+dashboard/
 
 # Archivos del sistema
 .DS_Store

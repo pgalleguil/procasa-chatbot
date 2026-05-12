@@ -107,6 +107,10 @@ async def _db_call(fn, *args, **kwargs):
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(_CONTRACTS_DB_EXECUTOR, lambda: fn(*args, **kwargs))
 
+async def _run_blocking(fn, *args, **kwargs):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_CONTRACTS_DB_EXECUTOR, lambda: fn(*args, **kwargs))
+
 def get_db():
     client = MongoClient(Config.MONGO_URI)
     return client[Config.DB_NAME]
@@ -159,7 +163,7 @@ async def preview_contract(request: Request):
     """Retorna un PDF generado en caliente para previsualización."""
     try:
         data = _normalize_contract_fields(await request.json())
-        pdf_bytes = PDFGenerator.generate_original_contract(data)
+        pdf_bytes = await _run_blocking(PDFGenerator.generate_original_contract, data)
         return Response(content=pdf_bytes, media_type="application/pdf")
     except Exception as e:
         logger.error(f"Error generating preview: {e}")

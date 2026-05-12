@@ -4,8 +4,10 @@ import logging
 import threading
 import psutil
 import time
+import asyncio
 from collections import defaultdict
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Request, HTTPException, Form, Depends, Header, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -99,6 +101,11 @@ async def health_check():
     return JSONResponse(status_dict, status_code=200 if status_dict["status"] == "ok" else 503)
 
 gdrive_sync = GDriveSync()
+_CONTRACTS_DB_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="contracts_db")
+
+async def _db_call(fn, *args, **kwargs):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_CONTRACTS_DB_EXECUTOR, lambda: fn(*args, **kwargs))
 
 def get_db():
     client = MongoClient(Config.MONGO_URI)
@@ -372,7 +379,7 @@ async def download_original_pdf(contract_code: str):
 async def download_signed_pdf(contract_code: str):
     """Permite descargar el PDF firmado (Forza descarga)"""
     db = get_db()
-    contract = db["contracts"].find_one({"contract_code": contract_code})
+    contract = await _db_call(db["contracts"].find_one, {"contract_code": contract_code})
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
 
@@ -898,7 +905,7 @@ async def verify_otp(token: str, request: Request):
     check_rate_limit(ip, verify_rate_limit, 10, window_seconds=60)
     
     db = get_db()
-    contract = db["contracts"].find_one({"security.token": token})
+    contract = await _db_call(db["contracts"].find_one, {"security.token": token})
     if not contract:
         raise HTTPException(status_code=404)
         
@@ -947,15 +954,16 @@ async def verify_otp(token: str, request: Request):
             blocked_until_new = now + timedelta(seconds=60)
             update_doc["$set"]["security.blocked_until"] = blocked_until_new
             update_doc["$push"]["timeline"] = {"action": "otp_blocked_max_attempts", "server_timestamp": server_timestamp, "ip": ip, "user_agent": ua}
-            db["contracts"].update_one({"contract_code": contract["contract_code"]}, update_doc)
+            await _db_call(db["contracts"].update_one, {"contract_code": contract["contract_code"]}, update_doc)
             raise HTTPException(status_code=429, detail="OTP_BLOCKED|60")
         else:
-            db["contracts"].update_one({"contract_code": contract["contract_code"]}, update_doc)
+            await _db_call(db["contracts"].update_one, {"contract_code": contract["contract_code"]}, update_doc)
             remaining = 5 - attempts
             raise HTTPException(status_code=400, detail=f"OTP_INVALID|{remaining}")
         
     # Success
-    db["contracts"].update_one(
+    await _db_call(
+        db["contracts"].update_one,
         {"contract_code": contract["contract_code"]},
         {
             "$set": {"status": "otp_verified", "security.otp": None}, # Invalidate OTP
@@ -993,7 +1001,7 @@ async def accept_terms(token: str, request: Request):
 async def accept_contract(token: str, request: Request, background_tasks: BackgroundTasks):
     import shutil
     db = get_db()
-    contract = db["contracts"].find_one({"security.token": token})
+    contract = await _db_call(db["contracts"].find_one, {"security.token": token})
     if not contract:
         logger.error(f"[SERVER_ERROR] Token inválido intentado para {token}")
         raise HTTPException(status_code=403, detail="Token inválido")
@@ -1043,7 +1051,8 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     timezone_info = "America/Santiago (CLT)"
     
     # 1. Registrar aceptaci\u00f3n
-    db["contracts"].update_one(
+    await _db_call(
+        db["contracts"].update_one,
         {"contract_code": contract_code},
         {
             "$set": {
@@ -1068,7 +1077,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     logger.info(f"[METRIC] contracts_signed: {contract_code}")
     
     # Refrescar documento para tener el timeline completo
-    contract = db["contracts"].find_one({"contract_code": contract_code})
+    contract = await _db_call(db["contracts"].find_one, {"contract_code": contract_code})
     timeline = contract.get("timeline") or []  # Fix: guard against NoneType
     
     # 2. Generar Firma HMAC del Servidor y Hash del Timeline
@@ -1144,7 +1153,8 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
             json.dump(timeline, f, indent=4)
 
         # 5. Guardar Hashes finales y ruta local en DB
-        db["contracts"].update_one(
+        await _db_call(
+            db["contracts"].update_one,
             {"contract_code": contract_code},
             {"$set": {
                 "security.signed_hash": signed_hash,
@@ -1157,7 +1167,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
 
         # TSA mock
         tsa_response = f"TSA_MOCK_{datetime.now(timezone.utc).timestamp()}_SIGNED"
-        db["contracts"].update_one({"contract_code": contract_code}, {"$set": {"security.tsa_stamp": tsa_response}})
+        await _db_call(db["contracts"].update_one, {"contract_code": contract_code}, {"$set": {"security.tsa_stamp": tsa_response}})
 
         # 6. Generar Informe Legal y Subida a Google Drive en Background
         def finalize_bg_task(c_code, c_doc, e_data, t_line, s_pdf_bytes, o_hash, s_hash, t_hash, s_hmac):
@@ -1167,6 +1177,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
                 l_report_bytes = PDFGenerator.generate_legal_report(c_doc, e_data, t_line)
                 
                 t_dir = BASE_DIR / "tmp" / "contracts" / c_code
+                t_dir.mkdir(parents=True, exist_ok=True)
                 with open(t_dir / "informe_legal.pdf", "wb") as f:
                     f.write(l_report_bytes)
                     

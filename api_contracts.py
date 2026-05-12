@@ -165,6 +165,16 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         data = _normalize_contract_fields(await request.json())
         from chatbot.storage import get_async_db
         adb = get_async_db()
+        # Extraer usuario creador desde JWT
+        created_by = None
+        try:
+            from jose import jwt as _jwt
+            _tok = request.cookies.get("access_token")
+            if _tok:
+                _pl = _jwt.decode(_tok, Config.SECRET_KEY, algorithms=["HS256"])
+                created_by = _pl.get("sub")
+        except Exception:
+            pass
         property_code = data.get("property_code", "").strip()
         
         # Verificar si existe contrato previo creado (no firmado)
@@ -235,7 +245,8 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             ],
             "version": 1,
             "created_at": datetime.now(CHILE_TZ),
-            "created_at_local": datetime.now(CHILE_TZ).strftime('%Y-%m-%d %H:%M:%S')
+            "created_at_local": datetime.now(CHILE_TZ).strftime('%Y-%m-%d %H:%M:%S'),
+            "created_by": created_by
         }
         
         if existing:
@@ -1388,18 +1399,9 @@ async def contract_dashboard(request: Request):
     """Módulo principal para gestión y generación de convenios de corretaje"""
     from chatbot.storage import get_async_db
     adb = get_async_db()
-    # Listar los \u00faltimos contratos (excluir los eliminados o manejarlos en frontend)
-    contracts_cursor = adb["contracts"].find({"status": {"$ne": "deleted"}}).sort("created_at", -1).limit(100)
-    contracts = await contracts_cursor.to_list(length=100)
-    
-    for c in contracts:
-        if c.get("created_at"):
-            # PyMongo returns naive UTC, convert to CHILE_TZ
-            dt_utc = c["created_at"].replace(tzinfo=timezone.utc)
-            c["created_at"] = dt_utc.astimezone(CHILE_TZ)
-        
-    # Extraer el usuario desde el JWT para el rol
+    # Extraer el usuario desde el JWT
     user_role = "agente"
+    username = None
     token = request.cookies.get("access_token")
     if token:
         try:
@@ -1413,9 +1415,24 @@ async def contract_dashboard(request: Request):
                     user_role = user_doc.get("rol", "agente")
         except Exception as e:
             logger.error(f"Error decodificando JWT en contract_dashboard: {e}")
-        
+
+    # AISLAMIENTO DE DATOS: supervisores/admin ven todos; agentes solo los suyos
+    if user_role in ["supervisor", "admin"]:
+        query = {"status": {"$ne": "deleted"}}
+    else:
+        query = {"status": {"$ne": "deleted"}, "created_by": username}
+
+    contracts_cursor = adb["contracts"].find(query).sort("created_at", -1).limit(100)
+    contracts = await contracts_cursor.to_list(length=100)
+
+    for c in contracts:
+        if c.get("created_at"):
+            dt_utc = c["created_at"].replace(tzinfo=timezone.utc)
+            c["created_at"] = dt_utc.astimezone(CHILE_TZ)
+
     return templates.TemplateResponse("contract_dashboard.html", {
         "request": request,
         "contracts": contracts,
-        "user_role": user_role
+        "user_role": user_role,
+        "user_username": username or ""
     })

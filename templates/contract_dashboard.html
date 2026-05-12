@@ -626,20 +626,22 @@
     <div id="sidebarOverlay" onclick="toggleMobileMenu()"></div>
     <nav class="sidebar" id="sidebar">
         <div class="brand">
-            <img src="logo.png" alt="Procasa" style="max-height: 35px; margin-left: 15px; max-width: 100%;">
+            <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
+                style="max-height: 30px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
+                onerror="this.style.display='none'"> <span>MENÚ</span>
         </div>
-        <a href="dashboard.html" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
-        <a href="ingreso.html" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso Manual</span></a>
-        <a href="leads.html" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
-        <a href="captaciones.html" class="nav-link"><i class="fa-solid fa-house-circle-check"></i>
-            <span>Captaciones</span></a>
-        <a href="contract_dashboard.html" class="nav-link active"><i class="fa-solid fa-file-contract"></i>
-            <span>Convenios</span></a>
+        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
+        {% if user_role in ['supervisor', 'admin'] %}
+        <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso Manual</span></a>
+        {% endif %}
+        <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+        <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i> <span>Captaciones</span></a>
+        <a href="/contracts/dashboard" class="nav-link active"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
 
         <a href="javascript:void(0)" class="nav-link theme-toggle" style="margin-top:auto" onclick="toggleTheme()">
-            <i class="fa-solid fa-sun" id="themeIcon" style="transition: transform 0.4s;"></i> <span>Cambiar Tema</span>
+            <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
         </a>
-        <a href="login.html" class="nav-link logout" style="margin-top:5px">
+        <a href="/logout" class="nav-link logout" style="margin-top:5px">
             <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
         </a>
     </nav>

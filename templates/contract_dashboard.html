@@ -8,11 +8,13 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/css/intlTelInput.css">
+
     <style>
         :root {
             --bg-body: #0f172a;
             --bg-card: #1e293b;
+            --bg-table-row: #0f172a;
             --bg-sidebar: #020617;
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
@@ -31,6 +33,7 @@
         [data-theme="light"] {
             --bg-body: #f1f5f9;
             --bg-card: #ffffff;
+            --bg-table-row: #f8fafc;
             --bg-sidebar: #0f172a;
             --text-primary: #1e293b;
             --text-secondary: #475569;
@@ -65,8 +68,10 @@
             backdrop-filter: blur(20px);
         }
 
-        .sidebar:hover { width: var(--sidebar-width); }
-        
+        .sidebar:hover {
+            width: var(--sidebar-width);
+        }
+
         .brand {
             font-size: 1.5rem;
             font-weight: 800;
@@ -76,12 +81,22 @@
             align-items: center;
             height: 50px;
         }
-        .brand i, .brand img {
+
+        .brand i,
+        .brand img {
             min-width: var(--sidebar-width-collapsed);
             text-align: center;
         }
-        .brand span { margin-left: -10px; opacity: 0; transition: opacity 0.3s; }
-        .sidebar:hover .brand span { opacity: 1; }
+
+        .brand span {
+            margin-left: -10px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .sidebar:hover .brand span {
+            opacity: 1;
+        }
 
         .nav-link {
             color: var(--text-secondary);
@@ -94,11 +109,34 @@
             transition: all 0.3s;
             height: 50px;
         }
-        .nav-link i { min-width: calc(var(--sidebar-width-collapsed) - 24px); text-align: center; font-size: 1.25rem; }
-        .nav-link span { opacity: 0; transform: translateX(-10px); transition: all 0.3s; font-weight: 600; }
-        .sidebar:hover .nav-link span { opacity: 1; transform: translateX(0); }
-        .nav-link:hover { background: rgba(255, 255, 255, 0.05); color: var(--text-primary); }
-        .nav-link.active { background: rgba(99, 102, 241, 0.1); color: var(--accent) !important; }
+
+        .nav-link i {
+            min-width: calc(var(--sidebar-width-collapsed) - 24px);
+            text-align: center;
+            font-size: 1.25rem;
+        }
+
+        .nav-link span {
+            opacity: 0;
+            transform: translateX(-10px);
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+
+        .sidebar:hover .nav-link span {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+        }
+
+        .nav-link.active {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent) !important;
+        }
 
         .main-content {
             margin-left: var(--sidebar-width-collapsed);
@@ -123,17 +161,21 @@
             padding-bottom: 10px;
         }
 
-        .form-control, .form-select {
+        .form-control,
+        .form-select {
             background-color: var(--input-bg);
             border-color: var(--input-border);
             color: var(--input-text);
             font-size: 0.9rem;
         }
-        .form-control:focus, .form-select:focus {
+
+        .form-control:focus,
+        .form-select:focus {
             background-color: var(--input-bg);
             border-color: var(--accent);
             color: var(--input-text);
-            box-shadow: 0 0 0 0.25rem rgba(99, 102, 241, 0.25);
+            box-shadow: 0 0 0 1px var(--accent);
+            outline: none;
         }
 
         /* Tabla Estilo Captacion */
@@ -177,7 +219,7 @@
         }
 
         .prop-table td {
-            background: var(--bg-card);
+            background: var(--bg-table-row);
             padding: 15px;
             vertical-align: middle;
             border-top: 1px solid var(--border-color);
@@ -202,14 +244,42 @@
             font-size: 0.75rem;
             font-weight: 700;
         }
-        .status-created { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
-        .status-sent { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
-        .status-opened { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
-        .status-otp_requested { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
-        .status-otp_verified { background: rgba(14, 165, 233, 0.2); color: #0ea5e9; }
-        .status-accepted { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
-        .status-signed { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
-        
+
+        .status-created {
+            background: rgba(148, 163, 184, 0.2);
+            color: #94a3b8;
+        }
+
+        .status-sent {
+            background: rgba(59, 130, 246, 0.2);
+            color: #3b82f6;
+        }
+
+        .status-opened {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        .status-otp_requested {
+            background: rgba(168, 85, 247, 0.2);
+            color: #a855f7;
+        }
+
+        .status-otp_verified {
+            background: rgba(14, 165, 233, 0.2);
+            color: #0ea5e9;
+        }
+
+        .status-accepted {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+
+        .status-signed {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+
         .pdf-preview-container {
             height: 100%;
             min-height: 500px;
@@ -220,16 +290,44 @@
             overflow-y: auto;
             display: flex;
             align-items: stretch;
+            position: relative;
         }
-        
+
         #pdfPreviewIframe {
             width: 100%;
             height: 100%;
             border: none;
             min-height: 500px;
+            transition: opacity 0.3s;
         }
 
-        /* â”€â”€ Mobile: hamburger + sidebar overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        .pdf-loading-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(2px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            z-index: 10;
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        [data-theme="dark"] .pdf-loading-overlay {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .pdf-loading-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Mobile: hamburger + sidebar overlay */
         .hamburger-mobile {
             display: none;
             background: var(--bg-card);
@@ -241,7 +339,7 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             margin-right: 12px;
             flex-shrink: 0;
         }
@@ -250,7 +348,7 @@
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.55);
+            background: rgba(0, 0, 0, 0.55);
             z-index: 1100;
         }
 
@@ -260,17 +358,37 @@
                 width: 260px;
                 transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             }
-            .sidebar:hover { width: 260px; box-shadow: none; }
+
+            .sidebar:hover {
+                width: 260px;
+                box-shadow: none;
+            }
+
             .sidebar.mobile-open {
                 left: 0;
-                box-shadow: 10px 0 30px rgba(0,0,0,0.8);
+                box-shadow: 10px 0 30px rgba(0, 0, 0, 0.8);
                 z-index: 1200;
             }
-            .sidebar.mobile-open:hover { width: 260px; }
+
+            .sidebar.mobile-open:hover {
+                width: 260px;
+            }
+
             .sidebar .brand span,
-            .sidebar .nav-link span { opacity: 1 !important; transform: translateX(0) !important; }
-            .main-content { margin-left: 0 !important; padding: 12px; }
-            .hamburger-mobile { display: flex !important; }
+            .sidebar .nav-link span {
+                opacity: 1 !important;
+                transform: translateX(0) !important;
+            }
+
+            .main-content {
+                margin-left: 0 !important;
+                padding: 12px;
+            }
+
+            .hamburger-mobile {
+                display: flex !important;
+            }
+
             .pdf-viewer-section {
                 position: relative;
                 top: auto;
@@ -278,21 +396,31 @@
                 margin-top: 12px;
             }
 
-            /* TABLA â†’ CARDS en móvil */
-            .table-responsive { overflow-x: visible; }
-            .prop-table thead { display: none; }
-            .prop-table, .prop-table tbody, .prop-table tr, .prop-table td {
+            .table-responsive {
+                overflow-x: visible;
+            }
+
+            .prop-table thead {
+                display: none;
+            }
+
+            .prop-table,
+            .prop-table tbody,
+            .prop-table tr,
+            .prop-table td {
                 display: block;
                 width: 100%;
             }
+
             .prop-table tbody tr {
-                background: var(--bg-card);
+                background: var(--bg-table-row);
                 border: 1px solid var(--border-color);
                 border-radius: 14px;
                 margin-bottom: 12px;
                 padding: 14px 16px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
             }
+
             .prop-table td {
                 border: none !important;
                 box-shadow: none !important;
@@ -305,7 +433,7 @@
                 align-items: flex-start;
                 text-align: left;
             }
-            /* Etiqueta antes de cada celda */
+
             .prop-table td[data-label]::before {
                 content: attr(data-label);
                 font-weight: 700;
@@ -323,7 +451,6 @@
             width: 95vw;
         }
 
-        /* --- NEW LAYOUT MODAL --- */
         .contract-layout {
             display: grid;
             grid-template-columns: 1.2fr 1fr;
@@ -348,32 +475,170 @@
             }
         }
 
-        .required-star { color: var(--danger-color); }
+        .required-star {
+            color: var(--danger-color);
+        }
+
+        /* intl-tel-input overrides */
+        .iti {
+            width: 100%;
+            display: block;
+        }
+
+        .iti__flag {
+            background-image: url("https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/img/flags.png");
+        }
+
+        @media (min-resolution: 2x) {
+            .iti__flag {
+                background-image: url("https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/img/flags@2x.png");
+            }
+        }
+
+        .iti__dropdown-content {
+            background-color: var(--bg-card) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 8px !important;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4) !important;
+            overflow: hidden !important;
+        }
+
+        .iti__search-input {
+            background-color: var(--input-bg) !important;
+            color: var(--input-text) !important;
+            border: 1px solid var(--input-border) !important;
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-top: 5px;
+            margin-bottom: 5px;
+            transition: all 0.2s;
+        }
+
+        .iti__country-list {
+            background-color: var(--bg-card) !important;
+            color: var(--text-primary) !important;
+            border: none !important;
+            margin-top: 0 !important;
+            border-bottom-left-radius: 8px !important;
+            border-bottom-right-radius: 8px !important;
+        }
+
+        .iti__country.iti__highlight {
+            background-color: rgba(99, 102, 241, 0.1) !important;
+        }
+
+        .iti__selected-dial-code {
+            color: var(--input-text) !important;
+        }
+
+        .iti__search-input:focus {
+            outline: none !important;
+            border-color: var(--accent) !important;
+            box-shadow: 0 0 0 1px var(--accent) !important;
+        }
+
+        /* Custom scrollbar for iti dropdown and autocomplete */
+        .iti__country-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .iti__country-list::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            /* Match dark mode */
+        }
+
+        .iti__country-list::-webkit-scrollbar-thumb {
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            margin-top: 5px;
+        }
+
+        .autocomplete-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            color: var(--text-primary);
+            transition: background-color 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .autocomplete-item:hover {
+            background-color: rgba(99, 102, 241, 0.1);
+        }
+
+        .autocomplete-dropdown::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .autocomplete-dropdown::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            /* Match dark mode */
+        }
+
+        .autocomplete-dropdown::-webkit-scrollbar-thumb {
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+
+        .iti__search {
+            padding: 8px !important;
+            background-color: var(--bg-card) !important;
+            border-bottom: 1px solid var(--border-color) !important;
+            border-top-left-radius: 8px !important;
+            border-top-right-radius: 8px !important;
+        }
+    </style>
+    <!-- Custom Status & Actions Styles -->
+    <style>
+        .btn-hover-whatsapp:hover,
+        .btn-hover-whatsapp:focus,
+        .btn-hover-whatsapp:active {
+            color: #fff !important;
+            background-color: #25D366 !important;
+            border-color: #25D366 !important;
+        }
+
+        .btn-hover-danger:hover,
+        .btn-hover-danger:focus,
+        .btn-hover-danger:active {
+            color: #fff !important;
+            background-color: var(--bs-danger) !important;
+            border-color: var(--bs-danger) !important;
+        }
     </style>
 </head>
 
 <body>
-    <!-- Overlay para cerrar sidebar en móvil -->
-    <div id="sidebarOverlay" onclick="toggleMobileMenu()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;"></div>
-    <!-- Sidebar -->
+    <div id="sidebarOverlay" onclick="toggleMobileMenu()"></div>
     <nav class="sidebar" id="sidebar">
         <div class="brand">
-            <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
-                style="max-height: 30px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
-                onerror="this.style.display='none'"> <span>MENÚ</span>
+            <span style="padding: 0 15px; font-size: 24px;"><i class="fa-solid fa-file-signature"
+                    style="color: var(--accent);"></i></span> <span>MENÚ</span>
         </div>
-        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
-        {% if user_role in ['supervisor', 'admin'] %}
-        <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso Manual</span></a>
-        {% endif %}
-        <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
-        <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i> <span>Captaciones</span></a>
-        <a href="/contracts/dashboard" class="nav-link active"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
-        
+        <a href="#" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
+        <a href="#" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso Manual</span></a>
+        <a href="#" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+        <a href="#" class="nav-link"><i class="fa-solid fa-house-circle-check"></i> <span>Captaciones</span></a>
+        <a href="#" class="nav-link active"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
+
         <a href="javascript:void(0)" class="nav-link theme-toggle" style="margin-top:auto" onclick="toggleTheme()">
             <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
         </a>
-        <a href="/logout" class="nav-link logout" style="margin-top:5px">
+        <a href="#" class="nav-link logout" style="margin-top:5px">
             <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
         </a>
     </nav>
@@ -384,26 +649,27 @@
                 <div class="hamburger-mobile" onclick="toggleMobileMenu()">
                     <i class="fa-solid fa-bars"></i>
                 </div>
-                <h4 class="m-0 fw-bold">Módulo de Convenios (Ley 19.799)</h4>
+                <h4 class="m-0 fw-bold">Módulo de Convenios</h4>
             </div>
             <button class="btn btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#modalNewContract">
                 <i class="fa-solid fa-plus me-2"></i> Nuevo Convenio
             </button>
         </div>
-        
-        <!-- Global Error Banner for Dashboard if needed -->
+
         <div id="globalErrorBanner" class="alert alert-danger d-none fw-bold shadow-sm">
-            <i class="fa-solid fa-triangle-exclamation me-2"></i> Faltan campos obligatorios o tienen errores. Revisa el formulario rojo.
+            <i class="fa-solid fa-triangle-exclamation me-2"></i> Faltan campos obligatorios o tienen errores. Revisa el
+            formulario rojo.
         </div>
 
         <div class="table-container">
-            <div class="section-title">Convenios Emitidos Recientemente</div>
+            <div class="section-title">Convenios Emitidos</div>
             <div class="table-responsive">
                 <table class="prop-table">
                     <thead>
                         <tr>
                             <th>Fecha</th>
-                            <th>Código Interno</th>
+                            <th>Código</th>
+                            <th>Origen</th>
                             <th>Cliente</th>
                             <th>Propiedad / Rol</th>
                             <th>Estado</th>
@@ -411,230 +677,214 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for c in contracts %}
+                        <!-- Ejemplo 1 -->
                         <tr>
-                            <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y %H:%M') if c.created_at else '---' }}</td>
-                            <td data-label="Código Interno" class="font-monospace text-accent">{{ c.property_code or c.contract_code[:8] }}</td>
-                            <td data-label="Cliente">
-                                <b>{{ c.client_data.nombre }}</b><br>
-                                <small class="text-secondary">{{ c.client_data.rut }} | {{ c.client_data.email }}</small>
+                            <td>12/05/2026<br><small class="text-secondary">14:30 hrs</small></td>
+                            <td><strong>15482</strong></td>
+                            <td>Captación Interna</td>
+                            <td>Juan Pérez<br><small class="text-secondary">912345678</small></td>
+                            <td>Santiago<br><small class="text-secondary">Rol: 1234-56</small></td>
+                            <td><span
+                                    class="badge bg-success bg-opacity-10 text-success border border-success">Firmado</span>
                             </td>
-                            <td data-label="Propiedad / Rol">
-                                {{ c.property_data.direccion }}<br>
-                                <small class="text-secondary">{{ c.property_data.tipo }} | Rol: {{ c.property_data.rol }}</small>
-                            </td>
-                            <td data-label="Estado">
-                                <span class="status-badge status-{{ c.status }}">
-                                    {% if c.status == 'created' %}Creado
-                                    {% elif c.status == 'sent' %}Enviado
-                                    {% elif c.status == 'opened' %}Abierto
-                                    {% elif c.status == 'otp_requested' %}Código Solicitado
-                                    {% elif c.status == 'otp_verified' %}RUT Validado
-                                    {% elif c.status == 'signed' %}Firmado
-                                    {% else %}{{ c.status|title }}{% endif %}
-                                </span>
-                                <div class="small text-secondary mt-1">
-                                    {% if c.status in ['created','sent','opened','otp_requested','otp_verified'] %}
-                                    Progreso: En firma (pendiente cliente)
-                                    {% elif c.status in ['accepted','signed'] %}
-                                    Progreso: Firmado completo
-                                    {% else %}
-                                    Progreso: {{ c.status|title }}
-                                    {% endif %}
-                                </div>
-                            </td>
-                            <td data-label="Acciones">
-                                <div class="d-flex flex-wrap gap-2 mt-2 mt-md-0">
-                                {% if c.status == 'created' %}
-                                <a href="/contracts/api/download/{{ c.contract_code }}" target="_blank" class="btn btn-sm btn-secondary" title="Ver PDF Generado">
-                                    <i class="fa-solid fa-file-pdf"></i>
-                                </a>
-                                <button class="btn btn-sm btn-success" onclick="sendContract('{{ c.contract_code }}')" title="Enviar por WhatsApp">
-                                    <i class="fa-brands fa-whatsapp"></i>
-                                </button>
-                                {% endif %}
-                                {% if c.status == 'signed' %}
-                                <a href="/contracts/api/download_signed/{{ c.contract_code }}" target="_blank" class="btn btn-sm btn-success" title="Descargar Contrato Firmado">
-                                    <i class="fa-solid fa-file-circle-check"></i>
-                                </a>
-                                <a href="/contracts/verify/{{ c.contract_code }}" target="_blank" class="btn btn-sm btn-info" title="Verificar Evidencia">
-                                    <i class="fa-solid fa-shield-halved"></i>
-                                </a>
-                                {% endif %}
-                                {% if c.status == 'accepted' %}
-                                <a href="/contracts/verify/{{ c.contract_code }}" target="_blank" class="btn btn-sm btn-info" title="Verificar Evidencia">
-                                    <i class="fa-solid fa-shield-halved"></i>
-                                </a>
-                                {% endif %}
-                                <button class="btn btn-sm btn-danger ms-2" onclick="deleteContract('{{ c.contract_code }}')" title="Eliminar Contrato">
-                                    <i class="fa-solid fa-trash"></i>
-                                </button>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-secondary" title="Ver Convenio"><i
+                                            class="fa-solid fa-eye"></i></button>
+                                    <button class="btn btn-outline-secondary btn-hover-whatsapp"
+                                        title="Enviar WhatsApp"><i class="fa-brands fa-whatsapp"></i></button>
+                                    <button class="btn btn-outline-secondary btn-hover-danger" title="Eliminar"><i
+                                            class="fa-solid fa-trash-can"></i></button>
                                 </div>
                             </td>
                         </tr>
-                        {% else %}
+                        <!-- Ejemplo 2 -->
                         <tr>
-                            <td colspan="6" class="text-center text-secondary py-4">No hay convenios generados aún.</td>
+                            <td>10/05/2026<br><small class="text-secondary">09:15 hrs</small></td>
+                            <td><strong>15480</strong></td>
+                            <td>Captación Externa</td>
+                            <td>María González<br><small class="text-secondary">987654321</small></td>
+                            <td>Providencia<br><small class="text-secondary">Rol: 987-65</small></td>
+                            <td><span
+                                    class="badge bg-warning bg-opacity-10 text-warning border border-warning">Pendiente
+                                    Firma</span></td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-secondary" title="Ver Convenio"><i
+                                            class="fa-solid fa-eye"></i></button>
+                                    <button class="btn btn-outline-secondary btn-hover-whatsapp"
+                                        title="Enviar WhatsApp"><i class="fa-brands fa-whatsapp"></i></button>
+                                    <button class="btn btn-outline-secondary btn-hover-danger" title="Eliminar"><i
+                                            class="fa-solid fa-trash-can"></i></button>
+                                </div>
+                            </td>
                         </tr>
-                        {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    <datalist id="comunasChileList">
-        <option value="Santiago"><option value="Providencia"><option value="Las Condes"><option value="Ñuñoa"><option value="Maipú">
-        <option value="Puente Alto"><option value="La Florida"><option value="San Miguel"><option value="Estación Central"><option value="Quilicura">
-        <option value="Pudahuel"><option value="San Bernardo"><option value="Vitacura"><option value="La Reina"><option value="Peñalolén">
-        <option value="Lo Barnechea"><option value="Conchalí"><option value="Independencia"><option value="Recoleta"><option value="Renca">
-        <option value="Cerrillos"><option value="Cerro Navia"><option value="Huechuraba"><option value="Lo Prado"><option value="Macul">
-        <option value="Pedro Aguirre Cerda"><option value="Quinta Normal"><option value="Lo Espejo"><option value="La Cisterna"><option value="La Granja">
-        <option value="El Bosque"><option value="San Ramón"><option value="La Pintana"><option value="Buin"><option value="Calera de Tango">
-        <option value="Colina"><option value="Lampa"><option value="Tiltil"><option value="Melipilla"><option value="Talagante">
-        <option value="Isla de Maipo"><option value="Peñaflor"><option value="Padre Hurtado"><option value="El Monte"><option value="Pirque">
-        <option value="Viña del Mar"><option value="Valparaíso"><option value="Concón"><option value="Quilpué"><option value="Villa Alemana">
-        <option value="San Antonio"><option value="Quillota"><option value="Los Andes"><option value="San Felipe"><option value="La Calera">
-        <option value="Rancagua"><option value="Machalí"><option value="San Fernando"><option value="Pichilemu"><option value="Curicó">
-        <option value="Talca"><option value="Linares"><option value="Constitución"><option value="Chillán"><option value="Chillán Viejo">
-        <option value="Los íngeles"><option value="Concepción"><option value="Talcahuano"><option value="San Pedro de la Paz"><option value="Coronel">
-        <option value="Hualpén"><option value="Chiguayante"><option value="Temuco"><option value="Padre Las Casas"><option value="Villarrica">
-        <option value="Pucón"><option value="Valdivia"><option value="Osorno"><option value="Puerto Montt"><option value="Puerto Varas">
-        <option value="Castro"><option value="Ancud"><option value="Coyhaique"><option value="Punta Arenas"><option value="Arica">
-        <option value="Iquique"><option value="Alto Hospicio"><option value="Antofagasta"><option value="Calama"><option value="Copiapó">
-        <option value="La Serena"><option value="Coquimbo">
-    </datalist>
-
     <!-- Modal Nuevo Contrato -->
     <div class="modal fade" id="modalNewContract" tabindex="-1">
         <div class="modal-dialog modal-xl">
-            <div class="modal-content" style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color);">
+            <div class="modal-content"
+                style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color);">
                 <div class="modal-header border-bottom-0">
-                    <h5 class="modal-title fw-bold"><i class="fa-solid fa-file-signature text-accent me-2"></i> Generar Nuevo Convenio de Corretaje</h5>
+                    <h5 class="modal-title fw-bold"><i class="fa-solid fa-file-signature me-2"
+                            style="color: var(--accent);"></i> Generar Nuevo Convenio de Corretaje</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" style="overflow-x: hidden;">
                     <div class="contract-layout">
-                        <!-- Formulario -->
                         <div class="form-section">
                             <form id="formNewContract" class="needs-validation" novalidate>
                                 <div id="formErrors" class="alert alert-danger d-none mb-3 py-2 text-sm fw-bold"></div>
-                                <div class="row mb-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del Cliente <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="cliente_nombre" placeholder="Ej: Juan Pérez" required onblur="capitalizeName(this); validateField(this); triggerPreview();">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-lg-8 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del
+                                            Cliente <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="cliente_nombre"
+                                            placeholder="Ej: Juan Pérez" required
+                                            onblur="capitalizeName(this); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa el nombre completo.</div>
                                     </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">RUT Cliente <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="cliente_rut" placeholder="12345678-9" required oninput="formatRut(this)" onblur="validateField(this); triggerPreview();">
+                                    <div class="col-lg-4 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">RUT
+                                            Cliente <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="cliente_rut"
+                                            placeholder="12345678-9" required oninput="formatRut(this)"
+                                            onblur="validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa un RUT válido.</div>
                                     </div>
                                 </div>
-                                <div class="row mb-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span class="required-star">*</span></label>
-                                        <div class="input-group">
-                                            <select class="form-select" name="phone_country" style="max-width: 110px" onchange="updatePhonePrefix(); triggerPreview();">
-                                                <option value="+56" selected>🇨🇱 +56</option>
-                                                <option value="+54">🇦🇷 +54</option>
-                                                <option value="+57">🇨🇴 +57</option>
-                                                <option value="+51">🇵🇪 +51</option>
-                                                <option value="+1">🇺🇸 +1</option>
-                                                <option value="+34">🇪🇸 +34</option>
-                                            </select>
-                                            <input type="text" class="form-control" name="phone" placeholder="912345678" required oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();" onblur="formatPhone(this); validateField(this); triggerPreview();">
+                                <div class="row g-3 mb-3">
+                                    <div class="col-lg-4 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono
+                                            <span class="required-star">*</span></label>
+                                        <div class="w-100">
+                                            <input type="tel" class="form-control w-100" id="phoneInput"
+                                                name="phone_full" placeholder="912345678" required style="width: 100%;">
                                         </div>
-                                        <div class="invalid-feedback">Ingresa un teléfono (ej: +569...).</div>
+                                        <div class="invalid-feedback" id="phoneErrorMsg">Ingresa un teléfono válido.
+                                        </div>
                                     </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Email <span class="required-star">*</span></label>
+                                    <div class="col-lg-8 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Email
+                                            <span class="required-star">*</span></label>
                                         <input type="email" class="form-control" name="email" required
                                             oninput="this.value=this.value.toLowerCase()"
                                             onblur="this.value=this.value.trim().toLowerCase(); validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).</div>
+                                        <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).
+                                        </div>
                                     </div>
                                 </div>
-                                
+
                                 <hr style="border-color: var(--border-color);">
-                                
-                                <div class="row mb-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Tipo de Operación <span class="required-star">*</span></label>
+
+                                <div class="row g-3 mb-3">
+                                    <div class="col-lg-8 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Tipo de
+                                            Operación <span class="required-star">*</span></label>
                                         <select class="form-select" name="tipo" onchange="triggerPreview()">
                                             <option value="Venta">Autorización de Venta</option>
                                             <option value="Venta Exclusiva">Autorización de Venta Exclusiva</option>
                                             <option value="Arriendo">Autorización de Arriendo</option>
-                                            <option value="Arriendo y Administración">Autorización de Arriendo y Administración</option>
+                                            <option value="Arriendo y Administración">Autorización de Arriendo y
+                                                Administración</option>
                                         </select>
                                     </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Vigencia (Días) <span class="required-star">*</span></label>
-                                        <input type="number" min="30" max="720" step="1" class="form-control" name="vigencia" value="120" required oninput="triggerPreview()" onblur="validateField(this); triggerPreview();">
+                                    <div class="col-lg-4 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Vigencia
+                                            (Días) <span class="required-star">*</span></label>
+                                        <select class="form-select" name="vigencia" required
+                                            onchange="validateField(this); triggerPreview();">
+                                            <option value="60">60 Días</option>
+                                            <option value="90">90 Días</option>
+                                            <option value="120" selected>120 Días</option>
+                                            <option value="180">180 Días</option>
+                                            <option value="360">360 Días</option>
+                                        </select>
                                     </div>
                                 </div>
-                                <div class="row mb-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Dirección Propiedad <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="propiedad_direccion" placeholder="Calle, Número" required
-                                            oninput="triggerPreview()"
+                                <div class="row g-3 mb-3">
+                                    <div class="col-lg-8 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Dirección
+                                            Propiedad <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="propiedad_direccion"
+                                            placeholder="Calle, Número" required oninput="triggerPreview()"
                                             onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa la dirección.</div>
                                     </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comuna <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="comuna" list="comunasChileList" placeholder="Ej: Santiago" required
-                                            oninput="triggerPreview()"
-                                            onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
+                                    <div class="col-lg-4 col-md-6 position-relative">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comuna
+                                            <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="comuna" id="comunaInput"
+                                            placeholder="Ej: Santiago" required autocomplete="off"
+                                            oninput="filterComunas(); triggerPreview();" onfocus="showComunas()"
+                                            onblur="setTimeout(() => validateComunaList(this), 200);">
+                                        <div id="comunaDropdown" class="autocomplete-dropdown custom-scrollbar d-none">
+                                        </div>
                                         <div class="invalid-feedback">Ingresa la comuna.</div>
                                     </div>
                                 </div>
-                                      <div class="row mb-3">
-                                    <div class="col-md-4">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Rol <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="rol" placeholder="Ej: 223-12 â†’ 00223-012" required
-                                            oninput="this.value=this.value.replace(/[^0-9\-]/g,''); triggerPreview();"
-                                            onblur="formatRol(this); validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Solo números y un guión (Ej: 223-12).</div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Precio <span class="required-star">*</span></label>
+                                <div class="row g-3 mb-3">
+                                    <div class="col-lg-4 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Rol <span
+                                                class="required-star">*</span></label>
                                         <div class="input-group">
-                                            <input type="text" class="form-control" name="precio_valor" placeholder="Ej: 5000 o 120000000" required
+                                            <input type="text" class="form-control text-center px-1" name="rol_manzana"
+                                                placeholder="Manzana" required
+                                                oninput="this.value=this.value.replace(/[^0-9]/g,''); if(this.value.length>5) this.value=this.value.slice(0,5); triggerPreview();"
+                                                onblur="if(this.value) this.value = this.value.padStart(5, '0'); validateField(this); triggerPreview();">
+                                            <span class="input-group-text px-1"
+                                                style="background:var(--input-bg); border-color:var(--input-border); color:var(--text-secondary)">-</span>
+                                            <input type="text" class="form-control text-center px-1" name="rol_predio"
+                                                placeholder="Predio" required
+                                                oninput="this.value=this.value.replace(/[^0-9]/g,''); if(this.value.length>3) this.value=this.value.slice(0,3); triggerPreview();"
+                                                onblur="if(this.value) this.value = this.value.padStart(3, '0'); validateField(this); triggerPreview();">
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-5 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Precio
+                                            <span class="required-star">*</span></label>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" name="precio_valor"
+                                                placeholder="Ej: 5000" required
                                                 oninput="this.value=this.value.replace(/[^0-9\.\,]/g,''); triggerPreview();"
                                                 onblur="validateField(this); triggerPreview();">
-                                            <select class="form-select" name="moneda" style="max-width:120px" onchange="triggerPreview()">
+                                            <select class="form-select px-2" name="moneda"
+                                                style="flex: 0 0 85px; min-width: 85px; text-align: center;"
+                                                onchange="triggerPreview()">
                                                 <option value="UF" selected>UF</option>
                                                 <option value="CLP">CLP</option>
                                             </select>
                                         </div>
-                                        <input type="hidden" name="precio" value="">
-                                        <input type="hidden" name="price_currency" value="UF">
-                                        <div class="form-text text-secondary" style="font-size:0.75rem">Se guardará como "valor + monedaâ€ (UF o CLP).</div>
-                                        <div class="invalid-feedback">Ingresa el monto.</div>
                                     </div>
-                                    <div class="col-md-4">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comisión <span class="required-star">*</span></label>
-                                        <select class="form-select" name="comision" required onchange="validateField(this); triggerPreview();">
+                                    <div class="col-lg-3 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comisión
+                                            <span class="required-star">*</span></label>
+                                        <select class="form-select" name="comision" required
+                                            onchange="validateField(this); triggerPreview();">
                                             <option value="1%">1%</option>
                                             <option value="1.5%">1.5%</option>
                                             <option value="2%" selected>2%</option>
                                         </select>
-                                        <div class="form-text text-secondary" style="font-size:0.75rem">Este porcentaje quedará escrito en el convenio.</div>
-                                        <div class="invalid-feedback">Requerido.</div>
                                     </div>
                                 </div>
-                                
-                                <div class="row mb-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Cód Propiedad (Convecta) <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="property_code" placeholder="Ej: 15482" required
+
+                                <div class="row g-3 mb-3">
+                                    <div class="col-lg-6 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Código
+                                            <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="property_code"
+                                            placeholder="Ej: 15482" required
                                             oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();"
                                             onblur="validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Requerido (solo números).</div>
                                     </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Origen</label>
+                                    <div class="col-lg-6 col-md-6">
+                                        <label
+                                            class="form-label text-secondary small text-uppercase fw-bold">Origen</label>
                                         <select class="form-select" name="origen">
                                             <option value="Captación Interna">Captación Interna</option>
                                             <option value="Captación Externa">Captación Externa</option>
@@ -643,25 +893,29 @@
                                 </div>
                             </form>
                         </div>
-                        
-                        <!-- Vista Previa PDF: solo visible en desktop (lg+) -->
+
                         <div class="pdf-viewer-section">
                             <div class="pdf-preview-container" style="height: 100%;">
+                                <div id="pdfLoadingOverlay" class="pdf-loading-overlay">
+                                    <i class="fa-solid fa-spinner fa-spin"></i>
+                                    <span>Actualizando documento...</span>
+                                </div>
                                 <iframe id="pdfPreviewIframe" src="about:blank"></iframe>
                             </div>
                             <div class="text-center mt-2 text-secondary small">
                                 <i class="fa-solid fa-eye"></i> Vista Previa en Tiempo Real
                             </div>
                         </div>
-                    </div> <!-- /contract-layout -->
+                    </div>
                 </div>
                 <div class="modal-footer border-top-0 align-items-center">
                     <div id="missingFieldsMsg" class="text-danger small fw-bold d-none me-auto">
                         <i class="fa-solid fa-circle-exclamation me-1"></i>
-                        <span id="missingFieldsList">Faltan campos obligatorios.</span>
+                        <span id="missingFieldsList">Faltan campos obligatorios o hay errores.</span>
                     </div>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-                    <button type="button" id="btnGenerateContract" class="btn btn-primary fw-bold" onclick="generateContract()" disabled>
+                    <button type="button" id="btnGenerateContract" class="btn btn-primary fw-bold" disabled
+                        onclick="generateContract()">
                         <i class="fa-solid fa-file-signature me-2"></i>Crear Documento
                     </button>
                 </div>
@@ -670,13 +924,73 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/js/intlTelInput.min.js"></script>
     <script>
+        const comunasDeChile = [
+            'Arica', 'Camarones', 'Putre', 'General Lagos', 'Iquique', 'Alto Hospicio', 'Pozo Almonte', 'Camiña', 'Colchane', 'Huara', 'Pica', 'Antofagasta', 'Mejillones', 'Sierra Gorda', 'Taltal', 'Calama', 'Ollagüe', 'San Pedro de Atacama', 'Tocopilla', 'María Elena', 'Copiapó', 'Caldera', 'Tierra Amarilla', 'Chañaral', 'Diego de Almagro', 'Vallenar', 'Alto del Carmen', 'Freirina', 'Huasco', 'La Serena', 'Coquimbo', 'Andacollo', 'La Higuera', 'Paihuano', 'Vicuña', 'Illapel', 'Canela', 'Los Vilos', 'Salamanca', 'Ovalle', 'Combarbalá', 'Monte Patria', 'Punitaqui', 'Río Hurtado', 'Valparaíso', 'Casablanca', 'Concón', 'Juan Fernández', 'Puchuncaví', 'Quintero', 'Viña del Mar', 'Isla de Pascua', 'Los Andes', 'Calle Larga', 'Rinconada', 'San Esteban', 'La Ligua', 'Cabildo', 'Papudo', 'Petorca', 'Zapallar', 'Quillota', 'Calera', 'Hijuelas', 'La Cruz', 'Nogales', 'San Antonio', 'Algarrobo', 'Cartagena', 'El Quisco', 'El Tabo', 'Santo Domingo', 'San Felipe', 'Catemu', 'Llaillay', 'Panquehue', 'Putaendo', 'Santa María', 'Quilpué', 'Limache', 'Olmué', 'Villa Alemana', 'Rancagua', 'Codegua', 'Coinco', 'Coltauco', 'Doñihue', 'Graneros', 'Las Cabras', 'Machalí', 'Malloa', 'Mostazal', 'Olivar', 'Peumo', 'Pichidegua', 'Quinta de Tilcoco', 'Rengo', 'Requínoa', 'San Vicente', 'Pichilemu', 'La Estrella', 'Litueche', 'Marchihue', 'Navidad', 'Paredones', 'San Fernando', 'Chépica', 'Chimbarongo', 'Lolol', 'Nancagua', 'Palmilla', 'Peralillo', 'Placilla', 'Pumanque', 'Santa Cruz', 'Talca', 'Constitución', 'Curepto', 'Empedrado', 'Maule', 'Pelarco', 'Pencahue', 'Río Claro', 'San Clemente', 'San Rafael', 'Cauquenes', 'Chanco', 'Pelluhue', 'Curicó', 'Hualañé', 'Licantén', 'Molina', 'Rauco', 'Romeral', 'Sagrada Familia', 'Teno', 'Vichuquén', 'Linares', 'Colbún', 'Longaví', 'Parral', 'Retiro', 'San Javier', 'Villa Alegre', 'Yerbas Buenas', 'Cobquecura', 'Coelemu', 'Ninhue', 'Portezuelo', 'Quirihue', 'Ránquil', 'Treguaco', 'Bulnes', 'Chillán Viejo', 'Chillán', 'El Carmen', 'Pemuco', 'Pinto', 'Quillón', 'San Ignacio', 'Yungay', 'Coihueco', 'Ñiquén', 'San Carlos', 'San Fabián', 'San Nicolás', 'Concepción', 'Coronel', 'Chiguayante', 'Florida', 'Hualqui', 'Lota', 'Penco', 'San Pedro de la Paz', 'Santa Juana', 'Talcahuano', 'Tomé', 'Hualpén', 'Lebu', 'Arauco', 'Cañete', 'Contulmo', 'Curanilahue', 'Los Álamos', 'Tirúa', 'Los Ángeles', 'Antuco', 'Cabrero', 'Laja', 'Mulchén', 'Nacimiento', 'Negrete', 'Quilaco', 'Quilleco', 'San Rosendo', 'Santa Bárbara', 'Tucapel', 'Yumbel', 'Alto Biobío', 'Temuco', 'Carahue', 'Cunco', 'Curarrehue', 'Freire', 'Galvarino', 'Gorbea', 'Lautaro', 'Loncoche', 'Melipeuco', 'Nueva Imperial', 'Padre las Casas', 'Perquenco', 'Pitrufquén', 'Pucón', 'Saavedra', 'Teodoro Schmidt', 'Toltén', 'Vilcún', 'Villarrica', 'Cholchol', 'Angol', 'Collipulli', 'Curacautín', 'Ercilla', 'Lonquimay', 'Los Sauces', 'Lumaco', 'Purén', 'Renaico', 'Traiguén', 'Victoria', 'Valdivia', 'Corral', 'Lanco', 'Los Lagos', 'Máfil', 'San José de la Mariquina', 'Paillaco', 'Panguipulli', 'La Unión', 'Futrono', 'Lago Ranco', 'Río Bueno', 'Puerto Montt', 'Calbuco', 'Cochamó', 'Fresia', 'Frutillar', 'Los Muermos', 'Llanquihue', 'Maullín', 'Puerto Varas', 'Castro', 'Ancud', 'Chonchi', 'Curaco de Vélez', 'Dalcahue', 'Puqueldón', 'Queilén', 'Quellón', 'Quemchi', 'Quinchao', 'Osorno', 'Puerto Octay', 'Purranque', 'Puyehue', 'Río Negro', 'San Juan de la Costa', 'San Pablo', 'Chaitén', 'Futaleufú', 'Hualaihué', 'Palena', 'Coyhaique', 'Lago Verde', 'Aysén', 'Cisnes', 'Guaitecas', 'Cochrane', 'O\'Higgins', 'Tortel', 'Chile Chico', 'Río Ibáñez', 'Punta Arenas', 'Laguna Blanca', 'Río Verde', 'San Gregorio', 'Cabo de Hornos', 'Antártica', 'Porvenir', 'Primavera', 'Timaukel', 'Natales', 'Torres del Paine', 'Cerrillos', 'Cerro Navia', 'Conchalí', 'El Bosque', 'Estación Central', 'Huechuraba', 'Independencia', 'La Cisterna', 'La Florida', 'La Granja', 'La Pintana', 'La Reina', 'Las Condes', 'Lo Barnechea', 'Lo Espejo', 'Lo Prado', 'Macul', 'Maipú', 'Ñuñoa', 'Pedro Aguirre Cerda', 'Peñalolén', 'Providencia', 'Pudahuel', 'Quilicura', 'Quinta Normal', 'Recoleta', 'Renca', 'San Joaquín', 'San Miguel', 'San Ramón', 'Santiago', 'Vitacura', 'Puente Alto', 'Pirque', 'San José de Maipo', 'Colina', 'Lampa', 'Tiltil', 'San Bernardo', 'Buin', 'Calera de Tango', 'Paine', 'Melipilla', 'Alhué', 'Curacaví', 'María Pinto', 'San Pedro', 'Talagante', 'El Monte', 'Isla de Maipo', 'Padre Hurtado', 'Peñaflor'
+        ];
+
+        document.addEventListener("DOMContentLoaded", function () {
+            buildComunaDropdown(comunasDeChile);
+        });
+
+        function buildComunaDropdown(list) {
+            const dropdown = document.getElementById('comunaDropdown');
+            if (!dropdown) return;
+            dropdown.innerHTML = '';
+            if (list.length === 0) {
+                dropdown.innerHTML = '<div class="autocomplete-item text-secondary py-2 text-center" style="font-size: 0.85rem">Sin resultados</div>';
+                return;
+            }
+            list.forEach(c => {
+                const div = document.createElement('div');
+                div.className = 'autocomplete-item';
+                div.innerText = c;
+                div.onclick = () => {
+                    const input = document.getElementById('comunaInput');
+                    input.value = c;
+                    dropdown.classList.add('d-none');
+                    validateField(input);
+                    triggerPreview();
+                };
+                dropdown.appendChild(div);
+            });
+        }
+
+        function showComunas() {
+            document.getElementById('comunaDropdown').classList.remove('d-none');
+            filterComunas();
+        }
+
+        function filterComunas() {
+            const val = document.getElementById('comunaInput').value.toLowerCase();
+            const filtered = comunasDeChile.filter(c => c.toLowerCase().includes(val));
+            buildComunaDropdown(filtered);
+            document.getElementById('comunaDropdown').classList.remove('d-none');
+        }
+
+        function validateComunaList(input) {
+            const dropdown = document.getElementById('comunaDropdown');
+            if (dropdown) dropdown.classList.add('d-none');
+
+            const val = input.value.trim().toLowerCase();
+            const found = comunasDeChile.find(c => c.toLowerCase() === val);
+            if (found) {
+                input.value = found;
+            } else if (input.value) {
+                input.value = '';
+            }
+            validateField(input);
+            triggerPreview();
+        }
+
         function toggleTheme() {
             const html = document.documentElement;
             const current = html.getAttribute('data-theme');
             const next = current === 'dark' ? 'light' : 'dark';
             html.setAttribute('data-theme', next);
             localStorage.setItem('theme', next);
+            document.getElementById('themeIcon').className = next === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
         }
 
         function toggleMobileMenu() {
@@ -686,15 +1000,8 @@
             overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
         }
 
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.addEventListener('click', () => {
-                if (window.innerWidth <= 768) toggleMobileMenu();
-            });
-        });
+        if (localStorage.getItem('theme') === 'light') toggleTheme();
 
-        if(localStorage.getItem('theme') === 'light') toggleTheme();
-
-        // --- SMART INPUTS ---
         function capitalizeName(input) {
             let val = input.value.toLowerCase().replace(/\s+/g, ' ').trim();
             input.value = val.replace(/(^|\s)\S/g, l => l.toUpperCase());
@@ -714,83 +1021,37 @@
 
         function formatRol(input) {
             const raw = input.value.replace(/[^0-9\-]/g, '').trim();
-            if (!raw.includes('-')) return; // no formatear si no hay guión
+            if (!raw.includes('-')) return;
             const parts = raw.split('-');
             const manzana = parts[0].padStart(5, '0').slice(0, 5);
-            const predio  = (parts[1] || '').padStart(3, '0').slice(0, 3);
+            const predio = (parts[1] || '').padStart(3, '0').slice(0, 3);
             input.value = `${manzana}-${predio}`;
         }
-
-        function formatPrecio(input) {
-            // Logic removed to allow $, UF, CLP natively
-        }
-
-        function formatComision(input) {
-            let v = input.value.replace(/[^0-9\.]/g, '').trim();
-            if (!v) return;
-            input.value = v + '%';
-        }
-
-        function formatPhone(input) {
-            input.value = input.value.replace(/[^0-9]/g, '');
-        }
-
-        function updatePhonePrefix() {
-            triggerPreview();
-        }
-
-
-        // --- PREVIEW LOGIC ---
-        let previewTimeout = null;
-        let objectUrl = null;
 
         function checkFormValidity() {
             const form = document.getElementById('formNewContract');
             const btn = document.getElementById('btnGenerateContract');
             const msgDiv = document.getElementById('missingFieldsMsg');
-            const msgList = document.getElementById('missingFieldsList');
-
-            const FIELD_LABELS = {
-                cliente_nombre: 'Nombre',
-                cliente_rut: 'RUT',
-                phone: 'Teléfono',
-                email: 'Email',
-                propiedad_direccion: 'Dirección',
-                comuna: 'Comuna',
-                rol: 'ROL',
-                precio_valor: 'Precio',
-                comision: 'Comisión'
-            };
-
-            const missing = [];
             let isValid = true;
+
+            const phoneInput = document.getElementById('phoneInput');
+            if (phoneInput.classList.contains('is-invalid') || !phoneInput.value.trim()) {
+                isValid = false;
+            }
+
             Array.from(form.elements).forEach(el => {
-                if (el.required && !el.value.trim()) {
-                    isValid = false;
-                    const label = FIELD_LABELS[el.name] || el.name;
-                    missing.push(label);
-                }
+                if (el.tagName !== 'BUTTON' && el.required && !el.value.trim()) isValid = false;
                 if (el.classList.contains('is-invalid')) isValid = false;
             });
 
             btn.disabled = !isValid;
-
-            if (!isValid && missing.length > 0) {
-                msgDiv.classList.remove('d-none');
-                msgList.textContent = 'Faltan: ' + missing.join(', ');
-            } else if (!isValid) {
-                msgDiv.classList.remove('d-none');
-                msgList.textContent = 'Revisa los campos en rojo.';
-            } else {
-                msgDiv.classList.add('d-none');
-            }
-            return isValid;
+            if (!isValid) msgDiv.classList.remove('d-none');
+            else msgDiv.classList.add('d-none');
         }
 
-        
-        function validateField(input, type) {
+        function validateField(input) {
+            if (input.id === 'phoneInput') return;
             let valid = input.value.trim() !== '' && input.checkValidity();
-            // Removed specific validation for 'precio' to allow $, UF, CLP
             if (!valid) {
                 input.classList.add('is-invalid');
                 input.classList.remove('is-valid');
@@ -801,25 +1062,29 @@
             checkFormValidity();
         }
 
+        let previewTimeout = null;
+        let objectUrl = null;
+
         function triggerPreview() {
             checkFormValidity();
-            
-            if(previewTimeout) clearTimeout(previewTimeout);
+
+            const overlay = document.getElementById('pdfLoadingOverlay');
+            overlay.classList.add('active');
+
+            if (previewTimeout) clearTimeout(previewTimeout);
             previewTimeout = setTimeout(async () => {
                 const form = document.getElementById('formNewContract');
-                // Al menos tener un nombre para mostrar algo
-                if(form.cliente_nombre.value.trim().length < 2) return;
-                
+
                 const data = {
                     cliente_nombre: form.cliente_nombre.value,
                     cliente_rut: form.cliente_rut.value,
-                    phone: `${form.phone_country.value}${form.phone.value}`,
+                    phone: window.getPhoneData ? window.getPhoneData() : document.getElementById('phoneInput').value,
                     email: form.email.value,
                     tipo: form.tipo.value,
                     propiedad_direccion: form.propiedad_direccion.value,
                     comuna: form.comuna.value,
                     vigencia: form.vigencia.value,
-                    rol: form.rol.value,
+                    rol: form.rol_manzana.value && form.rol_predio.value ? `${form.rol_manzana.value}-${form.rol_predio.value}` : '',
                     precio_valor: form.precio_valor.value,
                     moneda: form.moneda.value,
                     comision: form.comision.value,
@@ -830,29 +1095,86 @@
                 try {
                     const res = await fetch('/contracts/api/preview', {
                         method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(data)
                     });
-                    if(res.ok) {
+                    if (res.ok) {
                         const blob = await res.blob();
-                        if(objectUrl) URL.revokeObjectURL(objectUrl);
+                        if (objectUrl) URL.revokeObjectURL(objectUrl);
                         objectUrl = URL.createObjectURL(blob);
                         document.getElementById('pdfPreviewIframe').src = objectUrl + '#toolbar=0&navpanes=0&scrollbar=0&view=FitH';
                     }
-                } catch(e) {
+                } catch (e) {
                     console.error("Preview error", e);
+                } finally {
+                    overlay.classList.remove('active');
                 }
-            }, 800); // 800ms debounce
+            }, 800);
         }
 
-        // --- SUBMIT ---
-        async function generateContract() {
-            const form = document.getElementById('formNewContract');
-            if(!form.checkValidity()) {
-                form.reportValidity();
-                return;
+        document.addEventListener("DOMContentLoaded", function () {
+            if (window.intlTelInputGlobals) {
+                const countryData = window.intlTelInputGlobals.getCountryData();
+                try {
+                    const esRegionNames = new Intl.DisplayNames(['es'], { type: 'region' });
+                    countryData.forEach(country => {
+                        try {
+                            const esName = esRegionNames.of(country.iso2.toUpperCase());
+                            if (esName) {
+                                country.name = esName;
+                            }
+                        } catch (e) { }
+                    });
+                } catch (e) { }
+
+                // Sort countryData alphabetically by the new Spanish names
+                countryData.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
             }
 
+            const phoneInputField = document.querySelector("#phoneInput");
+            const phoneInput = window.intlTelInput(phoneInputField, {
+                initialCountry: "cl",
+                preferredCountries: ["cl", "ar", "co", "pe", "us", "es"],
+                utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/js/utils.js",
+                separateDialCode: true,
+                countrySearch: true
+            });
+
+            const modalEl = document.getElementById('modalNewContract');
+            modalEl.addEventListener('show.bs.modal', () => {
+                const iframeSrc = document.getElementById('pdfPreviewIframe').src;
+                if (iframeSrc.includes('about:blank') || iframeSrc.includes(window.location.origin + '/about:blank')) {
+                    triggerPreview();
+                }
+            });
+
+            window.getPhoneData = function () {
+                return phoneInput.getNumber();
+            };
+
+            const validatePhone = () => {
+                if (phoneInputField.value.trim()) {
+                    if (phoneInput.isValidNumber()) {
+                        phoneInputField.classList.remove('is-invalid');
+                        phoneInputField.classList.add('is-valid');
+                    } else {
+                        phoneInputField.classList.add('is-invalid');
+                        phoneInputField.classList.remove('is-valid');
+                    }
+                } else {
+                    phoneInputField.classList.remove('is-valid');
+                    phoneInputField.classList.add('is-invalid');
+                }
+                triggerPreview();
+            };
+
+            phoneInputField.addEventListener('input', validatePhone);
+            phoneInputField.addEventListener('countrychange', validatePhone);
+            phoneInputField.addEventListener('blur', validatePhone);
+        });
+
+        async function generateContract() {
+            const form = document.getElementById('formNewContract');
             const btn = document.getElementById('btnGenerateContract');
             btn.disabled = true;
             btn.innerText = "Procesando...";
@@ -860,13 +1182,13 @@
             const data = {
                 cliente_nombre: form.cliente_nombre.value,
                 cliente_rut: form.cliente_rut.value,
-                phone: `${form.phone_country.value}${form.phone.value}`,
+                phone: window.getPhoneData ? window.getPhoneData() : document.getElementById('phoneInput').value,
                 email: form.email.value,
                 tipo: form.tipo.value,
                 propiedad_direccion: form.propiedad_direccion.value,
                 comuna: form.comuna.value,
                 vigencia: form.vigencia.value,
-                rol: form.rol.value,
+                rol: form.rol_manzana.value && form.rol_predio.value ? `${form.rol_manzana.value}-${form.rol_predio.value}` : '',
                 precio_valor: form.precio_valor.value,
                 moneda: form.moneda.value,
                 comision: form.comision.value,
@@ -877,55 +1199,23 @@
             try {
                 const res = await fetch('/contracts/api/create', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
                 const result = await res.json();
-                if(res.ok) {
+                if (res.ok) {
                     window.location.reload();
                 } else {
                     alert('Error: ' + result.detail);
-                    btn.disabled = false;
-                    btn.innerText = "Generar y Preparar";
                 }
-            } catch(e) {
+            } catch (e) {
                 alert('Error al generar contrato.');
+            } finally {
                 btn.disabled = false;
-                btn.innerText = "Generar y Preparar";
-            }
-        }
-
-        async function sendContract(code) {
-            if(!confirm('Â¿Enviar enlace seguro de firma por WhatsApp al cliente?')) return;
-            
-            try {
-                const res = await fetch(`/contracts/api/${code}/send`, { method: 'POST' });
-                const result = await res.json();
-                if(res.ok) {
-                    alert('Â¡Enviado exitosamente!');
-                    window.location.reload();
-                } else {
-                    alert('Error: ' + result.detail);
-                }
-            } catch(e) {
-                alert('Error al enviar contrato.');
-            }
-        }
-        
-        async function deleteContract(code) {
-            if(!confirm('Â¿Estás seguro de eliminar este contrato de la base de datos? Esto no se puede deshacer.')) return;
-            try {
-                const res = await fetch(`/contracts/api/delete/${code}`, { method: 'DELETE' });
-                if(res.ok) {
-                    window.location.reload();
-                } else {
-                    alert('Error eliminando contrato.');
-                }
-            } catch(e) {
-                alert('Error de conexión.');
+                btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
             }
         }
     </script>
 </body>
-</html>
 
+</html>

@@ -630,18 +630,18 @@
                 style="max-height: 30px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
                 onerror="this.style.display='none'"> <span>MENÚ</span>
         </div>
-        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
         {% if user_role in ['supervisor', 'admin'] %}
+        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
         <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso Manual</span></a>
         {% endif %}
         <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
         <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i> <span>Captaciones</span></a>
         <a href="/contracts/dashboard" class="nav-link active"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
 
-        <a href="javascript:void(0)" class="nav-link theme-toggle" style="margin-top:auto" onclick="toggleTheme()">
+        <a href="javascript:void(0)" class="nav-link" style="margin-top:auto" onclick="toggleTheme()">
             <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
         </a>
-        <a href="/logout" class="nav-link logout" style="margin-top:5px">
+        <a href="/logout" class="nav-link">
             <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
         </a>
     </nav>
@@ -680,48 +680,79 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <!-- Ejemplo 1 -->
+                        {% for c in contracts %}
                         <tr>
-                            <td>12/05/2026<br><small class="text-secondary">14:30 hrs</small></td>
-                            <td><strong>15482</strong></td>
-                            <td>Captación Interna</td>
-                            <td>Juan Pérez<br><small class="text-secondary">912345678</small></td>
-                            <td>Santiago<br><small class="text-secondary">Rol: 1234-56</small></td>
-                            <td><span
-                                    class="badge bg-success bg-opacity-10 text-success border border-success">Firmado</span>
+                            <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '---' }}<br><small class="text-secondary">{{ c.created_at.strftime('%H:%M') if c.created_at else '' }} hrs</small></td>
+                            <td data-label="Código"><strong>{{ c.property_code or c.contract_code[:8] }}</strong></td>
+                            <td data-label="Origen">{{ c.get('origen', '---') }}</td>
+                            <td data-label="Cliente">
+                                {{ c.client_data.nombre }}<br>
+                                <small class="text-secondary">{{ c.client_data.rut }}</small>
                             </td>
-                            <td>
-                                <div class="btn-group btn-group-sm">
-                                    <button class="btn btn-outline-secondary" title="Ver Convenio"><i
-                                            class="fa-solid fa-eye"></i></button>
-                                    <button class="btn btn-outline-secondary btn-hover-whatsapp"
-                                        title="Enviar WhatsApp"><i class="fa-brands fa-whatsapp"></i></button>
-                                    <button class="btn btn-outline-secondary btn-hover-danger" title="Eliminar"><i
-                                            class="fa-solid fa-trash-can"></i></button>
+                            <td data-label="Propiedad / Rol">
+                                {{ c.property_data.direccion }}<br>
+                                <small class="text-secondary">Rol: {{ c.property_data.rol }}</small>
+                            </td>
+                            <td data-label="Estado">
+                                {% if c.status == 'created' %}<span class="status-badge status-created">Creado</span>
+                                {% elif c.status == 'sent' %}<span class="status-badge status-sent">Enviado</span>
+                                {% elif c.status == 'opened' %}<span class="status-badge status-opened">Abierto</span>
+                                {% elif c.status == 'otp_requested' %}<span class="status-badge status-otp_requested">Código Pedido</span>
+                                {% elif c.status == 'otp_verified' %}<span class="status-badge status-otp_verified">RUT Validado</span>
+                                {% elif c.status in ['signed','accepted'] %}<span class="status-badge status-signed">Firmado ✓</span>
+                                {% else %}<span class="status-badge status-created">{{ c.status }}</span>{% endif %}
+                            </td>
+                            <td data-label="Acciones">
+                                <div class="d-flex flex-wrap gap-1">
+                                    {# Botón Ver PDF original (solo si no está firmado) #}
+                                    {% if c.status == 'created' %}
+                                    <a href="/contracts/api/download/{{ c.contract_code }}" target="_blank"
+                                        class="btn btn-sm btn-outline-secondary" title="Ver PDF">
+                                        <i class="fa-solid fa-file-pdf"></i>
+                                    </a>
+                                    {# Botón Enviar WhatsApp: solo si aún no se ha enviado #}
+                                    <button class="btn btn-sm btn-outline-secondary btn-hover-whatsapp"
+                                        title="Enviar por WhatsApp"
+                                        onclick="sendContract('{{ c.contract_code }}', this)">
+                                        <i class="fa-brands fa-whatsapp"></i>
+                                    </button>
+                                    {% elif c.status in ['sent','opened','otp_requested','otp_verified'] %}
+                                    {# Ya enviado: solo reenvío permitido, con advertencia #}
+                                    <button class="btn btn-sm btn-outline-warning"
+                                        title="Reenviar enlace (ya fue enviado)"
+                                        onclick="sendContract('{{ c.contract_code }}', this, true)">
+                                        <i class="fa-solid fa-rotate-right"></i>
+                                    </button>
+                                    {% elif c.status in ['signed','accepted'] %}
+                                    {# Firmado: descargar PDF firmado #}
+                                    <a href="/contracts/api/download_signed/{{ c.contract_code }}" target="_blank"
+                                        class="btn btn-sm btn-success" title="Descargar Firmado">
+                                        <i class="fa-solid fa-file-circle-check"></i>
+                                    </a>
+                                    <a href="/contracts/verify/{{ c.contract_code }}" target="_blank"
+                                        class="btn btn-sm btn-outline-info" title="Verificar Evidencia">
+                                        <i class="fa-solid fa-shield-halved"></i>
+                                    </a>
+                                    {% endif %}
+                                    {# Eliminar: siempre visible excepto firmados #}
+                                    {% if c.status not in ['signed','accepted'] %}
+                                    <button class="btn btn-sm btn-outline-secondary btn-hover-danger"
+                                        title="Eliminar"
+                                        onclick="deleteContract('{{ c.contract_code }}', this)">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
-                        <!-- Ejemplo 2 -->
+                        {% else %}
                         <tr>
-                            <td>10/05/2026<br><small class="text-secondary">09:15 hrs</small></td>
-                            <td><strong>15480</strong></td>
-                            <td>Captación Externa</td>
-                            <td>María González<br><small class="text-secondary">987654321</small></td>
-                            <td>Providencia<br><small class="text-secondary">Rol: 987-65</small></td>
-                            <td><span
-                                    class="badge bg-warning bg-opacity-10 text-warning border border-warning">Pendiente
-                                    Firma</span></td>
-                            <td>
-                                <div class="btn-group btn-group-sm">
-                                    <button class="btn btn-outline-secondary" title="Ver Convenio"><i
-                                            class="fa-solid fa-eye"></i></button>
-                                    <button class="btn btn-outline-secondary btn-hover-whatsapp"
-                                        title="Enviar WhatsApp"><i class="fa-brands fa-whatsapp"></i></button>
-                                    <button class="btn btn-outline-secondary btn-hover-danger" title="Eliminar"><i
-                                            class="fa-solid fa-trash-can"></i></button>
-                                </div>
+                            <td colspan="7" class="text-center text-secondary py-5">
+                                <i class="fa-solid fa-folder-open fa-2x mb-2 d-block"></i>
+                                No hay convenios generados aún.
                             </td>
                         </tr>
+                        {% endfor %}
                     </tbody>
                 </table>
             </div>
@@ -1222,6 +1253,61 @@
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
+            }
+        }
+
+        // ─── ANTI-DUPLICADO: bloquea el botón mientras procesa ───────────
+        async function sendContract(contractCode, btn, isResend = false) {
+            if (btn.disabled) return; // previene doble clic
+            if (isResend) {
+                const ok = confirm('Este convenio ya fue enviado al cliente.\n¿Deseas reenviar el enlace de firma?');
+                if (!ok) return;
+            }
+            const originalHTML = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try {
+                const res = await fetch(`/contracts/api/${contractCode}/send`, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    btn.classList.remove('btn-outline-secondary', 'btn-outline-warning');
+                    btn.classList.add('btn-success');
+                    setTimeout(() => window.location.reload(), 1200);
+                } else {
+                    alert('Error al enviar: ' + (data.detail || 'Error desconocido'));
+                    btn.innerHTML = originalHTML;
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                alert('Error de red al enviar el convenio.');
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+            }
+        }
+
+        async function deleteContract(contractCode, btn) {
+            if (btn.disabled) return;
+            const ok = confirm('¿Eliminar este convenio? Esta acción no se puede deshacer.');
+            if (!ok) return;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            try {
+                const res = await fetch(`/contracts/api/delete/${contractCode}`, { method: 'DELETE' });
+                if (res.ok) {
+                    btn.closest('tr').style.transition = 'opacity 0.4s';
+                    btn.closest('tr').style.opacity = '0';
+                    setTimeout(() => window.location.reload(), 450);
+                } else {
+                    const data = await res.json();
+                    alert('Error al eliminar: ' + (data.detail || 'Error desconocido'));
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+                }
+            } catch (e) {
+                alert('Error de red al eliminar el convenio.');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
             }
         }
     </script>

@@ -91,19 +91,18 @@
             -webkit-overflow-scrolling: touch;
         }
 
-        #pdf-container:fullscreen {
-            padding: 20px;
+        #pdf-container.fullscreen-mode {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            max-width: none;
+            z-index: 9999;
             background: #0f172a;
-            overflow: auto;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        #pdf-container:-webkit-full-screen {
             padding: 20px;
-            background: #0f172a;
             overflow: auto;
+            border-radius: 0;
         }
 
         .pdf-page-wrapper {
@@ -242,8 +241,8 @@
             <div class="page-wrap py-5 px-3 max-w-2xl mx-auto">
 
                                 <!-- Header -->
-                <div class="mb-5">
-                    <div class="flex items-center justify-center mb-2">
+                <div class="mb-3">
+                    <div class="flex items-center justify-center mb-0">
                         <img src="/static/logo.png?v=1.0.1" alt="Procasa" style="max-height:110px;width:auto;">
                     </div>
                     <div class="text-center">
@@ -433,7 +432,7 @@
                     class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center transition-colors shadow-sm text-sm">
                     <i class="fa-solid fa-download mr-2"></i> Descargar contrato
                 </a>
-                <button onclick="document.getElementById('pdf-container').requestFullscreen()"
+                <button onclick="document.getElementById('pdf-container').classList.toggle('fullscreen-mode')"
                     class="flex-1 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold py-2.5 px-4 rounded-lg flex items-center justify-center transition-colors shadow-sm text-sm">
                     <i class="fa-solid fa-expand mr-2"></i> Ver en pantalla completa
                 </button>

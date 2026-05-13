@@ -836,170 +836,61 @@
                                 <input type="hidden" name="executive" value="{{ user_username }}">
                                 <div class="row g-3 mb-3">
                                     <div class="col-lg-6 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del
-                                            Cliente <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="cliente_nombre"
-                                            placeholder="Ej: Juan Pérez" required
-                                            onblur="capitalizeName(this); validateField(this); triggerPreview();">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del Cliente <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="cliente_nombre" placeholder="Ej: Juan Pérez" required onblur="capitalizeName(this); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa el nombre completo.</div>
                                     </div>
-                                    <div class="col-lg-4 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">RUT
-                                            Cliente <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="cliente_rut"
-                                            placeholder="12345678-9" required oninput="formatRut(this)"
-                                            onblur="validateField(this); triggerPreview();">
+                                    <div class="col-lg-6 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">RUT Cliente <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="cliente_rut" placeholder="12345678-9" required oninput="formatRut(this)" onblur="validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa un RUT válido.</div>
                                     </div>
                                 </div>
                                 <div class="row g-3 mb-3">
-                                    <div class="col-lg-4 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono
-                                            <span class="required-star">*</span></label>
-                                        <div class="w-100">
-                                            <input type="tel" class="form-control w-100" id="phoneInput"
-                                                name="phone_full" placeholder="912345678" required style="width: 100%;">
-                                        </div>
-                                        <div class="invalid-feedback" id="phoneErrorMsg">Ingresa un teléfono válido.
-                                        </div>
-                                    </div>
                                     <div class="col-lg-8 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Email
-                                            <span class="required-star">*</span></label>
-                                        <input type="email" class="form-control" name="email" required
-                                            oninput="this.value=this.value.toLowerCase()"
-                                            onblur="this.value=this.value.trim().toLowerCase(); validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).
-                                        </div>
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Domicilio <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="cliente_direccion" placeholder="Calle, Número" required onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa el domicilio.</div>
                                     </div>
-                                </div>
-
-                                <hr style="border-color: var(--border-color);">
-
-                                <div class="row g-3 mb-3">
-                                    <div class="col-lg-8 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Tipo
-                                            Convenio <span class="required-star">*</span></label>
-                                        <select class="form-select" name="tipo" required
-                                            onchange="validateField(this); triggerPreview()">
-                                            <option value="" selected>Selecciona tipo de operación</option>
-                                            <option value="Venta">Autorización de Venta</option>
-                                            <option value="Venta Exclusiva">Autorización de Venta Exclusiva</option>
-                                            <option value="Arriendo">Autorización de Arriendo</option>
-                                            <option value="Arriendo y Administración">Autorización de Arriendo y
-                                                Administración</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-lg-4 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Vigencia
-                                            (Días) <span class="required-star">*</span></label>
-                                        <select class="form-select" name="vigencia" required
-                                            onchange="validateField(this); triggerPreview();">
-                                            <option value="" selected>Selecciona vigencia</option>
-                                            <option value="60">60 Días</option>
-                                            <option value="90">90 Días</option>
-                                            <option value="120">120 Días</option>
-                                            <option value="180">180 Días</option>
-                                            <option value="360">360 Días</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div class="row g-3 mb-3">
-                                    <div class="col-lg-8 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Dirección
-                                            Propiedad <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="propiedad_direccion"
-                                            placeholder="Calle, Número" required oninput="triggerPreview()"
-                                            onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa la dirección.</div>
-                                    </div>
-                                    <div class="col-lg-3 col-md-6 position-relative">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comuna
-                                            <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="comuna" id="comunaInput"
-                                            placeholder="Ej: Santiago" required autocomplete="off"
-                                            oninput="filterComunas(); triggerPreview();" onfocus="showComunas()"
-                                            onblur="setTimeout(() => validateComunaList(this), 200);">
-                                        <div id="comunaDropdown" class="autocomplete-dropdown custom-scrollbar d-none">
-                                        </div>
+                                    <div class="col-lg-4 col-md-6 position-relative">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comuna <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="cliente_comuna" id="comunaInput" placeholder="Ej: Santiago" required autocomplete="off" oninput="filterComunas(); triggerPreview();" onfocus="showComunas()" onblur="setTimeout(() => validateComunaList(this), 200);">
+                                        <div id="comunaDropdown" class="autocomplete-dropdown custom-scrollbar d-none"></div>
                                         <div class="invalid-feedback">Ingresa la comuna.</div>
                                     </div>
-                                    <div class="col-lg-3 col-md-6 position-relative">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Ciudad
-                                            Firma <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="ciudad_firma" id="ciudadFirmaInput"
-                                            placeholder="Ej: Santiago de Chile" required autocomplete="off"
-                                            oninput="filterCiudadesFirma(); triggerPreview();" onfocus="showCiudadesFirma()"
-                                            onblur="setTimeout(() => validateCiudadFirmaList(this), 200);">
-                                        <div id="ciudadFirmaDropdown" class="autocomplete-dropdown custom-scrollbar d-none">
+                                </div>
+                                <div class="row g-3 mb-3">
+                                    <div class="col-lg-6 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span class="required-star">*</span></label>
+                                        <div class="w-100">
+                                            <input type="tel" class="form-control w-100" id="phoneInput" name="phone_full" placeholder="912345678" required style="width: 100%;">
                                         </div>
-                                        <div class="invalid-feedback">Ingresa la ciudad de firma.</div>
+                                        <div class="invalid-feedback" id="phoneErrorMsg">Ingresa un teléfono válido.</div>
+                                    </div>
+                                    <div class="col-lg-6 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Email</label>
+                                        <input type="email" class="form-control" name="email" oninput="this.value=this.value.toLowerCase()" onblur="this.value=this.value.trim().toLowerCase(); validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).</div>
                                     </div>
                                 </div>
+                                <hr style="border-color: var(--border-color);">
+                                <h6 class="fw-bold mb-3"><i class="fa-solid fa-house me-2"></i>Datos de la Propiedad a Visitar</h6>
                                 <div class="row g-3 mb-3">
                                     <div class="col-lg-4 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Rol <span
-                                                class="required-star">*</span></label>
-                                        <div class="input-group">
-                                            <input type="text" class="form-control text-center px-1" name="rol_manzana"
-                                                placeholder="Manzana" required
-                                                oninput="this.value=this.value.replace(/[^0-9]/g,''); if(this.value.length>5) this.value=this.value.slice(0,5); triggerPreview();"
-                                                onblur="if(this.value) this.value = this.value.padStart(5, '0'); validateField(this); triggerPreview();">
-                                            <span class="input-group-text px-1"
-                                                style="background:var(--input-bg); border-color:var(--input-border); color:var(--text-secondary)">-</span>
-                                            <input type="text" class="form-control text-center px-1" name="rol_predio"
-                                                placeholder="Predio" required
-                                                oninput="this.value=this.value.replace(/[^0-9]/g,''); if(this.value.length>3) this.value=this.value.slice(0,3); triggerPreview();"
-                                                onblur="if(this.value) this.value = this.value.padStart(3, '0'); validateField(this); triggerPreview();">
-                                        </div>
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Código <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="property_code" placeholder="Ej: 15482" required oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();" onblur="validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa el código.</div>
                                     </div>
-                                    <div class="col-lg-5 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Precio
-                                            <span class="required-star">*</span></label>
-                                        <div class="input-group">
-                                            <input type="text" class="form-control" name="precio_valor"
-                                                placeholder="Ej: 5000" required
-                                                oninput="this.value=this.value.replace(/[^0-9\.\,]/g,''); triggerPreview();"
-                                                onblur="validateField(this); triggerPreview();">
-                                            <select class="form-select px-2" name="moneda"
-                                                style="flex: 0 0 85px; min-width: 85px; text-align: center;"
-                                                onchange="triggerPreview()">
-                                                <option value="UF" selected>UF</option>
-                                                <option value="CLP">CLP</option>
-                                            </select>
-                                        </div>
+                                    <div class="col-lg-4 col-md-6 position-relative">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comuna <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="property_comuna" id="ciudadFirmaInput" placeholder="Ej: Vitacura" required autocomplete="off" oninput="filterCiudadesFirma(); triggerPreview();" onfocus="showCiudadesFirma()" onblur="setTimeout(() => validateCiudadFirmaList(this), 200);">
+                                        <div id="ciudadFirmaDropdown" class="autocomplete-dropdown custom-scrollbar d-none"></div>
+                                        <div class="invalid-feedback">Ingresa la comuna.</div>
                                     </div>
-                                    <div class="col-lg-3 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comisión
-                                            <span class="required-star">*</span></label>
-                                        <select class="form-select" name="comision" required
-                                            onchange="validateField(this); triggerPreview();">
-                                            <option value="" selected>Selecciona comisión</option>
-                                            <option value="1%">1%</option>
-                                            <option value="1.5%">1.5%</option>
-                                            <option value="2%">2%</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="row g-3 mb-3">
-                                    <div class="col-lg-6 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Código
-                                            <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="property_code"
-                                            placeholder="Ej: 15482" required
-                                            oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();"
-                                            onblur="validateField(this); triggerPreview();">
-                                    </div>
-                                    <div class="col-lg-6 col-md-6">
-                                        <label
-                                            class="form-label text-secondary small text-uppercase fw-bold">Origen</label>
-                                        <select class="form-select" name="origen" required
-                                            onchange="validateField(this); triggerPreview();">
-                                            <option value="" selected>Selecciona origen</option>
-                                            <option value="Captación Interna">Captación Interna</option>
-                                            <option value="Captación Externa">Captación Externa</option>
-                                        </select>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Región <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="property_region" placeholder="Ej: Metropolitana" required onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa la región.</div>
                                     </div>
                                 </div>
                             </form>

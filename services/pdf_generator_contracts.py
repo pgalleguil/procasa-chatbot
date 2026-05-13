@@ -83,9 +83,9 @@ class PDFGenerator:
         tipo = contract_data.get("tipo", "Arriendo")
         
         if tipo == "Venta Exclusiva":
-            Story.append(Paragraph("AUTORIZACIÃ“N DE CORRETAJE DE VENTA EXCLUSIVA", title_style))
+            Story.append(Paragraph("AUTORIZACIÓN DE CORRETAJE DE VENTA EXCLUSIVA", title_style))
         else:
-            Story.append(Paragraph(f"AUTORIZACIÃ“N DE {tipo.upper()}", title_style))
+            Story.append(Paragraph(f"AUTORIZACIÓN DE {tipo.upper()}", title_style))
         Story.append(Spacer(1, 0.01 * inch))
         
         if 'contract_code' in contract_data:
@@ -120,20 +120,20 @@ class PDFGenerator:
         if tipo in ["Venta", "Venta Exclusiva"]:
             comision_text = comision if comision else "dos por ciento (2 %)"
             if tipo == "Venta Exclusiva":
-                p3 = f"<b>COMISIÃ“N:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por EL COMITENTE, se devengará en favor de PROCASA S.A. y/o sus franquiciados una comisión equivalente al <b>{comision_text}</b> del precio de venta más I.V.A. Esta comisión también aplicará si EL COMITENTE vende directamente o por terceros no autorizados durante la vigencia, respecto de clientes presentados o gestionados por PROCASA."
-                p4 = "<b>PROTECCIÃ“N DE CLIENTES PRESENTADOS:</b> EL COMITENTE reconoce protección comercial sobre los clientes presentados por PROCASA S.A. y/o sus franquiciados durante la vigencia del presente instrumento."
+                p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por EL COMITENTE, se devengará en favor de PROCASA S.A. y/o sus franquiciados una comisión equivalente al <b>{comision_text}</b> del precio de venta más I.V.A. Esta comisión también aplicará si EL COMITENTE vende directamente o por terceros no autorizados durante la vigencia, respecto de clientes presentados o gestionados por PROCASA."
+                p4 = "<b>PROTECCIÓN DE CLIENTES PRESENTADOS:</b> EL COMITENTE reconoce protección comercial sobre los clientes presentados por PROCASA S.A. y/o sus franquiciados durante la vigencia del presente instrumento."
                 Story.append(Paragraph(p3, normal_style))
                 Story.append(Paragraph(p4, normal_style))
             else:
-                p3 = f"<b>COMISIÃ“N:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> del precio de venta más el I.V.A."
+                p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> del precio de venta más el I.V.A."
                 Story.append(Paragraph(p3, normal_style))
         else:
             comision_text = comision if comision else "50%"
-            p3 = f"<b>COMISIÃ“N:</b> En caso de formularse una oferta de arriendo respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> de la renta mensual pactada más I.V.A. En los contratos de plazos superiores a 24 meses la comisión será de un dos por ciento (2 %) más IVA sobre el total de las rentas y con un límite de 60 meses."
+            p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de arriendo respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> de la renta mensual pactada más I.V.A. En los contratos de plazos superiores a 24 meses la comisión será de un dos por ciento (2 %) más IVA sobre el total de las rentas y con un límite de 60 meses."
             Story.append(Paragraph(p3, normal_style))
             
             if tipo == "Arriendo y Administración":
-                p4 = "<b>ADMINISTRACIÃ“N:</b> EL COMITENTE encarga la administración de la propiedad a INMOBILIARIA SUCRE SPA, quien acepta la administración de la propiedad individualizada. INMOBILIARIA SUCRE SPA se encuentra expresamente facultada para tomar todas aquellas medidas de carácter administrativo que resulten pertinentes para el normal cumplimiento de lo convenido en este mandato. Dentro de las facultades de la administración que por este acto se otorgan al administrador, se entenderán las de cobrar y percibir las rentas de arrendamiento. Las facultades de administración se ejercerán durante la vigencia del presente contrato, incluyendo sus renovaciones e incluso los períodos de eventual incumplimiento del arrendatario."
+                p4 = "<b>ADMINISTRACIÓN:</b> EL COMITENTE encarga la administración de la propiedad a INMOBILIARIA SUCRE SPA, quien acepta la administración de la propiedad individualizada. INMOBILIARIA SUCRE SPA se encuentra expresamente facultada para tomar todas aquellas medidas de carácter administrativo que resulten pertinentes para el normal cumplimiento de lo convenido en este mandato. Dentro de las facultades de la administración que por este acto se otorgan al administrador, se entenderán las de cobrar y percibir las rentas de arrendamiento. Las facultades de administración se ejercerán durante la vigencia del presente contrato, incluyendo sus renovaciones e incluso los períodos de eventual incumplimiento del arrendatario."
                 Story.append(Paragraph(p4, normal_style))
                 
                 admin_honorarios = comision if comision else "10"

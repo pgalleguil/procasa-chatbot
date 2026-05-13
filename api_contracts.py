@@ -1446,7 +1446,21 @@ async def verify_contract(contract_code: str, request: Request):
 @router.get("/dashboard", response_class=HTMLResponse)
 async def contract_dashboard(request: Request):
     """Módulo principal para gestión y generación de convenios de corretaje"""
+    from bson import ObjectId
     from chatbot.storage import get_async_db
+
+    def _json_safe(value):
+        """Convierte tipos BSON/fecha a estructuras serializables para Jinja tojson."""
+        if isinstance(value, ObjectId):
+            return str(value)
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, dict):
+            return {k: _json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_json_safe(v) for v in value]
+        return value
+
     adb = get_async_db()
     username, user_role = await _get_request_user(adb, request)
 
@@ -1476,6 +1490,7 @@ async def contract_dashboard(request: Request):
             "executive": c.get("executive", ""),
             "created_by": c.get("created_by", "")
         }
+        c["edit_data"] = _json_safe(c["edit_data"])
 
     executives = []
     if user_role in ["supervisor", "admin"]:

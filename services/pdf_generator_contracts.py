@@ -1,4 +1,4 @@
-import os
+﻿import os
 import io
 import qrcode
 from pathlib import Path
@@ -33,7 +33,7 @@ class NumberedCanvas(canvas.Canvas):
     def draw_page_number(self, page_count):
         self.saveState()
         self.setFont("Helvetica", 8)
-        text = f"Página {self._pageNumber} de {page_count}"
+        text = f"PÃ¡gina {self._pageNumber} de {page_count}"
         self.drawCentredString(letter[0] / 2.0, 0.5 * inch, text)
         self.restoreState()
 
@@ -54,7 +54,7 @@ class PDFGenerator:
     def generate_original_contract(contract_data: dict) -> bytes:
         """Genera el contrato original en base a la data."""
         buffer = io.BytesIO()
-        # Reducimos márgenes para maximizar espacio (2cm = 56.7 pt)
+        # Reducimos mÃ¡rgenes para maximizar espacio (2cm = 56.7 pt)
         doc = SimpleDocTemplate(buffer, pagesize=letter,
             rightMargin=36, leftMargin=36, topMargin=24, bottomMargin=30)
         styles = getSampleStyleSheet()
@@ -66,7 +66,7 @@ class PDFGenerator:
         
         Story = []
         
-        # Logo de Procasa — esquina superior izquierda
+        # Logo de Procasa â€” esquina superior izquierda
         logo_path = BASE_DIR / "static" / "logo.png"
         if logo_path.exists():
             from reportlab.lib.utils import ImageReader
@@ -83,24 +83,14 @@ class PDFGenerator:
         tipo = contract_data.get("tipo", "Arriendo")
         
         if tipo == "Venta Exclusiva":
-            Story.append(Paragraph("AUTORIZACIÓN DE CORRETAJE DE VENTA EXCLUSIVA", title_style))
+            Story.append(Paragraph("AUTORIZACIÃ“N DE CORRETAJE DE VENTA EXCLUSIVA", title_style))
         else:
-            Story.append(Paragraph(f"AUTORIZACIÓN DE {tipo.upper()}", title_style))
+            Story.append(Paragraph(f"AUTORIZACIÃ“N DE {tipo.upper()}", title_style))
         Story.append(Spacer(1, 0.01 * inch))
         
         if 'contract_code' in contract_data:
-            fecha_emision = datetime.now(CHILE_TZ).strftime('%d/%m/%Y')
-            if 'created_at' in contract_data:
-                try:
-                    dt = contract_data['created_at']
-                    if isinstance(dt, str):
-                        dt = datetime.fromisoformat(dt)
-                    fecha_emision = dt.astimezone(CHILE_TZ).strftime('%d/%m/%Y')
-                except:
-                    pass
-            vigencia_dias = contract_data.get('property_data', {}).get('vigencia', contract_data.get('vigencia', '30'))
-            Story.append(Paragraph(f"<b>Código de Verificación:</b> {contract_data['contract_code']} &nbsp;&nbsp; <b>Fecha:</b> {fecha_emision} &nbsp;&nbsp; <b>Vigencia:</b> {vigencia_dias} días", normal_style))
-            Story.append(Spacer(1, 0.03 * inch))
+            Story.append(Paragraph(f"<b>Código de Verificación:</b> {contract_data['contract_code']}", normal_style))
+            Story.append(Spacer(1, 0.02 * inch))
         
         fecha = datetime.now(CHILE_TZ).strftime('%d de %m de %Y').replace('de 01 de', 'de enero de').replace('de 02 de', 'de febrero de').replace('de 03 de', 'de marzo de').replace('de 04 de', 'de abril de').replace('de 05 de', 'de mayo de').replace('de 06 de', 'de junio de').replace('de 07 de', 'de julio de').replace('de 08 de', 'de agosto de').replace('de 09 de', 'de septiembre de').replace('de 10 de', 'de octubre de').replace('de 11 de', 'de noviembre de').replace('de 12 de', 'de diciembre de')
         nombre = contract_data.get('cliente_nombre', '')
@@ -117,41 +107,41 @@ class PDFGenerator:
         
         op = "la venta de" if tipo in ["Venta", "Venta Exclusiva"] else "en arriendo"
         
-        p1 = f"En {ciudad_firma}, a {fecha}, yo <b>{nombre}</b>, rut <b>{rut}</b>, mediante la suscripción de la presente, autorizo a PROCASA S.A. y a sus franquiciados para ofrecer {op} mi propiedad ubicada en <b>{direccion}, comuna de {comuna}</b>, Rol de Avalúo <b>{rol}</b>, código interno <b>{codigo_prop}</b>; el nexo principal entre la franquicia master Procasa S.A. será el franquiciado INMOBILIARIA SUCRE SPA y el COMITENTE."
+        p1 = f"En {ciudad_firma}, a {fecha}, yo <b>{nombre}</b>, rut <b>{rut}</b>, mediante la suscripciÃ³n de la presente, autorizo a PROCASA S.A. y a sus franquiciados para ofrecer {op} mi propiedad ubicada en <b>{direccion}, comuna de {comuna}</b>, Rol de AvalÃºo <b>{rol}</b>, cÃ³digo interno <b>{codigo_prop}</b>; el nexo principal entre la franquicia master Procasa S.A. serÃ¡ el franquiciado INMOBILIARIA SUCRE SPA y el COMITENTE."
         Story.append(Paragraph(p1, normal_style))
         
         precio_texto = f" al precio de <b>{precio}</b>" if precio else ""
         if tipo == "Venta Exclusiva":
-            p2 = f"<b>ANTECEDENTES:</b> La presente autorización se otorga con carácter de <b>EXCLUSIVIDAD</b>{precio_texto} y tendrá una validez de <b>{vigencia}</b> días corridos a contar de esta fecha, renovable por períodos iguales. Durante su vigencia, EL COMITENTE se obliga a trabajar exclusivamente con PROCASA S.A. y/o sus franquiciados para la comercialización del inmueble."
+            p2 = f"<b>ANTECEDENTES:</b> La presente autorizaciÃ³n se otorga con carÃ¡cter de <b>EXCLUSIVIDAD</b>{precio_texto} y tendrÃ¡ una validez de <b>{vigencia}</b> dÃ­as corridos a contar de esta fecha, renovable por perÃ­odos iguales. Durante su vigencia, EL COMITENTE se obliga a trabajar exclusivamente con PROCASA S.A. y/o sus franquiciados para la comercializaciÃ³n del inmueble."
         else:
-            p2 = f"<b>ANTECEDENTES:</b> La presente autorización se otorga SIN exclusividad{precio_texto} y tendrá una validez de <b>{vigencia}</b> días corridos a contar de esta fecha y se renovará, automática y sucesivamente, por períodos iguales. Asimismo el COMITENTE, autoriza expresamente a PROCASA S.A. y a sus franquiciados a extender órdenes de visita electrónicas, para mostrar la propiedad a posibles interesados, además el COMITENTE se compromete a pagar a PROCASA S.A. o a sus franquiciados por los servicios de corretaje para la venta o arriendo de la propiedad descrita."
+            p2 = f"<b>ANTECEDENTES:</b> La presente autorizaciÃ³n se otorga SIN exclusividad{precio_texto} y tendrÃ¡ una validez de <b>{vigencia}</b> dÃ­as corridos a contar de esta fecha y se renovarÃ¡, automÃ¡tica y sucesivamente, por perÃ­odos iguales. Asimismo el COMITENTE, autoriza expresamente a PROCASA S.A. y a sus franquiciados a extender Ã³rdenes de visita electrÃ³nicas, para mostrar la propiedad a posibles interesados, ademÃ¡s el COMITENTE se compromete a pagar a PROCASA S.A. o a sus franquiciados por los servicios de corretaje para la venta o arriendo de la propiedad descrita."
         Story.append(Paragraph(p2, normal_style))
         
         if tipo in ["Venta", "Venta Exclusiva"]:
             comision_text = comision if comision else "dos por ciento (2 %)"
             if tipo == "Venta Exclusiva":
-                p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por EL COMITENTE, se devengará en favor de PROCASA S.A. y/o sus franquiciados una comisión equivalente al <b>{comision_text}</b> del precio de venta más I.V.A. Esta comisión también aplicará si EL COMITENTE vende directamente o por terceros no autorizados durante la vigencia, respecto de clientes presentados o gestionados por PROCASA."
-                p4 = "<b>PROTECCIÓN DE CLIENTES PRESENTADOS:</b> EL COMITENTE reconoce protección comercial sobre los clientes presentados por PROCASA S.A. y/o sus franquiciados durante la vigencia del presente instrumento."
+                p3 = f"<b>COMISIÃ“N:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por EL COMITENTE, se devengarÃ¡ en favor de PROCASA S.A. y/o sus franquiciados una comisiÃ³n equivalente al <b>{comision_text}</b> del precio de venta mÃ¡s I.V.A. Esta comisiÃ³n tambiÃ©n aplicarÃ¡ si EL COMITENTE vende directamente o por terceros no autorizados durante la vigencia, respecto de clientes presentados o gestionados por PROCASA."
+                p4 = "<b>PROTECCIÃ“N DE CLIENTES PRESENTADOS:</b> EL COMITENTE reconoce protecciÃ³n comercial sobre los clientes presentados por PROCASA S.A. y/o sus franquiciados durante la vigencia del presente instrumento."
                 Story.append(Paragraph(p3, normal_style))
                 Story.append(Paragraph(p4, normal_style))
             else:
-                p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> del precio de venta más el I.V.A."
+                p3 = f"<b>COMISIÃ“N:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengarÃ¡ en favor de PROCASA S.A. y/o a sus franquiciados una comisiÃ³n equivalente al <b>{comision_text}</b> del precio de venta mÃ¡s el I.V.A."
                 Story.append(Paragraph(p3, normal_style))
         else:
             comision_text = comision if comision else "50%"
-            p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de arriendo respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> de la renta mensual pactada más I.V.A. En los contratos de plazos superiores a 24 meses la comisión será de un dos por ciento (2 %) más IVA sobre el total de las rentas y con un límite de 60 meses."
+            p3 = f"<b>COMISIÃ“N:</b> En caso de formularse una oferta de arriendo respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengarÃ¡ en favor de PROCASA S.A. y/o a sus franquiciados una comisiÃ³n equivalente al <b>{comision_text}</b> de la renta mensual pactada mÃ¡s I.V.A. En los contratos de plazos superiores a 24 meses la comisiÃ³n serÃ¡ de un dos por ciento (2 %) mÃ¡s IVA sobre el total de las rentas y con un lÃ­mite de 60 meses."
             Story.append(Paragraph(p3, normal_style))
             
-            if tipo == "Arriendo y Administración":
-                p4 = "<b>ADMINISTRACIÓN:</b> EL COMITENTE encarga la administración de la propiedad a INMOBILIARIA SUCRE SPA, quien acepta la administración de la propiedad individualizada. INMOBILIARIA SUCRE SPA se encuentra expresamente facultada para tomar todas aquellas medidas de carácter administrativo que resulten pertinentes para el normal cumplimiento de lo convenido en este mandato. Dentro de las facultades de la administración que por este acto se otorgan al administrador, se entenderán las de cobrar y percibir las rentas de arrendamiento. Las facultades de administración se ejercerán durante la vigencia del presente contrato, incluyendo sus renovaciones e incluso los períodos de eventual incumplimiento del arrendatario."
+            if tipo == "Arriendo y AdministraciÃ³n":
+                p4 = "<b>ADMINISTRACIÃ“N:</b> EL COMITENTE encarga la administraciÃ³n de la propiedad a INMOBILIARIA SUCRE SPA, quien acepta la administraciÃ³n de la propiedad individualizada. INMOBILIARIA SUCRE SPA se encuentra expresamente facultada para tomar todas aquellas medidas de carÃ¡cter administrativo que resulten pertinentes para el normal cumplimiento de lo convenido en este mandato. Dentro de las facultades de la administraciÃ³n que por este acto se otorgan al administrador, se entenderÃ¡n las de cobrar y percibir las rentas de arrendamiento. Las facultades de administraciÃ³n se ejercerÃ¡n durante la vigencia del presente contrato, incluyendo sus renovaciones e incluso los perÃ­odos de eventual incumplimiento del arrendatario."
                 Story.append(Paragraph(p4, normal_style))
                 
                 admin_honorarios = comision if comision else "10"
                 admin_duracion = vigencia if vigencia else "12"
-                p5 = f"Por el desempeño de la administración, INMOBILIARIA SUCRE SPA, percibirá un honorario mensual de {admin_honorarios}% + IVA de la renta de arrendamiento que será descontado de ésta. La duración de la administración será de {admin_duracion} meses a contar de la fecha del contrato de arriendo, y se renovará automáticamente por periodos iguales y sucesivos si no mediare carta certificada de aviso de no renovación y correo electrónico de término del contrato, de cualquiera de las dos partes, con una anticipación de, a lo menos, 60 (sesenta) días corridos contados hacia atrás respecto de la fecha de vencimiento del periodo respectivo."
+                p5 = f"Por el desempeÃ±o de la administraciÃ³n, INMOBILIARIA SUCRE SPA, percibirÃ¡ un honorario mensual de {admin_honorarios}% + IVA de la renta de arrendamiento que serÃ¡ descontado de Ã©sta. La duraciÃ³n de la administraciÃ³n serÃ¡ de {admin_duracion} meses a contar de la fecha del contrato de arriendo, y se renovarÃ¡ automÃ¡ticamente por periodos iguales y sucesivos si no mediare carta certificada de aviso de no renovaciÃ³n y correo electrÃ³nico de tÃ©rmino del contrato, de cualquiera de las dos partes, con una anticipaciÃ³n de, a lo menos, 60 (sesenta) dÃ­as corridos contados hacia atrÃ¡s respecto de la fecha de vencimiento del periodo respectivo."
                 Story.append(Paragraph(p5, normal_style))
 
-        # Cláusulas sobre firma electrónica
+        # ClÃ¡usulas sobre firma electrÃ³nica
         Story.append(Spacer(1, 0.1 * inch))
         Story.append(Paragraph('<b>CLAUSULA - FIRMA ELECTRONICA:</b> Las partes acuerdan que la firma electronica utilizada en este instrumento, conforme a la Ley 19.799, tendra el mismo valor legal que una firma manuscrita.', normal_style))
         Story.append(Paragraph('<b>CLAUSULA - USO DE MEDIOS ELECTRONICOS:</b> El firmante declara que el numero telefonico y correo electronico proporcionados son de su exclusivo uso y control, aceptando la utilizacion de dichos medios para la suscripcion del presente instrumento.', normal_style))
@@ -160,7 +150,7 @@ class PDFGenerator:
         Story.append(Spacer(1, 0.14 * inch))
         Story.append(Paragraph("________________________________________________", normal_style))
         Story.append(Paragraph("<b>EL COMITENTE</b>", normal_style))
-        Story.append(Paragraph(f"Nombre: {nombre} &nbsp;&nbsp; RUT: {rut}<br/>Teléfono: {contract_data.get('phone', '')} &nbsp;&nbsp; Correo: <a href='mailto:{email}'>{email}</a>", normal_style))
+        Story.append(Paragraph(f"Nombre: {nombre} &nbsp;&nbsp; RUT: {rut}<br/>TelÃ©fono: {contract_data.get('phone', '')} &nbsp;&nbsp; Correo: <a href='mailto:{email}'>{email}</a>", normal_style))
         
         doc.contract_code = contract_data.get('contract_code', '')
         doc.is_original = True
@@ -255,11 +245,11 @@ class PDFGenerator:
         
         msg_style = ParagraphStyle('Msg', parent=normal_style, alignment=1, fontName='Helvetica-Bold', fontSize=10)
         Story.append(Spacer(1, 0.1 * inch))
-        legal_text = """El firmante declara haber leído íntegramente el documento,
+        legal_text = """El firmante declara haber leÃ­do Ã­ntegramente el documento,
 comprendido su contenido y manifestado su consentimiento
-expreso mediante autenticación OTP enviada a su número
-de teléfono registrado.<br/><br/>
-El documento fue firmado electrónicamente conforme a la
+expreso mediante autenticaciÃ³n OTP enviada a su nÃºmero
+de telÃ©fono registrado.<br/><br/>
+El documento fue firmado electrÃ³nicamente conforme a la
 Ley 19.799."""
         Story.append(Paragraph(legal_text, msg_style))
         
@@ -286,7 +276,7 @@ Ley 19.799."""
         merged_bytes = merged_buffer.getvalue()
         merger.close()
 
-        # 3. Normaliza numeración en todas las páginas del PDF final firmado
+        # 3. Normaliza numeraciÃ³n en todas las pÃ¡ginas del PDF final firmado
         reader = pypdf.PdfReader(io.BytesIO(merged_bytes))
         writer = pypdf.PdfWriter()
         total_pages = len(reader.pages)
@@ -299,7 +289,7 @@ Ley 19.799."""
             overlay.rect((page_w / 2.0) - 74, 0.34 * inch, 148, 0.24 * inch, fill=1, stroke=0)
             overlay.setFillColor(colors.black)
             overlay.setFont("Helvetica", 8)
-            overlay.drawCentredString(page_w / 2.0, 0.42 * inch, f"Página {idx} de {total_pages}")
+            overlay.drawCentredString(page_w / 2.0, 0.42 * inch, f"PÃ¡gina {idx} de {total_pages}")
             overlay.save()
             overlay_pdf = pypdf.PdfReader(io.BytesIO(overlay_buffer.getvalue()))
             page.merge_page(overlay_pdf.pages[0])
@@ -323,13 +313,13 @@ Ley 19.799."""
         Story.append(Spacer(1, 0.14 * inch))
         
         Story.append(Paragraph("<b>1. Resumen Ejecutivo</b>", styles['Heading2']))
-        Story.append(Paragraph("El presente documento detalla la cadena de custodia y evidencia digital recopilada durante el proceso de aceptación electrónica del contrato, en cumplimiento con la Ley 19.799 sobre Documentos Electrónicos y Firma Electrónica.", styles['Normal']))
+        Story.append(Paragraph("El presente documento detalla la cadena de custodia y evidencia digital recopilada durante el proceso de aceptaciÃ³n electrÃ³nica del contrato, en cumplimiento con la Ley 19.799 sobre Documentos ElectrÃ³nicos y Firma ElectrÃ³nica.", styles['Normal']))
         Story.append(Spacer(1, 0.14 * inch))
         
         # Timeline
-        Story.append(Paragraph("<b>2. Línea de Tiempo (Timeline Inmutable)</b>", styles['Heading2']))
+        Story.append(Paragraph("<b>2. LÃ­nea de Tiempo (Timeline Inmutable)</b>", styles['Heading2']))
         
-        timeline_data = [["Acción", "Timestamp UTC", "IP", "User Agent"]]
+        timeline_data = [["AcciÃ³n", "Timestamp UTC", "IP", "User Agent"]]
         for event in timeline:
             timeline_data.append([
                 event.get("action", ""),
@@ -349,7 +339,7 @@ Ley 19.799."""
         Story.append(t_timeline)
         
         Story.append(Spacer(1, 0.3 * inch))
-        Story.append(Paragraph("<b>3. Consistencia Criptográfica</b>", styles['Heading2']))
+        Story.append(Paragraph("<b>3. Consistencia CriptogrÃ¡fica</b>", styles['Heading2']))
         Story.append(Paragraph(f"<b>Hash Original (SHA-256):</b> {evidence.get('original_hash', '')}", styles['Normal']))
         Story.append(Paragraph(f"<b>Hash de Evidencia (Timeline SHA-256):</b> {evidence.get('timeline_hash', '')}", styles['Normal']))
         Story.append(Paragraph(f"<b>Firma del Servidor (HMAC SHA-256):</b> {evidence.get('server_hmac', '')}", styles['Normal']))
@@ -358,4 +348,5 @@ Ley 19.799."""
         pdf_bytes = buffer.getvalue()
         buffer.close()
         return pdf_bytes
+
 

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 
 <head>
@@ -41,10 +41,11 @@
 
         .form-section {
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 20px;
         }
 
-        /* PDF viewer — only show on step-1 */
+        /* PDF viewer â€” only show on step-1 */
         .pdf-viewer-section {
             position: sticky;
             top: 0;
@@ -71,7 +72,7 @@
             max-width: 600px;
         }
 
-        /* PDF container — scroll inside, no overflow outside */
+        /* PDF container â€” scroll inside, no overflow outside */
         #pdf-container {
             width: 100%;
             height: calc(100vh - 40px);
@@ -94,7 +95,8 @@
         #pdf-container:fullscreen {
             padding: 20px;
             background: #0f172a;
-            overflow: auto;
+            overflow-y: auto;
+            overflow-x: hidden;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -240,32 +242,32 @@
         <div class="form-section">
             <div class="page-wrap py-5 px-3 max-w-2xl mx-auto">
 
-                <!-- Header -->
+                                <!-- Header -->
                 <div class="mb-5">
-                    <div class="flex items-center justify-center gap-3 mb-2">
+                    <div class="flex items-center justify-center mb-2">
                         <img src="/static/logo.png?v=1.0.1" alt="Procasa" style="max-height:68px;width:auto;">
-                        <h1 class="text-2xl font-bold text-blue-900 m-0">Procasa Sucre</h1>
                     </div>
-                    <span
-                        class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold text-blue-700 bg-blue-100 border border-blue-200 uppercase tracking-wide">
-                        Firma Electrónica Segura — Ley 19.799
-                    </span>
+                    <div class="text-center">
+                        <span class="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold text-blue-700 bg-blue-100 border border-blue-200 uppercase tracking-wide">
+                            Firma Electrónica Segura — Ley 19.799
+                        </span>
+                    </div>
                 </div>
 
                 <!-- Countdown Banner -->
                 <div id="expiry-countdown-banner"
                     class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-5 text-sm font-semibold text-yellow-800 text-center flex justify-center items-center gap-2"
                     style="display: none;">
-                    <i class="fa-regular fa-clock"></i> Este documento es válido por: <span
+                    <i class="fa-regular fa-clock"></i> Este documento es vÃ¡lido por: <span
                         id="document-countdown">Calculando...</span>
                 </div>
 
                 <div class="contract-card bg-white rounded-xl shadow-lg border border-gray-200 p-5">
 
-                    <!-- ── PROGRESS BAR (3 steps) ── -->
+                    <!-- â”€â”€ PROGRESS BAR (3 steps) â”€â”€ -->
                     <div id="progress-bar-wrap" class="mb-6">
                         <div class="flex items-center justify-between mb-2">
-                            <h3 id="progress-label" class="text-sm font-bold text-gray-800">Paso 1 de 3 — Revisa tu
+                            <h3 id="progress-label" class="text-sm font-bold text-gray-800">Paso 1 de 3 â€” Revisa tu
                                 contrato</h3>
                             <span id="progress-fraction"
                                 class="text-xs font-bold text-blue-600 bg-blue-100 py-1 px-2 rounded-full">1 / 3</span>
@@ -276,7 +278,7 @@
                         </div>
                     </div>
 
-                    <!-- ── STEP 1 — Visible: Paso 1 · Revisa tu contrato ── -->
+                    <!-- â”€â”€ STEP 1 â€” Visible: Paso 1 Â· Revisa tu contrato â”€â”€ -->
                     <div id="step-1" class="step active py-2">
 
                         <div class="border-l-4 border-blue-600 pl-4 mb-4">
@@ -287,7 +289,7 @@
                         <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start mb-4">
                             <i class="fa-solid fa-circle-info text-amber-500 mt-0.5 mr-2 flex-shrink-0"></i>
                             <p class="text-amber-800 text-sm font-medium leading-relaxed">
-                                La aceptación electrónica tiene validez legal conforme a la Ley 19.799.
+                                La aceptaciÃ³n electrÃ³nica tiene validez legal conforme a la Ley 19.799.
                             </p>
                         </div>
 
@@ -296,11 +298,11 @@
                         <!-- Scroll-progress banner -->
                         <div id="read-banner">
                             <i class="fa-solid fa-arrow-down-long"></i>
-                            <span id="read-banner-text">Desplázate hasta el final del contrato para habilitar la
+                            <span id="read-banner-text">DesplÃ¡zate hasta el final del contrato para habilitar la
                                 firma</span>
                         </div>
 
-                        <div id="page-badge">Página 1 de ?</div>
+                        <div id="page-badge">PÃ¡gina 1 de ?</div>
 
                         <!-- Legal checkbox (PARTE 1: 2 checks obligatorios) -->
                         <div class="mt-5 bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-3">
@@ -310,7 +312,7 @@
                                     disabled>
                                 <div class="ml-3">
                                     <label for="check-titular" class="text-sm font-medium text-gray-800 cursor-pointer">
-                                        Declaro ser el titular del número telefónico asignado a este contrato.
+                                        Declaro ser el titular del nÃºmero telefÃ³nico asignado a este contrato.
                                     </label>
                                 </div>
                             </div>
@@ -320,8 +322,8 @@
                                     disabled>
                                 <div class="ml-3">
                                     <label for="check-intent" class="text-sm font-medium text-gray-800 cursor-pointer">
-                                        Acepto revisar el documento de forma electrónica y reconozco que mi aceptación
-                                        constituye una firma válida conforme a la Ley 19.799.
+                                        Acepto revisar el documento de forma electrÃ³nica y reconozco que mi aceptaciÃ³n
+                                        constituye una firma vÃ¡lida conforme a la Ley 19.799.
                                     </label>
                                 </div>
                             </div>
@@ -343,8 +345,8 @@
                             <p class="text-xs text-gray-500 mt-0.5">Ingresa tu RUT para confirmar tu identidad</p>
                         </div>
                         <p class="text-gray-600 mb-4 text-sm bg-gray-50 p-3 rounded-lg border border-gray-200">
-                            Tu RUT será verificado contra el titular del contrato y te enviaremos un código de
-                            verificación por WhatsApp para firmar.
+                            Tu RUT serÃ¡ verificado contra el titular del contrato y te enviaremos un cÃ³digo de
+                            verificaciÃ³n por WhatsApp para firmar.
                         </p>
                         <div class="mb-5">
                             <label class="block text-sm font-bold text-gray-700 mb-2">Tu RUT (con guion)</label>
@@ -357,7 +359,7 @@
                             <button id="btn-validate-rut"
                                 class="w-full bg-[#25D366] hover:bg-[#1EBE5D] text-white font-bold py-3 px-4 rounded-lg transition-colors shadow"
                                 style="min-height:48px;font-size:16px;">
-                                <i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir código
+                                <i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir cÃ³digo
                             </button>
                             <button id="btn-back-1"
                                 class="w-full bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-2.5 px-4 rounded-lg transition-colors"
@@ -367,29 +369,29 @@
                         </div>
                     </div>
 
-                    <!-- ── STEP 4 — Ingresar OTP ── -->
+                    <!-- â”€â”€ STEP 4 â€” Ingresar OTP â”€â”€ -->
                     <div id="step-4" class="step">
                         <div class="border-l-4 border-blue-600 pl-4 mb-5">
                             <h2 class="text-lg font-bold text-gray-900">Confirma y Firma</h2>
-                            <p class="text-xs text-gray-500 mt-0.5">Ingresa el código enviado a tu WhatsApp</p>
+                            <p class="text-xs text-gray-500 mt-0.5">Ingresa el cÃ³digo enviado a tu WhatsApp</p>
                         </div>
                         <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-5 flex items-center">
                             <i class="fa-solid fa-check-circle text-green-500 mr-2.5"></i>
-                            <p class="text-green-800 text-sm font-medium">Hemos enviado un código de 4 dígitos a tu
+                            <p class="text-green-800 text-sm font-medium">Hemos enviado un cÃ³digo de 4 dÃ­gitos a tu
                                 WhatsApp.</p>
                         </div>
 
                         <div id="block-banner" class="bg-red-50 border border-red-200 rounded-lg p-4 mb-5 hidden">
-                            <p class="text-red-800 text-sm font-semibold mb-2">Has superado el número máximo de
+                            <p class="text-red-800 text-sm font-semibold mb-2">Has superado el nÃºmero mÃ¡ximo de
                                 intentos.</p>
                             <p class="text-red-700 text-sm mb-2">Por seguridad, el sistema se ha bloqueado
-                                temporalmente. Podrás intentar nuevamente en:</p>
+                                temporalmente. PodrÃ¡s intentar nuevamente en:</p>
                             <div class="text-center text-red-600 font-mono text-2xl font-bold" id="block-timer">00:60
                             </div>
                         </div>
 
                         <div class="mb-6">
-                            <label class="block text-sm font-bold text-gray-700 mb-2 text-center">Código de Firma
+                            <label class="block text-sm font-bold text-gray-700 mb-2 text-center">CÃ³digo de Firma
                                 (OTP)</label>
                             <input type="text" id="input-otp" inputmode="numeric" pattern="[0-9]*"
                                 class="w-full p-4 border-2 border-gray-300 text-center text-4xl font-mono tracking-[0.5em] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:opacity-50 transition-colors"
@@ -402,24 +404,24 @@
                         </button>
                         <div id="otp-error" class="text-red-500 text-sm mt-3 text-center font-medium hidden"></div>
                         <p class="text-sm text-gray-500 text-center mt-5">
-                            ¿El código expiró? <a href="#" onclick="requestNewOTP(); return false;"
+                            Â¿El cÃ³digo expirÃ³? <a href="#" onclick="requestNewOTP(); return false;"
                                 class="text-blue-600 hover:underline font-semibold">Solicitar uno nuevo</a>
                         </p>
                     </div>
 
-                    <!-- ── STEP 5 — Firma completada ── -->
+                    <!-- â”€â”€ STEP 5 â€” Firma completada â”€â”€ -->
                     <div id="step-5" class="step text-center py-10">
                         <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
                             <i class="fa-solid fa-check text-green-500 text-4xl"></i>
                         </div>
-                        <h2 class="text-2xl font-extrabold text-gray-900 mb-3">¡Contrato Firmado!</h2>
+                        <h2 class="text-2xl font-extrabold text-gray-900 mb-3">Â¡Contrato Firmado!</h2>
                         <p class="text-gray-500 mb-8 max-w-sm mx-auto text-sm">Tu copia ha sido guardada con los sellos
                             legales conforme a la Ley 19.799.</p>
                         <a id="btn-download-signed" href="#" target="_blank"
                             class="inline-flex items-center bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-8 rounded-lg transition-colors shadow">
                             <i class="fa-solid fa-download mr-2"></i> Descargar Copia Firmada
                         </a>
-                        <p class="text-sm text-gray-400 mt-8">Pronto un ejecutivo se pondrá en contacto contigo.</p>
+                        <p class="text-sm text-gray-400 mt-8">Pronto un ejecutivo se pondrÃ¡ en contacto contigo.</p>
                     </div> <!-- step-4 -->
                 </div> <!-- contract-card -->
             </div> <!-- page-wrap -->
@@ -462,7 +464,7 @@
             document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
             document.getElementById('step-5').classList.add('active');
             document.getElementById('btn-download-signed').href = `/contracts/api/download_signed/${CONTRACT_CODE}`;
-            document.getElementById('progress-label').textContent = 'Firmado — ¡Proceso completado!';
+            document.getElementById('progress-label').textContent = 'Firmado â€” Â¡Proceso completado!';
             document.getElementById('progress-fraction').textContent = '3 / 3';
             document.getElementById('progress-fill').style.width = '100%';
             document.getElementById('progress-fill').classList.replace('bg-blue-600', 'bg-green-500');
@@ -472,7 +474,7 @@
             document.body.classList.add('pdf-step');
         }
 
-        // ── Document Expiry Countdown ───────────────────────────────────────────
+        // â”€â”€ Document Expiry Countdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (tokenExpiryIso && !isSigned) {
             const expiryDate = new Date(tokenExpiryIso);
             const countdownEl = document.getElementById('document-countdown');
@@ -522,7 +524,7 @@
             }
         }
 
-        // ── PDF.js ───────────────────────────────────────────────────────────────
+        // â”€â”€ PDF.js â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         pdfjsLib.GlobalWorkerOptions.workerSrc =
             'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
@@ -540,7 +542,7 @@
             for (let i = wrappers.length - 1; i >= 0; i--) {
                 const r = wrappers[i].getBoundingClientRect();
                 if (r.top <= window.innerHeight * 0.55) {
-                    pageBadge.textContent = `Página ${i + 1} de ${totalPages}`;
+                    pageBadge.textContent = `PÃ¡gina ${i + 1} de ${totalPages}`;
                     break;
                 }
             }
@@ -561,7 +563,7 @@
                 };
                 const pdf = await loadingTask.promise;
                 totalPages = pdf.numPages;
-                pageBadge.textContent = `Página 1 de ${totalPages}`;
+                pageBadge.textContent = `PÃ¡gina 1 de ${totalPages}`;
                 pageBadge.style.display = 'block';
 
                 // Lazy-load remaining pages via IntersectionObserver (rootMargin=600px ahead)
@@ -586,7 +588,7 @@
                     if (p < pdf.numPages) {
                         const sep = document.createElement('div');
                         sep.className = 'page-sep';
-                        sep.textContent = `— Página ${p} de ${totalPages} —`;
+                        sep.textContent = `â€” PÃ¡gina ${p} de ${totalPages} â€”`;
                         pdfContainer.appendChild(sep);
                     }
 
@@ -595,7 +597,7 @@
                         wrapper.dataset.rendered = 'true';
                         // Remove loading placeholder
                         if (pdfLoading.parentNode) pdfLoading.parentNode.removeChild(pdfLoading);
-                        // ⏱ Start reading timer ONLY when PDF is visible
+                        // â± Start reading timer ONLY when PDF is visible
                         if (!pageOpenTime) pageOpenTime = Date.now();
                     } else {
                         observer.observe(wrapper);
@@ -623,7 +625,7 @@
             const unscaled = page.getViewport({ scale: 1.0 });
 
             // Fit PDF width to container
-            const containerWidth = pdfContainer.clientWidth - 16; // 8px padding × 2
+            const containerWidth = pdfContainer.clientWidth - 16; // 8px padding Ã— 2
             const scale = containerWidth / unscaled.width;
             const viewport = page.getViewport({ scale });
 
@@ -651,7 +653,7 @@
             }
         });
 
-        // ── Timer & reading check ────────────────────────────────────────────────
+        // â”€â”€ Timer & reading check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const checkIntent = document.getElementById('check-intent');
         const btnRequestOtp = document.getElementById('btn-request-otp');
         const timerText = document.getElementById('timer-text');
@@ -661,7 +663,7 @@
         let pdfFullyRendered = false;
         let readRegistered = false;
 
-        // (legal_intent endpoint does not exist — removed to avoid 404)
+        // (legal_intent endpoint does not exist â€” removed to avoid 404)
 
         function registerReadIfNeeded() {
             if (readRegistered) return;
@@ -737,7 +739,7 @@
                 return;
             }
             if (!scrolledToBottom) {
-                timerText.textContent = 'Desplázate hasta el final del documento para continuar...';
+                timerText.textContent = 'DesplÃ¡zate hasta el final del documento para continuar...';
                 return;
             }
             timerText.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Documento revisado. Ya puedes marcar las casillas.';
@@ -754,7 +756,7 @@
             const bothChecked = checkTitular && checkTitular.checked && checkIntent.checked;
             btnRequestOtp.disabled = !bothChecked;
             if (bothChecked) {
-                btnRequestOtp.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-white"></i> Solicitar código de verificación';
+                btnRequestOtp.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-white"></i> Solicitar cÃ³digo de verificaciÃ³n';
                 btnRequestOtp.classList.remove('bg-blue-600', 'hover:bg-blue-700');
                 btnRequestOtp.classList.add('bg-[#25D366]', 'hover:bg-[#1EBE5D]');
             } else {
@@ -767,12 +769,12 @@
         document.getElementById('check-titular')?.addEventListener('change', updateOtpButton);
         checkIntent.addEventListener('change', updateOtpButton);
 
-        // ── Progress bar ─────────────────────────────────────────────────────────
+        // â”€â”€ Progress bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const STEP_PROGRESS = {
-            'step-1': { n: 1, label: 'Paso 1 de 3 — Revisa el contrato', pct: '33%' },
-            'step-2': { n: 2, label: 'Paso 2 de 3 — Verifica tu identidad', pct: '66%' },
-            'step-4': { n: 3, label: 'Paso 3 de 3 — Confirma y firma', pct: '100%' },
-            'step-5': { n: 3, label: '¡Proceso completado!', pct: '100%' },
+            'step-1': { n: 1, label: 'Paso 1 de 3 â€” Revisa el contrato', pct: '33%' },
+            'step-2': { n: 2, label: 'Paso 2 de 3 â€” Verifica tu identidad', pct: '66%' },
+            'step-4': { n: 3, label: 'Paso 3 de 3 â€” Confirma y firma', pct: '100%' },
+            'step-5': { n: 3, label: 'Â¡Proceso completado!', pct: '100%' },
         };
 
         function showStep(targetId) {
@@ -797,7 +799,7 @@
             }
         }
 
-        // ── Step navigation ──────────────────────────────────────────────────────
+        // â”€â”€ Step navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         let pageOpenTime = null; // starts when PDF first renders, not on page load
 
         function formatRut(input) {
@@ -808,7 +810,7 @@
             input.value = rut;
         }
 
-        // Step-1 Continue → Step-2 (RUT entry)
+        // Step-1 Continue â†’ Step-2 (RUT entry)
         btnRequestOtp.addEventListener('click', () => {
             showStep('step-2');
             document.getElementById('input-rut-request').focus();
@@ -880,17 +882,17 @@
                         location.reload();
                         return;
                     }
-                    goToStep2(data.detail || 'Error al solicitar código. Verifica tu RUT.');
+                    goToStep2(data.detail || 'Error al solicitar cÃ³digo. Verifica tu RUT.');
                 }
             } catch (err) {
                 console.timeEnd("OTP request");
                 if (err.message === 'TIMEOUT') {
-                    goToStep2('La conexión está tardando más de lo normal. Intente nuevamente.');
+                    goToStep2('La conexiÃ³n estÃ¡ tardando mÃ¡s de lo normal. Intente nuevamente.');
                 } else {
-                    goToStep2('Error de conexión.');
+                    goToStep2('Error de conexiÃ³n.');
                 }
             } finally {
-                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir código'; }
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir cÃ³digo'; }
             }
         }
 
@@ -941,7 +943,7 @@
             const otp = document.getElementById('input-otp').value;
             const errorDiv = document.getElementById('otp-error');
             if (otp.length !== 4) {
-                errorDiv.textContent = 'Ingresa los 4 dígitos.';
+                errorDiv.textContent = 'Ingresa los 4 dÃ­gitos.';
                 errorDiv.classList.remove('hidden');
                 return;
             }
@@ -964,28 +966,28 @@
                     } else if (detail.startsWith('OTP_INVALID')) {
                         const remaining = parseInt(detail.split('|')[1]) || 0;
                         if (remaining === 1) {
-                            errorDiv.textContent = 'El código ingresado no es válido. Te queda 1 intento antes de que el sistema se bloquee temporalmente.';
+                            errorDiv.textContent = 'El cÃ³digo ingresado no es vÃ¡lido. Te queda 1 intento antes de que el sistema se bloquee temporalmente.';
                         } else {
-                            errorDiv.textContent = `El código ingresado no es válido. Te quedan ${remaining} intentos.`;
+                            errorDiv.textContent = `El cÃ³digo ingresado no es vÃ¡lido. Te quedan ${remaining} intentos.`;
                         }
                     } else if (detail === 'DOCUMENT_EXPIRED') {
                         alert('Este documento ha expirado. Solicita un nuevo convenio.');
                         location.reload();
                         return;
                     } else if (detail === 'OTP_EXPIRED') {
-                        errorDiv.textContent = 'Este código ha expirado. Solicita uno nuevo para continuar.';
+                        errorDiv.textContent = 'Este cÃ³digo ha expirado. Solicita uno nuevo para continuar.';
                         const btnRetry = document.createElement('button');
                         btnRetry.className = 'w-full mt-3 bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-2 px-4 rounded-lg transition-colors';
-                        btnRetry.innerHTML = '<i class="fa-solid fa-rotate-right mr-2"></i> Solicitar nuevo código';
+                        btnRetry.innerHTML = '<i class="fa-solid fa-rotate-right mr-2"></i> Solicitar nuevo cÃ³digo';
                         btnRetry.onclick = (e) => { e.preventDefault(); requestNewOTP(); };
                         errorDiv.appendChild(btnRetry);
                     } else if (detail === 'SIGNATURE_SESSION_EXPIRED') {
-                        goToStep2('⏱ La sesión expiró. Solicita un nuevo código para continuar.');
+                        goToStep2('â± La sesiÃ³n expirÃ³. Solicita un nuevo cÃ³digo para continuar.');
                         btnVerify.disabled = false;
                         btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
                         return;
                     } else {
-                        errorDiv.textContent = detail || 'No se pudo validar el código. Intenta nuevamente.';
+                        errorDiv.textContent = detail || 'No se pudo validar el cÃ³digo. Intenta nuevamente.';
                     }
 
                     errorDiv.classList.remove('hidden');
@@ -1020,7 +1022,7 @@
                         location.reload();
                         return;
                     } else if (detail === 'SIGNATURE_SESSION_EXPIRED') {
-                        goToStep2('⏱ La sesión expiró. Solicita un nuevo código para continuar.');
+                        goToStep2('â± La sesiÃ³n expirÃ³. Solicita un nuevo cÃ³digo para continuar.');
                         btnVerify.disabled = false;
                         btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
                         return;
@@ -1033,9 +1035,9 @@
                 }
             } catch (err) {
                 if (err.message === 'TIMEOUT') {
-                    alert('La conexión está tardando más de lo normal. Intente nuevamente.');
+                    alert('La conexiÃ³n estÃ¡ tardando mÃ¡s de lo normal. Intente nuevamente.');
                 } else {
-                    alert('Error de conexión');
+                    alert('Error de conexiÃ³n');
                 }
                 btnVerify.disabled = false;
                 btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
@@ -1045,3 +1047,6 @@
 </body>
 
 </html>
+
+
+

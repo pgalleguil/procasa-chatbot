@@ -727,7 +727,7 @@ def ensure_document_valid(contract: dict):
 async def view_contract_public(token: str, request: Request):
     """Vista pública para el cliente"""
     db = get_db()
-    contract = db["contracts"].find_one({"security.token": token})
+    contract = await _db_call(db["contracts"].find_one, {"security.token": token})
     
     if not contract:
         return HTMLResponse("<h1>Enlace inválido o expirado.</h1>", status_code=404)
@@ -747,7 +747,8 @@ async def view_contract_public(token: str, request: Request):
     ua = request.headers.get("user-agent", "")
     server_timestamp = SecurityContracts.generate_server_timestamp()
     
-    db["contracts"].update_one(
+    await _db_call(
+        db["contracts"].update_one,
         {"contract_code": contract["contract_code"]},
         {
             "$push": {
@@ -760,7 +761,7 @@ async def view_contract_public(token: str, request: Request):
                 }
             },
             "$set": {"status": "opened"}
-        }
+        },
     )
     
     # Obtener token_expiry exacto en America/Santiago para evitar el bug de las 27 horas
@@ -1473,10 +1474,19 @@ async def contract_dashboard(request: Request):
     executive_filter = (request.query_params.get("executive") or "").strip()
     if user_role in ["supervisor", "admin"]:
         query = {"status": {"$ne": "deleted"}}
-        if executive_filter:
-            query["executive"] = executive_filter
     else:
         query = {"status": {"$ne": "deleted"}, "created_by": username}
+
+    selected_exec_name = ""
+    if executive_filter and user_role in ["supervisor", "admin"]:
+        selected_user = await adb["usuarios"].find_one({"username": executive_filter}, {"nombre": 1})
+        selected_exec_name = ((selected_user or {}).get("nombre") or "").strip()
+        query["$or"] = [
+            {"executive": executive_filter},
+            {"created_by": executive_filter},
+        ]
+        if selected_exec_name:
+            query["$or"].append({"executive": selected_exec_name})
 
     contracts_cursor = adb["contracts"].find(query).sort("created_at", -1).limit(100)
     contracts = await contracts_cursor.to_list(length=100)
@@ -1491,6 +1501,7 @@ async def contract_dashboard(request: Request):
             "client_data": c.get("client_data", {}),
             "property_data": c.get("property_data", {}),
             "property_code": c.get("property_code", ""),
+            "phone": c.get("phone", ""),
             "origen": c.get("origen", ""),
             "ciudad_firma": c.get("property_data", {}).get("ciudad_firma", "Santiago de Chile"),
             "executive": c.get("executive", ""),

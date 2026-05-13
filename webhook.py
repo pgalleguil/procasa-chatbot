@@ -1020,7 +1020,8 @@ async def webhook(
     # --- FILTRO DE EJECUTIVOS (Solicitado por usuario) ---
     # Si quien escribe es un ejecutivo (excepto Pablo Galleguillos), 
     # forzamos from_me=True para que el bot no responda.
-    user_found = get_user_by_phone(phone)
+    loop = asyncio.get_running_loop()
+    user_found = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_user_by_phone(phone))
     if user_found and user_found.get("rol") in ["agente", "supervisor"]:
         if user_found.get("nombre") != "Pablo Galleguillos":
             logger.info(f"[FILTER] Mensaje de EJECUTIVO ({user_found.get('nombre')}) detectado. Forzando modo manual.")
@@ -1028,13 +1029,16 @@ async def webhook(
 
     # --- FILTRO PROPIETARIOS CON CONTRATO ---
     from chatbot.storage import get_db
-    _db = get_db()
+    _db = await loop.run_in_executor(_WEB_THREAD_POOL, get_db)
     phone_digits_check = "".join(filter(str.isdigit, phone))
     if phone_digits_check and len(phone_digits_check) >= 8:
-        contract_active = _db.contracts.find_one({
-            "phone": {"$regex": phone_digits_check[-8:] + "$"}, 
-            "status": {"$in": ["created", "viewed", "accepted"]}
-        })
+        contract_active = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: _db.contracts.find_one({
+                "phone": {"$regex": phone_digits_check[-8:] + "$"},
+                "status": {"$in": ["created", "viewed", "accepted"]}
+            })
+        )
         if contract_active:
             logger.info(f"[WHATSAPP] Ignorando mensaje de {phone} porque tiene un contrato en proceso.")
             return JSONResponse({"status": "contract owner ignored"}, status_code=200)
@@ -1073,7 +1077,15 @@ async def webhook(
         from chatbot.storage import log_event, EventType
         # Para el log de eventos, usamos el número limpio sin el '+'
         phone_log = phone.replace("+", "")
-        log_event(phone_log, EventType.MSG_IN if not from_me else EventType.MSG_OUT, "user" if not from_me else "agent", {"text": text})
+        await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: log_event(
+                phone_log,
+                EventType.MSG_IN if not from_me else EventType.MSG_OUT,
+                "user" if not from_me else "agent",
+                {"text": text},
+            ),
+        )
     except:
         pass
         

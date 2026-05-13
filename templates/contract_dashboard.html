@@ -877,8 +877,8 @@
 
                                 <div class="row g-3 mb-3">
                                     <div class="col-lg-8 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Tipo de
-                                            Operación <span class="required-star">*</span></label>
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Tipo
+                                            Convenio <span class="required-star">*</span></label>
                                         <select class="form-select" name="tipo" required
                                             onchange="validateField(this); triggerPreview()">
                                             <option value="" selected>Selecciona tipo de operación</option>
@@ -927,7 +927,6 @@
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Ciudad
                                             Firma <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="ciudad_firma" id="ciudadFirmaInput"
-                                            value="Santiago de Chile"
                                             placeholder="Ej: Santiago de Chile" required autocomplete="off"
                                             oninput="filterCiudadesFirma(); triggerPreview();" onfocus="showCiudadesFirma()"
                                             onblur="setTimeout(() => validateCiudadFirmaList(this), 200);">
@@ -1242,6 +1241,7 @@
 
         let previewTimeout = null;
         let objectUrl = null;
+        let isEditingContract = false;
 
         function triggerPreview() {
             checkFormValidity();
@@ -1282,7 +1282,7 @@
                         const blob = await res.blob();
                         if (objectUrl) URL.revokeObjectURL(objectUrl);
                         objectUrl = URL.createObjectURL(blob);
-                        document.getElementById('pdfPreviewIframe').src = objectUrl + '#toolbar=0&navpanes=0&scrollbar=0&view=FitH';
+                        document.getElementById('pdfPreviewIframe').src = objectUrl + '#toolbar=0&navpanes=0&scrollbar=0&zoom=page-width';
                         const mobileOpen = document.getElementById('mobilePdfOpenBtn');
                         mobileOpen.href = objectUrl;
                         if (window.innerWidth <= 768) mobileOpen.classList.remove('d-none');
@@ -1327,14 +1327,18 @@
             const modalEl = document.getElementById('modalNewContract');
             modalEl.addEventListener('show.bs.modal', () => {
                 hasInteracted = false;
-                const ciudadInput = document.getElementById('ciudadFirmaInput');
-                if (ciudadInput && !ciudadInput.value.trim()) ciudadInput.value = 'Santiago de Chile';
                 const iframeSrc = document.getElementById('pdfPreviewIframe').src;
                 if (iframeSrc.includes('about:blank') || iframeSrc.includes(window.location.origin + '/about:blank')) {
                     triggerPreview();
                 }
             });
+            modalEl.addEventListener('hidden.bs.modal', () => {
+                isEditingContract = false;
+                const btn = document.getElementById('btnGenerateContract');
+                if (btn) btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
+            });
 
+            window.phoneInputIntl = phoneInput;
             window.getPhoneData = function () {
                 return phoneInput.getNumber();
             };
@@ -1406,6 +1410,11 @@
         async function generateContract() {
             const form = document.getElementById('formNewContract');
             const btn = document.getElementById('btnGenerateContract');
+            Array.from(form.elements).forEach(el => {
+                if (el.tagName === 'SELECT' || el.tagName === 'INPUT') validateField(el);
+            });
+            checkFormValidity();
+            if (btn.disabled) return;
             btn.disabled = true;
             btn.innerText = "Procesando...";
 
@@ -1444,7 +1453,7 @@
                 alert('Error al generar contrato.');
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
+                btn.innerHTML = `<i class="fa-solid fa-file-signature me-2"></i>${isEditingContract ? 'Actualizar Documento' : 'Crear Documento'}`;
             }
         }
 
@@ -1505,13 +1514,14 @@
 
         function editContract(c) {
             const form = document.getElementById('formNewContract');
+            isEditingContract = true;
             form.cliente_nombre.value = c?.client_data?.nombre || '';
             form.cliente_rut.value = c?.client_data?.rut || '';
             form.email.value = c?.client_data?.email || '';
             form.tipo.value = c?.property_data?.tipo || '';
             form.propiedad_direccion.value = c?.property_data?.direccion || '';
             form.comuna.value = c?.property_data?.comuna || '';
-            if (form.ciudad_firma) form.ciudad_firma.value = c?.ciudad_firma || c?.property_data?.ciudad_firma || 'Santiago de Chile';
+            if (form.ciudad_firma) form.ciudad_firma.value = c?.ciudad_firma || c?.property_data?.ciudad_firma || '';
             form.vigencia.value = c?.property_data?.vigencia || '';
             const rol = (c?.property_data?.rol || '').split('-');
             form.rol_manzana.value = rol[0] || '';
@@ -1521,6 +1531,11 @@
             form.property_code.value = c?.property_code || '';
             form.origen.value = c?.origen || '';
             if (form.executive) form.executive.value = c?.executive || c?.created_by || form.executive.value || '';
+            if (window.phoneInputIntl && c?.phone) {
+                window.phoneInputIntl.setNumber(c.phone.startsWith('+') ? c.phone : `+${String(c.phone).replace(/[^\d]/g, '')}`);
+            }
+            const btn = document.getElementById('btnGenerateContract');
+            if (btn) btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Actualizar Documento';
             const precio = String(c?.property_data?.precio || '').replace(/[^\d.,]/g, '');
             form.precio_valor.value = precio;
             hasInteracted = true;

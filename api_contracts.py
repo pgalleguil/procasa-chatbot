@@ -196,9 +196,8 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         adb = get_async_db()
         # Extraer usuario/rol desde JWT
         created_by, user_role = await _get_request_user(adb, request)
-        executive = str(data.get("executive", "")).strip()
-        if user_role not in ["supervisor", "admin"] or not executive:
-            executive = created_by or ""
+        # El emisor del convenio siempre es el usuario autenticado.
+        executive = created_by or ""
 
         property_code = data.get("property_code", "").strip()
         
@@ -1492,22 +1491,38 @@ async def contract_dashboard(request: Request):
         }
         c["edit_data"] = _json_safe(c["edit_data"])
 
+    users = await adb["usuarios"].find(
+        {"rol": {"$in": ["agente", "supervisor", "admin"]}},
+        {"username": 1, "nombre": 1}
+    ).to_list(length=300)
+    user_name_map = {}
+    for u in users:
+        uname = (u.get("username") or "").strip()
+        if not uname:
+            continue
+        display_name = (u.get("nombre") or uname).strip()
+        user_name_map[uname] = display_name
+
     executives = []
     if user_role in ["supervisor", "admin"]:
-        executives = await adb["usuarios"].find(
-            {"rol": {"$in": ["agente", "supervisor", "admin"]}},
-            {"username": 1}
-        ).to_list(length=300)
         executives = sorted(
-            [u.get("username", "") for u in executives if u.get("username")],
-            key=lambda x: x.lower()
+            [
+                {"username": uname, "name": name}
+                for uname, name in user_name_map.items()
+            ],
+            key=lambda x: (x.get("name") or x.get("username") or "").lower()
         )
+
+    for c in contracts:
+        exec_username = (c.get("executive") or c.get("created_by") or "").strip()
+        c["executive_display"] = user_name_map.get(exec_username, exec_username or "---")
 
     return templates.TemplateResponse("contract_dashboard.html", {
         "request": request,
         "contracts": contracts,
         "user_role": user_role,
         "user_username": username or "",
+        "user_display_name": user_name_map.get(username or "", username or ""),
         "executives": executives,
         "executive_filter": executive_filter
     })

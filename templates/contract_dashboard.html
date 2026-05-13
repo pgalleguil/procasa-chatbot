@@ -680,7 +680,7 @@
                     <select class="form-select form-select-sm" name="executive" onchange="this.form.submit()">
                         <option value="">Todos los ejecutivos</option>
                         {% for ex in executives %}
-                        <option value="{{ ex }}" {% if executive_filter == ex %}selected{% endif %}>{{ ex }}</option>
+                        <option value="{{ ex.username }}" {% if executive_filter == ex.username %}selected{% endif %}>{{ ex.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -705,7 +705,7 @@
                         <tr data-contract-code="{{ c.contract_code }}" data-contract-status="{{ c.status }}">
                             <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '---' }}<br><small class="text-secondary">{{ c.created_at.strftime('%H:%M') if c.created_at else '' }} hrs</small></td>
                             {% if user_role in ['supervisor', 'admin'] %}
-                            <td data-label="Ejecutivo">{{ c.get('executive', c.get('created_by', '---')) or '---' }}</td>
+                            <td data-label="Ejecutivo">{{ c.executive_display or '---' }}</td>
                             {% endif %}
                             <td data-label="Código"><strong>{{ c.property_code or c.contract_code[:8] }}</strong></td>
                             <td data-label="Origen">{{ c.get('origen', '---') }}</td>
@@ -810,23 +810,7 @@
                         <div class="form-section">
                             <form id="formNewContract" class="needs-validation" novalidate>
                                 <div id="formErrors" class="alert alert-danger d-none mb-3 py-2 text-sm fw-bold"></div>
-                                {% if user_role in ['supervisor', 'admin'] %}
-                                <div class="row g-3 mb-3">
-                                    <div class="col-12">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Ejecutivo
-                                            que crea el convenio <span class="required-star">*</span></label>
-                                        <select class="form-select" name="executive" required
-                                            onchange="validateField(this); triggerPreview();">
-                                            <option value="" selected>Selecciona ejecutivo</option>
-                                            {% for ex in executives %}
-                                            <option value="{{ ex }}">{{ ex }}</option>
-                                            {% endfor %}
-                                        </select>
-                                    </div>
-                                </div>
-                                {% else %}
                                 <input type="hidden" name="executive" value="{{ user_username }}">
-                                {% endif %}
                                 <div class="row g-3 mb-3">
                                     <div class="col-lg-8 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del

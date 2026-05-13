@@ -175,7 +175,7 @@ async def monitor_sla_thresholds():
                 ejecutivo = lead.get("ejecutivo_asignado")
                 logger.info(f"[SLA_MONITOR] Alerta {level.upper()}! Lead {phone_clean} asignado a {ejecutivo} hace {minutes_diff:.1f} min sin gestión.")
                 
-                exec_phone = get_executive_phone(ejecutivo)
+                exec_phone = await asyncio.to_thread(get_executive_phone, ejecutivo)
                 if not exec_phone or exec_phone == "+56900000000":
                     continue
 

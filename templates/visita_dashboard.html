@@ -666,8 +666,10 @@
         {% endif %}
         <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
         <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i> <span>Captaciones</span></a>
-        <a href="/contracts/dashboard" class="nav-link active"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
-        <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
+        <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
+        {% if user_role in ['supervisor', 'admin'] %}
+        <a href="/visitas/dashboard" class="nav-link active"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
+        {% endif %}
 
         <a href="javascript:void(0)" class="nav-link" style="margin-top:auto" onclick="toggleTheme()">
             <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
@@ -708,6 +710,130 @@
                     </select>
                 </div>
             </form>
+            {% endif %}
+            <div class="table-responsive">
+                <table class="prop-table">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            {% if user_role in ['supervisor', 'admin'] %}<th>Ejecutivo</th>{% endif %}
+                            <th>Código</th>
+                            <th>Origen</th>
+                            <th>Cliente</th>
+                            <th>Propiedad / Rol</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in contracts %}
+                        <tr data-contract-code="{{ c.contract_code }}" data-contract-status="{{ c.status }}">
+                            <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '---' }}<br><small class="text-secondary">{{ c.created_at.strftime('%H:%M') if c.created_at else '' }} hrs</small></td>
+                            {% if user_role in ['supervisor', 'admin'] %}
+                            <td data-label="Ejecutivo">{{ c.executive_display or '---' }}</td>
+                            {% endif %}
+                            <td data-label="Código"><strong>{{ c.property_code or c.contract_code[:8] }}</strong></td>
+                            <td data-label="Origen">{{ c.get('origen', '---') }}</td>
+                            <td data-label="Cliente">
+                                {{ c.client_data.nombre }}<br>
+                                <small class="text-secondary">{{ c.client_data.rut }}</small>
+                            </td>
+                            <td data-label="Propiedad / Rol">
+                                {{ c.property_data.direccion }}<br>
+                                <small class="text-secondary">Rol: {{ c.property_data.rol }}</small>
+                            </td>
+                            <td data-label="Estado" class="contract-status-cell">
+                                {% if c.status == 'created' %}<span class="status-badge status-created">Creado</span>
+                                {% elif c.status == 'sent' %}<span class="status-badge status-sent">Enviado</span>
+                                {% elif c.status == 'opened' %}<span class="status-badge status-opened">Abierto</span>
+                                {% elif c.status == 'otp_requested' %}<span class="status-badge status-otp_requested">Código Pedido</span>
+                                {% elif c.status == 'otp_verified' %}<span class="status-badge status-otp_verified">RUT Validado</span>
+                                {% elif c.status in ['signed','accepted'] %}<span class="status-badge status-signed">Firmado ✓</span>
+                                {% else %}<span class="status-badge status-created">{{ c.status }}</span>{% endif %}
+                            </td>
+                            <td data-label="Acciones">
+                                <div class="d-flex flex-wrap gap-1">
+                                    {# Botón Ver PDF original (solo si no está firmado) #}
+                                    {% if c.status == 'created' %}
+                                    <a href="/visitas/api/download/{{ c.contract_code }}" target="_blank"
+                                        class="btn btn-sm btn-outline-secondary" title="Ver PDF">
+                                        <i class="fa-solid fa-file-pdf"></i>
+                                    </a>
+                                    <button class="btn btn-sm btn-outline-info" title="Editar antes de enviar"
+                                        onclick='editContract({{ c.edit_data|tojson|safe }})'>
+                                        <i class="fa-solid fa-pen"></i>
+                                    </button>
+                                    {# Botón Enviar WhatsApp: solo si aún no se ha enviado #}
+                                    <button class="btn btn-sm btn-outline-secondary btn-hover-whatsapp"
+                                        title="Enviar por WhatsApp"
+                                        onclick="sendContract('{{ c.contract_code }}', this)">
+                                        <i class="fa-brands fa-whatsapp"></i>
+                                    </button>
+                                    {% elif c.status in ['sent','opened','otp_requested','otp_verified'] %}
+                                    <a href="/visitas/api/download/{{ c.contract_code }}" target="_blank"
+                                        class="btn btn-sm btn-outline-secondary" title="Ver Convenio">
+                                        <i class="fa-solid fa-eye"></i>
+                                    </a>
+                                    {% if user_role in ['supervisor', 'admin'] %}
+                                    <button class="btn btn-sm btn-outline-warning"
+                                        title="Reenviar enlace (ya fue enviado)"
+                                        onclick="sendContract('{{ c.contract_code }}', this, true)">
+                                        <i class="fa-solid fa-rotate-right"></i>
+                                    </button>
+                                    {% endif %}
+                                    {% elif c.status in ['signed','accepted'] %}
+                                    <a href="/visitas/api/view_signed/{{ c.contract_code }}" target="_blank"
+                                        class="btn btn-sm btn-outline-secondary" title="Ver Firmado">
+                                        <i class="fa-solid fa-eye"></i>
+                                    </a>
+                                    <a href="/visitas/api/download_signed/{{ c.contract_code }}" target="_blank"
+                                        class="btn btn-sm btn-success" title="Descargar Firmado">
+                                        <i class="fa-solid fa-file-circle-check"></i>
+                                    </a>
+                                    <a href="/contracts/verify/{{ c.contract_code }}" target="_blank"
+                                        class="btn btn-sm btn-outline-info" title="Verificar Evidencia">
+                                        <i class="fa-solid fa-shield-halved"></i>
+                                    </a>
+                                    {% endif %}
+                                    {# Eliminar: siempre visible excepto firmados #}
+                                    {% if c.status not in ['signed','accepted'] %}
+                                    <button class="btn btn-sm btn-outline-secondary btn-hover-danger"
+                                        title="Eliminar"
+                                        onclick="deleteContract('{{ c.contract_code }}', this)">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="{% if user_role in ['supervisor', 'admin'] %}8{% else %}7{% endif %}" class="text-center text-secondary py-5">
+                                <i class="fa-solid fa-folder-open fa-2x mb-2 d-block"></i>
+                                No hay órdenes generadas aún.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Nuevo Orden -->
+    <div class="modal fade" id="modalNewContract" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content"
+                style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color);">
+                <div class="modal-header border-bottom-0">
+                    <h5 class="modal-title fw-bold"><i class="fa-solid fa-file-signature me-2"
+                            style="color: var(--accent);"></i> Generar Nueva Orden de Visita</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" style="overflow-x: hidden;">
+                    <div class="contract-layout">
+                        <div class="form-section">
+                            </form>
             {% endif %}
             <div class="table-responsive">
                 <table class="prop-table">
@@ -1302,165 +1428,50 @@
         async function generateContract() {
             const form = document.getElementById('formNewContract');
             const btn = document.getElementById('btnGenerateContract');
+            
             Array.from(form.elements).forEach(el => {
                 if (el.tagName === 'SELECT' || el.tagName === 'INPUT') validateField(el);
             });
             checkFormValidity();
             if (btn.disabled) return;
-            btn.disabled = true;
-            btn.innerText = "Procesando...";
 
-            const data = {
-                cliente_nombre: form.cliente_nombre.value,
-                cliente_rut: form.cliente_rut.value,
-                phone: window.getPhoneData ? window.getPhoneData() : document.getElementById('phoneInput').value,
-                email: form.email.value,
-                tipo: form.tipo.value,
-                propiedad_direccion: form.propiedad_direccion.value,
-                comuna: form.comuna.value,
-                ciudad_firma: form.ciudad_firma ? form.ciudad_firma.value : '',
-                vigencia: form.vigencia.value,
-                rol: form.rol_manzana.value && form.rol_predio.value ? `${form.rol_manzana.value}-${form.rol_predio.value}` : '',
-                precio_valor: form.precio_valor.value,
-                moneda: form.moneda.value,
-                comision: form.comision.value,
-                property_code: form.property_code.value,
-                origen: form.origen.value,
-                executive: form.executive ? form.executive.value : ''
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Generando...';
+            btn.disabled = true;
+
+            const payload = {
+                executive: form.executive.value,
+                cliente_nombre: form.cliente_nombre?.value || '',
+                cliente_rut: form.cliente_rut?.value || '',
+                phone: window.getPhoneData ? window.getPhoneData() : (document.getElementById('phoneInput')?.value || ''),
+                email: form.email?.value || '',
+                cliente_direccion: form.cliente_direccion?.value || '',
+                cliente_comuna: form.cliente_comuna?.value || '',
+                property_code: form.property_code?.value || '',
+                property_comuna: form.property_comuna?.value || '',
+                property_region: form.property_region?.value || '',
+                origen: form.origen?.value || ''
             };
 
-            try {
-                const res = await fetch('/visitas/api/create', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-                const result = await res.json();
-                if (res.ok) {
-                    window.location.reload();
-                } else {
-                    alert('Error: ' + result.detail);
-                }
-            } catch (e) {
-                alert('Error al generar contrato.');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = `<i class="fa-solid fa-file-signature me-2"></i>${isEditingContract ? 'Actualizar Documento' : 'Crear Documento'}`;
-            }
-        }
-
-        // ─── ANTI-DUPLICADO: bloquea el botón mientras procesa ───────────
-        async function sendContract(visitaCode, btn, isResend = false) {
-            if (btn.disabled) return; // previene doble clic
-            if (isResend) {
-                const ok = confirm('Este convenio ya fue enviado al cliente.\n¿Deseas reenviar el enlace de firma?');
-                if (!ok) return;
-            }
-            const originalHTML = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-            try {
-                const res = await fetch(`/visitas/api/${visitaCode}/send`, { method: 'POST' });
-                const data = await res.json();
-                if (res.ok) {
-                    btn.innerHTML = '<i class="fa-solid fa-check"></i>';
-                    btn.classList.remove('btn-outline-secondary', 'btn-outline-warning');
-                    btn.classList.add('btn-success');
-                    setTimeout(() => window.location.reload(), 1200);
-                } else {
-                    alert('Error al enviar: ' + (data.detail || 'Error desconocido'));
-                    btn.innerHTML = originalHTML;
-                    btn.disabled = false;
-                }
-            } catch (e) {
-                alert('Error de red al enviar el convenio.');
-                btn.innerHTML = originalHTML;
-                btn.disabled = false;
-            }
-        }
-
-        async function deleteContract(visitaCode, btn) {
-            if (btn.disabled) return;
-            const ok = confirm('¿Eliminar este convenio? Esta acción no se puede deshacer.');
-            if (!ok) return;
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-            try {
-                const res = await fetch(`/visitas/api/delete/${visitaCode}`, { method: 'DELETE' });
-                if (res.ok) {
-                    btn.closest('tr').style.transition = 'opacity 0.4s';
-                    btn.closest('tr').style.opacity = '0';
-                    setTimeout(() => window.location.reload(), 450);
-                } else {
-                    const data = await res.json();
-                    alert('Error al eliminar: ' + (data.detail || 'Error desconocido'));
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
-                }
-            } catch (e) {
-                alert('Error de red al eliminar el convenio.');
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
-            }
-        }
-
-        function editContract(c) {
-            const form = document.getElementById('formNewContract');
-            isEditingContract = true;
-            form.cliente_nombre.value = c?.client_data?.nombre || '';
-            form.cliente_rut.value = c?.client_data?.rut || '';
-            form.email.value = c?.client_data?.email || '';
-            form.tipo.value = c?.property_data?.tipo || '';
-            form.propiedad_direccion.value = c?.property_data?.direccion || '';
-            form.comuna.value = c?.property_data?.comuna || '';
-            if (form.ciudad_firma) form.ciudad_firma.value = c?.ciudad_firma || c?.property_data?.ciudad_firma || '';
-            form.vigencia.value = c?.property_data?.vigencia || '';
-            const rol = (c?.property_data?.rol || '').split('-');
-            form.rol_manzana.value = rol[0] || '';
-            form.rol_predio.value = rol[1] || '';
-            form.moneda.value = c?.property_data?.moneda || 'UF';
-            form.comision.value = c?.property_data?.comision || '';
-            form.property_code.value = c?.property_code || '';
-            form.origen.value = c?.origen || '';
-            if (form.executive) form.executive.value = c?.executive || c?.created_by || form.executive.value || '';
-            if (window.phoneInputIntl && c?.phone) {
-                window.phoneInputIntl.setNumber(c.phone.startsWith('+') ? c.phone : `+${String(c.phone).replace(/[^\d]/g, '')}`);
-            }
-            const btn = document.getElementById('btnGenerateContract');
-            if (btn) btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Actualizar Documento';
-            const precio = String(c?.property_data?.precio || '').replace(/[^\d.,]/g, '');
-            form.precio_valor.value = precio;
-            hasInteracted = true;
-            const modal = new bootstrap.Modal(document.getElementById('modalNewContract'));
-            modal.show();
-            triggerPreview();
-        }
-
-        async function syncStatuses() {
-            try {
-                const res = await fetch('/visitas/api/statuses');
-                if (!res.ok) return;
-                const data = await res.json();
-                const map = {};
-                (data.items || []).forEach(i => map[i.contract_code] = i.status);
-                document.querySelectorAll('tr[data-contract-code]').forEach(tr => {
-                    const code = tr.getAttribute('data-contract-code');
-                    const current = tr.getAttribute('data-contract-status');
-                    const next = map[code];
-                    if (!next || next === current) return;
-                    tr.setAttribute('data-contract-status', next);
-                    const td = tr.querySelector('.contract-status-cell');
-                    if (!td) return;
-                    let html = `<span class="status-badge status-created">${next}</span>`;
-                    if (next === 'created') html = '<span class="status-badge status-created">Creado</span>';
-                    else if (next === 'sent') html = '<span class="status-badge status-sent">Enviado</span>';
-                    else if (next === 'opened') html = '<span class="status-badge status-opened">Abierto</span>';
-                    else if (next === 'otp_requested') html = '<span class="status-badge status-otp_requested">Código Pedido</span>';
-                    else if (next === 'otp_verified') html = '<span class="status-badge status-otp_verified">RUT Validado</span>';
-                    else if (next === 'signed' || next === 'accepted') html = '<span class="status-badge status-signed">Firmado ✓</span>';
-                    td.innerHTML = html;
-                });
-            } catch (_) { }
+            fetch('/visitas/api/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(response => response.json())
+              .then(data => {
+                  if (data.status === 'success') {
+                      window.location.reload();
+                  } else {
+                      alert('Error: ' + data.message);
+                      btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
+                      btn.disabled = false;
+                  }
+              })
+              .catch(err => {
+                  alert('Error de conexión');
+                  btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
+                  btn.disabled = false;
+              });
+        } catch (_) { }
         }
     </script>
 </body>

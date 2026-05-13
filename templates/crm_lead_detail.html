@@ -2400,7 +2400,9 @@
         <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i>
             <span>Captaciones</span></a>
         <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
+        {% if user_role in ['supervisor', 'admin'] %}
         <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
+        {% endif %}
 
         <!-- Tema Toggle -->
         <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="toggleTheme(); return false;">

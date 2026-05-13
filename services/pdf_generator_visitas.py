@@ -60,7 +60,7 @@ class PDFGeneratorVisitas:
         styles = getSampleStyleSheet()
         
         title_style = ParagraphStyle('ContractTitle', parent=styles['Heading1'],
-            alignment=1, fontSize=12, spaceAfter=4, spaceBefore=0)
+            alignment=1, fontSize=12, spaceAfter=10, spaceBefore=0)
         normal_style = ParagraphStyle('ContractNormal', parent=styles['Normal'],
             spaceAfter=4, alignment=4, leading=12, fontSize=9.6)
         bold_style = ParagraphStyle('ContractBold', parent=normal_style, fontName='Helvetica-Bold')
@@ -79,7 +79,11 @@ class PDFGeneratorVisitas:
             img = RLImage(str(logo_path), width=width, height=height)
             img.hAlign = 'CENTER'
             Story.append(img)
-            Story.append(Spacer(1, 0.01 * inch))
+            Story.append(Spacer(1, 0.05 * inch))
+        
+        # TITLE
+        Story.append(Paragraph("ORDEN DE VISITA", title_style))
+        Story.append(Spacer(1, 0.1 * inch))
         
         fecha = datetime.now(CHILE_TZ).strftime('%d de %m de %Y').replace('de 01 de', 'de enero de').replace('de 02 de', 'de febrero de').replace('de 03 de', 'de marzo de').replace('de 04 de', 'de abril de').replace('de 05 de', 'de mayo de').replace('de 06 de', 'de junio de').replace('de 07 de', 'de julio de').replace('de 08 de', 'de agosto de').replace('de 09 de', 'de septiembre de').replace('de 10 de', 'de octubre de').replace('de 11 de', 'de noviembre de').replace('de 12 de', 'de diciembre de')
         
@@ -94,17 +98,16 @@ class PDFGeneratorVisitas:
         property_comuna = contract_data.get('property_comuna', '')
         property_region = contract_data.get('property_region', '')
         precio = contract_data.get('precio', '')
+        operacion = contract_data.get('operacion', '')
         
         ejecutivo_nombre = contract_data.get('ejecutivo_nombre', '')
         ejecutivo_email = contract_data.get('ejecutivo_email', '')
         
+        # HEADERS
         Story.append(Paragraph(f"<b>Fecha:</b> {fecha}", normal_style))
         Story.append(Paragraph(f"<b>Al Sr.(a):</b> {nombre}", normal_style))
         Story.append(Paragraph(f"<b>Rut:</b> {rut}", normal_style))
         Story.append(Paragraph(f"<b>Dirección:</b> {direccion_cliente}, {comuna_cliente} {region_cliente}", normal_style))
-        Story.append(Spacer(1, 0.1 * inch))
-        
-        Story.append(Paragraph("Orden de Visita", title_style))
         Story.append(Spacer(1, 0.1 * inch))
         
         if 'visita_code' in contract_data:
@@ -119,8 +122,13 @@ class PDFGeneratorVisitas:
         Story.append(Spacer(1, 0.05 * inch))
         
         Story.append(Paragraph("<b>Características</b>", normal_style))
-        Story.append(Paragraph(f"<b>Tipo Propiedad:</b> {property_tipo} &nbsp;&nbsp;&nbsp;&nbsp; <b>Región:</b> {property_region} &nbsp;&nbsp;&nbsp;&nbsp; <b>Comuna:</b> {property_comuna}", normal_style))
-        Story.append(Paragraph(f"<b>Precio:</b> {precio}", normal_style))
+        chars = f"<b>Tipo Propiedad:</b> {property_tipo} &nbsp;&nbsp;&nbsp;&nbsp; <b>Región:</b> {property_region} &nbsp;&nbsp;&nbsp;&nbsp; <b>Comuna:</b> {property_comuna}"
+        Story.append(Paragraph(chars, normal_style))
+        
+        precios = f"<b>Precio:</b> {precio}"
+        if operacion:
+            precios += f" &nbsp;&nbsp;&nbsp;&nbsp; <b>Operación:</b> {operacion}"
+        Story.append(Paragraph(precios, normal_style))
         Story.append(Spacer(1, 0.1 * inch))
         
         Story.append(Paragraph(f"Para coordinar la visita favor contactar a : <b>{ejecutivo_nombre}</b> - {ejecutivo_email}", normal_style))
@@ -147,12 +155,13 @@ arbitrador designado por Centro Nacional de Arbitrajes S.A.("CNA"), de acuerdo a
         Story.append(Paragraph('<b>CLAUSULA - USO DE MEDIOS ELECTRONICOS:</b> El firmante declara que el numero telefonico y correo electronico proporcionados son de su exclusivo uso y control, aceptando la utilizacion de dichos medios para la suscripcion del presente instrumento.', normal_style))
         Story.append(Paragraph('<b>CLAUSULA - VALIDEZ DEL PROCESO DE FIRMA:</b> El acceso al enlace enviado, la autenticacion mediante codigo de verificacion (OTP) y el registro de antecedentes tecnicos del sistema constituiran evidencia de la aceptacion y consentimiento del firmante.', normal_style))
 
-        Story.append(Spacer(1, 0.3 * inch))
+        Story.append(Spacer(1, 0.4 * inch))
         
-        # We put both names at the bottom side by side if possible, or just one below another.
-        data_signatures = [
-            [Paragraph(f"<b>{ejecutivo_nombre}</b>", normal_style), Paragraph(f"<b>{rut} {nombre}</b>", normal_style)]
-        ]
+        # Signatures layout: Side by side (Centered)
+        sig_left = Paragraph(f"<para align='center'><b>{ejecutivo_nombre}</b><br/>Procasa S.A.</para>", normal_style)
+        sig_right = Paragraph(f"<para align='center'><b>{rut} {nombre}</b><br/>Cliente</para>", normal_style)
+        
+        data_signatures = [[sig_left, sig_right]]
         t = Table(data_signatures, colWidths=[3.5*inch, 3.5*inch])
         Story.append(t)
         

@@ -157,11 +157,30 @@ def _normalize_visita_fields(d: dict) -> dict:
         d["property_region"] = d["property_region"].strip().title()
     return d
 
+
+async def _enrich_with_property_data(data: dict) -> dict:
+    prop_code = data.get("property_code", "").strip()
+    if prop_code:
+        try:
+            from chatbot.storage import get_async_db
+            adb = get_async_db()
+            prop_data = await adb["universo_cartera"].find_one({"codigo": prop_code})
+            if prop_data:
+                data["property_comuna"] = prop_data.get("comuna", "")
+                data["property_region"] = prop_data.get("region", "")
+                data["property_tipo"] = prop_data.get("tipo", "")
+                data["precio"] = prop_data.get("precio", "")
+                data["operacion"] = prop_data.get("operacion", "")
+        except Exception as e:
+            pass
+    return data
+
 @router.post("/api/preview")
 async def preview_contract(request: Request):
     """Retorna un PDF generado en caliente para previsualización."""
     try:
         data = _normalize_visita_fields(await request.json())
+        data = await _enrich_with_property_data(data)
         pdf_bytes = await _run_blocking(PDFGenerator.generate_original_contract, data)
         return Response(content=pdf_bytes, media_type="application/pdf")
     except Exception as e:
@@ -173,6 +192,7 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
     """Crea o actualiza un orden de visita (desde CRM)"""
     try:
         data = _normalize_visita_fields(await request.json())
+        data = await _enrich_with_property_data(data)
         from chatbot.storage import get_async_db
         adb = get_async_db()
         # Extraer usuario/rol desde JWT
@@ -223,7 +243,8 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                 "comuna": data.get("property_comuna", ""),
                 "region": data.get("property_region", ""),
                 "tipo": data.get("property_tipo", ""),
-                "precio": data.get("precio", "")
+                "precio": data.get("precio", ""),
+                "operacion": data.get("operacion", "")
             },
             "status": "created",
             "security": {

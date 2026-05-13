@@ -837,40 +837,40 @@
                                 <div id="formErrors" class="alert alert-danger d-none mb-3 py-2 text-sm fw-bold"></div>
                                 <input type="hidden" name="executive" value="{{ user_username }}">
                                 <div class="row g-3 mb-3">
-                                    <div class="col-12">
+                                    <div class="col-lg-6 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del Cliente <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="cliente_nombre" placeholder="Ej: Juan Pérez" required onblur="capitalizeName(this); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa el nombre completo.</div>
                                     </div>
-                                    <div class="col-12">
+                                    <div class="col-lg-6 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">RUT Cliente <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="cliente_rut" placeholder="12345678-9" required oninput="formatRut(this)" onblur="validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa un RUT válido.</div>
                                     </div>
-                                    <div class="col-12">
+                                    <div class="col-lg-6 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Domicilio <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="cliente_direccion" placeholder="Calle, Número" required onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa el domicilio.</div>
                                     </div>
-                                    <div class="col-12">
+                                    <div class="col-lg-6 col-md-6 position-relative">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Comuna <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="cliente_comuna" id="comunaInput" placeholder="Ej: Santiago" required autocomplete="off" oninput="filterComunas(); triggerPreview();" onfocus="showComunas()" onblur="setTimeout(() => validateComunaList(this), 200);">
                                         <div id="comunaDropdown" class="autocomplete-dropdown custom-scrollbar d-none"></div>
                                         <div class="invalid-feedback">Ingresa la comuna.</div>
                                     </div>
-                                    <div class="col-12">
+                                    <div class="col-lg-6 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span class="required-star">*</span></label>
                                         <div class="w-100">
                                             <input type="tel" class="form-control w-100" id="phoneInput" name="phone_full" placeholder="912345678" required style="width: 100%;">
                                         </div>
                                         <div class="invalid-feedback" id="phoneErrorMsg">Ingresa un teléfono válido.</div>
                                     </div>
-                                    <div class="col-12">
+                                    <div class="col-lg-6 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Email</label>
                                         <input type="email" class="form-control" name="email" oninput="this.value=this.value.toLowerCase()" onblur="this.value=this.value.trim().toLowerCase(); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).</div>
                                     </div>
-                                    <div class="col-12">
+                                    <div class="col-lg-6 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Código de Propiedad <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="property_code" placeholder="Ej: 15482" required oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();" onblur="validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa el código.</div>

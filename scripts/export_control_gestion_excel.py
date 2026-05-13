@@ -85,8 +85,14 @@ def _to_dt(value: Any) -> Optional[datetime]:
     return dt.astimezone(CHILE_TZ)
 
 
+import unicodedata
+
 def _norm_text(v: Any) -> str:
-    return str(v or "").strip().lower()
+    """Normaliza texto: minúsculas, sin espacios extra y sin acentos."""
+    s = str(v or "").strip().lower()
+    # Eliminar acentos
+    s = unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('ASCII')
+    return s
 
 
 def _norm_exec_name(name: str) -> str:
@@ -176,6 +182,28 @@ def build_report(days_back: int = 0) -> Dict[str, pd.DataFrame]:
     db = get_db()
     now = datetime.now(CHILE_TZ)
     since = now - pd.Timedelta(days=days_back)
+
+    # Cartera Maestra (Filtrada por Oficina y Disponibilidad)
+    cartera_docs = list(db["universo_cartera"].find(
+        {"oficina": "PROCASA SUCRE", "disponible": True}, 
+        {
+            "ejecutivo": 1, "codigo": 1, "titulo": 1, "comuna": 1, "precio_uf": 1, "operacion": 1, "tipo": 1, "url": 1
+        }
+    ))
+    
+    sucre_execs = set()
+    jorge_pablo_codes = set()
+    jorge_pablo_norm = _norm_text("Jorge Pablo Caro")
+    
+    for d in cartera_docs:
+        raw_name = d.get("ejecutivo")
+        norm_name = _norm_text(raw_name)
+        sucre_execs.add(_norm_exec_name(raw_name))
+        if norm_name == jorge_pablo_norm:
+            c = str(d.get("codigo") or "").strip()
+            if c:
+                jorge_pablo_codes.add(c)
+    # ---------------------------------------------------------
 
     leads_query: Dict[str, Any] = {
         "$or": [
@@ -292,48 +320,6 @@ def build_report(days_back: int = 0) -> Dict[str, pd.DataFrame]:
             "Captaciones Asignadas": 0, "Captaciones Activas": 0, "Captaciones Captadas": 0, "Captaciones con Actividad": 0,
         })
         mb["Leads Nuevos"] += 1
-        mb["Leads con Gestion"] += 1 if mgmt_events else 0
-        if response_min is not None:
-            mb["Resp"].append(response_min)
-            mb["SLA Criticos >3h"] += 1 if response_min > SLA_CRITICAL_MINUTES else 0
-
-    # 0. Usuarios Activos (Filtro de Seguridad)
-    active_users_list = list(db["usuarios"].find({"is_active": True}, {"nombre": 1}))
-    active_execs_set = { _norm_exec_name(u.get("nombre")) for u in active_users_list }
-
-    # 1. Cartera Maestra de Propiedades (FILTRADA POR OFICINA SUCRE Y DISPONIBLES)
-    cartera_docs = list(db["universo_cartera"].find(
-        {"oficina": "PROCASA SUCRE", "disponible": True}, 
-        {
-            "ejecutivo": 1, "codigo": 1, "codigo_procasa": 1, "titulo": 1, "comuna": 1, "precio_uf": 1, "operacion": 1, "tipo": 1, "url": 1
-        }
-    ))
-    
-    # Lista de ejecutivos permitidos (solo los de SUCRE que estén ACTIVOS)
-    sucre_execs = set()
-    jorge_pablo_codes = set()
-    jorge_pablo_norm = _norm_exec_name("Jorge Pablo Caro")
-    
-    for d in cartera_docs:
-        name = _norm_exec_name(d.get("ejecutivo"))
-        if name in active_execs_set:
-            sucre_execs.add(name)
-        if name == jorge_pablo_norm:
-            c = str(d.get("codigo") or "").strip()
-            if c:
-                jorge_pablo_codes.add(c)
-    
-    # 2. Captaciones Recientes (Yapo) - Mantener solo si son de SUCRE
-    captacion_docs = list(db["yapo_propiedades"].find(
-        {"details.es_propietario_directo": True, "gestion.ejecutivo_asignado": {"$exists": True, "$ne": ""}},
-        {
-            "details.titulo": 1, "details.comuna": 1, "details.telefono": 1,
-            "gestion.ejecutivo_asignado": 1, "gestion.estado": 1, "gestion.estado_captacion": 1,
-            "gestion.fecha_ultima_gestion": 1, "gestion.actividades": 1, "gestion.fecha_asignacion": 1,
-            "score_captacion": 1, "created_at": 1, "url": 1,
-        }
-    ))
-
     # Pre-calcular consultas por código de propiedad (Master)
     prop_consultas: Dict[str, int] = {}
     for lead in leads_docs:
@@ -351,11 +337,6 @@ def build_report(days_back: int = 0) -> Dict[str, pd.DataFrame]:
             continue
 
         ejecutivo = _norm_exec_name(lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo") or "SIN_ASIGNAR")
-        
-        # FILTRO: Solo procesar si el ejecutivo es de SUCRE
-        if ejecutivo != "Sin Asignar" and ejecutivo not in sucre_execs:
-            continue
-
         exec_key = _norm_text(ejecutivo)
 
         created_at = _to_dt(lead.get("created_at"))
@@ -469,13 +450,21 @@ def build_report(days_back: int = 0) -> Dict[str, pd.DataFrame]:
             mb["Resp"].append(response_min_bus)
             if response_min_bus > SLA_CRITICAL_MINUTES:
                 mb["SLA Criticos >3h"] += 1
-
+    
+    # 2. Captaciones Recientes (Yapo)
     capt_rows: List[Dict[str, Any]] = []
+    captacion_docs = list(db["yapo_propiedades"].find(
+        {"details.es_propietario_directo": True, "gestion.ejecutivo_asignado": {"$exists": True, "$ne": ""}},
+        {
+            "details.titulo": 1, "details.comuna": 1, "details.telefono": 1,
+            "gestion.ejecutivo_asignado": 1, "gestion.estado": 1, "gestion.estado_captacion": 1,
+            "gestion.fecha_ultima_gestion": 1, "gestion.actividades": 1, "gestion.fecha_asignacion": 1,
+            "score_captacion": 1, "created_at": 1, "url": 1,
+        }
+    ))
     for doc in captacion_docs:
         g = doc.get("gestion") or {}
         ejecutivo = _norm_exec_name(g.get("ejecutivo_asignado") or "")
-        if not ejecutivo or (ejecutivo != "Sin Asignar" and ejecutivo not in sucre_execs):
-            continue
         state = g.get("estado") or g.get("estado_captacion") or "N/D"
         activities = g.get("actividades") or []
         act_n = len(activities)
@@ -540,17 +529,19 @@ def build_report(days_back: int = 0) -> Dict[str, pd.DataFrame]:
         mb["Captaciones Captadas"] += 1 if str(state) in CAPTADO_STATES else 0
         mb["Captaciones con Actividad"] += 1 if act_n > 0 else 0
 
-    # 3. Procesar Cartera Maestra
+    # 3. Cartera Maestra
     cartera_rows: List[Dict[str, Any]] = []
+    code_to_title: Dict[str, str] = {}
     for doc in cartera_docs:
         ejecutivo = _norm_exec_name(doc.get("ejecutivo") or "SIN_ASIGNAR")
         code = str(doc.get("codigo") or "").strip()
         consultas_n = prop_consultas.get(code, 0) if code else 0
+        if code and doc.get("titulo"):
+            code_to_title[code] = str(doc.get("titulo"))
         
         cartera_rows.append({
             "Ejecutivo": ejecutivo,
             "Codigo": code,
-            "Codigo Procasa (Backup)": str(doc.get("codigo_procasa") or "").strip(),
             "Titulo": doc.get("titulo", ""),
             "Consultas (Leads)": consultas_n,
             "Salud": "ACTIVA (Con Consultas)" if consultas_n > 0 else "ESTANCADA (Sin Consultas)",
@@ -625,12 +616,41 @@ def build_report(days_back: int = 0) -> Dict[str, pd.DataFrame]:
             "Captaciones Captadas": v.get("Captaciones Captadas", 0),
             "Captaciones con Actividad": v.get("Captaciones con Actividad", 0),
         })
+        
+    props_top_rows: List[Dict[str, Any]] = []
+    props_by_exec: Dict[str, List[Dict[str, Any]]] = {}
+    for row in cartera_rows:
+        ejecutivo = str(row.get("Ejecutivo") or "")
+        code = str(row.get("Codigo") or "").strip()
+        qty = int(row.get("Consultas (Leads)") or 0)
+        if not ejecutivo or not code or qty <= 0:
+            continue
+        props_by_exec.setdefault(ejecutivo, []).append({
+            "Codigo Propiedad": code,
+            "Titulo Propiedad": str(row.get("Titulo") or ""),
+            "Solicitudes (Leads)": qty,
+        })
+
+    for ejecutivo in sorted(props_by_exec.keys(), key=lambda x: x.lower()):
+        ordered = sorted(
+            props_by_exec[ejecutivo],
+            key=lambda r: (-int(r["Solicitudes (Leads)"]), str(r["Codigo Propiedad"]))
+        )
+        for pos, item in enumerate(ordered[:10], start=1):
+            props_top_rows.append({
+                "Ejecutivo": ejecutivo,
+                "Ranking": pos,
+                "Codigo Propiedad": item["Codigo Propiedad"],
+                "Titulo Propiedad": item["Titulo Propiedad"],
+                "Solicitudes (Leads)": item["Solicitudes (Leads)"],
+            })
 
     summary_df = pd.DataFrame(summary_rows)
     leads_df = pd.DataFrame(lead_rows)
     cartera_df = pd.DataFrame(cartera_rows)
     capt_df = pd.DataFrame(capt_rows)
     monthly_df = pd.DataFrame(monthly_rows)
+    props_top_df = pd.DataFrame(props_top_rows)
 
     if not summary_df.empty:
         summary_df = summary_df.sort_values(by=["Leads Asignados", "Acciones Plataforma (Total)"], ascending=False)
@@ -640,6 +660,8 @@ def build_report(days_back: int = 0) -> Dict[str, pd.DataFrame]:
         capt_df = capt_df.sort_values(by=["Ultima Gestion"], ascending=False)
     if not monthly_df.empty:
         monthly_df = monthly_df.sort_values(by=["Mes", "Ejecutivo"], ascending=[False, True])
+    if not props_top_df.empty:
+        props_top_df = props_top_df.sort_values(by=["Ejecutivo", "Ranking"], ascending=[True, True])
 
     audit_captacion = pd.DataFrame(capt_rows)
     if not audit_captacion.empty:
@@ -654,6 +676,7 @@ def build_report(days_back: int = 0) -> Dict[str, pd.DataFrame]:
         "control_mensual": monthly_df,
         "detalle_leads": leads_df,
         "detalle_cartera": cartera_df,
+        "top_propiedades_por_ejecutivo": props_top_df,
         "detalle_captacion": capt_df,
         "auditoria_captacion_estados": audit_captacion,
     }

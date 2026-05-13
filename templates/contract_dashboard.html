@@ -299,6 +299,7 @@
             border: none;
             min-height: 500px;
             transition: opacity 0.3s;
+            overflow: hidden;
         }
 
         .pdf-loading-overlay {
@@ -473,6 +474,9 @@
             .contract-layout {
                 grid-template-columns: 1fr;
             }
+            #pdfPreviewIframe {
+                min-height: 420px;
+            }
         }
 
         .required-star {
@@ -530,6 +534,7 @@
 
         .iti__selected-dial-code {
             color: var(--input-text) !important;
+            font-weight: 600;
         }
 
         .iti__search-input:focus {
@@ -578,6 +583,9 @@
 
         .autocomplete-item:hover {
             background-color: rgba(99, 102, 241, 0.1);
+        }
+        .autocomplete-item.active {
+            background-color: rgba(99, 102, 241, 0.2);
         }
 
         .autocomplete-dropdown::-webkit-scrollbar {
@@ -666,11 +674,24 @@
 
         <div class="table-container">
             <div class="section-title">Convenios Emitidos</div>
+            {% if user_role in ['supervisor', 'admin'] %}
+            <form method="get" action="/contracts/dashboard" class="row g-2 mb-3">
+                <div class="col-md-4 col-sm-6">
+                    <select class="form-select form-select-sm" name="executive" onchange="this.form.submit()">
+                        <option value="">Todos los ejecutivos</option>
+                        {% for ex in executives %}
+                        <option value="{{ ex }}" {% if executive_filter == ex %}selected{% endif %}>{{ ex }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </form>
+            {% endif %}
             <div class="table-responsive">
                 <table class="prop-table">
                     <thead>
                         <tr>
                             <th>Fecha</th>
+                            {% if user_role in ['supervisor', 'admin'] %}<th>Ejecutivo</th>{% endif %}
                             <th>Código</th>
                             <th>Origen</th>
                             <th>Cliente</th>
@@ -681,8 +702,11 @@
                     </thead>
                     <tbody>
                         {% for c in contracts %}
-                        <tr>
+                        <tr data-contract-code="{{ c.contract_code }}" data-contract-status="{{ c.status }}">
                             <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '---' }}<br><small class="text-secondary">{{ c.created_at.strftime('%H:%M') if c.created_at else '' }} hrs</small></td>
+                            {% if user_role in ['supervisor', 'admin'] %}
+                            <td data-label="Ejecutivo">{{ c.get('executive', c.get('created_by', '---')) or '---' }}</td>
+                            {% endif %}
                             <td data-label="Código"><strong>{{ c.property_code or c.contract_code[:8] }}</strong></td>
                             <td data-label="Origen">{{ c.get('origen', '---') }}</td>
                             <td data-label="Cliente">
@@ -693,7 +717,7 @@
                                 {{ c.property_data.direccion }}<br>
                                 <small class="text-secondary">Rol: {{ c.property_data.rol }}</small>
                             </td>
-                            <td data-label="Estado">
+                            <td data-label="Estado" class="contract-status-cell">
                                 {% if c.status == 'created' %}<span class="status-badge status-created">Creado</span>
                                 {% elif c.status == 'sent' %}<span class="status-badge status-sent">Enviado</span>
                                 {% elif c.status == 'opened' %}<span class="status-badge status-opened">Abierto</span>
@@ -710,6 +734,10 @@
                                         class="btn btn-sm btn-outline-secondary" title="Ver PDF">
                                         <i class="fa-solid fa-file-pdf"></i>
                                     </a>
+                                    <button class="btn btn-sm btn-outline-info" title="Editar antes de enviar"
+                                        onclick='editContract({{ c|tojson|safe }})'>
+                                        <i class="fa-solid fa-pen"></i>
+                                    </button>
                                     {# Botón Enviar WhatsApp: solo si aún no se ha enviado #}
                                     <button class="btn btn-sm btn-outline-secondary btn-hover-whatsapp"
                                         title="Enviar por WhatsApp"
@@ -717,14 +745,22 @@
                                         <i class="fa-brands fa-whatsapp"></i>
                                     </button>
                                     {% elif c.status in ['sent','opened','otp_requested','otp_verified'] %}
-                                    {# Ya enviado: solo reenvío permitido, con advertencia #}
+                                    <a href="/contracts/api/download/{{ c.contract_code }}" target="_blank"
+                                        class="btn btn-sm btn-outline-secondary" title="Ver Convenio">
+                                        <i class="fa-solid fa-eye"></i>
+                                    </a>
+                                    {% if user_role in ['supervisor', 'admin'] %}
                                     <button class="btn btn-sm btn-outline-warning"
                                         title="Reenviar enlace (ya fue enviado)"
                                         onclick="sendContract('{{ c.contract_code }}', this, true)">
                                         <i class="fa-solid fa-rotate-right"></i>
                                     </button>
+                                    {% endif %}
                                     {% elif c.status in ['signed','accepted'] %}
-                                    {# Firmado: descargar PDF firmado #}
+                                    <a href="/contracts/api/view_signed/{{ c.contract_code }}" target="_blank"
+                                        class="btn btn-sm btn-outline-secondary" title="Ver Firmado">
+                                        <i class="fa-solid fa-eye"></i>
+                                    </a>
                                     <a href="/contracts/api/download_signed/{{ c.contract_code }}" target="_blank"
                                         class="btn btn-sm btn-success" title="Descargar Firmado">
                                         <i class="fa-solid fa-file-circle-check"></i>
@@ -747,7 +783,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="7" class="text-center text-secondary py-5">
+                            <td colspan="{% if user_role in ['supervisor', 'admin'] %}8{% else %}7{% endif %}" class="text-center text-secondary py-5">
                                 <i class="fa-solid fa-folder-open fa-2x mb-2 d-block"></i>
                                 No hay convenios generados aún.
                             </td>
@@ -774,6 +810,23 @@
                         <div class="form-section">
                             <form id="formNewContract" class="needs-validation" novalidate>
                                 <div id="formErrors" class="alert alert-danger d-none mb-3 py-2 text-sm fw-bold"></div>
+                                {% if user_role in ['supervisor', 'admin'] %}
+                                <div class="row g-3 mb-3">
+                                    <div class="col-12">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Ejecutivo
+                                            que crea el convenio <span class="required-star">*</span></label>
+                                        <select class="form-select" name="executive" required
+                                            onchange="validateField(this); triggerPreview();">
+                                            <option value="" selected>Selecciona ejecutivo</option>
+                                            {% for ex in executives %}
+                                            <option value="{{ ex }}">{{ ex }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                {% else %}
+                                <input type="hidden" name="executive" value="{{ user_username }}">
+                                {% endif %}
                                 <div class="row g-3 mb-3">
                                     <div class="col-lg-8 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del
@@ -820,7 +873,9 @@
                                     <div class="col-lg-8 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Tipo de
                                             Operación <span class="required-star">*</span></label>
-                                        <select class="form-select" name="tipo" onchange="triggerPreview()">
+                                        <select class="form-select" name="tipo" required
+                                            onchange="validateField(this); triggerPreview()">
+                                            <option value="" selected>Selecciona tipo de operación</option>
                                             <option value="Venta">Autorización de Venta</option>
                                             <option value="Venta Exclusiva">Autorización de Venta Exclusiva</option>
                                             <option value="Arriendo">Autorización de Arriendo</option>
@@ -833,9 +888,10 @@
                                             (Días) <span class="required-star">*</span></label>
                                         <select class="form-select" name="vigencia" required
                                             onchange="validateField(this); triggerPreview();">
+                                            <option value="" selected>Selecciona vigencia</option>
                                             <option value="60">60 Días</option>
                                             <option value="90">90 Días</option>
-                                            <option value="120" selected>120 Días</option>
+                                            <option value="120">120 Días</option>
                                             <option value="180">180 Días</option>
                                             <option value="360">360 Días</option>
                                         </select>
@@ -900,9 +956,10 @@
                                             <span class="required-star">*</span></label>
                                         <select class="form-select" name="comision" required
                                             onchange="validateField(this); triggerPreview();">
+                                            <option value="" selected>Selecciona comisión</option>
                                             <option value="1%">1%</option>
                                             <option value="1.5%">1.5%</option>
-                                            <option value="2%" selected>2%</option>
+                                            <option value="2%">2%</option>
                                         </select>
                                     </div>
                                 </div>
@@ -919,7 +976,9 @@
                                     <div class="col-lg-6 col-md-6">
                                         <label
                                             class="form-label text-secondary small text-uppercase fw-bold">Origen</label>
-                                        <select class="form-select" name="origen">
+                                        <select class="form-select" name="origen" required
+                                            onchange="validateField(this); triggerPreview();">
+                                            <option value="" selected>Selecciona origen</option>
                                             <option value="Captación Interna">Captación Interna</option>
                                             <option value="Captación Externa">Captación Externa</option>
                                         </select>
@@ -939,6 +998,10 @@
                             <div class="text-center mt-2 text-secondary small">
                                 <i class="fa-solid fa-eye"></i> Vista Previa en Tiempo Real
                             </div>
+                            <a id="mobilePdfOpenBtn" href="#" target="_blank"
+                                class="btn btn-sm btn-outline-secondary mt-2 d-none">
+                                <i class="fa-solid fa-up-right-from-square me-1"></i>Abrir PDF en otra pestaña
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -963,6 +1026,9 @@
         const comunasDeChile = [
             'Arica', 'Camarones', 'Putre', 'General Lagos', 'Iquique', 'Alto Hospicio', 'Pozo Almonte', 'Camiña', 'Colchane', 'Huara', 'Pica', 'Antofagasta', 'Mejillones', 'Sierra Gorda', 'Taltal', 'Calama', 'Ollagüe', 'San Pedro de Atacama', 'Tocopilla', 'María Elena', 'Copiapó', 'Caldera', 'Tierra Amarilla', 'Chañaral', 'Diego de Almagro', 'Vallenar', 'Alto del Carmen', 'Freirina', 'Huasco', 'La Serena', 'Coquimbo', 'Andacollo', 'La Higuera', 'Paihuano', 'Vicuña', 'Illapel', 'Canela', 'Los Vilos', 'Salamanca', 'Ovalle', 'Combarbalá', 'Monte Patria', 'Punitaqui', 'Río Hurtado', 'Valparaíso', 'Casablanca', 'Concón', 'Juan Fernández', 'Puchuncaví', 'Quintero', 'Viña del Mar', 'Isla de Pascua', 'Los Andes', 'Calle Larga', 'Rinconada', 'San Esteban', 'La Ligua', 'Cabildo', 'Papudo', 'Petorca', 'Zapallar', 'Quillota', 'Calera', 'Hijuelas', 'La Cruz', 'Nogales', 'San Antonio', 'Algarrobo', 'Cartagena', 'El Quisco', 'El Tabo', 'Santo Domingo', 'San Felipe', 'Catemu', 'Llaillay', 'Panquehue', 'Putaendo', 'Santa María', 'Quilpué', 'Limache', 'Olmué', 'Villa Alemana', 'Rancagua', 'Codegua', 'Coinco', 'Coltauco', 'Doñihue', 'Graneros', 'Las Cabras', 'Machalí', 'Malloa', 'Mostazal', 'Olivar', 'Peumo', 'Pichidegua', 'Quinta de Tilcoco', 'Rengo', 'Requínoa', 'San Vicente', 'Pichilemu', 'La Estrella', 'Litueche', 'Marchihue', 'Navidad', 'Paredones', 'San Fernando', 'Chépica', 'Chimbarongo', 'Lolol', 'Nancagua', 'Palmilla', 'Peralillo', 'Placilla', 'Pumanque', 'Santa Cruz', 'Talca', 'Constitución', 'Curepto', 'Empedrado', 'Maule', 'Pelarco', 'Pencahue', 'Río Claro', 'San Clemente', 'San Rafael', 'Cauquenes', 'Chanco', 'Pelluhue', 'Curicó', 'Hualañé', 'Licantén', 'Molina', 'Rauco', 'Romeral', 'Sagrada Familia', 'Teno', 'Vichuquén', 'Linares', 'Colbún', 'Longaví', 'Parral', 'Retiro', 'San Javier', 'Villa Alegre', 'Yerbas Buenas', 'Cobquecura', 'Coelemu', 'Ninhue', 'Portezuelo', 'Quirihue', 'Ránquil', 'Treguaco', 'Bulnes', 'Chillán Viejo', 'Chillán', 'El Carmen', 'Pemuco', 'Pinto', 'Quillón', 'San Ignacio', 'Yungay', 'Coihueco', 'Ñiquén', 'San Carlos', 'San Fabián', 'San Nicolás', 'Concepción', 'Coronel', 'Chiguayante', 'Florida', 'Hualqui', 'Lota', 'Penco', 'San Pedro de la Paz', 'Santa Juana', 'Talcahuano', 'Tomé', 'Hualpén', 'Lebu', 'Arauco', 'Cañete', 'Contulmo', 'Curanilahue', 'Los Álamos', 'Tirúa', 'Los Ángeles', 'Antuco', 'Cabrero', 'Laja', 'Mulchén', 'Nacimiento', 'Negrete', 'Quilaco', 'Quilleco', 'San Rosendo', 'Santa Bárbara', 'Tucapel', 'Yumbel', 'Alto Biobío', 'Temuco', 'Carahue', 'Cunco', 'Curarrehue', 'Freire', 'Galvarino', 'Gorbea', 'Lautaro', 'Loncoche', 'Melipeuco', 'Nueva Imperial', 'Padre las Casas', 'Perquenco', 'Pitrufquén', 'Pucón', 'Saavedra', 'Teodoro Schmidt', 'Toltén', 'Vilcún', 'Villarrica', 'Cholchol', 'Angol', 'Collipulli', 'Curacautín', 'Ercilla', 'Lonquimay', 'Los Sauces', 'Lumaco', 'Purén', 'Renaico', 'Traiguén', 'Victoria', 'Valdivia', 'Corral', 'Lanco', 'Los Lagos', 'Máfil', 'San José de la Mariquina', 'Paillaco', 'Panguipulli', 'La Unión', 'Futrono', 'Lago Ranco', 'Río Bueno', 'Puerto Montt', 'Calbuco', 'Cochamó', 'Fresia', 'Frutillar', 'Los Muermos', 'Llanquihue', 'Maullín', 'Puerto Varas', 'Castro', 'Ancud', 'Chonchi', 'Curaco de Vélez', 'Dalcahue', 'Puqueldón', 'Queilén', 'Quellón', 'Quemchi', 'Quinchao', 'Osorno', 'Puerto Octay', 'Purranque', 'Puyehue', 'Río Negro', 'San Juan de la Costa', 'San Pablo', 'Chaitén', 'Futaleufú', 'Hualaihué', 'Palena', 'Coyhaique', 'Lago Verde', 'Aysén', 'Cisnes', 'Guaitecas', 'Cochrane', 'O\'Higgins', 'Tortel', 'Chile Chico', 'Río Ibáñez', 'Punta Arenas', 'Laguna Blanca', 'Río Verde', 'San Gregorio', 'Cabo de Hornos', 'Antártica', 'Porvenir', 'Primavera', 'Timaukel', 'Natales', 'Torres del Paine', 'Cerrillos', 'Cerro Navia', 'Conchalí', 'El Bosque', 'Estación Central', 'Huechuraba', 'Independencia', 'La Cisterna', 'La Florida', 'La Granja', 'La Pintana', 'La Reina', 'Las Condes', 'Lo Barnechea', 'Lo Espejo', 'Lo Prado', 'Macul', 'Maipú', 'Ñuñoa', 'Pedro Aguirre Cerda', 'Peñalolén', 'Providencia', 'Pudahuel', 'Quilicura', 'Quinta Normal', 'Recoleta', 'Renca', 'San Joaquín', 'San Miguel', 'San Ramón', 'Santiago', 'Vitacura', 'Puente Alto', 'Pirque', 'San José de Maipo', 'Colina', 'Lampa', 'Tiltil', 'San Bernardo', 'Buin', 'Calera de Tango', 'Paine', 'Melipilla', 'Alhué', 'Curacaví', 'María Pinto', 'San Pedro', 'Talagante', 'El Monte', 'Isla de Maipo', 'Padre Hurtado', 'Peñaflor'
         ];
+
+        let activeComunaIndex = -1;
+        let hasInteracted = false;
 
         document.addEventListener("DOMContentLoaded", function () {
             buildComunaDropdown(comunasDeChile);
@@ -999,6 +1065,7 @@
         function filterComunas() {
             const val = document.getElementById('comunaInput').value.toLowerCase();
             const filtered = comunasDeChile.filter(c => c.toLowerCase().includes(val));
+            activeComunaIndex = -1;
             buildComunaDropdown(filtered);
             document.getElementById('comunaDropdown').classList.remove('d-none');
         }
@@ -1085,7 +1152,7 @@
             });
 
             btn.disabled = !isValid;
-            if (!isValid) msgDiv.classList.remove('d-none');
+            if (!isValid && hasInteracted) msgDiv.classList.remove('d-none');
             else msgDiv.classList.add('d-none');
         }
 
@@ -1099,6 +1166,7 @@
                 input.classList.remove('is-invalid');
                 input.classList.add('is-valid');
             }
+            hasInteracted = true;
             checkFormValidity();
         }
 
@@ -1129,7 +1197,8 @@
                     moneda: form.moneda.value,
                     comision: form.comision.value,
                     property_code: form.property_code.value,
-                    origen: form.origen.value
+                    origen: form.origen.value,
+                    executive: form.executive ? form.executive.value : ''
                 };
 
                 try {
@@ -1143,6 +1212,10 @@
                         if (objectUrl) URL.revokeObjectURL(objectUrl);
                         objectUrl = URL.createObjectURL(blob);
                         document.getElementById('pdfPreviewIframe').src = objectUrl + '#toolbar=0&navpanes=0&scrollbar=0&view=FitH';
+                        const mobileOpen = document.getElementById('mobilePdfOpenBtn');
+                        mobileOpen.href = objectUrl;
+                        if (window.innerWidth <= 768) mobileOpen.classList.remove('d-none');
+                        else mobileOpen.classList.add('d-none');
                     }
                 } catch (e) {
                     console.error("Preview error", e);
@@ -1182,6 +1255,7 @@
 
             const modalEl = document.getElementById('modalNewContract');
             modalEl.addEventListener('show.bs.modal', () => {
+                hasInteracted = false;
                 const iframeSrc = document.getElementById('pdfPreviewIframe').src;
                 if (iframeSrc.includes('about:blank') || iframeSrc.includes(window.location.origin + '/about:blank')) {
                     triggerPreview();
@@ -1203,7 +1277,7 @@
                     }
                 } else {
                     phoneInputField.classList.remove('is-valid');
-                    phoneInputField.classList.add('is-invalid');
+                    phoneInputField.classList.remove('is-invalid');
                 }
                 triggerPreview();
             };
@@ -1211,6 +1285,29 @@
             phoneInputField.addEventListener('input', validatePhone);
             phoneInputField.addEventListener('countrychange', validatePhone);
             phoneInputField.addEventListener('blur', validatePhone);
+
+            const comunaInput = document.getElementById('comunaInput');
+            comunaInput.addEventListener('keydown', (e) => {
+                const items = Array.from(document.querySelectorAll('#comunaDropdown .autocomplete-item'));
+                if (!items.length) return;
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    activeComunaIndex = Math.min(activeComunaIndex + 1, items.length - 1);
+                    items.forEach((it, idx) => it.classList.toggle('active', idx === activeComunaIndex));
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    activeComunaIndex = Math.max(activeComunaIndex - 1, 0);
+                    items.forEach((it, idx) => it.classList.toggle('active', idx === activeComunaIndex));
+                } else if (e.key === 'Enter' && activeComunaIndex >= 0) {
+                    e.preventDefault();
+                    items[activeComunaIndex].click();
+                } else if (e.key === 'Escape') {
+                    document.getElementById('comunaDropdown').classList.add('d-none');
+                }
+            });
+
+            setInterval(syncStatuses, 12000);
+            syncStatuses();
         });
 
         async function generateContract() {
@@ -1233,7 +1330,8 @@
                 moneda: form.moneda.value,
                 comision: form.comision.value,
                 property_code: form.property_code.value,
-                origen: form.origen.value
+                origen: form.origen.value,
+                executive: form.executive ? form.executive.value : ''
             };
 
             try {
@@ -1309,6 +1407,58 @@
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
             }
+        }
+
+        function editContract(c) {
+            const form = document.getElementById('formNewContract');
+            form.cliente_nombre.value = c?.client_data?.nombre || '';
+            form.cliente_rut.value = c?.client_data?.rut || '';
+            form.email.value = c?.client_data?.email || '';
+            form.tipo.value = c?.property_data?.tipo || '';
+            form.propiedad_direccion.value = c?.property_data?.direccion || '';
+            form.comuna.value = c?.property_data?.comuna || '';
+            form.vigencia.value = c?.property_data?.vigencia || '';
+            const rol = (c?.property_data?.rol || '').split('-');
+            form.rol_manzana.value = rol[0] || '';
+            form.rol_predio.value = rol[1] || '';
+            form.moneda.value = c?.property_data?.moneda || 'UF';
+            form.comision.value = c?.property_data?.comision || '';
+            form.property_code.value = c?.property_code || '';
+            form.origen.value = c?.origen || '';
+            if (form.executive) form.executive.value = c?.executive || c?.created_by || form.executive.value || '';
+            const precio = String(c?.property_data?.precio || '').replace(/[^\d.,]/g, '');
+            form.precio_valor.value = precio;
+            hasInteracted = true;
+            const modal = new bootstrap.Modal(document.getElementById('modalNewContract'));
+            modal.show();
+            triggerPreview();
+        }
+
+        async function syncStatuses() {
+            try {
+                const res = await fetch('/contracts/api/statuses');
+                if (!res.ok) return;
+                const data = await res.json();
+                const map = {};
+                (data.items || []).forEach(i => map[i.contract_code] = i.status);
+                document.querySelectorAll('tr[data-contract-code]').forEach(tr => {
+                    const code = tr.getAttribute('data-contract-code');
+                    const current = tr.getAttribute('data-contract-status');
+                    const next = map[code];
+                    if (!next || next === current) return;
+                    tr.setAttribute('data-contract-status', next);
+                    const td = tr.querySelector('.contract-status-cell');
+                    if (!td) return;
+                    let html = `<span class="status-badge status-created">${next}</span>`;
+                    if (next === 'created') html = '<span class="status-badge status-created">Creado</span>';
+                    else if (next === 'sent') html = '<span class="status-badge status-sent">Enviado</span>';
+                    else if (next === 'opened') html = '<span class="status-badge status-opened">Abierto</span>';
+                    else if (next === 'otp_requested') html = '<span class="status-badge status-otp_requested">Código Pedido</span>';
+                    else if (next === 'otp_verified') html = '<span class="status-badge status-otp_verified">RUT Validado</span>';
+                    else if (next === 'signed' || next === 'accepted') html = '<span class="status-badge status-signed">Firmado ✓</span>';
+                    td.innerHTML = html;
+                });
+            } catch (_) { }
         }
     </script>
 </body>

@@ -121,6 +121,24 @@ def get_client_ip(request: Request) -> str:
         return forwarded.split(",")[0]
     return request.client.host if request.client else "unknown"
 
+async def _get_request_user(adb, request: Request):
+    username = None
+    user_role = "agente"
+    token = request.cookies.get("access_token")
+    if not token:
+        return username, user_role
+    try:
+        from jose import jwt
+        payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
+        username = payload.get("sub")
+        if username:
+            user_doc = await adb["usuarios"].find_one({"username": username})
+            if user_doc:
+                user_role = user_doc.get("rol", "agente")
+    except Exception as e:
+        logger.error(f"Error decodificando JWT: {e}")
+    return username, user_role
+
 def _normalize_contract_fields(d: dict) -> dict:
     if d.get("email"):
         d["email"] = d["email"].strip().lower()
@@ -176,16 +194,12 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         data = _normalize_contract_fields(await request.json())
         from chatbot.storage import get_async_db
         adb = get_async_db()
-        # Extraer usuario creador desde JWT
-        created_by = None
-        try:
-            from jose import jwt as _jwt
-            _tok = request.cookies.get("access_token")
-            if _tok:
-                _pl = _jwt.decode(_tok, Config.SECRET_KEY, algorithms=["HS256"])
-                created_by = _pl.get("sub")
-        except Exception:
-            pass
+        # Extraer usuario/rol desde JWT
+        created_by, user_role = await _get_request_user(adb, request)
+        executive = str(data.get("executive", "")).strip()
+        if user_role not in ["supervisor", "admin"] or not executive:
+            executive = created_by or ""
+
         property_code = data.get("property_code", "").strip()
         
         # Verificar si existe contrato previo creado (no firmado)
@@ -257,7 +271,8 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             "version": 1,
             "created_at": datetime.now(CHILE_TZ),
             "created_at_local": datetime.now(CHILE_TZ).strftime('%Y-%m-%d %H:%M:%S'),
-            "created_by": created_by
+            "created_by": created_by,
+            "executive": executive
         }
         
         if existing:
@@ -595,9 +610,16 @@ async def view_signed_pdf(contract_code: str):
 async def send_contract(contract_code: str, request: Request):
     """Genera token y envía por WhatsApp"""
     db = get_db()
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    username, user_role = await _get_request_user(adb, request)
     contract = db["contracts"].find_one({"contract_code": contract_code})
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
+    # Después del primer envío, solo supervisor/admin puede reenviar
+    if contract.get("status") in ["sent", "opened", "otp_requested", "otp_verified", "signed", "accepted"]:
+        if user_role not in ["supervisor", "admin"]:
+            raise HTTPException(status_code=403, detail="Solo supervisor/admin puede reenviar convenios ya enviados.")
         
     # Reusar token si aún es válido
     if contract.get("security", {}).get("token") and not contract["security"]["token_used"]:
@@ -672,6 +694,18 @@ Este proceso utiliza firma electrónica conforme a la Ley 19.799.
     await send_whatsapp_message(phone, mensaje)
     
     return {"status": "ok", "message": "Enviado por WhatsApp"}
+
+@router.get("/api/statuses")
+async def contracts_statuses(request: Request):
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    username, user_role = await _get_request_user(adb, request)
+    if user_role in ["supervisor", "admin"]:
+        query = {"status": {"$ne": "deleted"}}
+    else:
+        query = {"status": {"$ne": "deleted"}, "created_by": username}
+    rows = await adb["contracts"].find(query, {"contract_code": 1, "status": 1}).to_list(length=300)
+    return {"items": [{"contract_code": r.get("contract_code"), "status": r.get("status", "created")} for r in rows]}
 
 def ensure_document_valid(contract: dict):
     """Verifica la expiración real del documento (24 horas) en todos los endpoints"""
@@ -1414,26 +1448,14 @@ async def contract_dashboard(request: Request):
     """Módulo principal para gestión y generación de convenios de corretaje"""
     from chatbot.storage import get_async_db
     adb = get_async_db()
-    # Extraer el usuario desde el JWT
-    user_role = "agente"
-    username = None
-    token = request.cookies.get("access_token")
-    if token:
-        try:
-            from jose import jwt
-            from config import Config
-            payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
-            username = payload.get("sub")
-            if username:
-                user_doc = await adb["usuarios"].find_one({"username": username})
-                if user_doc:
-                    user_role = user_doc.get("rol", "agente")
-        except Exception as e:
-            logger.error(f"Error decodificando JWT en contract_dashboard: {e}")
+    username, user_role = await _get_request_user(adb, request)
 
     # AISLAMIENTO DE DATOS: supervisores/admin ven todos; agentes solo los suyos
+    executive_filter = (request.query_params.get("executive") or "").strip()
     if user_role in ["supervisor", "admin"]:
         query = {"status": {"$ne": "deleted"}}
+        if executive_filter:
+            query["executive"] = executive_filter
     else:
         query = {"status": {"$ne": "deleted"}, "created_by": username}
 
@@ -1445,9 +1467,22 @@ async def contract_dashboard(request: Request):
             dt_utc = c["created_at"].replace(tzinfo=timezone.utc)
             c["created_at"] = dt_utc.astimezone(CHILE_TZ)
 
+    executives = []
+    if user_role in ["supervisor", "admin"]:
+        executives = await adb["usuarios"].find(
+            {"rol": {"$in": ["agente", "supervisor", "admin"]}},
+            {"username": 1}
+        ).to_list(length=300)
+        executives = sorted(
+            [u.get("username", "") for u in executives if u.get("username")],
+            key=lambda x: x.lower()
+        )
+
     return templates.TemplateResponse("contract_dashboard.html", {
         "request": request,
         "contracts": contracts,
         "user_role": user_role,
-        "user_username": username or ""
+        "user_username": username or "",
+        "executives": executives,
+        "executive_filter": executive_filter
     })

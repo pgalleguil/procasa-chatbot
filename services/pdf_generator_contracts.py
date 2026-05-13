@@ -38,9 +38,9 @@ class NumberedCanvas(canvas.Canvas):
         is_original = getattr(self, 'is_original', True)
         
         if is_original:
-            text = f"Página {self._pageNumber} de {page_count} | Código: {code}"
+            text = f"Página {self._pageNumber} de {page_count} "
         else:
-            text = f"Certificado de Firma Electrónica | Código: {code}"
+            text = f"Certificado de Firma Electrónica "
             
         self.drawCentredString(letter[0] / 2.0, 0.5 * inch, text)
         self.restoreState()
@@ -64,7 +64,7 @@ class PDFGenerator:
         buffer = io.BytesIO()
         # Reducimos márgenes para maximizar espacio (2cm = 56.7 pt)
         doc = SimpleDocTemplate(buffer, pagesize=letter,
-            rightMargin=42.5, leftMargin=42.5, topMargin=42.5, bottomMargin=42.5)
+            rightMargin=36, leftMargin=36, topMargin=28, bottomMargin=34)
         styles = getSampleStyleSheet()
         
         title_style = ParagraphStyle('ContractTitle', parent=styles['Heading1'],
@@ -81,12 +81,12 @@ class PDFGenerator:
             img_reader = ImageReader(str(logo_path))
             iw, ih = img_reader.getSize()
             aspect = ih / float(iw)
-            width = 2.0 * inch
+            width = 1.6 * inch
             height = width * aspect
             img = RLImage(str(logo_path), width=width, height=height)
             img.hAlign = 'CENTER'
             Story.append(img)
-            Story.append(Spacer(1, 0.05 * inch))
+            Story.append(Spacer(1, 0.02 * inch))
         
         tipo = contract_data.get("tipo", "Arriendo")
         
@@ -94,7 +94,7 @@ class PDFGenerator:
             Story.append(Paragraph("AUTORIZACIÓN DE CORRETAJE DE VENTA EXCLUSIVA", title_style))
         else:
             Story.append(Paragraph(f"AUTORIZACIÓN DE {tipo.upper()}", title_style))
-        Story.append(Spacer(1, 0.08 * inch))
+        Story.append(Spacer(1, 0.04 * inch))
         
         if 'contract_code' in contract_data:
             fecha_emision = datetime.now(CHILE_TZ).strftime('%d/%m/%Y')
@@ -108,7 +108,7 @@ class PDFGenerator:
                     pass
             vigencia_dias = contract_data.get('property_data', {}).get('vigencia', contract_data.get('vigencia', '30'))
             Story.append(Paragraph(f"<b>Código de Verificación:</b> {contract_data['contract_code']} &nbsp;&nbsp; <b>Fecha:</b> {fecha_emision} &nbsp;&nbsp; <b>Vigencia:</b> {vigencia_dias} días", normal_style))
-            Story.append(Spacer(1, 0.06 * inch))
+            Story.append(Spacer(1, 0.03 * inch))
         
         fecha = datetime.now(CHILE_TZ).strftime('%d de %m de %Y').replace('de 01 de', 'de enero de').replace('de 02 de', 'de febrero de').replace('de 03 de', 'de marzo de').replace('de 04 de', 'de abril de').replace('de 05 de', 'de mayo de').replace('de 06 de', 'de junio de').replace('de 07 de', 'de julio de').replace('de 08 de', 'de agosto de').replace('de 09 de', 'de septiembre de').replace('de 10 de', 'de octubre de').replace('de 11 de', 'de noviembre de').replace('de 12 de', 'de diciembre de')
         nombre = contract_data.get('cliente_nombre', '')
@@ -193,7 +193,7 @@ class PDFGenerator:
         # 1. Generate ONLY the signature page
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter,
-            rightMargin=42.5, leftMargin=42.5, topMargin=42.5, bottomMargin=42.5)
+            rightMargin=36, leftMargin=36, topMargin=28, bottomMargin=34)
         styles = getSampleStyleSheet()
         normal_style = ParagraphStyle('ContractNormalS', parent=styles['Normal'],
             spaceAfter=6, alignment=4, leading=13, fontSize=10)
@@ -205,12 +205,12 @@ class PDFGenerator:
             img_reader = ImageReader(str(logo_path))
             iw, ih = img_reader.getSize()
             aspect = ih / float(iw)
-            width = 2.0 * inch
+            width = 1.6 * inch
             height = width * aspect
             img = RLImage(str(logo_path), width=width, height=height)
             img.hAlign = 'CENTER'
             Story.append(img)
-            Story.append(Spacer(1, 0.08 * inch))
+            Story.append(Spacer(1, 0.04 * inch))
         Story.append(Paragraph("--- ANEXO: CERTIFICADO DE FIRMA ELECTR\u00d3NICA ---", styles['Heading1']))
         Story.append(Spacer(1, 0.2 * inch))
         
@@ -345,3 +345,4 @@ Ley 19.799."""
         pdf_bytes = buffer.getvalue()
         buffer.close()
         return pdf_bytes
+

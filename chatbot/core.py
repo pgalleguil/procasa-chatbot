@@ -77,13 +77,16 @@ def formatear_ficha_tecnica(propiedad):
 
 
 async def process_user_message(phone: str, message: str, is_from_me: bool = False) -> str:
+    async def _run_sync(fn, *args, **kwargs):
+        return await asyncio.to_thread(fn, *args, **kwargs)
+
     original_message = message
     msg_lower = original_message.lower()
     
     # 1. Guardar mensaje (con el rol correcto)
     # Si viene de 'me' (del dueño del bot), lo guardamos como assistant/human
     role = "assistant" if is_from_me else "user"
-    guardar_mensaje(phone, role, original_message)
+    await _run_sync(guardar_mensaje, phone, role, original_message)
 
     # === LÓGICA DE PAUSA (INTERCEPCIÓN) ===
     from .storage import obtener_bot_pausado, toggle_bot_pausado
@@ -96,7 +99,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             logger.info(f"🤖 [TOGGLE] Bot REACTIVADO para {phone}")
         
         # Guardamos en DB para historial interno pero retornamos vacío para NO enviar a WhatsApp
-        guardar_mensaje(phone, "assistant", f"Bot {'Pausado' if nuevo_estado else 'Reactivado'} (Comando ..)", {"tipo": "bot_toggle"})
+        await _run_sync(guardar_mensaje, phone, "assistant", f"Bot {'Pausado' if nuevo_estado else 'Reactivado'} (Comando ..)", {"tipo": "bot_toggle"})
         return "" 
 
     # Si es un mensaje manual del agente (is_from_me), no hacemos nada más, 
@@ -106,16 +109,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         return ""
 
     # Si el bot está pausado, NO procesamos ni respondemos para el cliente
-    if obtener_bot_pausado(phone):
+    if await _run_sync(obtener_bot_pausado, phone):
         logger.info(f"[PAUSED] Bot pausado para {phone}. Ignorando procesamiento.")
         return "" 
 
-    historial = obtener_conversacion(phone)
+    historial = await _run_sync(obtener_conversacion, phone)
 
     # === OBTENEMOS PROSPECTO TEMPRANO PARA PODER USARLO EN ORIGEN Y EN TODO EL FLUJO ===
     # NOTA: stage es un campo de nivel superior, no está dentro de 'prospecto'
-    db = get_db()
-    lead_doc_full = db["leads"].find_one({"phone": phone}) or {}
+    db = await _run_sync(get_db)
+    lead_doc_full = await _run_sync(lambda: db["leads"].find_one({"phone": phone}) or {})
     prospecto_actual = lead_doc_full.get("prospecto", {})
 
     # NUEVO: Lógica de Reactivación (Si estaba archivado y vuelve a escribir)
@@ -125,7 +128,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         now_str = datetime.now(CHILE_TZ).isoformat()
         
         # Actualizamos campos de nivel superior para que el motor lo vea como nuevo
-        db["leads"].update_one(
+        await _run_sync(
+            db["leads"].update_one,
             {"phone": phone},
             {"$set": {
                 "stage": PipelineStage.NEW,
@@ -141,19 +145,19 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
     # Solo forzar WhatsApp como fallback si no hay origen previo (permite Yapo, MercadoLibre, etc.)
     if not prospecto_actual.get("origen"):
-        actualizar_prospecto(phone, {"origen": "WhatsApp"})
+        await _run_sync(actualizar_prospecto, phone, {"origen": "WhatsApp"})
 
     # =======================================================
     # 2. FLUJO PROPIETARIO
     # =======================================================
-    es_prop, nombre_prop = es_propietario(phone) 
+    es_prop, nombre_prop = await _run_sync(es_propietario, phone)
     if es_prop:
         prompt_propietario = f"Eres asistente Procasa para propietarios. Habla directo y claro con {nombre_prop}. Responde cualquier consulta sobre su propiedad o venta."
         respuesta = generar_respuesta(
             [{"role": "system", "content": prompt_propietario}, *historial[-20:], {"role": "user", "content": original_message}],
             "propietario"
         )
-        guardar_mensaje(phone, "assistant", respuesta, {"tipo": "propietario_atencion"})
+        await _run_sync(guardar_mensaje, phone, "assistant", respuesta, {"tipo": "propietario_atencion"})
         return respuesta
 
     # =======================================================
@@ -169,13 +173,13 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "Que tenga un excelente día."
         )
         logger.info(f"[CORREDOR] Respuesta de rechazo enviada a {phone}.")
-        guardar_mensaje(phone, "assistant", respuesta_corredor, {"tipo": "rechazo_corredor"})
+        await _run_sync(guardar_mensaje, phone, "assistant", respuesta_corredor, {"tipo": "rechazo_corredor"})
         return respuesta_corredor
 
     # =======================================================
     # 3. ANÁLISIS PRELIMINAR DE DATOS Y EXTRACCIÓN PROACTIVA
     # =======================================================
-    prospecto_actual = obtener_prospecto(phone) or {} 
+    prospecto_actual = await _run_sync(obtener_prospecto, phone) or {} 
     updates_datos = {}
     
     # A) EXTRACCIÓN PROACTIVA DE DATOS PERSONALES
@@ -198,7 +202,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         elif "arriendo" in msg_lower or "arrendar" in msg_lower: updates_datos["operacion"] = "Arriendo"
 
     if updates_datos:
-        actualizar_prospecto(phone, updates_datos)
+        await _run_sync(actualizar_prospecto, phone, updates_datos)
         prospecto_actual.update(updates_datos)
 
     # =======================================================
@@ -210,7 +214,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     codigo_detectado = None
     
     # 1. Intentar detectar Link o Código en el mensaje actual
-    es_link, temp_prop, plataforma_origen, codigo_externo_raw = analizar_mensaje_para_link(original_message)
+    es_link, temp_prop, plataforma_origen, codigo_externo_raw = await _run_sync(analizar_mensaje_para_link, original_message)
 
     if es_link and temp_prop:
         propiedad = temp_prop
@@ -225,12 +229,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     if not propiedad:
         cod_int = extraer_codigo_internacional(original_message)
         if cod_int:
-            propiedad = get_db()[Config.COLLECTION_NAME].find_one({
-                "$or": [
-                    {"codigo_internacional": cod_int},
-                    {"publicaciones.codigo_internacional": cod_int}
-                ]
-            })
+            db_props = await _run_sync(get_db)
+            propiedad = await _run_sync(
+                db_props[Config.COLLECTION_NAME].find_one,
+                {
+                    "$or": [
+                        {"codigo_internacional": cod_int},
+                        {"publicaciones.codigo_internacional": cod_int}
+                    ]
+                }
+            )
             if propiedad:
                 codigo_detectado = str(propiedad.get("codigo"))
                 nuevo_origen = "WhatsApp (Int Code)"
@@ -241,12 +249,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         match = re.search(r"\b(\d{4,6})\b", original_message)
         if match:
             cod = match.group(1)
-            propiedad = get_db()[Config.COLLECTION_NAME].find_one({"$or": [
-                {"codigo": cod},
-                {"codigo": safe_int_conversion(cod)},
-                {"codigo_procasa": cod},
-                {"codigo_procasa": safe_int_conversion(cod)},
-            ]})
+            db_props = await _run_sync(get_db)
+            propiedad = await _run_sync(
+                db_props[Config.COLLECTION_NAME].find_one,
+                {"$or": [
+                    {"codigo": cod},
+                    {"codigo": safe_int_conversion(cod)},
+                    {"codigo_procasa": cod},
+                    {"codigo_procasa": safe_int_conversion(cod)},
+                ]}
+            )
             if propiedad:
                 codigo_detectado = str(propiedad.get("codigo"))
                 if not prospecto_actual.get("origen"):
@@ -256,7 +268,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     if not propiedad and not any(x in msg_lower for x in ["busco", "otra", "tienes", "opciones"]):
         codigo_guardado = prospecto_actual.get("codigo")
         if codigo_guardado:
-            propiedad = get_db()[Config.COLLECTION_NAME].find_one({"$or": [{"codigo": codigo_guardado}, {"codigo": safe_int_conversion(codigo_guardado)}]})
+            db_props = await _run_sync(get_db)
+            propiedad = await _run_sync(
+                db_props[Config.COLLECTION_NAME].find_one,
+                {"$or": [{"codigo": codigo_guardado}, {"codigo": safe_int_conversion(codigo_guardado)}]}
+            )
 
     # Actualizar prospecto si encontramos propiedad nueva
     if propiedad and codigo_detectado:
@@ -269,10 +285,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "operacion": propiedad.get("operacion"),
             "origen": nuevo_origen  # Siempre actualiza origen si viene de link
         }
-        actualizar_prospecto(phone, updates_prop)
+        await _run_sync(actualizar_prospecto, phone, updates_prop)
         
         # Registrar para anti-repetición en RAG
-        registrar_propiedades_vistas(phone, [codigo_detectado])
+        await _run_sync(registrar_propiedades_vistas, phone, [codigo_detectado])
 
     # === CORRECCIÓN: Guardar código externo aunque no esté en DB ===
     if codigo_externo:
@@ -285,7 +301,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         # SOLO guardamos el código externo si NO encontramos una propiedad de Procasa
         # o si queremos mantener la trazabilidad del link original.
         # Pero nos aseguramos de no tocar el campo 'codigo' si ya tiene un valor de Procasa.
-        actualizar_prospecto(phone, ext_updates)
+        await _run_sync(actualizar_prospecto, phone, ext_updates)
 
     # --- NOTIFICACIÓN POR PROPIEDAD DESCONOCIDA ---
     if es_link and not propiedad and codigo_externo:
@@ -399,7 +415,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 
                 # Guardamos inmediatamente en Mongo para que la próxima búsqueda los excluya
                 if nuevos_codigos:
-                    registrar_propiedades_vistas(phone, nuevos_codigos)
+                    await _run_sync(registrar_propiedades_vistas, phone, nuevos_codigos)
                     logger.info(f"[RAG] Propiedades registradas como vistas para {phone}: {nuevos_codigos}")
                 # ---------------------------------------------
                 
@@ -449,7 +465,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         
         # Guardar nuevos datos detectados por IA
         if datos_extraidos:
-            actualizar_prospecto(phone, datos_extraidos)
+            await _run_sync(actualizar_prospecto, phone, datos_extraidos)
 
     except Exception as e:
         logger.error(f"Error Grok: {e}")
@@ -470,7 +486,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     if not prospecto_actual.get("email"):
         email_detectado = extraer_email(original_message)
         if email_detectado:
-             actualizar_prospecto(phone, {"email": email_detectado.lower()})
+             await _run_sync(actualizar_prospecto, phone, {"email": email_detectado.lower()})
 
     # --- NUEVA LÓGICA DE INTENCIÓN (ENTERPRISE) ---
     intent_map = {
@@ -481,15 +497,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     }
     
     selected_intent = intent_map.get(intencion, LeadIntent.OTHER)
-    CrmService.update_intent(phone, selected_intent, actor="bot")
+    await _run_sync(CrmService.update_intent, phone, selected_intent, actor="bot")
 
     # =======================================================
     # 9. ENVÍO DE ALERTAS...
     # =======================================================
     metadata_tipo = {"tipo": "respuesta_general", "intencion": intencion, "lead_intent": selected_intent}
-    prospecto_actual = obtener_prospecto(phone) or {} # Recargamos prospecto para lead score
-    lead_doc = CrmService.get_lead(phone) or {} # Obtenemos documento completo para score
-    lead_score = CrmService.calculate_score(lead_doc)
+    prospecto_actual = await _run_sync(obtener_prospecto, phone) or {} # Recargamos prospecto para lead score
+    lead_doc = await _run_sync(CrmService.get_lead, phone) or {} # Obtenemos documento completo para score
+    lead_score = await _run_sync(CrmService.calculate_score, lead_doc)
 
     # CORRECCIÓN DE TIEMPOS: 60 minutos para evitar spam de correo
     if intencion == "escalado_urgente":
@@ -515,7 +531,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # =======================================================
     try:
         # Log del evento estructurado (Ya usa InteractionType.BOT_MSG)
-        log_event(phone, InteractionType.BOT_MSG, "bot", {
+        await _run_sync(log_event, phone, InteractionType.BOT_MSG, "bot", {
             "text": respuesta, 
             "intencion": intencion,
             "lead_intent": selected_intent
@@ -527,5 +543,5 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     except Exception as ex_log:
         logger.error(f"Error logging bot event: {ex_log}")
 
-    guardar_mensaje(phone, "assistant", respuesta, metadata_tipo)
+    await _run_sync(guardar_mensaje, phone, "assistant", respuesta, metadata_tipo)
     return respuesta

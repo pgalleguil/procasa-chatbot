@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Procasa | Módulo de Convenios</title>
+    <title>Procasa | Módulo de Órdenes de Visita</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -683,10 +683,10 @@
                 <div class="hamburger-mobile" onclick="toggleMobileMenu()">
                     <i class="fa-solid fa-bars"></i>
                 </div>
-                <h4 class="m-0 fw-bold">Módulo de Convenios</h4>
+                <h4 class="m-0 fw-bold">Módulo de Órdenes de Visita</h4>
             </div>
             <button class="btn btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#modalNewContract">
-                <i class="fa-solid fa-plus me-2"></i> Nuevo Convenio
+                <i class="fa-solid fa-plus me-2"></i> Nueva Orden
             </button>
         </div>
 
@@ -696,7 +696,7 @@
         </div>
 
         <div class="table-container">
-            <div class="section-title">Convenios Emitidos</div>
+            <div class="section-title">Órdenes de Visita Emitidas</div>
             {% if user_role in ['supervisor', 'admin'] %}
             <form method="get" action="/contracts/dashboard" class="row g-2 mb-3">
                 <div class="col-md-4 col-sm-6">
@@ -753,7 +753,7 @@
                                 <div class="d-flex flex-wrap gap-1">
                                     {# Botón Ver PDF original (solo si no está firmado) #}
                                     {% if c.status == 'created' %}
-                                    <a href="/contracts/api/download/{{ c.contract_code }}" target="_blank"
+                                    <a href="/visitas/api/download/{{ c.contract_code }}" target="_blank"
                                         class="btn btn-sm btn-outline-secondary" title="Ver PDF">
                                         <i class="fa-solid fa-file-pdf"></i>
                                     </a>
@@ -768,7 +768,7 @@
                                         <i class="fa-brands fa-whatsapp"></i>
                                     </button>
                                     {% elif c.status in ['sent','opened','otp_requested','otp_verified'] %}
-                                    <a href="/contracts/api/download/{{ c.contract_code }}" target="_blank"
+                                    <a href="/visitas/api/download/{{ c.contract_code }}" target="_blank"
                                         class="btn btn-sm btn-outline-secondary" title="Ver Convenio">
                                         <i class="fa-solid fa-eye"></i>
                                     </a>
@@ -780,11 +780,11 @@
                                     </button>
                                     {% endif %}
                                     {% elif c.status in ['signed','accepted'] %}
-                                    <a href="/contracts/api/view_signed/{{ c.contract_code }}" target="_blank"
+                                    <a href="/visitas/api/view_signed/{{ c.contract_code }}" target="_blank"
                                         class="btn btn-sm btn-outline-secondary" title="Ver Firmado">
                                         <i class="fa-solid fa-eye"></i>
                                     </a>
-                                    <a href="/contracts/api/download_signed/{{ c.contract_code }}" target="_blank"
+                                    <a href="/visitas/api/download_signed/{{ c.contract_code }}" target="_blank"
                                         class="btn btn-sm btn-success" title="Descargar Firmado">
                                         <i class="fa-solid fa-file-circle-check"></i>
                                     </a>
@@ -808,7 +808,7 @@
                         <tr>
                             <td colspan="{% if user_role in ['supervisor', 'admin'] %}8{% else %}7{% endif %}" class="text-center text-secondary py-5">
                                 <i class="fa-solid fa-folder-open fa-2x mb-2 d-block"></i>
-                                No hay convenios generados aún.
+                                No hay órdenes generadas aún.
                             </td>
                         </tr>
                         {% endfor %}
@@ -818,14 +818,14 @@
         </div>
     </div>
 
-    <!-- Modal Nuevo Contrato -->
+    <!-- Modal Nuevo Orden -->
     <div class="modal fade" id="modalNewContract" tabindex="-1">
         <div class="modal-dialog modal-xl">
             <div class="modal-content"
                 style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color);">
                 <div class="modal-header border-bottom-0">
                     <h5 class="modal-title fw-bold"><i class="fa-solid fa-file-signature me-2"
-                            style="color: var(--accent);"></i> Generar Nuevo Convenio de Corretaje</h5>
+                            style="color: var(--accent);"></i> Generar Nueva Orden de Visita</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" style="overflow-x: hidden;">
@@ -1274,7 +1274,7 @@
                 };
 
                 try {
-                    const res = await fetch('/contracts/api/preview', {
+                    const res = await fetch('/visitas/api/preview', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(data)
@@ -1439,7 +1439,7 @@
             };
 
             try {
-                const res = await fetch('/contracts/api/create', {
+                const res = await fetch('/visitas/api/create', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
@@ -1459,7 +1459,7 @@
         }
 
         // ─── ANTI-DUPLICADO: bloquea el botón mientras procesa ───────────
-        async function sendContract(contractCode, btn, isResend = false) {
+        async function sendContract(visitaCode, btn, isResend = false) {
             if (btn.disabled) return; // previene doble clic
             if (isResend) {
                 const ok = confirm('Este convenio ya fue enviado al cliente.\n¿Deseas reenviar el enlace de firma?');
@@ -1469,7 +1469,7 @@
             btn.disabled = true;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
             try {
-                const res = await fetch(`/contracts/api/${contractCode}/send`, { method: 'POST' });
+                const res = await fetch(`/visitas/api/${visitaCode}/send`, { method: 'POST' });
                 const data = await res.json();
                 if (res.ok) {
                     btn.innerHTML = '<i class="fa-solid fa-check"></i>';
@@ -1488,14 +1488,14 @@
             }
         }
 
-        async function deleteContract(contractCode, btn) {
+        async function deleteContract(visitaCode, btn) {
             if (btn.disabled) return;
             const ok = confirm('¿Eliminar este convenio? Esta acción no se puede deshacer.');
             if (!ok) return;
             btn.disabled = true;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
             try {
-                const res = await fetch(`/contracts/api/delete/${contractCode}`, { method: 'DELETE' });
+                const res = await fetch(`/visitas/api/delete/${visitaCode}`, { method: 'DELETE' });
                 if (res.ok) {
                     btn.closest('tr').style.transition = 'opacity 0.4s';
                     btn.closest('tr').style.opacity = '0';
@@ -1547,7 +1547,7 @@
 
         async function syncStatuses() {
             try {
-                const res = await fetch('/contracts/api/statuses');
+                const res = await fetch('/visitas/api/statuses');
                 if (!res.ok) return;
                 const data = await res.json();
                 const map = {};

@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
+    <title>Firma de Contrato - Procasa Sucre</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        html {
+            scroll-behavior: smooth;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f1f5f9;
+            overflow-x: hidden;
+        }
+
+        .step {
+            display: none;
+        }
+
+        .step.active {
+            display: block;
+        }
+
+        /* --- NEW LAYOUT --- */
+        .contract-layout {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 24px;
+            align-items: start;
+            height: 100vh;
+        }
+
+        .form-section {
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 20px;
+        }
+
+        /* PDF viewer — only show on step-1 */
+        .pdf-viewer-section {
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow: hidden;
+            padding: 20px 20px 20px 0;
+            display: none;
+        }
+
+        body.pdf-step .pdf-viewer-section {
+            display: flex;
+            flex-direction: column;
+        }
+
+        body.pdf-step .contract-layout {
+            grid-template-columns: 1.2fr 1fr;
+        }
+
+        body:not(.pdf-step) .contract-layout {
+            grid-template-columns: 1fr;
+        }
+
+        body:not(.pdf-step) .form-section .page-wrap {
+            max-width: 600px;
+        }
+
+        /* PDF container — scroll inside, no overflow outside */
+        #pdf-container {
+            width: 100%;
+            height: calc(100vh - 40px);
+            max-width: 900px;
+            margin: 0 auto;
+            overflow-y: auto;
+            overflow-x: auto;
+            box-sizing: border-box;
+            background: #dde3ea;
+            border-radius: 10px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            /* Scroll suave en iOS */
+            -webkit-overflow-scrolling: touch;
+        }
+
+        #pdf-container.fullscreen-mode {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            max-width: none;
+            z-index: 9999;
+            background: #0f172a;
+            padding: 20px;
+            overflow: auto;
+            border-radius: 0;
+        }
+
+        .pdf-page-wrapper {
+            width: 100%;
+            margin-bottom: 8px;
+        }
+
+        .pdf-page-wrapper canvas {
+            display: block;
+            width: 100% !important;
+            max-width: 100%;
+            height: auto !important;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.20);
+            border-radius: 2px;
+            background: #fff;
+        }
+
+        .page-sep {
+            text-align: center;
+            font-size: 11px;
+            color: #94a3b8;
+            padding: 4px 0 8px 0;
+        }
+
+        #pdf-loading {
+            width: 100%;
+            min-height: 220px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #f1f5f9;
+            border-radius: 6px;
+        }
+
+        .loader {
+            width: 42px;
+            height: 42px;
+            border: 4px solid #dde3ec;
+            border-bottom-color: #2563EB;
+            border-radius: 50%;
+            display: inline-block;
+            animation: spin 0.85s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Scroll-progress banner */
+        #read-banner {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #fffbeb;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            color: #92400e;
+            font-weight: 600;
+        }
+
+        #read-banner.done {
+            background: #f0fdf4;
+            border-color: #86efac;
+            color: #166534;
+        }
+
+        #page-badge {
+            display: none;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 12px;
+            text-align: center;
+            margin-bottom: 6px;
+        }
+
+        /* Mobile */
+        @media (max-width: 768px) {
+            body {
+                padding: 0;
+            }
+
+            /* On mobile, always single-column regardless of pdf-step */
+            .contract-layout {
+                grid-template-columns: 1fr !important;
+                height: auto;
+                gap: 0;
+            }
+
+            .form-section {
+                padding: 10px;
+                overflow-y: visible;
+            }
+
+            /* On mobile step-1: show PDF below the form */
+            body.pdf-step .pdf-viewer-section {
+                display: flex;
+                flex-direction: column;
+                position: relative;
+                height: auto;
+                padding: 10px;
+            }
+
+            .contract-card {
+                border-radius: 0 !important;
+                border-left: none !important;
+                border-right: none !important;
+                padding: 16px !important;
+                margin: 0 !important;
+            }
+
+            .page-wrap {
+                padding: 0 !important;
+            }
+
+            #pdf-container {
+                height: auto;
+                max-height: 60vh;
+            }
+        }
+    </style>
+</head>
+
+<body class="font-sans text-gray-800 antialiased">
+    <div class="contract-layout">
+
+        <!-- LADO IZQUIERDO: Formulario -->
+        <div class="form-section">
+            <div class="page-wrap py-5 px-3 max-w-2xl mx-auto">
+
+                                <!-- Header -->
+                <div class="mb-3">
+                    <div class="flex items-center justify-center mb-0">
+                        <img src="/static/logo.png?v=1.0.1" alt="Procasa" style="max-height:110px;width:auto;">
+                    </div>
+                    <div class="text-center">
+                        <span class="inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-semibold text-blue-700 bg-blue-100 border border-blue-200 uppercase tracking-wide">
+                            Firma Electrónica Segura — Ley 19.799
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Countdown Banner -->
+                <div id="expiry-countdown-banner"
+                    class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-5 text-sm font-semibold text-yellow-800 text-center flex justify-center items-center gap-2"
+                    style="display: none;">
+                    <i class="fa-regular fa-clock"></i> Este documento es válido por: <span
+                        id="document-countdown">Calculando...</span>
+                </div>
+
+                <div class="contract-card bg-white rounded-xl shadow-lg border border-gray-200 p-5">
+
+                    <!-- â”€â”€ PROGRESS BAR (3 steps) â”€â”€ -->
+                    <div id="progress-bar-wrap" class="mb-6">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 id="progress-label" class="text-sm font-bold text-gray-800">Paso 1 de 3 — Revisa tu
+                                contrato</h3>
+                            <span id="progress-fraction"
+                                class="text-xs font-bold text-blue-600 bg-blue-100 py-1 px-2 rounded-full">1 / 3</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mb-6 mt-1">
+                            <div id="progress-fill" class="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                                style="width: 33%"></div>
+                        </div>
+                    </div>
+
+                    <!-- â”€â”€ STEP 1 — Visible: Paso 1 Â· Revisa tu orden de visita â”€â”€ -->
+                    <div id="step-1" class="step active py-2">
+
+                        <div class="border-l-4 border-blue-600 pl-4 mb-4">
+                            <h2 class="text-lg font-bold text-gray-900">Revisa tu Orden de Visita</h2>
+                            <p class="text-xs text-gray-500 mt-0.5">Lee el documento completo antes de firmar</p>
+                        </div>
+
+                        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start mb-4">
+                            <i class="fa-solid fa-circle-info text-amber-500 mt-0.5 mr-2 flex-shrink-0"></i>
+                            <p class="text-amber-800 text-sm font-medium leading-relaxed">
+                                La aceptación electrónica tiene validez legal conforme a la Ley 19.799.
+                            </p>
+                        </div>
+
+
+
+                        <!-- Scroll-progress banner -->
+                        <div id="read-banner">
+                            <i class="fa-solid fa-arrow-down-long"></i>
+                            <span id="read-banner-text">Desplázate hasta el final del contrato para habilitar la
+                                firma</span>
+                        </div>
+
+                        <div id="page-badge">Página 1 de ?</div>
+
+                        <!-- Legal checkbox (PARTE 1: 2 checks obligatorios) -->
+                        <div class="mt-5 bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-3">
+                            <div class="flex items-start">
+                                <input type="checkbox" id="check-titular"
+                                    class="w-5 h-5 mt-0.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-40 flex-shrink-0 cursor-pointer"
+                                    disabled>
+                                <div class="ml-3">
+                                    <label for="check-titular" class="text-sm font-medium text-gray-800 cursor-pointer">
+                                        Declaro ser el titular del número telefónico asignado a este contrato.
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="flex items-start">
+                                <input type="checkbox" id="check-intent"
+                                    class="w-5 h-5 mt-0.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-40 flex-shrink-0 cursor-pointer"
+                                    disabled>
+                                <div class="ml-3">
+                                    <label for="check-intent" class="text-sm font-medium text-gray-800 cursor-pointer">
+                                        Acepto revisar el documento de forma electrónica y reconozco que mi aceptación
+                                        constituye una firma válida conforme a la Ley 19.799.
+                                    </label>
+                                </div>
+                            </div>
+                            <p id="timer-text" class="text-xs text-blue-600 font-semibold">
+                                Obligatorio leer el documento (35s restantes)...
+                            </p>
+                            <button id="btn-request-otp"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                style="min-height:48px;font-size:16px;" disabled>
+                                Debe leer el documento completo primero
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- \u2500\u2500 STEP 2 \u2014 Ingresa tu RUT \u2500\u2500 -->
+                    <div id="step-2" class="step">
+                        <div class="border-l-4 border-blue-600 pl-4 mb-5">
+                            <h2 class="text-lg font-bold text-gray-900">Verifica tu Identidad</h2>
+                            <p class="text-xs text-gray-500 mt-0.5">Ingresa tu RUT para confirmar tu identidad</p>
+                        </div>
+                        <p class="text-gray-600 mb-4 text-sm bg-gray-50 p-3 rounded-lg border border-gray-200">
+                            Tu RUT será verificado contra el titular del contrato y te enviaremos un código de
+                            verificación por WhatsApp para firmar.
+                        </p>
+                        <div class="mb-5">
+                            <label class="block text-sm font-bold text-gray-700 mb-2">Tu RUT (con guion)</label>
+                            <input type="text" id="input-rut-request" inputmode="text"
+                                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                                placeholder="Ej: 12345678-9" oninput="formatRut(this)">
+                            <p id="rut-error" class="text-red-500 text-sm mt-2 font-medium hidden"></p>
+                        </div>
+                        <div class="space-y-3">
+                            <button id="btn-validate-rut"
+                                class="w-full bg-[#25D366] hover:bg-[#1EBE5D] text-white font-bold py-3 px-4 rounded-lg transition-colors shadow"
+                                style="min-height:48px;font-size:16px;">
+                                <i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir código
+                            </button>
+                            <button id="btn-back-1"
+                                class="w-full bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-2.5 px-4 rounded-lg transition-colors"
+                                style="min-height:48px;">
+                                Volver al contrato
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- â”€â”€ STEP 4 — Ingresar OTP â”€â”€ -->
+                    <div id="step-4" class="step">
+                        <div class="border-l-4 border-blue-600 pl-4 mb-5">
+                            <h2 class="text-lg font-bold text-gray-900">Confirma y Firma</h2>
+                            <p class="text-xs text-gray-500 mt-0.5">Ingresa el código enviado a tu WhatsApp</p>
+                        </div>
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-5 flex items-center">
+                            <i class="fa-solid fa-check-circle text-green-500 mr-2.5"></i>
+                            <p class="text-green-800 text-sm font-medium">Hemos enviado un código de 4 dígitos a tu
+                                WhatsApp.</p>
+                        </div>
+
+                        <div id="block-banner" class="bg-red-50 border border-red-200 rounded-lg p-4 mb-5 hidden">
+                            <p class="text-red-800 text-sm font-semibold mb-2">Has superado el número máximo de
+                                intentos.</p>
+                            <p class="text-red-700 text-sm mb-2">Por seguridad, el sistema se ha bloqueado
+                                temporalmente. Podrás intentar nuevamente en:</p>
+                            <div class="text-center text-red-600 font-mono text-2xl font-bold" id="block-timer">00:60
+                            </div>
+                        </div>
+
+                        <div class="mb-6">
+                            <label class="block text-sm font-bold text-gray-700 mb-2 text-center">Código de Firma
+                                (OTP)</label>
+                            <input type="text" id="input-otp" inputmode="numeric" pattern="[0-9]*"
+                                class="w-full p-4 border-2 border-gray-300 text-center text-4xl font-mono tracking-[0.5em] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:opacity-50 transition-colors"
+                                maxlength="4" placeholder="----">
+                        </div>
+                        <button id="btn-verify-otp"
+                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-4 rounded-lg transition-colors shadow text-base"
+                            style="min-height:52px;font-size:16px;">
+                            <i class="fa-solid fa-file-signature mr-2"></i> Firmar Orden de Visita Definitivamente
+                        </button>
+                        <div id="otp-error" class="text-red-500 text-sm mt-3 text-center font-medium hidden"></div>
+                        <p class="text-sm text-gray-500 text-center mt-5">
+                            ¿El código expiró? <a href="#" onclick="requestNewOTP(); return false;"
+                                class="text-blue-600 hover:underline font-semibold">Solicitar uno nuevo</a>
+                        </p>
+                    </div>
+
+                    <!-- â”€â”€ STEP 5 — Firma completada â”€â”€ -->
+                    <div id="step-5" class="step text-center py-10">
+                        <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5">
+                            <i class="fa-solid fa-check text-green-500 text-4xl"></i>
+                        </div>
+                        <h2 class="text-2xl font-extrabold text-gray-900 mb-3">¡Contrato Firmado!</h2>
+                        <p class="text-gray-500 mb-8 max-w-sm mx-auto text-sm">Tu copia ha sido guardada con los sellos
+                            legales conforme a la Ley 19.799.</p>
+                        <a id="btn-download-signed" href="#" target="_blank"
+                            class="inline-flex items-center bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-8 rounded-lg transition-colors shadow">
+                            <i class="fa-solid fa-download mr-2"></i> Descargar Copia Firmada
+                        </a>
+                        <p class="text-sm text-gray-400 mt-8">Pronto un ejecutivo se pondrá en contacto contigo.</p>
+                    </div> <!-- step-4 -->
+                </div> <!-- contract-card -->
+            </div> <!-- page-wrap -->
+        </div> <!-- form-section -->
+
+        <!-- LADO DERECHO: Visor PDF -->
+        <div class="pdf-viewer-section flex-col relative">
+            <div class="sticky top-0 z-50 bg-[#f1f5f9] pb-3 mb-1 flex gap-2 w-full max-w-[900px] mx-auto">
+                <a href="/visitas/api/download/{{ contract.visita_code }}" target="_blank"
+                    class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center transition-colors shadow-sm text-sm">
+                    <i class="fa-solid fa-download mr-2"></i> Descargar orden
+                </a>
+                <button onclick="document.getElementById('pdf-container').classList.toggle('fullscreen-mode')"
+                    class="flex-1 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold py-2.5 px-4 rounded-lg flex items-center justify-center transition-colors shadow-sm text-sm">
+                    <i class="fa-solid fa-expand mr-2"></i> Ver en pantalla completa
+                </button>
+            </div>
+            <div id="pdf-container">
+                <div id="pdf-loading">
+                    <span class="loader mb-3"></span>
+                    <p id="pdf-progress-text" class="text-slate-700 font-semibold mt-1">Cargando documento...</p>
+                    <div class="w-48 bg-gray-200 rounded-full h-1.5 mt-2 mx-auto overflow-hidden">
+                        <div id="pdf-progress-bar" class="bg-blue-600 h-1.5 rounded-full" style="width: 0%"></div>
+                    </div>
+                    <p class="text-slate-500 text-xs mt-2">Esto puede tardar unos segundos</p>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /contract-layout -->
+
+    <script>
+        const TOKEN = "{{ token }}";
+        const tokenExpiryIso = "{{ token_expiry_iso }}";
+
+        const isSigned = {{ 'true' if is_signed else 'false' }};
+        const CONTRACT_CODE = "{{ contract.visita_code }}";
+
+        if (isSigned) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById('step-5').classList.add('active');
+            document.getElementById('btn-download-signed').href = `/visitas/api/download_signed/${CONTRACT_CODE}`;
+            document.getElementById('progress-label').textContent = 'Firmado — ¡Proceso completado!';
+            document.getElementById('progress-fraction').textContent = '3 / 3';
+            document.getElementById('progress-fill').style.width = '100%';
+            document.getElementById('progress-fill').classList.replace('bg-blue-600', 'bg-green-500');
+            // No PDF on signed view
+            document.body.classList.remove('pdf-step');
+        } else {
+            document.body.classList.add('pdf-step');
+        }
+
+        // â”€â”€ Document Expiry Countdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        if (tokenExpiryIso && !isSigned) {
+            const expiryDate = new Date(tokenExpiryIso);
+            const countdownEl = document.getElementById('document-countdown');
+            const bannerEl = document.getElementById('expiry-countdown-banner');
+            bannerEl.style.display = 'flex';
+
+            function updateCountdown() {
+                const now = new Date();
+                const diff = expiryDate - now;
+
+                if (diff <= 0) {
+                    countdownEl.textContent = 'Expirado';
+                    bannerEl.classList.remove('bg-yellow-50', 'border-yellow-200', 'text-yellow-800');
+                    bannerEl.classList.add('bg-red-50', 'border-red-200', 'text-red-800');
+                    return;
+                }
+
+                const h = Math.floor(diff / (1000 * 60 * 60));
+                const m = Math.floor((diff / 1000 / 60) % 60);
+                const s = Math.floor((diff / 1000) % 60);
+
+                countdownEl.textContent =
+                    `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            }
+
+            updateCountdown();
+            window.countdownInterval = setInterval(updateCountdown, 1000);
+        }
+        let intentRegistered = false;
+
+        async function fetchWithRetry(url, options, retries = 3, interval = 2000, timeoutMs = 10000) {
+            for (let i = 0; i < retries; i++) {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+                try {
+                    const res = await fetch(url, { ...options, signal: controller.signal });
+                    clearTimeout(timeoutId);
+                    return res;
+                } catch (err) {
+                    clearTimeout(timeoutId);
+                    if (i === retries - 1) {
+                        if (err.name === 'AbortError') throw new Error('TIMEOUT');
+                        throw err;
+                    }
+                    await new Promise(r => setTimeout(r, interval));
+                }
+            }
+        }
+
+        // â”€â”€ PDF.js â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        const pdfUrl = '/visitas/api/download/{{ contract.visita_code }}';
+        const pdfContainer = document.getElementById('pdf-container');
+        const pdfLoading = document.getElementById('pdf-loading');
+        const pageBadge = document.getElementById('page-badge');
+        let totalPages = 0;
+
+        // Update page badge on window scroll
+        window.addEventListener('scroll', updateBadge, { passive: true });
+        function updateBadge() {
+            if (!totalPages) return;
+            const wrappers = pdfContainer.querySelectorAll('.pdf-page-wrapper');
+            for (let i = wrappers.length - 1; i >= 0; i--) {
+                const r = wrappers[i].getBoundingClientRect();
+                if (r.top <= window.innerHeight * 0.55) {
+                    pageBadge.textContent = `Página ${i + 1} de ${totalPages}`;
+                    break;
+                }
+            }
+        }
+
+        async function renderPDF() {
+            console.time("PDF load");
+            try {
+                const loadingTask = pdfjsLib.getDocument(pdfUrl);
+                loadingTask.onProgress = function (progress) {
+                    if (progress.total > 0) {
+                        const percent = Math.round((progress.loaded / progress.total) * 100);
+                        const progressText = document.getElementById('pdf-progress-text');
+                        const progressBar = document.getElementById('pdf-progress-bar');
+                        if (progressText) progressText.textContent = `Cargando documento... ${percent}%`;
+                        if (progressBar) progressBar.style.width = `${percent}%`;
+                    }
+                };
+                const pdf = await loadingTask.promise;
+                totalPages = pdf.numPages;
+                pageBadge.textContent = `Página 1 de ${totalPages}`;
+                pageBadge.style.display = 'block';
+
+                // Lazy-load remaining pages via IntersectionObserver (rootMargin=600px ahead)
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting && !entry.target.dataset.rendered) {
+                            entry.target.dataset.rendered = 'true';
+                            observer.unobserve(entry.target);
+                            renderPage(pdf, +entry.target.dataset.page, entry.target.querySelector('canvas'));
+                        }
+                    });
+                }, { rootMargin: '600px 0px' });
+
+                for (let p = 1; p <= pdf.numPages; p++) {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'pdf-page-wrapper';
+                    wrapper.dataset.page = p;
+                    const canvas = document.createElement('canvas');
+                    wrapper.appendChild(canvas);
+                    pdfContainer.appendChild(wrapper);
+
+                    if (p < pdf.numPages) {
+                        const sep = document.createElement('div');
+                        sep.className = 'page-sep';
+                        sep.textContent = `— Página ${p} de ${totalPages} —`;
+                        pdfContainer.appendChild(sep);
+                    }
+
+                    if (p === 1) {
+                        await renderPage(pdf, 1, canvas);
+                        wrapper.dataset.rendered = 'true';
+                        // Remove loading placeholder
+                        if (pdfLoading.parentNode) pdfLoading.parentNode.removeChild(pdfLoading);
+                        // â± Start reading timer ONLY when PDF is visible
+                        if (!pageOpenTime) pageOpenTime = Date.now();
+                    } else {
+                        observer.observe(wrapper);
+                    }
+                }
+                updateBadge();
+
+                // Marcar PDF como completamente renderizado y verificar si se necesita scroll
+                pdfFullyRendered = true;
+                checkIfScrollIsNeeded();
+                console.timeEnd("PDF load");
+            } catch (err) {
+                console.error('PDF error:', err);
+                pdfLoading.innerHTML = `
+                <div class="text-center p-6">
+                    <i class="fa-solid fa-triangle-exclamation text-red-400 text-4xl mb-3"></i>
+                    <p class="text-slate-700 font-semibold mb-4">No se pudo cargar la vista previa.</p>
+                    <a href="/visitas/api/download/{{ contract.visita_code }}" class="bg-blue-600 text-white py-2 px-5 rounded-lg font-semibold text-sm">Descargar Documento</a>
+                </div>`;
+            }
+        }
+
+        async function renderPage(pdf, pageNum, canvas) {
+            const page = await pdf.getPage(pageNum);
+            const unscaled = page.getViewport({ scale: 1.0 });
+
+            // Fit PDF width to container
+            const containerWidth = pdfContainer.clientWidth - 16; // 8px padding Ã— 2
+            const scale = containerWidth / unscaled.width;
+            const viewport = page.getViewport({ scale });
+
+            // High-DPI internal resolution - Use at least 2.5x for crisp text on desktop
+            const dpr = Math.max(window.devicePixelRatio || 1, 2.5);
+            canvas.width = Math.floor(viewport.width * dpr);
+            canvas.height = Math.floor(viewport.height * dpr);
+
+            // CSS: fill container width, height auto keeps proportions
+            canvas.style.width = '100%';
+            canvas.style.height = 'auto';
+
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            await page.render({ canvasContext: ctx, viewport }).promise;
+        }
+
+        console.time("page load");
+
+        // Cargar el PDF de forma diferida al terminar de cargar el DOM
+        window.addEventListener('load', function () {
+            console.timeEnd("page load");
+            if (!isSigned) {
+                setTimeout(renderPDF, 100);
+            }
+        });
+
+        // â”€â”€ Timer & reading check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        const checkIntent = document.getElementById('check-intent');
+        const btnRequestOtp = document.getElementById('btn-request-otp');
+        const timerText = document.getElementById('timer-text');
+
+        let timeLeft = 35;
+        let scrolledToBottom = false;
+        let pdfFullyRendered = false;
+        let readRegistered = false;
+
+        // (legal_intent endpoint does not exist — removed to avoid 404)
+
+        function registerReadIfNeeded() {
+            if (readRegistered) return;
+            readRegistered = true;
+            checkEnableCheckbox();
+        }
+
+        function hasReachedBottom() {
+            if (!pdfFullyRendered) return false;
+            const pdfContainer = document.getElementById('pdf-container');
+            if (!pdfContainer) return false;
+
+            const scrollTop = pdfContainer.scrollTop;
+            const viewportHeight = pdfContainer.clientHeight;
+            const scrollHeight = pdfContainer.scrollHeight;
+
+            // Also check window scroll just in case (mobile might use body scroll depending on layout)
+            const winScrollTop = window.scrollY || document.documentElement.scrollTop;
+            const winHeight = window.innerHeight;
+            const docHeight = document.documentElement.scrollHeight;
+
+            const containerReached = (scrollTop + viewportHeight) >= (scrollHeight - 10);
+            const windowReached = (winScrollTop + winHeight) >= (docHeight - 10);
+
+            return containerReached || windowReached;
+        }
+
+        // Bind to both window and pdf-container
+        function onScrollCheck() {
+            if (scrolledToBottom) return;
+            if (!pdfFullyRendered) return;
+            if (hasReachedBottom()) {
+                scrolledToBottom = true;
+                registerReadIfNeeded();
+            }
+        }
+
+        window.addEventListener('scroll', onScrollCheck, { passive: true });
+        document.getElementById('pdf-container').addEventListener('scroll', onScrollCheck, { passive: true });
+
+        function checkIfScrollIsNeeded() {
+            if (!pdfFullyRendered) return;
+            if (scrolledToBottom) return;
+            const pdfContainer = document.getElementById('pdf-container');
+            if (!pdfContainer) return;
+
+            // If the entire PDF content fits within the visible container, mark as read
+            if (pdfContainer.scrollHeight <= pdfContainer.clientHeight + 10) {
+                scrolledToBottom = true;
+                registerReadIfNeeded();
+            }
+        }
+
+        const timerInterval = setInterval(() => {
+            timeLeft--;
+            checkEnableCheckbox();
+            if (timeLeft <= 0) clearInterval(timerInterval);
+        }, 1000);
+
+        const readBanner = document.getElementById('read-banner');
+        const readBannerText = document.getElementById('read-banner-text');
+
+        function checkEnableCheckbox() {
+            // Update banner
+            if (scrolledToBottom) {
+                readBanner.classList.add('done');
+                readBanner.querySelector('i').className = 'fa-solid fa-check-circle';
+                readBannerText.textContent = 'Contrato revisado correctamente.';
+            }
+
+            if (timeLeft > 0) {
+                timerText.textContent = `Debes revisar el contrato completo (${timeLeft}s restantes)...`;
+                return;
+            }
+            if (!scrolledToBottom) {
+                timerText.textContent = 'Desplázate hasta el final del documento para continuar...';
+                return;
+            }
+            timerText.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Documento revisado. Ya puedes marcar las casillas.';
+            timerText.classList.replace('text-blue-600', 'text-green-600');
+            // Enable both checkboxes
+            const checkTitular = document.getElementById('check-titular');
+            if (checkTitular) checkTitular.disabled = false;
+            checkIntent.disabled = false;
+        }
+
+        // Both checkboxes must be ticked to enable the button
+        function updateOtpButton() {
+            const checkTitular = document.getElementById('check-titular');
+            const bothChecked = checkTitular && checkTitular.checked && checkIntent.checked;
+            btnRequestOtp.disabled = !bothChecked;
+            if (bothChecked) {
+                btnRequestOtp.innerHTML = '<i class="fa-brands fa-whatsapp mr-2 text-white"></i> Solicitar código de verificación';
+                btnRequestOtp.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                btnRequestOtp.classList.add('bg-[#25D366]', 'hover:bg-[#1EBE5D]');
+            } else {
+                btnRequestOtp.textContent = 'Debe leer el documento y marcar ambas casillas';
+                btnRequestOtp.classList.remove('bg-[#25D366]', 'hover:bg-[#1EBE5D]');
+                btnRequestOtp.classList.add('bg-blue-600', 'hover:bg-blue-700');
+            }
+        }
+
+        document.getElementById('check-titular')?.addEventListener('change', updateOtpButton);
+        checkIntent.addEventListener('change', updateOtpButton);
+
+        // â”€â”€ Progress bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        const STEP_PROGRESS = {
+            'step-1': { n: 1, label: 'Paso 1 de 3 — Revisa el contrato', pct: '33%' },
+            'step-2': { n: 2, label: 'Paso 2 de 3 — Verifica tu identidad', pct: '66%' },
+            'step-4': { n: 3, label: 'Paso 3 de 3 — Confirma y firma', pct: '100%' },
+            'step-5': { n: 3, label: '¡Proceso completado!', pct: '100%' },
+        };
+
+        function showStep(targetId) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById(targetId).classList.add('active');
+            window.scrollTo(0, 0);
+            // Show/hide PDF column
+            if (targetId === 'step-1') {
+                document.body.classList.add('pdf-step');
+            } else {
+                document.body.classList.remove('pdf-step');
+            }
+            // Update progress bar
+            const p = STEP_PROGRESS[targetId];
+            if (p) {
+                document.getElementById('progress-label').textContent = p.label;
+                document.getElementById('progress-fraction').textContent = p.n + ' / 3';
+                document.getElementById('progress-fill').style.width = p.pct;
+                if (targetId === 'step-5') {
+                    document.getElementById('progress-fill').classList.replace('bg-blue-600', 'bg-green-500');
+                }
+            }
+        }
+
+        // â”€â”€ Step navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        let pageOpenTime = null; // starts when PDF first renders, not on page load
+
+        function formatRut(input) {
+            let rut = input.value.replace(/[^0-9kK]/g, '').toUpperCase();
+            if (rut.length > 1) rut = rut.slice(0, -1) + '-' + rut.slice(-1);
+            if (rut.length > 5) rut = rut.slice(0, -5) + '.' + rut.slice(-5);
+            if (rut.length > 9) rut = rut.slice(0, -9) + '.' + rut.slice(-9);
+            input.value = rut;
+        }
+
+        // Step-1 Continue â†’ Step-2 (RUT entry)
+        btnRequestOtp.addEventListener('click', () => {
+            showStep('step-2');
+            document.getElementById('input-rut-request').focus();
+        });
+
+        // Step-2 Back \u2192 Step-1
+        document.getElementById('btn-back-1').addEventListener('click', () => showStep('step-1'));
+
+        // Step-2 Validate RUT & Request OTP \u2192 Step-4
+        document.getElementById('btn-validate-rut').addEventListener('click', () => requestNewOTP());
+
+        function goToStep2(message) {
+            const otpInput = document.getElementById('input-otp');
+            if (otpInput) otpInput.value = '';
+            const errorDiv = document.getElementById('otp-error');
+            if (errorDiv) errorDiv.classList.add('hidden');
+            showStep('step-2');
+            if (message) {
+                const errorEl = document.getElementById('rut-error');
+                if (errorEl) {
+                    errorEl.textContent = message;
+                    errorEl.classList.remove('hidden');
+                }
+            }
+        }
+
+        function isValidRUT(rutStr) {
+            const cleanRut = rutStr.replace(/[^0-9kK]/g, '');
+            if (cleanRut.length < 8) return false;
+            let t = parseInt(cleanRut.slice(0, -1), 10);
+            let m = 0, s = 1;
+            while (t > 0) {
+                s = (s + t % 10 * (9 - m++ % 6)) % 11;
+                t = Math.floor(t / 10);
+            }
+            let v = s > 0 ? '' + (s - 1) : 'K';
+            return v === cleanRut.slice(-1).toUpperCase();
+        }
+
+        async function requestNewOTP() {
+            const rut = document.getElementById('input-rut-request').value;
+            const rutErrorEl = document.getElementById('rut-error');
+            if (!rut || !isValidRUT(rut)) {
+                rutErrorEl.textContent = 'Ingresa un RUT v\u00e1lido (Ej: 12345678-9)';
+                rutErrorEl.classList.remove('hidden');
+                return;
+            }
+            rutErrorEl.classList.add('hidden');
+
+            const btn = document.getElementById('btn-validate-rut');
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Procesando...'; }
+
+            console.time("OTP request");
+            try {
+                const res = await fetchWithRetry(`/visitas/api/${TOKEN}/request-otp`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rut })
+                });
+                if (res.ok) {
+                    console.timeEnd("OTP request");
+                    showStep('step-4');
+                    const otpInput = document.getElementById('input-otp');
+                    if (otpInput) { otpInput.value = ''; otpInput.focus(); }
+                    document.getElementById('btn-verify-otp').innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Orden de Visita Definitivamente';
+                } else {
+                    const data = await res.json().catch(() => ({}));
+                    if (data.detail === 'DOCUMENT_EXPIRED') {
+                        alert('Este documento ha expirado. Solicita un nuevo convenio.');
+                        location.reload();
+                        return;
+                    }
+                    goToStep2(data.detail || 'Error al solicitar código. Verifica tu RUT.');
+                }
+            } catch (err) {
+                console.timeEnd("OTP request");
+                if (err.message === 'TIMEOUT') {
+                    goToStep2('La conexión está tardando más de lo normal. Intente nuevamente.');
+                } else {
+                    goToStep2('Error de conexión.');
+                }
+            } finally {
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir código'; }
+            }
+        }
+
+        // Remove old btn-submit-rut listener if it still exists (now replaced by btn-validate-rut + btn-send-otp)
+        // (btn-submit-rut no longer exists in the HTML)
+
+
+        let blockInterval = null;
+        function startBlockTimer(seconds) {
+            const inputOtp = document.getElementById('input-otp');
+            const btnVerify = document.getElementById('btn-verify-otp');
+            const errorDiv = document.getElementById('otp-error');
+            const blockBanner = document.getElementById('block-banner');
+            const blockTimer = document.getElementById('block-timer');
+
+            // Hide previous errors, show banner
+            errorDiv.classList.add('hidden');
+            blockBanner.classList.remove('hidden');
+
+            // Disable inputs
+            inputOtp.disabled = true;
+            btnVerify.disabled = true;
+            btnVerify.innerHTML = '<i class="fa-solid fa-lock mr-2"></i> Sistema Bloqueado';
+
+            if (blockInterval) clearInterval(blockInterval);
+
+            let remaining = seconds;
+            blockTimer.textContent = `00:${remaining.toString().padStart(2, '0')}`;
+
+            blockInterval = setInterval(() => {
+                remaining--;
+                if (remaining <= 0) {
+                    clearInterval(blockInterval);
+                    blockBanner.classList.add('hidden');
+                    inputOtp.disabled = false;
+                    btnVerify.disabled = false;
+                    btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Orden de Visita Definitivamente';
+                    inputOtp.value = '';
+                    inputOtp.focus();
+                } else {
+                    blockTimer.textContent = `00:${remaining.toString().padStart(2, '0')}`;
+                }
+            }, 1000);
+        }
+
+        const btnVerify = document.getElementById('btn-verify-otp');
+        btnVerify.addEventListener('click', async () => {
+            const otp = document.getElementById('input-otp').value;
+            const errorDiv = document.getElementById('otp-error');
+            if (otp.length !== 4) {
+                errorDiv.textContent = 'Ingresa los 4 dígitos.';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+            btnVerify.disabled = true;
+            btnVerify.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Verificando...';
+            errorDiv.classList.add('hidden');
+            try {
+                const resOtp = await fetchWithRetry(`/visitas/api/${TOKEN}/verify-otp`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ otp })
+                });
+                if (!resOtp.ok) {
+                    const data = await resOtp.json().catch(() => ({}));
+                    const detail = data.detail || '';
+
+                    if (detail.startsWith('OTP_BLOCKED')) {
+                        const waitSecs = parseInt(detail.split('|')[1]) || 60;
+                        startBlockTimer(waitSecs);
+                        return;
+                    } else if (detail.startsWith('OTP_INVALID')) {
+                        const remaining = parseInt(detail.split('|')[1]) || 0;
+                        if (remaining === 1) {
+                            errorDiv.textContent = 'El código ingresado no es válido. Te queda 1 intento antes de que el sistema se bloquee temporalmente.';
+                        } else {
+                            errorDiv.textContent = `El código ingresado no es válido. Te quedan ${remaining} intentos.`;
+                        }
+                    } else if (detail === 'DOCUMENT_EXPIRED') {
+                        alert('Este documento ha expirado. Solicita un nuevo convenio.');
+                        location.reload();
+                        return;
+                    } else if (detail === 'OTP_EXPIRED') {
+                        errorDiv.textContent = 'Este código ha expirado. Solicita uno nuevo para continuar.';
+                        const btnRetry = document.createElement('button');
+                        btnRetry.className = 'w-full mt-3 bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-2 px-4 rounded-lg transition-colors';
+                        btnRetry.innerHTML = '<i class="fa-solid fa-rotate-right mr-2"></i> Solicitar nuevo código';
+                        btnRetry.onclick = (e) => { e.preventDefault(); requestNewOTP(); };
+                        errorDiv.appendChild(btnRetry);
+                    } else if (detail === 'SIGNATURE_SESSION_EXPIRED') {
+                        goToStep2('â± La sesión expiró. Solicita un nuevo código para continuar.');
+                        btnVerify.disabled = false;
+                        btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Orden de Visita Definitivamente';
+                        return;
+                    } else {
+                        errorDiv.textContent = detail || 'No se pudo validar el código. Intenta nuevamente.';
+                    }
+
+                    errorDiv.classList.remove('hidden');
+                    btnVerify.disabled = false;
+                    btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Orden de Visita Definitivamente';
+                    return;
+                }
+                btnVerify.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Generando Sellos Legales...';
+                const timeSpent = pageOpenTime ? Math.floor((Date.now() - pageOpenTime) / 1000) : 0;
+                const readMethod = scrolledToBottom ? "scroll" : "time";
+                const resAccept = await fetch(`/visitas/api/${TOKEN}/accept`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ read_time_seconds: timeSpent, scrolled_to_bottom: scrolledToBottom, read_method: readMethod })
+                });
+                if (resAccept.ok) {
+                    const d = await resAccept.json();
+                    showStep('step-5');
+                    window.scrollTo(0, 0);
+
+                    if (window.countdownInterval) clearInterval(window.countdownInterval);
+                    const bannerEl = document.getElementById('expiry-countdown-banner');
+                    if (bannerEl) bannerEl.style.display = 'none';
+
+                    document.getElementById('btn-download-signed').href =
+                        `/visitas/api/download_signed/${d.visita_code}`;
+                } else {
+                    const data = await resAccept.json().catch(() => ({}));
+                    const detail = data.detail || '';
+
+                    if (detail === 'DOCUMENT_EXPIRED') {
+                        alert('Este documento ha expirado. Solicita un nuevo convenio.');
+                        location.reload();
+                        return;
+                    } else if (detail === 'SIGNATURE_SESSION_EXPIRED') {
+                        goToStep2('â± La sesión expiró. Solicita un nuevo código para continuar.');
+                        btnVerify.disabled = false;
+                        btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Orden de Visita Definitivamente';
+                        return;
+                    }
+
+                    errorDiv.textContent = 'Error al generar el contrato firmado. Por favor intenta nuevamente en unos segundos.';
+                    errorDiv.classList.remove('hidden');
+                    btnVerify.disabled = false;
+                    btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Orden de Visita Definitivamente';
+                }
+            } catch (err) {
+                if (err.message === 'TIMEOUT') {
+                    alert('La conexión está tardando más de lo normal. Intente nuevamente.');
+                } else {
+                    alert('Error de conexión');
+                }
+                btnVerify.disabled = false;
+                btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Orden de Visita Definitivamente';
+            }
+        });
+    </script>
+</body>
+
+</html>
+
+
+

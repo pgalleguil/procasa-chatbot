@@ -264,10 +264,18 @@ CONTRACTS_PDF_DIR = BASE_DIR / "contracts_pdf"
 CONTRACTS_PDF_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/contracts_pdf", StaticFiles(directory=CONTRACTS_PDF_DIR), name="contracts_pdf")
 
+# Mount visitas_pdf
+VISITAS_PDF_DIR = BASE_DIR / "visitas_pdf"
+VISITAS_PDF_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/visitas_pdf", StaticFiles(directory=VISITAS_PDF_DIR), name="visitas_pdf")
+
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 from api_contracts import router as contracts_router
 app.include_router(contracts_router)
+
+from api_visitas import router as visitas_router
+app.include_router(visitas_router)
 
 from chatbot.lead_router import should_send_now, format_whatsapp_template
 from chatbot.storage import (

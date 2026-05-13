@@ -140,42 +140,21 @@ async def _get_request_user(adb, request: Request):
     return username, user_role
 
 def _normalize_visita_fields(d: dict) -> dict:
+    """Minimal normalization for visita order form data."""
     if d.get("email"):
         d["email"] = d["email"].strip().lower()
-    if d.get("propiedad_direccion"):
-        d["propiedad_direccion"] = d["propiedad_direccion"].strip().title()
-    if d.get("comuna"):
-        d["comuna"] = d["comuna"].strip().title()
-    if d.get("ciudad_firma"):
-        d["ciudad_firma"] = d["ciudad_firma"].strip().title()
-    if d.get("rol"):
-        rol_raw = str(d["rol"]).strip().replace(" ", "")
-        if "-" in rol_raw:
-            parts = rol_raw.split("-", 1)
-            manzana = "".join(ch for ch in parts[0] if ch.isdigit()).zfill(5)[:5]
-            predio = "".join(ch for ch in (parts[1] if len(parts) > 1 else "") if ch.isdigit()).zfill(3)[:3]
-            d["rol"] = f"{manzana}-{predio}"
-    try:
-        vig = int(str(d.get("vigencia", "90")).strip())
-    except Exception:
-        vig = 90
-    d["vigencia"] = str(max(30, min(vig, 720)))
-    tipo = str(d.get("tipo", "Arriendo")).strip()
-    valid_tipos = {"Venta", "Venta Exclusiva", "Arriendo", "Arriendo y Administración"}
-    d["tipo"] = tipo if tipo in valid_tipos else "Arriendo"
-    comision_raw = str(d.get("comision", "2")).replace("%", "").replace(",", ".").strip()
-    if comision_raw not in {"1", "1.0", "1.5", "2", "2.0"}:
-        comision_raw = "2"
-    if comision_raw in {"1.0", "2.0"}:
-        comision_raw = comision_raw.split(".")[0]
-    d["comision"] = f"{comision_raw}%"
-    moneda = str(d.get("moneda", "UF")).upper().strip()
-    d["moneda"] = moneda if moneda in {"UF", "CLP"} else "UF"
-    precio_valor = str(d.get("precio_valor", "")).strip()
-    if precio_valor:
-        precio_valor = "".join(ch for ch in precio_valor if ch.isdigit() or ch in [".", ","])
-    precio_input = str(d.get("precio", "")).strip()
-    d["precio"] = f"{precio_valor} {d['moneda']}" if precio_valor else precio_input
+    if d.get("cliente_nombre"):
+        d["cliente_nombre"] = d["cliente_nombre"].strip()
+    if d.get("cliente_rut"):
+        d["cliente_rut"] = d["cliente_rut"].strip()
+    if d.get("cliente_direccion"):
+        d["cliente_direccion"] = d["cliente_direccion"].strip()
+    if d.get("cliente_comuna"):
+        d["cliente_comuna"] = d["cliente_comuna"].strip().title()
+    if d.get("property_comuna"):
+        d["property_comuna"] = d["property_comuna"].strip().title()
+    if d.get("property_region"):
+        d["property_region"] = d["property_region"].strip().title()
     return d
 
 @router.post("/api/preview")
@@ -229,24 +208,22 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             
         visita_doc = {
             "visita_code": visita_code,
-            "origen": data.get("origen", "Captación Interna"),
+            "origen": data.get("origen", "CRM"),
             "property_code": property_code,
             "phone": data.get("phone", ""),
             "client_data": {
                 "nombre": data.get("cliente_nombre", ""),
                 "rut": data.get("cliente_rut", ""),
-                "email": data.get("email", "")
+                "email": data.get("email", ""),
+                "direccion": data.get("cliente_direccion", ""),
+                "comuna": data.get("cliente_comuna", "")
             },
             "property_data": {
-                "direccion": data.get("propiedad_direccion", ""),
-                "comuna": data.get("comuna", ""),
-                "ciudad_firma": data.get("ciudad_firma", "Santiago de Chile"),
-                "tipo": data.get("tipo", "Arriendo"),
-                "rol": data.get("rol", ""),
-                "vigencia": data.get("vigencia", "30"),
-                "precio": data.get("precio", ""),
-                "moneda": data.get("moneda", "UF"),
-                "comision": data.get("comision", "")
+                "property_code": property_code,
+                "comuna": data.get("property_comuna", ""),
+                "region": data.get("property_region", ""),
+                "tipo": data.get("property_tipo", ""),
+                "precio": data.get("precio", "")
             },
             "status": "created",
             "security": {

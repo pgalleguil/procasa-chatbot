@@ -1463,9 +1463,19 @@ async def contract_dashboard(request: Request):
     contracts = await contracts_cursor.to_list(length=100)
 
     for c in contracts:
+        if "_id" in c:
+            c["_id"] = str(c["_id"])
         if c.get("created_at"):
             dt_utc = c["created_at"].replace(tzinfo=timezone.utc)
             c["created_at"] = dt_utc.astimezone(CHILE_TZ)
+        c["edit_data"] = {
+            "client_data": c.get("client_data", {}),
+            "property_data": c.get("property_data", {}),
+            "property_code": c.get("property_code", ""),
+            "origen": c.get("origen", ""),
+            "executive": c.get("executive", ""),
+            "created_by": c.get("created_by", "")
+        }
 
     executives = []
     if user_role in ["supervisor", "admin"]:

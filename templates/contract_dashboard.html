@@ -735,7 +735,7 @@
                                         <i class="fa-solid fa-file-pdf"></i>
                                     </a>
                                     <button class="btn btn-sm btn-outline-info" title="Editar antes de enviar"
-                                        onclick='editContract({{ c|tojson|safe }})'>
+                                        onclick='editContract({{ c.edit_data|tojson|safe }})'>
                                         <i class="fa-solid fa-pen"></i>
                                     </button>
                                     {# Botón Enviar WhatsApp: solo si aún no se ha enviado #}

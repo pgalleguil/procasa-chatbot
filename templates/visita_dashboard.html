@@ -666,9 +666,11 @@
         {% endif %}
         <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
         <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i> <span>Captaciones</span></a>
-        <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
+        <a href="/visitas/dashboard" class="nav-link active"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
+        {% if user_role in ['supervisor', 'admin'] %}
         {% if user_role in ['supervisor', 'admin'] %}
         <a href="/visitas/dashboard" class="nav-link active"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
+        {% endif %}
         {% endif %}
 
         <a href="javascript:void(0)" class="nav-link" style="margin-top:auto" onclick="toggleTheme()">
@@ -688,7 +690,7 @@
                 <h4 class="m-0 fw-bold">Módulo de Órdenes de Visita</h4>
             </div>
             <button class="btn btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#modalNewContract">
-                <i class="fa-solid fa-plus me-2"></i> Nueva Orden
+                <i class="fa-solid fa-plus me-2"></i> Nuevo Convenio
             </button>
         </div>
 
@@ -700,7 +702,7 @@
         <div class="table-container">
             <div class="section-title">Órdenes de Visita Emitidas</div>
             {% if user_role in ['supervisor', 'admin'] %}
-            <form method="get" action="/contracts/dashboard" class="row g-2 mb-3">
+            <form method="get" action="/visitas/dashboard" class="row g-2 mb-3">
                 <div class="col-md-4 col-sm-6">
                     <select class="form-select form-select-sm" name="executive" onchange="this.form.submit()">
                         <option value="">Todos los ejecutivos</option>
@@ -727,12 +729,12 @@
                     </thead>
                     <tbody>
                         {% for c in contracts %}
-                        <tr data-contract-code="{{ c.contract_code }}" data-contract-status="{{ c.status }}">
+                        <tr data-contract-code="{{ c.visita_code }}" data-contract-status="{{ c.status }}">
                             <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '---' }}<br><small class="text-secondary">{{ c.created_at.strftime('%H:%M') if c.created_at else '' }} hrs</small></td>
                             {% if user_role in ['supervisor', 'admin'] %}
                             <td data-label="Ejecutivo">{{ c.executive_display or '---' }}</td>
                             {% endif %}
-                            <td data-label="Código"><strong>{{ c.property_code or c.contract_code[:8] }}</strong></td>
+                            <td data-label="Código"><strong>{{ c.property_code or c.visita_code[:8] }}</strong></td>
                             <td data-label="Origen">{{ c.get('origen', '---') }}</td>
                             <td data-label="Cliente">
                                 {{ c.client_data.nombre }}<br>
@@ -755,42 +757,42 @@
                                 <div class="d-flex flex-wrap gap-1">
                                     {# Botón Ver PDF original (solo si no está firmado) #}
                                     {% if c.status == 'created' %}
-                                    <a href="/visitas/api/download/{{ c.contract_code }}" target="_blank"
+                                    <a href="/visitas/api/download/{{ c.visita_code }}" target="_blank"
                                         class="btn btn-sm btn-outline-secondary" title="Ver PDF">
                                         <i class="fa-solid fa-file-pdf"></i>
                                     </a>
                                     <button class="btn btn-sm btn-outline-info" title="Editar antes de enviar"
-                                        onclick='editContract({{ c.edit_data|tojson|safe }})'>
+                                        onclick='editVisita({{ c.edit_data|tojson|safe }})'>
                                         <i class="fa-solid fa-pen"></i>
                                     </button>
                                     {# Botón Enviar WhatsApp: solo si aún no se ha enviado #}
                                     <button class="btn btn-sm btn-outline-secondary btn-hover-whatsapp"
                                         title="Enviar por WhatsApp"
-                                        onclick="sendContract('{{ c.contract_code }}', this)">
+                                        onclick="sendVisita('{{ c.visita_code }}', this)">
                                         <i class="fa-brands fa-whatsapp"></i>
                                     </button>
                                     {% elif c.status in ['sent','opened','otp_requested','otp_verified'] %}
-                                    <a href="/visitas/api/download/{{ c.contract_code }}" target="_blank"
-                                        class="btn btn-sm btn-outline-secondary" title="Ver Convenio">
+                                    <a href="/visitas/api/download/{{ c.visita_code }}" target="_blank"
+                                        class="btn btn-sm btn-outline-secondary" title="Ver Orden de Visita">
                                         <i class="fa-solid fa-eye"></i>
                                     </a>
                                     {% if user_role in ['supervisor', 'admin'] %}
                                     <button class="btn btn-sm btn-outline-warning"
                                         title="Reenviar enlace (ya fue enviado)"
-                                        onclick="sendContract('{{ c.contract_code }}', this, true)">
+                                        onclick="sendVisita('{{ c.visita_code }}', this, true)">
                                         <i class="fa-solid fa-rotate-right"></i>
                                     </button>
                                     {% endif %}
                                     {% elif c.status in ['signed','accepted'] %}
-                                    <a href="/visitas/api/view_signed/{{ c.contract_code }}" target="_blank"
+                                    <a href="/visitas/api/view_signed/{{ c.visita_code }}" target="_blank"
                                         class="btn btn-sm btn-outline-secondary" title="Ver Firmado">
                                         <i class="fa-solid fa-eye"></i>
                                     </a>
-                                    <a href="/visitas/api/download_signed/{{ c.contract_code }}" target="_blank"
+                                    <a href="/visitas/api/download_signed/{{ c.visita_code }}" target="_blank"
                                         class="btn btn-sm btn-success" title="Descargar Firmado">
                                         <i class="fa-solid fa-file-circle-check"></i>
                                     </a>
-                                    <a href="/contracts/verify/{{ c.contract_code }}" target="_blank"
+                                    <a href="/visitas/verify/{{ c.visita_code }}" target="_blank"
                                         class="btn btn-sm btn-outline-info" title="Verificar Evidencia">
                                         <i class="fa-solid fa-shield-halved"></i>
                                     </a>
@@ -799,7 +801,7 @@
                                     {% if c.status not in ['signed','accepted'] %}
                                     <button class="btn btn-sm btn-outline-secondary btn-hover-danger"
                                         title="Eliminar"
-                                        onclick="deleteContract('{{ c.contract_code }}', this)">
+                                        onclick="deleteVisita('{{ c.visita_code }}', this)">
                                         <i class="fa-solid fa-trash-can"></i>
                                     </button>
                                     {% endif %}
@@ -810,7 +812,7 @@
                         <tr>
                             <td colspan="{% if user_role in ['supervisor', 'admin'] %}8{% else %}7{% endif %}" class="text-center text-secondary py-5">
                                 <i class="fa-solid fa-folder-open fa-2x mb-2 d-block"></i>
-                                No hay órdenes generadas aún.
+                                No hay convenios generados aún.
                             </td>
                         </tr>
                         {% endfor %}
@@ -820,138 +822,14 @@
         </div>
     </div>
 
-    <!-- Modal Nuevo Orden -->
+    <!-- Modal Nuevo Contrato -->
     <div class="modal fade" id="modalNewContract" tabindex="-1">
         <div class="modal-dialog modal-xl">
             <div class="modal-content"
                 style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color);">
                 <div class="modal-header border-bottom-0">
                     <h5 class="modal-title fw-bold"><i class="fa-solid fa-file-signature me-2"
-                            style="color: var(--accent);"></i> Generar Nueva Orden de Visita</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" style="overflow-x: hidden;">
-                    <div class="contract-layout">
-                        <div class="form-section">
-                            </form>
-            {% endif %}
-            <div class="table-responsive">
-                <table class="prop-table">
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            {% if user_role in ['supervisor', 'admin'] %}<th>Ejecutivo</th>{% endif %}
-                            <th>Código</th>
-                            <th>Origen</th>
-                            <th>Cliente</th>
-                            <th>Propiedad / Rol</th>
-                            <th>Estado</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for c in contracts %}
-                        <tr data-contract-code="{{ c.contract_code }}" data-contract-status="{{ c.status }}">
-                            <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '---' }}<br><small class="text-secondary">{{ c.created_at.strftime('%H:%M') if c.created_at else '' }} hrs</small></td>
-                            {% if user_role in ['supervisor', 'admin'] %}
-                            <td data-label="Ejecutivo">{{ c.executive_display or '---' }}</td>
-                            {% endif %}
-                            <td data-label="Código"><strong>{{ c.property_code or c.contract_code[:8] }}</strong></td>
-                            <td data-label="Origen">{{ c.get('origen', '---') }}</td>
-                            <td data-label="Cliente">
-                                {{ c.client_data.nombre }}<br>
-                                <small class="text-secondary">{{ c.client_data.rut }}</small>
-                            </td>
-                            <td data-label="Propiedad / Rol">
-                                {{ c.property_data.direccion }}<br>
-                                <small class="text-secondary">Rol: {{ c.property_data.rol }}</small>
-                            </td>
-                            <td data-label="Estado" class="contract-status-cell">
-                                {% if c.status == 'created' %}<span class="status-badge status-created">Creado</span>
-                                {% elif c.status == 'sent' %}<span class="status-badge status-sent">Enviado</span>
-                                {% elif c.status == 'opened' %}<span class="status-badge status-opened">Abierto</span>
-                                {% elif c.status == 'otp_requested' %}<span class="status-badge status-otp_requested">Código Pedido</span>
-                                {% elif c.status == 'otp_verified' %}<span class="status-badge status-otp_verified">RUT Validado</span>
-                                {% elif c.status in ['signed','accepted'] %}<span class="status-badge status-signed">Firmado ✓</span>
-                                {% else %}<span class="status-badge status-created">{{ c.status }}</span>{% endif %}
-                            </td>
-                            <td data-label="Acciones">
-                                <div class="d-flex flex-wrap gap-1">
-                                    {# Botón Ver PDF original (solo si no está firmado) #}
-                                    {% if c.status == 'created' %}
-                                    <a href="/visitas/api/download/{{ c.contract_code }}" target="_blank"
-                                        class="btn btn-sm btn-outline-secondary" title="Ver PDF">
-                                        <i class="fa-solid fa-file-pdf"></i>
-                                    </a>
-                                    <button class="btn btn-sm btn-outline-info" title="Editar antes de enviar"
-                                        onclick='editContract({{ c.edit_data|tojson|safe }})'>
-                                        <i class="fa-solid fa-pen"></i>
-                                    </button>
-                                    {# Botón Enviar WhatsApp: solo si aún no se ha enviado #}
-                                    <button class="btn btn-sm btn-outline-secondary btn-hover-whatsapp"
-                                        title="Enviar por WhatsApp"
-                                        onclick="sendContract('{{ c.contract_code }}', this)">
-                                        <i class="fa-brands fa-whatsapp"></i>
-                                    </button>
-                                    {% elif c.status in ['sent','opened','otp_requested','otp_verified'] %}
-                                    <a href="/visitas/api/download/{{ c.contract_code }}" target="_blank"
-                                        class="btn btn-sm btn-outline-secondary" title="Ver Convenio">
-                                        <i class="fa-solid fa-eye"></i>
-                                    </a>
-                                    {% if user_role in ['supervisor', 'admin'] %}
-                                    <button class="btn btn-sm btn-outline-warning"
-                                        title="Reenviar enlace (ya fue enviado)"
-                                        onclick="sendContract('{{ c.contract_code }}', this, true)">
-                                        <i class="fa-solid fa-rotate-right"></i>
-                                    </button>
-                                    {% endif %}
-                                    {% elif c.status in ['signed','accepted'] %}
-                                    <a href="/visitas/api/view_signed/{{ c.contract_code }}" target="_blank"
-                                        class="btn btn-sm btn-outline-secondary" title="Ver Firmado">
-                                        <i class="fa-solid fa-eye"></i>
-                                    </a>
-                                    <a href="/visitas/api/download_signed/{{ c.contract_code }}" target="_blank"
-                                        class="btn btn-sm btn-success" title="Descargar Firmado">
-                                        <i class="fa-solid fa-file-circle-check"></i>
-                                    </a>
-                                    <a href="/contracts/verify/{{ c.contract_code }}" target="_blank"
-                                        class="btn btn-sm btn-outline-info" title="Verificar Evidencia">
-                                        <i class="fa-solid fa-shield-halved"></i>
-                                    </a>
-                                    {% endif %}
-                                    {# Eliminar: siempre visible excepto firmados #}
-                                    {% if c.status not in ['signed','accepted'] %}
-                                    <button class="btn btn-sm btn-outline-secondary btn-hover-danger"
-                                        title="Eliminar"
-                                        onclick="deleteContract('{{ c.contract_code }}', this)">
-                                        <i class="fa-solid fa-trash-can"></i>
-                                    </button>
-                                    {% endif %}
-                                </div>
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="{% if user_role in ['supervisor', 'admin'] %}8{% else %}7{% endif %}" class="text-center text-secondary py-5">
-                                <i class="fa-solid fa-folder-open fa-2x mb-2 d-block"></i>
-                                No hay órdenes generadas aún.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal Nuevo Orden -->
-    <div class="modal fade" id="modalNewContract" tabindex="-1">
-        <div class="modal-dialog modal-xl">
-            <div class="modal-content"
-                style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color);">
-                <div class="modal-header border-bottom-0">
-                    <h5 class="modal-title fw-bold"><i class="fa-solid fa-file-signature me-2"
-                            style="color: var(--accent);"></i> Generar Nueva Orden de Visita</h5>
+                            style="color: var(--accent);"></i> Generar Nueva Orden de Visita de Corretaje</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" style="overflow-x: hidden;">
@@ -961,62 +839,43 @@
                                 <div id="formErrors" class="alert alert-danger d-none mb-3 py-2 text-sm fw-bold"></div>
                                 <input type="hidden" name="executive" value="{{ user_username }}">
                                 <div class="row g-3 mb-3">
-                                    <div class="col-lg-6 col-md-6">
+                                    <div class="col-12">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del Cliente <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="cliente_nombre" placeholder="Ej: Juan Pérez" required onblur="capitalizeName(this); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa el nombre completo.</div>
                                     </div>
-                                    <div class="col-lg-6 col-md-6">
+                                    <div class="col-12">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">RUT Cliente <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="cliente_rut" placeholder="12345678-9" required oninput="formatRut(this)" onblur="validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa un RUT válido.</div>
                                     </div>
-                                </div>
-                                <div class="row g-3 mb-3">
-                                    <div class="col-lg-8 col-md-6">
+                                    <div class="col-12">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Domicilio <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="cliente_direccion" placeholder="Calle, Número" required onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa el domicilio.</div>
                                     </div>
-                                    <div class="col-lg-4 col-md-6 position-relative">
+                                    <div class="col-12">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Comuna <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="cliente_comuna" id="comunaInput" placeholder="Ej: Santiago" required autocomplete="off" oninput="filterComunas(); triggerPreview();" onfocus="showComunas()" onblur="setTimeout(() => validateComunaList(this), 200);">
                                         <div id="comunaDropdown" class="autocomplete-dropdown custom-scrollbar d-none"></div>
                                         <div class="invalid-feedback">Ingresa la comuna.</div>
                                     </div>
-                                </div>
-                                <div class="row g-3 mb-3">
-                                    <div class="col-lg-6 col-md-6">
+                                    <div class="col-12">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span class="required-star">*</span></label>
                                         <div class="w-100">
                                             <input type="tel" class="form-control w-100" id="phoneInput" name="phone_full" placeholder="912345678" required style="width: 100%;">
                                         </div>
                                         <div class="invalid-feedback" id="phoneErrorMsg">Ingresa un teléfono válido.</div>
                                     </div>
-                                    <div class="col-lg-6 col-md-6">
+                                    <div class="col-12">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Email</label>
                                         <input type="email" class="form-control" name="email" oninput="this.value=this.value.toLowerCase()" onblur="this.value=this.value.trim().toLowerCase(); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).</div>
                                     </div>
-                                </div>
-                                <hr style="border-color: var(--border-color);">
-                                <h6 class="fw-bold mb-3"><i class="fa-solid fa-house me-2"></i>Datos de la Propiedad a Visitar</h6>
-                                <div class="row g-3 mb-3">
-                                    <div class="col-lg-4 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Código <span class="required-star">*</span></label>
+                                    <div class="col-12">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Código de Propiedad <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="property_code" placeholder="Ej: 15482" required oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();" onblur="validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa el código.</div>
-                                    </div>
-                                    <div class="col-lg-4 col-md-6 position-relative">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comuna <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="property_comuna" id="ciudadFirmaInput" placeholder="Ej: Vitacura" required autocomplete="off" oninput="filterCiudadesFirma(); triggerPreview();" onfocus="showCiudadesFirma()" onblur="setTimeout(() => validateCiudadFirmaList(this), 200);">
-                                        <div id="ciudadFirmaDropdown" class="autocomplete-dropdown custom-scrollbar d-none"></div>
-                                        <div class="invalid-feedback">Ingresa la comuna.</div>
-                                    </div>
-                                    <div class="col-lg-4 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Región <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="property_region" placeholder="Ej: Metropolitana" required onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa la región.</div>
                                     </div>
                                 </div>
                             </form>
@@ -1439,17 +1298,14 @@
             btn.disabled = true;
 
             const payload = {
-                executive: form.executive.value,
+                executive: form.executive ? form.executive.value : '',
                 cliente_nombre: form.cliente_nombre?.value || '',
                 cliente_rut: form.cliente_rut?.value || '',
                 phone: window.getPhoneData ? window.getPhoneData() : (document.getElementById('phoneInput')?.value || ''),
                 email: form.email?.value || '',
                 cliente_direccion: form.cliente_direccion?.value || '',
                 cliente_comuna: form.cliente_comuna?.value || '',
-                property_code: form.property_code?.value || '',
-                property_comuna: form.property_comuna?.value || '',
-                property_region: form.property_region?.value || '',
-                origen: form.origen?.value || ''
+                property_code: form.property_code?.value || ''
             };
 
             fetch('/visitas/api/create', {

@@ -161,7 +161,7 @@ arbitrador designado por Centro Nacional de Arbitrajes S.A.("CNA"), de acuerdo a
         
         def make_canvas(*args, **kwargs):
             c = NumberedCanvas(*args, **kwargs)
-            c.contract_code = doc.contract_code
+            c.visita_code = getattr(doc, 'visita_code', '')
             c.is_original = doc.is_original
             return c
             
@@ -262,7 +262,7 @@ Ley 19.799."""
         
         def make_canvas_signed(*args, **kwargs):
             c = NumberedCanvas(*args, **kwargs)
-            c.contract_code = doc.contract_code
+            c.visita_code = getattr(doc, 'visita_code', '')
             c.is_original = doc.is_original
             return c
             

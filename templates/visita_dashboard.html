@@ -666,11 +666,9 @@
         {% endif %}
         <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
         <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i> <span>Captaciones</span></a>
-        <a href="/visitas/dashboard" class="nav-link active"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
-        {% if user_role in ['supervisor', 'admin'] %}
+        <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
         {% if user_role in ['supervisor', 'admin'] %}
         <a href="/visitas/dashboard" class="nav-link active"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
-        {% endif %}
         {% endif %}
 
         <a href="javascript:void(0)" class="nav-link" style="margin-top:auto" onclick="toggleTheme()">
@@ -922,12 +920,10 @@
         ];
 
         let activeComunaIndex = -1;
-        let activeCiudadFirmaIndex = -1;
         let hasInteracted = false;
 
         document.addEventListener("DOMContentLoaded", function () {
             buildComunaDropdown(comunasDeChile);
-            buildCiudadFirmaDropdown(comunasDeChile);
         });
 
         function buildComunaDropdown(list) {
@@ -935,356 +931,209 @@
             if (!dropdown) return;
             dropdown.innerHTML = '';
             if (list.length === 0) {
-                dropdown.innerHTML = '<div class="autocomplete-item text-secondary py-2 text-center" style="font-size: 0.85rem">Sin resultados</div>';
+                dropdown.classList.add('d-none');
                 return;
             }
-            list.forEach(c => {
+            list.forEach((comuna, index) => {
                 const div = document.createElement('div');
                 div.className = 'autocomplete-item';
-                div.innerText = c;
-                div.onclick = () => {
-                    const input = document.getElementById('comunaInput');
-                    input.value = c;
+                div.textContent = comuna;
+                div.onclick = function () {
+                    const inp = document.getElementById('comunaInput');
+                    inp.value = comuna;
                     dropdown.classList.add('d-none');
-                    validateField(input);
+                    validateField(inp);
                     triggerPreview();
                 };
                 dropdown.appendChild(div);
             });
-        }
-
-        function showComunas() {
-            document.getElementById('comunaDropdown').classList.remove('d-none');
-            filterComunas();
+            activeComunaIndex = -1;
+            updateComunaActive();
         }
 
         function filterComunas() {
             const val = document.getElementById('comunaInput').value.toLowerCase();
             const filtered = comunasDeChile.filter(c => c.toLowerCase().includes(val));
-            activeComunaIndex = -1;
             buildComunaDropdown(filtered);
-            document.getElementById('comunaDropdown').classList.remove('d-none');
+            const dropdown = document.getElementById('comunaDropdown');
+            if (filtered.length > 0) dropdown.classList.remove('d-none');
+            else dropdown.classList.add('d-none');
+        }
+
+        function showComunas() {
+            filterComunas();
         }
 
         function validateComunaList(input) {
-            const dropdown = document.getElementById('comunaDropdown');
-            if (dropdown) dropdown.classList.add('d-none');
-
-            const val = input.value.trim().toLowerCase();
-            const found = comunasDeChile.find(c => c.toLowerCase() === val);
-            if (found) {
-                input.value = found;
-            } else if (input.value) {
-                input.value = '';
+            const val = input.value.trim();
+            if (val && !comunasDeChile.includes(val)) {
+                const match = comunasDeChile.find(c => c.toLowerCase() === val.toLowerCase());
+                if (match) {
+                    input.value = match;
+                }
             }
             validateField(input);
-            triggerPreview();
+            document.getElementById('comunaDropdown').classList.add('d-none');
         }
 
-        function buildCiudadFirmaDropdown(list) {
-            const dropdown = document.getElementById('ciudadFirmaDropdown');
-            if (!dropdown) return;
-            dropdown.innerHTML = '';
-            if (list.length === 0) {
-                dropdown.innerHTML = '<div class="autocomplete-item text-secondary py-2 text-center" style="font-size: 0.85rem">Sin resultados</div>';
-                return;
-            }
-            list.forEach(c => {
-                const div = document.createElement('div');
-                div.className = 'autocomplete-item';
-                div.innerText = c;
-                div.onclick = () => {
-                    const input = document.getElementById('ciudadFirmaInput');
-                    input.value = c;
-                    dropdown.classList.add('d-none');
-                    validateField(input);
-                    triggerPreview();
-                };
-                dropdown.appendChild(div);
+        function updateComunaActive() {
+            const items = document.querySelectorAll('#comunaDropdown .autocomplete-item');
+            items.forEach((item, index) => {
+                if (index === activeComunaIndex) item.classList.add('active');
+                else item.classList.remove('active');
             });
         }
 
-        function showCiudadesFirma() {
-            document.getElementById('ciudadFirmaDropdown').classList.remove('d-none');
-            filterCiudadesFirma();
-        }
-
-        function filterCiudadesFirma() {
-            const val = document.getElementById('ciudadFirmaInput').value.toLowerCase();
-            const filtered = comunasDeChile.filter(c => c.toLowerCase().includes(val));
-            activeCiudadFirmaIndex = -1;
-            buildCiudadFirmaDropdown(filtered);
-            document.getElementById('ciudadFirmaDropdown').classList.remove('d-none');
-        }
-
-        function validateCiudadFirmaList(input) {
-            const dropdown = document.getElementById('ciudadFirmaDropdown');
-            if (dropdown) dropdown.classList.add('d-none');
-            const val = input.value.trim().toLowerCase();
-            const found = comunasDeChile.find(c => c.toLowerCase() === val);
-            if (found) {
-                input.value = found;
-            } else if (input.value) {
-                input.value = '';
-            }
-            validateField(input);
-            triggerPreview();
-        }
-
-        function toggleTheme() {
-            const html = document.documentElement;
-            const current = html.getAttribute('data-theme');
-            const next = current === 'dark' ? 'light' : 'dark';
-            html.setAttribute('data-theme', next);
-            localStorage.setItem('theme', next);
-            const icon = document.getElementById('themeIcon');
-            icon.className = next === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
-            icon.style.transform = 'rotate(360deg)';
-            setTimeout(() => {
-                icon.style.transition = 'none'; icon.style.transform = 'rotate(0deg)';
-                setTimeout(() => icon.style.transition = 'transform 0.4s', 50);
-            }, 400);
-        }
-
-        function toggleMobileMenu() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            sidebar.classList.toggle('mobile-open');
-            overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
-        }
-
-        if (localStorage.getItem('theme') === 'light') toggleTheme();
-
-        function capitalizeName(input) {
-            let val = input.value.toLowerCase().replace(/\s+/g, ' ').trim();
-            input.value = val.replace(/(^|\s)\S/g, l => l.toUpperCase());
-        }
-
-        function toTitleCase(str) {
-            return str.toLowerCase().replace(/(^|\s)\S/g, l => l.toUpperCase()).trim();
-        }
-
-        function formatRut(input) {
-            let rut = input.value.replace(/[^0-9kK]/g, '').toUpperCase();
-            if (rut.length > 1) rut = rut.slice(0, -1) + '-' + rut.slice(-1);
-            if (rut.length > 5) rut = rut.slice(0, -5) + '.' + rut.slice(-5);
-            if (rut.length > 9) rut = rut.slice(0, -9) + '.' + rut.slice(-9);
-            input.value = rut;
-        }
-
-        function formatRol(input) {
-            const raw = input.value.replace(/[^0-9\-]/g, '').trim();
-            if (!raw.includes('-')) return;
-            const parts = raw.split('-');
-            const manzana = parts[0].padStart(5, '0').slice(0, 5);
-            const predio = (parts[1] || '').padStart(3, '0').slice(0, 3);
-            input.value = `${manzana}-${predio}`;
-        }
-
-        function checkFormValidity() {
-            const form = document.getElementById('formNewContract');
-            const btn = document.getElementById('btnGenerateContract');
-            const msgDiv = document.getElementById('missingFieldsMsg');
-            let isValid = true;
-
-            const phoneInput = document.getElementById('phoneInput');
-            if (phoneInput.classList.contains('is-invalid') || !phoneInput.value.trim()) {
-                isValid = false;
-            }
-
-            Array.from(form.elements).forEach(el => {
-                if (el.tagName !== 'BUTTON' && el.required && !el.value.trim()) isValid = false;
-                if (el.classList.contains('is-invalid')) isValid = false;
-            });
-
-            btn.disabled = !isValid;
-            if (!isValid && hasInteracted) msgDiv.classList.remove('d-none');
-            else msgDiv.classList.add('d-none');
-        }
-
-        function validateField(input) {
-            if (input.id === 'phoneInput') return;
-            let valid = input.value.trim() !== '' && input.checkValidity();
-            if (!valid) {
-                input.classList.add('is-invalid');
-                input.classList.remove('is-valid');
-            } else {
-                input.classList.remove('is-invalid');
-                input.classList.add('is-valid');
-            }
-            hasInteracted = true;
-            checkFormValidity();
-        }
-
-        let previewTimeout = null;
-        let objectUrl = null;
-        let isEditingContract = false;
-
-        function triggerPreview() {
-            checkFormValidity();
-
-            const overlay = document.getElementById('pdfLoadingOverlay');
-            overlay.classList.add('active');
-
-            if (previewTimeout) clearTimeout(previewTimeout);
-            previewTimeout = setTimeout(async () => {
-                const form = document.getElementById('formNewContract');
-
-                const data = {
-                    cliente_nombre: form.cliente_nombre.value,
-                    cliente_rut: form.cliente_rut.value,
-                    phone: window.getPhoneData ? window.getPhoneData() : document.getElementById('phoneInput').value,
-                    email: form.email.value,
-                    tipo: form.tipo.value,
-                    propiedad_direccion: form.propiedad_direccion.value,
-                    comuna: form.comuna.value,
-                    ciudad_firma: form.ciudad_firma ? form.ciudad_firma.value : '',
-                    vigencia: form.vigencia.value,
-                    rol: form.rol_manzana.value && form.rol_predio.value ? `${form.rol_manzana.value}-${form.rol_predio.value}` : '',
-                    precio_valor: form.precio_valor.value,
-                    moneda: form.moneda.value,
-                    comision: form.comision.value,
-                    property_code: form.property_code.value,
-                    origen: form.origen.value,
-                    executive: form.executive ? form.executive.value : ''
-                };
-
-                try {
-                    const res = await fetch('/visitas/api/preview', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(data)
-                    });
-                    if (res.ok) {
-                        const blob = await res.blob();
-                        if (objectUrl) URL.revokeObjectURL(objectUrl);
-                        objectUrl = URL.createObjectURL(blob);
-                        document.getElementById('pdfPreviewIframe').src = objectUrl + '#toolbar=0&navpanes=0&scrollbar=0&zoom=page-width';
-                        const mobileOpen = document.getElementById('mobilePdfOpenBtn');
-                        mobileOpen.href = objectUrl;
-                        if (window.innerWidth <= 768) mobileOpen.classList.remove('d-none');
-                        else mobileOpen.classList.add('d-none');
-                    }
-                } catch (e) {
-                    console.error("Preview error", e);
-                } finally {
-                    overlay.classList.remove('active');
-                }
-            }, 800);
-        }
-
-        document.addEventListener("DOMContentLoaded", function () {
-            if (window.intlTelInputGlobals) {
-                const countryData = window.intlTelInputGlobals.getCountryData();
-                try {
-                    const esRegionNames = new Intl.DisplayNames(['es'], { type: 'region' });
-                    countryData.forEach(country => {
-                        try {
-                            const esName = esRegionNames.of(country.iso2.toUpperCase());
-                            if (esName) {
-                                country.name = esName;
-                            }
-                        } catch (e) { }
-                    });
-                } catch (e) { }
-
-                // Sort countryData alphabetically by the new Spanish names
-                countryData.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
-            }
-
-            const phoneInputField = document.querySelector("#phoneInput");
-            const phoneInput = window.intlTelInput(phoneInputField, {
-                initialCountry: "cl",
-                preferredCountries: ["cl", "ar", "co", "pe", "us", "es"],
-                utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/js/utils.js",
-                separateDialCode: true,
-                countrySearch: true
-            });
-
-            const modalEl = document.getElementById('modalNewContract');
-            modalEl.addEventListener('show.bs.modal', () => {
-                hasInteracted = false;
-                const iframeSrc = document.getElementById('pdfPreviewIframe').src;
-                if (iframeSrc.includes('about:blank') || iframeSrc.includes(window.location.origin + '/about:blank')) {
-                    triggerPreview();
-                }
-            });
-            modalEl.addEventListener('hidden.bs.modal', () => {
-                isEditingContract = false;
-                const btn = document.getElementById('btnGenerateContract');
-                if (btn) btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
-            });
-
-            window.phoneInputIntl = phoneInput;
-            window.getPhoneData = function () {
-                return phoneInput.getNumber();
-            };
-
-            const validatePhone = () => {
-                if (phoneInputField.value.trim()) {
-                    if (phoneInput.isValidNumber()) {
-                        phoneInputField.classList.remove('is-invalid');
-                        phoneInputField.classList.add('is-valid');
-                    } else {
-                        phoneInputField.classList.add('is-invalid');
-                        phoneInputField.classList.remove('is-valid');
-                    }
-                } else {
-                    phoneInputField.classList.remove('is-valid');
-                    phoneInputField.classList.remove('is-invalid');
-                }
-                triggerPreview();
-            };
-
-            phoneInputField.addEventListener('input', validatePhone);
-            phoneInputField.addEventListener('countrychange', validatePhone);
-            phoneInputField.addEventListener('blur', validatePhone);
-
-            const comunaInput = document.getElementById('comunaInput');
-            comunaInput.addEventListener('keydown', (e) => {
-                const items = Array.from(document.querySelectorAll('#comunaDropdown .autocomplete-item'));
-                if (!items.length) return;
+        const comunaInput = document.getElementById('comunaInput');
+        if (comunaInput) {
+            comunaInput.addEventListener('keydown', function(e) {
+                const items = document.querySelectorAll('#comunaDropdown .autocomplete-item');
                 if (e.key === 'ArrowDown') {
+                    activeComunaIndex++;
+                    if (activeComunaIndex >= items.length) activeComunaIndex = 0;
+                    updateComunaActive();
                     e.preventDefault();
-                    activeComunaIndex = Math.min(activeComunaIndex + 1, items.length - 1);
-                    items.forEach((it, idx) => it.classList.toggle('active', idx === activeComunaIndex));
                 } else if (e.key === 'ArrowUp') {
+                    activeComunaIndex--;
+                    if (activeComunaIndex < 0) activeComunaIndex = items.length - 1;
+                    updateComunaActive();
                     e.preventDefault();
-                    activeComunaIndex = Math.max(activeComunaIndex - 1, 0);
-                    items.forEach((it, idx) => it.classList.toggle('active', idx === activeComunaIndex));
-                } else if (e.key === 'Enter' && activeComunaIndex >= 0) {
+                } else if (e.key === 'Enter') {
                     e.preventDefault();
-                    items[activeComunaIndex].click();
+                    if (activeComunaIndex > -1 && items.length > 0) {
+                        items[activeComunaIndex].click();
+                    }
                 } else if (e.key === 'Escape') {
                     document.getElementById('comunaDropdown').classList.add('d-none');
                 }
             });
+        }
 
-            const ciudadFirmaInput = document.getElementById('ciudadFirmaInput');
-            ciudadFirmaInput.addEventListener('keydown', (e) => {
-                const items = Array.from(document.querySelectorAll('#ciudadFirmaDropdown .autocomplete-item'));
-                if (!items.length) return;
-                if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    activeCiudadFirmaIndex = Math.min(activeCiudadFirmaIndex + 1, items.length - 1);
-                    items.forEach((it, idx) => it.classList.toggle('active', idx === activeCiudadFirmaIndex));
-                } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    activeCiudadFirmaIndex = Math.max(activeCiudadFirmaIndex - 1, 0);
-                    items.forEach((it, idx) => it.classList.toggle('active', idx === activeCiudadFirmaIndex));
-                } else if (e.key === 'Enter' && activeCiudadFirmaIndex >= 0) {
-                    e.preventDefault();
-                    items[activeCiudadFirmaIndex].click();
-                } else if (e.key === 'Escape') {
-                    document.getElementById('ciudadFirmaDropdown').classList.add('d-none');
-                }
+        // Utilidades de formato
+        function capitalizeName(input) {
+            input.value = input.value.replace(/\w\S*/g, function(txt){
+                return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
             });
+        }
+        function toTitleCase(str) {
+            return str.replace(/\w\S*/g, function(txt){
+                return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+            });
+        }
+        function formatRut(input) {
+            let value = input.value.replace(/[^0-9kK]/g, '').toUpperCase();
+            if (value.length > 1) {
+                value = value.slice(0, -1) + '-' + value.slice(-1);
+            }
+            input.value = value;
+        }
+        function validateRut(rut) {
+            if (!/^[0-9]+-[0-9K]$/i.test(rut)) return false;
+            let parts = rut.split('-');
+            let number = parts[0];
+            let dv = parts[1].toUpperCase();
+            let sum = 0;
+            let multiplier = 2;
+            for (let i = number.length - 1; i >= 0; i--) {
+                sum += parseInt(number.charAt(i)) * multiplier;
+                multiplier = multiplier === 7 ? 2 : multiplier + 1;
+            }
+            let expectedDv = 11 - (sum % 11);
+            expectedDv = expectedDv === 11 ? '0' : expectedDv === 10 ? 'K' : expectedDv.toString();
+            return dv === expectedDv;
+        }
 
-            setInterval(syncStatuses, 12000);
-            syncStatuses();
-        });
+        function validateEmail(email) {
+            const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return re.test(email);
+        }
 
-        async function generateContract() {
+        function validateField(input) {
+            let isValid = true;
+            if (input.required && !input.value.trim()) {
+                isValid = false;
+            } else if (input.name === 'cliente_rut' && input.value) {
+                isValid = validateRut(input.value);
+            } else if (input.name === 'email' && input.value) {
+                isValid = validateEmail(input.value);
+            }
+
+            if (isValid) {
+                input.classList.remove('is-invalid');
+                input.classList.add('is-valid');
+            } else {
+                input.classList.remove('is-valid');
+                input.classList.add('is-invalid');
+            }
+            return isValid;
+        }
+
+        let previewTimeout;
+        
+        function checkFormValidity() {
+            const form = document.getElementById('formNewContract');
+            if (!form) return;
+            const elements = Array.from(form.elements).filter(el => el.tagName === 'INPUT' || el.tagName === 'SELECT');
+            let isValid = true;
+            elements.forEach(el => {
+                if (el.required && !el.value.trim()) isValid = false;
+                if (el.classList.contains('is-invalid')) isValid = false;
+            });
+            const phoneInputObj = window.intlTelInputGlobals ? window.intlTelInputGlobals.getInstance(document.getElementById('phoneInput')) : null;
+            if (phoneInputObj && !phoneInputObj.isValidNumber()) isValid = false;
+            
+            document.getElementById('btnGenerateContract').disabled = !isValid;
+        }
+
+        function triggerPreview() {
+            checkFormValidity();
+            const overlay = document.getElementById('pdfLoadingOverlay');
+            if (overlay) overlay.classList.add('active');
+
+            if (previewTimeout) clearTimeout(previewTimeout);
+            previewTimeout = setTimeout(async () => {
+                const form = document.getElementById('formNewContract');
+                if (!form) return;
+
+                const data = {
+                    cliente_nombre: form.cliente_nombre?.value || '',
+                    cliente_rut: form.cliente_rut?.value || '',
+                    phone: window.getPhoneData ? window.getPhoneData() : (document.getElementById('phoneInput')?.value || ''),
+                    email: form.email?.value || '',
+                    cliente_direccion: form.cliente_direccion?.value || '',
+                    cliente_comuna: form.cliente_comuna?.value || '',
+                    property_code: form.property_code?.value || ''
+                };
+
+                try {
+                    const response = await fetch('/visitas/api/preview', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        document.getElementById('pdfPreviewIframe').src = url + "#toolbar=0&view=FitH";
+                        const mobileBtn = document.getElementById('mobilePdfOpenBtn');
+                        if (mobileBtn) {
+                            mobileBtn.href = url;
+                            mobileBtn.classList.remove('d-none');
+                        }
+                    } else {
+                        console.error('Error generating preview');
+                        document.getElementById('pdfPreviewIframe').src = 'about:blank';
+                    }
+                } catch (error) {
+                    console.error('Preview error:', error);
+                } finally {
+                    if (overlay) overlay.classList.remove('active');
+                }
+            }, 600);
+        }
+
+        function generateContract() {
             const form = document.getElementById('formNewContract');
             const btn = document.getElementById('btnGenerateContract');
             
@@ -1327,8 +1176,94 @@
                   btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
                   btn.disabled = false;
               });
-        } catch (_) { }
         }
+
+        // Listeners globales
+        document.addEventListener('DOMContentLoaded', () => {
+            const modal = document.getElementById('modalNewContract');
+            if (modal) {
+                modal.addEventListener('shown.bs.modal', function () {
+                    if(!hasInteracted) triggerPreview();
+                });
+            }
+            
+            // Inicializar intlTelInput
+            const phoneInputField = document.querySelector("#phoneInput");
+            if (phoneInputField && window.intlTelInput) {
+                const phoneInput = window.intlTelInput(phoneInputField, {
+                    initialCountry: "cl",
+                    preferredCountries: ["cl", "ar", "pe", "co", "ve", "br"],
+                    utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/js/utils.js",
+                    separateDialCode: true,
+                    formatOnDisplay: true,
+                    nationalMode: true
+                });
+
+                window.getPhoneData = function() {
+                    return phoneInput.getNumber();
+                };
+
+                phoneInputField.addEventListener('input', function() {
+                    const msg = document.getElementById('phoneErrorMsg');
+                    if (phoneInput.isValidNumber()) {
+                        phoneInputField.classList.remove('is-invalid');
+                        phoneInputField.classList.add('is-valid');
+                        if (msg) msg.style.display = 'none';
+                    } else {
+                        phoneInputField.classList.remove('is-valid');
+                        phoneInputField.classList.add('is-invalid');
+                        if (msg) msg.style.display = 'block';
+                    }
+                    triggerPreview();
+                });
+            }
+        });
+
+        async function deleteVisita(code, btn) {
+            if(!confirm('¿Estás seguro de que deseas eliminar este documento?')) return;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+            try {
+                const res = await fetch(`/visitas/api/${code}/delete`, {method: 'DELETE'});
+                const data = await res.json();
+                if(data.status === 'success') {
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                    btn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+                    btn.disabled = false;
+                }
+            } catch(e) {
+                alert('Error de red');
+                btn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+                btn.disabled = false;
+            }
+        }
+        
+        async function sendVisita(code, btn, force=false) {
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+            try {
+                const res = await fetch(`/visitas/api/${code}/send`, {method: 'POST'});
+                const data = await res.json();
+                if(data.status === 'success') {
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                    btn.innerHTML = '<i class="fa-brands fa-whatsapp"></i>';
+                    btn.disabled = false;
+                }
+            } catch(e) {
+                alert('Error de red');
+                btn.innerHTML = '<i class="fa-brands fa-whatsapp"></i>';
+                btn.disabled = false;
+            }
+        }
+
+        function editVisita(data) {
+            alert("La edición aún no está habilitada para Órdenes de Visita.");
+        }
+
     </script>
 </body>
 

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 
 <head>
@@ -79,7 +79,7 @@
             max-width: 900px;
             margin: 0 auto;
             overflow-y: auto;
-            overflow-x: hidden;
+            overflow-x: auto;
             box-sizing: border-box;
             background: #dde3ea;
             border-radius: 10px;
@@ -87,7 +87,6 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            touch-action: pan-y pinch-zoom;
             /* Scroll suave en iOS */
             -webkit-overflow-scrolling: touch;
         }
@@ -95,8 +94,7 @@
         #pdf-container:fullscreen {
             padding: 20px;
             background: #0f172a;
-            overflow-y: auto;
-            overflow-x: hidden;
+            overflow: auto;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -105,6 +103,7 @@
         #pdf-container:-webkit-full-screen {
             padding: 20px;
             background: #0f172a;
+            overflow: auto;
         }
 
         .pdf-page-wrapper {
@@ -323,7 +322,7 @@
                                 <div class="ml-3">
                                     <label for="check-intent" class="text-sm font-medium text-gray-800 cursor-pointer">
                                         Acepto revisar el documento de forma electrónica y reconozco que mi aceptación
-                                        constituye una firma vÃ¡lida conforme a la Ley 19.799.
+                                        constituye una firma válida conforme a la Ley 19.799.
                                     </label>
                                 </div>
                             </div>
@@ -391,7 +390,7 @@
                         </div>
 
                         <div class="mb-6">
-                            <label class="block text-sm font-bold text-gray-700 mb-2 text-center">CÃ³digo de Firma
+                            <label class="block text-sm font-bold text-gray-700 mb-2 text-center">Código de Firma
                                 (OTP)</label>
                             <input type="text" id="input-otp" inputmode="numeric" pattern="[0-9]*"
                                 class="w-full p-4 border-2 border-gray-300 text-center text-4xl font-mono tracking-[0.5em] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:opacity-50 transition-colors"
@@ -629,8 +628,8 @@
             const scale = containerWidth / unscaled.width;
             const viewport = page.getViewport({ scale });
 
-            // High-DPI internal resolution
-            const dpr = window.devicePixelRatio || 1;
+            // High-DPI internal resolution - Use at least 2.5x for crisp text on desktop
+            const dpr = Math.max(window.devicePixelRatio || 1, 2.5);
             canvas.width = Math.floor(viewport.width * dpr);
             canvas.height = Math.floor(viewport.height * dpr);
 
@@ -887,9 +886,9 @@
             } catch (err) {
                 console.timeEnd("OTP request");
                 if (err.message === 'TIMEOUT') {
-                    goToStep2('La conexiÃ³n estÃ¡ tardando mÃ¡s de lo normal. Intente nuevamente.');
+                    goToStep2('La conexión está tardando más de lo normal. Intente nuevamente.');
                 } else {
-                    goToStep2('Error de conexiÃ³n.');
+                    goToStep2('Error de conexión.');
                 }
             } finally {
                 if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-brands fa-whatsapp mr-2"></i> Continuar y recibir código'; }
@@ -982,7 +981,7 @@
                         btnRetry.onclick = (e) => { e.preventDefault(); requestNewOTP(); };
                         errorDiv.appendChild(btnRetry);
                     } else if (detail === 'SIGNATURE_SESSION_EXPIRED') {
-                        goToStep2('â± La sesiÃ³n expiró. Solicita un nuevo código para continuar.');
+                        goToStep2('â± La sesión expiró. Solicita un nuevo código para continuar.');
                         btnVerify.disabled = false;
                         btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
                         return;
@@ -1022,7 +1021,7 @@
                         location.reload();
                         return;
                     } else if (detail === 'SIGNATURE_SESSION_EXPIRED') {
-                        goToStep2('â± La sesiÃ³n expiró. Solicita un nuevo código para continuar.');
+                        goToStep2('â± La sesión expiró. Solicita un nuevo código para continuar.');
                         btnVerify.disabled = false;
                         btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';
                         return;
@@ -1035,9 +1034,9 @@
                 }
             } catch (err) {
                 if (err.message === 'TIMEOUT') {
-                    alert('La conexiÃ³n estÃ¡ tardando mÃ¡s de lo normal. Intente nuevamente.');
+                    alert('La conexión está tardando más de lo normal. Intente nuevamente.');
                 } else {
-                    alert('Error de conexiÃ³n');
+                    alert('Error de conexión');
                 }
                 btnVerify.disabled = false;
                 btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';

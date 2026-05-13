@@ -480,7 +480,29 @@
         }
 
         .required-star {
-            color: var(--danger-color);
+            display: none;
+        }
+
+        .form-select:required:invalid {
+            color: var(--text-secondary);
+        }
+
+        .form-select option {
+            color: var(--text-primary);
+        }
+
+        @media (max-width: 1700px) {
+            .prop-table th {
+                font-size: 0.72rem;
+                padding: 8px 10px;
+            }
+            .prop-table td {
+                font-size: 0.82rem;
+                padding: 11px 10px;
+            }
+            .prop-table .btn.btn-sm {
+                padding: 0.25rem 0.42rem;
+            }
         }
 
         /* intl-tel-input overrides */
@@ -812,7 +834,7 @@
                                 <div id="formErrors" class="alert alert-danger d-none mb-3 py-2 text-sm fw-bold"></div>
                                 <input type="hidden" name="executive" value="{{ user_username }}">
                                 <div class="row g-3 mb-3">
-                                    <div class="col-lg-8 col-md-6">
+                                    <div class="col-lg-6 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del
                                             Cliente <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="cliente_nombre"
@@ -890,7 +912,7 @@
                                             onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa la dirección.</div>
                                     </div>
-                                    <div class="col-lg-4 col-md-6 position-relative">
+                                    <div class="col-lg-3 col-md-6 position-relative">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Comuna
                                             <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="comuna" id="comunaInput"
@@ -900,6 +922,18 @@
                                         <div id="comunaDropdown" class="autocomplete-dropdown custom-scrollbar d-none">
                                         </div>
                                         <div class="invalid-feedback">Ingresa la comuna.</div>
+                                    </div>
+                                    <div class="col-lg-3 col-md-6 position-relative">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Ciudad
+                                            Firma <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="ciudad_firma" id="ciudadFirmaInput"
+                                            value="Santiago de Chile"
+                                            placeholder="Ej: Santiago de Chile" required autocomplete="off"
+                                            oninput="filterCiudadesFirma(); triggerPreview();" onfocus="showCiudadesFirma()"
+                                            onblur="setTimeout(() => validateCiudadFirmaList(this), 200);">
+                                        <div id="ciudadFirmaDropdown" class="autocomplete-dropdown custom-scrollbar d-none">
+                                        </div>
+                                        <div class="invalid-feedback">Ingresa la ciudad de firma.</div>
                                     </div>
                                 </div>
                                 <div class="row g-3 mb-3">
@@ -1012,10 +1046,12 @@
         ];
 
         let activeComunaIndex = -1;
+        let activeCiudadFirmaIndex = -1;
         let hasInteracted = false;
 
         document.addEventListener("DOMContentLoaded", function () {
             buildComunaDropdown(comunasDeChile);
+            buildCiudadFirmaDropdown(comunasDeChile);
         });
 
         function buildComunaDropdown(list) {
@@ -1058,6 +1094,56 @@
             const dropdown = document.getElementById('comunaDropdown');
             if (dropdown) dropdown.classList.add('d-none');
 
+            const val = input.value.trim().toLowerCase();
+            const found = comunasDeChile.find(c => c.toLowerCase() === val);
+            if (found) {
+                input.value = found;
+            } else if (input.value) {
+                input.value = '';
+            }
+            validateField(input);
+            triggerPreview();
+        }
+
+        function buildCiudadFirmaDropdown(list) {
+            const dropdown = document.getElementById('ciudadFirmaDropdown');
+            if (!dropdown) return;
+            dropdown.innerHTML = '';
+            if (list.length === 0) {
+                dropdown.innerHTML = '<div class="autocomplete-item text-secondary py-2 text-center" style="font-size: 0.85rem">Sin resultados</div>';
+                return;
+            }
+            list.forEach(c => {
+                const div = document.createElement('div');
+                div.className = 'autocomplete-item';
+                div.innerText = c;
+                div.onclick = () => {
+                    const input = document.getElementById('ciudadFirmaInput');
+                    input.value = c;
+                    dropdown.classList.add('d-none');
+                    validateField(input);
+                    triggerPreview();
+                };
+                dropdown.appendChild(div);
+            });
+        }
+
+        function showCiudadesFirma() {
+            document.getElementById('ciudadFirmaDropdown').classList.remove('d-none');
+            filterCiudadesFirma();
+        }
+
+        function filterCiudadesFirma() {
+            const val = document.getElementById('ciudadFirmaInput').value.toLowerCase();
+            const filtered = comunasDeChile.filter(c => c.toLowerCase().includes(val));
+            activeCiudadFirmaIndex = -1;
+            buildCiudadFirmaDropdown(filtered);
+            document.getElementById('ciudadFirmaDropdown').classList.remove('d-none');
+        }
+
+        function validateCiudadFirmaList(input) {
+            const dropdown = document.getElementById('ciudadFirmaDropdown');
+            if (dropdown) dropdown.classList.add('d-none');
             const val = input.value.trim().toLowerCase();
             const found = comunasDeChile.find(c => c.toLowerCase() === val);
             if (found) {
@@ -1175,6 +1261,7 @@
                     tipo: form.tipo.value,
                     propiedad_direccion: form.propiedad_direccion.value,
                     comuna: form.comuna.value,
+                    ciudad_firma: form.ciudad_firma ? form.ciudad_firma.value : '',
                     vigencia: form.vigencia.value,
                     rol: form.rol_manzana.value && form.rol_predio.value ? `${form.rol_manzana.value}-${form.rol_predio.value}` : '',
                     precio_valor: form.precio_valor.value,
@@ -1240,6 +1327,8 @@
             const modalEl = document.getElementById('modalNewContract');
             modalEl.addEventListener('show.bs.modal', () => {
                 hasInteracted = false;
+                const ciudadInput = document.getElementById('ciudadFirmaInput');
+                if (ciudadInput && !ciudadInput.value.trim()) ciudadInput.value = 'Santiago de Chile';
                 const iframeSrc = document.getElementById('pdfPreviewIframe').src;
                 if (iframeSrc.includes('about:blank') || iframeSrc.includes(window.location.origin + '/about:blank')) {
                     triggerPreview();
@@ -1290,6 +1379,26 @@
                 }
             });
 
+            const ciudadFirmaInput = document.getElementById('ciudadFirmaInput');
+            ciudadFirmaInput.addEventListener('keydown', (e) => {
+                const items = Array.from(document.querySelectorAll('#ciudadFirmaDropdown .autocomplete-item'));
+                if (!items.length) return;
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    activeCiudadFirmaIndex = Math.min(activeCiudadFirmaIndex + 1, items.length - 1);
+                    items.forEach((it, idx) => it.classList.toggle('active', idx === activeCiudadFirmaIndex));
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    activeCiudadFirmaIndex = Math.max(activeCiudadFirmaIndex - 1, 0);
+                    items.forEach((it, idx) => it.classList.toggle('active', idx === activeCiudadFirmaIndex));
+                } else if (e.key === 'Enter' && activeCiudadFirmaIndex >= 0) {
+                    e.preventDefault();
+                    items[activeCiudadFirmaIndex].click();
+                } else if (e.key === 'Escape') {
+                    document.getElementById('ciudadFirmaDropdown').classList.add('d-none');
+                }
+            });
+
             setInterval(syncStatuses, 12000);
             syncStatuses();
         });
@@ -1308,6 +1417,7 @@
                 tipo: form.tipo.value,
                 propiedad_direccion: form.propiedad_direccion.value,
                 comuna: form.comuna.value,
+                ciudad_firma: form.ciudad_firma ? form.ciudad_firma.value : '',
                 vigencia: form.vigencia.value,
                 rol: form.rol_manzana.value && form.rol_predio.value ? `${form.rol_manzana.value}-${form.rol_predio.value}` : '',
                 precio_valor: form.precio_valor.value,
@@ -1401,6 +1511,7 @@
             form.tipo.value = c?.property_data?.tipo || '';
             form.propiedad_direccion.value = c?.property_data?.direccion || '';
             form.comuna.value = c?.property_data?.comuna || '';
+            if (form.ciudad_firma) form.ciudad_firma.value = c?.ciudad_firma || c?.property_data?.ciudad_firma || 'Santiago de Chile';
             form.vigencia.value = c?.property_data?.vigencia || '';
             const rol = (c?.property_data?.rol || '').split('-');
             form.rol_manzana.value = rol[0] || '';

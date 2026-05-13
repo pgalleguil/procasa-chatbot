@@ -146,6 +146,8 @@ def _normalize_contract_fields(d: dict) -> dict:
         d["propiedad_direccion"] = d["propiedad_direccion"].strip().title()
     if d.get("comuna"):
         d["comuna"] = d["comuna"].strip().title()
+    if d.get("ciudad_firma"):
+        d["ciudad_firma"] = d["ciudad_firma"].strip().title()
     if d.get("rol"):
         rol_raw = str(d["rol"]).strip().replace(" ", "")
         if "-" in rol_raw:
@@ -238,6 +240,7 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             "property_data": {
                 "direccion": data.get("propiedad_direccion", ""),
                 "comuna": data.get("comuna", ""),
+                "ciudad_firma": data.get("ciudad_firma", "Santiago de Chile"),
                 "tipo": data.get("tipo", "Arriendo"),
                 "rol": data.get("rol", ""),
                 "vigencia": data.get("vigencia", "30"),
@@ -361,6 +364,7 @@ async def download_original_pdf(contract_code: str):
                     "email": contract.get("client_data", {}).get("email", ""),
                     "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
                     "comuna": contract.get("property_data", {}).get("comuna", ""),
+                    "ciudad_firma": contract.get("property_data", {}).get("ciudad_firma", "Santiago de Chile"),
                     "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
                     "rol": contract.get("property_data", {}).get("rol", ""),
                     "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
@@ -451,6 +455,7 @@ async def download_signed_pdf(contract_code: str):
         "email": contract.get("client_data", {}).get("email", ""),
         "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
         "comuna": contract.get("property_data", {}).get("comuna", ""),
+        "ciudad_firma": contract.get("property_data", {}).get("ciudad_firma", "Santiago de Chile"),
         "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
         "rol": contract.get("property_data", {}).get("rol", ""),
         "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
@@ -557,6 +562,7 @@ async def view_signed_pdf(contract_code: str):
         "email": contract.get("client_data", {}).get("email", ""),
         "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
         "comuna": contract.get("property_data", {}).get("comuna", ""),
+        "ciudad_firma": contract.get("property_data", {}).get("ciudad_firma", "Santiago de Chile"),
         "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
         "rol": contract.get("property_data", {}).get("rol", ""),
         "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
@@ -1486,6 +1492,7 @@ async def contract_dashboard(request: Request):
             "property_data": c.get("property_data", {}),
             "property_code": c.get("property_code", ""),
             "origen": c.get("origen", ""),
+            "ciudad_firma": c.get("property_data", {}).get("ciudad_firma", "Santiago de Chile"),
             "executive": c.get("executive", ""),
             "created_by": c.get("created_by", "")
         }

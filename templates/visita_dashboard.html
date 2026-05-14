@@ -699,23 +699,23 @@
 
         <div class="table-container">
             <div class="section-title">Órdenes de Visita Emitidas</div>
-            <div class="row mb-3">
+            <div class="row g-2 mb-3">
                 <div class="col-md-4">
-                    <input type="text" id="phoneSearchInput" class="form-control form-control-sm" placeholder="Buscar por teléfono..." onkeyup="filterVisitasByPhone()">
+                    <input type="text" id="phoneSearchInput" class="form-control form-control-sm" placeholder="Buscar por tel\u00e9fono..." onkeyup="filterVisitasByPhone()">
                 </div>
+                {% if user_role in ['supervisor', 'admin'] %}
+                <div class="col-md-4">
+                    <form method="get" action="/visitas/dashboard" class="m-0">
+                        <select class="form-select form-select-sm" name="executive" onchange="this.form.submit()">
+                            <option value="">Todos los ejecutivos</option>
+                            {% for ex in executives %}
+                            <option value="{{ ex.username }}" {% if executive_filter == ex.username %}selected{% endif %}>{{ ex.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </div>
+                {% endif %}
             </div>
-            {% if user_role in ['supervisor', 'admin'] %}
-            <form method="get" action="/visitas/dashboard" class="row g-2 mb-3">
-                <div class="col-md-4 col-sm-6">
-                    <select class="form-select form-select-sm" name="executive" onchange="this.form.submit()">
-                        <option value="">Todos los ejecutivos</option>
-                        {% for ex in executives %}
-                        <option value="{{ ex.username }}" {% if executive_filter == ex.username %}selected{% endif %}>{{ ex.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-            </form>
-            {% endif %}
             <div class="table-responsive">
                 <table class="prop-table">
                     <thead>
@@ -1406,6 +1406,51 @@
                 }       
             }
         }
+        }
+
+        // Polling para estados
+        async function updateStatuses() {
+            try {
+                const res = await fetch('/visitas/api/statuses');
+                const data = await res.json();
+                if (data && data.items) {
+                    data.items.forEach(item => {
+                        const row = document.querySelector(`tr[data-contract-code="${item.visita_code}"]`);
+                        if (row) {
+                            const oldStatus = row.getAttribute('data-contract-status');
+                            if (oldStatus !== item.status) {
+                                row.setAttribute('data-contract-status', item.status);
+                                const cell = row.querySelector('.contract-status-cell');
+                                if (cell) {
+                                    let badgeClass = 'status-created';
+                                    let label = 'Creado';
+                                    
+                                    if (item.status === 'sent') { badgeClass = 'status-sent'; label = 'Enviado'; }
+                                    else if (item.status === 'opened') { badgeClass = 'status-opened'; label = 'Abierto'; }
+                                    else if (item.status === 'otp_requested') { badgeClass = 'status-otp-requested'; label = 'OTP Solicitado'; }
+                                    else if (item.status === 'otp_verified') { badgeClass = 'status-otp-verified'; label = 'OTP Verificado'; }
+                                    else if (item.status === 'signed' || item.status === 'accepted') { badgeClass = 'status-signed'; label = 'Firmado'; }
+                                    
+                                    cell.innerHTML = `<span class="status-badge ${badgeClass}">${label}</span>`;
+                                }
+                                // Actualizar visibilidad de botones si es necesario (ej. ocultar enviar si ya está firmado)
+                                if (item.status === 'signed' || item.status === 'accepted') {
+                                    const btnSend = row.querySelector('.btn-send-whatsapp');
+                                    if (btnSend) btnSend.classList.add('d-none');
+                                    const btnEdit = row.querySelector('.btn-edit-visita');
+                                    if (btnEdit) btnEdit.classList.add('d-none');
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error("Error polling statuses:", e);
+            }
+        }
+
+        setInterval(updateStatuses, 10000);
+        updateStatuses();
     </script>
 </body>
 

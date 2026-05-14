@@ -184,13 +184,13 @@ arbitrador designado por Centro Nacional de Arbitrajes S.A.("CNA"), de acuerdo a
         # Cláusulas sobre firma electrónica
         Story.append(Paragraph('<b>CLAUSULA - FIRMA ELECTRONICA:</b> Las partes acuerdan que la firma electronica utilizada en este instrumento, conforme a la Ley 19.799, tendra el mismo valor legal que una firma manuscrita.', normal_style))
         Story.append(Paragraph('<b>CLAUSULA - USO DE MEDIOS ELECTRONICOS:</b> El firmante declara que el numero telefonico y correo electronico proporcionados son de su exclusivo uso y control, aceptando la utilizacion de dichos medios para la suscripcion del presente instrumento.', normal_style))
-        Story.append(Paragraph('<b>CLAUSULA - VALIDEZ DEL PROCESO DE FIRMA:</b> El acceso al enlace enviado, la autenticacion mediante codigo de verificacion (OTP) y el registro de antecedentes tecnicos del sistema constituiran evidencia de la aceptacion y consentimiento del firmante.', normal_style))
+        Story.append(Paragraph('<b>CLAUSULA - VALIDEZ DEL PROCESO DE FIRMA:</b> El acceso al enlace enviado al firmante, la autenticacion mediante codigo de verificacion (OTP) y el registro de antecedentes tecnicos del sistema constituiran evidencia suficiente de la aceptacion, consentimiento y firma electronica del firmante, conforme a la Ley N\u00b0 19.799 sobre Documentos Electronicos y Firma Electronica.', normal_style))
 
         Story.append(Spacer(1, 0.4 * inch))
         
         # Signatures layout: Side by side (Centered)
         sig_left = Paragraph(f"<para align='center'><b>{ejecutivo_nombre}</b><br/>Procasa S.A.</para>", normal_style)
-        sig_right = Paragraph(f"<para align='center'><b>{rut} {nombre}</b><br/>Cliente</para>", normal_style)
+        sig_right = Paragraph(f"<para align='center'><b>{PDFGeneratorVisitas.format_rut(rut)} {nombre}</b><br/>Cliente</para>", normal_style)
         
         data_signatures = [[sig_left, sig_right]]
         t = Table(data_signatures, colWidths=[3.5*inch, 3.5*inch])

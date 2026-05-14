@@ -705,10 +705,18 @@ async def update_visita(visita_code: str, request: Request):
     if not update_fields:
         return {"status": "success", "message": "Sin cambios"}
 
+    update_fields["version"] = contract.get("version", 1) + 1
+    
     await adb["visitas"].update_one(
         {"visita_code": visita_code},
         {"$set": update_fields}
     )
+
+    # Limpiar tmp para forzar regeneración de PDF original si existía
+    import shutil
+    tmp_path_dir = BASE_DIR / "tmp" / "visitas" / visita_code
+    if tmp_path_dir.exists():
+        shutil.rmtree(tmp_path_dir, ignore_errors=True)
 
     # Regenerar el PDF original en background después de editar
     contract_updated = await adb["visitas"].find_one({"visita_code": visita_code})
@@ -1308,7 +1316,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         verify_url = f"{base_url}/contracts/verify/{verify_token}"
 
         evidence_data = {
-            "visita_code": visita_code,
+            "visita_code": str(uuid.uuid4()),
             "contract_code": visita_code,
             "verify_token": verify_token,
             "server_timestamp": server_timestamp,
@@ -1509,7 +1517,7 @@ def send_signed_email_task(visita_code: str, email_to: str, nombre: str, pdf_byt
             return
 
         prop_label = property_code if property_code else visita_code
-        asunto = f"Orden de Visita Firmado – Propiedad {prop_label} – {nombre}"
+        asunto = f"Orden de Visita Firmada – Propiedad {prop_label} – {nombre}"
         
         db = get_db()
         contract = db["visitas"].find_one({"visita_code": visita_code})
@@ -1532,7 +1540,7 @@ def send_signed_email_task(visita_code: str, email_to: str, nombre: str, pdf_byt
         msg["Cc"] = cc_str
         msg["Subject"] = asunto
 
-        verify_url_email = f"{Config.CRM_BASE_URL}/contracts/verify/{contract.get('security', {}).get('verify_token', visita_code) if contract else visita_code}"
+        verify_url_email = f"{Config.CRM_BASE_URL}/visitas/verify/{visita_code}"
         body = f"""Estimado/a {nombre}:
 
 Junto con saludar, adjuntamos la Orden de Visita correspondiente a la propiedad N° {prop_label}, la cual ha sido firmada electrónicamente conforme a la Ley N° 19.799 sobre Documentos y Firma Electrónica.

@@ -198,9 +198,11 @@ async def preview_contract(request: Request):
         if user_doc:
             data["ejecutivo_nombre"] = user_doc.get("nombre", created_by)
             data["ejecutivo_email"] = user_doc.get("email", created_by)
+            data["ejecutivo_telefono"] = user_doc.get("phone") or user_doc.get("telefono", "")
         else:
             data["ejecutivo_nombre"] = created_by or ""
             data["ejecutivo_email"] = ""
+            data["ejecutivo_telefono"] = ""
 
         pdf_bytes = await _run_blocking(PDFGenerator.generate_original_contract, data)
         return Response(content=pdf_bytes, media_type="application/pdf")
@@ -225,9 +227,11 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         if user_doc:
             data["ejecutivo_nombre"] = user_doc.get("nombre", created_by)
             data["ejecutivo_email"] = user_doc.get("email", created_by)
+            data["ejecutivo_telefono"] = user_doc.get("phone") or user_doc.get("telefono", "")
         else:
             data["ejecutivo_nombre"] = created_by or ""
             data["ejecutivo_email"] = ""
+            data["ejecutivo_telefono"] = ""
 
         property_code = data.get("property_code", "").strip()
         
@@ -278,7 +282,8 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             "status": "created",
             "executive_data": {
                 "nombre": data.get("ejecutivo_nombre", ""),
-                "email": data.get("ejecutivo_email", "")
+                "email": data.get("ejecutivo_email", ""),
+                "telefono": data.get("ejecutivo_telefono", "")
             },
             "security": {
                 "original_hash": None, # Calculado en background
@@ -496,6 +501,7 @@ async def download_signed_pdf(visita_code: str):
         "comision": contract.get("property_data", {}).get("comision", ""),
         "ejecutivo_nombre": contract.get("executive_data", {}).get("nombre", ""),
         "ejecutivo_email": contract.get("executive_data", {}).get("email", ""),
+        "ejecutivo_telefono": contract.get("executive_data", {}).get("telefono", ""),
         "created_at": contract.get("created_at"),
         "version": contract.get("version", 1)
     }
@@ -605,6 +611,7 @@ async def view_signed_pdf(visita_code: str):
         "comision": contract.get("property_data", {}).get("comision", ""),
         "ejecutivo_nombre": contract.get("executive_data", {}).get("nombre", ""),
         "ejecutivo_email": contract.get("executive_data", {}).get("email", ""),
+        "ejecutivo_telefono": contract.get("executive_data", {}).get("telefono", ""),
         "created_at": contract.get("created_at"),
         "version": contract.get("version", 1)
     }
@@ -722,6 +729,7 @@ async def update_visita(visita_code: str, request: Request):
             "operacion": contract_updated.get("property_data", {}).get("operacion", ""),
             "ejecutivo_nombre": exec_data.get("nombre", ""),
             "ejecutivo_email": exec_data.get("email", ""),
+            "ejecutivo_telefono": exec_data.get("phone") or exec_data.get("telefono", ""),
         }
         try:
             pdf_bytes = await _run_blocking(PDFGenerator.generate_original_contract, data_payload)
@@ -1280,7 +1288,10 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
                 "rol": contract.get("property_data", {}).get("rol", ""),
                 "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
                 "precio": contract.get("property_data", {}).get("precio", ""),
-                "comision": contract.get("property_data", {}).get("comision", "")
+                "comision": contract.get("property_data", {}).get("comision", ""),
+                "ejecutivo_nombre": contract.get("executive_data", {}).get("nombre", ""),
+                "ejecutivo_email": contract.get("executive_data", {}).get("email", ""),
+                "ejecutivo_telefono": contract.get("executive_data", {}).get("telefono", "")
             }
             original_bytes = PDFGenerator.generate_original_contract(data_payload)
 
@@ -1293,6 +1304,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
 
         evidence_data = {
             "visita_code": visita_code,
+            "contract_code": visita_code,
             "verify_token": verify_token,
             "server_timestamp": server_timestamp,
             "ip": ip,
@@ -1303,7 +1315,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
             "server_hmac": server_hmac,
             "timeline_hash": timeline_hash,
             "read_time_seconds": read_time,
-            "scrolled_to_bottom": "S\u00ed" if scrolled_to_bottom else "No",
+            "scrolled_to_bottom": "Sí" if scrolled_to_bottom else "No",
             "read_method": read_method
         }
 

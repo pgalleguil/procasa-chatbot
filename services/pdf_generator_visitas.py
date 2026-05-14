@@ -131,7 +131,14 @@ class PDFGeneratorVisitas:
         Story.append(Paragraph(precios, normal_style))
         Story.append(Spacer(1, 0.1 * inch))
         
-        Story.append(Paragraph(f"Para coordinar la visita favor contactar a : <b>{ejecutivo_nombre}</b> - {ejecutivo_email}", normal_style))
+        ejecutivo_telefono = contract_data.get('ejecutivo_telefono', '')
+        contact_line = f"Para coordinar la visita favor contactar a : <b>{ejecutivo_nombre}</b>"
+        if ejecutivo_email:
+            contact_line += f" - {ejecutivo_email}"
+        if ejecutivo_telefono:
+            contact_line += f" - {ejecutivo_telefono}"
+        
+        Story.append(Paragraph(contact_line, normal_style))
         Story.append(Spacer(1, 0.1 * inch))
         
         legal_text = """El comitente, suscrito o su cónyuge hemos encargado personal, telefónicamente, vía email, whatsapp o por algún medio
@@ -202,9 +209,9 @@ arbitrador designado por Centro Nacional de Arbitrajes S.A.("CNA"), de acuerdo a
             width = 1.35 * inch
             height = width * aspect
             img = RLImage(str(logo_path), width=width, height=height)
-            img.hAlign = 'LEFT'
+            img.hAlign = 'CENTER'
             Story.append(img)
-            Story.append(Spacer(1, 0.01 * inch))
+            Story.append(Spacer(1, 0.05 * inch))
         annex_title_style = ParagraphStyle('AnnexTitle', parent=styles['Heading1'], alignment=1, fontSize=12, spaceAfter=4, spaceBefore=0)
         Story.append(Paragraph("ANEXO: CERTIFICADO DE FIRMA ELECTR\u00d3NICA", annex_title_style))
         Story.append(Spacer(1, 0.14 * inch))
@@ -222,7 +229,7 @@ arbitrador designado por Centro Nacional de Arbitrajes S.A.("CNA"), de acuerdo a
             chile_time = server_ts_utc
             
         data = [
-            ["C\u00f3digo \u00fanico del contrato:", evidence_data.get('contract_code', '')],
+            ["Código de Verificación:", evidence_data.get('contract_code', '')],
             ["Nombre completo:", nombre],
             ["RUT:", rut],
             ["Correo electr\u00f3nico:", email],

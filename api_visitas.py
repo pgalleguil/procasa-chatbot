@@ -752,11 +752,10 @@ async def update_visita(visita_code: str, request: Request):
 @router.post("/api/{visita_code}/send")
 async def send_contract(visita_code: str, request: Request):
     """Genera token y envía por WhatsApp"""
-    db = get_db()
     from chatbot.storage import get_async_db
     adb = get_async_db()
     username, user_role = await _get_request_user(adb, request)
-    contract = db["visitas"].find_one({"visita_code": visita_code})
+    contract = await adb["visitas"].find_one({"visita_code": visita_code})
     if not contract:
         raise HTTPException(status_code=404, detail="Orden de Visita no encontrado")
     # Después del primer envío, solo supervisor/admin puede reenviar
@@ -782,7 +781,7 @@ async def send_contract(visita_code: str, request: Request):
     ip = get_client_ip(request)
     ua = request.headers.get("user-agent", "")
     
-    db["visitas"].update_one(
+    await adb["visitas"].update_one(
         {"visita_code": visita_code},
         {
             "$set": {
@@ -803,7 +802,9 @@ async def send_contract(visita_code: str, request: Request):
     )
     
     # Enviar WhatsApp
-    phone = contract.get("phone")
+    phone = str(contract.get("phone", "")).replace(" ", "").replace("+", "").strip()
+    if not phone.startswith("56"):
+        phone = "56" + phone
     # Usar la base_url de la request actual para que funcione localmente o en prod
     base_url = str(request.base_url).rstrip('/')
     link = f"{base_url}/visitas/view/{token}"
@@ -828,7 +829,7 @@ La firma electrónica utilizada en este proceso se encuentra respaldada por la L
     
     # Guardar mensaje dentro del mismo documento del orden de visita
     try:
-        db["visitas"].update_one(
+        await adb["visitas"].update_one(
             {"visita_code": visita_code},
             {"$push": {"messages": {
                 "phone": phone,
@@ -840,7 +841,7 @@ La firma electrónica utilizada en este proceso se encuentra respaldada por la L
     except Exception as e:
         logger.error(f"[MSG_LOG] Error guardando mensaje: {e}")
     
-    await send_whatsapp_message(phone, mensaje)
+    await send_whatsapp_circuit_breaker(phone, mensaje)
     
     return {"status": "ok", "message": "Enviado por WhatsApp"}
 

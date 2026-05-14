@@ -1406,51 +1406,6 @@
                 }       
             }
         }
-        }
-
-        // Polling para estados
-        async function updateStatuses() {
-            try {
-                const res = await fetch('/visitas/api/statuses');
-                const data = await res.json();
-                if (data && data.items) {
-                    data.items.forEach(item => {
-                        const row = document.querySelector(`tr[data-contract-code="${item.visita_code}"]`);
-                        if (row) {
-                            const oldStatus = row.getAttribute('data-contract-status');
-                            if (oldStatus !== item.status) {
-                                row.setAttribute('data-contract-status', item.status);
-                                const cell = row.querySelector('.contract-status-cell');
-                                if (cell) {
-                                    let badgeClass = 'status-created';
-                                    let label = 'Creado';
-                                    
-                                    if (item.status === 'sent') { badgeClass = 'status-sent'; label = 'Enviado'; }
-                                    else if (item.status === 'opened') { badgeClass = 'status-opened'; label = 'Abierto'; }
-                                    else if (item.status === 'otp_requested') { badgeClass = 'status-otp-requested'; label = 'OTP Solicitado'; }
-                                    else if (item.status === 'otp_verified') { badgeClass = 'status-otp-verified'; label = 'OTP Verificado'; }
-                                    else if (item.status === 'signed' || item.status === 'accepted') { badgeClass = 'status-signed'; label = 'Firmado'; }
-                                    
-                                    cell.innerHTML = `<span class="status-badge ${badgeClass}">${label}</span>`;
-                                }
-                                // Actualizar visibilidad de botones si es necesario (ej. ocultar enviar si ya está firmado)
-                                if (item.status === 'signed' || item.status === 'accepted') {
-                                    const btnSend = row.querySelector('.btn-send-whatsapp');
-                                    if (btnSend) btnSend.classList.add('d-none');
-                                    const btnEdit = row.querySelector('.btn-edit-visita');
-                                    if (btnEdit) btnEdit.classList.add('d-none');
-                                }
-                            }
-                        }
-                    });
-                }
-            } catch (e) {
-                console.error("Error polling statuses:", e);
-            }
-        }
-
-        setInterval(updateStatuses, 10000);
-        updateStatuses();
     </script>
 </body>
 

@@ -705,18 +705,10 @@ async def update_visita(visita_code: str, request: Request):
     if not update_fields:
         return {"status": "success", "message": "Sin cambios"}
 
-    update_fields["version"] = contract.get("version", 1) + 1
-    
     await adb["visitas"].update_one(
         {"visita_code": visita_code},
         {"$set": update_fields}
     )
-
-    # Limpiar tmp para forzar regeneración de PDF original si existía
-    import shutil
-    tmp_path_dir = BASE_DIR / "tmp" / "visitas" / visita_code
-    if tmp_path_dir.exists():
-        shutil.rmtree(tmp_path_dir, ignore_errors=True)
 
     # Regenerar el PDF original en background después de editar
     contract_updated = await adb["visitas"].find_one({"visita_code": visita_code})
@@ -1313,7 +1305,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         server_hmac = SecurityContracts.generate_server_hmac(visita_code, original_hash, server_timestamp, secret_key)
         base_url = str(request.base_url).rstrip('/')
         verify_token = str(uuid.uuid4()).replace("-", "")
-        verify_url = f"{base_url}/contracts/verify/{verify_token}"
+        verify_url = f"{base_url}/visitas/verify/{visita_code}"
 
         evidence_data = {
             "visita_code": str(uuid.uuid4()),

@@ -1591,14 +1591,29 @@ async def delete_contract(visita_code: str):
 
 @router.get("/verify/{visita_code}", response_class=HTMLResponse)
 async def verify_contract(visita_code: str, request: Request):
+    from bson import ObjectId
+    def _json_safe(value):
+        if isinstance(value, ObjectId):
+            return str(value)
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, dict):
+            return {k: _json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_json_safe(v) for v in value]
+        return value
+
     db = get_db()
     contract = db["visitas"].find_one({"visita_code": visita_code})
     if not contract:
         return HTMLResponse("<h1>Orden de Visita no encontrado</h1>", status_code=404)
+    
+    # Limpiar datos para evitar error 500 de serialización
+    safe_contract = _json_safe(contract)
         
     return templates.TemplateResponse("visita_verify.html", {
         "request": request,
-        "contract": contract
+        "contract": safe_contract
     })
 
 @router.get("/dashboard", response_class=HTMLResponse)

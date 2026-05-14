@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
-    <title>Firma de Contrato - Procasa Sucre</title>
+    <title>Firma de Orden de Visita - Procasa Sucre</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
@@ -297,8 +297,8 @@
                         <!-- Scroll-progress banner -->
                         <div id="read-banner">
                             <i class="fa-solid fa-arrow-down-long"></i>
-                            <span id="read-banner-text">Desplázate hasta el final del contrato para habilitar la
-                                firma</span>
+                            <span id="read-banner-text">Desplázate hasta el final de la orden de visista para habilitar
+                                la firma</span>
                         </div>
 
                         <div id="page-badge">Página 1 de ?</div>
@@ -736,7 +736,7 @@
             }
 
             if (timeLeft > 0) {
-                timerText.textContent = `Debes revisar el contrato completo (${timeLeft}s restantes)...`;
+                timerText.textContent = `Debes revisar la orden de visita completo (${timeLeft}s restantes)...`;
                 return;
             }
             if (!scrolledToBottom) {
@@ -1029,7 +1029,7 @@
                         return;
                     }
 
-                    errorDiv.textContent = 'Error al generar el contrato firmado. Por favor intenta nuevamente en unos segundos.';
+                    errorDiv.textContent = 'Error al generar la orden de visista firmado. Por favor intenta nuevamente en unos segundos.';
                     errorDiv.classList.remove('hidden');
                     btnVerify.disabled = false;
                     btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Orden de Visita Definitivamente';

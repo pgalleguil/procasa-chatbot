@@ -805,7 +805,7 @@ async def send_contract(visita_code: str, request: Request):
     property_code_display = contract.get("property_code", "")
     mensaje = f"""Hola {nombre} 👋
 
-Para coordinar la visita de la propiedad N° {property_code_display}, necesitamos que revise y firme digitalmente la Orden de Visita.
+Para coordinar la visita de la propiedad https://www.procasa.cl/{property_code_display}, necesitamos que revise y firme digitalmente la Orden de Visita.
 
 🔒 Este enlace es personal, confidencial e intransferible. Al ingresar y firmar el documento, usted confirma ser el titular de este número telefónico y acepta las condiciones de la visita.
 

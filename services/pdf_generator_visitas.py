@@ -40,6 +40,30 @@ class NumberedCanvas(canvas.Canvas):
 class PDFGeneratorVisitas:
     
     @staticmethod
+    def format_rut(rut: str) -> str:
+        if not rut: return ""
+        clean = rut.replace(".", "").replace("-", "").strip().upper()
+        if not clean: return rut
+        if len(clean) < 2: return clean
+        cuerpo = clean[:-1]
+        dv = clean[-1]
+        try:
+            cuerpo_fmt = "{:,}".format(int(cuerpo)).replace(",", ".")
+            return f"{cuerpo_fmt}-{dv}"
+        except:
+            return rut
+
+    @staticmethod
+    def format_phone(phone: str) -> str:
+        if not phone: return ""
+        clean = str(phone).replace(" ", "").replace("-", "").strip()
+        if clean.startswith("+569") and len(clean) == 12:
+            return f"+56 9 {clean[4:8]} {clean[8:]}"
+        if len(clean) == 9 and clean.startswith("9"):
+            return f"+56 9 {clean[1:5]} {clean[5:]}"
+        return phone
+    
+    @staticmethod
     def _create_qr(data: str) -> io.BytesIO:
         qr = qrcode.QRCode(version=1, box_size=10, border=4)
         qr.add_data(data)
@@ -106,7 +130,7 @@ class PDFGeneratorVisitas:
         # HEADERS
         Story.append(Paragraph(f"<b>Fecha:</b> {fecha}", normal_style))
         Story.append(Paragraph(f"<b>Al Sr.(a):</b> {nombre}", normal_style))
-        Story.append(Paragraph(f"<b>Rut:</b> {rut}", normal_style))
+        Story.append(Paragraph(f"<b>Rut:</b> {PDFGeneratorVisitas.format_rut(rut)}", normal_style))
         Story.append(Paragraph(f"<b>Dirección:</b> {direccion_cliente}, {comuna_cliente} {region_cliente}", normal_style))
         Story.append(Spacer(1, 0.1 * inch))
         
@@ -131,12 +155,12 @@ class PDFGeneratorVisitas:
         Story.append(Paragraph(precios, normal_style))
         Story.append(Spacer(1, 0.1 * inch))
         
-        ejecutivo_telefono = contract_data.get('ejecutivo_telefono', '')
-        contact_line = f"Para coordinar la visita favor contactar a : <b>{ejecutivo_nombre}</b>"
+        ejecutivo_telefono = PDFGeneratorVisitas.format_phone(contract_data.get('ejecutivo_telefono', ''))
+        contact_line = f"Para coordinar la visita favor contactar a : {ejecutivo_nombre}"
         if ejecutivo_email:
-            contact_line += f" - {ejecutivo_email}"
+            contact_line += f" / {ejecutivo_email}"
         if ejecutivo_telefono:
-            contact_line += f" - {ejecutivo_telefono}"
+            contact_line += f" / {ejecutivo_telefono}"
         
         Story.append(Paragraph(contact_line, normal_style))
         Story.append(Spacer(1, 0.1 * inch))
@@ -229,11 +253,12 @@ arbitrador designado por Centro Nacional de Arbitrajes S.A.("CNA"), de acuerdo a
             chile_time = server_ts_utc
             
         data = [
-            ["Código de Verificación:", evidence_data.get('contract_code', '')],
+            ["ID de transacci\u00f3n (UUID):", evidence_data.get('visita_code', '')],
+            ["C\u00f3digo de Verificaci\u00f3n:", evidence_data.get('contract_code', '')],
             ["Nombre completo:", nombre],
-            ["RUT:", rut],
+            ["RUT:", PDFGeneratorVisitas.format_rut(rut)],
             ["Correo electr\u00f3nico:", email],
-            ["Tel\u00e9fono:", phone],
+            ["Tel\u00e9fono:", PDFGeneratorVisitas.format_phone(phone)],
             ["Direcci\u00f3n IP:", evidence_data.get('ip', '')],
             ["Fecha y hora exacta:", chile_time],
             ["Zona horaria:", evidence_data.get('timezone', "America/Santiago (CLT)")],
@@ -241,7 +266,7 @@ arbitrador designado por Centro Nacional de Arbitrajes S.A.("CNA"), de acuerdo a
             ["M\u00e9todo de lectura:", evidence_data.get('read_method', 'scroll')],
             ["Tiempo de lectura del documento:", f"{evidence_data.get('read_time_seconds', 0)} segundos"],
             ["Confirmaci\u00f3n de visualizaci\u00f3n completa:", evidence_data.get('scrolled_to_bottom', 'S\u00ed')],
-            ["Hash SHA256 del documento:", str(evidence_data.get('timeline_hash', ''))[:12] + "..."]
+            ["Hash SHA256 del documento:", str(evidence_data.get('timeline_hash', ''))]
         ]
         
         t = Table(data, colWidths=[2.5*inch, 4*inch])

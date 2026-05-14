@@ -131,7 +131,12 @@ class PDFGeneratorVisitas:
         Story.append(Paragraph(f"<b>Fecha:</b> {fecha}", normal_style))
         Story.append(Paragraph(f"<b>Al Sr.(a):</b> {nombre}", normal_style))
         Story.append(Paragraph(f"<b>Rut:</b> {PDFGeneratorVisitas.format_rut(rut)}", normal_style))
-        Story.append(Paragraph(f"<b>Dirección:</b> {direccion_cliente}, {comuna_cliente} {region_cliente}", normal_style))
+        if direccion_cliente or comuna_cliente or region_cliente:
+            addr_parts = [direccion_cliente] if direccion_cliente else []
+            if comuna_cliente: addr_parts.append(comuna_cliente)
+            if region_cliente: addr_parts.append(region_cliente)
+            full_addr = ", ".join(addr_parts)
+            Story.append(Paragraph(f"<b>Dirección:</b> {full_addr}", normal_style))
         Story.append(Spacer(1, 0.1 * inch))
         
         if 'visita_code' in contract_data:

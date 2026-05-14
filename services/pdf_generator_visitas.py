@@ -182,9 +182,9 @@ arbitrador designado por Centro Nacional de Arbitrajes S.A.("CNA"), de acuerdo a
         Story.append(Spacer(1, 0.2 * inch))
         
         # Cláusulas sobre firma electrónica
-        Story.append(Paragraph('<b>CLAUSULA - FIRMA ELECTRONICA:</b> Las partes acuerdan que la firma electronica utilizada en este instrumento, conforme a la Ley 19.799, tendra el mismo valor legal que una firma manuscrita.', normal_style))
-        Story.append(Paragraph('<b>CLAUSULA - USO DE MEDIOS ELECTRONICOS:</b> El firmante declara que el numero telefonico y correo electronico proporcionados son de su exclusivo uso y control, aceptando la utilizacion de dichos medios para la suscripcion del presente instrumento.', normal_style))
-        Story.append(Paragraph('<b>CLAUSULA - VALIDEZ DEL PROCESO DE FIRMA:</b> El acceso al enlace enviado al firmante, la autenticacion mediante codigo de verificacion (OTP) y el registro de antecedentes tecnicos del sistema constituiran evidencia suficiente de la aceptacion, consentimiento y firma electronica del firmante, conforme a la Ley N\u00b0 19.799 sobre Documentos Electronicos y Firma Electronica.', normal_style))
+        Story.append(Paragraph('<b>CLÁUSULA — FIRMA ELECTRÓNICA:</b> Las partes acuerdan que la firma electrónica utilizada en este instrumento, conforme a la Ley 19.799, tendrá el mismo valor legal que una firma manuscrita.', normal_style))
+        Story.append(Paragraph('<b>CLÁUSULA — USO DE MEDIOS ELECTRÓNICOS:</b> El firmante declara que el número telefónico y correo electrónico proporcionados son de su exclusivo uso y control, aceptando la utilización de dichos medios para la suscripción del presente instrumento.', normal_style))
+        Story.append(Paragraph('<b>CLÁUSULA — VALIDEZ DEL PROCESO DE FIRMA:</b> El acceso al enlace enviado al firmante, la autenticación mediante código de verificación (OTP) y el registro de antecedentes técnicos del sistema constituirán evidencia suficiente de la aceptación, consentimiento y firma electrónica del firmante, conforme a la Ley N° 19.799 sobre Documentos Electrónicos y Firma Electrónica.', normal_style))
 
         Story.append(Spacer(1, 0.4 * inch))
         

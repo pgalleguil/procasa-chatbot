@@ -1314,9 +1314,12 @@ async def api_update_captacion(request: Request):
             )
         )
         return {"status": "ok"} if result else {"status": "error", "message": "Operación retornó falso"}
+    except HTTPException:
+        # Re-lanzar 401/403/400 para que el cliente y el handler global los manejen correctamente
+        raise
     except Exception as e:
         logger.error(f"Error updating captacion: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/captacion/contact")
@@ -1347,9 +1350,11 @@ async def api_update_captacion_contact(request: Request):
             )
         )
         return {"status": "ok"} if result else {"status": "error", "message": "Operación retornó falso"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error updating captacion contact: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/captacion/log_action")

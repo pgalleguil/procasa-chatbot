@@ -169,10 +169,19 @@ async def _enrich_with_property_data(data: dict) -> dict:
                 data["property_comuna"] = prop_data.get("comuna", "")
                 data["property_region"] = prop_data.get("region", "")
                 data["property_tipo"] = prop_data.get("tipo", "")
-                data["precio"] = prop_data.get("precio", "")
+                # Buscar precio en precio_clp primero, luego fallback a precio
+                precio_val = prop_data.get("precio_clp") or prop_data.get("precio", "")
+                if precio_val:
+                    try:
+                        precio_int = int(float(str(precio_val).replace(",",".").replace(" ","")))
+                        data["precio"] = f"${precio_int:,}".replace(",",".")
+                    except:
+                        data["precio"] = str(precio_val)
+                else:
+                    data["precio"] = ""
                 data["operacion"] = prop_data.get("operacion", "")
         except Exception as e:
-            pass
+            logger.warning(f"[ENRICH] Error enriqueciendo propiedad {prop_code}: {e}")
     return data
 
 @router.post("/api/preview")
@@ -639,6 +648,98 @@ async def view_signed_pdf(visita_code: str):
         }
     )
 
+@router.put("/api/{visita_code}/update")
+async def update_visita(visita_code: str, request: Request):
+    """Actualiza los datos de una orden de visita (solo si no ha sido enviada aún)"""
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    username, user_role = await _get_request_user(adb, request)
+
+    contract = await adb["visitas"].find_one({"visita_code": visita_code})
+    if not contract:
+        raise HTTPException(status_code=404, detail="Orden de Visita no encontrada")
+
+    # Solo se puede editar si está en estado 'created'
+    if contract.get("status") not in ["created"]:
+        if user_role not in ["supervisor", "admin"]:
+            raise HTTPException(status_code=403, detail="Solo se puede editar antes de enviar la orden.")
+
+    data = _normalize_visita_fields(await request.json())
+
+    update_fields = {}
+    if data.get("cliente_nombre"):
+        update_fields["client_data.nombre"] = data["cliente_nombre"]
+    if data.get("cliente_rut"):
+        update_fields["client_data.rut"] = data["cliente_rut"]
+    if data.get("email"):
+        update_fields["client_data.email"] = data["email"]
+    if data.get("cliente_direccion") is not None:
+        update_fields["client_data.direccion"] = data.get("cliente_direccion", "")
+    if data.get("cliente_comuna") is not None:
+        update_fields["client_data.comuna"] = data.get("cliente_comuna", "")
+    if data.get("phone"):
+        update_fields["phone"] = data["phone"]
+    if data.get("property_code"):
+        update_fields["property_code"] = data["property_code"]
+        # Re-enriquecer con datos de la propiedad
+        enriched = await _enrich_with_property_data({"property_code": data["property_code"]})
+        if enriched.get("property_comuna"):
+            update_fields["property_data.comuna"] = enriched["property_comuna"]
+        if enriched.get("property_region"):
+            update_fields["property_data.region"] = enriched["property_region"]
+        if enriched.get("property_tipo"):
+            update_fields["property_data.tipo"] = enriched["property_tipo"]
+        if enriched.get("precio"):
+            update_fields["property_data.precio"] = enriched["precio"]
+        if enriched.get("operacion"):
+            update_fields["property_data.operacion"] = enriched["operacion"]
+
+    if not update_fields:
+        return {"status": "success", "message": "Sin cambios"}
+
+    await adb["visitas"].update_one(
+        {"visita_code": visita_code},
+        {"$set": update_fields}
+    )
+
+    # Regenerar el PDF original en background después de editar
+    contract_updated = await adb["visitas"].find_one({"visita_code": visita_code})
+    if contract_updated:
+        exec_data = contract_updated.get("executive_data", {})
+        data_payload = {
+            "visita_code": visita_code,
+            "property_code": contract_updated.get("property_code", ""),
+            "phone": contract_updated.get("phone", ""),
+            "cliente_nombre": contract_updated.get("client_data", {}).get("nombre", ""),
+            "cliente_rut": contract_updated.get("client_data", {}).get("rut", ""),
+            "email": contract_updated.get("client_data", {}).get("email", ""),
+            "cliente_direccion": contract_updated.get("client_data", {}).get("direccion", ""),
+            "cliente_comuna": contract_updated.get("client_data", {}).get("comuna", ""),
+            "property_comuna": contract_updated.get("property_data", {}).get("comuna", ""),
+            "property_region": contract_updated.get("property_data", {}).get("region", ""),
+            "property_tipo": contract_updated.get("property_data", {}).get("tipo", ""),
+            "precio": contract_updated.get("property_data", {}).get("precio", ""),
+            "operacion": contract_updated.get("property_data", {}).get("operacion", ""),
+            "ejecutivo_nombre": exec_data.get("nombre", ""),
+            "ejecutivo_email": exec_data.get("email", ""),
+        }
+        try:
+            pdf_bytes = await _run_blocking(PDFGenerator.generate_original_contract, data_payload)
+            perm_dir = BASE_DIR / "visitas_pdf"
+            perm_dir.mkdir(parents=True, exist_ok=True)
+            perm_path = perm_dir / f"{visita_code}_original.pdf"
+            with open(perm_path, "wb") as f:
+                f.write(pdf_bytes)
+            orig_hash = SecurityContracts.hash_document(pdf_bytes)
+            await adb["visitas"].update_one(
+                {"visita_code": visita_code},
+                {"$set": {"security.original_hash": orig_hash, "security.original_pdf_path": str(perm_path)}}
+            )
+        except Exception as e:
+            logger.warning(f"[UPDATE] No se pudo regenerar PDF para {visita_code}: {e}")
+
+    return {"status": "success", "message": "Orden de visita actualizada correctamente"}
+
 @router.post("/api/{visita_code}/send")
 async def send_contract(visita_code: str, request: Request):
     """Genera token y envía por WhatsApp"""
@@ -701,13 +802,16 @@ async def send_contract(visita_code: str, request: Request):
     nombre = contract.get('client_data', {}).get('nombre', contract.get('cliente_nombre', ''))
     direccion = contract.get('property_data', {}).get('direccion', contract.get('propiedad_direccion', ''))
     
-    mensaje = f"""Hola, este enlace es personal, confidencial e intransferible.
+    property_code_display = contract.get("property_code", "")
+    mensaje = f"""Hola {nombre} 👋
 
-Al acceder y firmar el documento, usted declara ser el titular del número telefónico al que fue enviado este mensaje y acepta el orden de visita asociado a su propiedad.
+Para coordinar la visita de la propiedad N° {property_code_display}, necesitamos que revise y firme digitalmente la Orden de Visita.
 
-Este proceso utiliza firma electrónica conforme a la Ley 19.799 para la orden de visita.
+🔒 Este enlace es personal, confidencial e intransferible. Al ingresar y firmar el documento, usted confirma ser el titular de este número telefónico y acepta las condiciones de la visita.
 
-👉 Ingrese aquí para revisar y firmar:
+La firma electrónica utilizada en este proceso se encuentra respaldada por la Ley N° 19.799 sobre Documentos y Firma Electrónica.
+
+👉 Revise y firme aquí:
 {link}"""
     
     # Guardar mensaje dentro del mismo documento del orden de visita
@@ -932,9 +1036,10 @@ async def request_otp(token: str, request: Request, background_tasks: Background
         }
     )
     
-    mensaje = f"""Tu c\u00f3digo de verificaci\u00f3n para firmar tu orden de visita es: *{otp}*
+    mensaje = f"""Código de verificación: *{otp}*
 
-Este c\u00f3digo es personal, v\u00e1lido por 5 minutos y no debe compartirse con terceros."""
+⏳ Válido por 5 minutos.
+🔒 No compartas este código con nadie."""
     
     try:
         await adb["visitas"].update_one(
@@ -1345,11 +1450,11 @@ def notify_client_bg(visita_code: str, phone: str, client_email: str, nombre: st
     )
 
     # WhatsApp confirmation
-    mensaje_conf = """Confirmamos la aceptación electrónica de tu orden de visita conforme a la Ley 19.799.
+    mensaje_conf = """✅ ¡Proceso completado con éxito!
 
-Se ha registrado la fecha, hora, dirección IP y verificación de identidad asociada a esta aceptación.
+Tu Orden de Visita fue firmada electrónicamente y registrada de forma segura conforme a la Ley N° 19.799.
 
-En breve recibirás una copia del documento firmado."""
+📄 En breve recibirás una copia del documento firmado en tu correo o medio de contacto registrado."""
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -1410,20 +1515,21 @@ def send_signed_email_task(visita_code: str, email_to: str, nombre: str, pdf_byt
         msg["Cc"] = cc_str
         msg["Subject"] = asunto
 
-        body = f"""Estimado/a {nombre},
+        verify_url_email = f"{Config.CRM_BASE_URL}/contracts/verify/{contract.get('security', {}).get('verify_token', visita_code) if contract else visita_code}"
+        body = f"""Estimado/a {nombre}:
 
-Adjunto encontrará el documento de su orden de visita de corretaje firmado electrónicamente conforme a la Ley 19.799.
+Junto con saludar, adjuntamos la Orden de Visita correspondiente a la propiedad N° {prop_label}, la cual ha sido firmada electrónicamente conforme a la Ley N° 19.799 sobre Documentos y Firma Electrónica.
 
-Detalles del orden de visita:
+Detalle del documento:
 • Propiedad: {prop_label}
 • Código de verificación: {visita_code}
 
-Puede verificar la autenticidad del documento en:
-{Config.CRM_BASE_URL}/contracts/verify/{visita_code}
+Para validar la autenticidad del documento, puede ingresar al siguiente enlace:
+{verify_url_email}
 
-Si tiene alguna duda, no dude en contactarnos.
+Ante cualquier consulta, quedamos atentos para ayudarle.
 
-Saludos,
+Saludos cordiales,
 Equipo Procasa Sucre"""
 
         msg.attach(MIMEText(body, "plain", "utf-8"))
@@ -1526,6 +1632,7 @@ async def visita_dashboard(request: Request):
             dt_utc = c["created_at"].replace(tzinfo=timezone.utc)
             c["created_at"] = dt_utc.astimezone(CHILE_TZ)
         c["edit_data"] = {
+            "visita_code": c.get("visita_code", ""),
             "client_data": c.get("client_data", {}),
             "property_data": c.get("property_data", {}),
             "property_code": c.get("property_code", ""),

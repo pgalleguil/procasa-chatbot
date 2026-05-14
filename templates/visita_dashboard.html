@@ -850,15 +850,13 @@
                                         <div class="invalid-feedback">Ingresa un RUT válido.</div>
                                     </div>
                                     <div class="col-lg-6 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Domicilio <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="cliente_direccion" placeholder="Calle, Número" required onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa el domicilio.</div>
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Domicilio</label>
+                                        <input type="text" class="form-control" name="cliente_direccion" placeholder="Calle, Número (opcional)" onblur="this.value=toTitleCase(this.value); triggerPreview();">
                                     </div>
                                     <div class="col-lg-6 col-md-6 position-relative">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comuna <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="cliente_comuna" id="comunaInput" placeholder="Ej: Santiago" required autocomplete="off" oninput="filterComunas(); triggerPreview();" onfocus="showComunas()" onblur="setTimeout(() => validateComunaList(this), 200);">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comuna</label>
+                                        <input type="text" class="form-control" name="cliente_comuna" id="comunaInput" placeholder="Ej: Santiago (opcional)" autocomplete="off" oninput="filterComunas(); triggerPreview();" onfocus="showComunas()" onblur="setTimeout(() => document.getElementById('comunaDropdown').classList.add('d-none'), 200);">
                                         <div id="comunaDropdown" class="autocomplete-dropdown custom-scrollbar d-none"></div>
-                                        <div class="invalid-feedback">Ingresa la comuna.</div>
                                     </div>
                                     <div class="col-lg-6 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span class="required-star">*</span></label>
@@ -905,6 +903,60 @@
                     <button type="button" id="btnGenerateContract" class="btn btn-primary fw-bold" disabled
                         onclick="generateContract()">
                         <i class="fa-solid fa-file-signature me-2"></i>Crear Documento
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Editar Visita -->
+    <div class="modal fade" id="modalEditVisita" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content" style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color);">
+                <div class="modal-header border-bottom-0">
+                    <h5 class="modal-title fw-bold"><i class="fa-solid fa-pen-to-square me-2" style="color:#8b5cf6;"></i> Editar Orden de Visita</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="formEditVisita">
+                        <input type="hidden" id="editVisitaCode">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label text-secondary small text-uppercase fw-bold">Nombre Cliente <span class="required-star">*</span></label>
+                                <input type="text" class="form-control" id="editNombre" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-secondary small text-uppercase fw-bold">RUT Cliente <span class="required-star">*</span></label>
+                                <input type="text" class="form-control" id="editRut" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-secondary small text-uppercase fw-bold">Email <span class="required-star">*</span></label>
+                                <input type="email" class="form-control" id="editEmail" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span class="required-star">*</span></label>
+                                <input type="text" class="form-control" id="editPhone" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-secondary small text-uppercase fw-bold">Domicilio</label>
+                                <input type="text" class="form-control" id="editDireccion" placeholder="Opcional">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-secondary small text-uppercase fw-bold">Comuna</label>
+                                <input type="text" class="form-control" id="editComuna" placeholder="Opcional">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-secondary small text-uppercase fw-bold">Código Propiedad <span class="required-star">*</span></label>
+                                <input type="text" class="form-control" id="editPropertyCode" required>
+                            </div>
+                        </div>
+                        <div id="editErrorMsg" class="alert alert-danger d-none mt-3 py-2"></div>
+                    </form>
+                </div>
+                <div class="modal-footer border-top-0">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" id="btnSaveEdit" class="btn fw-bold text-white" style="background:#8b5cf6;" onclick="saveEditVisita()">
+                        <i class="fa-solid fa-floppy-disk me-2"></i>Guardar Cambios
                     </button>
                 </div>
             </div>
@@ -1245,22 +1297,94 @@
             try {
                 const res = await fetch(`/visitas/api/${code}/send`, {method: 'POST'});
                 const data = await res.json();
-                if(data.status === 'success') {
+                if(res.ok && (data.status === 'ok' || data.status === 'success')) {
                     window.location.reload();
                 } else {
-                    alert('Error: ' + data.message);
+                    const msg = data.detail || data.message || 'Error desconocido';
+                    alert('Error al enviar: ' + msg);
                     btn.innerHTML = '<i class="fa-brands fa-whatsapp"></i>';
                     btn.disabled = false;
                 }
             } catch(e) {
-                alert('Error de red');
+                alert('Error de red al enviar.');
                 btn.innerHTML = '<i class="fa-brands fa-whatsapp"></i>';
                 btn.disabled = false;
             }
         }
 
         function editVisita(data) {
-            alert("La edición aún no está habilitada para Órdenes de Visita.");
+            // Poblar el modal con los datos actuales
+            document.getElementById('editVisitaCode').value = data.visita_code || '';
+            document.getElementById('editNombre').value = (data.client_data && data.client_data.nombre) || '';
+            document.getElementById('editRut').value = (data.client_data && data.client_data.rut) || '';
+            document.getElementById('editEmail').value = (data.client_data && data.client_data.email) || '';
+            document.getElementById('editPhone').value = data.phone || '';
+            document.getElementById('editDireccion').value = (data.client_data && data.client_data.direccion) || '';
+            document.getElementById('editComuna').value = (data.client_data && data.client_data.comuna) || '';
+            document.getElementById('editPropertyCode').value = data.property_code || '';
+            document.getElementById('editErrorMsg').classList.add('d-none');
+            // Abrir modal
+            const modal = new bootstrap.Modal(document.getElementById('modalEditVisita'));
+            modal.show();
+        }
+
+        async function saveEditVisita() {
+            const btn = document.getElementById('btnSaveEdit');
+            const errDiv = document.getElementById('editErrorMsg');
+            errDiv.classList.add('d-none');
+
+            const visitaCode = document.getElementById('editVisitaCode').value;
+            const nombre = document.getElementById('editNombre').value.trim();
+            const rut = document.getElementById('editRut').value.trim();
+            const email = document.getElementById('editEmail').value.trim();
+            const phone = document.getElementById('editPhone').value.trim();
+
+            if (!nombre || !rut || !email || !phone || !visitaCode) {
+                errDiv.textContent = 'Por favor completa todos los campos obligatorios.';
+                errDiv.classList.remove('d-none');
+                return;
+            }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                errDiv.textContent = 'El correo electrónico no es válido.';
+                errDiv.classList.remove('d-none');
+                return;
+            }
+
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Guardando...';
+            btn.disabled = true;
+
+            const payload = {
+                cliente_nombre: nombre,
+                cliente_rut: rut,
+                email: email,
+                phone: phone,
+                cliente_direccion: document.getElementById('editDireccion').value.trim(),
+                cliente_comuna: document.getElementById('editComuna').value.trim(),
+                property_code: document.getElementById('editPropertyCode').value.trim()
+            };
+
+            try {
+                const res = await fetch(`/visitas/api/${visitaCode}/update`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+                if (result.status === 'success') {
+                    bootstrap.Modal.getInstance(document.getElementById('modalEditVisita')).hide();
+                    window.location.reload();
+                } else {
+                    errDiv.textContent = 'Error: ' + (result.message || 'No se pudo guardar.');
+                    errDiv.classList.remove('d-none');
+                    btn.innerHTML = '<i class="fa-solid fa-floppy-disk me-2"></i>Guardar Cambios';
+                    btn.disabled = false;
+                }
+            } catch(e) {
+                errDiv.textContent = 'Error de conexión. Intenta nuevamente.';
+                errDiv.classList.remove('d-none');
+                btn.innerHTML = '<i class="fa-solid fa-floppy-disk me-2"></i>Guardar Cambios';
+                btn.disabled = false;
+            }
         }
 
         function filterVisitasByPhone() {

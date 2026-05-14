@@ -180,7 +180,7 @@ arbitrador designado por Centro Nacional de Arbitrajes S.A.("CNA"), de acuerdo a
         return pdf_bytes
 
     @staticmethod
-    def generate_signed_contract(original_pdf_bytes: bytes, contract_data: dict, evidence_data: dict, verify_url: str) -> bytes:
+    ed_contract(original_pdf_bytes: bytes, contract_data: dict, evidence_data: dict, verify_url: str) -> bytes:
         """Genera el contrato FINAL, anexando la hoja de firmas al PDF original."""
         import pypdf
         

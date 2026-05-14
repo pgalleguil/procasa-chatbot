@@ -687,8 +687,8 @@
                 </div>
                 <h4 class="m-0 fw-bold">Módulo de Órdenes de Visita</h4>
             </div>
-            <button class="btn btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#modalNewContract">
-                <i class="fa-solid fa-plus me-2"></i> Nuevo Convenio
+            <button class="btn fw-bold text-white" style="background-color: #8b5cf6;" data-bs-toggle="modal" data-bs-target="#modalNewContract">
+                <i class="fa-solid fa-plus me-2"></i> Nueva Orden de Visita
             </button>
         </div>
 
@@ -699,6 +699,11 @@
 
         <div class="table-container">
             <div class="section-title">Órdenes de Visita Emitidas</div>
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <input type="text" id="phoneSearchInput" class="form-control form-control-sm" placeholder="Buscar por teléfono..." onkeyup="filterVisitasByPhone()">
+                </div>
+            </div>
             {% if user_role in ['supervisor', 'admin'] %}
             <form method="get" action="/visitas/dashboard" class="row g-2 mb-3">
                 <div class="col-md-4 col-sm-6">
@@ -718,9 +723,8 @@
                             <th>Fecha</th>
                             {% if user_role in ['supervisor', 'admin'] %}<th>Ejecutivo</th>{% endif %}
                             <th>Código</th>
-                            <th>Origen</th>
                             <th>Cliente</th>
-                            <th>Propiedad / Rol</th>
+                            <th>Teléfono Cliente</th>
                             <th>Estado</th>
                             <th>Acciones</th>
                         </tr>
@@ -733,14 +737,12 @@
                             <td data-label="Ejecutivo">{{ c.executive_display or '---' }}</td>
                             {% endif %}
                             <td data-label="Código"><strong>{{ c.property_code or c.visita_code[:8] }}</strong></td>
-                            <td data-label="Origen">{{ c.get('origen', '---') }}</td>
                             <td data-label="Cliente">
                                 {{ c.client_data.nombre }}<br>
                                 <small class="text-secondary">{{ c.client_data.rut }}</small>
                             </td>
-                            <td data-label="Propiedad / Rol">
-                                {{ c.property_data.direccion }}<br>
-                                <small class="text-secondary">Rol: {{ c.property_data.rol }}</small>
+                            <td data-label="Teléfono Cliente">
+                                {{ c.phone or c.client_data.phone or '---' }}
                             </td>
                             <td data-label="Estado" class="contract-status-cell">
                                 {% if c.status == 'created' %}<span class="status-badge status-created">Creado</span>
@@ -866,8 +868,8 @@
                                         <div class="invalid-feedback" id="phoneErrorMsg">Ingresa un teléfono válido.</div>
                                     </div>
                                     <div class="col-lg-6 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Email</label>
-                                        <input type="email" class="form-control" name="email" oninput="this.value=this.value.toLowerCase()" onblur="this.value=this.value.trim().toLowerCase(); validateField(this); triggerPreview();">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Email <span class="required-star">*</span></label>
+                                        <input type="email" class="form-control" name="email" required oninput="this.value=this.value.toLowerCase()" onblur="this.value=this.value.trim().toLowerCase(); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).</div>
                                     </div>
                                     <div class="col-lg-6 col-md-6">
@@ -890,10 +892,7 @@
                             <div class="text-center mt-2 text-secondary small">
                                 <i class="fa-solid fa-eye"></i> Vista Previa en Tiempo Real
                             </div>
-                            <a id="mobilePdfOpenBtn" href="#" target="_blank"
-                                class="btn btn-sm btn-outline-secondary mt-2 d-none">
-                                <i class="fa-solid fa-up-right-from-square me-1"></i>Abrir PDF en otra pestaña
-                            </a>
+
                         </div>
                     </div>
                 </div>
@@ -1264,6 +1263,25 @@
             alert("La edición aún no está habilitada para Órdenes de Visita.");
         }
 
+        function filterVisitasByPhone() {
+            let input = document.getElementById("phoneSearchInput");
+            let filter = input.value.toUpperCase();
+            let table = document.querySelector(".prop-table");
+            if (!table) return;
+            let tr = table.getElementsByTagName("tr");
+            
+            for (let i = 1; i < tr.length; i++) {
+                let td = tr[i].querySelector('td[data-label="Teléfono Cliente"]');
+                if (td) {
+                    let txtValue = td.textContent || td.innerText;
+                    if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                        tr[i].style.display = "";
+                    } else {
+                        tr[i].style.display = "none";
+                    }
+                }       
+            }
+        }
     </script>
 </body>
 

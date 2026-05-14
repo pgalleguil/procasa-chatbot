@@ -181,6 +181,18 @@ async def preview_contract(request: Request):
     try:
         data = _normalize_visita_fields(await request.json())
         data = await _enrich_with_property_data(data)
+        
+        from chatbot.storage import get_async_db
+        adb = get_async_db()
+        created_by, user_role = await _get_request_user(adb, request)
+        user_doc = await adb["usuarios"].find_one({"username": created_by}) if created_by else None
+        if user_doc:
+            data["ejecutivo_nombre"] = user_doc.get("nombre", created_by)
+            data["ejecutivo_email"] = user_doc.get("email", created_by)
+        else:
+            data["ejecutivo_nombre"] = created_by or ""
+            data["ejecutivo_email"] = ""
+
         pdf_bytes = await _run_blocking(PDFGenerator.generate_original_contract, data)
         return Response(content=pdf_bytes, media_type="application/pdf")
     except Exception as e:
@@ -199,6 +211,14 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         created_by, user_role = await _get_request_user(adb, request)
         # El emisor del orden de visita siempre es el usuario autenticado.
         executive = created_by or ""
+        
+        user_doc = await adb["usuarios"].find_one({"username": created_by}) if created_by else None
+        if user_doc:
+            data["ejecutivo_nombre"] = user_doc.get("nombre", created_by)
+            data["ejecutivo_email"] = user_doc.get("email", created_by)
+        else:
+            data["ejecutivo_nombre"] = created_by or ""
+            data["ejecutivo_email"] = ""
 
         property_code = data.get("property_code", "").strip()
         
@@ -247,6 +267,10 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                 "operacion": data.get("operacion", "")
             },
             "status": "created",
+            "executive_data": {
+                "nombre": data.get("ejecutivo_nombre", ""),
+                "email": data.get("ejecutivo_email", "")
+            },
             "security": {
                 "original_hash": None, # Calculado en background
                 "original_pdf_path": str(perm_original_path),
@@ -368,6 +392,8 @@ async def download_original_pdf(visita_code: str):
                     "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
                     "precio": contract.get("property_data", {}).get("precio", ""),
                     "comision": contract.get("property_data", {}).get("comision", ""),
+                    "ejecutivo_nombre": contract.get("executive_data", {}).get("nombre", ""),
+                    "ejecutivo_email": contract.get("executive_data", {}).get("email", ""),
                     "created_at": contract.get("created_at"),
                     "version": contract.get("version", 1)
                 }
@@ -459,6 +485,8 @@ async def download_signed_pdf(visita_code: str):
         "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
         "precio": contract.get("property_data", {}).get("precio", ""),
         "comision": contract.get("property_data", {}).get("comision", ""),
+        "ejecutivo_nombre": contract.get("executive_data", {}).get("nombre", ""),
+        "ejecutivo_email": contract.get("executive_data", {}).get("email", ""),
         "created_at": contract.get("created_at"),
         "version": contract.get("version", 1)
     }
@@ -566,6 +594,8 @@ async def view_signed_pdf(visita_code: str):
         "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
         "precio": contract.get("property_data", {}).get("precio", ""),
         "comision": contract.get("property_data", {}).get("comision", ""),
+        "ejecutivo_nombre": contract.get("executive_data", {}).get("nombre", ""),
+        "ejecutivo_email": contract.get("executive_data", {}).get("email", ""),
         "created_at": contract.get("created_at"),
         "version": contract.get("version", 1)
     }
@@ -1535,7 +1565,7 @@ async def visita_dashboard(request: Request):
 
     return templates.TemplateResponse("visita_dashboard.html", {
         "request": request,
-        "visitas": contracts,
+        "contracts": contracts,
         "user_role": user_role,
         "user_username": username or "",
         "user_display_name": user_name_map.get(username or "", username or ""),

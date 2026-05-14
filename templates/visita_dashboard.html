@@ -474,6 +474,7 @@
             .contract-layout {
                 grid-template-columns: 1fr;
             }
+
             #pdfPreviewIframe {
                 min-height: 420px;
             }
@@ -496,10 +497,12 @@
                 font-size: 0.72rem;
                 padding: 8px 10px;
             }
+
             .prop-table td {
                 font-size: 0.82rem;
                 padding: 11px 10px;
             }
+
             .prop-table .btn.btn-sm {
                 padding: 0.25rem 0.42rem;
             }
@@ -606,6 +609,7 @@
         .autocomplete-item:hover {
             background-color: rgba(99, 102, 241, 0.1);
         }
+
         .autocomplete-item.active {
             background-color: rgba(99, 102, 241, 0.2);
         }
@@ -662,13 +666,17 @@
         </div>
         {% if user_role in ['supervisor', 'admin'] %}
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
-        <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso Manual</span></a>
+        <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
+                Manual</span></a>
         {% endif %}
         <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
-        <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i> <span>Captaciones</span></a>
-        <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
+        <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i>
+            <span>Captaciones</span></a>
+        <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i>
+            <span>Convenios</span></a>
         {% if user_role in ['supervisor', 'admin'] %}
-        <a href="/visitas/dashboard" class="nav-link active"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
+        <a href="/visitas/dashboard" class="nav-link active"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes
+                de Visita</span></a>
         {% endif %}
 
         <a href="javascript:void(0)" class="nav-link" style="margin-top:auto" onclick="toggleTheme()">
@@ -687,7 +695,8 @@
                 </div>
                 <h4 class="m-0 fw-bold">Módulo de Órdenes de Visita</h4>
             </div>
-            <button class="btn fw-bold text-white" style="background-color: #8b5cf6;" data-bs-toggle="modal" data-bs-target="#modalNewContract">
+            <button class="btn fw-bold text-white" style="background-color: #8b5cf6;" data-bs-toggle="modal"
+                data-bs-target="#modalNewContract">
                 <i class="fa-solid fa-plus me-2"></i> Nueva Orden de Visita
             </button>
         </div>
@@ -701,7 +710,8 @@
             <div class="section-title">Órdenes de Visita Emitidas</div>
             <div class="row g-2 mb-3">
                 <div class="col-md-4">
-                    <input type="text" id="phoneSearchInput" class="form-control form-control-sm" placeholder="Buscar por tel\u00e9fono..." onkeyup="filterVisitasByPhone()">
+                    <input type="text" id="phoneSearchInput" class="form-control form-control-sm"
+                        placeholder="Buscar por teléfono" onkeyup="filterVisitasByPhone()">
                 </div>
                 {% if user_role in ['supervisor', 'admin'] %}
                 <div class="col-md-4">
@@ -709,7 +719,8 @@
                         <select class="form-select form-select-sm" name="executive" onchange="this.form.submit()">
                             <option value="">Todos los ejecutivos</option>
                             {% for ex in executives %}
-                            <option value="{{ ex.username }}" {% if executive_filter == ex.username %}selected{% endif %}>{{ ex.name }}</option>
+                            <option value="{{ ex.username }}" {% if executive_filter==ex.username %}selected{% endif %}>
+                                {{ ex.name }}</option>
                             {% endfor %}
                         </select>
                     </form>
@@ -732,7 +743,9 @@
                     <tbody>
                         {% for c in contracts %}
                         <tr data-contract-code="{{ c.visita_code }}" data-contract-status="{{ c.status }}">
-                            <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '---' }}<br><small class="text-secondary">{{ c.created_at.strftime('%H:%M') if c.created_at else '' }} hrs</small></td>
+                            <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '---'
+                                }}<br><small class="text-secondary">{{ c.created_at.strftime('%H:%M') if c.created_at
+                                    else '' }} hrs</small></td>
                             {% if user_role in ['supervisor', 'admin'] %}
                             <td data-label="Ejecutivo">{{ c.executive_display or '---' }}</td>
                             {% endif %}
@@ -748,9 +761,12 @@
                                 {% if c.status == 'created' %}<span class="status-badge status-created">Creado</span>
                                 {% elif c.status == 'sent' %}<span class="status-badge status-sent">Enviado</span>
                                 {% elif c.status == 'opened' %}<span class="status-badge status-opened">Abierto</span>
-                                {% elif c.status == 'otp_requested' %}<span class="status-badge status-otp_requested">Código Pedido</span>
-                                {% elif c.status == 'otp_verified' %}<span class="status-badge status-otp_verified">RUT Validado</span>
-                                {% elif c.status in ['signed','accepted'] %}<span class="status-badge status-signed">Firmado ✓</span>
+                                {% elif c.status == 'otp_requested' %}<span
+                                    class="status-badge status-otp_requested">Código Pedido</span>
+                                {% elif c.status == 'otp_verified' %}<span class="status-badge status-otp_verified">RUT
+                                    Validado</span>
+                                {% elif c.status in ['signed','accepted'] %}<span
+                                    class="status-badge status-signed">Firmado ✓</span>
                                 {% else %}<span class="status-badge status-created">{{ c.status }}</span>{% endif %}
                             </td>
                             <td data-label="Acciones">
@@ -767,8 +783,7 @@
                                     </button>
                                     {# Botón Enviar WhatsApp: solo si aún no se ha enviado #}
                                     <button class="btn btn-sm btn-outline-secondary btn-hover-whatsapp"
-                                        title="Enviar por WhatsApp"
-                                        onclick="sendVisita('{{ c.visita_code }}', this)">
+                                        title="Enviar por WhatsApp" onclick="sendVisita('{{ c.visita_code }}', this)">
                                         <i class="fa-brands fa-whatsapp"></i>
                                     </button>
                                     {% elif c.status in ['sent','opened','otp_requested','otp_verified'] %}
@@ -799,8 +814,7 @@
                                     {% endif %}
                                     {# Eliminar: siempre visible excepto firmados #}
                                     {% if c.status not in ['signed','accepted'] %}
-                                    <button class="btn btn-sm btn-outline-secondary btn-hover-danger"
-                                        title="Eliminar"
+                                    <button class="btn btn-sm btn-outline-secondary btn-hover-danger" title="Eliminar"
                                         onclick="deleteVisita('{{ c.visita_code }}', this)">
                                         <i class="fa-solid fa-trash-can"></i>
                                     </button>
@@ -810,7 +824,8 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="{% if user_role in ['supervisor', 'admin'] %}8{% else %}7{% endif %}" class="text-center text-secondary py-5">
+                            <td colspan="{% if user_role in ['supervisor', 'admin'] %}8{% else %}7{% endif %}"
+                                class="text-center text-secondary py-5">
                                 <i class="fa-solid fa-folder-open fa-2x mb-2 d-block"></i>
                                 No hay convenios generados aún.
                             </td>
@@ -840,39 +855,64 @@
                                 <input type="hidden" name="executive" value="{{ user_username }}">
                                 <div class="row g-3 mb-3">
                                     <div class="col-lg-6 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del Cliente <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="cliente_nombre" placeholder="Ej: Juan Pérez" required onblur="capitalizeName(this); validateField(this); triggerPreview();">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del
+                                            Cliente <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="cliente_nombre"
+                                            placeholder="Ej: Juan Pérez" required
+                                            onblur="capitalizeName(this); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa el nombre completo.</div>
                                     </div>
                                     <div class="col-lg-6 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">RUT Cliente <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="cliente_rut" placeholder="12345678-9" required oninput="formatRut(this)" onblur="validateField(this); triggerPreview();">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">RUT
+                                            Cliente <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="cliente_rut"
+                                            placeholder="12345678-9" required oninput="formatRut(this)"
+                                            onblur="validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa un RUT válido.</div>
                                     </div>
                                     <div class="col-lg-6 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Domicilio</label>
-                                        <input type="text" class="form-control" name="cliente_direccion" placeholder="Calle, Número (opcional)" onblur="this.value=toTitleCase(this.value); triggerPreview();">
+                                        <label
+                                            class="form-label text-secondary small text-uppercase fw-bold">Domicilio</label>
+                                        <input type="text" class="form-control" name="cliente_direccion"
+                                            placeholder="Calle, Número (opcional)"
+                                            onblur="this.value=toTitleCase(this.value); triggerPreview();">
                                     </div>
                                     <div class="col-lg-6 col-md-6 position-relative">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comuna</label>
-                                        <input type="text" class="form-control" name="cliente_comuna" id="comunaInput" placeholder="Ej: Santiago (opcional)" autocomplete="off" oninput="filterComunas(); triggerPreview();" onfocus="showComunas()" onblur="setTimeout(() => document.getElementById('comunaDropdown').classList.add('d-none'), 200);">
-                                        <div id="comunaDropdown" class="autocomplete-dropdown custom-scrollbar d-none"></div>
-                                    </div>
-                                    <div class="col-lg-6 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span class="required-star">*</span></label>
-                                        <div class="w-100">
-                                            <input type="tel" class="form-control w-100" id="phoneInput" name="phone_full" placeholder="912345678" required style="width: 100%;">
+                                        <label
+                                            class="form-label text-secondary small text-uppercase fw-bold">Comuna</label>
+                                        <input type="text" class="form-control" name="cliente_comuna" id="comunaInput"
+                                            placeholder="Ej: Santiago (opcional)" autocomplete="off"
+                                            oninput="filterComunas(); triggerPreview();" onfocus="showComunas()"
+                                            onblur="setTimeout(() => document.getElementById('comunaDropdown').classList.add('d-none'), 200);">
+                                        <div id="comunaDropdown" class="autocomplete-dropdown custom-scrollbar d-none">
                                         </div>
-                                        <div class="invalid-feedback" id="phoneErrorMsg">Ingresa un teléfono válido.</div>
                                     </div>
                                     <div class="col-lg-6 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Email <span class="required-star">*</span></label>
-                                        <input type="email" class="form-control" name="email" required oninput="this.value=this.value.toLowerCase()" onblur="this.value=this.value.trim().toLowerCase(); validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).</div>
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono
+                                            <span class="required-star">*</span></label>
+                                        <div class="w-100">
+                                            <input type="tel" class="form-control w-100" id="phoneInput"
+                                                name="phone_full" placeholder="912345678" required style="width: 100%;">
+                                        </div>
+                                        <div class="invalid-feedback" id="phoneErrorMsg">Ingresa un teléfono válido.
+                                        </div>
                                     </div>
                                     <div class="col-lg-6 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">Código de Propiedad <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="property_code" placeholder="Ej: 15482" required oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();" onblur="validateField(this); triggerPreview();">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Email
+                                            <span class="required-star">*</span></label>
+                                        <input type="email" class="form-control" name="email" required
+                                            oninput="this.value=this.value.toLowerCase()"
+                                            onblur="this.value=this.value.trim().toLowerCase(); validateField(this); triggerPreview();">
+                                        <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6 col-md-6">
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Código de
+                                            Propiedad <span class="required-star">*</span></label>
+                                        <input type="text" class="form-control" name="property_code"
+                                            placeholder="Ej: 15482" required
+                                            oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();"
+                                            onblur="validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa el código.</div>
                                     </div>
                                 </div>
@@ -912,9 +952,11 @@
     <!-- Modal Editar Visita -->
     <div class="modal fade" id="modalEditVisita" tabindex="-1">
         <div class="modal-dialog modal-lg">
-            <div class="modal-content" style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color);">
+            <div class="modal-content"
+                style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color);">
                 <div class="modal-header border-bottom-0">
-                    <h5 class="modal-title fw-bold"><i class="fa-solid fa-pen-to-square me-2" style="color:#8b5cf6;"></i> Editar Orden de Visita</h5>
+                    <h5 class="modal-title fw-bold"><i class="fa-solid fa-pen-to-square me-2"
+                            style="color:#8b5cf6;"></i> Editar Orden de Visita</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -922,19 +964,23 @@
                         <input type="hidden" id="editVisitaCode">
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label class="form-label text-secondary small text-uppercase fw-bold">Nombre Cliente <span class="required-star">*</span></label>
+                                <label class="form-label text-secondary small text-uppercase fw-bold">Nombre Cliente
+                                    <span class="required-star">*</span></label>
                                 <input type="text" class="form-control" id="editNombre" required>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label text-secondary small text-uppercase fw-bold">RUT Cliente <span class="required-star">*</span></label>
+                                <label class="form-label text-secondary small text-uppercase fw-bold">RUT Cliente <span
+                                        class="required-star">*</span></label>
                                 <input type="text" class="form-control" id="editRut" required>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label text-secondary small text-uppercase fw-bold">Email <span class="required-star">*</span></label>
+                                <label class="form-label text-secondary small text-uppercase fw-bold">Email <span
+                                        class="required-star">*</span></label>
                                 <input type="email" class="form-control" id="editEmail" required>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span class="required-star">*</span></label>
+                                <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span
+                                        class="required-star">*</span></label>
                                 <input type="text" class="form-control" id="editPhone" required>
                             </div>
                             <div class="col-md-6">
@@ -946,7 +992,8 @@
                                 <input type="text" class="form-control" id="editComuna" placeholder="Opcional">
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label text-secondary small text-uppercase fw-bold">Código Propiedad <span class="required-star">*</span></label>
+                                <label class="form-label text-secondary small text-uppercase fw-bold">Código Propiedad
+                                    <span class="required-star">*</span></label>
                                 <input type="text" class="form-control" id="editPropertyCode" required>
                             </div>
                         </div>
@@ -955,7 +1002,8 @@
                 </div>
                 <div class="modal-footer border-top-0">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" id="btnSaveEdit" class="btn fw-bold text-white" style="background:#8b5cf6;" onclick="saveEditVisita()">
+                    <button type="button" id="btnSaveEdit" class="btn fw-bold text-white" style="background:#8b5cf6;"
+                        onclick="saveEditVisita()">
                         <i class="fa-solid fa-floppy-disk me-2"></i>Guardar Cambios
                     </button>
                 </div>
@@ -1037,7 +1085,7 @@
 
         const comunaInput = document.getElementById('comunaInput');
         if (comunaInput) {
-            comunaInput.addEventListener('keydown', function(e) {
+            comunaInput.addEventListener('keydown', function (e) {
                 const items = document.querySelectorAll('#comunaDropdown .autocomplete-item');
                 if (e.key === 'ArrowDown') {
                     activeComunaIndex++;
@@ -1062,12 +1110,12 @@
 
         // Utilidades de formato
         function capitalizeName(input) {
-            input.value = input.value.replace(/\w\S*/g, function(txt){
+            input.value = input.value.replace(/\w\S*/g, function (txt) {
                 return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
             });
         }
         function toTitleCase(str) {
-            return str.replace(/\w\S*/g, function(txt){
+            return str.replace(/\w\S*/g, function (txt) {
                 return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
             });
         }
@@ -1120,7 +1168,7 @@
         }
 
         let previewTimeout;
-        
+
         function checkFormValidity() {
             const form = document.getElementById('formNewContract');
             if (!form) return;
@@ -1132,7 +1180,7 @@
             });
             const phoneInputObj = window.intlTelInputGlobals ? window.intlTelInputGlobals.getInstance(document.getElementById('phoneInput')) : null;
             if (phoneInputObj && !phoneInputObj.isValidNumber()) isValid = false;
-            
+
             document.getElementById('btnGenerateContract').disabled = !isValid;
         }
 
@@ -1162,7 +1210,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(data)
                     });
-                    
+
                     if (response.ok) {
                         const blob = await response.blob();
                         const url = URL.createObjectURL(blob);
@@ -1187,7 +1235,7 @@
         function generateContract() {
             const form = document.getElementById('formNewContract');
             const btn = document.getElementById('btnGenerateContract');
-            
+
             Array.from(form.elements).forEach(el => {
                 if (el.tagName === 'SELECT' || el.tagName === 'INPUT') validateField(el);
             });
@@ -1213,20 +1261,20 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             }).then(response => response.json())
-              .then(data => {
-                  if (data.status === 'success') {
-                      window.location.reload();
-                  } else {
-                      alert('Error: ' + data.message);
-                      btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
-                      btn.disabled = false;
-                  }
-              })
-              .catch(err => {
-                  alert('Error de conexión');
-                  btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
-                  btn.disabled = false;
-              });
+                .then(data => {
+                    if (data.status === 'success') {
+                        window.location.reload();
+                    } else {
+                        alert('Error: ' + data.message);
+                        btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
+                        btn.disabled = false;
+                    }
+                })
+                .catch(err => {
+                    alert('Error de conexión');
+                    btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
+                    btn.disabled = false;
+                });
         }
 
         // Listeners globales
@@ -1234,10 +1282,10 @@
             const modal = document.getElementById('modalNewContract');
             if (modal) {
                 modal.addEventListener('shown.bs.modal', function () {
-                    if(!hasInteracted) triggerPreview();
+                    if (!hasInteracted) triggerPreview();
                 });
             }
-            
+
             // Inicializar intlTelInput
             const phoneInputField = document.querySelector("#phoneInput");
             if (phoneInputField && window.intlTelInput) {
@@ -1250,11 +1298,11 @@
                     nationalMode: true
                 });
 
-                window.getPhoneData = function() {
+                window.getPhoneData = function () {
                     return phoneInput.getNumber();
                 };
 
-                phoneInputField.addEventListener('input', function() {
+                phoneInputField.addEventListener('input', function () {
                     const msg = document.getElementById('phoneErrorMsg');
                     if (phoneInput.isValidNumber()) {
                         phoneInputField.classList.remove('is-invalid');
@@ -1271,33 +1319,33 @@
         });
 
         async function deleteVisita(code, btn) {
-            if(!confirm('¿Estás seguro de que deseas eliminar este documento?')) return;
+            if (!confirm('¿Estás seguro de que deseas eliminar este documento?')) return;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
             btn.disabled = true;
             try {
-                const res = await fetch(`/visitas/api/${code}/delete`, {method: 'DELETE'});
+                const res = await fetch(`/visitas/api/${code}/delete`, { method: 'DELETE' });
                 const data = await res.json();
-                if(data.status === 'success') {
+                if (data.status === 'success') {
                     window.location.reload();
                 } else {
                     alert('Error: ' + data.message);
                     btn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
                     btn.disabled = false;
                 }
-            } catch(e) {
+            } catch (e) {
                 alert('Error de red');
                 btn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
                 btn.disabled = false;
             }
         }
-        
-        async function sendVisita(code, btn, force=false) {
+
+        async function sendVisita(code, btn, force = false) {
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
             btn.disabled = true;
             try {
-                const res = await fetch(`/visitas/api/${code}/send`, {method: 'POST'});
+                const res = await fetch(`/visitas/api/${code}/send`, { method: 'POST' });
                 const data = await res.json();
-                if(res.ok && (data.status === 'ok' || data.status === 'success')) {
+                if (res.ok && (data.status === 'ok' || data.status === 'success')) {
                     window.location.reload();
                 } else {
                     const msg = data.detail || data.message || 'Error desconocido';
@@ -1305,7 +1353,7 @@
                     btn.innerHTML = '<i class="fa-brands fa-whatsapp"></i>';
                     btn.disabled = false;
                 }
-            } catch(e) {
+            } catch (e) {
                 alert('Error de red al enviar.');
                 btn.innerHTML = '<i class="fa-brands fa-whatsapp"></i>';
                 btn.disabled = false;
@@ -1366,7 +1414,7 @@
             try {
                 const res = await fetch(`/visitas/api/${visitaCode}/update`, {
                     method: 'PUT',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 const result = await res.json();
@@ -1379,7 +1427,7 @@
                     btn.innerHTML = '<i class="fa-solid fa-floppy-disk me-2"></i>Guardar Cambios';
                     btn.disabled = false;
                 }
-            } catch(e) {
+            } catch (e) {
                 errDiv.textContent = 'Error de conexión. Intenta nuevamente.';
                 errDiv.classList.remove('d-none');
                 btn.innerHTML = '<i class="fa-solid fa-floppy-disk me-2"></i>Guardar Cambios';
@@ -1393,7 +1441,7 @@
             let table = document.querySelector(".prop-table");
             if (!table) return;
             let tr = table.getElementsByTagName("tr");
-            
+
             for (let i = 1; i < tr.length; i++) {
                 let td = tr[i].querySelector('td[data-label="Teléfono Cliente"]');
                 if (td) {
@@ -1403,7 +1451,7 @@
                     } else {
                         tr[i].style.display = "none";
                     }
-                }       
+                }
             }
         }
     </script>

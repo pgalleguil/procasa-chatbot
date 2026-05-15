@@ -375,7 +375,7 @@ async def slide_session_middleware(request: Request, call_next):
                 if exp_ts:
                     try:
                         now_ts = datetime.now(pytz.utc).timestamp()
-                        should_renew = (float(exp_ts) - now_ts) <= 1800
+                        should_renew = (float(exp_ts) - now_ts) <= 5400
                     except Exception:
                         should_renew = True
                 if should_renew:
@@ -489,7 +489,7 @@ async def auth_google_callback(request: Request, code: str):
         target_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
         access_token_jwt = create_access_token({"sub": user_sub})
         response = RedirectResponse(target_url, status_code=303)
-        response.set_cookie(key="access_token", value=access_token_jwt, httponly=True, secure=True, samesite="lax", max_age=1800)
+        response.set_cookie(key="access_token", value=access_token_jwt, httponly=True, secure=True, samesite="lax", max_age=7200)
         logger.info("Conexion a MongoDB exitosa")
         logger.info(f"Sesion iniciada para {email} (Rol: {user_rol})")
         return response
@@ -532,7 +532,7 @@ async def login_post(request: Request, username: str = Form(...), password: str 
                 httponly=True, 
                 secure=True,   # Cambiado a True para Render (HTTPS)
                 samesite="lax", 
-                max_age=1800
+                max_age=7200
             )
             return response
         

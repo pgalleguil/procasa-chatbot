@@ -1610,10 +1610,25 @@ async def verify_contract(visita_code: str, request: Request):
     
     # Limpiar datos para evitar error 500 de serialización
     safe_contract = _json_safe(contract)
+    
+    # Formatear fecha de firma para visualización humana
+    signature_date_raw = contract.get("security", {}).get("signature_timestamp")
+    formatted_date = "---"
+    if signature_date_raw:
+        try:
+            from datetime import datetime, timezone
+            from chatbot.constants import CHILE_TZ
+            dt = datetime.fromisoformat(signature_date_raw)
+            if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
+            dt_cl = dt.astimezone(CHILE_TZ)
+            formatted_date = dt_cl.strftime("%d-%m-%Y %H:%M CLT")
+        except:
+            pass
         
     return templates.TemplateResponse("visita_verify.html", {
         "request": request,
-        "contract": safe_contract
+        "contract": safe_contract,
+        "signature_date_clt": formatted_date
     })
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -1636,6 +1651,9 @@ async def visita_dashboard(request: Request):
 
     adb = get_async_db()
     username, user_role = await _get_request_user(adb, request)
+
+    if not username:
+        return RedirectResponse(url="/login", status_code=303)
 
     # AISLAMIENTO DE DATOS: supervisores/admin ven todos; agentes solo los suyos
     executive_filter = (request.query_params.get("executive") or "").strip()

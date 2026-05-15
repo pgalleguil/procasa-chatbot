@@ -1470,6 +1470,9 @@ async def contract_dashboard(request: Request):
     adb = get_async_db()
     username, user_role = await _get_request_user(adb, request)
 
+    if not username:
+        return RedirectResponse(url="/login", status_code=303)
+
     # AISLAMIENTO DE DATOS: supervisores/admin ven todos; agentes solo los suyos
     executive_filter = (request.query_params.get("executive") or "").strip()
     if user_role in ["supervisor", "admin"]:

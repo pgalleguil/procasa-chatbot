@@ -1617,12 +1617,16 @@ async def verify_contract(visita_code: str, request: Request):
     formatted_date = "---"
     if signature_date_raw:
         try:
-
-            dt = datetime.fromisoformat(signature_date_raw)
-            if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
+            if isinstance(signature_date_raw, datetime):
+                dt = signature_date_raw
+            else:
+                dt = datetime.fromisoformat(signature_date_raw)
+            
+            if dt.tzinfo is None: 
+                dt = dt.replace(tzinfo=timezone.utc)
             dt_cl = dt.astimezone(CHILE_TZ)
             formatted_date = dt_cl.strftime("%d-%m-%Y %H:%M CLT")
-        except:
+        except Exception as e:
             pass
         
     return templates.TemplateResponse("visita_verify.html", {

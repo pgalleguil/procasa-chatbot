@@ -19,7 +19,8 @@
                 </svg>
             </div>
             <h1 class="text-2xl font-extrabold text-gray-900 tracking-tight">Verificación de Integridad Documental</h1>
-            <p class="text-sm text-gray-500 font-medium uppercase tracking-wider">Sistema de Validación Procasa Sucre</p>
+            <p class="text-sm text-gray-500 font-medium uppercase tracking-wider">Sistema de Validación Documental</p>
+            <p class="text-xs text-gray-400 font-medium mt-1">Inmobiliaria Sucre SpA &mdash; Franquicia Procasa</p>
         </div>
 
         {% if contract.status in ["accepted", "signed"] %}
@@ -54,7 +55,7 @@
             </div>
             <div class="flex justify-between border-b border-gray-100 pb-3">
                 <span class="text-gray-500 font-medium">Cliente:</span>
-                <span class="font-bold text-gray-900 text-right">{{ (contract.client_data or {}).nombre | default('---') }}</span>
+                <span class="font-bold text-gray-900 text-right">{{ (contract.client_data or {}).nombre | default('---') }} {{ (contract.client_data or {}).apellidos | default('') }}</span>
             </div>
             <div class="flex justify-between border-b border-gray-100 pb-3">
                 <span class="text-gray-500 font-medium">Fecha de Firma:</span>
@@ -66,7 +67,7 @@
             </div>
             <div class="flex flex-col pt-2">
                 <span class="text-gray-400 text-[10px] uppercase font-bold tracking-widest mb-1">Código de Integridad (SHA-256)</span>
-                <span class="font-mono text-[11px] text-gray-500 break-all leading-tight bg-gray-50 p-2 rounded border border-gray-100"
+                <span class="font-mono text-[10px] text-gray-500 break-all leading-relaxed tracking-widest bg-gray-50 p-3 rounded border border-gray-100 shadow-inner"
                     title="{{ (contract.security or {}).server_hmac | default('No disponible') }}">
                     {{ (contract.security or {}).server_hmac | default('---') }}
                 </span>
@@ -93,8 +94,8 @@
         {% endif %}
         
         <div class="mt-8 text-center">
-            <p class="text-[10px] text-gray-400 font-medium uppercase tracking-tighter">
-                &copy; 2026 Procasa S.A. | Departamento de Operaciones Sucre
+            <p class="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
+                &copy; 2026 Inmobiliaria Sucre SpA &mdash; Franquicia Procasa
             </p>
         </div>
     </div>

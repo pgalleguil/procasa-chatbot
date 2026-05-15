@@ -166,6 +166,7 @@ async def _enrich_with_property_data(data: dict) -> dict:
             adb = get_async_db()
             prop_data = await adb["universo_cartera"].find_one({"codigo": prop_code})
             if prop_data:
+                data["_property_found"] = True
                 data["property_comuna"] = prop_data.get("comuna", "")
                 data["property_region"] = prop_data.get("region", "")
                 data["property_tipo"] = prop_data.get("tipo", "")
@@ -180,8 +181,11 @@ async def _enrich_with_property_data(data: dict) -> dict:
                 else:
                     data["precio"] = ""
                 data["operacion"] = prop_data.get("operacion", "")
+            else:
+                data["_property_found"] = False
         except Exception as e:
             logger.warning(f"[ENRICH] Error enriqueciendo propiedad {prop_code}: {e}")
+            data["_property_found"] = False
     return data
 
 @router.post("/api/preview")
@@ -216,6 +220,9 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
     try:
         data = _normalize_visita_fields(await request.json())
         data = await _enrich_with_property_data(data)
+        if data.get("_property_found") is False:
+            raise HTTPException(status_code=400, detail="El código de propiedad ingresado no existe en nuestra base de datos. Por favor verifique e intente nuevamente.")
+        
         from chatbot.storage import get_async_db
         adb = get_async_db()
         # Extraer usuario/rol desde JWT
@@ -667,12 +674,21 @@ async def update_visita(visita_code: str, request: Request):
     if not contract:
         raise HTTPException(status_code=404, detail="Orden de Visita no encontrada")
 
-    # Solo se puede editar si está en estado 'created'
-    if contract.get("status") not in ["created"]:
+    # Bloqueo estricto si ya se ha enviado o firmado
+    if contract.get("status") in ["otp_requested", "otp_verified", "signed"]:
+        raise HTTPException(status_code=403, detail="La orden ya está en proceso de firma o firmada y NO puede ser editada por protección de integridad documental.")
+
+    # Solo se puede editar libremente si está en estado 'created' o 'opened'. Para otros, requiere admin.
+    if contract.get("status") not in ["created", "opened", "sent"]:
         if user_role not in ["supervisor", "admin"]:
-            raise HTTPException(status_code=403, detail="Solo se puede editar antes de enviar la orden.")
+            raise HTTPException(status_code=403, detail="No tiene permisos para editar esta orden en su estado actual.")
 
     data = _normalize_visita_fields(await request.json())
+    
+    if data.get("property_code"):
+        enriched = await _enrich_with_property_data({"property_code": data["property_code"]})
+        if enriched.get("_property_found") is False:
+            raise HTTPException(status_code=400, detail="El código de propiedad ingresado no existe en nuestra base de datos.")
 
     update_fields = {}
     if data.get("cliente_nombre"):
@@ -705,9 +721,23 @@ async def update_visita(visita_code: str, request: Request):
     if not update_fields:
         return {"status": "success", "message": "Sin cambios"}
 
+    # --- Auditoría de Edición ---
+    from datetime import datetime, timezone
+    update_fields["updated_by"] = username
+    update_fields["updated_at"] = datetime.now(timezone.utc)
+    
+    edit_record = {
+        "updated_by": username,
+        "updated_at": datetime.now(timezone.utc),
+        "changes": {k: v for k, v in update_fields.items() if k not in ["updated_by", "updated_at"]}
+    }
+
     await adb["visitas"].update_one(
         {"visita_code": visita_code},
-        {"$set": update_fields}
+        {
+            "$set": update_fields,
+            "$push": {"edit_history": edit_record}
+        }
     )
 
     # Regenerar el PDF original en background después de editar
@@ -841,8 +871,19 @@ La firma electrónica utilizada en este proceso se encuentra respaldada por la L
     except Exception as e:
         logger.error(f"[MSG_LOG] Error guardando mensaje: {e}")
     
-    await send_whatsapp_circuit_breaker(phone, mensaje)
-    
+    try:
+        from chatbot.whatsapp_client import send_whatsapp_message
+        success = await send_whatsapp_message(phone, mensaje)
+        if not success:
+            # Revertimos status si falla
+            await adb["visitas"].update_one({"visita_code": visita_code}, {"$set": {"status": contract.get("status", "created")}})
+            raise HTTPException(status_code=400, detail="El número de teléfono es inválido o no tiene WhatsApp. Corríjalo e intente nuevamente.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        await adb["visitas"].update_one({"visita_code": visita_code}, {"$set": {"status": contract.get("status", "created")}})
+        raise HTTPException(status_code=400, detail=f"Error en WhatsApp: {str(e)}")
+        
     return {"status": "ok", "message": "Enviado por WhatsApp"}
 
 @router.get("/api/statuses")
@@ -1248,6 +1289,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
             "$set": {
                 "status": "signed", 
                 "security.token_used": True,
+                "security.signature_timestamp": datetime.now(timezone.utc),
                 "locked": True
             },
             "$push": {"timeline": {

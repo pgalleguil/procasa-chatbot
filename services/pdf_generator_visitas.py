@@ -171,8 +171,8 @@ class PDFGeneratorVisitas:
         Story.append(Spacer(1, 0.1 * inch))
         
         legal_text = """El comitente, suscrito o su cónyuge hemos encargado personal, telefónicamente, vía email, whatsapp o por algún medio
-electrónico esta orden de visita y efectuaremos toda la transacción respecto de ellas, sólo por intermedio de PROCASA S.A y/o
-sus franquiciados. En consecuencia, por venta, nos comprometemos a pagar, al momento de firmar la escritura de compraventa,
+electrónico esta orden de visita y efectuaremos toda la transacción respecto de ellas, sólo por intermedio de Inmobiliaria Sucre SpA y/o
+sus asociados. En consecuencia, por venta, nos comprometemos a pagar, al momento de firmar la escritura de compraventa,
 una comisión del 2% más IVA Sobre el monto de la operación, CON UN PAGO MINIMO DE $1.000.000 + IVA. Siendo esta
 orden personal e intransferible, si en cualquier época y aún no estando vigente el plazo del Convenio de Corretaje, con el
 propietario, nos entendiéramos directamente con éste o por intermedio de otro corredor o si proporcionáramos su uso o
@@ -194,7 +194,7 @@ arbitrador designado por Centro Nacional de Arbitrajes S.A.("CNA"), de acuerdo a
         Story.append(Spacer(1, 0.4 * inch))
         
         # Signatures layout: Side by side (Centered)
-        sig_left = Paragraph(f"<para align='center'><b>{ejecutivo_nombre}</b><br/>Procasa S.A.</para>", normal_style)
+        sig_left = Paragraph(f"<para align='center'><b>{ejecutivo_nombre}</b><br/>Inmobiliaria Sucre SpA</para>", normal_style)
         sig_right = Paragraph(f"<para align='center'><b>{PDFGeneratorVisitas.format_rut(rut)} {nombre}</b><br/>Cliente</para>", normal_style)
         
         data_signatures = [[sig_left, sig_right]]

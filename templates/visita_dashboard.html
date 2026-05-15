@@ -934,11 +934,12 @@
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer border-top-0 align-items-center">
+                <div class="modal-footer border-top-0 align-items-center flex-wrap gap-2">
                     <div id="missingFieldsMsg" class="text-danger small fw-bold d-none me-auto">
                         <i class="fa-solid fa-circle-exclamation me-1"></i>
                         <span id="missingFieldsList">Faltan campos obligatorios o hay errores.</span>
                     </div>
+                    <div id="createErrorMsg" class="alert alert-danger d-none w-100 mb-0 py-2 px-3 small" role="alert" style="border-left:4px solid #dc3545;"></div>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
                     <button type="button" id="btnGenerateContract" class="btn btn-primary fw-bold" disabled
                         onclick="generateContract()">
@@ -1256,25 +1257,46 @@
                 property_code: form.property_code?.value || ''
             };
 
-            fetch('/visitas/api/create', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            }).then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        window.location.reload();
+            try {
+                const res = await fetch('/visitas/api/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok && data.status === 'success') {
+                    window.location.reload();
+                } else {
+                    // Mostrar el mensaje de error del backend (ej: propiedad no encontrada)
+                    const errorMsg = data.detail || data.message || 'Error al crear el documento.';
+                    // Buscar el div de error en el modal si existe, o crear toast
+                    const errDiv = document.getElementById('createErrorMsg');
+                    if (errDiv) {
+                        errDiv.innerHTML = `<i class="fa-solid fa-triangle-exclamation me-2"></i>${errorMsg}`;
+                        errDiv.classList.remove('d-none');
                     } else {
-                        alert('Error: ' + data.message);
-                        btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
-                        btn.disabled = false;
+                        let toastEl = document.getElementById('create-err-toast');
+                        if (!toastEl) {
+                            toastEl = document.createElement('div');
+                            toastEl.id = 'create-err-toast';
+                            toastEl.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;max-width:400px;';
+                            document.body.appendChild(toastEl);
+                        }
+                        toastEl.innerHTML = `
+                            <div class="alert alert-danger alert-dismissible shadow-lg" role="alert" style="border-left:4px solid #dc3545;">
+                                <strong><i class="fa-solid fa-triangle-exclamation me-2"></i>Error al crear</strong><br>
+                                <small>${errorMsg}</small>
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>`;
+                        setTimeout(() => toastEl.remove(), 10000);
                     }
-                })
-                .catch(err => {
-                    alert('Error de conexión');
                     btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
                     btn.disabled = false;
-                });
+                }
+            } catch (err) {
+                btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
+                btn.disabled = false;
+            }
         }
 
         // Listeners globales
@@ -1283,6 +1305,9 @@
             if (modal) {
                 modal.addEventListener('shown.bs.modal', function () {
                     if (!hasInteracted) triggerPreview();
+                    // Limpiar mensajes de error previos
+                    const errDiv = document.getElementById('createErrorMsg');
+                    if (errDiv) errDiv.classList.add('d-none');
                 });
             }
 
@@ -1340,6 +1365,7 @@
         }
 
         async function sendVisita(code, btn, force = false) {
+            const originalIcon = '<i class="fa-brands fa-whatsapp"></i>';
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
             btn.disabled = true;
             try {
@@ -1349,13 +1375,27 @@
                     window.location.reload();
                 } else {
                     const msg = data.detail || data.message || 'Error desconocido';
-                    alert('Error al enviar: ' + msg);
-                    btn.innerHTML = '<i class="fa-brands fa-whatsapp"></i>';
+                    // Mostrar alerta visual en la fila
+                    const row = btn.closest('tr');
+                    let alertEl = document.getElementById(`send-err-${code}`);
+                    if (!alertEl) {
+                        alertEl = document.createElement('div');
+                        alertEl.id = `send-err-${code}`;
+                        alertEl.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;max-width:380px;';
+                        document.body.appendChild(alertEl);
+                    }
+                    alertEl.innerHTML = `
+                        <div class="alert alert-danger alert-dismissible shadow-lg" role="alert" style="border-left:4px solid #dc3545;">
+                            <strong><i class="fa-solid fa-triangle-exclamation me-2"></i>Error al enviar</strong><br>
+                            <small>${msg}</small>
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>`;
+                    setTimeout(() => alertEl.remove(), 8000);
+                    btn.innerHTML = originalIcon;
                     btn.disabled = false;
                 }
             } catch (e) {
-                alert('Error de red al enviar.');
-                btn.innerHTML = '<i class="fa-brands fa-whatsapp"></i>';
+                btn.innerHTML = originalIcon;
                 btn.disabled = false;
             }
         }
@@ -1418,17 +1458,19 @@
                     body: JSON.stringify(payload)
                 });
                 const result = await res.json();
-                if (result.status === 'success') {
+                if (res.ok && result.status === 'success') {
                     bootstrap.Modal.getInstance(document.getElementById('modalEditVisita')).hide();
                     window.location.reload();
                 } else {
-                    errDiv.textContent = 'Error: ' + (result.message || 'No se pudo guardar.');
+                    // Capturar errores HTTP 400/403 del backend
+                    const errorMsg = result.detail || result.message || 'No se pudo guardar.';
+                    errDiv.innerHTML = `<i class="fa-solid fa-triangle-exclamation me-2"></i>${errorMsg}`;
                     errDiv.classList.remove('d-none');
                     btn.innerHTML = '<i class="fa-solid fa-floppy-disk me-2"></i>Guardar Cambios';
                     btn.disabled = false;
                 }
             } catch (e) {
-                errDiv.textContent = 'Error de conexión. Intenta nuevamente.';
+                errDiv.innerHTML = '<i class="fa-solid fa-triangle-exclamation me-2"></i>Error de conexión. Intenta nuevamente.';
                 errDiv.classList.remove('d-none');
                 btn.innerHTML = '<i class="fa-solid fa-floppy-disk me-2"></i>Guardar Cambios';
                 btn.disabled = false;

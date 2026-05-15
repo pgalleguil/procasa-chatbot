@@ -982,15 +982,21 @@
                             <div class="col-md-6">
                                 <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span
                                         class="required-star">*</span></label>
-                                <input type="text" class="form-control" id="editPhone" required>
+                                <div class="w-100">
+                                    <input type="tel" class="form-control w-100" id="editPhone" required placeholder="912345678">
+                                </div>
+                                <div class="invalid-feedback" id="editPhoneErrorMsg">Ingresa un teléfono válido.</div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label text-secondary small text-uppercase fw-bold">Domicilio</label>
                                 <input type="text" class="form-control" id="editDireccion" placeholder="Opcional">
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-6 position-relative">
                                 <label class="form-label text-secondary small text-uppercase fw-bold">Comuna</label>
-                                <input type="text" class="form-control" id="editComuna" placeholder="Opcional">
+                                <input type="text" class="form-control" id="editComuna" placeholder="Opcional"
+                                    autocomplete="off" oninput="filterEditComunas()" onfocus="showEditComunas()"
+                                    onblur="setTimeout(() => document.getElementById('editComunaDropdown').classList.add('d-none'), 200)">
+                                <div id="editComunaDropdown" class="autocomplete-dropdown custom-scrollbar d-none"></div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label text-secondary small text-uppercase fw-bold">Código Propiedad

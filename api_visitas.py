@@ -193,7 +193,8 @@ async def preview_contract(request: Request):
     """Retorna un PDF generado en caliente para previsualización."""
     try:
         data = _normalize_visita_fields(await request.json())
-        data = await _enrich_with_property_data(data)
+        # Preview no consulta MongoDB por propiedad — es solo una vista visual instantánea.
+        # La validación real ocurre al crear el documento.
         
         from chatbot.storage import get_async_db
         adb = get_async_db()

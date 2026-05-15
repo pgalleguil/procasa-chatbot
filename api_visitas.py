@@ -193,8 +193,10 @@ async def preview_contract(request: Request):
     """Retorna un PDF generado en caliente para previsualización."""
     try:
         data = _normalize_visita_fields(await request.json())
-        # Preview no consulta MongoDB por propiedad — es solo una vista visual instantánea.
-        # La validación real ocurre al crear el documento.
+        # Enriquecer con datos de propiedad si el código existe en la BD
+        # El preview nunca bloquea: si la propiedad no existe, simplemente no muestra sus datos
+        data = await _enrich_with_property_data(data)
+        data.pop("_property_found", None)  # No bloquear en preview
         
         from chatbot.storage import get_async_db
         adb = get_async_db()
@@ -438,7 +440,8 @@ async def download_original_pdf(visita_code: str):
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={
-            "Cache-Control": "public, max-age=86400",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
             "Content-Disposition": f"inline; filename=Orden_Visita_{tipo}_{prop_code}_{visita_code}.pdf"
         }
     )
@@ -745,6 +748,7 @@ async def update_visita(visita_code: str, request: Request):
     contract_updated = await adb["visitas"].find_one({"visita_code": visita_code})
     if contract_updated:
         exec_data = contract_updated.get("executive_data", {})
+        prop_data = contract_updated.get("property_data", {})
         data_payload = {
             "visita_code": visita_code,
             "property_code": contract_updated.get("property_code", ""),
@@ -754,11 +758,13 @@ async def update_visita(visita_code: str, request: Request):
             "email": contract_updated.get("client_data", {}).get("email", ""),
             "cliente_direccion": contract_updated.get("client_data", {}).get("direccion", ""),
             "cliente_comuna": contract_updated.get("client_data", {}).get("comuna", ""),
-            "property_comuna": contract_updated.get("property_data", {}).get("comuna", ""),
-            "property_region": contract_updated.get("property_data", {}).get("region", ""),
-            "property_tipo": contract_updated.get("property_data", {}).get("tipo", ""),
-            "precio": contract_updated.get("property_data", {}).get("precio", ""),
-            "operacion": contract_updated.get("property_data", {}).get("operacion", ""),
+            # Datos de propiedad desde property_data (subdocumento en MongoDB)
+            "property_comuna": prop_data.get("comuna", ""),
+            "property_region": prop_data.get("region", ""),
+            "property_tipo": prop_data.get("tipo", ""),
+            "precio": prop_data.get("precio", ""),
+            "operacion": prop_data.get("operacion", ""),
+            # Datos del ejecutivo
             "ejecutivo_nombre": exec_data.get("nombre", ""),
             "ejecutivo_email": exec_data.get("email", ""),
             "ejecutivo_telefono": exec_data.get("phone") or exec_data.get("telefono", ""),

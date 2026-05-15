@@ -1603,8 +1603,9 @@ async def verify_contract(visita_code: str, request: Request):
             return [_json_safe(v) for v in value]
         return value
 
-    db = get_db()
-    contract = db["visitas"].find_one({"visita_code": visita_code})
+    from chatbot.storage import get_async_db
+    db = get_async_db()
+    contract = await db["visitas"].find_one({"visita_code": visita_code})
     if not contract:
         return HTMLResponse("<h1>Orden de Visita no encontrado</h1>", status_code=404)
     
@@ -1616,8 +1617,7 @@ async def verify_contract(visita_code: str, request: Request):
     formatted_date = "---"
     if signature_date_raw:
         try:
-            from datetime import datetime, timezone
-            from chatbot.constants import CHILE_TZ
+
             dt = datetime.fromisoformat(signature_date_raw)
             if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
             dt_cl = dt.astimezone(CHILE_TZ)

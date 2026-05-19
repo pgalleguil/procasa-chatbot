@@ -1122,9 +1122,11 @@ async def campana_respuesta(
     email: str = Query(...),
     accion: str = Query(...),
     codigos: str = Query("N/A"),
-    campana: str = Query(...)
+    campana: str = Query(...),
+    token: str = Query(""),
+    mode: str = Query("live")
 ):
-    return await handle_campana_respuesta(request, email, accion, codigos, campana)
+    return await handle_campana_respuesta(request, email, accion, codigos, campana, mode, token)
 
 @app.get("/api/reporte_real")
 async def api_reporte_real():

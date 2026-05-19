@@ -939,7 +939,8 @@
                         <i class="fa-solid fa-circle-exclamation me-1"></i>
                         <span id="missingFieldsList">Faltan campos obligatorios o hay errores.</span>
                     </div>
-                    <div id="createErrorMsg" class="alert alert-danger d-none w-100 mb-0 py-2 px-3 small" role="alert" style="border-left:4px solid #dc3545;"></div>
+                    <div id="createErrorMsg" class="alert alert-danger d-none w-100 mb-0 py-2 px-3 small" role="alert"
+                        style="border-left:4px solid #dc3545;"></div>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
                     <button type="button" id="btnGenerateContract" class="btn btn-primary fw-bold" disabled
                         onclick="generateContract()">
@@ -983,7 +984,8 @@
                                 <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono <span
                                         class="required-star">*</span></label>
                                 <div class="w-100">
-                                    <input type="tel" class="form-control w-100" id="editPhone" required placeholder="912345678">
+                                    <input type="tel" class="form-control w-100" id="editPhone" required
+                                        placeholder="912345678">
                                 </div>
                                 <div class="invalid-feedback" id="editPhoneErrorMsg">Ingresa un teléfono válido.</div>
                             </div>
@@ -996,7 +998,8 @@
                                 <input type="text" class="form-control" id="editComuna" placeholder="Opcional"
                                     autocomplete="off" oninput="filterEditComunas()" onfocus="showEditComunas()"
                                     onblur="setTimeout(() => document.getElementById('editComunaDropdown').classList.add('d-none'), 200)">
-                                <div id="editComunaDropdown" class="autocomplete-dropdown custom-scrollbar d-none"></div>
+                                <div id="editComunaDropdown" class="autocomplete-dropdown custom-scrollbar d-none">
+                                </div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label text-secondary small text-uppercase fw-bold">Código Propiedad

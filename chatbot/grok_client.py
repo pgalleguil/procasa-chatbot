@@ -135,6 +135,12 @@ Ejemplo recomendado: "¡Hola! Bienvenido/a a Procasa. 😊 Si ya tienes una prop
             contenido_json_str = contenido_json_str[7:-3].strip()
         elif contenido_json_str.startswith("```"):
             contenido_json_str = contenido_json_str[3:-3].strip()
+        # Fallback común: el modelo devuelve texto + JSON embebido.
+        if not contenido_json_str.startswith("{"):
+            ini = contenido_json_str.find("{")
+            fin = contenido_json_str.rfind("}")
+            if ini != -1 and fin != -1 and fin > ini:
+                contenido_json_str = contenido_json_str[ini:fin + 1].strip()
 
         if not contenido_json_str:
             raise ValueError("Respuesta vacia del modelo")

@@ -16,6 +16,16 @@ from .utils import get_accion_config, normalize_accion
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="campanas/templates")
 
+def _find_contacto_by_email(contactos, email_lower: str):
+    contacto = contactos.find_one({"email_propietario_lc": email_lower})
+    if contacto:
+        return contacto
+    # Fallback legacy para datos antiguos sin campo normalizado.
+    contacto = contactos.find_one({"email_propietario": {"$regex": f"^{re.escape(email_lower)}$", "$options": "i"}})
+    if contacto and contacto.get("email_propietario_lc") != email_lower:
+        contactos.update_one({"_id": contacto.get("_id")}, {"$set": {"email_propietario_lc": email_lower}})
+    return contacto
+
 
 def _sync_process_campana_response(
     email: str,
@@ -38,7 +48,7 @@ def _sync_process_campana_response(
     respuestas = db[Config.COLLECTION_RESPUESTAS]
     historico = db[Config.COLLECTION_CAMPANAS_LOG]
 
-    contacto = contactos.find_one({"email_propietario": {"$regex": f"^{re.escape(email_lower)}$", "$options": "i"}})
+    contacto = _find_contacto_by_email(contactos, email_lower)
     update_price = contacto.get("update_price", {}) if contacto else {}
 
     # Bloqueo fuerte: 1 respuesta por email+campaña
@@ -115,7 +125,7 @@ def _sync_process_campana_response(
     )
 
     upd = contactos.update_one(
-        {"email_propietario": {"$regex": f"^{re.escape(email_lower)}$", "$options": "i"}},
+        {"$or": [{"email_propietario_lc": email_lower}, {"email_propietario": {"$regex": f"^{re.escape(email_lower)}$", "$options": "i"}}]},
         {
             "$set": {
                 "update_price.campana_nombre": campana,
@@ -123,6 +133,7 @@ def _sync_process_campana_response(
                 "update_price.fecha_respuesta": ahora,
                 "estado": config_accion["estado"],
                 "bloqueo_email": accion in {"no_disponible", "unsubscribe"},
+                "email_propietario_lc": email_lower,
             }
         },
     )
@@ -131,7 +142,7 @@ def _sync_process_campana_response(
         email_lower, campana, accion, mode, getattr(upd, "matched_count", 0), getattr(upd, "modified_count", 0),
     )
 
-    contacto = contactos.find_one({"email_propietario": {"$regex": f"^{re.escape(email_lower)}$", "$options": "i"}})
+    contacto = _find_contacto_by_email(contactos, email_lower)
     nombre = "Sin nombre"
     telefono = "Sin telefono"
     if contacto:

@@ -86,7 +86,18 @@ def _forensic_sleep(seconds):
 
 def _forensic_subprocess_run(*args, **kwargs):
     if _in_event_loop_thread():
-        logger.warning("[BLOCKING_DETECTOR] subprocess.run llamado dentro de async/event loop")
+        try:
+            stack = inspect.stack()
+            project_frames = [
+                fr for fr in stack
+                if fr.filename and ("\\ChatBot_v4_Grok\\" in fr.filename or "/ChatBot_v4_Grok/" in fr.filename)
+            ]
+            short = " > ".join(
+                f"{os.path.basename(fr.filename)}:{fr.function}:{fr.lineno}" for fr in project_frames[:5]
+            ) if project_frames else "stack_no_disponible"
+            logger.warning(f"[BLOCKING_DETECTOR] subprocess.run llamado dentro de async/event loop stack={short}")
+        except Exception:
+            logger.warning("[BLOCKING_DETECTOR] subprocess.run llamado dentro de async/event loop")
     return _ORIG_SUBPROCESS_RUN(*args, **kwargs)
 
 def _forensic_future_result(self, *args, **kwargs):
@@ -1877,6 +1888,9 @@ def asegurar_indices_db():
             logger.warning(f"Error creando índice comuna_norm: {e}")
         # Índice para Market Insights
         db["universo_cartera"].create_index([("comuna", 1), ("tipo", 1)])
+        # Índices para respuestas de campañas por email
+        db[Config.COLLECTION_CONTACTOS].create_index([("email_propietario_lc", 1)], name="idx_contactos_email_lc")
+        db[Config.COLLECTION_CAMPANAS_LOG].create_index([("token", 1)], name="idx_campanas_token")
         
         logger.info("Índices de CRM y Captación asegurados.")
     except Exception as e:

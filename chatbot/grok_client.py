@@ -8,6 +8,10 @@ client = OpenAI(
     base_url=Config.GROK_BASE_URL
 )
 
+
+def _model_name() -> str:
+    return (Config.GROK_MODEL or "grok-4-1-fast-non-reasoning").strip()
+
 MAX_TOKENS = {
     "propietario": 600,
     "prospecto": 500
@@ -17,7 +21,7 @@ def generar_respuesta(messages: list, tipo: str = "prospecto") -> str:
     try:
         print(f"[GROK] Enviando {len(messages)} mensajes al modelo...")
         response = client.chat.completions.create(
-            model=Config.GROK_MODEL or "grok-4-1-fast-non-reasoning",
+            model=_model_name(),
             messages=messages,
             temperature=Config.GROK_TEMPERATURE,
             max_tokens=MAX_TOKENS.get(tipo, 500),
@@ -117,7 +121,7 @@ Ejemplo recomendado: "¡Hola! Bienvenido/a a Procasa. 😊 Si ya tienes una prop
         print(f"[GROK] Generando respuesta estructurada ({len(structured_messages)} msgs)...")
         
         response = client.chat.completions.create(
-            model=Config.GROK_MODEL or "grok-4-1-fast-non-reasoning",
+            model=_model_name(),
             messages=structured_messages,
             temperature=0.1, 
             max_tokens=600, 
@@ -132,6 +136,8 @@ Ejemplo recomendado: "¡Hola! Bienvenido/a a Procasa. 😊 Si ya tienes una prop
         elif contenido_json_str.startswith("```"):
             contenido_json_str = contenido_json_str[3:-3].strip()
 
+        if not contenido_json_str:
+            raise ValueError("Respuesta vacia del modelo")
         datos = json.loads(contenido_json_str)
 
         return {
@@ -142,6 +148,16 @@ Ejemplo recomendado: "¡Hola! Bienvenido/a a Procasa. 😊 Si ya tienes una prop
 
     except Exception as e:
         print(f"[ERROR GROK] {e}")
+        try:
+            # Fallback: responder natural para no cortar la conversación aunque falle el parseo JSON.
+            texto = generar_respuesta(messages, tipo="prospecto")
+            return {
+                "intencion": "consulta_general",
+                "datos_extraidos": {},
+                "respuesta_bot": texto or "Disculpa, tuve un problema momentáneo. ¿Me repites tu consulta?",
+            }
+        except Exception:
+            pass
         return {
             "intencion": "consulta_general",
             "datos_extraidos": {},

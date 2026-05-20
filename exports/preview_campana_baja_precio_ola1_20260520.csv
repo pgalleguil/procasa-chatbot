@@ -1,0 +1,462 @@
+﻿codigo;email;ejecutivo;ruta;brecha_pct;tiene_pdf;pdf_motivo;confidence_score;categoria_outlier;usa_tasacion;accion_sugerida;precio_publicado
+16348;javieririgoyenr@gmail.com;Mariela Arriagada;Ruta Ajuste Progresivo;83.33%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);55.0
+16469;SIN_EMAIL;Mariela Arriagada;Cola Manual;9.36%;SI;ok;100;Datos CRM faltantes;NO;Omitir - Sin email;7750.0
+16479;SIN_EMAIL;Mariela Arriagada;Cola Manual;125.19%;SI;ok;100;Datos CRM faltantes;NO;Omitir - Sin email;3967.85
+16482;SIN_EMAIL;Mariela Arriagada;Cola Manual;82.69%;SI;ok;100;Datos CRM faltantes;NO;Omitir - Sin email;4166.25
+16485;SIN_EMAIL;Mariela Arriagada;Cola Manual;8.50%;SI;ok;100;Datos CRM faltantes;NO;Omitir - Sin email;8.68
+16486;SIN_EMAIL;Paula Cristina Morales Rocco;Cola Manual;N/A;NO;pdf_missing;65;Datos CRM faltantes;NO;Omitir - Sin email;8927.67
+16492;SIN_EMAIL;Rocío Aliaga;Cola Manual;20.52%;SI;ok;85;Datos CRM faltantes;NO;Omitir - Sin email;3700.0
+16514;SIN_EMAIL;Erika Garrido Varela;Cola Manual;-7.63%;SI;ok;100;Datos CRM faltantes;NO;Omitir - Sin email;4215.85
+16515;SIN_EMAIL;Erika Garrido Varela;Cola Manual;24.23%;SI;ok;75;Datos CRM faltantes;NO;Omitir - Sin email;1339.15
+16517;SIN_EMAIL;Mariela Arriagada;Cola Manual;-74.84%;SI;ok;100;Datos CRM faltantes;NO;Omitir - Sin email;17.36
+16520;SIN_EMAIL;Paula Cristina Morales Rocco;Cola Manual;N/A;NO;pdf_missing;65;Datos CRM faltantes;NO;Omitir - Sin email;1859.93
+16521;SIN_EMAIL;Paula Cristina Morales Rocco;Cola Manual;23.20%;SI;ok;100;Datos CRM faltantes;NO;Omitir - Sin email;1735.94
+16523;SIN_EMAIL;Paula Cristina Morales Rocco;Cola Manual;N/A;NO;pdf_missing;65;Datos CRM faltantes;NO;Omitir - Sin email;1611.94
+16527;SIN_EMAIL;Susana Ensignia;Cola Manual;43.75%;SI;ok;100;Datos CRM faltantes;NO;Omitir - Sin email;23.0
+16533;SIN_EMAIL;Rocío Aliaga;Cola Manual;58.27%;SI;ok;85;Datos CRM faltantes;NO;Omitir - Sin email;2253.0
+16544;SIN_EMAIL;Mariela Arriagada;Cola Manual;N/A;NO;pdf_missing;75;Datos CRM faltantes;NO;Omitir - Sin email;50.0
+16548;SIN_EMAIL;Paula Cristina Morales Rocco;Cola Manual;22.99%;SI;ok;100;Datos CRM faltantes;NO;Omitir - Sin email;2355.91
+16555;SIN_EMAIL;Paula Cristina Morales Rocco;Cola Manual;N/A;NO;pdf_missing;40;Datos CRM faltantes;NO;Omitir - Sin email;3558.67
+16588;SIN_EMAIL;Paula Cristina Morales Rocco;Cola Manual;N/A;NO;pdf_missing;65;Datos CRM faltantes;NO;Omitir - Sin email;7439.73
+16633;SIN_EMAIL;Paula Cristina Morales Rocco;Cola Manual;N/A;NO;pdf_missing;65;Datos CRM faltantes;NO;Omitir - Sin email;1239.95
+16645;SIN_EMAIL;Paula Cristina Morales Rocco;Cola Manual;N/A;NO;pdf_missing;65;Datos CRM faltantes;NO;Omitir - Sin email;1983.93
+16685;SIN_EMAIL;Mariela Arriagada;Cola Manual;N/A;NO;pdf_missing;75;Datos CRM faltantes;NO;Omitir - Sin email;60.0
+16704;SIN_EMAIL;Mariela Arriagada;Cola Manual;N/A;NO;pdf_missing;75;Datos CRM faltantes;NO;Omitir - Sin email;4250.0
+5347;diaz.salgado.javier@gmail.com;Susana Ensignia;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2975.89
+5399;vsanza@gmail.com;Susana Ensignia;Cola Manual;307.73%;SI;ok;90;Error probable - Cola manual;NO;Revisión comercial manual obligatoria;95.0
+5400;vsanza@gmail.com;Susana Ensignia;Ruta Ajuste Progresivo;137.50%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);95.0
+5438;rodgarces@hotmail.com;Erika Garrido Varela;Ruta Inteligencia Comunal;-11.63%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);10230.0
+5451;malujan99@yahoo.com;Susana Ensignia;Ruta Tasación Individual;19.77%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;5400.0
+5522;aracelisilva2212@gmail.com;Mariela Arriagada;Ruta Inteligencia Comunal;-16.88%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);1135.8
+5605;jacaro@procasa.cl;Mariela Arriagada;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);967.16
+5612;jzentenou.jz@gmail.com;Erika Garrido Varela;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3099.89
+5628;jcabrera@certex.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);9250.0
+5641;nancy.angelica.salazar@gmail.com;Erika Garrido Varela;Ruta Tasación Individual;18.91%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3100.0
+5667;jotadiazleon@gmail.com;Mariela Arriagada;Ruta Tasación Individual;36.53%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2850.0
+5670;daniela.ortega@westayrent.com;Erika Garrido Varela;Ruta Inteligencia Comunal;-7.07%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2090.0
+5671;daniela.ortega@westayrent.com;Erika Garrido Varela;Ruta Inteligencia Comunal;-88.34%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2090.0
+5672;daniela.ortega@westayrent.com;Erika Garrido Varela;Ruta Inteligencia Comunal;-32.78%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2090.0
+5695;nicolas.diaz@westayrent.com;Mariela Arriagada;Ruta Tasación Individual;37.01%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;18507.0
+5704;sieteadm@gmail.com;Susana Ensignia;Ruta Ajuste Progresivo;66.67%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);30.0
+5705;sieteadm@gmail.com;Susana Ensignia;Ruta Tasación Individual;16.67%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;21.0
+5708;sieteadm@gmail.com;Susana Ensignia;Ruta Inteligencia Comunal;-30.00%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);28.0
+5709;CRISTIAN.PICHARA@GMAIL.COM;Mariela Arriagada;Ruta Tasación Individual;21.00%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2290.0
+5710;marcelo.medel.v@gmail.com;Mariela Arriagada;Ruta Tasación Individual;15.19%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2935.0
+5711;eduarmarusic@gmail.com;Mariela Arriagada;Ruta Tasación Individual;10.79%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2265.0
+5713;CRISTIAN.PICHARA@GMAIL.COM;Mariela Arriagada;Ruta Tasación Individual;17.56%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2290.0
+5716;sieteadm@gmail.com;Susana Ensignia;Ruta Inteligencia Comunal;-12.50%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);28.0
+5723;daniela.ortega@westayrent.com;Erika Garrido Varela;Ruta Tasación Individual;12.40%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2090.0
+5735;jandres1420@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-11.96%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2300.0
+5748;natalypavez@gmail.com;Erika Garrido Varela;Ruta Ajuste Progresivo;102.55%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);3500.0
+5763;asesoriga@gmail.com;Susana Ensignia;Ruta Inteligencia Comunal;-3.97%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);6695.75
+5765;juanpaulo.riverag@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;28.60%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3100.0
+5783;crosselb@gmail.com;Erika Garrido Varela;Ruta Tasación Individual;7.87%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;1559.86
+5806;alvarezhidalgovictor@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3990.0
+5807;Claudiabrito@hotmail.cl;Jorge Pablo Caro;Ruta Tasación Individual;6.45%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4500.0
+5860;centrovioleta@hotmail.com;Mariela Arriagada;Ruta Inteligencia Comunal;-87.42%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);8.68
+5868;apco2004@yahoo.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2727.9
+5873;su.connie@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-5.45%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);3900.0
+5887;pabloignaciohurtado@gmail.com;Erika Garrido Varela;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;40;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1822.0
+5900;sol.asd@yahoo.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);10500.0
+5901;lmaureirav@yahoo.com;Mariela Arriagada;Ruta Inteligencia Comunal;-1.87%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2800.0
+5906;Claudiabrito@hotmail.cl;Jorge Pablo Caro;Ruta Tasación Individual;18.37%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3200.0
+5912;kpinochetbriceno@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);7000.0
+5917;mrigoli@fidelis.cl;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;-33.75%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);9650.0
+5918;mrigoli@fidelis.cl;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;-39.74%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);47.0
+5919;mrigoli@fidelis.cl;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;-9.39%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);6400.0
+5920;mrigoli@fidelis.cl;Raquel Cheneaux Valz;Ruta Tasación Individual;2.94%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;35.0
+5922;fernandoc1234@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;6.53%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2700.0
+5923;jacaro@procasa.cl;Mariela Arriagada;Ruta Tasación Individual;45.48%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;13000.0
+5924;martitasepulvedaortega@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1983.93
+5927;quezada.yazmin@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;5.68%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;5307.01
+5931;hdiazi@hotmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;95.76%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);2727.9
+5949;torres1430@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;8.87%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;6200.0
+5962;nespinoz2004@yahoo.com;Mariela Arriagada;Ruta Tasación Individual;24.93%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;10600.0
+5965;Rchcl9@yahoo.com;Jorge Pablo Caro;Ruta Tasación Individual;0.68%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2000.0
+5968;reservas@antukuyen.cl;Erika Garrido Varela;Cola Manual;415.67%;SI;ok;80;Error probable - Cola manual;NO;Revisión comercial manual obligatoria;5455.8
+5974;Alekisiliuk@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;34.72%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;10500.0
+5980;chateaunicole@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;34.85%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;13000.0
+5985;gaspar.amw@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-1.75%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);56.0
+5986;carmen.gloria.retamal@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);4463.84
+5988;inmobiliariavidalltda@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;39.32%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3237.0
+5989;Dr.danielosoriomoore@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;9.50%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;6300.0
+5994;herreradelabarra@hotmail.com;Mariela Arriagada;Ruta Ajuste Progresivo;66.65%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);15810.0
+5996;inmobiliariavidalltda@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-22.54%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2628.7
+6001;bnavarreteh.96@gmail.com;Mariela Arriagada;Ruta Tasación Individual;11.62%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2450.0
+6005;domingoponce@outlook.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);6323.77
+6006;inversioneslosrobles@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;218.18%;SI;ok;99;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);70.0
+6007;inversioneslosrobles@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);135.0
+6008;inversioneslosrobles@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);35.0
+6021;reservas@antukuyen.cl;Jorge Pablo Caro;Ruta Ajuste Progresivo;253.33%;SI;ok;95;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);53.0
+6026;sieteadm@gmail.com;Erika Garrido Varela;Ruta Inteligencia Comunal;-33.46%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);27.28
+6027;sieteadm@gmail.com;Susana Ensignia;Ruta Inteligencia Comunal;-30.00%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);28.0
+6028;sieteadm@gmail.com;Susana Ensignia;Ruta Inteligencia Comunal;0.00%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);21.0
+6029;sieteadm@gmail.com;Susana Ensignia;Ruta Inteligencia Comunal;0.00%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);40.0
+6030;sieteadm@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-19.40%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);32.24
+6033;cho.hernandez.ortiz@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3719.86
+6035;earr@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;0.34%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;6300.0
+6036;earr@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;0.34%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;6300.0
+6037;cvillegasabogada@gmail.com;Rocío Aliaga;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2107.92
+6041;AITOR@GEOL.CL;Jorge Pablo Caro;Ruta Inteligencia Comunal;-0.28%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);5900.0
+6042;alejandrabrunet@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1016.76
+6055;Ignacio.mas.m@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-48.59%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);3900.0
+6059;ftirapegui@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);10000.0
+6061;cmenesesg@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;7.19%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;11200.0
+6062;pmunitad@yahoo.com;Jorge Pablo Caro;Ruta Tasación Individual;5.06%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3208.0
+6083;cbeyzaga@yahoo.com;Jorge Pablo Caro;Ruta Tasación Individual;8.62%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;7500.0
+6100;Jmferrand@caltronics.cl;Jorge Pablo Caro;Ruta Tasación Individual;11.55%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3700.0
+6101;ANITA.NUNEZTOLEDO@GMAIL.COM;Jorge Pablo Caro;Ruta Tasación Individual;5.03%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2231.92
+6104;abogadochileno@gmail.com;Erika Garrido Varela;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;40;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);61380.0
+6115;ivansaavedragodoy@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-43.52%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);3100.0
+6131;reservas@antukuyen.cl;Paula Cristina Morales Rocco;Cola Manual;415.67%;SI;ok;80;Error probable - Cola manual;NO;Revisión comercial manual obligatoria;5455.8
+6132;jeanese12@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);185.0
+6133;CYZS@YAHOO.ES;Jorge Pablo Caro;Ruta Tasación Individual;16.31%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4600.0
+6160;g.mancilla.o@gmail.com;Erika Garrido Varela;Ruta Tasación Individual;10.74%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;7900.0
+6162;benitaya@yahoo.es;Jorge Pablo Caro;Ruta Inteligencia Comunal;-1.91%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);7113.0
+6170;reyeslemusmarco@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;129.38%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);4339.84
+6183;cmercadosaldia@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;18.61%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;6500.0
+6186;mptoledo@live.cl;Jorge Pablo Caro;Ruta Tasación Individual;17.53%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3500.0
+6193;j.mfigueroa27@hotmail.com;Mariela Arriagada;Ruta Tasación Individual;38.23%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4614.0
+6199;conjefe@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-12.70%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);3100.0
+6218;jonathan.ehijos@gmail.com;Raquel Cheneaux Valz;Ruta Tasación Individual;20.31%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4650.0
+6232;ferjara@hotmail.cl;Jorge Pablo Caro;Ruta Tasación Individual;10.53%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3700.0
+6234;ANDRESMAZZOTTIPIRLO@HOTMAIL.COM;Mariela Arriagada;Ruta Ajuste Progresivo;158.75%;SI;ok;80;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);15871.42
+6235;juliovivancoaravena@gmail.com;Mariela Arriagada;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1729.74
+6240;transazagra1@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);11729.0
+6241;elenayala@gmail.com;Erika Garrido Varela;Ruta Tasación Individual;38.86%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;5950.0
+6245;gcalvof@gmail.com;Erika Garrido Varela;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);27400.0
+6247;felipe.toro.as@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;0.57%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;6017.0
+6252;jacaro@procasa.cl;Mariela Arriagada;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);36000.0
+6254;melani.bravo@gmail.com;Erika Garrido Varela;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;40;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);8950.0
+6255;aamunozzi@gmail.com;Rocío Aliaga;Ruta Inteligencia Comunal;-16.35%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);1785.53
+6258;gtacchi@hometec.cl;Jorge Pablo Caro;Ruta Tasación Individual;44.26%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;12800.0
+6260;amarchesse@gmail.com;Mariela Arriagada;Ruta Inteligencia Comunal;-21.84%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2430.31
+6262;wnavarrete@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;9.02%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3100.0
+6264;amarchesse@gmail.com;Mariela Arriagada;Ruta Inteligencia Comunal;-14.46%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2660.0
+6273;mrigoli@fidelis.cl;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;-44.34%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);13200.0
+6274;Claudiamonserrat@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;33.96%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;10415.62
+6280;gonzalo.soto.pinto@gmail.com;Mariela Arriagada;Ruta Tasación Individual;0.09%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2325.0
+6282;riverosenrique75@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1363.95
+6283;camossi@vtr.net;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);55.0
+6285;carolina.bff@gmail.com;Mariela Arriagada;Ruta Tasación Individual;18.68%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2500.0
+6293;maperez@santotomas.cl;Jorge Pablo Caro;Ruta Tasación Individual;16.81%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2060.0
+6295;f-f-fierro@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;24.86%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4000.0
+6296;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;5.75%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4990.0
+6297;ydaner@hotmail.cl;Jorge Pablo Caro;Ruta Tasación Individual;2.33%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2000.0
+6299;ydaner@hotmail.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);6650.0
+6300;pozo.jaime@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;6.93%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2090.0
+6301;inmobiliaria@nuevacapital.cl;Mariela Arriagada;Ruta Inteligencia Comunal;-40.00%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);30.0
+6303;felipeignaciocea@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;10.80%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2600.0
+6306;jacaro@procasa.cl;Mariela Arriagada;Ruta Inteligencia Comunal;-17.47%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);1500.0
+6307;Nataliasailermora@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;33.75%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;13400.0
+6308;holate@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);11997.0
+6311;inversioneslosrobles@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);250.0
+6313;judiemar@hotmail.com;Raquel Cheneaux Valz;Ruta Tasación Individual;42.53%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;1850.0
+6314;rretamalm@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;85.32%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);12700.0
+6317;psepulveda@ambimet.cl;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;-10.91%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);98.0
+6318;prevencionista1@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2727.9
+6328;ignacio@r2b.cl;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);5700.0
+6329;ignacio@r2b.cl;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);5700.0
+6330;elyshewardg@gmail.com;Raquel Cheneaux Valz;Ruta Tasación Individual;12.08%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2960.0
+6331;mauromf33@hotmail.com;Susana Ensignia;Ruta Inteligencia Comunal;-16.34%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2790.0
+6339;tjarar2013@gmail.com;Mariela Arriagada;Ruta Tasación Individual;26.45%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3967.85
+6341;mary.cnatura@gmail.com;María Paz Galleguillos;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);10960.0
+6342;pinillaf50@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);21079.23
+6348;mauromf33@hotmail.com;Susana Ensignia;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);440.0
+6366;nelson.saez.osorio@gmail.com;Rocío Aliaga;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1983.93
+6367;mmoralespalavicino790@gmail.com;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);26040.0
+6370;vicente6612@gmail.com;Mariela Arriagada;Ruta Tasación Individual;0.84%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;1690.0
+6377;jorgep.allendedlc@gmail.com;Mariela Arriagada;Ruta Inteligencia Comunal;-3.75%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);5123.0
+6380;allendesbarros@gmail.com;Raquel Cheneaux Valz;Ruta Tasación Individual;7.97%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;8000.0
+6388;jacaro@procasa.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);39678.54
+6390;chanduja@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);619.98
+6391;leonelsaravia1989@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3720.0
+6392;Ori.fierroserra@gmail.com;Susana Ensignia;Ruta Inteligencia Comunal;-27.22%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);1600.0
+6393;Ori.fierroserra@gmail.com;Susana Ensignia;Ruta Inteligencia Comunal;-27.23%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);1700.0
+6405;aminelobos1@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;14.67%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;13000.0
+6407;jorgen2602@hotmail.com;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;-12.87%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);4900.0
+6411;felipecatalan762@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;38.78%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;5100.0
+6412;Seb.toubeau.23@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3695.06
+6413;Seb.toubeau.23@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);4935.02
+6414;sanchez.alex.alexis@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;12.98%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;1735.94
+6418;dmolinaotazo@gmail.com;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;-10.93%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2851.9
+6420;inmobiliaria@nuevacapital.cl;Mariela Arriagada;Ruta Ajuste Progresivo;268.42%;SI;ok;94;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);70.0
+6422;vero.benavides@hotmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;88.37%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);8600.0
+6425;Seb.toubeau.23@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2851.9
+6426;ocortes@veritas.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);7900.0
+6427;irisvillanueva.l@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1487.95
+6429;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-3.89%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);6370.0
+6431;carolinafajardoc@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);12000.0
+6432;ricardobarragan123@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1686.34
+6434;jialarrain@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3370.0
+6435;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Tasación Individual;41.07%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3900.0
+6436;mauricio_lj@yahoo.com;Mariela Arriagada;Ruta Tasación Individual;3.82%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2990.0
+6437;judiemar@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;15.53%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;1800.0
+6438;magdalena_ts@yahoo.com;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1962.0
+6439;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);8390.0
+6441;soledad.ruz.b@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;6.97%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2800.0
+6442;luzsmilianaester@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;81.94%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);8766.0
+6443;claudio.pozo.barrena@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-2.53%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);4140.0
+6444;pedro.jadue@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);100.0
+6445;pedro.jadue@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);150.0
+6446;agiesen@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);11950.0
+6447;gerhardhansensaavedra@gmail.com;Erika Garrido Varela;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;40;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3099.89
+6448;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;-6.64%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);3608.0
+6450;ovalle.psico@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2727.9
+6451;nadia2241@gmail.com;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1348.0
+6452;mpinosalinas@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;29.71%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2622.0
+6453;mpinosalinas@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;31.51%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3093.0
+6454;rossana@gestion-chile.cl;Erika Garrido Varela;Ruta Inteligencia Comunal;-5.35%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);1150.0
+6455;danielaconchanu@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);890.29
+6456;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Tasación Individual;13.16%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3800.0
+6457;luna_corde@hotmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;61.72%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);3967.85
+6458;tespinozaaguilo@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;1.43%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3200.0
+6459;fabian.sd82@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;18.68%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;5350.0
+6460;elkhourymalik@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);25000.0
+6461;vicentedominguezmoure@hotmail.com;Susana Ensignia;Ruta Tasación Individual;20.39%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2043.0
+6462;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2984.0
+6463;biachicastro@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;37.53%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4711.83
+6464;claudio.sierra.martinez@gmail.com;Mariela Arriagada;Ruta Ajuste Progresivo;120.79%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);7000.0
+6468;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);7439.73
+6469;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;-25.00%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);13.5
+6470;rosita.aviles@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);4365.0
+6471;madworkscl@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;20.58%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4275.0
+6472;mcchacano@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;72.01%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);4215.85
+6473;Jetrivadeneira@yahoo.com;Jorge Pablo Caro;Ruta Tasación Individual;31.26%;SI;ok;85;Sobreprecio moderado;SI;Enviar Tasación Individual;6045.0
+6474;algodoyf@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;172.87%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);5207.81
+6475;javierseguel02@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3653.0
+6477;angelicaegana@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;2.17%;SI;ok;85;Sobreprecio moderado;SI;Enviar Tasación Individual;2490.0
+6478;mcristinamunozg@hotmail.com;Rocío Aliaga;Ruta Ajuste Progresivo;100.28%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);4959.82
+6479;pierina.gm@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;18.71%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;18500.0
+6480;judiemar@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;23.16%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;1920.0
+6481;genesisebenezer2000@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;285.97%;SI;ok;92;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);3558.67
+6482;ceciliaangel04@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;41.61%;SI;ok;85;Sobreprecio moderado;SI;Enviar Tasación Individual;1983.93
+6483;jaquelinacecchetto@live.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;111.51%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);19500.0
+6484;pcoronado@u.uchile.cl;Mariela Arriagada;Ruta Tasación Individual;19.99%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2650.0
+6485;rolando.guzmantobar28@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1363.95
+6487;gvillarlefenda@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;63.71%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);16000.0
+6488;dgalvane@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3967.85
+6489;leonelsaravia1989@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-2.00%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2324.0
+6490;mecc44621@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3719.86
+6491;cristiany2871@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3943.06
+6492;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Ajuste Progresivo;74.70%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);2900.0
+6493;soportelobarnechea@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1859.93
+6494;judiemar@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1880.0
+6495;francisco.hidalgo.rivera@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-3.61%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);3200.0
+6496;fer.libante@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;83.59%;SI;ok;85;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);3300.0
+6497;ester.valdesv@gmail.com;Erika Garrido Varela;Ruta Tasación Individual;19.14%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3200.0
+6499;viviana@boreal.cl;Mariela Arriagada;Ruta Inteligencia Comunal;-83.47%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);20.0
+6500;LUISBECERRAR@HOTMAIL.COM;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);9175.66
+6501;victor.casanueva@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1487.95
+6502;ANDRESMAZZOTTIPIRLO@HOTMAIL.COM;Mariela Arriagada;Ruta Ajuste Progresivo;158.81%;SI;ok;80;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);15871.42
+6506;marcelareyesaravena@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);13813.09
+6507;rubi.mena@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);12399.55
+6508;oriettarodriguez67@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;54.06%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2465.0
+6509;Carlos@tecnovedades.cl;Raquel Cheneaux Valz;Ruta Ajuste Progresivo;101.53%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);3700.0
+6511;jc.diazjadue1960@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);7500.0
+6512;waldovaldes.as@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);50.0
+6514;melyhoma@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);70.0
+6518;contact.solivares@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;21.52%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2380.0
+6519;jose.caro.lazo@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);21850.0
+6521;contact.solivares@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;18.73%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2380.0
+6522;apenroz@gmail.com;Susana Ensignia;Ruta Tasación Individual;46.16%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2500.0
+6523;apenroz@gmail.com;Susana Ensignia;Ruta Tasación Individual;46.16%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2500.0
+6535;gpizarro2112@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;145.29%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);8431.69
+6536;pia.madaro@comtec.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);80.0
+6537;carlosandres4x4@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1339.15
+6538;carolinafajardoc@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;8.72%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;17300.0
+6539;carolinafajardoc@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;34.10%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2383.0
+6541;claudiosaezm@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;13.77%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;11400.0
+6542;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Tasación Individual;45.50%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2400.0
+6543;mrigoli@fidelis.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;-11.11%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);96.0
+6544;mrigoli@fidelis.cl;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;-25.27%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);8700.0
+6545;mrigoli@fidelis.cl;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);7600.0
+6573;lagoscandia68@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;36.20%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2628.7
+6574;connie.edelai@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;55.85%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;8116.0
+6575;gonzalezcarlos060@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;217.94%;SI;ok;99;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);2975.89
+6576;eugeniacarrasco@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3990.0
+6577;pinkdove100@yahoo.com;Jorge Pablo Caro;Ruta Tasación Individual;14.07%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;5455.8
+6578;leonelsaravia1989@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1302.0
+6579;danielvp20@yahoo.com;Susana Ensignia;Ruta Inteligencia Comunal;-17.87%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);4100.0
+6581;23.monitadr@gmail.com;Erika Garrido Varela;Ruta Tasación Individual;36.08%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4215.85
+6582;ivanortizsa@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-8.50%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);3674.0
+6583;23.monitadr@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;58.13%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4959.82
+6590;juancarlosalisteg@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2430.31
+6591;CLAUDIA.CARRAMAN@GMAIL.COM;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);669.58
+6596;rrcastilloo@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;13.69%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4990.0
+6597;caritoastudillo1980@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;44.06%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;12832.0
+6598;alexandrammv5@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3843.86
+6600;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);619.98
+6601;p.montero.c@gmail.com;Raquel Cheneaux Valz;Ruta Tasación Individual;38.80%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;8481.29
+6602;iandreaguzman@yahoo.es;Jorge Pablo Caro;Ruta Ajuste Progresivo;67.59%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);6200.0
+6608;salogonzalezbravo@gmail.com;Paula Cristina Morales Rocco;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2107.92
+6609;Sm.sepulvedagarrido@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;160.08%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);7067.74
+6622;philippe@manckoch.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;-14.85%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);1611.94
+6623;evclav@yahoo.com;Jorge Pablo Caro;Ruta Tasación Individual;31.29%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;1670.0
+6624;an.abigail.m@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;28.45%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;1983.93
+6625;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-7.81%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);13340.0
+6626;ostynespinoza@gmail.com;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);5604.59
+6627;evclav@yahoo.com;Jorge Pablo Caro;Ruta Tasación Individual;7.53%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2306.0
+6628;nicoseguravallejos@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3099.89
+6629;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;6.68%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4940.0
+6631;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-5.55%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);8540.0
+6632;martin.urraa@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2405.51
+6633;hectoraedolagos1@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1041.56
+6634;frutillas.mart@gmail.com;Rocío Aliaga;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);507.39
+6635;frutillas.mart@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1614.42
+6636;chirino.h@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);619.98
+6637;toloza9@hotmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;117.59%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);16900.0
+6639;danielguga07@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;59.61%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;4339.84
+6640;josegustavoavila@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;15.58%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2700.0
+6642;melyhoma@hotmail.com;Paula Cristina Morales Rocco;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2162.0
+6643;giovannidicostanzo@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;73.84%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);10700.0
+6644;juanomunoz1098@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;13.05%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3993.0
+6646;janiceleroy@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3719.86
+6647;janiceleroy@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3447.07
+6648;jaimegonzalezlopez44@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);6199.77
+6649;janiceleroy@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3543.38
+6654;neiravargasm@gmail.com;Erika Garrido Varela;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);110500.0
+6655;mpradocallejas@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;19.13%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;1790.0
+6656;jeremias.l.d1990@gmail.com;Erika Garrido Varela;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;40;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);22000.0
+6658;patriciogodoys@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1239.95
+6660;jr_cartes@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);4513.43
+6661;cancino.belgica@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2700.0
+6662;patriciogodoys@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);8065.0
+6665;pduran.duran23@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);7067.74
+6667;robertocornejoes@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;113.47%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);3595.87
+6668;edu.rebolle2@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1983.93
+6669;corifarfan@gmail.com;Susana Ensignia;Ruta Tasación Individual;7.59%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;5699.0
+6670;mandrescoduras@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);32100.0
+6671;Rnoemiboss@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;73.06%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);6199.77
+6672;okuval@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);164700.0
+6673;fralvec@yahoo.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);7935.71
+6674;firmasjpc@gmail.com;María Paz Galleguillos;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);45446.81
+6675;bosquecelta@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);30250.0
+6677;alabarza@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3223.88
+6678;cvenegas@inmobiliariaemsa.cl;Susana Ensignia;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);132.57
+6679;cvenegas@inmobiliariaemsa.cl;Susana Ensignia;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);87.36
+6680;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1487.95
+6683;marcelobravoramirez@gmail.com;Raquel Cheneaux Valz;Cola Manual;556.85%;SI;ok;55;Error probable - Cola manual;NO;Revisión comercial manual obligatoria;13639.5
+6684;mtbustamantee@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;22.02%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2300.0
+6685;secaroa1@gmail.com;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;40;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);6199.77
+6687;benjamin.ramphall@gmail.com;Rocío Aliaga;Ruta Inteligencia Comunal;-37.11%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);5652.0
+6688;carito.romero@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;188.46%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);4500.0
+6690;anavillaronga05@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;292.78%;SI;ok;91;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);23559.14
+6691;sriveros@proiberica.cl;Susana Ensignia;Ruta Ajuste Progresivo;64.12%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);82.06
+6692;r-lillo@live.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);12500.0
+6694;dani.grunberg@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);20.0
+6695;hectoraedolagos1@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);4215.85
+6697;cevelynbs@gmail.com;Erika Garrido Varela;Ruta Tasación Individual;42.60%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3657.0
+6698;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2890.0
+6699;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2890.0
+6700;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;17.81%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2100.0
+6701;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;17.81%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2100.0
+6702;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2100.0
+6703;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;8.61%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2100.0
+6704;firmasjpc@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-21.33%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2100.0
+6716;marita.eugenia@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);7067.74
+6717;kmunozmaureira@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3471.87
+6718;francisco.olea2010@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1487.95
+6719;leandrourrutiam@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3223.88
+6720;calegriac29@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3719.86
+6722;comercial@aminfo.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;-67.68%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);32.0
+6723;denissecancinog@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;205.61%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);6045.0
+6724;dino.jara@hotmail.com;Jorge Pablo Caro;Ruta Tasación Individual;56.24%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;5951.78
+6725;restaurantviejolobodemar@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);6199.77
+6726;julnathal@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);11903.56
+6728;LSALVADORES@GMAIL.COM;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);154.8
+6729;LSALVADORES@GMAIL.COM;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);27520.0
+6731;lauramendez.7274@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);7439.73
+6732;askaanwz@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-35.55%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);6943.75
+6734;fcampos@asm.cl;Jorge Pablo Caro;Cola Manual;433.12%;SI;ok;90;Error probable - Cola manual;NO;Revisión comercial manual obligatoria;19568.0
+6736;firmasjpc@gmail.com;María Paz Galleguillos;Ruta Tasación Individual;9.44%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3667.36
+6737;firmasjpc@gmail.com;María Paz Galleguillos;Ruta Tasación Individual;7.74%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2792.0
+6738;firmasjpc@gmail.com;María Paz Galleguillos;Ruta Tasación Individual;5.23%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2727.0
+6739;firmasjpc@gmail.com;María Paz Galleguillos;Ruta Tasación Individual;6.49%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2699.0
+6740;firmasjpc@gmail.com;María Paz Galleguillos;Ruta Inteligencia Comunal;-8.81%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);3780.0
+6741;firmasjpc@gmail.com;María Paz Galleguillos;Ruta Inteligencia Comunal;-0.49%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2620.0
+6742;firmasjpc@gmail.com;María Paz Galleguillos;Ruta Tasación Individual;6.14%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2690.0
+6743;firmasjpc@gmail.com;María Paz Galleguillos;Ruta Inteligencia Comunal;-16.96%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2609.0
+6745;LSALVADORES@GMAIL.COM;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);27741.0
+6746;doctorchandia@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-17.73%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);7200.0
+6747;benjamin.ansoleaga@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);27500.0
+6748;mperezlarrea@gmail.com;Jorge Pablo Caro;Cola Manual;904.18%;SI;ok;65;Error probable - Cola manual;NO;Revisión comercial manual obligatoria;19200.0
+6749;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Tasación Individual;29.21%;SI;ok;85;Sobreprecio moderado;SI;Enviar Tasación Individual;10000.0
+6751;arriendos@invesmart.org;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);215000.0
+6752;v_lourdesrs@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);8810.0
+6753;uramamovimientodetierra@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3967.85
+6754;georeduarvill@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);30600.0
+6755;galeriadelpoeta@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;74.42%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);2700.0
+6756;hlf@multiservice.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);220000.0
+6757;transubal@hotmail.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);9671.65
+6760;pazalvadiaz@gmail.com;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;40;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);8183.7
+6761;babii.olivares@gmail.com;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);5827.79
+6764;mhamilton@r2b.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);1992.64
+6765;sanmartin-nancy@hotmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;93.24%;SI;ok;85;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);22200.0
+6766;kevin548reyes@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;68.17%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);1859.93
+6767;benjabeltran@gmail.com;Raquel Cheneaux Valz;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;40;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);41850.0
+6769;maxperezcl@yahoo.es;Jorge Pablo Caro;Ruta Tasación Individual;24.70%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;15474.63
+6770;davidgarvel1@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);13267.51
+6771;rh@acoustic.cl;Jorge Pablo Caro;Ruta Ajuste Progresivo;116.13%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);11400.0
+6772;tamariclaudiazara@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;64.83%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);9919.64
+6773;waldovaldes.as@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);14.88
+6774;patriciogonzalez4785@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;2.18%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;1611.94
+6775;abogadochileno@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3344.16
+6776;abogadochileno@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);5000.0
+6778;abogadochileno@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3298.03
+6779;abogadochileno@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);55000.0
+6780;jesus.bastias@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-13.71%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2336.24
+6781;kamal.maluk@gmail.com;Susana Ensignia;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);322.39
+6782;cecilia.alvarado@santacruzclima.cl;Jorge Pablo Caro;Ruta Tasación Individual;25.58%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3900.0
+6783;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Ajuste Progresivo;120.30%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);4528.22
+6786;sleivanster@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;33.74%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3720.0
+6787;longwei.ltda@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);15139.84
+6788;daviddigarbo@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;99.81%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);8300.0
+6792;sriveros@proiberica.cl;María Paz Galleguillos;Ruta Inteligencia Comunal;-99.08%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);0.49
+6793;incorrecto@procasa.cl;Susana Ensignia;Ruta Tasación Individual;46.00%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;292.0
+6794;incorrecto@procasa.cl;Susana Ensignia;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);231.0
+6797;nsaguer@cifco.cl;Susana Ensignia;Ruta Inteligencia Comunal;-55.91%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);62.17
+6800;ji.perezolave@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);12.2
+6801;ji.perezolave@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);12.2
+6805;srg_ayala@yahoo.com;Jorge Pablo Caro;Ruta Tasación Individual;5.65%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;1880.0
+6808;alagosb@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-17.27%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);1611.94
+6810;cgn_carloscastro@hotmail.com;Erika Garrido Varela;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;65;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);150000.0
+6811;doctorchandia@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-52.33%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);21.45
+6815;arriagadamariela3@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3223.88
+6816;diez.paulina@gmail.com;Susana Ensignia;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);52000.0
+6822;carlosdearce45@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-16.61%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);10000.0
+6824;titaarenas@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);11.0
+6826;anitamariamolina@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);426.67
+6828;fambustos@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;106.80%;SI;ok;85;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);15500.0
+6829;EMCOL@EMCOL.CL;Jorge Pablo Caro;Ruta Ajuste Progresivo;115.72%;SI;ok;84;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);22319.18
+6833;mueblemadrid@hotmail.com;María Paz Galleguillos;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);6943.75
+6834;incorrecto@procasa.cl;Jorge Pablo Caro;Cola Manual;476.58%;SI;ok;90;Error probable - Cola manual;NO;Revisión comercial manual obligatoria;5765.79
+6835;vickypallares@gmail.com;María Paz Galleguillos;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);5135.0
+6839;alfripoll56@yahoo.es;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3099.89
+6841;jacaro@procasa.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);16000.0
+6842;JOHNBLECHER@HOTMAIL.COM;Jorge Pablo Caro;Ruta Ajuste Progresivo;110.50%;SI;ok;84;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);40000.0
+6843;cespedes.victoria@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2727.9
+6844;sriveros@proiberica.cl;María Paz Galleguillos;Ruta Inteligencia Comunal;-99.55%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);0.5
+6846;juanclangevin@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);32175.0
+6848;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Tasación Individual;4.57%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2479.91
+6849;marcelonavarrete273@gmail.com;Jorge Pablo Caro;Ruta Ajuste Progresivo;63.69%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);3719.86
+6850;EDO.BENAVIDES@GMAIL.COM;Jorge Pablo Caro;Ruta Tasación Individual;12.46%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;3250.0
+6851;alejandraf.gonzalez@telefonica.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2107.92
+6852;alejandraf.gonzalez@telefonica.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-2.41%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);2107.92
+6853;FRANCISCO.DELGADO.Y@GMAIL.COM;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);2709.1
+6854;jacaro@procasa.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);15414.0
+6856;jacaro@procasa.cl;Jorge Pablo Caro;Ruta Ajuste Progresivo;248.19%;SI;ok;96;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);7615.0
+6865;jgasparcubillos@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;-57.45%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);20.0
+6866;incorrecto@procasa.cl;Jorge Pablo Caro;Ruta Tasación Individual;36.46%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;88.7
+6867;csilva@postgradouchile.cl;Jorge Pablo Caro;Ruta Tasación Individual;35.27%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;14.88
+6869;LUIS.PASTEN@USACH.CL;Jorge Pablo Caro;Ruta Ajuste Progresivo;130.57%;SI;ok;100;Sobreprecio extremo legítimo;SI;Enviar Ajuste Progresivo (Consultivo);16.14
+6870;gina_araya_alcayaga@hotmail.com;Raquel Cheneaux Valz;Ruta Tasación Individual;50.07%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;6850.0
+6871;MVERDALA@HOTMAIL.COM;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);5765.79
+6872;DKARRIAGADA@GMAIL.COM;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);3967.85
+6873;anitamariamolina@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;50;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);458.78
+6875;cvenegas@inmobiliariaemsa.cl;Jorge Pablo Caro;Ruta Inteligencia Comunal;-65.18%;SI;ok;100;Alineada o bajo mercado;NO;Enviar Inteligencia Comunal (Fallback);118.03
+6879;adrianaur72@hotmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);9919.64
+6883;raul.bossart@gmail.com;Jorge Pablo Caro;Ruta Tasación Individual;13.10%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;12950.0
+6887;faraneda12@gmail.com;Jorge Pablo Caro;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);14383.47
+6888;info@hotelcarmenere.com;María Paz Galleguillos;Ruta Inteligencia Comunal;N/A;NO;pdf_missing;75;Sin tasación referencial;NO;Enviar Inteligencia Comunal (Fallback);23700.0
+7390;vasconunezv@gmail.com;Erika Garrido Varela;Ruta Tasación Individual;28.10%;SI;ok;100;Sobreprecio moderado;SI;Enviar Tasación Individual;2107.92

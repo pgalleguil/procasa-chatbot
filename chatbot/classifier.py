@@ -99,7 +99,7 @@ def detectar_intencion_con_ai(mensaje_actual: str, historial_reducido: list) -> 
             # **********************************************
             # ****** CORRECCIÓN A Config.GROK_MODEL *******
             # **********************************************
-            model=Config.GROK_MODEL, 
+            model=(Config.GROK_MODEL or "grok-4-1-fast-non-reasoning"), 
             messages=messages,
             temperature=0.0, 
             max_tokens=15

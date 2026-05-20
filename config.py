@@ -33,7 +33,7 @@ class Config:
     COLLECTION_CONTACTOS = os.getenv("COLLECTION_CONTACTOS", "contactos")
     COLLECTION_RESPUESTAS = os.getenv("COLLECTION_RESPUESTAS", "price_updates")
     COLLECTION_WHATSAPP_ENVIADOS = os.getenv("COLLECTION_WHATSAPP_ENVIADOS", "whatsapp_price_updates")
-    COLLECTION_CAMPANAS_LOG = os.getenv("COLLECTION_CAMPANAS_LOG", "campanas_historico")
+    COLLECTION_CAMPANAS_LOG = "ajuste_precio"
 
     # === Modo y opciones ===
     SIMULATION_MODE = os.getenv("SIMULATION_MODE", "false").lower() == "true"

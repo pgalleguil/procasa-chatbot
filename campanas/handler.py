@@ -47,6 +47,10 @@ def _sync_process_campana_response(
     contactos = db[Config.COLLECTION_CONTACTOS]
     respuestas = db[Config.COLLECTION_RESPUESTAS]
     historico = db[Config.COLLECTION_CAMPANAS_LOG]
+    legacy_historicos = []
+    for legacy_name in ["campanas_historico", "campaigns_price_drop_log"]:
+        if legacy_name != Config.COLLECTION_CAMPANAS_LOG:
+            legacy_historicos.append(db[legacy_name])
 
     contacto = _find_contacto_by_email(contactos, email_lower)
     update_price = contacto.get("update_price", {}) if contacto else {}
@@ -63,25 +67,41 @@ def _sync_process_campana_response(
 
     # Token obligatorio fuera de test; además bloqueo atómico por token para doble click
     if token:
+        update_payload = {
+            "$set": {
+                "respuesta_propietario": accion,
+                "respuesta_at": ahora.isoformat(),
+                "respuesta_mode": mode,
+                "respuesta_email": email_lower,
+                "estado_respuesta": "respondido",
+                "respuesta_confirmada": True,
+                "primer_click_at": ahora,
+                "click_user_agent": user_agent,
+                "click_ip": ip,
+            }
+        }
         historico_doc = historico.find_one_and_update(
             {"token": token, "respuesta_confirmada": {"$ne": True}},
-            {
-                "$set": {
-                    "respuesta_propietario": accion,
-                    "respuesta_at": ahora.isoformat(),
-                    "respuesta_mode": mode,
-                    "respuesta_email": email_lower,
-                    "estado_respuesta": "respondido",
-                    "respuesta_confirmada": True,
-                    "primer_click_at": ahora,
-                    "click_user_agent": user_agent,
-                    "click_ip": ip,
-                }
-            },
+            update_payload,
             return_document=False,
         )
+        # Compatibilidad temporal: si el token está en colecciones históricas antiguas
+        if historico_doc is None:
+            for legacy_col in legacy_historicos:
+                historico_doc = legacy_col.find_one_and_update(
+                    {"token": token, "respuesta_confirmada": {"$ne": True}},
+                    update_payload,
+                    return_document=False,
+                )
+                if historico_doc is not None:
+                    break
         if historico_doc is None:
             existing_token = historico.find_one({"token": token})
+            if not existing_token:
+                for legacy_col in legacy_historicos:
+                    existing_token = legacy_col.find_one({"token": token})
+                    if existing_token:
+                        break
             if existing_token:
                 logger.warning(
                     "[CAMPANA_RESPUESTA_BLOQUEADO] token=%s email=%s accion=%s ip=%s",

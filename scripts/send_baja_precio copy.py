@@ -1285,11 +1285,17 @@ def send_email(
     codigo: str,
     use_tasacion_pdf: bool = False,
     comercial_pdf_filename: str = "",
+    cc_emails: list[str] | None = None,
 ) -> tuple[bool, bool, str]:
     """Envía el correo mediante SMTP con retries exponenciales, timeout y Reply-To dinámico."""
     msg = MIMEMultipart()
     msg["From"] = f"Procasa <{Config.GMAIL_USER}>"
     msg["To"] = to_email
+    cc_list = [x.strip().lower() for x in (cc_emails or []) if x and str(x).strip()]
+    # Deduplicar destinatarios de copia y evitar repetir el To
+    cc_list = [x for x in sorted(set(cc_list)) if x != to_email.strip().lower()]
+    if cc_list:
+        msg["Cc"] = ", ".join(cc_list)
     msg["Subject"] = subject
     
     # Inyectar cabecera Reply-To dinámica
@@ -1310,7 +1316,8 @@ def send_email(
             with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
                 server.starttls()
                 server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
-                server.sendmail(Config.GMAIL_USER, [to_email], msg.as_string())
+                recipients = [to_email] + cc_list
+                server.sendmail(Config.GMAIL_USER, recipients, msg.as_string())
             return True, attached, "ok"
         except Exception as e:
             print(f"SMTP WARNING: Intento {attempt}/{max_retries} falló para {to_email}: {e}")

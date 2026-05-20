@@ -5,6 +5,7 @@ import sys
 import os
 import glob
 import re
+import argparse
 from datetime import datetime
 from tqdm import tqdm
 
@@ -282,7 +283,7 @@ TRACKED_FIELDS = [
 
 # ─── UPSERT CON AUDITORÍA ─────────────────────────────────────────────────────
 
-def upsert_doc(coll, doc, dict_pub, model_nlp=None):
+def upsert_doc(coll, doc, dict_pub, model_nlp=None, oficina_target="PROCASA SUCRE"):
     codigo = doc.get("codigo")
     existing = coll.find_one({"codigo": codigo})
 
@@ -317,6 +318,23 @@ def upsert_doc(coll, doc, dict_pub, model_nlp=None):
                 if field == "ejecutivo" and doc.get("oficina") == "PROCASA SUCRE":
                     print(f" [CAMBIO EJECUTIVO - PROCASA SUCRE] Código {codigo}: {old_val} -> {new_val}")
 
+    # Snapshot explícito de cambios críticos para campañas (solo oficina target)
+    oficina_actual = str(doc.get("oficina") or existing.get("oficina") or "").strip()
+    if existing and oficina_actual == oficina_target:
+        old_precio = existing.get("precio_uf")
+        new_precio = doc.get("precio_uf", existing.get("precio_uf"))
+        old_exec = existing.get("ejecutivo")
+        new_exec = doc.get("ejecutivo", existing.get("ejecutivo"))
+
+        if str(old_precio).strip() != str(new_precio).strip():
+            doc["precio_uf_anterior"] = old_precio
+            doc["precio_uf_cambio_at"] = datetime.now().isoformat()
+            doc["precio_uf_cambio_origen"] = "sync_convecta_master"
+        if str(old_exec).strip().lower() != str(new_exec).strip().lower():
+            doc["ejecutivo_anterior"] = old_exec
+            doc["ejecutivo_cambio_at"] = datetime.now().isoformat()
+            doc["ejecutivo_cambio_origen"] = "sync_convecta_master"
+
     # NLP Vectors
     vector_gen = False
     if doc.get("disponible") and doc.get("descripcion_clean"):
@@ -339,7 +357,7 @@ def upsert_doc(coll, doc, dict_pub, model_nlp=None):
 
 # ─── MASTER SYNC ─────────────────────────────────────────────────────────────
 
-def master_sync():
+def master_sync(oficina_target="PROCASA SUCRE"):
     file_net  = get_latest_file("prop_", "xls")           # Tiémp real (Red)
     file_prop = get_latest_file("propiedades_", "xlsx")    # Semanal (Office)
     file_pub  = get_latest_file("publicaciones_", "xlsx")  # Portales
@@ -351,6 +369,7 @@ def master_sync():
     print(f"Archivo Red Procasa (Real-Time): {file_net}")
     print(f"Archivo Nuestra Oficina (Semanal): {file_prop or 'No encontrado'}")
     print(f"Archivo Publicaciones Portales: {file_pub or 'No encontrado'}")
+    print(f"Oficina target auditoría crítica: {oficina_target}")
 
     dict_pub = map_publicaciones(file_pub)
     
@@ -381,7 +400,7 @@ def master_sync():
         cod_str = str(doc.get("codigo")).strip()
         codigos_encontrados_en_excel.add(cod_str)
         
-        n, a, c, v = upsert_doc(coll, doc, dict_pub, None)
+        n, a, c, v = upsert_doc(coll, doc, dict_pub, None, oficina_target=oficina_target)
         nuevos += n; actualizados += a; cambios_audit += c; vectores += v
 
     # ── FASE 2: propiedades_ (Nuestra oficina SUCRE, semanal) ──────────────────
@@ -395,7 +414,7 @@ def master_sync():
             cod_str = str(doc.get("codigo")).strip()
             codigos_encontrados_en_excel.add(cod_str)
             
-            n, a, c, v = upsert_doc(coll, doc, dict_pub, model_nlp)
+            n, a, c, v = upsert_doc(coll, doc, dict_pub, model_nlp, oficina_target=oficina_target)
             nuevos += n; actualizados += a; cambios_audit += c; vectores += v
     else:
         print("\nFASE 2: Sin archivo propiedades_ (se usaran datos de la red para esta oficina).")
@@ -405,7 +424,7 @@ def master_sync():
     
     # Buscamos propiedades que el sistema cree disponibles pero que no vinieron en el Excel
     query_bajas = {
-        "oficina": "PROCASA SUCRE", 
+        "oficina": oficina_target,
         "disponible": True,
         "codigo": {"$nin": list(codigos_encontrados_en_excel)}
     }
@@ -427,9 +446,12 @@ def master_sync():
     print(f"Cambios Auditados en Historial: {cambios_audit}")
     print(f"Vectores NLP Generados: {vectores}")
     print(f"Total en coleccion: {coll.count_documents({})}")
-    print(f"Disponibles Reales (Sucre): {coll.count_documents({'oficina': 'PROCASA SUCRE', 'disponible': True})}")
+    print(f"Disponibles Reales ({oficina_target}): {coll.count_documents({'oficina': oficina_target, 'disponible': True})}")
     print("Proceso finalizado correctamente.")
 
 
 if __name__ == "__main__":
-    master_sync()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--oficina-target", default="PROCASA SUCRE", help="Oficina para snapshots críticos y bajas automáticas")
+    args = ap.parse_args()
+    master_sync(oficina_target=args.oficina_target)

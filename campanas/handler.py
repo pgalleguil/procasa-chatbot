@@ -1,4 +1,4 @@
-# campanas/handler.py
+﻿# campanas/handler.py
 import asyncio
 import logging
 import re
@@ -55,17 +55,17 @@ def _sync_process_campana_response(
     contacto = _find_contacto_by_email(contactos, email_lower)
     update_price = contacto.get("update_price", {}) if contacto else {}
 
-    # Bloqueo fuerte: 1 respuesta por email+campaña
-    if update_price.get("campana_nombre") == campana and update_price.get("respuesta"):
+    # Bloqueo fuerte: 1 respuesta por email+campaÃ±a
+    if (not token) and update_price.get("campana_nombre") == campana and update_price.get("respuesta"):
         return {
             "status_code": 200,
             "titulo": "Respuesta ya registrada",
             "color": "#6b7280",
             "accion_label": "Registro completo",
-            "mensaje": "Ya registramos una respuesta previa para esta campaña. Si desea cambiar su decisión, contacte a su asesor.",
+            "mensaje": "Ya registramos una respuesta previa para esta campaÃ±a. Si desea cambiar su decisiÃ³n, contacte a su asesor.",
         }
 
-    # Token obligatorio fuera de test; además bloqueo atómico por token para doble click
+    # Token obligatorio fuera de test; ademÃ¡s bloqueo atÃ³mico por token para doble click
     if token:
         update_payload = {
             "$set": {
@@ -85,7 +85,7 @@ def _sync_process_campana_response(
             update_payload,
             return_document=False,
         )
-        # Compatibilidad temporal: si el token está en colecciones históricas antiguas
+        # Compatibilidad temporal: si el token estÃ¡ en colecciones histÃ³ricas antiguas
         if historico_doc is None:
             for legacy_col in legacy_historicos:
                 historico_doc = legacy_col.find_one_and_update(
@@ -117,19 +117,19 @@ def _sync_process_campana_response(
             logger.warning("[CAMPANA_RESPUESTA_TOKEN_INVALIDO] token=%s email=%s accion=%s", token, email_lower, accion)
             return {
                 "status_code": 400,
-                "titulo": "Enlace inválido",
+                "titulo": "Enlace invÃ¡lido",
                 "color": "#6b7280",
-                "accion_label": "Token inválido",
-                "mensaje": "Enlace inválido o expirado. Solicite un nuevo enlace a su asesor.",
+                "accion_label": "Token invÃ¡lido",
+                "mensaje": "Enlace invÃ¡lido o expirado. Solicite un nuevo enlace a su asesor.",
             }
     elif mode != "test":
         logger.warning("[CAMPANA_RESPUESTA_SIN_TOKEN_BLOQUEADA] email=%s campana=%s accion=%s", email_lower, campana, accion)
         return {
             "status_code": 400,
-            "titulo": "Enlace inválido",
+            "titulo": "Enlace invÃ¡lido",
             "color": "#6b7280",
             "accion_label": "Sin token",
-            "mensaje": "Este enlace no es válido para respuesta automática. Contacte a su asesor.",
+            "mensaje": "Este enlace no es vÃ¡lido para respuesta automÃ¡tica. Contacte a su asesor.",
         }
 
     respuestas.update_one(
@@ -229,3 +229,4 @@ async def handle_campana_respuesta(
     except Exception as e:
         logger.error(f"Error en campana: {e}", exc_info=True)
         return HTMLResponse("Error interno del servidor", status_code=500)
+

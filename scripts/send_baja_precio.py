@@ -17,6 +17,7 @@ import smtplib
 import sys
 import time
 import threading
+import unicodedata
 from datetime import datetime, timezone
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -162,6 +163,98 @@ def _to_float(value):
         return None
 
 
+def _normalize_person_name(value: str) -> str:
+    txt = unicodedata.normalize("NFKD", str(value or "").strip().lower())
+    txt = "".join(ch for ch in txt if not unicodedata.combining(ch))
+    txt = re.sub(r"[^a-z0-9\s]", " ", txt)
+    txt = re.sub(r"\s+", " ", txt).strip()
+    return txt
+
+
+def _name_tokens(value: str) -> list[str]:
+    return [t for t in _normalize_person_name(value).split(" ") if t]
+
+
+def _build_usuarios_index(db) -> list[dict]:
+    docs = []
+    for usr in db["usuarios"].find(
+        {},
+        {
+            "_id": 0,
+            "nombre": 1,
+            "telefono": 1,
+            "celular": 1,
+            "phone": 1,
+            "movil": 1,
+            "email": 1,
+            "correo": 1,
+            "mail": 1,
+        },
+    ):
+        nombre = str(usr.get("nombre") or "").strip()
+        if not nombre:
+            continue
+        docs.append(
+            {
+                "nombre": nombre,
+                "nombre_norm": _normalize_person_name(nombre),
+                "tokens": set(_name_tokens(nombre)),
+                "telefono": str(
+                    usr.get("telefono")
+                    or usr.get("celular")
+                    or usr.get("phone")
+                    or usr.get("movil")
+                    or ""
+                ).strip(),
+                "email": str(
+                    usr.get("email")
+                    or usr.get("correo")
+                    or usr.get("mail")
+                    or ""
+                ).strip().lower(),
+            }
+        )
+    return docs
+
+
+def _find_contacto_ejecutivo(ejecutivo_nombre: str, usuarios_idx: list[dict]) -> tuple[str, str]:
+    target_norm = _normalize_person_name(ejecutivo_nombre)
+    if not target_norm:
+        return "", ""
+    target_tokens = set(_name_tokens(ejecutivo_nombre))
+    if not target_tokens:
+        return "", ""
+
+    # 1) Match exacto normalizado
+    for u in usuarios_idx:
+        if u["nombre_norm"] == target_norm:
+            return u["telefono"], u["email"]
+
+    # 2) Match flexible por tokens y prefijos (tolera apellidos faltantes/iniciales)
+    best = None
+    best_score = -1.0
+    for u in usuarios_idx:
+        cand_tokens = u["tokens"]
+        if not cand_tokens:
+            continue
+        common = len(target_tokens & cand_tokens)
+        if common == 0:
+            continue
+        starts_ok = any(ct.startswith(tt) or tt.startswith(ct) for tt in target_tokens for ct in cand_tokens)
+        if not starts_ok:
+            continue
+        coverage = common / max(1, len(target_tokens))
+        precision = common / max(1, len(cand_tokens))
+        score = (coverage * 0.7) + (precision * 0.3)
+        if score > best_score:
+            best_score = score
+            best = u
+
+    if best and best_score >= 0.6:
+        return best["telefono"], best["email"]
+    return "", ""
+
+
 def _normalize_liquidez_score(raw_liquidez: str | None) -> float | None:
     liq = str(raw_liquidez or "").strip().lower()
     if not liq:
@@ -299,10 +392,10 @@ def clasificar_propiedad(p: dict, pdf_dir: Path) -> dict:
 
     # Gobernanza adicional para Ruta Inteligencia Comunal (robusta/parcial/insuficiente)
     if ruta_asignada == "Ruta Inteligencia Comunal":
-        if comunal_quality_tier == "insuficiente" and not pdf_valido:
+        if comunal_quality_tier == "insuficiente":
             ruta_asignada = "Cola Manual"
             categoria_outlier = "Datos comunales insuficientes"
-            motivo_ruta = "Fallback comunal con datos críticos faltantes y sin PDF individual válido"
+            motivo_ruta = "Fallback comunal con datos críticos faltantes"
             accion_sugerida = "Derivar a revisión manual"
             exclusion_reason = "DATOS_COMUNALES_INSUFICIENTES"
             send_eligible = False
@@ -736,9 +829,18 @@ def build_html(
     whatsapp_url = f"https://wa.me/{wa_phone}"
 
     bloquea_precio_por_tasacion = estado_precio_tasacion in {"alineada", "bajo_mercado"} or prioridad_ajuste_tasacion in {"baja", "ninguna"}
+    comunal_has_backing = all(
+        v is not None
+        for v in [
+            prop.get("uf_m2_publicacion_actual"),
+            prop.get("uf_m2_venta_efectiva_actual"),
+            prop.get("publicaciones_activas"),
+            prop.get("score_presion_comercial"),
+        ]
+    )
     es_recomendacion_precio = nuevo > 0 and not bloquea_precio_por_tasacion and (
         ruta_asignada != "Ruta Inteligencia Comunal" or suggested_adjustment_enabled
-    )
+    ) and (ruta_asignada != "Ruta Inteligencia Comunal" or comunal_has_backing)
     
     # Banner Anti-Reply Directo superior obligatorio en CTAs
     banner_anti_reply = """
@@ -1325,7 +1427,21 @@ def send_email(
                 raise e
             time.sleep(retry_delay)
             retry_delay *= 2.0  # Backoff exponencial
-            
+
+
+def _classify_smtp_error(err_text: str) -> str:
+    t = str(err_text or "").lower()
+    if any(x in t for x in ["user unknown", "no such user", "recipient address rejected", "5.1.1", "550 5.1.1"]):
+        return "EMAIL_NO_EXISTE"
+    if any(x in t for x in ["mailbox full", "quota exceeded", "over quota", "552", "5.2.2"]):
+        return "BUZON_LLENO"
+    if any(x in t for x in ["domain", "dns", "host not found", "name or service not known"]):
+        return "DOMINIO_INVALIDO"
+    if any(x in t for x in ["timeout", "timed out", "connection reset", "temporarily deferred", "4."]):
+        return "TEMPORAL_REINTENTAR"
+    if any(x in t for x in ["blocked", "spam", "blacklist"]):
+        return "BLOQUEO_ANTISPAM"
+    return "SMTP_ERROR_OTRO"
     return False, attached, "error"
 
 
@@ -1399,12 +1515,16 @@ def load_wave1(oficina: str) -> list[dict]:
     
     for u in uc.find(
         {"codigo": {"$in": list(by_code.keys())}},
-        {"_id": 0, "codigo": 1, "email_propietario": 1, "ejecutivo": 1},
+        {"_id": 0, "codigo": 1, "email_propietario": 1, "ejecutivo": 1, "email_ejecutivo": 1},
     ):
         c = str(u.get("codigo") or "")
         if c in by_code:
             by_code[c]["email_propietario"] = (u.get("email_propietario") or "").strip()
             by_code[c]["ejecutivo"] = (u.get("ejecutivo") or "").strip()
+            # Priorizar correo del ejecutivo definido en la ficha maestra de cartera.
+            email_exec_uc = str(u.get("email_ejecutivo") or "").strip().lower()
+            if email_exec_uc:
+                by_code[c]["email_ejecutivo"] = email_exec_uc
 
     inteligencia = db["propiedades_inteligencia_comercial"]
     for ic in inteligencia.find(
@@ -1543,41 +1663,22 @@ def load_wave1(oficina: str) -> list[dict]:
         p["resumen_comercial_llm"] = m.get("resumen_comercial_llm")
         p["mercado_pdf_filename"] = pdf_control.get("filename")
 
-    # Enriquecer ejecutivo
-    nombres_ejecutivos = {
-        (p.get("ejecutivo") or "").strip().lower()
-        for p in by_code.values()
-        if (p.get("ejecutivo") or "").strip()
-    }
-    if nombres_ejecutivos:
-        usuarios = db["usuarios"]
-        for usr in usuarios.find(
-            {},
-            {
-                "_id": 0,
-                "nombre": 1,
-                "telefono": 1,
-                "celular": 1,
-                "phone": 1,
-                "movil": 1,
-            },
-        ):
-            nombre_usr = (usr.get("nombre") or "").strip().lower()
-            if not nombre_usr or nombre_usr not in nombres_ejecutivos:
+    # Enriquecer ejecutivo con matching flexible por nombre (tolerante a apellidos/iniciales)
+    usuarios_idx = _build_usuarios_index(db)
+    if usuarios_idx:
+        cache_contacto: dict[str, tuple[str, str]] = {}
+        for p in by_code.values():
+            ejecutivo_name = str(p.get("ejecutivo") or "").strip()
+            if not ejecutivo_name:
                 continue
-            phone = (
-                usr.get("telefono")
-                or usr.get("celular")
-                or usr.get("phone")
-                or usr.get("movil")
-                or ""
-            )
-            phone = str(phone).strip()
-            if not phone:
-                continue
-            for p in by_code.values():
-                if (p.get("ejecutivo") or "").strip().lower() == nombre_usr:
-                    p["telefono_ejecutivo"] = phone
+            cache_key = _normalize_person_name(ejecutivo_name)
+            if cache_key not in cache_contacto:
+                cache_contacto[cache_key] = _find_contacto_ejecutivo(ejecutivo_name, usuarios_idx)
+            phone, email_exec = cache_contacto.get(cache_key, ("", ""))
+            if phone and not str(p.get("telefono_ejecutivo") or "").strip():
+                p["telefono_ejecutivo"] = phone
+            if email_exec and not str(p.get("email_ejecutivo") or "").strip():
+                p["email_ejecutivo"] = email_exec
 
     return list(by_code.values())
 
@@ -1638,10 +1739,13 @@ def load_by_codigo_for_test(codigo: str) -> list[dict]:
 
     uc = db["universo_cartera"].find_one(
         {"codigo": c},
-        {"_id": 0, "email_propietario": 1, "ejecutivo": 1},
+        {"_id": 0, "email_propietario": 1, "ejecutivo": 1, "email_ejecutivo": 1},
     ) or {}
     doc["email_propietario"] = (uc.get("email_propietario") or "").strip()
     doc["ejecutivo"] = (uc.get("ejecutivo") or "").strip()
+    email_exec_uc = str(uc.get("email_ejecutivo") or "").strip().lower()
+    if email_exec_uc:
+        doc["email_ejecutivo"] = email_exec_uc
 
     temp = [doc]
     by_code = {c: doc}
@@ -1726,20 +1830,29 @@ def load_by_codigo_for_test(codigo: str) -> list[dict]:
             by_code[c]["resumen_comercial_llm"] = m.get("resumen_comercial_llm")
             by_code[c]["mercado_pdf_filename"] = pdf_control.get("filename")
 
-    ejecutivo = (doc.get("ejecutivo") or "").strip().lower()
-    if ejecutivo:
-        usr = db["usuarios"].find_one(
-            {"nombre": {"$regex": f"^{re.escape(ejecutivo)}$", "$options": "i"}},
-            {"_id": 0, "telefono": 1, "celular": 1, "phone": 1, "movil": 1},
-        ) or {}
-        phone = usr.get("telefono") or usr.get("celular") or usr.get("phone") or usr.get("movil")
-        if phone:
-            doc["telefono_ejecutivo"] = str(phone).strip()
+    ejecutivo = (doc.get("ejecutivo") or "").strip()
+    if ejecutivo and (not str(doc.get("telefono_ejecutivo") or "").strip() or not str(doc.get("email_ejecutivo") or "").strip()):
+        usuarios_idx = _build_usuarios_index(db)
+        phone, email_exec = _find_contacto_ejecutivo(ejecutivo, usuarios_idx)
+        if phone and not str(doc.get("telefono_ejecutivo") or "").strip():
+            doc["telefono_ejecutivo"] = phone
+        if email_exec and not str(doc.get("email_ejecutivo") or "").strip():
+            doc["email_ejecutivo"] = email_exec
 
     return temp
 
 
-def registrar_envio(db, campana: str, p: dict, to_email: str, ok: bool, attached: bool, token: str, mode: str) -> None:
+def registrar_envio(
+    db,
+    campana: str,
+    p: dict,
+    to_email: str,
+    ok: bool,
+    attached: bool,
+    token: str,
+    mode: str,
+    smtp_error: str = "",
+) -> None:
     """Registra de manera completa y trazable la transacción comercial en campanas_historico."""
     db[Config.COLLECTION_CAMPANAS_LOG].insert_one(
         {
@@ -1767,6 +1880,8 @@ def registrar_envio(db, campana: str, p: dict, to_email: str, ok: bool, attached
             "suggested_adjustment_enabled": p.get("suggested_adjustment_enabled"),
             "exclusion_reason": p.get("exclusion_reason"),
             "send_eligible": p.get("send_eligible"),
+            "smtp_error": str(smtp_error or "").strip(),
+            "smtp_error_type": _classify_smtp_error(smtp_error) if (not ok and smtp_error) else "",
         }
     )
 
@@ -2050,6 +2165,8 @@ def main() -> None:
         skipped_idempotencia = 0
         skipped_global_dedupe = 0
         skipped_by_reason: dict[str, int] = {}
+        usuarios_idx = _build_usuarios_index(db)
+        contacto_cache: dict[str, tuple[str, str]] = {}
         dedupe_cutoff_iso = datetime.now(timezone.utc).timestamp() - (args.global_dedupe_days * 86400)
         
         for i, p in enumerate(wave, start=1):
@@ -2111,6 +2228,12 @@ def main() -> None:
             token = secrets.token_urlsafe(20)
             asesor = (p.get("ejecutivo") or "Equipo Procasa").strip() or "Equipo Procasa"
             ejecutivo_email = str(p.get("email_ejecutivo") or "").strip().lower()
+            if not ejecutivo_email and asesor:
+                cache_key = _normalize_person_name(asesor)
+                if cache_key not in contacto_cache:
+                    contacto_cache[cache_key] = _find_contacto_ejecutivo(asesor, usuarios_idx)
+                _, matched_email = contacto_cache.get(cache_key, ("", ""))
+                ejecutivo_email = str(matched_email or "").strip().lower()
             cc_emails = [x for x in [ejecutivo_email, "jpcaro@procasa.cl"] if x]
             
             # Mapear PDFs según ruta asignada
@@ -2150,7 +2273,7 @@ def main() -> None:
             registrar_envio(db, args.campana, p, email_owner, ok, attached, token, args.mode)
             if ok:
                 sent += 1
-                print(f"[{i}/{len(wave)}] ENVIADO: codigo={codigo} to={email_owner} ruta={ruta} pdf={attached}")
+                print(f"[{i}/{len(wave)}] ENVIADO: codigo={codigo} to={email_owner} cc={','.join(sorted(set(cc_emails))) if cc_emails else 'SIN_CC'} ruta={ruta} pdf={attached}")
                 
         print("=" * 80)
         print(f"CAMPANA EN VIVO FINALIZADA")
@@ -2186,6 +2309,13 @@ def main() -> None:
         p = wave[0]
         classification = clasificar_propiedad(p, TASACIONES_DIR)
         p.update(classification)
+        if p.get("ruta_asignada") == "Cola Manual" or not bool(p.get("send_eligible", True)):
+            print("AVISO TEST: Esta propiedad no sería enviada en modo live, pero se enviará test para revisión visual.")
+            print(f"  -> Código propiedad:   {codigo_input}")
+            print(f"  -> Ruta asignada:      {p.get('ruta_asignada')}")
+            print(f"  -> Motivo ruta:        {p.get('motivo_ruta')}")
+            print(f"  -> Exclusion reason:   {p.get('exclusion_reason')}")
+            print(f"  -> Send eligible:      {p.get('send_eligible')}")
         
         token = secrets.token_urlsafe(20)
         asesor = (p.get("ejecutivo") or "Equipo Procasa").strip() or "Equipo Procasa"
@@ -2213,6 +2343,7 @@ def main() -> None:
         print(f"  -> Ruta asignada:     {p.get('ruta_asignada')}")
         print(f"  -> Score de confianza: {p.get('confidence_score')}/100")
         print(f"  -> Categoría outlier: {p.get('categoria_outlier')}")
+        print(f"  -> Usa tasación adjunta: {'SI' if usa_tasacion else 'NO'}")
         
         ok = False
         attached = False

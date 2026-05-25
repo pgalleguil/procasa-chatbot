@@ -1228,6 +1228,7 @@
 
             Array.from(form.elements).forEach(el => {
                 if (el.tagName === 'BUTTON') return;
+                if (el.id === 'phoneInput') return;
                 if (el.required && !el.value.trim()) {
                     isValid = false;
                     const label = el.closest('.col-lg-1, .col-lg-2, .col-lg-3, .col-lg-4, .col-lg-5, .col-lg-6, .col-lg-8, .col-md-6')?.querySelector('label')?.innerText || el.name;
@@ -1405,6 +1406,13 @@
 
             const validatePhone = () => {
                 if (phoneInputField.value.trim()) {
+                    const digits = normalizePhoneForContract(window.getPhoneData ? window.getPhoneData() : phoneInputField.value).replace(/\D/g, '');
+                    if (digits.length >= 8) {
+                        phoneInputField.classList.remove('is-invalid');
+                        phoneInputField.classList.add('is-valid');
+                        triggerPreview();
+                        return;
+                    }
                     const intlValid = (() => {
                         try {
                             return !!phoneInput.isValidNumber();
@@ -1543,11 +1551,23 @@
                         detail: result?.detail,
                         result
                     });
-                    alert('Error: ' + result.detail);
+                    const msg = document.getElementById('formErrors');
+                    if (msg) {
+                        msg.classList.remove('d-none');
+                        msg.innerText = `Error al crear convenio: ${result?.detail || 'Error desconocido'}`;
+                    } else {
+                        alert('Error: ' + (result?.detail || 'Error desconocido'));
+                    }
                 }
             } catch (e) {
                 console.error('[contracts] create exception', e);
-                alert('Error al generar contrato.');
+                const msg = document.getElementById('formErrors');
+                if (msg) {
+                    msg.classList.remove('d-none');
+                    msg.innerText = 'Error técnico al generar contrato. Intenta nuevamente.';
+                } else {
+                    alert('Error al generar contrato.');
+                }
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = `<i class="fa-solid fa-file-signature me-2"></i>${isEditingContract ? 'Actualizar Documento' : 'Crear Documento'}`;

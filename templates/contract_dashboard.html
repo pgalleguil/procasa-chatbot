@@ -8,7 +8,6 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/css/intlTelInput.css">
 
     <style>
         :root {
@@ -1037,7 +1036,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/js/intlTelInput.min.js"></script>
     <script>
         const comunasDeChile = [
             'Arica', 'Camarones', 'Putre', 'General Lagos', 'Iquique', 'Alto Hospicio', 'Pozo Almonte', 'Camiña', 'Colchane', 'Huara', 'Pica', 'Antofagasta', 'Mejillones', 'Sierra Gorda', 'Taltal', 'Calama', 'Ollagüe', 'San Pedro de Atacama', 'Tocopilla', 'María Elena', 'Copiapó', 'Caldera', 'Tierra Amarilla', 'Chañaral', 'Diego de Almagro', 'Vallenar', 'Alto del Carmen', 'Freirina', 'Huasco', 'La Serena', 'Coquimbo', 'Andacollo', 'La Higuera', 'Paihuano', 'Vicuña', 'Illapel', 'Canela', 'Los Vilos', 'Salamanca', 'Ovalle', 'Combarbalá', 'Monte Patria', 'Punitaqui', 'Río Hurtado', 'Valparaíso', 'Casablanca', 'Concón', 'Juan Fernández', 'Puchuncaví', 'Quintero', 'Viña del Mar', 'Isla de Pascua', 'Los Andes', 'Calle Larga', 'Rinconada', 'San Esteban', 'La Ligua', 'Cabildo', 'Papudo', 'Petorca', 'Zapallar', 'Quillota', 'Calera', 'Hijuelas', 'La Cruz', 'Nogales', 'San Antonio', 'Algarrobo', 'Cartagena', 'El Quisco', 'El Tabo', 'Santo Domingo', 'San Felipe', 'Catemu', 'Llaillay', 'Panquehue', 'Putaendo', 'Santa María', 'Quilpué', 'Limache', 'Olmué', 'Villa Alemana', 'Rancagua', 'Codegua', 'Coinco', 'Coltauco', 'Doñihue', 'Graneros', 'Las Cabras', 'Machalí', 'Malloa', 'Mostazal', 'Olivar', 'Peumo', 'Pichidegua', 'Quinta de Tilcoco', 'Rengo', 'Requínoa', 'San Vicente', 'Pichilemu', 'La Estrella', 'Litueche', 'Marchihue', 'Navidad', 'Paredones', 'San Fernando', 'Chépica', 'Chimbarongo', 'Lolol', 'Nancagua', 'Palmilla', 'Peralillo', 'Placilla', 'Pumanque', 'Santa Cruz', 'Talca', 'Constitución', 'Curepto', 'Empedrado', 'Maule', 'Pelarco', 'Pencahue', 'Río Claro', 'San Clemente', 'San Rafael', 'Cauquenes', 'Chanco', 'Pelluhue', 'Curicó', 'Hualañé', 'Licantén', 'Molina', 'Rauco', 'Romeral', 'Sagrada Familia', 'Teno', 'Vichuquén', 'Linares', 'Colbún', 'Longaví', 'Parral', 'Retiro', 'San Javier', 'Villa Alegre', 'Yerbas Buenas', 'Cobquecura', 'Coelemu', 'Ninhue', 'Portezuelo', 'Quirihue', 'Ránquil', 'Treguaco', 'Bulnes', 'Chillán Viejo', 'Chillán', 'El Carmen', 'Pemuco', 'Pinto', 'Quillón', 'San Ignacio', 'Yungay', 'Coihueco', 'Ñiquén', 'San Carlos', 'San Fabián', 'San Nicolás', 'Concepción', 'Coronel', 'Chiguayante', 'Florida', 'Hualqui', 'Lota', 'Penco', 'San Pedro de la Paz', 'Santa Juana', 'Talcahuano', 'Tomé', 'Hualpén', 'Lebu', 'Arauco', 'Cañete', 'Contulmo', 'Curanilahue', 'Los Álamos', 'Tirúa', 'Los Ángeles', 'Antuco', 'Cabrero', 'Laja', 'Mulchén', 'Nacimiento', 'Negrete', 'Quilaco', 'Quilleco', 'San Rosendo', 'Santa Bárbara', 'Tucapel', 'Yumbel', 'Alto Biobío', 'Temuco', 'Carahue', 'Cunco', 'Curarrehue', 'Freire', 'Galvarino', 'Gorbea', 'Lautaro', 'Loncoche', 'Melipeuco', 'Nueva Imperial', 'Padre las Casas', 'Perquenco', 'Pitrufquén', 'Pucón', 'Saavedra', 'Teodoro Schmidt', 'Toltén', 'Vilcún', 'Villarrica', 'Cholchol', 'Angol', 'Collipulli', 'Curacautín', 'Ercilla', 'Lonquimay', 'Los Sauces', 'Lumaco', 'Purén', 'Renaico', 'Traiguén', 'Victoria', 'Valdivia', 'Corral', 'Lanco', 'Los Lagos', 'Máfil', 'San José de la Mariquina', 'Paillaco', 'Panguipulli', 'La Unión', 'Futrono', 'Lago Ranco', 'Río Bueno', 'Puerto Montt', 'Calbuco', 'Cochamó', 'Fresia', 'Frutillar', 'Los Muermos', 'Llanquihue', 'Maullín', 'Puerto Varas', 'Castro', 'Ancud', 'Chonchi', 'Curaco de Vélez', 'Dalcahue', 'Puqueldón', 'Queilén', 'Quellón', 'Quemchi', 'Quinchao', 'Osorno', 'Puerto Octay', 'Purranque', 'Puyehue', 'Río Negro', 'San Juan de la Costa', 'San Pablo', 'Chaitén', 'Futaleufú', 'Hualaihué', 'Palena', 'Coyhaique', 'Lago Verde', 'Aysén', 'Cisnes', 'Guaitecas', 'Cochrane', 'O\'Higgins', 'Tortel', 'Chile Chico', 'Río Ibáñez', 'Punta Arenas', 'Laguna Blanca', 'Río Verde', 'San Gregorio', 'Cabo de Hornos', 'Antártica', 'Porvenir', 'Primavera', 'Timaukel', 'Natales', 'Torres del Paine', 'Cerrillos', 'Cerro Navia', 'Conchalí', 'El Bosque', 'Estación Central', 'Huechuraba', 'Independencia', 'La Cisterna', 'La Florida', 'La Granja', 'La Pintana', 'La Reina', 'Las Condes', 'Lo Barnechea', 'Lo Espejo', 'Lo Prado', 'Macul', 'Maipú', 'Ñuñoa', 'Pedro Aguirre Cerda', 'Peñalolén', 'Providencia', 'Pudahuel', 'Quilicura', 'Quinta Normal', 'Recoleta', 'Renca', 'San Joaquín', 'San Miguel', 'San Ramón', 'Santiago', 'Vitacura', 'Puente Alto', 'Pirque', 'San José de Maipo', 'Colina', 'Lampa', 'Tiltil', 'San Bernardo', 'Buin', 'Calera de Tango', 'Paine', 'Melipilla', 'Alhué', 'Curacaví', 'María Pinto', 'San Pedro', 'Talagante', 'El Monte', 'Isla de Maipo', 'Padre Hurtado', 'Peñaflor'
@@ -1356,34 +1354,7 @@
         }
 
         document.addEventListener("DOMContentLoaded", function () {
-            if (window.intlTelInputGlobals) {
-                const countryData = window.intlTelInputGlobals.getCountryData();
-                try {
-                    const esRegionNames = new Intl.DisplayNames(['es'], { type: 'region' });
-                    countryData.forEach(country => {
-                        try {
-                            const esName = esRegionNames.of(country.iso2.toUpperCase());
-                            if (esName) {
-                                country.name = esName;
-                            }
-                        } catch (e) { }
-                    });
-                } catch (e) { }
-
-                // Sort countryData alphabetically by the new Spanish names
-                countryData.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
-            }
-
             const phoneInputField = document.querySelector("#phoneInput");
-            const phoneInput = window.intlTelInput(phoneInputField, {
-                initialCountry: "cl",
-                preferredCountries: ["cl", "ar", "co", "pe", "us", "es"],
-                utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/js/utils.js",
-                separateDialCode: false,
-                nationalMode: false,
-                autoInsertDialCode: true,
-                countrySearch: true
-            });
 
             const modalEl = document.getElementById('modalNewContract');
             modalEl.addEventListener('show.bs.modal', () => {
@@ -1399,9 +1370,8 @@
                 if (btn) btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Crear Documento';
             });
 
-            window.phoneInputIntl = phoneInput;
             window.getPhoneData = function () {
-                return phoneInput.getNumber();
+                return phoneInputField ? phoneInputField.value : '';
             };
 
             const validatePhone = () => {
@@ -1413,15 +1383,8 @@
                         triggerPreview();
                         return;
                     }
-                    const intlValid = (() => {
-                        try {
-                            return !!phoneInput.isValidNumber();
-                        } catch (e) {
-                            return false;
-                        }
-                    })();
                     const fallbackValid = isPhoneAcceptableStrict() || isPhoneAcceptable(phoneInputField);
-                    if (intlValid || fallbackValid) {
+                    if (fallbackValid) {
                         phoneInputField.classList.remove('is-invalid');
                         phoneInputField.classList.add('is-valid');
                     } else {
@@ -1436,7 +1399,6 @@
             };
 
             phoneInputField.addEventListener('input', validatePhone);
-            phoneInputField.addEventListener('countrychange', validatePhone);
             phoneInputField.addEventListener('blur', validatePhone);
 
             const comunaInput = document.getElementById('comunaInput');
@@ -1648,8 +1610,10 @@
             form.property_code.value = c?.property_code || '';
             form.origen.value = c?.origen || '';
             if (form.executive) form.executive.value = c?.executive || c?.created_by || form.executive.value || '';
-            if (window.phoneInputIntl && c?.phone) {
-                window.phoneInputIntl.setNumber(c.phone.startsWith('+') ? c.phone : `+${String(c.phone).replace(/[^\d]/g, '')}`);
+            if (c?.phone) {
+                const normalizedPhone = c.phone.startsWith('+') ? c.phone : `+${String(c.phone).replace(/[^\d]/g, '')}`;
+                const phoneInput = document.getElementById('phoneInput');
+                if (phoneInput) phoneInput.value = normalizedPhone;
             }
             const btn = document.getElementById('btnGenerateContract');
             if (btn) btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Actualizar Documento';

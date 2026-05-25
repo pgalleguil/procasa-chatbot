@@ -1270,9 +1270,9 @@
             const rawFromInput = (document.getElementById('phoneInput')?.value || '');
             const normalized = normalizePhoneForContract(rawFromIntl || rawFromInput);
             const digits = normalized.replace(/\D/g, '');
-            if (!digits.startsWith('56')) return false;
-            const local = digits.slice(2);
-            return /^[2-9]\d{7,8}$/.test(local);
+            // Modo operativo: evitar falsos negativos del plugin.
+            // Si hay al menos 8 dígitos reales, se acepta y se normaliza al enviar.
+            return digits.length >= 8;
         }
 
         function validateField(input) {

@@ -140,6 +140,17 @@ async def _get_request_user(adb, request: Request):
     return username, user_role
 
 def _normalize_contract_fields(d: dict) -> dict:
+    # Normalización robusta de teléfono para convenios: siempre E.164 y Chile por defecto.
+    phone_raw = str(d.get("phone", "")).strip()
+    if phone_raw:
+        phone_digits = "".join(ch for ch in phone_raw if ch.isdigit())
+        if phone_digits.startswith("56") and len(phone_digits) >= 10:
+            d["phone"] = f"+{phone_digits}"
+        elif len(phone_digits) in (8, 9):
+            d["phone"] = f"+56{phone_digits}"
+        else:
+            d["phone"] = f"+{phone_digits}" if phone_digits else ""
+
     if d.get("email"):
         d["email"] = d["email"].strip().lower()
     if d.get("propiedad_direccion"):

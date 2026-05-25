@@ -189,6 +189,31 @@ def _normalize_contract_fields(d: dict) -> dict:
     d["precio"] = f"{precio_valor} {d['moneda']}" if precio_valor else precio_input
     return d
 
+def _get_missing_required_contract_fields(d: dict):
+    required_map = {
+        "cliente_nombre": "cliente_nombre",
+        "cliente_rut": "cliente_rut",
+        "phone": "phone",
+        "email": "email",
+        "tipo": "tipo",
+        "propiedad_direccion": "propiedad_direccion",
+        "comuna": "comuna",
+        "ciudad_firma": "ciudad_firma",
+        "vigencia": "vigencia",
+        "rol": "rol",
+        "precio_valor": "precio_valor",
+        "moneda": "moneda",
+        "comision": "comision",
+        "property_code": "property_code",
+        "origen": "origen",
+    }
+    missing = []
+    for field, source_key in required_map.items():
+        value = d.get(source_key, "")
+        if not str(value).strip():
+            missing.append(field)
+    return missing
+
 @router.post("/api/preview")
 async def preview_contract(request: Request):
     """Retorna un PDF generado en caliente para previsualización."""
@@ -213,6 +238,16 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         executive = created_by or ""
 
         property_code = data.get("property_code", "").strip()
+        missing_fields = _get_missing_required_contract_fields(data)
+        if missing_fields:
+            logger.warning(
+                "[contracts.create.validation_error] missing_required_fields "
+                f"user={created_by} role={user_role} property_code={property_code} missing={missing_fields}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Campos obligatorios faltantes: {', '.join(missing_fields)}"
+            )
         
         # Verificar si existe contrato previo creado (no firmado)
         existing = None
@@ -332,6 +367,9 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             "url_firma": url_firma
         }
         
+    except HTTPException as e:
+        logger.warning(f"Error controlado en /api/create: status={e.status_code} detail={e.detail}")
+        raise
     except Exception as e:
         logger.error(f"Error en /api/create: {e}")
         raise HTTPException(status_code=500, detail=str(e))

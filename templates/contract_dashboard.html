@@ -1207,21 +1207,40 @@
             const form = document.getElementById('formNewContract');
             const btn = document.getElementById('btnGenerateContract');
             const msgDiv = document.getElementById('missingFieldsMsg');
+            const msgList = document.getElementById('missingFieldsList');
             let isValid = true;
+            const invalidFields = [];
 
             const phoneInput = document.getElementById('phoneInput');
             if (!isPhoneAcceptable(phoneInput)) {
                 isValid = false;
+                invalidFields.push('Teléfono');
             }
 
             Array.from(form.elements).forEach(el => {
-                if (el.tagName !== 'BUTTON' && el.required && !el.value.trim()) isValid = false;
-                if (el.classList.contains('is-invalid')) isValid = false;
+                if (el.tagName === 'BUTTON') return;
+                if (el.required && !el.value.trim()) {
+                    isValid = false;
+                    const label = el.closest('.col-lg-1, .col-lg-2, .col-lg-3, .col-lg-4, .col-lg-5, .col-lg-6, .col-lg-8, .col-md-6')?.querySelector('label')?.innerText || el.name;
+                    invalidFields.push(label.replace('*', '').trim());
+                }
+                if (el.classList.contains('is-invalid')) {
+                    isValid = false;
+                    const label = el.closest('.col-lg-1, .col-lg-2, .col-lg-3, .col-lg-4, .col-lg-5, .col-lg-6, .col-lg-8, .col-md-6')?.querySelector('label')?.innerText || el.name;
+                    invalidFields.push(label.replace('*', '').trim());
+                }
             });
 
             btn.disabled = !isValid;
-            if (!isValid && hasInteracted) msgDiv.classList.remove('d-none');
-            else msgDiv.classList.add('d-none');
+            if (!isValid && hasInteracted) {
+                const uniq = [...new Set(invalidFields)].filter(Boolean);
+                msgList.textContent = uniq.length
+                    ? `Campos inválidos/faltantes: ${uniq.join(', ')}.`
+                    : 'Faltan campos obligatorios o hay errores.';
+                msgDiv.classList.remove('d-none');
+            } else {
+                msgDiv.classList.add('d-none');
+            }
         }
 
         function isPhoneAcceptable(inputEl) {
@@ -1444,7 +1463,30 @@
                 if (el.tagName === 'SELECT' || el.tagName === 'INPUT') validateField(el);
             });
             checkFormValidity();
-            if (btn.disabled) return;
+            if (btn.disabled) {
+                console.warn('[contracts] create blocked by client validation', {
+                    user: form.executive ? form.executive.value : '',
+                    payload_summary: {
+                        cliente_nombre: !!form.cliente_nombre.value,
+                        cliente_rut: !!form.cliente_rut.value,
+                        phone: normalizePhoneForContract(window.getPhoneData ? window.getPhoneData() : document.getElementById('phoneInput').value),
+                        email: !!form.email.value,
+                        tipo: form.tipo.value,
+                        propiedad_direccion: !!form.propiedad_direccion.value,
+                        comuna: form.comuna.value,
+                        ciudad_firma: form.ciudad_firma ? form.ciudad_firma.value : '',
+                        vigencia: form.vigencia.value,
+                        rol_manzana: form.rol_manzana.value,
+                        rol_predio: form.rol_predio.value,
+                        precio_valor: form.precio_valor.value,
+                        moneda: form.moneda.value,
+                        comision: form.comision.value,
+                        property_code: form.property_code.value,
+                        origen: form.origen.value
+                    }
+                });
+                return;
+            }
             btn.disabled = true;
             btn.innerText = "Procesando...";
 
@@ -1477,9 +1519,15 @@
                 if (res.ok) {
                     window.location.reload();
                 } else {
+                    console.error('[contracts] create failed', {
+                        status: res.status,
+                        detail: result?.detail,
+                        result
+                    });
                     alert('Error: ' + result.detail);
                 }
             } catch (e) {
+                console.error('[contracts] create exception', e);
                 alert('Error al generar contrato.');
             } finally {
                 btn.disabled = false;

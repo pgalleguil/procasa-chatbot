@@ -1210,7 +1210,7 @@
             let isValid = true;
 
             const phoneInput = document.getElementById('phoneInput');
-            if (phoneInput.classList.contains('is-invalid') || !phoneInput.value.trim()) {
+            if (!isPhoneAcceptable(phoneInput)) {
                 isValid = false;
             }
 
@@ -1222,6 +1222,19 @@
             btn.disabled = !isValid;
             if (!isValid && hasInteracted) msgDiv.classList.remove('d-none');
             else msgDiv.classList.add('d-none');
+        }
+
+        function isPhoneAcceptable(inputEl) {
+            if (!inputEl || !inputEl.value || !inputEl.value.trim()) return false;
+            if (inputEl.classList.contains('is-valid')) return true;
+
+            // Fallback robusto para Chile: acepta +56 9XXXXXXXX (8 o 9 dígitos locales por seguridad operativa)
+            const digits = (inputEl.value || '').replace(/\D/g, '');
+            if (digits.length >= 8) {
+                const local = digits.slice(-9);
+                return /^[2-9]\d{7,8}$/.test(local);
+            }
+            return false;
         }
 
         function validateField(input) {
@@ -1344,7 +1357,15 @@
 
             const validatePhone = () => {
                 if (phoneInputField.value.trim()) {
-                    if (phoneInput.isValidNumber()) {
+                    const intlValid = (() => {
+                        try {
+                            return !!phoneInput.isValidNumber();
+                        } catch (e) {
+                            return false;
+                        }
+                    })();
+                    const fallbackValid = isPhoneAcceptable(phoneInputField);
+                    if (intlValid || fallbackValid) {
                         phoneInputField.classList.remove('is-invalid');
                         phoneInputField.classList.add('is-valid');
                     } else {

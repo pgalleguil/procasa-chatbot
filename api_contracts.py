@@ -189,6 +189,20 @@ def _normalize_contract_fields(d: dict) -> dict:
     d["precio"] = f"{precio_valor} {d['moneda']}" if precio_valor else precio_input
     return d
 
+def _is_valid_whatsapp_phone(phone: str) -> bool:
+    """
+    Valida si el teléfono es enviable por WhatsApp.
+    - Chile: +56 9XXXXXXXX (9 dígitos locales móviles)
+    - Internacional: 10-15 dígitos (E.164 simplificado)
+    """
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    if not digits:
+        return False
+    if digits.startswith("56"):
+        local = digits[2:]
+        return len(local) == 9 and local.startswith("9")
+    return 10 <= len(digits) <= 15
+
 def _get_missing_required_contract_fields(d: dict):
     required_map = {
         "cliente_nombre": "cliente_nombre",
@@ -247,6 +261,15 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             raise HTTPException(
                 status_code=400,
                 detail=f"Campos obligatorios faltantes: {', '.join(missing_fields)}"
+            )
+        if not _is_valid_whatsapp_phone(data.get("phone", "")):
+            logger.warning(
+                "[contracts.create.validation_error] invalid_phone_for_whatsapp "
+                f"user={created_by} role={user_role} property_code={property_code} phone={data.get('phone', '')}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="Teléfono inválido para WhatsApp. Usa formato +569XXXXXXXX o 9XXXXXXXX."
             )
         
         # Verificar si existe contrato previo creado (no firmado)
@@ -715,6 +738,15 @@ async def send_contract(contract_code: str, request: Request):
     
     # Enviar WhatsApp
     phone = contract.get("phone")
+    if not _is_valid_whatsapp_phone(phone):
+        logger.warning(
+            "[contracts.send.validation_error] invalid_phone_for_whatsapp "
+            f"contract_code={contract_code} phone={phone}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="El teléfono del convenio no es válido para WhatsApp. Actualiza el teléfono y reintenta."
+        )
     # Usar la base_url de la request actual para que funcione localmente o en prod
     base_url = str(request.base_url).rstrip('/')
     link = f"{base_url}/contracts/view/{token}"
@@ -872,6 +904,11 @@ async def request_otp(token: str, request: Request, background_tasks: Background
         raise HTTPException(status_code=404, detail="Token inv\u00e1lido")
         
     ensure_document_valid(contract)
+    if not _is_valid_whatsapp_phone(contract.get("phone", "")):
+        raise HTTPException(
+            status_code=400,
+            detail="Teléfono inválido para recibir OTP por WhatsApp. Contacta a tu ejecutivo."
+        )
     
     if contract.get("status") == "signed" or contract["security"].get("token_used"):
         return JSONResponse(status_code=200, content={"status": "already_signed"})

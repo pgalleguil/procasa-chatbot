@@ -252,7 +252,34 @@ class LeadProcessingService:
         db = LeadProcessingService._db()
         try:
             query_id = ObjectId(lead_id) if isinstance(lead_id, str) else lead_id
-            lead = db["leads"].find_one({"_id": query_id})
+            # Proyección acotada para reducir I/O de documentos grandes (messages puede crecer mucho).
+            lead_projection = {
+                "phone": 1,
+                "nombre": 1,
+                "codigo": 1,
+                "created_at": 1,
+                "timestamp": 1,
+                "stage": 1,
+                "pipeline_stage": 1,
+                "cluster_id": 1,
+                "zone": 1,
+                "ejecutivo_asignado": 1,
+                "origen": 1,
+                "comuna": 1,
+                "comuna_interes": 1,
+                "tipo_interes": 1,
+                "tipo_propiedad": 1,
+                "operacion": 1,
+                "message_count": 1,
+                "last_message_at": 1,
+                "last_updated": 1,
+                "updated_at": 1,
+                "url": 1,
+                "ultima_actualizacion_bi": 1,
+                "prospecto": 1,
+                "messages": {"$slice": -5}
+            }
+            lead = db["leads"].find_one({"_id": query_id}, lead_projection)
             if not lead:
                 return False
 
@@ -315,28 +342,26 @@ class LeadProcessingService:
                 
                 # 3. Notificar si fue re-asignado o pedido explícitamente
                 if update_data.get("auto_reassigned") or force_notif:
-                    full_lead = db["leads"].find_one({"_id": query_id})
-                    
-                    # CORRECCIÓN: Estructurar la notificación para que webhook la entienda
-                    prospecto_data = full_lead.get("prospecto", {})
-                    prop_code = prospecto_data.get("codigo") or full_lead.get("codigo")
-                    exec_name = full_lead.get("ejecutivo_asignado") or prospecto_data.get("ejecutivo")
+                    # Evita un find_one adicional: armamos snapshot con los datos ya disponibles.
+                    prospecto_data = lead.get("prospecto", {}) or {}
+                    exec_name = update_data.get("ejecutivo_asignado") or update_data.get("prospecto.ejecutivo") or lead.get("ejecutivo_asignado") or prospecto_data.get("ejecutivo")
+                    prop_code = prospecto_data.get("codigo") or lead.get("codigo")
                     
                     from .lead_router import get_executive_phone
                     exec_phone = get_executive_phone(exec_name) if exec_name else "+56900000000"
                     
                     structured_alert = {
-                        "phone": full_lead.get("phone"),
+                        "phone": lead.get("phone"),
                         "property_code": prop_code,
                         "lead_type": "ReasignacionAutomatica",
                         "target_name": exec_name,
                         "target_phone": exec_phone,
-                        "nombre": prospecto_data.get("nombre") or full_lead.get("nombre", "Cliente"),
+                        "nombre": prospecto_data.get("nombre") or lead.get("nombre", "Cliente"),
                         "last_message": "Asignado automáticamente por el motor de distribución."
                     }
                     
                     save_pending_notification(structured_alert)
-                    logger.info(f"[PROCESS_SERVICE] Notificacion pendiente estructurada guardada para {full_lead.get('phone')} (destinado a {exec_name})")
+                    logger.info(f"[PROCESS_SERVICE] Notificacion pendiente estructurada guardada para {lead.get('phone')} (destinado a {exec_name})")
 
                 # --- NUEVO: STRUCTURED LOGGING PARA DECISIONES ---
                 import json

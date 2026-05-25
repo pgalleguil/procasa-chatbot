@@ -488,6 +488,25 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         if email_detectado:
              await _run_sync(actualizar_prospecto, phone, {"email": email_detectado.lower()})
 
+    # --- GUARDRAIL DE INTENCIÓN (REGLAS DETERMINÍSTICAS) ---
+    # Evita falsos "consulta_general" cuando el usuario expresa intención explícita.
+    msg_l = (original_message or "").lower()
+    visit_terms = [
+        "visita", "visitar", "ir a ver", "ver la propiedad", "verlo", "verla",
+        "disponible", "disponibilidad", "fin de semana", "mañana", "pasado mañana",
+        "agendar", "coordinar visita", "conocer la propiedad"
+    ]
+    contact_terms = [
+        "llamar", "llamen", "llamada", "contactar", "contacto", "ejecutivo",
+        "asesor", "humano", "supervisor", "gerente"
+    ]
+
+    if intencion == "consulta_general":
+        if any(t in msg_l for t in visit_terms):
+            intencion = "agendar_visita"
+        elif any(t in msg_l for t in contact_terms):
+            intencion = "contacto_directo"
+
     # --- NUEVA LÓGICA DE INTENCIÓN (ENTERPRISE) ---
     intent_map = {
         "agendar_visita": LeadIntent.ASK_VISIT,

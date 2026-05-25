@@ -306,7 +306,7 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
             "real_timestamp": last_ts_obj,
             "priority_score": config_estado["priority"],
             "codigo_propiedad": detect_property_code(lead) or "S/N",
-            "url_propiedad": f"https://www.procasa.cl/propiedad/{detect_property_code(lead)}" if detect_property_code(lead) else "#",
+            "url_propiedad": f"https://www.procasa.cl/{detect_property_code(lead)}" if detect_property_code(lead) else "#",
             "ultima_accion_titulo": last_action_text,
             "ultima_accion_note": last_action_note,
             "ejecutivo_nombre": ejecutivo or UNASSIGNED_LABEL,
@@ -316,4 +316,5 @@ def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad
     
     # 5. RETORNAR RESULTADOS
     return leads_procesados, kpi_counts, total_count
+
 

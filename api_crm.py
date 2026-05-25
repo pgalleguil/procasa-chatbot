@@ -1,4 +1,4 @@
-# from pymongo import MongoClient (Replaced by singleton)
+﻿# from pymongo import MongoClient (Replaced by singleton)
 from config import Config
 from datetime import datetime
 import pytz
@@ -63,7 +63,7 @@ def get_real_property_data(db, codigo_propiedad):
         "nombre_propietario": prop.get("nombre_propietario", "No registrado"),
         "movil_propietario": prop.get("movil_propietario") or prop.get("fono_propietario", "S/I"),
         "email_propietario": prop.get("email_propietario", "S/I"),
-        "url": f"https://www.procasa.cl/propiedad/{prop.get('codigo')}"
+        "url": f"https://www.procasa.cl/{prop.get('codigo')}"
     }
 
 def detect_property_code(lead):
@@ -519,7 +519,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             "created_timestamp": lead.get("created_at"),
             "priority_score": config_estado["priority"],
             "codigo_propiedad": detect_property_code(lead) or "S/N",
-            "url_propiedad": f"https://www.procasa.cl/propiedad/{detect_property_code(lead)}" if detect_property_code(lead) else "#",
+            "url_propiedad": f"https://www.procasa.cl/{detect_property_code(lead)}" if detect_property_code(lead) else "#",
             "ultima_accion_titulo": last_action_text,
             "ultima_accion_note": last_action_note,
             "ejecutivo_nombre": ejecutivo or UNASSIGNED_LABEL,
@@ -900,4 +900,5 @@ def log_recommendation_sent(phone: str, selected_properties: list, user_email: s
     except Exception as e:
         logger.error(f"[SEMANTIC] Error registrando recomendación: {e}", exc_info=True)
         return {"status": "error", "detail": str(e)}
+
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # email_retiro_propiedad.py → Versión FINAL con Copia a Ejecutivo (29-12-2025)
 
 import os
@@ -22,7 +22,7 @@ MODO_PRUEBA = False  # ← Cambia a False para envío real
 EMAIL_PRUEBA = "pgalleguillos@procasa.cl"
 
 RENDER_BASE_URL = "https://procasa-chatbot-yr8d.onrender.com"
-PUBLICACION_BASE_URL = "https://www.procasa.cl/propiedad/"
+PUBLICACION_BASE_URL = "https://www.procasa.cl/"
 
 # Zona horaria de Chile
 TZ_CHILE = ZoneInfo("America/Santiago")

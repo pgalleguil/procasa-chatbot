@@ -5182,7 +5182,7 @@
                                 <i class="fa-solid fa-bed me-1"></i> ${p.dormitorios} | 
                                 <i class="fa-solid fa-bath me-1"></i> ${p.banos} | 
                                 <i class="fa-solid fa-ruler-combined me-1"></i> ${p.m2_utiles}m²
-                                <a href="https://www.procasa.cl/propiedad/${p.codigo}" target="_blank" class="prop-link float-end" onclick="event.stopPropagation()">
+                                <a href="https://www.procasa.cl/${p.codigo}" target="_blank" class="prop-link float-end" onclick="event.stopPropagation()">
                                     <i class="fa-solid fa-up-right-from-square"></i> Ficha
                                 </a>
                             </div>
@@ -5334,7 +5334,7 @@
                 msg += `🏠 *${p.codigo}* | ${p.tipo} en ${p.comuna}\n`;
                 msg += `✨ ${p.dormitorios} dorm / ${p.banos} baños / ${p.m2_utiles}m²\n`;
                 msg += `💰 Precio: ${priceText}\n`;
-                msg += `🔗 Ver Ficha: https://www.procasa.cl/propiedad/${p.codigo}\n\n`;
+                msg += `🔗 Ver Ficha: https://www.procasa.cl/${p.codigo}\n\n`;
             });
 
             msg += `Si alguna te interesa o quieres más detalles, dime y coordinamos una visita. ¡Quedo atento!`;
@@ -5424,3 +5424,4 @@
 </body>
 
 </html>
+

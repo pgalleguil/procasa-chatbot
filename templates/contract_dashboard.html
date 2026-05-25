@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Procasa | MÃ³dulo de Convenios</title>
+    <title>Procasa | Módulo de Convenios</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -658,7 +658,7 @@
         <div class="brand">
             <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
                 style="max-height: 55px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
-                onerror="this.style.display='none'"> <span>MENÃš</span>
+                onerror="this.style.display='none'"> <span>MEN�s</span>
         </div>
         {% if user_role in ['supervisor', 'admin'] %}
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
@@ -668,14 +668,14 @@
         <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i> <span>Captaciones</span></a>
         <a href="/contracts/dashboard" class="nav-link active"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
         {% if user_role in ['supervisor', 'admin'] %}
-        <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Ã“rdenes de Visita</span></a>
+        <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>�"rdenes de Visita</span></a>
         {% endif %}
 
         <a href="javascript:void(0)" class="nav-link" style="margin-top:auto" onclick="toggleTheme()">
             <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
         </a>
         <a href="/logout" class="nav-link">
-            <i class="fa-solid fa-power-off"></i> <span>Cerrar SesiÃ³n</span>
+            <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
         </a>
     </nav>
 
@@ -685,7 +685,7 @@
                 <div class="hamburger-mobile" onclick="toggleMobileMenu()">
                     <i class="fa-solid fa-bars"></i>
                 </div>
-                <h4 class="m-0 fw-bold">MÃ³dulo de Convenios</h4>
+                <h4 class="m-0 fw-bold">Módulo de Convenios</h4>
             </div>
             <button class="btn btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#modalNewContract">
                 <i class="fa-solid fa-plus me-2"></i> Nuevo Convenio
@@ -717,7 +717,7 @@
                         <tr>
                             <th>Fecha</th>
                             {% if user_role in ['supervisor', 'admin'] %}<th>Ejecutivo</th>{% endif %}
-                            <th>CÃ³digo</th>
+                            <th>Código</th>
                             <th>Origen</th>
                             <th>Cliente</th>
                             <th>Propiedad / Rol</th>
@@ -732,7 +732,7 @@
                             {% if user_role in ['supervisor', 'admin'] %}
                             <td data-label="Ejecutivo">{{ c.executive_display or '---' }}</td>
                             {% endif %}
-                            <td data-label="CÃ³digo"><strong>{{ c.property_code or c.contract_code[:8] }}</strong></td>
+                            <td data-label="Código"><strong>{{ c.property_code or c.contract_code[:8] }}</strong></td>
                             <td data-label="Origen">{{ c.get('origen', '---') }}</td>
                             <td data-label="Cliente">
                                 {{ c.client_data.nombre }}<br>
@@ -746,14 +746,14 @@
                                 {% if c.status == 'created' %}<span class="status-badge status-created">Creado</span>
                                 {% elif c.status == 'sent' %}<span class="status-badge status-sent">Enviado</span>
                                 {% elif c.status == 'opened' %}<span class="status-badge status-opened">Abierto</span>
-                                {% elif c.status == 'otp_requested' %}<span class="status-badge status-otp_requested">CÃ³digo Pedido</span>
+                                {% elif c.status == 'otp_requested' %}<span class="status-badge status-otp_requested">Código Pedido</span>
                                 {% elif c.status == 'otp_verified' %}<span class="status-badge status-otp_verified">RUT Validado</span>
-                                {% elif c.status in ['signed','accepted'] %}<span class="status-badge status-signed">Firmado âœ“</span>
+                                {% elif c.status in ['signed','accepted'] %}<span class="status-badge status-signed">Firmado �o"</span>
                                 {% else %}<span class="status-badge status-created">{{ c.status }}</span>{% endif %}
                             </td>
                             <td data-label="Acciones">
                                 <div class="d-flex flex-wrap gap-1">
-                                    {# BotÃ³n Ver PDF original (solo si no estÃ¡ firmado) #}
+                                    {# Botón Ver PDF original (solo si no está firmado) #}
                                     {% if c.status == 'created' %}
                                     <a href="/contracts/api/download/{{ c.contract_code }}" target="_blank"
                                         class="btn btn-sm btn-outline-secondary" title="Ver PDF">
@@ -763,7 +763,7 @@
                                         onclick='editContract({{ c.edit_data|tojson|safe }})'>
                                         <i class="fa-solid fa-pen"></i>
                                     </button>
-                                    {# BotÃ³n Enviar WhatsApp: solo si aÃºn no se ha enviado #}
+                                    {# Botón Enviar WhatsApp: solo si aún no se ha enviado #}
                                     <button class="btn btn-sm btn-outline-secondary btn-hover-whatsapp"
                                         title="Enviar por WhatsApp"
                                         onclick="sendContract('{{ c.contract_code }}', this)">
@@ -810,7 +810,7 @@
                         <tr>
                             <td colspan="{% if user_role in ['supervisor', 'admin'] %}8{% else %}7{% endif %}" class="text-center text-secondary py-5">
                                 <i class="fa-solid fa-folder-open fa-2x mb-2 d-block"></i>
-                                No hay convenios generados aÃºn.
+                                No hay convenios generados aún.
                             </td>
                         </tr>
                         {% endfor %}
@@ -841,7 +841,7 @@
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Nombre del
                                             Cliente <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="cliente_nombre"
-                                            placeholder="Ej: Juan PÃ©rez" required
+                                            placeholder="Ej: Juan Pérez" required
                                             onblur="capitalizeName(this); validateField(this); triggerPreview();">
                                         <div class="invalid-feedback">Ingresa el nombre completo.</div>
                                     </div>
@@ -851,18 +851,18 @@
                                         <input type="text" class="form-control" name="cliente_rut"
                                             placeholder="12345678-9" required oninput="formatRut(this)"
                                             onblur="validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa un RUT vÃ¡lido.</div>
+                                        <div class="invalid-feedback">Ingresa un RUT válido.</div>
                                     </div>
                                 </div>
                                 <div class="row g-3 mb-3">
                                     <div class="col-lg-4 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">TelÃ©fono
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Teléfono
                                             <span class="required-star">*</span></label>
                                         <div class="w-100">
                                             <input type="tel" class="form-control w-100" id="phoneInput"
                                                 name="phone_full" placeholder="+56 9 1234 5678" required style="width: 100%;">
                                         </div>
-                                        <div class="invalid-feedback" id="phoneErrorMsg">Ingresa un telÃ©fono vÃ¡lido.
+                                        <div class="invalid-feedback" id="phoneErrorMsg">Ingresa un teléfono válido.
                                         </div>
                                     </div>
                                     <div class="col-lg-8 col-md-6">
@@ -871,7 +871,7 @@
                                         <input type="email" class="form-control" name="email" required
                                             oninput="this.value=this.value.toLowerCase()"
                                             onblur="this.value=this.value.trim().toLowerCase(); validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa un correo electrÃ³nico vÃ¡lido (con @).
+                                        <div class="invalid-feedback">Ingresa un correo electrónico válido (con @).
                                         </div>
                                     </div>
                                 </div>
@@ -884,36 +884,36 @@
                                             Convenio <span class="required-star">*</span></label>
                                         <select class="form-select" name="tipo" required
                                             onchange="validateField(this); triggerPreview()">
-                                            <option value="" selected>Selecciona tipo de operaciÃ³n</option>
-                                            <option value="Venta">AutorizaciÃ³n de Venta</option>
-                                            <option value="Venta Exclusiva">AutorizaciÃ³n de Venta Exclusiva</option>
-                                            <option value="Arriendo">AutorizaciÃ³n de Arriendo</option>
-                                            <option value="Arriendo y AdministraciÃ³n">AutorizaciÃ³n de Arriendo y
-                                                AdministraciÃ³n</option>
+                                            <option value="" selected>Selecciona tipo de operación</option>
+                                            <option value="Venta">Autorización de Venta</option>
+                                            <option value="Venta Exclusiva">Autorización de Venta Exclusiva</option>
+                                            <option value="Arriendo">Autorización de Arriendo</option>
+                                            <option value="Arriendo y Administración">Autorización de Arriendo y
+                                                Administración</option>
                                         </select>
                                     </div>
                                     <div class="col-lg-4 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Vigencia
-                                            (DÃ­as) <span class="required-star">*</span></label>
+                                            (Días) <span class="required-star">*</span></label>
                                         <select class="form-select" name="vigencia" required
                                             onchange="validateField(this); triggerPreview();">
                                             <option value="" selected>Selecciona vigencia</option>
-                                            <option value="60">60 DÃ­as</option>
-                                            <option value="90">90 DÃ­as</option>
-                                            <option value="120">120 DÃ­as</option>
-                                            <option value="180">180 DÃ­as</option>
-                                            <option value="360">360 DÃ­as</option>
+                                            <option value="60">60 Días</option>
+                                            <option value="90">90 Días</option>
+                                            <option value="120">120 Días</option>
+                                            <option value="180">180 Días</option>
+                                            <option value="360">360 Días</option>
                                         </select>
                                     </div>
                                 </div>
                                 <div class="row g-3 mb-3">
                                     <div class="col-lg-8 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">DirecciÃ³n
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Dirección
                                             Propiedad <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="propiedad_direccion"
-                                            placeholder="Calle, NÃºmero" required oninput="triggerPreview()"
+                                            placeholder="Calle, Número" required oninput="triggerPreview()"
                                             onblur="this.value=toTitleCase(this.value); validateField(this); triggerPreview();">
-                                        <div class="invalid-feedback">Ingresa la direcciÃ³n.</div>
+                                        <div class="invalid-feedback">Ingresa la dirección.</div>
                                     </div>
                                     <div class="col-lg-3 col-md-6 position-relative">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Comuna
@@ -972,11 +972,11 @@
                                         </div>
                                     </div>
                                     <div class="col-lg-3 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">ComisiÃ³n
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Comisión
                                             <span class="required-star">*</span></label>
                                         <select class="form-select" name="comision" required
                                             onchange="validateField(this); triggerPreview();">
-                                            <option value="" selected>Selecciona comisiÃ³n</option>
+                                            <option value="" selected>Selecciona comisión</option>
                                             <option value="1%">1%</option>
                                             <option value="1.5%">1.5%</option>
                                             <option value="2%">2%</option>
@@ -986,7 +986,7 @@
 
                                 <div class="row g-3 mb-3">
                                     <div class="col-lg-6 col-md-6">
-                                        <label class="form-label text-secondary small text-uppercase fw-bold">CÃ³digo
+                                        <label class="form-label text-secondary small text-uppercase fw-bold">Código
                                             <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="property_code"
                                             placeholder="Ej: 15482" required
@@ -999,8 +999,8 @@
                                         <select class="form-select" name="origen" required
                                             onchange="validateField(this); triggerPreview();">
                                             <option value="" selected>Selecciona origen</option>
-                                            <option value="CaptaciÃ³n Interna">CaptaciÃ³n Interna</option>
-                                            <option value="CaptaciÃ³n Externa">CaptaciÃ³n Externa</option>
+                                            <option value="Captación Interna">Captación Interna</option>
+                                            <option value="Captación Externa">Captación Externa</option>
                                         </select>
                                     </div>
                                 </div>
@@ -1040,7 +1040,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/js/intlTelInput.min.js"></script>
     <script>
         const comunasDeChile = [
-            'Arica', 'Camarones', 'Putre', 'General Lagos', 'Iquique', 'Alto Hospicio', 'Pozo Almonte', 'CamiÃ±a', 'Colchane', 'Huara', 'Pica', 'Antofagasta', 'Mejillones', 'Sierra Gorda', 'Taltal', 'Calama', 'OllagÃ¼e', 'San Pedro de Atacama', 'Tocopilla', 'MarÃ­a Elena', 'CopiapÃ³', 'Caldera', 'Tierra Amarilla', 'ChaÃ±aral', 'Diego de Almagro', 'Vallenar', 'Alto del Carmen', 'Freirina', 'Huasco', 'La Serena', 'Coquimbo', 'Andacollo', 'La Higuera', 'Paihuano', 'VicuÃ±a', 'Illapel', 'Canela', 'Los Vilos', 'Salamanca', 'Ovalle', 'CombarbalÃ¡', 'Monte Patria', 'Punitaqui', 'RÃ­o Hurtado', 'ValparaÃ­so', 'Casablanca', 'ConcÃ³n', 'Juan FernÃ¡ndez', 'PuchuncavÃ­', 'Quintero', 'ViÃ±a del Mar', 'Isla de Pascua', 'Los Andes', 'Calle Larga', 'Rinconada', 'San Esteban', 'La Ligua', 'Cabildo', 'Papudo', 'Petorca', 'Zapallar', 'Quillota', 'Calera', 'Hijuelas', 'La Cruz', 'Nogales', 'San Antonio', 'Algarrobo', 'Cartagena', 'El Quisco', 'El Tabo', 'Santo Domingo', 'San Felipe', 'Catemu', 'Llaillay', 'Panquehue', 'Putaendo', 'Santa MarÃ­a', 'QuilpuÃ©', 'Limache', 'OlmuÃ©', 'Villa Alemana', 'Rancagua', 'Codegua', 'Coinco', 'Coltauco', 'DoÃ±ihue', 'Graneros', 'Las Cabras', 'MachalÃ­', 'Malloa', 'Mostazal', 'Olivar', 'Peumo', 'Pichidegua', 'Quinta de Tilcoco', 'Rengo', 'RequÃ­noa', 'San Vicente', 'Pichilemu', 'La Estrella', 'Litueche', 'Marchihue', 'Navidad', 'Paredones', 'San Fernando', 'ChÃ©pica', 'Chimbarongo', 'Lolol', 'Nancagua', 'Palmilla', 'Peralillo', 'Placilla', 'Pumanque', 'Santa Cruz', 'Talca', 'ConstituciÃ³n', 'Curepto', 'Empedrado', 'Maule', 'Pelarco', 'Pencahue', 'RÃ­o Claro', 'San Clemente', 'San Rafael', 'Cauquenes', 'Chanco', 'Pelluhue', 'CuricÃ³', 'HualaÃ±Ã©', 'LicantÃ©n', 'Molina', 'Rauco', 'Romeral', 'Sagrada Familia', 'Teno', 'VichuquÃ©n', 'Linares', 'ColbÃºn', 'LongavÃ­', 'Parral', 'Retiro', 'San Javier', 'Villa Alegre', 'Yerbas Buenas', 'Cobquecura', 'Coelemu', 'Ninhue', 'Portezuelo', 'Quirihue', 'RÃ¡nquil', 'Treguaco', 'Bulnes', 'ChillÃ¡n Viejo', 'ChillÃ¡n', 'El Carmen', 'Pemuco', 'Pinto', 'QuillÃ³n', 'San Ignacio', 'Yungay', 'Coihueco', 'Ã‘iquÃ©n', 'San Carlos', 'San FabiÃ¡n', 'San NicolÃ¡s', 'ConcepciÃ³n', 'Coronel', 'Chiguayante', 'Florida', 'Hualqui', 'Lota', 'Penco', 'San Pedro de la Paz', 'Santa Juana', 'Talcahuano', 'TomÃ©', 'HualpÃ©n', 'Lebu', 'Arauco', 'CaÃ±ete', 'Contulmo', 'Curanilahue', 'Los Ãlamos', 'TirÃºa', 'Los Ãngeles', 'Antuco', 'Cabrero', 'Laja', 'MulchÃ©n', 'Nacimiento', 'Negrete', 'Quilaco', 'Quilleco', 'San Rosendo', 'Santa BÃ¡rbara', 'Tucapel', 'Yumbel', 'Alto BiobÃ­o', 'Temuco', 'Carahue', 'Cunco', 'Curarrehue', 'Freire', 'Galvarino', 'Gorbea', 'Lautaro', 'Loncoche', 'Melipeuco', 'Nueva Imperial', 'Padre las Casas', 'Perquenco', 'PitrufquÃ©n', 'PucÃ³n', 'Saavedra', 'Teodoro Schmidt', 'ToltÃ©n', 'VilcÃºn', 'Villarrica', 'Cholchol', 'Angol', 'Collipulli', 'CuracautÃ­n', 'Ercilla', 'Lonquimay', 'Los Sauces', 'Lumaco', 'PurÃ©n', 'Renaico', 'TraiguÃ©n', 'Victoria', 'Valdivia', 'Corral', 'Lanco', 'Los Lagos', 'MÃ¡fil', 'San JosÃ© de la Mariquina', 'Paillaco', 'Panguipulli', 'La UniÃ³n', 'Futrono', 'Lago Ranco', 'RÃ­o Bueno', 'Puerto Montt', 'Calbuco', 'CochamÃ³', 'Fresia', 'Frutillar', 'Los Muermos', 'Llanquihue', 'MaullÃ­n', 'Puerto Varas', 'Castro', 'Ancud', 'Chonchi', 'Curaco de VÃ©lez', 'Dalcahue', 'PuqueldÃ³n', 'QueilÃ©n', 'QuellÃ³n', 'Quemchi', 'Quinchao', 'Osorno', 'Puerto Octay', 'Purranque', 'Puyehue', 'RÃ­o Negro', 'San Juan de la Costa', 'San Pablo', 'ChaitÃ©n', 'FutaleufÃº', 'HualaihuÃ©', 'Palena', 'Coyhaique', 'Lago Verde', 'AysÃ©n', 'Cisnes', 'Guaitecas', 'Cochrane', 'O\'Higgins', 'Tortel', 'Chile Chico', 'RÃ­o IbÃ¡Ã±ez', 'Punta Arenas', 'Laguna Blanca', 'RÃ­o Verde', 'San Gregorio', 'Cabo de Hornos', 'AntÃ¡rtica', 'Porvenir', 'Primavera', 'Timaukel', 'Natales', 'Torres del Paine', 'Cerrillos', 'Cerro Navia', 'ConchalÃ­', 'El Bosque', 'EstaciÃ³n Central', 'Huechuraba', 'Independencia', 'La Cisterna', 'La Florida', 'La Granja', 'La Pintana', 'La Reina', 'Las Condes', 'Lo Barnechea', 'Lo Espejo', 'Lo Prado', 'Macul', 'MaipÃº', 'Ã‘uÃ±oa', 'Pedro Aguirre Cerda', 'PeÃ±alolÃ©n', 'Providencia', 'Pudahuel', 'Quilicura', 'Quinta Normal', 'Recoleta', 'Renca', 'San JoaquÃ­n', 'San Miguel', 'San RamÃ³n', 'Santiago', 'Vitacura', 'Puente Alto', 'Pirque', 'San JosÃ© de Maipo', 'Colina', 'Lampa', 'Tiltil', 'San Bernardo', 'Buin', 'Calera de Tango', 'Paine', 'Melipilla', 'AlhuÃ©', 'CuracavÃ­', 'MarÃ­a Pinto', 'San Pedro', 'Talagante', 'El Monte', 'Isla de Maipo', 'Padre Hurtado', 'PeÃ±aflor'
+            'Arica', 'Camarones', 'Putre', 'General Lagos', 'Iquique', 'Alto Hospicio', 'Pozo Almonte', 'Camiña', 'Colchane', 'Huara', 'Pica', 'Antofagasta', 'Mejillones', 'Sierra Gorda', 'Taltal', 'Calama', 'Ollagüe', 'San Pedro de Atacama', 'Tocopilla', 'María Elena', 'Copiapó', 'Caldera', 'Tierra Amarilla', 'Chañaral', 'Diego de Almagro', 'Vallenar', 'Alto del Carmen', 'Freirina', 'Huasco', 'La Serena', 'Coquimbo', 'Andacollo', 'La Higuera', 'Paihuano', 'Vicuña', 'Illapel', 'Canela', 'Los Vilos', 'Salamanca', 'Ovalle', 'Combarbalá', 'Monte Patria', 'Punitaqui', 'Río Hurtado', 'Valparaíso', 'Casablanca', 'Concón', 'Juan Fernández', 'Puchuncaví', 'Quintero', 'Viña del Mar', 'Isla de Pascua', 'Los Andes', 'Calle Larga', 'Rinconada', 'San Esteban', 'La Ligua', 'Cabildo', 'Papudo', 'Petorca', 'Zapallar', 'Quillota', 'Calera', 'Hijuelas', 'La Cruz', 'Nogales', 'San Antonio', 'Algarrobo', 'Cartagena', 'El Quisco', 'El Tabo', 'Santo Domingo', 'San Felipe', 'Catemu', 'Llaillay', 'Panquehue', 'Putaendo', 'Santa María', 'Quilpué', 'Limache', 'Olmué', 'Villa Alemana', 'Rancagua', 'Codegua', 'Coinco', 'Coltauco', 'Doñihue', 'Graneros', 'Las Cabras', 'Machalí', 'Malloa', 'Mostazal', 'Olivar', 'Peumo', 'Pichidegua', 'Quinta de Tilcoco', 'Rengo', 'Requínoa', 'San Vicente', 'Pichilemu', 'La Estrella', 'Litueche', 'Marchihue', 'Navidad', 'Paredones', 'San Fernando', 'Chépica', 'Chimbarongo', 'Lolol', 'Nancagua', 'Palmilla', 'Peralillo', 'Placilla', 'Pumanque', 'Santa Cruz', 'Talca', 'Constitución', 'Curepto', 'Empedrado', 'Maule', 'Pelarco', 'Pencahue', 'Río Claro', 'San Clemente', 'San Rafael', 'Cauquenes', 'Chanco', 'Pelluhue', 'Curicó', 'Hualañé', 'Licantén', 'Molina', 'Rauco', 'Romeral', 'Sagrada Familia', 'Teno', 'Vichuquén', 'Linares', 'Colbún', 'Longaví', 'Parral', 'Retiro', 'San Javier', 'Villa Alegre', 'Yerbas Buenas', 'Cobquecura', 'Coelemu', 'Ninhue', 'Portezuelo', 'Quirihue', 'Ránquil', 'Treguaco', 'Bulnes', 'Chillán Viejo', 'Chillán', 'El Carmen', 'Pemuco', 'Pinto', 'Quillón', 'San Ignacio', 'Yungay', 'Coihueco', 'Ñiquén', 'San Carlos', 'San Fabián', 'San Nicolás', 'Concepción', 'Coronel', 'Chiguayante', 'Florida', 'Hualqui', 'Lota', 'Penco', 'San Pedro de la Paz', 'Santa Juana', 'Talcahuano', 'Tomé', 'Hualpén', 'Lebu', 'Arauco', 'Cañete', 'Contulmo', 'Curanilahue', 'Los Álamos', 'Tirúa', 'Los Ángeles', 'Antuco', 'Cabrero', 'Laja', 'Mulchén', 'Nacimiento', 'Negrete', 'Quilaco', 'Quilleco', 'San Rosendo', 'Santa Bárbara', 'Tucapel', 'Yumbel', 'Alto Biobío', 'Temuco', 'Carahue', 'Cunco', 'Curarrehue', 'Freire', 'Galvarino', 'Gorbea', 'Lautaro', 'Loncoche', 'Melipeuco', 'Nueva Imperial', 'Padre las Casas', 'Perquenco', 'Pitrufquén', 'Pucón', 'Saavedra', 'Teodoro Schmidt', 'Toltén', 'Vilcún', 'Villarrica', 'Cholchol', 'Angol', 'Collipulli', 'Curacautín', 'Ercilla', 'Lonquimay', 'Los Sauces', 'Lumaco', 'Purén', 'Renaico', 'Traiguén', 'Victoria', 'Valdivia', 'Corral', 'Lanco', 'Los Lagos', 'Máfil', 'San José de la Mariquina', 'Paillaco', 'Panguipulli', 'La Unión', 'Futrono', 'Lago Ranco', 'Río Bueno', 'Puerto Montt', 'Calbuco', 'Cochamó', 'Fresia', 'Frutillar', 'Los Muermos', 'Llanquihue', 'Maullín', 'Puerto Varas', 'Castro', 'Ancud', 'Chonchi', 'Curaco de Vélez', 'Dalcahue', 'Puqueldón', 'Queilén', 'Quellón', 'Quemchi', 'Quinchao', 'Osorno', 'Puerto Octay', 'Purranque', 'Puyehue', 'Río Negro', 'San Juan de la Costa', 'San Pablo', 'Chaitén', 'Futaleufú', 'Hualaihué', 'Palena', 'Coyhaique', 'Lago Verde', 'Aysén', 'Cisnes', 'Guaitecas', 'Cochrane', 'O\'Higgins', 'Tortel', 'Chile Chico', 'Río Ibáñez', 'Punta Arenas', 'Laguna Blanca', 'Río Verde', 'San Gregorio', 'Cabo de Hornos', 'Antártica', 'Porvenir', 'Primavera', 'Timaukel', 'Natales', 'Torres del Paine', 'Cerrillos', 'Cerro Navia', 'Conchalí', 'El Bosque', 'Estación Central', 'Huechuraba', 'Independencia', 'La Cisterna', 'La Florida', 'La Granja', 'La Pintana', 'La Reina', 'Las Condes', 'Lo Barnechea', 'Lo Espejo', 'Lo Prado', 'Macul', 'Maipú', 'Ñuñoa', 'Pedro Aguirre Cerda', 'Peñalolén', 'Providencia', 'Pudahuel', 'Quilicura', 'Quinta Normal', 'Recoleta', 'Renca', 'San Joaquín', 'San Miguel', 'San Ramón', 'Santiago', 'Vitacura', 'Puente Alto', 'Pirque', 'San José de Maipo', 'Colina', 'Lampa', 'Tiltil', 'San Bernardo', 'Buin', 'Calera de Tango', 'Paine', 'Melipilla', 'Alhué', 'Curacaví', 'María Pinto', 'San Pedro', 'Talagante', 'El Monte', 'Isla de Maipo', 'Padre Hurtado', 'Peñaflor'
         ];
 
         let activeComunaIndex = -1;
@@ -1216,7 +1216,7 @@
             const phoneInput = document.getElementById('phoneInput');
             if (!isPhoneAcceptableStrict()) {
                 isValid = false;
-                invalidFields.push('TelÃ©fono');
+                invalidFields.push('Teléfono');
                 if (phoneInput) {
                     phoneInput.classList.add('is-invalid');
                     phoneInput.classList.remove('is-valid');
@@ -1245,7 +1245,7 @@
             if (!isValid && hasInteracted) {
                 const uniq = [...new Set(invalidFields)].filter(Boolean);
                 msgList.textContent = uniq.length
-                    ? `Campos invÃ¡lidos/faltantes: ${uniq.join(', ')}.`
+                    ? `Campos inválidos/faltantes: ${uniq.join(', ')}.`
                     : 'Faltan campos obligatorios o hay errores.';
                 msgDiv.classList.remove('d-none');
             } else {
@@ -1257,7 +1257,7 @@
             if (!inputEl || !inputEl.value || !inputEl.value.trim()) return false;
             if (inputEl.classList.contains('is-valid')) return true;
 
-            // Fallback robusto para Chile: acepta +56 9XXXXXXXX (8 o 9 dÃ­gitos locales por seguridad operativa)
+            // Fallback robusto para Chile: acepta +56 9XXXXXXXX (8 o 9 dígitos locales por seguridad operativa)
             const digits = (inputEl.value || '').replace(/\D/g, '');
             if (digits.length >= 8) {
                 const local = digits.slice(-9);
@@ -1272,7 +1272,7 @@
             const normalized = normalizePhoneForContract(rawFromIntl || rawFromInput);
             const digits = normalized.replace(/\D/g, '');
             // Modo operativo: evitar falsos negativos del plugin.
-            // Si hay al menos 8 dígitos reales, se acepta y se normaliza al enviar.
+            // Si hay al menos 8 d�gitos reales, se acepta y se normaliza al enviar.
             return digits.length >= 8;
         }
 
@@ -1564,7 +1564,7 @@
                 const msg = document.getElementById('formErrors');
                 if (msg) {
                     msg.classList.remove('d-none');
-                    msg.innerText = 'Error técnico al generar contrato. Intenta nuevamente.';
+                    msg.innerText = 'Error t�cnico al generar contrato. Intenta nuevamente.';
                 } else {
                     alert('Error al generar contrato.');
                 }
@@ -1574,11 +1574,11 @@
             }
         }
 
-        // â”€â”€â”€ ANTI-DUPLICADO: bloquea el botÃ³n mientras procesa â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // �"?�"?�"? ANTI-DUPLICADO: bloquea el botón mientras procesa �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
         async function sendContract(contractCode, btn, isResend = false) {
             if (btn.disabled) return; // previene doble clic
             if (isResend) {
-                const ok = confirm('Este convenio ya fue enviado al cliente.\nÂ¿Deseas reenviar el enlace de firma?');
+                const ok = confirm('Este convenio ya fue enviado al cliente.\n¿Deseas reenviar el enlace de firma?');
                 if (!ok) return;
             }
             const originalHTML = btn.innerHTML;
@@ -1606,7 +1606,7 @@
 
         async function deleteContract(contractCode, btn) {
             if (btn.disabled) return;
-            const ok = confirm('Â¿Eliminar este convenio? Esta acciÃ³n no se puede deshacer.');
+            const ok = confirm('¿Eliminar este convenio? Esta acción no se puede deshacer.');
             if (!ok) return;
             btn.disabled = true;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
@@ -1680,9 +1680,9 @@
                     if (next === 'created') html = '<span class="status-badge status-created">Creado</span>';
                     else if (next === 'sent') html = '<span class="status-badge status-sent">Enviado</span>';
                     else if (next === 'opened') html = '<span class="status-badge status-opened">Abierto</span>';
-                    else if (next === 'otp_requested') html = '<span class="status-badge status-otp_requested">CÃ³digo Pedido</span>';
+                    else if (next === 'otp_requested') html = '<span class="status-badge status-otp_requested">Código Pedido</span>';
                     else if (next === 'otp_verified') html = '<span class="status-badge status-otp_verified">RUT Validado</span>';
-                    else if (next === 'signed' || next === 'accepted') html = '<span class="status-badge status-signed">Firmado âœ“</span>';
+                    else if (next === 'signed' || next === 'accepted') html = '<span class="status-badge status-signed">Firmado �o"</span>';
                     td.innerHTML = html;
                 });
             } catch (_) { }
@@ -1691,5 +1691,7 @@
 </body>
 
 </html>
+
+
 
 

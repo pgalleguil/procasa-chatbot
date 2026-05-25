@@ -193,7 +193,7 @@ def _is_valid_whatsapp_phone(phone: str) -> bool:
     """
     Valida si el teléfono es enviable por WhatsApp.
     - Chile: +56 9XXXXXXXX (9 dígitos locales móviles)
-    - Internacional: 10-15 dígitos (E.164 simplificado)
+    - Internacional: 8-15 dígitos (E.164 simplificado, no bloquea extranjeros)
     """
     digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
     if not digits:
@@ -201,7 +201,7 @@ def _is_valid_whatsapp_phone(phone: str) -> bool:
     if digits.startswith("56"):
         local = digits[2:]
         return len(local) == 9 and local.startswith("9")
-    return 10 <= len(digits) <= 15
+    return 8 <= len(digits) <= 15
 
 def _get_missing_required_contract_fields(d: dict):
     required_map = {
@@ -269,7 +269,7 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             )
             raise HTTPException(
                 status_code=400,
-                detail="Teléfono inválido para WhatsApp. Usa formato +569XXXXXXXX o 9XXXXXXXX."
+                detail="Teléfono inválido para WhatsApp. Chile: +569XXXXXXXX o 9XXXXXXXX. Extranjeros: incluye código país."
             )
         
         # Verificar si existe contrato previo creado (no firmado)

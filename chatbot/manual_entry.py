@@ -9,6 +9,55 @@ from .processing_service import LeadProcessingService
 
 logger = logging.getLogger(__name__)
 
+
+def resolve_property_code(raw_code: str) -> Dict[str, Any]:
+    """
+    Resuelve un código ingresado por usuario a código interno de Procasa.
+    - Limpia puntos y espacios.
+    - Si coincide por `codigo`, devuelve ese código.
+    - Si no, intenta por `codigo_internacional` y `publicaciones.codigo_internacional`.
+    """
+    db = get_db()
+    code = str(raw_code or "").strip().replace(".", "").replace(" ", "")
+    if not code:
+        return {"status": "error", "message": "Código vacío"}
+
+    # 1) Búsqueda directa por código interno
+    prop = db["universo_cartera"].find_one(
+        {"$or": [{"codigo": code}, {"codigo": str(code)}]},
+        {"codigo": 1}
+    )
+    if prop and prop.get("codigo"):
+        return {
+            "status": "ok",
+            "property_code": str(prop.get("codigo")),
+            "matched_by": "codigo"
+        }
+
+    # 2) Búsqueda por códigos internacionales (ej: TocToc)
+    prop = db["universo_cartera"].find_one(
+        {
+            "$or": [
+                {"codigo_internacional": code},
+                {"codigo_internacional": str(code)},
+                {"publicaciones.codigo_internacional": code},
+                {"publicaciones.codigo_internacional": str(code)}
+            ]
+        },
+        {"codigo": 1}
+    )
+    if prop and prop.get("codigo"):
+        return {
+            "status": "ok",
+            "property_code": str(prop.get("codigo")),
+            "matched_by": "codigo_internacional"
+        }
+
+    return {
+        "status": "not_found",
+        "message": f"No existe propiedad para el código '{code}'"
+    }
+
 def check_lead_duplicate(phone: Optional[str], property_code: str, email: Optional[str] = None) -> Tuple[str, Optional[str]]:
     """
     Verifica si existe un lead por teléfono/email y propiedad.

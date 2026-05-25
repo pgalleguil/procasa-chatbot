@@ -54,7 +54,7 @@ from api_captacion import (
     distribute_sourced_leads, format_relative_time as format_captacion_time,
     get_personal_templates, save_personal_template, delete_personal_template
 )
-from chatbot.manual_entry import create_manual_lead, check_lead_duplicate
+from chatbot.manual_entry import create_manual_lead, check_lead_duplicate, resolve_property_code
 from chatbot.processing_service import LeadProcessingService
 
 # ========================= CONFIGURACIÓN =========================
@@ -649,6 +649,16 @@ async def api_check_duplicate(request: Request, phone: str = Query(None), proper
         lambda: check_lead_duplicate(phone, property_code, email)
     )
     return {"status": status, "exists": status != "not_found", "assigned_to": executive}
+
+@app.get("/api/leads/resolve-property-code")
+async def api_resolve_property_code(request: Request, code: str = Query(...)):
+    await get_current_user(request)
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: resolve_property_code(code)
+    )
+    return result
 
 @app.post("/api/leads/manual")
 async def api_create_manual_lead(request: Request):

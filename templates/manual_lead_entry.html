@@ -379,6 +379,7 @@
                                 <option value="MercadoLibre">MercadoLibre</option>
                                 <option value="ChilePropiedades">ChilePropiedades</option>
                                 <option value="Yapo">Yapo</option>
+                                <option value="Proppit">Proppit</option>
                                 <option value="Facebook">Facebook</option>
                                 <option value="Referido">Referido</option>
                                 <option value="Otro">Otro</option>
@@ -409,6 +410,38 @@
         let isVerified = false;
         let lastVerifiedData = { phone: '', email: '', property_code: '' };
 
+        function normalizePropertyCode(raw) {
+            return (raw || '').toString().trim().replace(/\./g, '').replace(/\s+/g, '');
+        }
+
+        async function resolvePropertyCodeIfNeeded(showNotFoundToast = true) {
+            const propertyInput = document.getElementById('property_code');
+            const original = propertyInput.value || '';
+            const normalized = normalizePropertyCode(original);
+            if (!normalized) return { ok: false, empty: true };
+
+            // Siempre limpiamos puntos/espacios al salir o validar
+            propertyInput.value = normalized;
+
+            try {
+                const response = await fetch(`/api/leads/resolve-property-code?code=${encodeURIComponent(normalized)}`);
+                if (!response.ok) {
+                    return { ok: true, propertyCode: normalized };
+                }
+                const data = await response.json();
+                if (data.status === 'ok' && data.property_code) {
+                    propertyInput.value = String(data.property_code).trim();
+                    return { ok: true, propertyCode: propertyInput.value, matchedBy: data.matched_by };
+                }
+                if (showNotFoundToast) {
+                    showToast("No existe ese código en cartera (ni por código internacional)", "warning");
+                }
+                return { ok: false, notFound: true, propertyCode: normalized };
+            } catch (error) {
+                return { ok: true, propertyCode: normalized };
+            }
+        }
+
         // AUTO-TRIM Y CAPITALIZAR
         ['nombre', 'email', 'property_code', 'phone'].forEach(id => {
             const el = document.getElementById(id);
@@ -431,17 +464,29 @@
                         this.value = digits;
                     }
                 }
+
+                if (id === 'property_code') {
+                    this.value = normalizePropertyCode(this.value);
+                }
             });
+        });
+
+        document.getElementById('property_code').addEventListener('blur', async () => {
+            await resolvePropertyCodeIfNeeded(true);
         });
 
         // VERIFICACIÓN DE DUPLICADOS
         document.getElementById('btnVerify').addEventListener('click', async () => {
             const phone = document.getElementById('phone').value.trim();
             const email = document.getElementById('email').value.trim();
+            const resolvedCode = await resolvePropertyCodeIfNeeded(true);
             const propertyCode = document.getElementById('property_code').value.trim();
 
             if (!propertyCode) {
                 showToast("Ingresa el código de propiedad", "warning");
+                return;
+            }
+            if (!resolvedCode.ok && resolvedCode.notFound) {
                 return;
             }
             if (!phone && !email) {
@@ -556,6 +601,8 @@
                 // Normalización con +56 (Backend ya se encarga del + pero lo enviamos limpio aquí para consistencia)
                 data.phone = (digits.length === 9) ? "56" + digits : digits;
             }
+
+            data.property_code = normalizePropertyCode(data.property_code);
 
             btn.disabled = true;
             loader.style.display = 'block';

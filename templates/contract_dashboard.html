@@ -286,8 +286,7 @@
             border: 1px solid var(--border-color);
             border-radius: 12px;
             background: #fff;
-            overflow-x: hidden;
-            overflow-y: auto;
+            overflow: hidden !important;
             display: flex;
             align-items: stretch;
             position: relative;
@@ -658,7 +657,7 @@
         <div class="brand">
             <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
                 style="max-height: 55px; width: auto; min-width: var(--sidebar-width-collapsed); object-fit: contain; padding: 0 15px;"
-                onerror="this.style.display='none'"> <span>MEN�s</span>
+                onerror="this.style.display='none'"> <span>MENÚ</span>
         </div>
         {% if user_role in ['supervisor', 'admin'] %}
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
@@ -668,7 +667,7 @@
         <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i> <span>Captaciones</span></a>
         <a href="/contracts/dashboard" class="nav-link active"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
         {% if user_role in ['supervisor', 'admin'] %}
-        <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>�"rdenes de Visita</span></a>
+        <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
         {% endif %}
 
         <a href="javascript:void(0)" class="nav-link" style="margin-top:auto" onclick="toggleTheme()">
@@ -718,7 +717,6 @@
                             <th>Fecha</th>
                             {% if user_role in ['supervisor', 'admin'] %}<th>Ejecutivo</th>{% endif %}
                             <th>Código</th>
-                            <th>Origen</th>
                             <th>Cliente</th>
                             <th>Propiedad / Rol</th>
                             <th>Estado</th>
@@ -733,7 +731,6 @@
                             <td data-label="Ejecutivo">{{ c.executive_display or '---' }}</td>
                             {% endif %}
                             <td data-label="Código"><strong>{{ c.property_code or c.contract_code[:8] }}</strong></td>
-                            <td data-label="Origen">{{ c.get('origen', '---') }}</td>
                             <td data-label="Cliente">
                                 {{ c.client_data.nombre }}<br>
                                 <small class="text-secondary">{{ c.client_data.rut }}</small>
@@ -748,7 +745,7 @@
                                 {% elif c.status == 'opened' %}<span class="status-badge status-opened">Abierto</span>
                                 {% elif c.status == 'otp_requested' %}<span class="status-badge status-otp_requested">Código Pedido</span>
                                 {% elif c.status == 'otp_verified' %}<span class="status-badge status-otp_verified">RUT Validado</span>
-                                {% elif c.status in ['signed','accepted'] %}<span class="status-badge status-signed">Firmado �o"</span>
+                                {% elif c.status in ['signed','accepted'] %}<span class="status-badge status-signed">Firmado ✓</span>
                                 {% else %}<span class="status-badge status-created">{{ c.status }}</span>{% endif %}
                             </td>
                             <td data-label="Acciones">
@@ -808,7 +805,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="{% if user_role in ['supervisor', 'admin'] %}8{% else %}7{% endif %}" class="text-center text-secondary py-5">
+                            <td colspan="{% if user_role in ['supervisor', 'admin'] %}7{% else %}6{% endif %}" class="text-center text-secondary py-5">
                                 <i class="fa-solid fa-folder-open fa-2x mb-2 d-block"></i>
                                 No hay convenios generados aún.
                             </td>
@@ -986,23 +983,13 @@
                                 </div>
 
                                 <div class="row g-3 mb-3">
-                                    <div class="col-lg-6 col-md-6">
+                                    <div class="col-lg-12 col-md-12">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Código
                                             <span class="required-star">*</span></label>
                                         <input type="text" class="form-control" name="property_code"
                                             placeholder="Ej: 15482" required
                                             oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();"
                                             onblur="validateField(this); triggerPreview();">
-                                    </div>
-                                    <div class="col-lg-6 col-md-6">
-                                        <label
-                                            class="form-label text-secondary small text-uppercase fw-bold">Origen</label>
-                                        <select class="form-select" name="origen" required
-                                            onchange="validateField(this); triggerPreview();">
-                                            <option value="" selected>Selecciona origen</option>
-                                            <option value="Captación Interna">Captación Interna</option>
-                                            <option value="Captación Externa">Captación Externa</option>
-                                        </select>
                                     </div>
                                 </div>
                             </form>
@@ -1280,7 +1267,7 @@
             const normalized = normalizePhoneForContract(rawFromIntl || rawFromInput);
             const digits = normalized.replace(/\D/g, '');
             // Modo operativo: evitar falsos negativos del plugin.
-            // Si hay al menos 8 d�gitos reales, se acepta y se normaliza al enviar.
+            // Si hay al menos 8 dígitos reales, se acepta y se normaliza al enviar.
             return digits.length >= 8;
         }
 
@@ -1338,7 +1325,7 @@
                     moneda: form.moneda.value,
                     comision: form.comision.value,
                     property_code: form.property_code.value,
-                    origen: form.origen.value,
+                    origen: form.origen ? form.origen.value : '',
                     executive: form.executive ? form.executive.value : ''
                 };
 
@@ -1508,7 +1495,7 @@
                         moneda: form.moneda.value,
                         comision: form.comision.value,
                         property_code: form.property_code.value,
-                        origen: form.origen.value
+                        origen: form.origen ? form.origen.value : ''
                     }
                 });
                 return;
@@ -1532,7 +1519,7 @@
                 moneda: form.moneda.value,
                 comision: form.comision.value,
                 property_code: form.property_code.value,
-                origen: form.origen.value,
+                origen: form.origen ? form.origen.value : '',
                 executive: form.executive ? form.executive.value : ''
             };
 
@@ -1564,7 +1551,7 @@
                 const msg = document.getElementById('formErrors');
                 if (msg) {
                     msg.classList.remove('d-none');
-                    msg.innerText = 'Error t�cnico al generar contrato. Intenta nuevamente.';
+                    msg.innerText = 'Error técnico al generar contrato. Intenta nuevamente.';
                 } else {
                     alert('Error al generar contrato.');
                 }
@@ -1574,7 +1561,7 @@
             }
         }
 
-        // �"?�"?�"? ANTI-DUPLICADO: bloquea el botón mientras procesa �"?�"?�"?�"?�"?�"?�"?�"?�"?�"?�"?
+        // ⚡ ANTI-DUPLICADO: bloquea el botón mientras procesa
         async function sendContract(contractCode, btn, isResend = false) {
             if (btn.disabled) return; // previene doble clic
             if (isResend) {
@@ -1647,7 +1634,7 @@
             form.moneda.value = c?.property_data?.moneda || 'UF';
             form.comision.value = c?.property_data?.comision || '';
             form.property_code.value = c?.property_code || '';
-            form.origen.value = c?.origen || '';
+            if (form.origen) form.origen.value = c?.origen || '';
             if (form.executive) form.executive.value = c?.executive || c?.created_by || form.executive.value || '';
             if (c?.phone) {
                 const normalizedPhone = c.phone.startsWith('+') ? c.phone : `+${String(c.phone).replace(/[^\d]/g, '')}`;
@@ -1689,7 +1676,7 @@
                     else if (next === 'opened') html = '<span class="status-badge status-opened">Abierto</span>';
                     else if (next === 'otp_requested') html = '<span class="status-badge status-otp_requested">Código Pedido</span>';
                     else if (next === 'otp_verified') html = '<span class="status-badge status-otp_verified">RUT Validado</span>';
-                    else if (next === 'signed' || next === 'accepted') html = '<span class="status-badge status-signed">Firmado �o"</span>';
+                    else if (next === 'signed' || next === 'accepted') html = '<span class="status-badge status-signed">Firmado ✓</span>';
                     td.innerHTML = html;
                 });
             } catch (_) { }

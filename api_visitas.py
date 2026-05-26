@@ -776,6 +776,14 @@ async def update_visita(visita_code: str, request: Request):
             perm_path = perm_dir / f"{visita_code}_original.pdf"
             with open(perm_path, "wb") as f:
                 f.write(pdf_bytes)
+            # También actualizar el tmp para mantener consistencia entre rutas
+            tmp_dir_upd = BASE_DIR / "tmp" / "visitas" / visita_code
+            tmp_dir_upd.mkdir(parents=True, exist_ok=True)
+            try:
+                with open(tmp_dir_upd / "orden de visita_original.pdf", "wb") as f:
+                    f.write(pdf_bytes)
+            except Exception as tmp_err:
+                logger.warning(f"[UPDATE] No se pudo actualizar tmp PDF para {visita_code}: {tmp_err}")
             orig_hash = SecurityContracts.hash_document(pdf_bytes)
             await adb["visitas"].update_one(
                 {"visita_code": visita_code},
@@ -1323,11 +1331,23 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     timeline_hash = SecurityContracts.hash_timeline(timeline)
     tmp_dir = BASE_DIR / "tmp" / "visitas" / visita_code
     try:
-        original_pdf_path = tmp_dir / "orden de visita_original.pdf"
-        if original_pdf_path.exists():
-            with open(original_pdf_path, "rb") as f:
+        # PRIORIDAD 1: PDF permanente actualizado (siempre regenerado al editar)
+        # Esto evita usar el tmp obsoleto cuando la orden fue editada antes de firmar.
+        perm_original_path = BASE_DIR / "visitas_pdf" / f"{visita_code}_original.pdf"
+        perm_path_from_db = contract.get("security", {}).get("original_pdf_path", "")
+
+        if perm_path_from_db and os.path.exists(perm_path_from_db):
+            with open(perm_path_from_db, "rb") as f:
                 original_bytes = f.read()
+            logger.info(f"[SIGN] PDF original leído desde ruta DB permanente: {perm_path_from_db}")
+        elif perm_original_path.exists():
+            with open(perm_original_path, "rb") as f:
+                original_bytes = f.read()
+            logger.info(f"[SIGN] PDF original leído desde visitas_pdf permanente: {perm_original_path}")
         else:
+            # PRIORIDAD 3: Regenerar desde los datos actualizados de la DB
+            # (nunca usar el tmp ya que puede estar desactualizado respecto a ediciones)
+            logger.info(f"[SIGN] PDF original no encontrado en disco, regenerando desde DB para {visita_code}")
             data_payload = {
                 "visita_code": contract.get("visita_code"),
                 "origen": contract.get("origen", ""),

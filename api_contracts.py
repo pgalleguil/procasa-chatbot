@@ -272,9 +272,12 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                 detail="Teléfono inválido para WhatsApp. Chile: +569XXXXXXXX o 9XXXXXXXX. Extranjeros: incluye código país."
             )
         
-        # Verificar si existe contrato previo creado (no firmado)
+        # Verificar si existe contrato previo
         existing = None
-        if property_code:
+        contract_code_in_payload = data.get("contract_code", "").strip()
+        if contract_code_in_payload:
+            existing = await adb["contracts"].find_one({"contract_code": contract_code_in_payload})
+        elif property_code:
             existing = await adb["contracts"].find_one({
                 "property_code": property_code, 
                 "status": {"$in": ["created", "sent", "opened"]}
@@ -288,12 +291,13 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             year = datetime.now().year
             short_id = str(uuid.uuid4())[:4].upper()
             contract_code = f"PROC-{year}-{short_id}"
-        # 1. Preparar rutas (PDF se generar\u00e1 as\u00edncronamente)
+            
+        # 1. Preparar rutas (PDF se generará asíncronamente)
         data['contract_code'] = contract_code
         perm_dir = BASE_DIR / "contracts_pdf"
         perm_dir.mkdir(parents=True, exist_ok=True)
         perm_original_path = perm_dir / f"{contract_code}_original.pdf"
-            
+        
         server_timestamp = SecurityContracts.generate_server_timestamp()
             
         contract_doc = {
@@ -1587,6 +1591,7 @@ async def contract_dashboard(request: Request):
             dt_utc = c["created_at"].replace(tzinfo=timezone.utc)
             c["created_at"] = dt_utc.astimezone(CHILE_TZ)
         c["edit_data"] = {
+            "contract_code": c.get("contract_code", ""),
             "client_data": c.get("client_data", {}),
             "property_data": c.get("property_data", {}),
             "property_code": c.get("property_code", ""),

@@ -1214,7 +1214,11 @@
             const invalidFields = [];
 
             const phoneInput = document.getElementById('phoneInput');
-            if (!isPhoneAcceptableStrict()) {
+            const phoneDigitsDirect = (phoneInput?.value || '').replace(/\D/g, '');
+            const phoneDigitsIntl = ((window.getPhoneData ? window.getPhoneData() : '') || '').replace(/\D/g, '');
+            const phoneDigits = phoneDigitsIntl.length >= phoneDigitsDirect.length ? phoneDigitsIntl : phoneDigitsDirect;
+            const phoneIsValidNow = phoneDigits.length >= 8;
+            if (!phoneIsValidNow) {
                 isValid = false;
                 invalidFields.push('Teléfono');
                 if (phoneInput) {
@@ -1679,6 +1683,7 @@
 </body>
 
 </html>
+
 
 
 

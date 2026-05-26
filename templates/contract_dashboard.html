@@ -1047,6 +1047,7 @@
         let activeComunaIndex = -1;
         let activeCiudadFirmaIndex = -1;
         let hasInteracted = false;
+        let phoneIntl = null;
 
         document.addEventListener("DOMContentLoaded", function () {
             buildComunaDropdown(comunasDeChile);
@@ -1365,7 +1366,7 @@
 
         document.addEventListener("DOMContentLoaded", function () {
             const phoneInputField = document.querySelector("#phoneInput");
-            let phoneIntl = null;
+            phoneIntl = null;
             if (window.intlTelInput && phoneInputField) {
                 try {
                     phoneIntl = window.intlTelInput(phoneInputField, {
@@ -1648,8 +1649,12 @@
             if (form.executive) form.executive.value = c?.executive || c?.created_by || form.executive.value || '';
             if (c?.phone) {
                 const normalizedPhone = c.phone.startsWith('+') ? c.phone : `+${String(c.phone).replace(/[^\d]/g, '')}`;
-                const phoneInput = document.getElementById('phoneInput');
-                if (phoneInput) phoneInput.value = normalizedPhone;
+                if (phoneIntl) {
+                    phoneIntl.setNumber(normalizedPhone);
+                } else {
+                    const phoneInput = document.getElementById('phoneInput');
+                    if (phoneInput) phoneInput.value = normalizedPhone;
+                }
             }
             const btn = document.getElementById('btnGenerateContract');
             if (btn) btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Actualizar Documento';

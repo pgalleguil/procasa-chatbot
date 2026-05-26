@@ -1048,6 +1048,7 @@
         let activeCiudadFirmaIndex = -1;
         let hasInteracted = false;
         let phoneIntl = null;
+        let pendingPhone = null;
 
         document.addEventListener("DOMContentLoaded", function () {
             buildComunaDropdown(comunasDeChile);
@@ -1373,8 +1374,8 @@
                         initialCountry: "cl",
                         preferredCountries: ["cl", "ar", "co", "pe", "us", "es"],
                         separateDialCode: true,
-                        nationalMode: false,
-                        autoInsertDialCode: true,
+                        nationalMode: true,
+                        autoInsertDialCode: false,
                         countrySearch: true
                     });
                 } catch (e) {
@@ -1388,6 +1389,23 @@
                 const iframeSrc = document.getElementById('pdfPreviewIframe').src;
                 if (iframeSrc.includes('about:blank') || iframeSrc.includes(window.location.origin + '/about:blank')) {
                     triggerPreview();
+                }
+            });
+            // Apply phone number AFTER modal is fully rendered so intl-tel-input formats it correctly
+            modalEl.addEventListener('shown.bs.modal', () => {
+                if (pendingPhone !== null && phoneIntl) {
+                    phoneIntl.setNumber(pendingPhone);
+                    pendingPhone = null;
+                    // Trigger validation after setting
+                    const phoneInputField = document.getElementById('phoneInput');
+                    if (phoneInputField) {
+                        const digits = (phoneIntl.getNumber() || '').replace(/\D/g, '');
+                        if (digits.length >= 8) {
+                            phoneInputField.classList.remove('is-invalid');
+                            phoneInputField.classList.add('is-valid');
+                        }
+                        triggerPreview();
+                    }
                 }
             });
             modalEl.addEventListener('hidden.bs.modal', () => {
@@ -1649,12 +1667,10 @@
             if (form.executive) form.executive.value = c?.executive || c?.created_by || form.executive.value || '';
             if (c?.phone) {
                 const normalizedPhone = c.phone.startsWith('+') ? c.phone : `+${String(c.phone).replace(/[^\d]/g, '')}`;
-                if (phoneIntl) {
-                    phoneIntl.setNumber(normalizedPhone);
-                } else {
-                    const phoneInput = document.getElementById('phoneInput');
-                    if (phoneInput) phoneInput.value = normalizedPhone;
-                }
+                // Store phone to be applied after modal is fully shown (avoids formatting bugs)
+                pendingPhone = normalizedPhone;
+            } else {
+                pendingPhone = null;
             }
             const btn = document.getElementById('btnGenerateContract');
             if (btn) btn.innerHTML = '<i class="fa-solid fa-file-signature me-2"></i>Actualizar Documento';

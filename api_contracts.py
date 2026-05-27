@@ -1457,13 +1457,19 @@ def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_b
         tipo = tipo_raw.replace(" ", "_")
         pdf_filename = f"Contrato_Autorizacion_{tipo}_{prop_label}_{contract_code}.pdf"
         
-        # Destinatarios CC (Desactivado temporalmente para pruebas)
-        cc_recipients = [] 
-        # cc_recipients = ["jpcaro@procasa.cl"]
+        # Destinatarios CC
+        cc_recipients = ["jpcaro@procasa.cl", "pgalleguillos@procasa.cl"]
+        
+        # Buscar el email del ejecutivo que creó el documento para incluirlo en copia
+        if contract:
+            exec_email = contract.get("executive_data", {}).get("email") or contract.get("ejecutivo_email")
+            if exec_email and exec_email.strip():
+                cc_recipients.append(exec_email.strip())
+                
         if cc_email and cc_email != email_to and cc_email not in cc_recipients:
             cc_recipients.append(cc_email)
+            
         cc_str = ", ".join(cc_recipients)
-        
         all_recipients = [email_to] + cc_recipients
 
         msg = MIMEMultipart()
@@ -1561,7 +1567,7 @@ async def contract_dashboard(request: Request):
     username, user_role = await _get_request_user(adb, request)
 
     if not username:
-        return RedirectResponse(url="/login", status_code=303)
+        return RedirectResponse(url="/", status_code=303)
 
     # AISLAMIENTO DE DATOS: supervisores/admin ven todos; agentes solo los suyos
     executive_filter = (request.query_params.get("executive") or "").strip()

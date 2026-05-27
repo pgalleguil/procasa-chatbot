@@ -1732,7 +1732,7 @@ async def visita_dashboard(request: Request):
     username, user_role = await _get_request_user(adb, request)
 
     if not username:
-        return RedirectResponse(url="/login", status_code=303)
+        return RedirectResponse(url="/", status_code=303)
 
     # AISLAMIENTO DE DATOS: supervisores/admin ven todos; agentes solo los suyos
     executive_filter = (request.query_params.get("executive") or "").strip()

@@ -1587,13 +1587,19 @@ def send_signed_email_task(visita_code: str, email_to: str, nombre: str, pdf_byt
         tipo = tipo_raw.replace(" ", "_")
         pdf_filename = f"Orden_Visita_Autorizacion_{tipo}_{prop_label}_{visita_code}.pdf"
         
-        # Destinatarios CC (Desactivado temporalmente para pruebas)
-        cc_recipients = [] 
-        # cc_recipients = ["jpcaro@procasa.cl"]
+        # Destinatarios CC
+        cc_recipients = ["jpcaro@procasa.cl", "pgalleguillos@procasa.cl"]
+        
+        # Buscar el email del ejecutivo que creó el documento para incluirlo en copia
+        if contract:
+            exec_email = contract.get("executive_data", {}).get("email") or contract.get("ejecutivo_email")
+            if exec_email and exec_email.strip():
+                cc_recipients.append(exec_email.strip())
+                
         if cc_email and cc_email != email_to and cc_email not in cc_recipients:
             cc_recipients.append(cc_email)
+            
         cc_str = ", ".join(cc_recipients)
-        
         all_recipients = [email_to] + cc_recipients
 
         msg = MIMEMultipart()

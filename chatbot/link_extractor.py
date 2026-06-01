@@ -5,6 +5,8 @@ from .storage import get_db
 from .utils import safe_int_conversion
 from config import Config
 
+URL_RE = re.compile(r'https?://[^\s<>\]\)"]+', re.IGNORECASE)
+
 def extraer_codigo_mercadolibre(url: str) -> Optional[str]:
     # Normalizar para encontrar el código MLC
     match = re.search(r"MLC[-_]?(\d+)", url, re.IGNORECASE)
@@ -43,7 +45,7 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
     Prioriza el campo de búsqueda según la plataforma detectada en la URL.
     Retorna: (encontrado_link, propiedad_encontrada, plataforma_origen, codigo_externo)
     """
-    urls = re.findall(r'https?://[^\s]+', mensaje, re.IGNORECASE)
+    urls = URL_RE.findall(mensaje)
     db = get_db()
     coleccion = db[Config.COLLECTION_NAME]
     
@@ -188,4 +190,37 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
             return True, None, plataforma, ext_code
 
     return False, None, "", None
-
+
+
+def extraer_contexto_urls(mensaje: str) -> list[dict]:
+    """
+    Devuelve un resumen liviano de URLs detectadas para inyectarlo al prompt.
+    Sirve para que el modelo no dependa solo de inferir desde texto crudo.
+    """
+    urls = URL_RE.findall(mensaje)
+    contexto = []
+    for url in urls:
+        url_clean = url.split("?")[0].split("#")[0].rstrip("/")
+        url_lower = url_clean.lower()
+        plataforma = "Otro Portal"
+        if "toctoc.com" in url_lower:
+            plataforma = "TocToc"
+        elif "yapo.cl" in url_lower:
+            plataforma = "Yapo"
+        elif "portalinmobiliario.com" in url_lower:
+            plataforma = "PortalInmobiliario"
+        elif "mercadolibre." in url_lower:
+            plataforma = "MercadoLibre"
+        elif "procasa.cl" in url_lower:
+            plataforma = "Procasa"
+
+        item = {"url": url_clean, "plataforma": plataforma}
+        ml = extraer_codigo_mercadolibre(url_clean)
+        if ml:
+            item["codigo_mercadolibre"] = ml
+        yapo = extraer_codigo_yapo(url_clean)
+        if yapo:
+            item["codigo_yapo"] = yapo
+        contexto.append(item)
+    return contexto
+

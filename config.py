@@ -9,6 +9,7 @@ load_dotenv(dotenv_path=env_path)
 class Config:
     # === Claves externas ===
     XAI_API_KEY = os.getenv("XAI_API_KEY")
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", XAI_API_KEY)
     MONGO_URI = os.getenv("MONGO_URI")
     DB_NAME = os.getenv("DB_NAME", "URLS")
 
@@ -42,10 +43,15 @@ class Config:
     MAX_RETRIES = int(os.getenv("MAX_RETRIES", 2))
     TEST_PHONE = os.getenv("TEST_PHONE")
 
-    # === Modelos Grok / xAI ===
-    GROK_MODEL = os.getenv("GROK_MODEL")
-    GROK_BASE_URL = os.getenv("GROK_BASE_URL", "https://api.x.ai/v1")
-    GROK_TEMPERATURE = float(os.getenv("GROK_TEMPERATURE", "0.0"))
+    # === Modelos DeepSeek / compatibilidad heredada ===
+    DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", os.getenv("GROK_MODEL", "deepseek-v4-flash"))
+    DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", os.getenv("GROK_BASE_URL", "https://api.deepseek.com"))
+    DEEPSEEK_TEMPERATURE = float(os.getenv("DEEPSEEK_TEMPERATURE", os.getenv("GROK_TEMPERATURE", "0.0")))
+
+    # Alias heredados para no romper módulos existentes durante la migración
+    GROK_MODEL = DEEPSEEK_MODEL
+    GROK_BASE_URL = DEEPSEEK_BASE_URL
+    GROK_TEMPERATURE = DEEPSEEK_TEMPERATURE
 
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"
     EMBEDDING_DIM = 384

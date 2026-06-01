@@ -20,7 +20,7 @@ from .crm_service import CrmService
 from .constants import PipelineStage, InteractionType, LeadIntent, CHILE_TZ
 
 from .grok_client import generar_respuesta, generar_respuesta_estructurada
-from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional
+from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, extraer_contexto_urls
 from .utils import extraer_rut, extraer_email, safe_int_conversion, extraer_nombre_explicito
 from .alert_service import send_alert_once
 from .classifier import es_propietario, es_corredor_externo
@@ -350,6 +350,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         messages_para_grok.append(m)
 
     system_parts = []
+
+    # --- CONTEXTO EXTRA PARA URLs ---
+    urls_contexto = extraer_contexto_urls(original_message)
+    if urls_contexto:
+        system_parts.append(
+            "[CONTEXTO DE ENLACES DETECTADOS]\n"
+            f"{json.dumps(urls_contexto, ensure_ascii=False)}\n"
+            "INSTRUCCIÓN: si el usuario envía enlaces, usa este contexto explícito para identificar plataforma/código "
+            "y no asumas propiedades que no estén confirmadas por la base de datos."
+        )
     
     # --- CONTEXTO 1: ESTADO DE DATOS PERSONALES ---
     datos_necesarios = {

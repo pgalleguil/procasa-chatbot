@@ -3,7 +3,7 @@ import logging
 import re
 from config import Config
 from .utils import limpiar_telefono
-from .grok_client import client # NECESARIO para usar la IA de Grok
+from .grok_client import client # Cliente OpenAI-compatible apuntando a DeepSeek
 from pymongo import MongoClient
 
 logger = logging.getLogger(__name__)
@@ -122,7 +122,7 @@ def detectar_intencion_con_ai(mensaje_actual: str, historial_reducido: list) -> 
         return "consulta_general" 
 
     except Exception as e:
-        logger.error(f"Error clasificando la intención con IA (Grok): {e}")
+        logger.error(f"Error clasificando la intención con IA (DeepSeek): {e}")
         # Fallback manual de emergencia
         m = mensaje_actual.lower()
         if any(x in m for x in ["visita", "verla", "verlo", "agendar", "ir a ver", "conocer"]):

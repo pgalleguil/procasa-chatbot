@@ -67,8 +67,15 @@
                 <span class="font-bold text-gray-900">Orden de Visita Electrónica</span>
             </div>
             <div class="flex flex-col pt-2">
-                <span class="text-gray-400 text-[10px] uppercase font-bold tracking-widest mb-1">Código de Integridad
-                    (SHA-256)</span>
+                <span class="text-gray-400 text-[10px] uppercase font-bold tracking-widest mb-1">Hash SHA256 del Documento</span>
+                <span
+                    class="font-mono text-[10px] text-gray-500 break-all leading-relaxed tracking-widest bg-gray-50 p-3 rounded border border-gray-100 shadow-inner"
+                    title="{{ (contract.security or {}).timeline_hash | default('No disponible') }}">
+                    {{ (contract.security or {}).timeline_hash | default('---') }}
+                </span>
+            </div>
+            <div class="flex flex-col pt-2 mt-2">
+                <span class="text-gray-400 text-[10px] uppercase font-bold tracking-widest mb-1">Firma HMAC del Servidor (SHA-256)</span>
                 <span
                     class="font-mono text-[10px] text-gray-500 break-all leading-relaxed tracking-widest bg-gray-50 p-3 rounded border border-gray-100 shadow-inner"
                     title="{{ (contract.security or {}).server_hmac | default('No disponible') }}">

@@ -12,6 +12,7 @@ httpx==0.27.0
 scikit-learn==1.5.2
 gunicorn==23.0.0
 numpy==2.1.1
+# fastembed: modelo ONNX ~200MB, no se carga en produccion. Se mantiene para run_embeddings.py offline.
 fastembed>=0.5.0
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
@@ -19,10 +20,9 @@ python-multipart==0.0.9
 bcrypt==4.0.1
 openai>=1.30.0
 pandas==2.2.3
-plotly==5.24.1
-streamlit==1.40.2
 openpyxl==3.1.5
 xlsxwriter==3.2.0
+# plotly y streamlit eliminados - no son necesarios en el servidor (ahorro ~120MB)
 curl_cffi>=0.7.1
 reportlab>=4.1.0
 pypdf>=5.0.0

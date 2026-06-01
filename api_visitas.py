@@ -101,7 +101,8 @@ async def health_check():
     return JSONResponse(status_dict, status_code=200 if status_dict["status"] == "ok" else 503)
 
 gdrive_sync = GDriveSync()
-_VISITAS_DB_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="visitas_db")
+_VISITAS_DB_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="visitas_db")
+
 
 async def _db_call(fn, *args, **kwargs):
     loop = asyncio.get_running_loop()

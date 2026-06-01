@@ -109,7 +109,19 @@ class PDFGeneratorVisitas:
         Story.append(Paragraph("ORDEN DE VISITA", title_style))
         Story.append(Spacer(1, 0.1 * inch))
         
-        fecha = datetime.now(CHILE_TZ).strftime('%d de %m de %Y').replace('de 01 de', 'de enero de').replace('de 02 de', 'de febrero de').replace('de 03 de', 'de marzo de').replace('de 04 de', 'de abril de').replace('de 05 de', 'de mayo de').replace('de 06 de', 'de junio de').replace('de 07 de', 'de julio de').replace('de 08 de', 'de agosto de').replace('de 09 de', 'de septiembre de').replace('de 10 de', 'de octubre de').replace('de 11 de', 'de noviembre de').replace('de 12 de', 'de diciembre de')
+        # Usar la fecha original del documento (created_at), no la fecha actual
+        created_at_raw = contract_data.get('created_at')
+        if created_at_raw:
+            if hasattr(created_at_raw, 'astimezone'):
+                dt_orig = created_at_raw.astimezone(CHILE_TZ)
+            else:
+                try:
+                    dt_orig = datetime.fromisoformat(str(created_at_raw)).astimezone(CHILE_TZ)
+                except Exception:
+                    dt_orig = datetime.now(CHILE_TZ)
+        else:
+            dt_orig = datetime.now(CHILE_TZ)
+        fecha = dt_orig.strftime('%d de %m de %Y').replace('de 01 de', 'de enero de').replace('de 02 de', 'de febrero de').replace('de 03 de', 'de marzo de').replace('de 04 de', 'de abril de').replace('de 05 de', 'de mayo de').replace('de 06 de', 'de junio de').replace('de 07 de', 'de julio de').replace('de 08 de', 'de agosto de').replace('de 09 de', 'de septiembre de').replace('de 10 de', 'de octubre de').replace('de 11 de', 'de noviembre de').replace('de 12 de', 'de diciembre de')
         
         nombre = contract_data.get('cliente_nombre', '')
         rut = contract_data.get('cliente_rut', '')

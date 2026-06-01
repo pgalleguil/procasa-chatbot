@@ -210,7 +210,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # =======================================================
     propiedad = None
     nuevo_origen = None
-    codigo_externo = None  # Genérico: será yapo o mercadolibre según plataforma
+    codigo_externo = None  # Solo para trazabilidad, no para routing si no hay match
     codigo_detectado = None
     
     # 1. Intentar detectar Link o Código en el mensaje actual
@@ -220,7 +220,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         propiedad = temp_prop
         nuevo_origen = plataforma_origen or "WhatsApp"
         codigo_detectado = str(propiedad.get("codigo"))
-        codigo_externo = codigo_externo_raw  # Guardamos el código externo crudo
+        codigo_externo = codigo_externo_raw
     elif es_link and not temp_prop:
         nuevo_origen = plataforma_origen or "WhatsApp"
         codigo_externo = codigo_externo_raw
@@ -291,51 +291,37 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         await _run_sync(registrar_propiedades_vistas, phone, [codigo_detectado])
 
     # === CORRECCIÓN: Guardar código externo aunque no esté en DB ===
-    if codigo_externo:
+    if codigo_externo and propiedad:
         ext_updates = {"origen": nuevo_origen}
         if plataforma_origen == "Yapo":
             ext_updates["codigo_yapo"] = codigo_externo
         elif plataforma_origen in ["MercadoLibre", "PortalInmobiliario", "Otro Portal (MLC code)"]:
             ext_updates["codigo_mercadolibre"] = codigo_externo
-        
-        # SOLO guardamos el código externo si NO encontramos una propiedad de Procasa
-        # o si queremos mantener la trazabilidad del link original.
-        # Pero nos aseguramos de no tocar el campo 'codigo' si ya tiene un valor de Procasa.
         await _run_sync(actualizar_prospecto, phone, ext_updates)
 
     # --- NOTIFICACIÓN POR PROPIEDAD DESCONOCIDA ---
     if es_link and not propiedad and codigo_externo:
         # Si es un link pero no encontramos propiedad, notificamos al Admin (Pablo Galleguillos)
-        from .lead_router import find_responsible_executive
-        
-        exec_name, _, assignment_type = find_responsible_executive(
-            property_code=codigo_externo,
-            lead_phone=phone,
-            lead_name=prospecto_actual.get("nombre")
+        admin_phone = "56983219804" # Pablo Galleguillos
+        admin_msg = (
+            f"🚨 *Propiedad No Encontrada*\n\n"
+            f"El cliente {prospecto_actual.get('nombre', 'Desconocido')} ({phone}) "
+            f"envió un link de {plataforma_origen or 'Portal'} con código `{codigo_externo}`, "
+            f"pero no existe en `universo_cartera`.\n\n"
+            f"El lead quedó sin propiedad confirmada. Favor revisar el enlace o actualizar la base."
         )
-        
-        if exec_name == "No Asignado":
-            admin_phone = "56983219804" # Pablo Galleguillos
-            admin_msg = (
-                f"🚨 *Propiedad No Encontrada*\n\n"
-                f"El cliente {prospecto_actual.get('nombre', 'Desconocido')} ({phone}) "
-                f"envió un link de {plataforma_origen or 'Portal'} con código `{codigo_externo}`, "
-                f"pero no existe en `universo_cartera`.\n\n"
-                f"El lead quedó *No Asignado*. Favor actualizar códigos o ingresar propiedad."
-            )
-            # Usamos send_alert_once para notificar al admin
-            asyncio.create_task(send_alert_once(
-                phone=admin_phone, 
-                lead_type="MissingProperty", 
-                lead_score=0,
-                criteria={"nombre": "Admin Pablo", "codigo_faltante": codigo_externo},
-                last_response=admin_msg,
-                last_user_msg=original_message,
-                full_history=[],
-                window_minutes=120, # No spamear al admin si el mismo link llega varias veces
-                lead_type_label="PROPIEDAD FALTANTE"
-            ))
-            logger.info(f"📢 Alerta de propiedad faltante ({codigo_externo}) enviada al administrador.")
+        asyncio.create_task(send_alert_once(
+            phone=admin_phone,
+            lead_type="MissingProperty",
+            lead_score=0,
+            criteria={"nombre": "Admin Pablo", "codigo_faltante": codigo_externo},
+            last_response=admin_msg,
+            last_user_msg=original_message,
+            full_history=[],
+            window_minutes=120,
+            lead_type_label="PROPIEDAD FALTANTE"
+        ))
+        logger.info(f"📢 Alerta de propiedad faltante ({codigo_externo}) enviada al administrador.")
 
     # =======================================================
     # 5. PREPARACIÓN DE MESSAGES PARA GROK

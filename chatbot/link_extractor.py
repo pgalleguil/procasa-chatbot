@@ -103,12 +103,27 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
         elif plataforma == "Yapo":
             # Buscar por código Yapo (dígitos finales de URL)
             cod_yapo = extraer_codigo_yapo(url_clean)
-            query_yapo = [{"publicaciones.yapo.url_yapo": url_regex}, {"url_yapo": url_regex}]
+            query_yapo = [
+                {"publicaciones.yapo.url_yapo": url_regex},
+                {"url_yapo": url_regex},
+                {"publicaciones.yapo.codigo_internacional": {"$exists": True}},
+                {"publicaciones.codigo_internacional": {"$exists": True}},
+                {"codigo_internacional": {"$exists": True}},
+            ]
             if cod_yapo:
                 query_yapo += [
                     {"publicaciones.yapo.codigo_yapo": cod_yapo},
                     {"codigo_yapo": cod_yapo},
                     {"publicaciones.yapo.url_yapo": {"$regex": cod_yapo + "$"}},
+                ]
+            # Si la URL trae el código internacional embebido o el anuncio está ligado a ese identificador,
+            # buscamos también por ese campo.
+            cod_ints = re.findall(r"\b(\d{9,10})\b", url_clean)
+            for cod_int in cod_ints:
+                query_yapo += [
+                    {"codigo_internacional": cod_int},
+                    {"publicaciones.codigo_internacional": cod_int},
+                    {"publicaciones.yapo.codigo_internacional": cod_int},
                 ]
             propiedad = coleccion.find_one({"$or": query_yapo})
             if propiedad:
@@ -148,6 +163,8 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
                 {"publicaciones.procasa.url_procasa": url_regex},
                 {"toctoc.enlace": url_regex},
                 {"url_yapo": url_regex},
+                {"codigo_internacional": {"$regex": re.escape(url_clean), "$options": "i"}},
+                {"publicaciones.codigo_internacional": {"$regex": re.escape(url_clean), "$options": "i"}},
             ]
             if codigo_ml:
                 query_or += [
@@ -186,7 +203,7 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
             return True, propiedad, plataforma, url_clean
         else:
             print(f"[FALLO] NO se encontró propiedad con el link '{url_clean[:80]}'")
-            ext_code = codigo_ml or cod_yapo or url_clean
+            ext_code = codigo_ml or cod_yapo or None
             return True, None, plataforma, ext_code
 
     return False, None, "", None

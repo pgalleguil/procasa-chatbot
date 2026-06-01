@@ -234,7 +234,18 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
                 {"codigo_mercadolibre": property_code},
                 {"codigo_mercadolibre": p_int},
                 {"codigo_yapo": property_code},
-                {"codigo_yapo": p_int}
+                {"codigo_yapo": p_int},
+                {"codigo_internacional": property_code},
+                {"codigo_internacional": p_int},
+                {"publicaciones.codigo_internacional": property_code},
+                {"publicaciones.codigo_internacional": p_int},
+                {"publicaciones.yapo.codigo_yapo": property_code},
+                {"publicaciones.yapo.codigo_yapo": p_int},
+                {"publicaciones.portal_inmobiliario.codigo_pi": property_code},
+                {"publicaciones.portal_inmobiliario.codigo_pi": p_int},
+                {"publicaciones.procasa.url_procasa": {"$regex": re.escape(str(property_code)), "$options": "i"}},
+                {"publicaciones.yapo.url_yapo": {"$regex": re.escape(str(property_code)), "$options": "i"}},
+                {"publicaciones.portal_inmobiliario.url_mercado_libre": {"$regex": re.escape(str(property_code)), "$options": "i"}},
             ]
         }
         prop = db[Config.COLLECTION_NAME].find_one(exact_query)

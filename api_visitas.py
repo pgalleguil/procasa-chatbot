@@ -524,17 +524,27 @@ async def download_signed_pdf(visita_code: str):
     timeline = contract.get("timeline", [])
     accepted_event = next((evt for evt in timeline if evt.get("action") == "accepted"), {})
     
+    security_data = contract.get("security", {})
+    transaction_uuid = security_data.get("transaction_uuid")
+    if not transaction_uuid:
+        vt = security_data.get("verify_token", "")
+        if len(vt) == 32:
+            transaction_uuid = f"{vt[:8]}-{vt[8:12]}-{vt[12:16]}-{vt[16:20]}-{vt[20:]}"
+        else:
+            transaction_uuid = str(uuid.uuid4())
+
     evidence_data = {
-        "visita_code": visita_code,
-        "verify_token": contract.get("security", {}).get("verify_token", ""),
+        "visita_code": transaction_uuid,
+        "contract_code": visita_code,
+        "verify_token": security_data.get("verify_token", ""),
         "server_timestamp": accepted_event.get("server_timestamp", ""),
         "ip": accepted_event.get("ip", ""),
         "geo_info": accepted_event.get("geo_location", "Localización no disponible"),
         "timezone": accepted_event.get("timezone", "America/Santiago (CLT)"),
         "user_agent": accepted_event.get("user_agent", ""),
-        "original_hash": contract.get("security", {}).get("original_hash", ""),
-        "server_hmac": contract.get("security", {}).get("server_hmac", ""),
-        "timeline_hash": contract.get("security", {}).get("timeline_hash", ""),
+        "original_hash": security_data.get("original_hash", ""),
+        "server_hmac": security_data.get("server_hmac", ""),
+        "timeline_hash": security_data.get("timeline_hash", ""),
         "read_time_seconds": accepted_event.get("read_time_seconds", 0),
         "scrolled_to_bottom": "Sí" if accepted_event.get("scrolled_to_bottom") else "No",
         "read_method": accepted_event.get("read_method", "scroll")
@@ -633,17 +643,27 @@ async def view_signed_pdf(visita_code: str):
     timeline = contract.get("timeline", [])
     accepted_event = next((evt for evt in timeline if evt.get("action") == "accepted"), {})
     
+    security_data = contract.get("security", {})
+    transaction_uuid = security_data.get("transaction_uuid")
+    if not transaction_uuid:
+        vt = security_data.get("verify_token", "")
+        if len(vt) == 32:
+            transaction_uuid = f"{vt[:8]}-{vt[8:12]}-{vt[12:16]}-{vt[16:20]}-{vt[20:]}"
+        else:
+            transaction_uuid = str(uuid.uuid4())
+
     evidence_data = {
-        "visita_code": visita_code,
-        "verify_token": contract.get("security", {}).get("verify_token", ""),
+        "visita_code": transaction_uuid,
+        "contract_code": visita_code,
+        "verify_token": security_data.get("verify_token", ""),
         "server_timestamp": accepted_event.get("server_timestamp", ""),
         "ip": accepted_event.get("ip", ""),
         "geo_info": accepted_event.get("geo_location", "Localización no disponible"),
         "timezone": accepted_event.get("timezone", "America/Santiago (CLT)"),
         "user_agent": accepted_event.get("user_agent", ""),
-        "original_hash": contract.get("security", {}).get("original_hash", ""),
-        "server_hmac": contract.get("security", {}).get("server_hmac", ""),
-        "timeline_hash": contract.get("security", {}).get("timeline_hash", ""),
+        "original_hash": security_data.get("original_hash", ""),
+        "server_hmac": security_data.get("server_hmac", ""),
+        "timeline_hash": security_data.get("timeline_hash", ""),
         "read_time_seconds": accepted_event.get("read_time_seconds", 0),
         "scrolled_to_bottom": "Sí" if accepted_event.get("scrolled_to_bottom") else "No",
         "read_method": accepted_event.get("read_method", "scroll")
@@ -1379,8 +1399,9 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         verify_token = str(uuid.uuid4()).replace("-", "")
         verify_url = f"{base_url}/visitas/verify/{visita_code}"
 
+        transaction_uuid = str(uuid.uuid4())
         evidence_data = {
-            "visita_code": str(uuid.uuid4()),
+            "visita_code": transaction_uuid,
             "contract_code": visita_code,
             "verify_token": verify_token,
             "server_timestamp": server_timestamp,
@@ -1427,7 +1448,8 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
                 "security.server_hmac": server_hmac,
                 "security.timeline_hash": timeline_hash,
                 "security.signed_pdf_path": str(local_pdf_path),
-                "security.verify_token": verify_token
+                "security.verify_token": verify_token,
+                "security.transaction_uuid": transaction_uuid
             }}
         )
 

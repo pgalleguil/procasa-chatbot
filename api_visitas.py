@@ -468,7 +468,7 @@ async def download_signed_pdf(visita_code: str):
             filename=filename,
             media_type="application/pdf",
             content_disposition_type="attachment",
-            headers={"Cache-Control": "public, max-age=3600"}
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate"}
         )
 
     file_id = contract.get("security", {}).get("signed_pdf_drive_id")
@@ -483,7 +483,7 @@ async def download_signed_pdf(visita_code: str):
                     io.BytesIO(pdf_bytes),
                     media_type="application/pdf",
                     headers={
-                        "Cache-Control": "public, max-age=3600",
+                        "Cache-Control": "no-store, no-cache, must-revalidate",
                         "Content-Disposition": f'attachment; filename="{filename}"'
                     }
                 )
@@ -562,7 +562,7 @@ async def download_signed_pdf(visita_code: str):
         io.BytesIO(signed_pdf_bytes),
         media_type="application/pdf",
         headers={
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
             "Content-Disposition": f'attachment; filename="{filename}"'
         }
     )
@@ -588,7 +588,7 @@ async def view_signed_pdf(visita_code: str):
             filename=filename,
             media_type="application/pdf",
             content_disposition_type="inline",
-            headers={"Cache-Control": "public, max-age=86400"}
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate"}
         )
 
     file_id = contract.get("security", {}).get("signed_pdf_drive_id")
@@ -603,7 +603,7 @@ async def view_signed_pdf(visita_code: str):
                     io.BytesIO(pdf_bytes),
                     media_type="application/pdf",
                     headers={
-                        "Cache-Control": "public, max-age=86400",
+                        "Cache-Control": "no-store, no-cache, must-revalidate",
                         "Content-Disposition": f'inline; filename="{filename}"'
                     }
                 )
@@ -681,7 +681,7 @@ async def view_signed_pdf(visita_code: str):
         io.BytesIO(signed_pdf_bytes),
         media_type="application/pdf",
         headers={
-            "Cache-Control": "public, max-age=86400",
+            "Cache-Control": "no-store, no-cache, must-revalidate",
             "Content-Disposition": f'inline; filename="{filename}"'
         }
     )

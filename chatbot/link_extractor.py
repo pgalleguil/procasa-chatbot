@@ -30,6 +30,14 @@ def normalizar_url(url: str) -> str:
     url = re.sub(r"^https?://(www\.)?", "", url, flags=re.IGNORECASE)
     return url.lower()
 
+
+def construir_patron_url(url: str) -> dict:
+    """
+    Construye un patrón flexible para matchear la URL aunque cambie http/https o www.
+    """
+    url_norm = normalizar_url(url)
+    return {"$regex": rf"^(https?://)?(www\.)?{re.escape(url_norm)}/?$", "$options": "i"}
+
 def extraer_codigo_mercadolibre(url: str) -> Optional[str]:
     # Normalizar para encontrar el código MLC
     match = re.search(r"MLC[-_]?(\d+)", url, re.IGNORECASE)
@@ -76,9 +84,8 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
         # Limpieza básica
         url_clean = url.split("?")[0].split("#")[0].rstrip("/")
         url_lower = url_clean.lower()
-        url_regex = {"$regex": re.escape(url_clean), "$options": "i"}
+        url_regex = construir_patron_url(url_clean)
         url_norm = normalizar_url(url_clean)
-        url_regex_norm = {"$regex": re.escape(url_norm), "$options": "i"}
         
         # === PASO 1: Identificar plataforma ===
         plataforma = detectar_plataforma(url_clean)
@@ -94,9 +101,7 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
             cod_ints = re.findall(r"\b(\d{9,10})\b", url_clean)
             candidatos = [
                 {"publicaciones.yapo.url_yapo": url_regex},
-                {"publicaciones.yapo.url_yapo": url_regex_norm},
                 {"url_yapo": url_regex},
-                {"url_yapo": url_regex_norm},
                 {"publicaciones.yapo.codigo_yapo": cod_yapo} if cod_yapo else None,
                 {"codigo_yapo": cod_yapo} if cod_yapo else None,
             ]
@@ -118,7 +123,6 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
                     {"codigo": cod_path},
                     {"codigo": safe_int_conversion(cod_path)},
                     {"publicaciones.procasa.url_procasa": url_regex},
-                    {"publicaciones.procasa.url_procasa": url_regex_norm},
                 ])
             propiedad = next((coleccion.find_one(q) for q in candidatos if q), None)
             codigo_externo = cod_path
@@ -127,7 +131,6 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
             codigo_ml = extraer_codigo_mercadolibre(url_clean)
             candidatos = [
                 {"publicaciones.portal_inmobiliario.url_mercado_libre": url_regex},
-                {"publicaciones.portal_inmobiliario.url_mercado_libre": url_regex_norm},
                 {"codigo_mercadolibre": codigo_ml} if codigo_ml else None,
                 {"publicaciones.portal_inmobiliario.codigo_pi": codigo_ml} if codigo_ml else None,
                 {"codigo_pi": codigo_ml} if codigo_ml else None,
@@ -139,7 +142,6 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
             codigo_pi = extraer_codigo_mercadolibre(url_clean)
             candidatos = [
                 {"publicaciones.portal_inmobiliario.url_pi": url_regex},
-                {"publicaciones.portal_inmobiliario.url_pi": url_regex_norm},
                 {"publicaciones.portal_inmobiliario.codigo_pi": codigo_pi} if codigo_pi else None,
                 {"codigo_pi": codigo_pi} if codigo_pi else None,
                 {"codigo_mercadolibre": codigo_pi} if codigo_pi else None,
@@ -152,9 +154,7 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
             tt_id = match_tt.group(1) if match_tt else None
             candidatos = [
                 {"publicaciones.toctoc.url_toctoc": url_regex},
-                {"publicaciones.toctoc.url_toctoc": url_regex_norm},
                 {"toctoc.enlace": url_regex},
-                {"toctoc.enlace": url_regex_norm},
                 {"publicaciones.toctoc.url_toctoc": {"$regex": tt_id}} if tt_id else None,
                 {"toctoc.enlace": {"$regex": tt_id}} if tt_id else None,
             ]

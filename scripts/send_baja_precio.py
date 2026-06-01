@@ -41,6 +41,60 @@ MARKET_DATA_SCORE_THRESHOLD = 65
 MARKET_DATA_SCORE_PARTIAL_MIN = 40
 
 
+def safe_float(v) -> float | None:
+    if v is None:
+        return None
+    try:
+        if isinstance(v, (int, float)):
+            return float(v)
+        s = str(v).strip()
+        if not s:
+            return None
+        if "." in s and "," not in s:
+            parts = s.split(".")
+            if len(parts) == 2 and len(parts[1]) == 3:
+                val_naive = float(s)
+                if val_naive < 1000.0:
+                    return float(s.replace(".", ""))
+        s = s.replace(",", ".")
+        if s.count(".") > 1:
+            parts = s.split(".")
+            s = "".join(parts[:-1]) + "." + parts[-1]
+        return float(s)
+    except Exception:
+        return None
+
+
+def tiene_baja_precio_reciente(historial_cambios: list | None, recent_drop_days: int) -> tuple[bool, str]:
+    """Detecta baja real de precio en historial_cambios dentro de la ventana de días indicada.
+    Usa tolerancia del 0.5% para evitar falsos positivos por precisión flotante.
+    """
+    MIN_DROP_PCT = 0.5  # Ignorar diferencias menores al 0.5%
+    if not historial_cambios:
+        return False, ""
+    for cambio in historial_cambios:
+        if cambio.get("campo") != "precio_uf":
+            continue
+        old_val = safe_float(cambio.get("valor_anterior"))
+        new_val = safe_float(cambio.get("valor_nuevo"))
+        if old_val is None or new_val is None or old_val <= 0:
+            continue
+        drop_pct = (old_val - new_val) / old_val * 100.0
+        if drop_pct < MIN_DROP_PCT:
+            continue  # diferencia insignificante, ignorar
+        fecha_str = cambio.get("fecha")
+        if not fecha_str:
+            continue
+        try:
+            fecha_dt = datetime.fromisoformat(fecha_str.replace("Z", "+00:00"))
+            dias = (datetime.now(timezone.utc) - fecha_dt).days
+            if 0 <= dias <= recent_drop_days:
+                return True, f"Baja de {old_val} a {new_val} UF ({drop_pct:.1f}%) hace {dias} días ({fecha_str})"
+        except Exception:
+            pass
+    return False, ""
+
+
 def build_action_url(base_url: str, email: str, accion: str, codigo: str, campana: str, token: str, mode: str = "live") -> str:
     return (
         f"{base_url}/campana/respuesta?email={quote_plus(email)}"
@@ -310,12 +364,18 @@ def calcular_market_data_score(p: dict) -> tuple[int, bool, str, list[str], dict
     return score, comunal_data_complete, quality_tier, missing_fields, raw_values
 
 
-def clasificar_propiedad(p: dict, pdf_dir: Path) -> dict:
+def clasificar_propiedad(p: dict, pdf_dir: Path, recent_drop_days: int = 14) -> dict:
     """Clasifica la propiedad entre rutas y outliers en base a reglas de negocio comercial."""
     codigo = str(p.get("codigo_propiedad") or "")
     email = (p.get("email_propietario") or "").strip()
     precio = float(p.get("precio_publicado_uf") or 0)
     
+    # 1. Check if owner already responded to any button previously
+    ya_respondio = bool(p.get("ya_respondio_campana"))
+    
+    # 2. Check if price was lowered in Convecta recently
+    bajado_reciente, motivo_bajada = tiene_baja_precio_reciente(p.get("historial_cambios"), recent_drop_days)
+
     brecha = _calcular_brecha_tasacion_pct(p)
     pdf_path = pdf_dir / f"{codigo}.pdf"
     pdf_valido, pdf_motive = validar_pdf_fisico(pdf_path)
@@ -346,6 +406,20 @@ def clasificar_propiedad(p: dict, pdf_dir: Path) -> dict:
         motivo_ruta = "Sin correo electrónico de propietario registrado"
         accion_sugerida = "Omitir - Sin email"
         exclusion_reason = "SIN_EMAIL"
+        send_eligible = False
+    elif ya_respondio:
+        categoria_outlier = "Propietario ya respondió anteriormente"
+        ruta_asignada = "Cola Manual"
+        motivo_ruta = "Propietario ya respondió a algún botón en una campaña previa"
+        accion_sugerida = "Omitir - Ya respondió"
+        exclusion_reason = "YA_RESPONDIO"
+        send_eligible = False
+    elif bajado_reciente:
+        categoria_outlier = "Baja de precio reciente"
+        ruta_asignada = "Cola Manual"
+        motivo_ruta = f"Exclusión por baja de precio reciente: {motivo_bajada}"
+        accion_sugerida = "Omitir - Rebajado recientemente"
+        exclusion_reason = "REBAJADO_RECIENTE"
         send_eligible = False
     elif brecha is not None:
         if brecha >= 300.0:
@@ -1275,6 +1349,10 @@ def build_html(
         </style>
       </head>
       <body style="margin:0;padding:0;background:#f3f5f8;font-family:'Open Sans','Roboto',Arial,sans-serif;color:#1f2937;">
+        <!-- Preheader Invisible -->
+        <div style="display:none;font-size:1px;color:#333333;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+          Analizamos el comportamiento de interesados de la zona para optimizar tu publicación.
+        </div>
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 12px;">
           <tr>
             <td align="center">
@@ -1297,7 +1375,7 @@ def build_html(
                 <tr>
                   <td style="padding:34px 22px 28px 22px;">
                     <h1 style="margin:0 0 12px 0;font-size:28px;line-height:1.25;color:#292256;font-weight:700;">{"Detectamos una oportunidad de alineamiento comercial respecto al mercado actual" if usar_ruta_tasacion else "Detectamos una oportunidad para mejorar el desempeño comercial de tu propiedad"}</h1>
-                    <p style="margin:0 0 12px 0;font-size:16px;line-height:1.65;color:#475569;">{"Este análisis se apoya en tasaciones, comparables vendidos y comportamiento de mercado reciente." if usar_ruta_tasacion else "Este análisis considera comportamiento reciente del mercado, actividad de compradores y publicaciones similares en tu comuna."}</p>
+                    <p style="margin:0 0 12px 0;font-size:16px;line-height:1.65;color:#475569;">Con el fin de mantener activa y competitiva tu publicación frente al stock actual de la zona, compartimos este análisis comercial personalizado de tu propiedad. {"Este análisis se apoya en tasaciones, comparables vendidos y comportamiento de mercado reciente." if usar_ruta_tasacion else "Este análisis considera comportamiento reciente del mercado, actividad de compradores y publicaciones similares en tu comuna."}</p>
                     <p style="margin:0 0 26px 0;font-size:14px;line-height:1.6;color:#475569;">Base de análisis: {origen_analisis}. Cuando existen datos de cierre, se incorporan operaciones inscritas recientemente para estimar posicionamiento competitivo real.</p>
 
                     {resumen_html}
@@ -1513,14 +1591,41 @@ def load_wave1(oficina: str) -> list[dict]:
     uc = db["universo_cartera"]
     by_code = {str(x.get("codigo_propiedad")): x for x in props}
     
+    # Consultar respuestas previas confirmadas en ajuste_precio
+    ajuste_precio = db[Config.COLLECTION_CAMPANAS_LOG]
+    codigos_list = list(by_code.keys())
+    respuestas_confirmadas = set()
+    try:
+        for r in list(ajuste_precio.find(
+            {
+                "codigo_propiedad": {"$in": codigos_list},
+                "respuesta_confirmada": True
+            },
+            {"_id": 0, "codigo_propiedad": 1}
+        )):
+            cod = str(r.get("codigo_propiedad") or "").strip()
+            if cod:
+                respuestas_confirmadas.add(cod)
+    except Exception as e:
+        print(f"WARNING: Error al consultar respuestas en log de campañas: {e}")
+
     for u in uc.find(
         {"codigo": {"$in": list(by_code.keys())}},
-        {"_id": 0, "codigo": 1, "email_propietario": 1, "ejecutivo": 1, "email_ejecutivo": 1},
+        {
+            "_id": 0,
+            "codigo": 1,
+            "email_propietario": 1,
+            "ejecutivo": 1,
+            "email_ejecutivo": 1,
+            "historial_cambios": 1
+        },
     ):
         c = str(u.get("codigo") or "")
         if c in by_code:
             by_code[c]["email_propietario"] = (u.get("email_propietario") or "").strip()
             by_code[c]["ejecutivo"] = (u.get("ejecutivo") or "").strip()
+            by_code[c]["historial_cambios"] = u.get("historial_cambios", [])
+            by_code[c]["ya_respondio_campana"] = (c in respuestas_confirmadas)
             # Priorizar correo del ejecutivo definido en la ficha maestra de cartera.
             email_exec_uc = str(u.get("email_ejecutivo") or "").strip().lower()
             if email_exec_uc:
@@ -1739,13 +1844,29 @@ def load_by_codigo_for_test(codigo: str) -> list[dict]:
 
     uc = db["universo_cartera"].find_one(
         {"codigo": c},
-        {"_id": 0, "email_propietario": 1, "ejecutivo": 1, "email_ejecutivo": 1},
+        {
+            "_id": 0,
+            "email_propietario": 1,
+            "ejecutivo": 1,
+            "email_ejecutivo": 1,
+            "historial_cambios": 1
+        },
     ) or {}
     doc["email_propietario"] = (uc.get("email_propietario") or "").strip()
     doc["ejecutivo"] = (uc.get("ejecutivo") or "").strip()
+    doc["historial_cambios"] = uc.get("historial_cambios", [])
     email_exec_uc = str(uc.get("email_ejecutivo") or "").strip().lower()
     if email_exec_uc:
         doc["email_ejecutivo"] = email_exec_uc
+
+    # Consultar si ya respondió
+    res_conf = db[Config.COLLECTION_CAMPANAS_LOG].find_one(
+        {
+            "codigo_propiedad": c,
+            "respuesta_confirmada": True
+        }
+    )
+    doc["ya_respondio_campana"] = (res_conf is not None)
 
     temp = [doc]
     by_code = {c: doc}
@@ -2031,6 +2152,7 @@ def main() -> None:
     ap.add_argument("--confirm-preview", action="store_true", help="Confirmar visualización de preview para poder correr en modo live")
     ap.add_argument("--run-tests", action="store_true", help="Ejecutar suite de tests unitarios")
     ap.add_argument("--global-dedupe-days", type=int, default=30, help="Evita reenvío entre campañas si el código ya fue enviado en los últimos N días")
+    ap.add_argument("--recent-price-drop-days", type=int, default=14, help="Evita envío si hubo baja de precio en Convecta en los últimos N días")
     args = ap.parse_args()
 
     if args.run_tests:
@@ -2050,7 +2172,7 @@ def main() -> None:
         
         properties_snapshot = []
         for p in raw_wave:
-            classification = clasificar_propiedad(p, TASACIONES_DIR)
+            classification = clasificar_propiedad(p, TASACIONES_DIR, recent_drop_days=args.recent_price_drop_days)
             p.update(classification)
             properties_snapshot.append(p)
             
@@ -2110,6 +2232,8 @@ def main() -> None:
         excl_outlier = len([x for x in properties_snapshot if x.get("exclusion_reason") == "OUTLIER_EXTREMO"])
         excl_datos = len([x for x in properties_snapshot if x.get("exclusion_reason") == "DATOS_COMUNALES_INSUFICIENTES"])
         excl_pdf_invalido = len([x for x in properties_snapshot if not x.get("pdf_valido") and x.get("ruta_asignada") != "Ruta Inteligencia Comunal"])
+        excl_ya_respondio = len([x for x in properties_snapshot if x.get("exclusion_reason") == "YA_RESPONDIO"])
+        excl_rebajado_reciente = len([x for x in properties_snapshot if x.get("exclusion_reason") == "REBAJADO_RECIENTE"])
         excl_manual = len([x for x in properties_snapshot if x.get("exclusion_reason") == "MANUAL_REVIEW_REQUIRED"])
         
         print("=" * 80)
@@ -2136,6 +2260,8 @@ def main() -> None:
         print(f"  -> OUTLIER_EXTREMO:                  {excl_outlier}")
         print(f"  -> DATOS_COMUNALES_INSUFICIENTES:    {excl_datos}")
         print(f"  -> PDF_INVALIDO:                     {excl_pdf_invalido}")
+        print(f"  -> YA_RESPONDIO:                     {excl_ya_respondio}")
+        print(f"  -> REBAJADO_RECIENTE:                {excl_rebajado_reciente}")
         print(f"  -> MANUAL_REVIEW_REQUIRED:           {excl_manual}")
         print("=" * 80)
         print("INFO: Puede proceder al envío en vivo agregando --mode live y --confirm-preview.")
@@ -2184,36 +2310,37 @@ def main() -> None:
                 skipped_by_reason["SIN_EMAIL"] = skipped_by_reason.get("SIN_EMAIL", 0) + 1
                 continue
                 
-            # 2. VALIDACION DE IDEMPOTENCIA DIRECTA ANTES DEL SEND TRANSPORT
-            idempotencia_key = {
-                "campana": args.campana,
-                "codigo_propiedad": codigo,
-                "estado_envio": "enviado"
-            }
-            if db[Config.COLLECTION_CAMPANAS_LOG].find_one(idempotencia_key):
-                skipped_idempotencia += 1
-                print(f"[{i}/{len(wave)}] IDEMPOTENCIA: Propiedad {codigo} ya fue enviada previamente. Saltando...")
-                continue
-            # 2b. Dedupe global entre campañas (misma propiedad enviada recientemente)
-            envio_previo = db[Config.COLLECTION_CAMPANAS_LOG].find_one(
-                {
-                    "codigo_propiedad": codigo,
-                    "estado_envio": "enviado",
-                    "mode": "live",
-                    "campana": {"$regex": r"^baja_precio_"},
-                    "enviado_at": {"$exists": True},
-                },
-                sort=[("enviado_at", -1)],
-            )
-            if envio_previo:
-                try:
-                    prev_dt = datetime.fromisoformat(str(envio_previo.get("enviado_at")).replace("Z", "+00:00"))
-                    if prev_dt.timestamp() >= dedupe_cutoff_iso:
-                        skipped_global_dedupe += 1
-                        print(f"[{i}/{len(wave)}] DEDUPE_GLOBAL: Propiedad {codigo} ya enviada en campaña {envio_previo.get('campana')}. Saltando...")
-                        continue
-                except Exception:
-                    pass
+            # 2. VALIDACION DE IDEMPOTENCIA DIRECTA (DESACTIVADO TEMPORALMENTE PARA REENVÍO)
+            # idempotencia_key = {
+            #     "campana": args.campana,
+            #     "codigo_propiedad": codigo,
+            #     "estado_envio": "enviado"
+            # }
+            # if db[Config.COLLECTION_CAMPANAS_LOG].find_one(idempotencia_key):
+            #     skipped_idempotencia += 1
+            #     print(f"[{i}/{len(wave)}] IDEMPOTENCIA: Propiedad {codigo} ya fue enviada previamente. Saltando...")
+            #     continue
+
+            # 2b. Dedupe global entre campañas (DESACTIVADO TEMPORALMENTE PARA REENVÍO)
+            # envio_previo = db[Config.COLLECTION_CAMPANAS_LOG].find_one(
+            #     {
+            #         "codigo_propiedad": codigo,
+            #         "estado_envio": "enviado",
+            #         "mode": "live",
+            #         "campana": {"$regex": r"^baja_precio_"},
+            #         "enviado_at": {"$exists": True},
+            #     },
+            #     sort=[("enviado_at", -1)],
+            # )
+            # if envio_previo:
+            #     try:
+            #         prev_dt = datetime.fromisoformat(str(envio_previo.get("enviado_at")).replace("Z", "+00:00"))
+            #         if prev_dt.timestamp() >= dedupe_cutoff_iso:
+            #             skipped_global_dedupe += 1
+            #             print(f"[{i}/{len(wave)}] DEDUPE_GLOBAL: Propiedad {codigo} ya enviada en campaña {envio_previo.get('campana')}. Saltando...")
+            #             continue
+            #     except Exception:
+            #         pass
 
             # 3. Aplicar Throttling Gradual
             if sent > 0:
@@ -2253,7 +2380,7 @@ def main() -> None:
                 incluye_tasacion_adjunta=usa_tasacion,
                 incluye_informe_comercial_adjunta=incluir_informe_comercial,
             )
-            subject = f"Procasa | Análisis de mercado personalizado sobre tu propiedad {codigo}"
+            subject = f"Procasa | Seguimiento y actualización comercial de tu propiedad {codigo}"
 
             ok = False
             attached = False
@@ -2286,6 +2413,8 @@ def main() -> None:
         print(f"  -> OUTLIER_EXTREMO:               {skipped_by_reason.get('OUTLIER_EXTREMO', 0)}")
         print(f"  -> DATOS_COMUNALES_INSUFICIENTES: {skipped_by_reason.get('DATOS_COMUNALES_INSUFICIENTES', 0)}")
         print(f"  -> PDF_INVALIDO:                  {skipped_by_reason.get('PDF_INVALIDO', 0)}")
+        print(f"  -> YA_RESPONDIO:                  {skipped_by_reason.get('YA_RESPONDIO', 0)}")
+        print(f"  -> REBAJADO_RECIENTE:             {skipped_by_reason.get('REBAJADO_RECIENTE', 0)}")
         print(f"  -> MANUAL_REVIEW_REQUIRED:        {skipped_by_reason.get('MANUAL_REVIEW_REQUIRED', 0)}")
         print("=" * 80)
         return

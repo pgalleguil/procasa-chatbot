@@ -121,7 +121,20 @@ def get_client_ip(request: Request) -> str:
         return forwarded.split(",")[0]
     return request.client.host if request.client else "unknown"
 
+# Thread-safe in-memory cache for mapping username -> user_role
+# Cache entries are stored as (user_role, expiration_timestamp)
+# TTL is set to 300 seconds (5 minutes) to avoid frequent queries to 'usuarios' collection.
+# Note: Any changes to a user's role in MongoDB may take up to 5 minutes to propagate to this cache.
+_USER_ROLE_CACHE = {}
+_USER_ROLE_CACHE_LOCK = threading.Lock()
+
 async def _get_request_user(adb, request: Request):
+    # 1. Request-level cache (lifetime of a single HTTP request)
+    cached_username = getattr(request.state, "contracts_user_name", None)
+    cached_role = getattr(request.state, "contracts_user_role", None)
+    if cached_username is not None:
+        return cached_username, cached_role
+
     username = None
     user_role = "agente"
     token = request.cookies.get("access_token")
@@ -132,11 +145,31 @@ async def _get_request_user(adb, request: Request):
         payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
         username = payload.get("sub")
         if username:
+            # 2. Check global in-memory cache
+            now = time.time()
+            with _USER_ROLE_CACHE_LOCK:
+                cached_entry = _USER_ROLE_CACHE.get(username)
+                if cached_entry and now < cached_entry[1]:
+                    user_role = cached_entry[0]
+                    # Cache in request state
+                    request.state.contracts_user_name = username
+                    request.state.contracts_user_role = user_role
+                    return username, user_role
+
+            # 3. Query DB
             user_doc = await adb["usuarios"].find_one({"username": username})
             if user_doc:
                 user_role = user_doc.get("rol", "agente")
+            
+            # Save in global cache
+            with _USER_ROLE_CACHE_LOCK:
+                _USER_ROLE_CACHE[username] = (user_role, now + 300) # 5 minutes TTL
     except Exception as e:
         logger.error(f"Error decodificando JWT: {e}")
+        
+    # Cache in request state
+    request.state.contracts_user_name = username
+    request.state.contracts_user_role = user_role
     return username, user_role
 
 def _normalize_contract_fields(d: dict) -> dict:
@@ -219,7 +252,6 @@ def _get_missing_required_contract_fields(d: dict):
         "moneda": "moneda",
         "comision": "comision",
         "property_code": "property_code",
-        "origen": "origen",
     }
     missing = []
     for field, source_key in required_map.items():
@@ -790,6 +822,8 @@ async def contracts_statuses(request: Request):
     from chatbot.storage import get_async_db
     adb = get_async_db()
     username, user_role = await _get_request_user(adb, request)
+    if not username:
+        return {"items": []}
     if user_role in ["supervisor", "admin"]:
         query = {"status": {"$ne": "deleted"}}
     else:

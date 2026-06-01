@@ -1553,6 +1553,100 @@
                 }
             }
         }
+
+        // ── Auto-refresh de estados cada 30 segundos ──────────────────────────────
+        // Llama al endpoint /visitas/api/statuses y actualiza badges + botones
+        // sin recargar la página completa.
+        const STATUS_LABELS = {
+            'created':       { text: 'Creado',        cls: 'status-created' },
+            'sent':          { text: 'Enviado',        cls: 'status-sent' },
+            'opened':        { text: 'Abierto',        cls: 'status-opened' },
+            'otp_requested': { text: 'Código Pedido',  cls: 'status-otp_requested' },
+            'otp_verified':  { text: 'RUT Validado',   cls: 'status-otp_verified' },
+            'signed':        { text: 'Firmado ✓',      cls: 'status-signed' },
+            'accepted':      { text: 'Firmado ✓',      cls: 'status-signed' }
+        };
+
+        function buildActionButtons(visita_code, status) {
+            const isSigned = status === 'signed' || status === 'accepted';
+            const isPending = ['sent','opened','otp_requested','otp_verified'].includes(status);
+            const isCreated = status === 'created';
+            const userRole = '{{ user_role }}';
+            const isAdmin = userRole === 'supervisor' || userRole === 'admin';
+
+            let html = '<div class="d-flex flex-wrap gap-1">';
+
+            if (isCreated) {
+                html += `<a href="/visitas/api/download/${visita_code}" target="_blank" class="btn btn-sm btn-outline-secondary" title="Ver PDF"><i class="fa-solid fa-file-pdf"></i></a>`;
+                html += `<button class="btn btn-sm btn-outline-info" title="Editar" onclick="location.reload()"><i class="fa-solid fa-pen"></i></button>`;
+                html += `<button class="btn btn-sm btn-outline-secondary btn-hover-whatsapp" title="Enviar por WhatsApp" onclick="sendVisita('${visita_code}', this)"><i class="fa-brands fa-whatsapp"></i></button>`;
+            } else if (isPending) {
+                html += `<a href="/visitas/api/download/${visita_code}" target="_blank" class="btn btn-sm btn-outline-secondary" title="Ver Orden de Visita"><i class="fa-solid fa-eye"></i></a>`;
+                if (isAdmin) {
+                    html += `<button class="btn btn-sm btn-outline-warning" title="Reenviar enlace" onclick="sendVisita('${visita_code}', this, true)"><i class="fa-solid fa-rotate-right"></i></button>`;
+                }
+            } else if (isSigned) {
+                html += `<a href="/visitas/api/view_signed/${visita_code}" target="_blank" class="btn btn-sm btn-outline-secondary" title="Ver Firmado"><i class="fa-solid fa-eye"></i></a>`;
+                html += `<a href="/visitas/api/download_signed/${visita_code}" target="_blank" class="btn btn-sm btn-success" title="Descargar Firmado"><i class="fa-solid fa-file-circle-check"></i></a>`;
+                html += `<a href="/visitas/verify/${visita_code}" target="_blank" class="btn btn-sm btn-outline-info" title="Verificar Evidencia"><i class="fa-solid fa-shield-halved"></i></a>`;
+            }
+
+            if (!isSigned) {
+                html += `<button class="btn btn-sm btn-outline-secondary btn-hover-danger" title="Eliminar" onclick="deleteVisita('${visita_code}', this)"><i class="fa-solid fa-trash-can"></i></button>`;
+            }
+
+            html += '</div>';
+            return html;
+        }
+
+        async function refreshStatuses() {
+            try {
+                const res = await fetch('/visitas/api/statuses');
+                if (!res.ok) return;
+                const data = await res.json();
+                const items = data.items || [];
+
+                items.forEach(item => {
+                    const row = document.querySelector(`tr[data-contract-code="${item.visita_code}"]`);
+                    if (!row) return;
+
+                    const prevStatus = row.getAttribute('data-contract-status');
+                    const newStatus  = item.status;
+                    if (prevStatus === newStatus) return; // sin cambio
+
+                    // Actualizar atributo de status en la fila
+                    row.setAttribute('data-contract-status', newStatus);
+
+                    // Actualizar badge de estado
+                    const statusCell = row.querySelector('.contract-status-cell');
+                    if (statusCell) {
+                        const info = STATUS_LABELS[newStatus] || { text: newStatus, cls: 'status-created' };
+                        statusCell.innerHTML = `<span class="status-badge ${info.cls}">${info.text}</span>`;
+                    }
+
+                    // Actualizar botones de acción
+                    const actionsCell = row.querySelector('td[data-label="Acciones"]');
+                    if (actionsCell) {
+                        actionsCell.innerHTML = buildActionButtons(item.visita_code, newStatus);
+                    }
+
+                    // Si acaba de firmarse, resaltar la fila brevemente
+                    if ((newStatus === 'signed' || newStatus === 'accepted') && prevStatus !== 'signed' && prevStatus !== 'accepted') {
+                        row.style.transition = 'background 1.5s';
+                        row.style.background = 'rgba(34,197,94,0.15)';
+                        setTimeout(() => { row.style.background = ''; }, 3000);
+                    }
+                });
+            } catch (e) {
+                // Silencioso — no interrumpir la UI por fallo de polling
+            }
+        }
+
+        // Iniciar polling al cargar la página
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(refreshStatuses, 5000);   // Primera verificación a los 5s
+            setInterval(refreshStatuses, 30000); // Luego cada 30 segundos
+        });
     </script>
 </body>
 

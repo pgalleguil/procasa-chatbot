@@ -541,9 +541,8 @@ async def download_signed_pdf(visita_code: str):
     }
     
     # Evitar fallar si faltan datos en orden de visitas antiguos
-    from fastapi import Request
-    base_url = "https://procasa.cl" # default fallback
-    verify_url = f"{base_url}/contracts/verify/{evidence_data['verify_token']}"
+    base_url = getattr(Config, "CRM_BASE_URL", "https://procasa.cl").rstrip('/')
+    verify_url = f"{base_url}/visitas/verify/{visita_code}"
     
     signed_pdf_bytes = PDFGenerator.generate_signed_contract(original_bytes, contract, evidence_data, verify_url)
     
@@ -651,9 +650,8 @@ async def view_signed_pdf(visita_code: str):
     }
     
     # Evitar fallar si faltan datos en orden de visitas antiguos
-    from fastapi import Request
-    base_url = "https://procasa.cl" # default fallback
-    verify_url = f"{base_url}/contracts/verify/{evidence_data['verify_token']}"
+    base_url = getattr(Config, "CRM_BASE_URL", "https://procasa.cl").rstrip('/')
+    verify_url = f"{base_url}/visitas/verify/{visita_code}"
     
     signed_pdf_bytes = PDFGenerator.generate_signed_contract(original_bytes, contract, evidence_data, verify_url)
     
@@ -949,21 +947,24 @@ async def view_visita_public(token: str, request: Request):
     ua = request.headers.get("user-agent", "")
     server_timestamp = SecurityContracts.generate_server_timestamp()
     
+    update_query = {
+        "$push": {
+            "access_logs": {"ip": ip, "user_agent": ua, "timestamp": server_timestamp},
+            "timeline": {
+                "action": "link_opened",
+                "server_timestamp": server_timestamp,
+                "ip": ip,
+                "user_agent": ua
+            }
+        }
+    }
+    if not is_signed and contract.get("status") not in ["signed", "accepted"]:
+        update_query["$set"] = {"status": "opened"}
+
     await _db_call(
         db["visitas"].update_one,
         {"visita_code": contract["visita_code"]},
-        {
-            "$push": {
-                "access_logs": {"ip": ip, "user_agent": ua, "timestamp": server_timestamp},
-                "timeline": {
-                    "action": "link_opened",
-                    "server_timestamp": server_timestamp,
-                    "ip": ip,
-                    "user_agent": ua
-                }
-            },
-            "$set": {"status": "opened"}
-        },
+        update_query,
     )
     
     # Obtener token_expiry exacto en America/Santiago para evitar el bug de las 27 horas

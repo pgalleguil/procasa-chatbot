@@ -22,6 +22,7 @@ from .constants import PipelineStage, InteractionType, LeadIntent, CHILE_TZ
 from .grok_client import generar_respuesta, generar_respuesta_estructurada
 from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, extraer_contexto_urls, URL_RE
 from .utils import extraer_rut, extraer_email, safe_int_conversion, extraer_nombre_explicito
+from .utils import parse_bool
 from .alert_service import send_alert_once
 from .classifier import es_propietario, es_corredor_externo
 
@@ -271,6 +272,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "origen": plataforma_origen or prospecto_actual.get("origen") or "WhatsApp",
             "link_pendiente": True
         })
+    elif propiedad:
+        await _run_sync(actualizar_prospecto, phone, {"link_pendiente": False})
 
     # Actualizar prospecto si encontramos propiedad nueva
     if propiedad and codigo_detectado:

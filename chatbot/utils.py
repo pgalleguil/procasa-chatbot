@@ -76,6 +76,18 @@ def safe_int_conversion(valor) -> int:
         except ValueError:
             return 0
 
+
+def parse_bool(valor) -> bool:
+    """Convierte strings y números comunes a bool real."""
+    if isinstance(valor, bool):
+        return valor
+    if valor is None:
+        return False
+    if isinstance(valor, (int, float)):
+        return valor != 0
+    s = str(valor).strip().lower()
+    return s in {"1", "true", "t", "yes", "y", "si", "sí", "on"}
+
 # ==========================================
 # 3. EXTRACCIÓN DE DATOS PERSONALES
 # ==========================================

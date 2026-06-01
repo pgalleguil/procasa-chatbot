@@ -7,6 +7,7 @@ from .lead_router import find_responsible_executive
 from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, URL_RE
 from config import Config
 from .storage import get_db, save_pending_notification
+from .utils import parse_bool
 from api_captacion import (
     get_zone_for_comuna, normalize_commune_v2,
     _normalize_tipo, _normalize_operacion
@@ -46,7 +47,7 @@ class LeadProcessingService:
         Calcula cluster_id y zone para un lead, buscando datos en universo_cartera si es necesario.
         """
         prospecto = lead_doc.get("prospecto", {}) or {}
-        if prospecto.get("link_pendiente"):
+        if parse_bool(prospecto.get("link_pendiente")):
             logger.info(f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} con link pendiente sin match. Se omite auto-asignación.")
             return {}
         

@@ -20,7 +20,7 @@ from .crm_service import CrmService
 from .constants import PipelineStage, InteractionType, LeadIntent, CHILE_TZ
 
 from .grok_client import generar_respuesta, generar_respuesta_estructurada
-from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, extraer_contexto_urls, detectar_plataforma, URL_RE
+from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, extraer_contexto_urls, URL_RE
 from .utils import extraer_rut, extraer_email, safe_int_conversion, extraer_nombre_explicito
 from .alert_service import send_alert_once
 from .classifier import es_propietario, es_corredor_externo
@@ -263,16 +263,6 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 codigo_detectado = str(propiedad.get("codigo"))
                 if not prospecto_actual.get("origen"):
                     nuevo_origen = "WhatsApp"
-
-    # 4. Si NO hay propiedad y NO venía un enlace, recuperar histórica
-    if not propiedad and not hay_url and not any(x in msg_lower for x in ["busco", "otra", "tienes", "opciones"]):
-        codigo_guardado = prospecto_actual.get("codigo")
-        if codigo_guardado:
-            db_props = await _run_sync(get_db)
-            propiedad = await _run_sync(
-                db_props[Config.COLLECTION_NAME].find_one,
-                {"$or": [{"codigo": codigo_guardado}, {"codigo": safe_int_conversion(codigo_guardado)}]}
-            )
 
     # Si hay enlace pero no encontramos propiedad, no heredamos código histórico.
     if hay_url and not propiedad:

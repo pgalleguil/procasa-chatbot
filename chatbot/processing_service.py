@@ -69,7 +69,7 @@ class LeadProcessingService:
                 property_code = str(prop_match.get("codigo"))
                 logger.info(f"[PROCESS_SERVICE] ¡Match encontrado en historial! Código: {property_code}")
             elif not URL_RE.search(all_text):
-                # Probar código internacional
+                # Probar código internacional solo si no hay enlaces en el historial
                 c_int = extraer_codigo_internacional(all_text)
                 if c_int:
                     db = LeadProcessingService._db()

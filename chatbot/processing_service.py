@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from .constants import CHILE_TZ, UNASSIGNED_LABEL
 from .lead_router import find_responsible_executive
-from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional
+from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, URL_RE
 from config import Config
 from .storage import get_db, save_pending_notification
 from api_captacion import (
@@ -46,6 +46,9 @@ class LeadProcessingService:
         Calcula cluster_id y zone para un lead, buscando datos en universo_cartera si es necesario.
         """
         prospecto = lead_doc.get("prospecto", {}) or {}
+        if prospecto.get("link_pendiente"):
+            logger.info(f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} con link pendiente sin match. Se omite auto-asignación.")
+            return {}
         
         # 1. Obtener datos base
         comuna = prospecto.get("comuna") or lead_doc.get("comuna_interes")
@@ -65,7 +68,7 @@ class LeadProcessingService:
             if found_link and prop_match:
                 property_code = str(prop_match.get("codigo"))
                 logger.info(f"[PROCESS_SERVICE] ¡Match encontrado en historial! Código: {property_code}")
-            else:
+            elif not URL_RE.search(all_text):
                 # Probar código internacional
                 c_int = extraer_codigo_internacional(all_text)
                 if c_int:

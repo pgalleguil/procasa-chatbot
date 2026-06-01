@@ -7,6 +7,21 @@ from config import Config
 
 URL_RE = re.compile(r'https?://[^\s<>\]\)"]+', re.IGNORECASE)
 
+
+def detectar_plataforma(url: str) -> str:
+    url_lower = (url or "").lower()
+    if "toctoc.com" in url_lower:
+        return "TocToc"
+    if "yapo.cl" in url_lower:
+        return "Yapo"
+    if "portalinmobiliario.com" in url_lower:
+        return "PortalInmobiliario"
+    if "mercadolibre." in url_lower:
+        return "MercadoLibre"
+    if "procasa.cl" in url_lower:
+        return "Procasa"
+    return "Otro Portal"
+
 def extraer_codigo_mercadolibre(url: str) -> Optional[str]:
     # Normalizar para encontrar el código MLC
     match = re.search(r"MLC[-_]?(\d+)", url, re.IGNORECASE)
@@ -56,155 +71,86 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
         url_regex = {"$regex": re.escape(url_clean), "$options": "i"}
         
         # === PASO 1: Identificar plataforma ===
-        plataforma = "Otro Portal"
-        if "toctoc.com" in url_lower:              plataforma = "TocToc"
-        elif "yapo.cl" in url_lower:               plataforma = "Yapo"
-        elif "portalinmobiliario.com" in url_lower: plataforma = "PortalInmobiliario"
-        elif "mercadolibre." in url_lower:          plataforma = "MercadoLibre"
-        elif "procasa.cl" in url_lower:             plataforma = "Procasa"
+        plataforma = detectar_plataforma(url_clean)
         
         print(f"\n[INFO] Plataforma detectada: {plataforma} | Buscando en {Config.COLLECTION_NAME}")
         
         propiedad = None
-        codigo_ml = None
-        cod_yapo = None
-        
-        # === PASO 2: Búsqueda PRIORIZADA por plataforma ===
-        
-        if plataforma == "MercadoLibre":
-            # Primero extraer código MLC y buscar en campos específicos de ML
-            codigo_ml = extraer_codigo_mercadolibre(url_clean)
-            if codigo_ml:
-                propiedad = coleccion.find_one({"$or": [
-                    {"publicaciones.portal_inmobiliario.codigo_pi": codigo_ml},
-                    {"codigo_pi": codigo_ml},
-                    {"codigo_mercadolibre": codigo_ml},
-                    {"publicaciones.portal_inmobiliario.url_mercado_libre": url_regex},
-                ]})
-                if propiedad:
-                    print(f"[EXITO-ML] Encontrado por código MLC {codigo_ml}")
-            if not propiedad:
-                propiedad = coleccion.find_one({"publicaciones.portal_inmobiliario.url_mercado_libre": url_regex})
+        codigo_externo = None
 
-        elif plataforma == "PortalInmobiliario":
-            # Buscar por URL y código PI
-            codigo_ml = extraer_codigo_mercadolibre(url_clean)  # PI usa mismo formato MLC
-            query_pi = [{"publicaciones.portal_inmobiliario.url_pi": url_regex}]
-            if codigo_ml:
-                query_pi += [
-                    {"publicaciones.portal_inmobiliario.codigo_pi": codigo_ml},
-                    {"codigo_pi": codigo_ml},
-                    {"codigo_mercadolibre": codigo_ml},
-                ]
-            propiedad = coleccion.find_one({"$or": query_pi})
-            if propiedad:
-                print(f"[EXITO-PI] Encontrado por URL/código Portal Inmobiliario")
-
-        elif plataforma == "Yapo":
-            # Buscar por código Yapo (dígitos finales de URL)
+        # === PASO 2: RESOLUCIÓN DETERMINÍSTICA POR PLATAFORMA ===
+        if plataforma == "Yapo":
             cod_yapo = extraer_codigo_yapo(url_clean)
-            query_yapo = [
+            candidatos = [
                 {"publicaciones.yapo.url_yapo": url_regex},
                 {"url_yapo": url_regex},
-                {"publicaciones.yapo.codigo_internacional": {"$exists": True}},
-                {"publicaciones.codigo_internacional": {"$exists": True}},
-                {"codigo_internacional": {"$exists": True}},
+                {"publicaciones.yapo.codigo_yapo": cod_yapo} if cod_yapo else None,
+                {"codigo_yapo": cod_yapo} if cod_yapo else None,
+                {"codigo_internacional": re.findall(r"\b(\d{9,10})\b", url_clean)[0]} if re.findall(r"\b(\d{9,10})\b", url_clean) else None,
+                {"publicaciones.codigo_internacional": re.findall(r"\b(\d{9,10})\b", url_clean)[0]} if re.findall(r"\b(\d{9,10})\b", url_clean) else None,
+                {"publicaciones.yapo.codigo_internacional": re.findall(r"\b(\d{9,10})\b", url_clean)[0]} if re.findall(r"\b(\d{9,10})\b", url_clean) else None,
             ]
-            if cod_yapo:
-                query_yapo += [
-                    {"publicaciones.yapo.codigo_yapo": cod_yapo},
-                    {"codigo_yapo": cod_yapo},
-                    {"publicaciones.yapo.url_yapo": {"$regex": cod_yapo + "$"}},
-                ]
-            # Si la URL trae el código internacional embebido o el anuncio está ligado a ese identificador,
-            # buscamos también por ese campo.
-            cod_ints = re.findall(r"\b(\d{9,10})\b", url_clean)
-            for cod_int in cod_ints:
-                query_yapo += [
-                    {"codigo_internacional": cod_int},
-                    {"publicaciones.codigo_internacional": cod_int},
-                    {"publicaciones.yapo.codigo_internacional": cod_int},
-                ]
-            propiedad = coleccion.find_one({"$or": query_yapo})
-            if propiedad:
-                print(f"[EXITO-YAPO] Encontrado por código Yapo {cod_yapo}")
-
-        elif plataforma == "TocToc":
-            query_tt = [{"publicaciones.toctoc.url_toctoc": url_regex}, {"toctoc.enlace": url_regex}]
-            match_tt = re.search(r"/([a-f0-9]{32,})", url_lower)
-            if match_tt:
-                tt_id = match_tt.group(1)
-                query_tt += [
-                    {"publicaciones.toctoc.url_toctoc": {"$regex": tt_id}},
-                    {"toctoc.enlace": {"$regex": tt_id}},
-                ]
-            propiedad = coleccion.find_one({"$or": query_tt})
-            if propiedad:
-                print(f"[EXITO-TOCTOC] Encontrado por URL TocToc")
+            propiedad = next((coleccion.find_one(q) for q in candidatos if q), None)
+            codigo_externo = cod_yapo
 
         elif plataforma == "Procasa":
-            # Link directo procasa.cl/CODIGO — extraer el código del path
-            match_pc = re.search(r"/([\w-]+)$", url_clean)
-            if match_pc:
-                cod_path = match_pc.group(1)
-                propiedad = coleccion.find_one({"$or": [
+            match_pc = re.search(r"/(\d+)$", url_clean)
+            cod_path = match_pc.group(1) if match_pc else None
+            candidatos = []
+            if cod_path:
+                candidatos.extend([
                     {"codigo": cod_path},
                     {"codigo": safe_int_conversion(cod_path)},
-                ]})
+                    {"publicaciones.procasa.url_procasa": url_regex},
+                ])
+            propiedad = next((coleccion.find_one(q) for q in candidatos if q), None)
+            codigo_externo = cod_path
 
-        # === PASO 3: Fallback UNIVERSAL si no se encontró por plataforma ===
-        if not propiedad:
-            print(f"[FALLBACK] Búsqueda universal para {plataforma} | URL: {url_clean[:80]}")
-            query_or = [
-                {"publicaciones.portal_inmobiliario.url_pi": url_regex},
+        elif plataforma == "MercadoLibre":
+            codigo_ml = extraer_codigo_mercadolibre(url_clean)
+            candidatos = [
                 {"publicaciones.portal_inmobiliario.url_mercado_libre": url_regex},
-                {"publicaciones.toctoc.url_toctoc": url_regex},
-                {"publicaciones.yapo.url_yapo": url_regex},
-                {"publicaciones.procasa.url_procasa": url_regex},
-                {"toctoc.enlace": url_regex},
-                {"url_yapo": url_regex},
-                {"codigo_internacional": {"$regex": re.escape(url_clean), "$options": "i"}},
-                {"publicaciones.codigo_internacional": {"$regex": re.escape(url_clean), "$options": "i"}},
+                {"codigo_mercadolibre": codigo_ml} if codigo_ml else None,
+                {"publicaciones.portal_inmobiliario.codigo_pi": codigo_ml} if codigo_ml else None,
+                {"codigo_pi": codigo_ml} if codigo_ml else None,
             ]
-            if codigo_ml:
-                query_or += [
-                    {"publicaciones.portal_inmobiliario.codigo_pi": codigo_ml},
-                    {"codigo_pi": codigo_ml},
-                    {"codigo_mercadolibre": codigo_ml},
-                ]
-            if cod_yapo:
-                query_or += [
-                    {"publicaciones.yapo.codigo_yapo": cod_yapo},
-                    {"codigo_yapo": cod_yapo},
-                ]
-            propiedad = coleccion.find_one({"$or": query_or})
+            propiedad = next((coleccion.find_one(q) for q in candidatos if q), None)
+            codigo_externo = codigo_ml
 
-        # === PASO 4: Fallback por códigos numéricos embebidos en la URL ===
-        if not propiedad:
-            codigos_en_url = re.findall(r"(\d{4,10})", url_clean)
-            if codigos_en_url:
-                print(f"[RE-BUSQUEDA] Por códigos numéricos en URL: {codigos_en_url}")
-                for potential_code in codigos_en_url:
-                    prop_extra = coleccion.find_one({"$or": [
-                        {"codigo": potential_code},
-                        {"codigo": safe_int_conversion(potential_code)},
-                        {"codigo_procasa": potential_code},
-                        {"codigo_procasa": safe_int_conversion(potential_code)},
-                        {"codigo_internacional": potential_code},
-                        {"publicaciones.codigo_internacional": potential_code},
-                    ]})
-                    if prop_extra:
-                        propiedad = prop_extra
-                        print(f"[EXITO] PROPIEDAD ENCONTRADA por código embebido! Cod: {propiedad.get('codigo')}")
-                        break
+        elif plataforma == "PortalInmobiliario":
+            codigo_pi = extraer_codigo_mercadolibre(url_clean)
+            candidatos = [
+                {"publicaciones.portal_inmobiliario.url_pi": url_regex},
+                {"publicaciones.portal_inmobiliario.codigo_pi": codigo_pi} if codigo_pi else None,
+                {"codigo_pi": codigo_pi} if codigo_pi else None,
+                {"codigo_mercadolibre": codigo_pi} if codigo_pi else None,
+            ]
+            propiedad = next((coleccion.find_one(q) for q in candidatos if q), None)
+            codigo_externo = codigo_pi
+
+        elif plataforma == "TocToc":
+            match_tt = re.search(r"/([a-f0-9]{32,})", url_lower)
+            tt_id = match_tt.group(1) if match_tt else None
+            candidatos = [
+                {"publicaciones.toctoc.url_toctoc": url_regex},
+                {"toctoc.enlace": url_regex},
+                {"publicaciones.toctoc.url_toctoc": {"$regex": tt_id}} if tt_id else None,
+                {"toctoc.enlace": {"$regex": tt_id}} if tt_id else None,
+            ]
+            propiedad = next((coleccion.find_one(q) for q in candidatos if q), None)
+            codigo_externo = tt_id
+
+        elif plataforma == "Otro Portal":
+            # No hacemos inventos; solo dejamos trazabilidad del link.
+            propiedad = None
+            codigo_externo = None
 
         if propiedad:
             print(f"[EXITO] PROPIEDAD ENCONTRADA | Plataforma: {plataforma} | Código Procasa: {propiedad.get('codigo')}")
             return True, propiedad, plataforma, url_clean
         else:
             print(f"[FALLO] NO se encontró propiedad con el link '{url_clean[:80]}'")
-            ext_code = codigo_ml or cod_yapo or None
-            return True, None, plataforma, ext_code
+            return True, None, plataforma, codigo_externo
 
     return False, None, "", None
 
@@ -218,18 +164,7 @@ def extraer_contexto_urls(mensaje: str) -> list[dict]:
     contexto = []
     for url in urls:
         url_clean = url.split("?")[0].split("#")[0].rstrip("/")
-        url_lower = url_clean.lower()
-        plataforma = "Otro Portal"
-        if "toctoc.com" in url_lower:
-            plataforma = "TocToc"
-        elif "yapo.cl" in url_lower:
-            plataforma = "Yapo"
-        elif "portalinmobiliario.com" in url_lower:
-            plataforma = "PortalInmobiliario"
-        elif "mercadolibre." in url_lower:
-            plataforma = "MercadoLibre"
-        elif "procasa.cl" in url_lower:
-            plataforma = "Procasa"
+        plataforma = detectar_plataforma(url_clean)
 
         item = {"url": url_clean, "plataforma": plataforma}
         ml = extraer_codigo_mercadolibre(url_clean)

@@ -110,7 +110,31 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             timeout=45,
         )
 
+        try:
+            logger.info(f"[DEEPSEEK RAW] {response.model_dump() if hasattr(response, 'model_dump') else response}")
+        except Exception as e:
+            logger.info(f"[DEEPSEEK RAW] unavailable: {e}")
+        try:
+            logger.info(f"[DEEPSEEK CHOICES] {response.choices}")
+        except Exception as e:
+            logger.info(f"[DEEPSEEK CHOICES] unavailable: {e}")
+
+        msg = response.choices[0].message if getattr(response, "choices", None) else None
+        try:
+            logger.info(f"[DEEPSEEK CONTENT] {getattr(msg, 'content', None)}")
+        except Exception as e:
+            logger.info(f"[DEEPSEEK CONTENT] unavailable: {e}")
+        try:
+            logger.info(f"[DEEPSEEK FINISH] {getattr(response.choices[0], 'finish_reason', None) if getattr(response, 'choices', None) else None}")
+        except Exception as e:
+            logger.info(f"[DEEPSEEK FINISH] unavailable: {e}")
+        try:
+            logger.info(f"[DEEPSEEK MESSAGE META] tool_calls={getattr(msg, 'tool_calls', None)} refusal={getattr(msg, 'refusal', None)}")
+        except Exception as e:
+            logger.info(f"[DEEPSEEK MESSAGE META] unavailable: {e}")
+
         contenido_json_str = response.choices[0].message.content.strip()
+        logger.info(f"[DEEPSEEK PARSE_INPUT] {contenido_json_str}")
         if contenido_json_str.startswith("```json"):
             contenido_json_str = contenido_json_str[7:-3].strip()
         elif contenido_json_str.startswith("```"):

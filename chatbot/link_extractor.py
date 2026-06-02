@@ -70,7 +70,7 @@ def extraer_codigo_internacional(mensaje: str) -> Optional[str]:
 
 
 
-def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str, Optional[str]]:
+def analizar_mensaje_para_link(mensaje: str, phone=None) -> Tuple[bool, Optional[dict], str, Optional[str]]:
     """
     Analiza el mensaje buscando URLs y busca la propiedad en la DB.
     Prioriza el campo de búsqueda según la plataforma detectada en la URL.
@@ -96,11 +96,28 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
         
         propiedad = None
         codigo_externo = None
+        debug_info = {
+            "url_original": url,
+            "url_clean": url_clean,
+            "repr_url_clean": repr(url_clean),
+            "len_url_clean": len(url_clean),
+            "platform": plataforma,
+        }
 
         # === PASO 2: RESOLUCIÓN DETERMINÍSTICA POR PLATAFORMA ===
         if plataforma == "Yapo":
             cod_yapo = extraer_codigo_yapo(url_clean)
             cod_ints = re.findall(r"\b(\d{9,10})\b", url_clean)
+            prop = coleccion.find_one({"publicaciones.yapo.url_yapo": url_clean})
+            debug_info["exact_match"] = bool(prop)
+            debug_info["regex_match"] = False
+            debug_info["urls_encontradas"] = []
+            if not prop and cod_yapo:
+                regex_q = {"publicaciones.yapo.url_yapo": {"$regex": re.escape(cod_yapo) + r"$", "$options": "i"}}
+                prop = coleccion.find_one(regex_q)
+                debug_info["regex_match"] = bool(prop)
+                if prop:
+                    debug_info["urls_encontradas"] = [prop.get("publicaciones", {}).get("yapo", {}).get("url_yapo") or prop.get("url_yapo")]
             candidatos = [
                 {"publicaciones.yapo.url_yapo": url_clean},
                 {"publicaciones.yapo.url_yapo": url_regex},
@@ -114,14 +131,21 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
                     {"codigo_internacional": cod_int},
                     {"publicaciones.codigo_internacional": cod_int},
                 {"publicaciones.yapo.codigo_internacional": cod_int},
-            ])
-            for i, q in enumerate([c for c in candidatos if c], 1):
-                print(f"[LINK_DEBUG] Yapo query #{i}: {q}")
-                propiedad = coleccion.find_one(q)
-                if propiedad:
-                    print(f"[LINK_DEBUG] Yapo match en query #{i} -> codigo={propiedad.get('codigo')}")
-                    break
+                ])
+            if not propiedad:
+                for i, q in enumerate([c for c in candidatos if c], 1):
+                    print(f"[LINK_DEBUG] Yapo query #{i}: {q}")
+                    propiedad = coleccion.find_one(q)
+                    if propiedad:
+                        print(f"[LINK_DEBUG] Yapo match en query #{i} -> codigo={propiedad.get('codigo')}")
+                        break
             codigo_externo = cod_yapo
+            if phone:
+                try:
+                    from .storage import actualizar_prospecto
+                    actualizar_prospecto(phone, {"debug_link": debug_info})
+                except Exception:
+                    pass
 
         elif plataforma == "Procasa":
             match_pc = re.search(r"/(\d+)$", url_clean)

@@ -215,7 +215,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     codigo_detectado = None
     
     # 1. Intentar detectar Link o Código en el mensaje actual
-    es_link, temp_prop, plataforma_origen, codigo_externo_raw = await _run_sync(analizar_mensaje_para_link, original_message)
+    es_link, temp_prop, plataforma_origen, codigo_externo_raw = await _run_sync(analizar_mensaje_para_link, original_message, phone)
     hay_url = bool(URL_RE.search(original_message))
     logger.info(
         f"[LINK_FLOW] phone={phone} hay_url={hay_url} plataforma={plataforma_origen} "

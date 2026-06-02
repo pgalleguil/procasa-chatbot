@@ -228,9 +228,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         nuevo_origen = plataforma_origen or "WhatsApp"
         codigo_detectado = str(propiedad.get("codigo"))
         codigo_externo = codigo_externo_raw
+        await _run_sync(actualizar_prospecto, phone, {"link_detectado": True})
     elif es_link and not temp_prop:
         nuevo_origen = plataforma_origen or "WhatsApp"
         codigo_externo = codigo_externo_raw
+        await _run_sync(actualizar_prospecto, phone, {"link_detectado": True})
 
     # 2. Si no viene un enlace, intentar detectar CODIGO INTERNACIONAL (9+ dígitos)
     if not propiedad and not hay_url:

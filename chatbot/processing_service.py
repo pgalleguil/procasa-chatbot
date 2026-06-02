@@ -46,6 +46,9 @@ class LeadProcessingService:
         Calcula cluster_id y zone para un lead, buscando datos en universo_cartera si es necesario.
         """
         prospecto = lead_doc.get("prospecto", {}) or {}
+        if prospecto.get("link_detectado") is True:
+            logger.info(f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} con link_detectado=True. Se omite classify.")
+            return {}
         if prospecto.get("link_pendiente") is True:
             logger.info(f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} con link pendiente sin match. Se omite auto-asignación.")
             return {}
@@ -294,6 +297,9 @@ class LeadProcessingService:
             }
             lead = db["leads"].find_one({"_id": query_id}, lead_projection)
             if not lead:
+                return False
+            if (lead.get("prospecto") or {}).get("link_detectado") is True:
+                logger.info(f"[PROCESS_SERVICE] Lead {lead.get('phone')} con link_detectado=True. Se omite process_lead.")
                 return False
 
             # --- AUTO-ARCHIVADO DE LEADS ANTIGUOS (Solicitado por usuario) ---

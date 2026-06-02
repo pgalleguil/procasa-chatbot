@@ -191,6 +191,10 @@ class CrmService:
     @staticmethod
     def assign_executive(phone: str, executive_name: str, method: str = "manual") -> bool:
         db = get_db()
+        lead = CrmService.get_lead(phone)
+        if lead and (lead.get("prospecto") or {}).get("link_detectado") is True:
+            logger.info(f"[CRM_SERVICE] Lead {phone} con link_detectado=True. No se asigna ejecutivo.")
+            return False
         from .lead_router import get_next_business_slot
         
         now_cl = datetime.now(CHILE_TZ)

@@ -17,8 +17,8 @@ def _model_name() -> str:
 
 
 MAX_TOKENS = {
-    "propietario": 600,
-    "prospecto": 500,
+    "propietario": 1500,
+    "prospecto": 1500,
 }
 
 
@@ -29,8 +29,8 @@ def generar_respuesta(messages: list, tipo: str = "prospecto") -> str:
             model=_model_name(),
             messages=messages,
             temperature=Config.DEEPSEEK_TEMPERATURE,
-            max_tokens=MAX_TOKENS.get(tipo, 500),
-            timeout=30,
+            max_tokens=MAX_TOKENS.get(tipo, 1500),
+            timeout=60,
         )
         contenido = response.choices[0].message.content.strip()
         print("[DEEPSEEK] Respuesta recibida correctamente")

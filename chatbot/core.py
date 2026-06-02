@@ -188,6 +188,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     updates_datos = {}
     
     # A) EXTRACCIÓN PROACTIVA DE DATOS PERSONALES
+    # Whitelist para evitar que el AI sobreescriba campos críticos
+    allowed_updates = {"email", "rut", "nombre"}
+    
     if not prospecto_actual.get("email"):
         nuevo_email = extraer_email(original_message)
         if nuevo_email: updates_datos["email"] = nuevo_email
@@ -217,6 +220,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     nuevo_origen = None
     codigo_externo = None  # Solo para trazabilidad, no para routing si no hay match
     codigo_detectado = None
+
+    logger.info(
+        f"[PROPERTY_TRACE] origen=PRE_LINK_RESOLUTION trace={trace_id} phone={phone} "
+        f"prospecto.codigo={prospecto_actual.get('codigo')} prospecto.comuna={prospecto_actual.get('comuna')}"
+    )
     
     # 1. Intentar detectar Link o Código en el mensaje actual
     es_link, temp_prop, plataforma_origen, codigo_externo_raw = await _run_sync(analizar_mensaje_para_link, original_message, phone, trace_id)
@@ -226,12 +234,25 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         f"temp_prop={(temp_prop.get('codigo') if temp_prop else None)} "
         f"codigo_externo_raw={codigo_externo_raw} collection={Config.COLLECTION_NAME}"
     )
+    logger.info(
+        f"[PROPERTY_TRACE] origen=LINK_EXTRACTOR_RESULT trace={trace_id} phone={phone} "
+        f"es_link={es_link} temp_prop_codigo={(temp_prop.get('codigo') if temp_prop else None)} "
+        f"temp_prop_comuna={(temp_prop.get('comuna') if temp_prop else None)}"
+    )
 
     if es_link and temp_prop:
+        _codigo_antes = prospecto_actual.get('codigo')
         propiedad = temp_prop
         nuevo_origen = plataforma_origen or "WhatsApp"
         codigo_detectado = str(propiedad.get("codigo"))
         codigo_externo = codigo_externo_raw
+        logger.info(
+            f"[PROPERTY_BEFORE] trace={trace_id} phone={phone} variable=propiedad valor_anterior={_codigo_antes}"
+        )
+        logger.info(
+            f"[PROPERTY_AFTER] trace={trace_id} phone={phone} variable=propiedad "
+            f"valor_nuevo={codigo_detectado} comuna={propiedad.get('comuna')} origen=LINK_EXTRACTOR"
+        )
         await _run_sync(actualizar_prospecto, phone, {"link_detectado": True}, trace_id)
     elif es_link and not temp_prop:
         nuevo_origen = plataforma_origen or "WhatsApp"
@@ -243,6 +264,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         cod_int = extraer_codigo_internacional(original_message)
         if cod_int:
             db_props = await _run_sync(get_db)
+            _antes_int = prospecto_actual.get('codigo')
             propiedad = await _run_sync(
                 db_props[Config.COLLECTION_NAME].find_one,
                 {
@@ -255,6 +277,13 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             if propiedad:
                 codigo_detectado = str(propiedad.get("codigo"))
                 nuevo_origen = "WhatsApp (Int Code)"
+                logger.info(
+                    f"[PROPERTY_BEFORE] trace={trace_id} phone={phone} variable=propiedad valor_anterior={_antes_int}"
+                )
+                logger.info(
+                    f"[PROPERTY_AFTER] trace={trace_id} phone={phone} variable=propiedad "
+                    f"valor_nuevo={codigo_detectado} comuna={propiedad.get('comuna')} origen=CODIGO_INTERNACIONAL"
+                )
 
     # 3. Si no viene un enlace, buscar código numérico explícito corto (4-6 dígitos)
     if not propiedad and not hay_url:
@@ -262,6 +291,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         if match:
             cod = match.group(1)
             db_props = await _run_sync(get_db)
+            _antes_short = prospecto_actual.get('codigo')
             propiedad = await _run_sync(
                 db_props[Config.COLLECTION_NAME].find_one,
                 {"$or": [
@@ -275,6 +305,13 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 codigo_detectado = str(propiedad.get("codigo"))
                 if not prospecto_actual.get("origen"):
                     nuevo_origen = "WhatsApp"
+                logger.info(
+                    f"[PROPERTY_BEFORE] trace={trace_id} phone={phone} variable=propiedad valor_anterior={_antes_short}"
+                )
+                logger.info(
+                    f"[PROPERTY_AFTER] trace={trace_id} phone={phone} variable=propiedad "
+                    f"valor_nuevo={codigo_detectado} comuna={propiedad.get('comuna')} origen=CODIGO_CORTO"
+                )
 
     # Si hay enlace pero no encontramos propiedad, no heredamos código histórico.
     if hay_url and not propiedad:
@@ -296,6 +333,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         })
         return respuesta_link_pendiente
     elif propiedad:
+        # NOTA: "codigo": None if hay_url else ... → el None es filtrado por actualizar_prospecto (storage.py:224)
+        # Se mantiene el campo solo por completitud lógica, no escribe None a Mongo.
         await _run_sync(actualizar_prospecto, phone, {"link_pendiente": False, "codigo": None if hay_url else prospecto_actual.get("codigo")}, trace_id)
         logger.info(f"[LINK_FLOW] trace={trace_id} phone={phone} propiedad encontrada codigo={codigo_detectado} origen={nuevo_origen}")
 
@@ -311,9 +350,17 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "origen": nuevo_origen,  # Siempre actualiza origen si viene de link
             "link_pendiente": False
         }
+        logger.info(
+            f"[PROPERTY_BEFORE] trace={trace_id} phone={phone} variable=prospecto.codigo "
+            f"valor_anterior={prospecto_actual.get('codigo')}"
+        )
         logger.info(f"[LINK_FLOW] trace={trace_id} phone={phone} actualizando prospecto.codigo={codigo_detectado} origen={nuevo_origen}")
         await _run_sync(actualizar_prospecto, phone, updates_prop, trace_id)
-        
+        logger.info(
+            f"[PROPERTY_AFTER] trace={trace_id} phone={phone} variable=prospecto.codigo "
+            f"valor_nuevo={codigo_detectado} comuna={propiedad.get('comuna')} origen=LINK_FLOW_FINAL"
+        )
+
         # Registrar para anti-repetición en RAG
         await _run_sync(registrar_propiedades_vistas, phone, [codigo_detectado])
 
@@ -480,16 +527,39 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # =======================================================
     # 6. RESPUESTA CON GROK (Generación + Extracción)
     # =======================================================
+    # CORRECCIÓN: Recargar prospecto_actual para reflejar el codigo ya guardado (16479)
+    # y para que el log [DEEPSEEK PROPERTY_PAYLOAD] sea exacto y no muestre el código anterior.
+    prospecto_actual = await _run_sync(obtener_prospecto, phone) or {}
+    logger.info(
+        f"[PROPERTY_TRACE] origen=PRE_DEEPSEEK trace={trace_id} phone={phone} "
+        f"prospecto.codigo={prospecto_actual.get('codigo')} prospecto.comuna={prospecto_actual.get('comuna')}"
+    )
+
+    # Campos que el modelo IA tiene PROHIBIDO sobrescribir (datos resueltos por el sistema)
+    _CAMPOS_BLOQUEADOS_IA = {"codigo", "comuna", "tipo", "operacion", "precio_uf", "link_detectado", "link_pendiente", "origen", "codigo_yapo", "codigo_mercadolibre"}
+
     try:
         resultado_grok = await _run_sync(generar_respuesta_estructurada, messages_para_grok, prospecto_actual)
-        
+
         intencion = resultado_grok["intencion"]
         respuesta = resultado_grok["respuesta_bot"]
         datos_extraidos = resultado_grok.get("datos_extraidos", {})
-        
-        # Guardar nuevos datos detectados por IA
+
+        # Guardar nuevos datos detectados por IA — SOLO campos permitidos
         if datos_extraidos:
-            await _run_sync(actualizar_prospecto, phone, datos_extraidos)
+            datos_seguros = {k: v for k, v in datos_extraidos.items() if k not in _CAMPOS_BLOQUEADOS_IA}
+            datos_bloqueados = {k: v for k, v in datos_extraidos.items() if k in _CAMPOS_BLOQUEADOS_IA}
+            if datos_bloqueados:
+                logger.warning(
+                    f"[PROPERTY_GUARD] trace={trace_id} phone={phone} "
+                    f"IA intentó sobrescribir campos bloqueados: {datos_bloqueados} — BLOQUEADO"
+                )
+            if datos_seguros:
+                logger.info(
+                    f"[PROPERTY_TRACE] origen=DATOS_EXTRAIDOS_IA trace={trace_id} phone={phone} "
+                    f"datos_seguros={datos_seguros}"
+                )
+                await _run_sync(actualizar_prospecto, phone, datos_seguros)
 
     except Exception as e:
         logger.error(f"Error Grok: {e}")

@@ -22,6 +22,10 @@ _observability_metrics = {"mongo_sync_on_loop": 0, "event_loop_blocked": 0}
 _event_loop_blocked_ts = deque(maxlen=1000)
 
 
+async def run_in_threadpool(func, *args, **kwargs):
+    return await asyncio.to_thread(func, *args, **kwargs)
+
+
 def observability_mark(kind: str, **kwargs):
     with _observability_lock:
         if kind in _observability_metrics:

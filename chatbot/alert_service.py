@@ -3,7 +3,7 @@ import json
 import asyncio
 import pytz
 from datetime import datetime, timedelta
-from .storage import obtener_prospecto, actualizar_prospecto, save_pending_notification
+from .storage import obtener_prospecto, actualizar_prospecto, save_pending_notification, run_in_threadpool
 from .lead_router import find_responsible_executive, should_send_now, format_whatsapp_template
 from .lead_router import find_responsible_executive, should_send_now, format_whatsapp_template
 from .constants import CHILE_TZ
@@ -111,12 +111,13 @@ async def send_alert_once(
              exec_name = assigned_exec
              # Intentamos obtener el teléfono de ese ejecutivo existente
              from .lead_router import get_executive_phone
-             exec_phone = get_executive_phone(assigned_exec)
+             exec_phone = await run_in_threadpool(get_executive_phone, assigned_exec)
              is_new_assignment = False
              logger.info(f"[ALERT] Lead ya asignado a {exec_name}. Manteniendo asignación.")
         else:
              logger.info(f"Asignando lead en base a propiedad {lead_data['property_code']}")
-             exec_name, exec_phone, assignment_type = find_responsible_executive(
+             exec_name, exec_phone, assignment_type = await run_in_threadpool(
+                 find_responsible_executive,
                  property_code=lead_data["property_code"],
                  lead_phone=phone,
                  lead_name=lead_data.get("nombre")
@@ -138,12 +139,17 @@ async def send_alert_once(
                 now_cl = datetime.now(CHILE_TZ)
                 assigned_at = get_next_business_slot(now_cl)
                 
-                update_lead_state(phone, metadata={
-                    "ejecutivo_asignado": exec_name,
-                    "prospecto.ejecutivo": exec_name,
-                    "lifecycle.assigned_at": assigned_at.isoformat(),
-                    "metodo_asignacion": "LeadRouter"
-                })
+                await run_in_threadpool(
+                    update_lead_state,
+                    phone,
+                    None,
+                    {
+                        "ejecutivo_asignado": exec_name,
+                        "prospecto.ejecutivo": exec_name,
+                        "lifecycle.assigned_at": assigned_at.isoformat(),
+                        "metodo_asignacion": "LeadRouter"
+                    }
+                )
                 
                 # Log de auditoría inmutable
                 log_event(phone, EventType.ASSIGNMENT, "system", {
@@ -161,7 +167,7 @@ async def send_alert_once(
         # se encargará de enviarla en el momento correcto, asegurando persistencia si el servidor se reinicia.
         
         # Marcamos en DB para evitar spam (idempotencia local del servicio de alertas)
-        mark_alert_sent(phone, lead_type)
+        await run_in_threadpool(mark_alert_sent, phone, lead_type)
 
         logger.info(f"[ALERT] Guardando notificación persistente para {exec_name} sobre lead {phone} (Prop: {lead_data['property_code']}).")
         
@@ -170,7 +176,7 @@ async def send_alert_once(
         lead_data["target_name"] = exec_name
         lead_data["is_new_assignment"] = is_new_assignment
         
-        save_pending_notification(lead_data)
+        await run_in_threadpool(save_pending_notification, lead_data)
         
         # Opcional: Si queremos mantener un pequeño delay antes de que el loop lo procese, 
         # podríamos agregar un campo 'send_after' a save_pending_notification, 

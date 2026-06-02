@@ -23,7 +23,7 @@ from pathlib import Path
 import uvicorn
 import json
 import pytz # Importante para la hora local
-from chatbot.storage import observability_mark, observability_snapshot_and_reset, observability_event_loop_blocked_recent
+from chatbot.storage import observability_mark, observability_snapshot_and_reset, observability_event_loop_blocked_recent, run_in_threadpool
 
 # ========================= THREAD POOL CONTROLADO =========================
 # Pool separado para request web (evita que tareas batch bloqueen respuestas HTTP).
@@ -1622,7 +1622,8 @@ async def process_pending_leads_loop():
                             p_code = lead_data.get("property_code") or lead_data.get("prospecto", {}).get("codigo")
                             if p_code:
                                 logger.info(f"[BACKGROUND] Re-enrutando lead {lead_phone} por falta de destino válido...")
-                                new_exec, new_phone, assignment_type = find_responsible_executive(
+                                new_exec, new_phone, assignment_type = await run_in_threadpool(
+                                    find_responsible_executive,
                                     property_code=p_code,
                                     lead_phone=lead_phone,
                                     lead_name=lead_data.get("nombre")
@@ -1818,7 +1819,7 @@ async def check_scheduled_tasks_loop():
                         if not ejecutivo or ejecutivo in ["No asignado", "Sin Asignar"]:
                             continue
                             
-                        exec_phone = get_executive_phone(ejecutivo)
+                        exec_phone = await run_in_threadpool(get_executive_phone, ejecutivo)
                         if not exec_phone or exec_phone == "+56900000000":
                             continue
                             

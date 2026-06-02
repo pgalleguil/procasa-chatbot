@@ -37,7 +37,7 @@ async def send_whatsapp_message(number: str, text: str) -> bool:
 
     try:
         # Intento 1
-        resp = requests.post(url, json=payload, headers=headers, timeout=15)
+        resp = await asyncio.to_thread(requests.post, url, json=payload, headers=headers, timeout=15)
         if resp.status_code == 200 and resp.json().get("success"):
             logger.info(f"Enviado correctamente a {clean}")
             return True
@@ -49,7 +49,7 @@ async def send_whatsapp_message(number: str, text: str) -> bool:
     # Reintento tras espera
     await asyncio.sleep(2)
     try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=15)
+        resp = await asyncio.to_thread(requests.post, url, json=payload, headers=headers, timeout=15)
         if resp.status_code == 200:
             logger.info(f"Enviado en reintento a {clean}")
             return True

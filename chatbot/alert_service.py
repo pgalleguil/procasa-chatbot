@@ -56,7 +56,7 @@ def mark_alert_sent(phone: str, lead_type: str) -> None:
     actualizar_prospecto(phone, {"alerts_sent": alerts})
 
 
-async def send_alert_once(
+def _send_alert_once_sync(
     phone: str,
     lead_type: str,
     lead_score: int,
@@ -111,13 +111,12 @@ async def send_alert_once(
              exec_name = assigned_exec
              # Intentamos obtener el teléfono de ese ejecutivo existente
              from .lead_router import get_executive_phone
-             exec_phone = await run_in_threadpool(get_executive_phone, assigned_exec)
+             exec_phone = get_executive_phone(assigned_exec)
              is_new_assignment = False
              logger.info(f"[ALERT] Lead ya asignado a {exec_name}. Manteniendo asignación.")
         else:
              logger.info(f"Asignando lead en base a propiedad {lead_data['property_code']}")
-             exec_name, exec_phone, assignment_type = await run_in_threadpool(
-                 find_responsible_executive,
+             exec_name, exec_phone, assignment_type = find_responsible_executive(
                  property_code=lead_data["property_code"],
                  lead_phone=phone,
                  lead_name=lead_data.get("nombre")
@@ -139,8 +138,7 @@ async def send_alert_once(
                 now_cl = datetime.now(CHILE_TZ)
                 assigned_at = get_next_business_slot(now_cl)
                 
-                await run_in_threadpool(
-                    update_lead_state,
+                update_lead_state(
                     phone,
                     None,
                     {
@@ -167,7 +165,7 @@ async def send_alert_once(
         # se encargará de enviarla en el momento correcto, asegurando persistencia si el servidor se reinicia.
         
         # Marcamos en DB para evitar spam (idempotencia local del servicio de alertas)
-        await run_in_threadpool(mark_alert_sent, phone, lead_type)
+        mark_alert_sent(phone, lead_type)
 
         logger.info(f"[ALERT] Guardando notificación persistente para {exec_name} sobre lead {phone} (Prop: {lead_data['property_code']}).")
         
@@ -176,7 +174,7 @@ async def send_alert_once(
         lead_data["target_name"] = exec_name
         lead_data["is_new_assignment"] = is_new_assignment
         
-        await run_in_threadpool(save_pending_notification, lead_data)
+        save_pending_notification(lead_data)
         
         # Opcional: Si queremos mantener un pequeño delay antes de que el loop lo procese, 
         # podríamos agregar un campo 'send_after' a save_pending_notification, 
@@ -188,3 +186,28 @@ async def send_alert_once(
     finally:
         # Liberar el lock siempre
         actively_processing_alerts.pop((phone, lead_type), None)
+
+
+async def send_alert_once(
+    phone: str,
+    lead_type: str,
+    lead_score: int,
+    criteria: dict,
+    last_response: str,
+    last_user_msg: str,
+    full_history: list,
+    window_minutes: int = 60, # MODIFICADO: 60 minutos para evitar duplicidad si el cliente sigue hablando
+    lead_type_label: str | None = None
+):
+    return await asyncio.to_thread(
+        _send_alert_once_sync,
+        phone,
+        lead_type,
+        lead_score,
+        criteria,
+        last_response,
+        last_user_msg,
+        full_history,
+        window_minutes,
+        lead_type_label
+    )

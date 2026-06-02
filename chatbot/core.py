@@ -275,11 +275,22 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         codigo_detectado = None
         await _run_sync(actualizar_prospecto, phone, {
             "origen": plataforma_origen or prospecto_actual.get("origen") or "WhatsApp",
-            "link_pendiente": True
+            "link_pendiente": True,
+            "codigo": None
         })
         logger.info(f"[LINK_FLOW] phone={phone} link sin match. Marcado link_pendiente=True")
+        respuesta_link_pendiente = (
+            "Gracias por compartir el enlace. No pude identificar la propiedad en este momento. "
+            "Si quieres, envíame el enlace nuevamente o dime qué tipo de propiedad buscas y te ayudo."
+        )
+        await _run_sync(guardar_mensaje, phone, "assistant", respuesta_link_pendiente, {
+            "tipo": "link_no_encontrado",
+            "intencion": "consulta_general",
+            "lead_intent": LeadIntent.ASK_INFO
+        })
+        return respuesta_link_pendiente
     elif propiedad:
-        await _run_sync(actualizar_prospecto, phone, {"link_pendiente": False})
+        await _run_sync(actualizar_prospecto, phone, {"link_pendiente": False, "codigo": None if hay_url else prospecto_actual.get("codigo")})
         logger.info(f"[LINK_FLOW] phone={phone} propiedad encontrada codigo={codigo_detectado} origen={nuevo_origen}")
 
     # Actualizar prospecto si encontramos propiedad nueva

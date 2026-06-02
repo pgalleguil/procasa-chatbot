@@ -58,13 +58,22 @@ class LeadProcessingService:
         
         # 2. Si falta comuna pero tenemos código, buscar en universo_cartera
         property_code = prospecto.get("codigo") or lead_doc.get("codigo")
+        logger.info(
+            f"[PROCESS_SERVICE] phone={lead_doc.get('phone')} collection={Config.COLLECTION_NAME} "
+            f"prospecto.codigo={prospecto.get('codigo')} lead.codigo={lead_doc.get('codigo')}"
+        )
         
         # [AUTOMATION] Si no hay código, intentar extraerlo de los mensajes (historial)
         if not property_code and lead_doc.get("messages"):
             logger.info(f"[PROCESS_SERVICE] Intentando RE-IDENTIFICAR lead {lead_doc.get('phone')} desde historial...")
             # Unimos los últimos mensajes para buscar links/códigos
             all_text = " ".join([m.get("content", "") for m in lead_doc.get("messages", [])[-5:]])
+            logger.info(f"[PROCESS_SERVICE] historial_text={all_text}")
             found_link, prop_match, platform, code_raw = analizar_mensaje_para_link(all_text)
+            logger.info(
+                f"[PROCESS_SERVICE] found_link={found_link} platform={platform} "
+                f"prop_match={(prop_match.get('codigo') if prop_match else None)} code_raw={code_raw}"
+            )
             
             if found_link and prop_match:
                 property_code = str(prop_match.get("codigo"))
@@ -80,6 +89,7 @@ class LeadProcessingService:
                             {"publicaciones.codigo_internacional": c_int}
                         ]
                     })
+                    logger.info(f"[PROCESS_SERVICE] query codigo_internacional={c_int} result={(prop_int.get('codigo') if prop_int else None)}")
                     if prop_int:
                         property_code = str(prop_int.get("codigo"))
                         logger.info(f"[PROCESS_SERVICE] ¡Match por Cód Internacional en historial! Código: {property_code}")

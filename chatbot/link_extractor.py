@@ -91,6 +91,8 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
         plataforma = detectar_plataforma(url_clean)
         
         print(f"\n[INFO] Plataforma detectada: {plataforma} | Buscando en {Config.COLLECTION_NAME}")
+        print(f"[LINK_DEBUG] URL recibida: {url_clean}")
+        print(f"[LINK_DEBUG] URL normalizada: {url_norm}")
         
         propiedad = None
         codigo_externo = None
@@ -100,8 +102,10 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
             cod_yapo = extraer_codigo_yapo(url_clean)
             cod_ints = re.findall(r"\b(\d{9,10})\b", url_clean)
             candidatos = [
+                {"publicaciones.yapo.url_yapo": url_clean},
                 {"publicaciones.yapo.url_yapo": url_regex},
                 {"url_yapo": url_regex},
+                {"url_yapo": url_clean},
                 {"publicaciones.yapo.codigo_yapo": cod_yapo} if cod_yapo else None,
                 {"codigo_yapo": cod_yapo} if cod_yapo else None,
             ]
@@ -109,9 +113,14 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
                 candidatos.extend([
                     {"codigo_internacional": cod_int},
                     {"publicaciones.codigo_internacional": cod_int},
-                    {"publicaciones.yapo.codigo_internacional": cod_int},
-                ])
-            propiedad = next((coleccion.find_one(q) for q in candidatos if q), None)
+                {"publicaciones.yapo.codigo_internacional": cod_int},
+            ])
+            for i, q in enumerate([c for c in candidatos if c], 1):
+                print(f"[LINK_DEBUG] Yapo query #{i}: {q}")
+                propiedad = coleccion.find_one(q)
+                if propiedad:
+                    print(f"[LINK_DEBUG] Yapo match en query #{i} -> codigo={propiedad.get('codigo')}")
+                    break
             codigo_externo = cod_yapo
 
         elif plataforma == "Procasa":
@@ -121,44 +130,70 @@ def analizar_mensaje_para_link(mensaje: str) -> Tuple[bool, Optional[dict], str,
             if cod_path:
                 candidatos.extend([
                     {"codigo": cod_path},
+                    {"codigo": cod_path},
                     {"codigo": safe_int_conversion(cod_path)},
+                    {"publicaciones.procasa.url_procasa": url_clean},
                     {"publicaciones.procasa.url_procasa": url_regex},
                 ])
-            propiedad = next((coleccion.find_one(q) for q in candidatos if q), None)
+            for i, q in enumerate([c for c in candidatos if c], 1):
+                print(f"[LINK_DEBUG] Procasa query #{i}: {q}")
+                propiedad = coleccion.find_one(q)
+                if propiedad:
+                    print(f"[LINK_DEBUG] Procasa match en query #{i} -> codigo={propiedad.get('codigo')}")
+                    break
             codigo_externo = cod_path
 
         elif plataforma == "MercadoLibre":
             codigo_ml = extraer_codigo_mercadolibre(url_clean)
             candidatos = [
+                {"publicaciones.portal_inmobiliario.url_mercado_libre": url_clean},
                 {"publicaciones.portal_inmobiliario.url_mercado_libre": url_regex},
                 {"codigo_mercadolibre": codigo_ml} if codigo_ml else None,
                 {"publicaciones.portal_inmobiliario.codigo_pi": codigo_ml} if codigo_ml else None,
                 {"codigo_pi": codigo_ml} if codigo_ml else None,
             ]
-            propiedad = next((coleccion.find_one(q) for q in candidatos if q), None)
+            for i, q in enumerate([c for c in candidatos if c], 1):
+                print(f"[LINK_DEBUG] ML query #{i}: {q}")
+                propiedad = coleccion.find_one(q)
+                if propiedad:
+                    print(f"[LINK_DEBUG] ML match en query #{i} -> codigo={propiedad.get('codigo')}")
+                    break
             codigo_externo = codigo_ml
 
         elif plataforma == "PortalInmobiliario":
             codigo_pi = extraer_codigo_mercadolibre(url_clean)
             candidatos = [
+                {"publicaciones.portal_inmobiliario.url_pi": url_clean},
                 {"publicaciones.portal_inmobiliario.url_pi": url_regex},
                 {"publicaciones.portal_inmobiliario.codigo_pi": codigo_pi} if codigo_pi else None,
                 {"codigo_pi": codigo_pi} if codigo_pi else None,
                 {"codigo_mercadolibre": codigo_pi} if codigo_pi else None,
             ]
-            propiedad = next((coleccion.find_one(q) for q in candidatos if q), None)
+            for i, q in enumerate([c for c in candidatos if c], 1):
+                print(f"[LINK_DEBUG] PI query #{i}: {q}")
+                propiedad = coleccion.find_one(q)
+                if propiedad:
+                    print(f"[LINK_DEBUG] PI match en query #{i} -> codigo={propiedad.get('codigo')}")
+                    break
             codigo_externo = codigo_pi
 
         elif plataforma == "TocToc":
             match_tt = re.search(r"/([a-f0-9]{32,})", url_lower)
             tt_id = match_tt.group(1) if match_tt else None
             candidatos = [
+                {"publicaciones.toctoc.url_toctoc": url_clean},
                 {"publicaciones.toctoc.url_toctoc": url_regex},
+                {"toctoc.enlace": url_clean},
                 {"toctoc.enlace": url_regex},
                 {"publicaciones.toctoc.url_toctoc": {"$regex": tt_id}} if tt_id else None,
                 {"toctoc.enlace": {"$regex": tt_id}} if tt_id else None,
             ]
-            propiedad = next((coleccion.find_one(q) for q in candidatos if q), None)
+            for i, q in enumerate([c for c in candidatos if c], 1):
+                print(f"[LINK_DEBUG] TocToc query #{i}: {q}")
+                propiedad = coleccion.find_one(q)
+                if propiedad:
+                    print(f"[LINK_DEBUG] TocToc match en query #{i} -> codigo={propiedad.get('codigo')}")
+                    break
             codigo_externo = tt_id
 
         elif plataforma == "Otro Portal":

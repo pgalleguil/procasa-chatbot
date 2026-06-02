@@ -217,6 +217,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # 1. Intentar detectar Link o Código en el mensaje actual
     es_link, temp_prop, plataforma_origen, codigo_externo_raw = await _run_sync(analizar_mensaje_para_link, original_message)
     hay_url = bool(URL_RE.search(original_message))
+    logger.info(
+        f"[LINK_FLOW] phone={phone} hay_url={hay_url} plataforma={plataforma_origen} "
+        f"temp_prop={(temp_prop.get('codigo') if temp_prop else None)} "
+        f"codigo_externo_raw={codigo_externo_raw} collection={Config.COLLECTION_NAME}"
+    )
 
     if es_link and temp_prop:
         propiedad = temp_prop
@@ -272,8 +277,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "origen": plataforma_origen or prospecto_actual.get("origen") or "WhatsApp",
             "link_pendiente": True
         })
+        logger.info(f"[LINK_FLOW] phone={phone} link sin match. Marcado link_pendiente=True")
     elif propiedad:
         await _run_sync(actualizar_prospecto, phone, {"link_pendiente": False})
+        logger.info(f"[LINK_FLOW] phone={phone} propiedad encontrada codigo={codigo_detectado} origen={nuevo_origen}")
 
     # Actualizar prospecto si encontramos propiedad nueva
     if propiedad and codigo_detectado:
@@ -287,6 +294,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "origen": nuevo_origen,  # Siempre actualiza origen si viene de link
             "link_pendiente": False
         }
+        logger.info(f"[LINK_FLOW] phone={phone} actualizando prospecto.codigo={codigo_detectado} origen={nuevo_origen}")
         await _run_sync(actualizar_prospecto, phone, updates_prop)
         
         # Registrar para anti-repetición en RAG
@@ -299,6 +307,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             ext_updates["codigo_yapo"] = codigo_externo
         elif plataforma_origen in ["MercadoLibre", "PortalInmobiliario"]:
             ext_updates["codigo_mercadolibre"] = codigo_externo
+        logger.info(f"[LINK_FLOW] phone={phone} sobrescritura externa={ext_updates}")
         await _run_sync(actualizar_prospecto, phone, ext_updates)
 
     # --- NOTIFICACIÓN POR PROPIEDAD DESCONOCIDA ---

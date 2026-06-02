@@ -10,12 +10,41 @@ from config import Config
 from typing import List, Dict, Optional
 from .constants import PipelineStage, InteractionType, EventType, CHILE_TZ
 import logging
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
 _mongo_client = None
 _mongo_forensics_patched = False
 _mongo_log_last_ts = {}
+_observability_lock = threading.Lock()
+_observability_metrics = {"mongo_sync_on_loop": 0, "event_loop_blocked": 0}
+_event_loop_blocked_ts = deque(maxlen=1000)
+
+
+def observability_mark(kind: str, **kwargs):
+    with _observability_lock:
+        if kind in _observability_metrics:
+            _observability_metrics[kind] += 1
+        if kind == "event_loop_blocked":
+            _event_loop_blocked_ts.append(time.time())
+    return True
+
+
+def observability_snapshot_and_reset():
+    with _observability_lock:
+        snap = dict(_observability_metrics)
+        _observability_metrics["mongo_sync_on_loop"] = 0
+        _observability_metrics["event_loop_blocked"] = 0
+        return snap
+
+
+def observability_event_loop_blocked_recent(count_seconds: int = 10) -> int:
+    now = time.time()
+    with _observability_lock:
+        while _event_loop_blocked_ts and (now - _event_loop_blocked_ts[0]) > count_seconds:
+            _event_loop_blocked_ts.popleft()
+        return len(_event_loop_blocked_ts)
 
 def _should_rate_log(key: str, every_seconds: float) -> bool:
     now = time.time()
@@ -55,9 +84,16 @@ def _patch_mongo_forensics():
                     except RuntimeError:
                         in_event_loop = False
                     if in_event_loop and (not from_motor):
+                        observability_mark("mongo_sync_on_loop")
                         logger.error(
                             f"[MONGO_SYNC_ON_EVENT_LOOP] op={name} col={self.name} caller={caller} "
                             f"thread={thread_name}:{thread_id} stack={stack_hint}"
+                        )
+                        logger.critical(
+                            f"[CRITICAL] [ASYNC_VIOLATION] type=mongo_sync_on_event_loop "
+                            f"event_loop_blocked=none lag_ms=none op={name} collection={self.name} "
+                            f"caller={caller} trace=none impact=HIGH action_required=true "
+                            f"async_context=true thread_type=main safe=false"
                         )
                     try:
                         return fn(self, *args, **kwargs)
@@ -74,6 +110,11 @@ def _patch_mongo_forensics():
                                 f"[MONGO_OP] op={name} col={self.name} dur={dt_ms:.1f}ms "
                                 f"thread={thread_name}:{thread_id} caller={caller} stack={stack_hint} "
                                 f"in_event_loop={str(in_event_loop).lower()} from_motor={str(from_motor).lower()}"
+                            )
+                            logger.info(
+                                f"[MONGO_OP_META] async_context={str(in_event_loop).lower()} "
+                                f"thread_type={'main' if thread_name.lower().startswith('main') else 'threadpool'} "
+                                f"safe={str((not in_event_loop) or from_motor).lower()} from_motor={str(from_motor).lower()}"
                             )
                 _wrapped.__forensics_wrapped__ = True
                 return _wrapped

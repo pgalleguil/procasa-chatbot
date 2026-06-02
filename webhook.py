@@ -23,6 +23,7 @@ from pathlib import Path
 import uvicorn
 import json
 import pytz # Importante para la hora local
+from chatbot.storage import observability_mark, observability_snapshot_and_reset, observability_event_loop_blocked_recent
 
 # ========================= THREAD POOL CONTROLADO =========================
 # Pool separado para request web (evita que tareas batch bloqueen respuestas HTTP).
@@ -233,6 +234,7 @@ import uuid
 async def advanced_perf_middleware(request: Request, call_next):
     request_id = str(uuid.uuid4())[:8]
     start_time = time.time()
+    request.state.trace_id = request_id
     
     # Extract user if available (lightweight estimation)
     user = "anon"
@@ -262,6 +264,19 @@ async def advanced_perf_middleware(request: Request, call_next):
                 
         response.headers["X-Process-Time"] = str(duration_ms)
         response.headers["X-Request-ID"] = request_id
+        try:
+            snap = observability_snapshot_and_reset()
+            status_level = "OK" if snap["mongo_sync_on_loop"] == 0 and snap["event_loop_blocked"] == 0 else "DEGRADED"
+            if snap["mongo_sync_on_loop"] > 5 or snap["event_loop_blocked"] > 5:
+                status_level = "CRITICAL"
+            logger.info(
+                f"[REQUEST_SUMMARY]\ntrace={request_id}\n"
+                f"mongo_calls=none\nmongo_sync_violations={snap['mongo_sync_on_loop']}\n"
+                f"event_loop_blocked={snap['event_loop_blocked']}\n"
+                f"duration_ms={duration_ms:.0f}\nstatus={status_level}"
+            )
+        except Exception:
+            logger.exception(f"[REQUEST_SUMMARY] trace={request_id} error=summary_failed")
         return response
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
@@ -2264,7 +2279,18 @@ async def event_loop_monitor_loop():
             lag_ms = (duration - 1.0) * 1000
             
             if lag_ms > 1000:
+                observability_mark("event_loop_blocked")
                 logger.error(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
+                logger.critical(
+                    f"[CRITICAL] [ASYNC_VIOLATION] type=event_loop_blocked lag_ms={lag_ms:.0f} "
+                    f"op=none collection=none caller=event_loop_monitor_loop trace=none "
+                    f"impact=HIGH action_required=true async_context=true thread_type=main safe=false"
+                )
+                recent = observability_event_loop_blocked_recent(10)
+                if recent > 3:
+                    logger.critical(
+                        f"[CRITICAL] [EVENT_LOOP_SATURATED] count={recent} window=10s action=INVESTIGATE_BLOCKING_CALLS"
+                    )
                 # Dump completo solo en bloqueos severos para evitar ruido excesivo.
                 if lag_ms > 5000:
                     now = time.time()
@@ -2284,11 +2310,29 @@ async def event_loop_monitor_loop():
                         )
             elif lag_ms > 250:
                 logger.warning(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
+                observability_mark("event_loop_blocked")
+                logger.critical(
+                    f"[CRITICAL] [ASYNC_VIOLATION] type=event_loop_blocked lag_ms={lag_ms:.0f} "
+                    f"op=none collection=none caller=event_loop_monitor_loop trace=none "
+                    f"impact=HIGH action_required=true async_context=true thread_type=main safe=false"
+                )
         except asyncio.CancelledError:
             break
         except Exception as e:
             logger.error(f"[EVENT_LOOP_MONITOR] Error: {e}")
             await asyncio.sleep(5)
+        if int(time.time()) % 60 == 0:
+            try:
+                snap = observability_snapshot_and_reset()
+                status_level = "OK" if snap["mongo_sync_on_loop"] == 0 and snap["event_loop_blocked"] == 0 else "DEGRADED"
+                if snap["mongo_sync_on_loop"] > 5 or snap["event_loop_blocked"] > 5:
+                    status_level = "CRITICAL"
+                logger.info(
+                    f"[HEALTH_SUMMARY]\nmongo_sync_on_loop={snap['mongo_sync_on_loop']}\n"
+                    f"event_loop_blocked={snap['event_loop_blocked']}\nstatus={status_level}"
+                )
+            except Exception:
+                logger.exception("[HEALTH_SUMMARY] error=failed_to_emit")
 
 async def threadpool_forensics_loop():
     """Forensics de threadpools: tamaño, ocupación aproximada y cola."""

@@ -157,7 +157,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     es_prop, nombre_prop = await _run_sync(es_propietario, phone)
     if es_prop:
         prompt_propietario = f"Eres asistente Procasa para propietarios. Habla directo y claro con {nombre_prop}. Responde cualquier consulta sobre su propiedad o venta."
-        respuesta = generar_respuesta(
+        respuesta = await _run_sync(
+            generar_respuesta,
             [{"role": "system", "content": prompt_propietario}, *historial[-20:], {"role": "user", "content": original_message}],
             "propietario"
         )
@@ -480,7 +481,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # 6. RESPUESTA CON GROK (Generación + Extracción)
     # =======================================================
     try:
-        resultado_grok = generar_respuesta_estructurada(messages_para_grok, prospecto_actual)
+        resultado_grok = await _run_sync(generar_respuesta_estructurada, messages_para_grok, prospecto_actual)
         
         intencion = resultado_grok["intencion"]
         respuesta = resultado_grok["respuesta_bot"]

@@ -99,6 +99,22 @@ def _forensic_subprocess_run(*args, **kwargs):
             logger.warning(f"[BLOCKING_DETECTOR] subprocess.run llamado dentro de async/event loop stack={short}")
         except Exception:
             logger.warning("[BLOCKING_DETECTOR] subprocess.run llamado dentro de async/event loop")
+        logger.info("[ASYNC_FIX] subprocess forced to threadpool")
+        result_box = {}
+        error_box = {}
+
+        def _runner():
+            try:
+                result_box["value"] = asyncio.run(asyncio.to_thread(_ORIG_SUBPROCESS_RUN, *args, **kwargs))
+            except Exception as exc:
+                error_box["error"] = exc
+
+        t = threading.Thread(target=_runner, daemon=True)
+        t.start()
+        t.join()
+        if "error" in error_box:
+            raise error_box["error"]
+        return result_box.get("value")
     return _ORIG_SUBPROCESS_RUN(*args, **kwargs)
 
 def _forensic_future_result(self, *args, **kwargs):

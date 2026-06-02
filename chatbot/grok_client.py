@@ -12,25 +12,15 @@ client = OpenAI(
 )
 
 
-def _model_name() -> str:
-    return (Config.DEEPSEEK_MODEL or "deepseek-v4-flash").strip()
-
-
-MAX_TOKENS = {
-    "propietario": 1500,
-    "prospecto": 1500,
-}
-
-
 def generar_respuesta(messages: list, tipo: str = "prospecto") -> str:
     try:
         print(f"[DEEPSEEK] Enviando {len(messages)} mensajes al modelo...")
         response = client.chat.completions.create(
-            model=_model_name(),
+            model=Config.DEEPSEEK_MODEL_FAST,
             messages=messages,
             temperature=Config.DEEPSEEK_TEMPERATURE,
-            max_tokens=MAX_TOKENS.get(tipo, 1500),
-            timeout=60,
+            max_tokens=Config.DEEPSEEK_MAX_TOKENS_FAST,
+            timeout=Config.DEEPSEEK_TIMEOUT_FAST,
         )
         contenido = response.choices[0].message.content.strip()
         print("[DEEPSEEK] Respuesta recibida correctamente")
@@ -138,12 +128,22 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
 
     try:
         print(f"[DEEPSEEK] Generando respuesta estructurada ({len(structured_messages)} msgs)...")
+        logger.info(
+            "[DEEPSEEK API PAYLOAD] model=%s max_tokens=%s temperature=%s timeout=%s stream=False response_format=%s",
+            Config.DEEPSEEK_MODEL_REASONER, Config.DEEPSEEK_MAX_TOKENS_REASONER, Config.DEEPSEEK_TEMPERATURE, Config.DEEPSEEK_TIMEOUT_REASONER, Config.DEEPSEEK_RESPONSE_FORMAT
+        )
+        
+        kwargs = {}
+        if Config.DEEPSEEK_RESPONSE_FORMAT == "json_object":
+            kwargs["response_format"] = {"type": "json_object"}
+
         response = client.chat.completions.create(
-            model=_model_name(),
+            model=Config.DEEPSEEK_MODEL_REASONER,
             messages=structured_messages,
-            temperature=0.1,
-            max_tokens=1500,
-            timeout=60,
+            temperature=Config.DEEPSEEK_TEMPERATURE,
+            max_tokens=Config.DEEPSEEK_MAX_TOKENS_REASONER,
+            timeout=Config.DEEPSEEK_TIMEOUT_REASONER,
+            **kwargs
         )
 
         try:
@@ -184,6 +184,12 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             getattr(usage, "completion_tokens", 0) if usage else 0,
             reasoning_tokens_used,
             len(content_final or "")
+        )
+
+        logger.info(
+            "[DEEPSEEK_CONTENT_SIZE] finish=%s raw_len=%s",
+            finish_reason,
+            len(raw_content or "")
         )
 
         logger.info("[DEEPSEEK RAW_CONTENT] %r", raw_content)

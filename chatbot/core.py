@@ -656,5 +656,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     except Exception as ex_log:
         logger.error(f"Error logging bot event: {ex_log}")
 
+    logger.info(
+        "[MONGO_SAVE_SIZE] respuesta_len=%s",
+        len(respuesta or "")
+    )
     await _run_sync(guardar_mensaje, phone, "assistant", respuesta, metadata_tipo)
     return respuesta

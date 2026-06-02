@@ -142,8 +142,8 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             model=_model_name(),
             messages=structured_messages,
             temperature=0.1,
-            max_tokens=600,
-            timeout=45,
+            max_tokens=1500,
+            timeout=60,
         )
 
         try:
@@ -170,6 +170,22 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             logger.info(f"[DEEPSEEK MESSAGE META] unavailable: {e}")
 
         raw_content = response.choices[0].message.content if getattr(response, "choices", None) else None
+        
+        finish_reason = getattr(response.choices[0], "finish_reason", "unknown") if getattr(response, "choices", None) else "unknown"
+        usage = getattr(response, "usage", None)
+        completion_details = getattr(usage, "completion_tokens_details", None) if usage else None
+        reasoning_tokens_used = getattr(completion_details, "reasoning_tokens", 0) if completion_details else 0
+        content_final = raw_content
+        
+        logger.info(
+            "[DEEPSEEK_USAGE] finish=%s prompt=%s completion=%s reasoning=%s content_len=%s",
+            finish_reason,
+            getattr(usage, "prompt_tokens", 0) if usage else 0,
+            getattr(usage, "completion_tokens", 0) if usage else 0,
+            reasoning_tokens_used,
+            len(content_final or "")
+        )
+
         logger.info("[DEEPSEEK RAW_CONTENT] %r", raw_content)
         contenido_json_str = (raw_content or "").strip()
         logger.info(f"[DEEPSEEK PARSE_INPUT] {contenido_json_str}")

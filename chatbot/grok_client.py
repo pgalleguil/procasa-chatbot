@@ -1,7 +1,10 @@
 # chatbot/grok_client.py
 import json
+import logging
 from openai import OpenAI
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 client = OpenAI(
     api_key=Config.DEEPSEEK_API_KEY,
@@ -100,6 +103,39 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         *messages,
     ]
 
+    prompt_completo = "\n\n".join(
+        f"[{m.get('role', 'unknown').upper()}]\n{m.get('content', '')}"
+        for m in structured_messages
+    )
+    bloque_propiedad = next(
+        (
+            m.get("content", "")
+            for m in structured_messages
+            if m.get("role") == "system" and "[DATOS OFICIALES DE LA PROPIEDAD ACTIVA]" in str(m.get("content", ""))
+        ),
+        ""
+    )
+    approx_tokens = len(prompt_completo) // 4
+    logger.info(
+        "[DEEPSEEK PROMPT_META] mensajes=%s tokens_aprox=%s bloque_propiedad_len=%s",
+        len(structured_messages),
+        approx_tokens,
+        len(bloque_propiedad),
+    )
+    logger.info("[DEEPSEEK PROMPT_HEAD] %s", prompt_completo[:1000])
+    logger.info("[DEEPSEEK PROMPT_TAIL] %s", prompt_completo[-1000:])
+    if bloque_propiedad:
+        logger.info(
+            "[DEEPSEEK PROPERTY_PAYLOAD] codigo=%s comuna=%s operacion=%s precio=%s ficha_preview=%s",
+            prospecto_actual.get("codigo"),
+            prospecto_actual.get("comuna"),
+            prospecto_actual.get("operacion"),
+            prospecto_actual.get("precio_uf"),
+            bloque_propiedad[:500],
+        )
+    else:
+        logger.info("[DEEPSEEK PROPERTY_PAYLOAD] no_property_block_in_prompt")
+
     try:
         print(f"[DEEPSEEK] Generando respuesta estructurada ({len(structured_messages)} msgs)...")
         response = client.chat.completions.create(
@@ -133,8 +169,20 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         except Exception as e:
             logger.info(f"[DEEPSEEK MESSAGE META] unavailable: {e}")
 
-        contenido_json_str = response.choices[0].message.content.strip()
+        raw_content = response.choices[0].message.content if getattr(response, "choices", None) else None
+        logger.info("[DEEPSEEK RAW_CONTENT] %r", raw_content)
+        contenido_json_str = (raw_content or "").strip()
         logger.info(f"[DEEPSEEK PARSE_INPUT] {contenido_json_str}")
+
+        if prospecto_actual and bloque_propiedad and raw_content:
+            contenido_lower = raw_content.lower()
+            mentions = {
+                "codigo": str(prospecto_actual.get("codigo", "")).lower() in contenido_lower,
+                "comuna": str(prospecto_actual.get("comuna", "")).lower() in contenido_lower if prospecto_actual.get("comuna") else False,
+                "tipo": str(prospecto_actual.get("tipo", "")).lower() in contenido_lower if prospecto_actual.get("tipo") else False,
+                "precio": str(prospecto_actual.get("precio_uf", "")).lower() in contenido_lower if prospecto_actual.get("precio_uf") else False,
+            }
+            logger.info("[DEEPSEEK PROPERTY_MENTION] %s", mentions)
         if contenido_json_str.startswith("```json"):
             contenido_json_str = contenido_json_str[7:-3].strip()
         elif contenido_json_str.startswith("```"):

@@ -1,5 +1,6 @@
 import logging
 import re
+import uuid
 import json
 import asyncio
 from datetime import datetime
@@ -81,8 +82,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     async def _run_sync(fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)
 
+    trace_id = str(uuid.uuid4())[:8]
     original_message = message
     msg_lower = original_message.lower()
+    logger.info(f"[LINK_TRACE] trace={trace_id} phone={phone} inicio_proceso_mensaje")
     
     # 1. Guardar mensaje (con el rol correcto)
     # Si viene de 'me' (del dueño del bot), lo guardamos como assistant/human
@@ -215,10 +218,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     codigo_detectado = None
     
     # 1. Intentar detectar Link o Código en el mensaje actual
-    es_link, temp_prop, plataforma_origen, codigo_externo_raw = await _run_sync(analizar_mensaje_para_link, original_message, phone)
+    es_link, temp_prop, plataforma_origen, codigo_externo_raw = await _run_sync(analizar_mensaje_para_link, original_message, phone, trace_id)
     hay_url = bool(URL_RE.search(original_message))
     logger.info(
-        f"[LINK_FLOW] phone={phone} hay_url={hay_url} plataforma={plataforma_origen} "
+        f"[LINK_FLOW] trace={trace_id} phone={phone} hay_url={hay_url} plataforma={plataforma_origen} "
         f"temp_prop={(temp_prop.get('codigo') if temp_prop else None)} "
         f"codigo_externo_raw={codigo_externo_raw} collection={Config.COLLECTION_NAME}"
     )
@@ -228,11 +231,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         nuevo_origen = plataforma_origen or "WhatsApp"
         codigo_detectado = str(propiedad.get("codigo"))
         codigo_externo = codigo_externo_raw
-        await _run_sync(actualizar_prospecto, phone, {"link_detectado": True})
+        await _run_sync(actualizar_prospecto, phone, {"link_detectado": True}, trace_id)
     elif es_link and not temp_prop:
         nuevo_origen = plataforma_origen or "WhatsApp"
         codigo_externo = codigo_externo_raw
-        await _run_sync(actualizar_prospecto, phone, {"link_detectado": True})
+        await _run_sync(actualizar_prospecto, phone, {"link_detectado": True}, trace_id)
 
     # 2. Si no viene un enlace, intentar detectar CODIGO INTERNACIONAL (9+ dígitos)
     if not propiedad and not hay_url:
@@ -279,8 +282,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "origen": plataforma_origen or prospecto_actual.get("origen") or "WhatsApp",
             "link_pendiente": True,
             "codigo": None
-        })
-        logger.info(f"[LINK_FLOW] phone={phone} link sin match. Marcado link_pendiente=True")
+        }, trace_id)
+        logger.info(f"[LINK_FLOW] trace={trace_id} phone={phone} link sin match. Marcado link_pendiente=True")
         respuesta_link_pendiente = (
             "Gracias por compartir el enlace. No pude identificar la propiedad en este momento. "
             "Si quieres, envíame el enlace nuevamente o dime qué tipo de propiedad buscas y te ayudo."
@@ -292,8 +295,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         })
         return respuesta_link_pendiente
     elif propiedad:
-        await _run_sync(actualizar_prospecto, phone, {"link_pendiente": False, "codigo": None if hay_url else prospecto_actual.get("codigo")})
-        logger.info(f"[LINK_FLOW] phone={phone} propiedad encontrada codigo={codigo_detectado} origen={nuevo_origen}")
+        await _run_sync(actualizar_prospecto, phone, {"link_pendiente": False, "codigo": None if hay_url else prospecto_actual.get("codigo")}, trace_id)
+        logger.info(f"[LINK_FLOW] trace={trace_id} phone={phone} propiedad encontrada codigo={codigo_detectado} origen={nuevo_origen}")
 
     # Actualizar prospecto si encontramos propiedad nueva
     if propiedad and codigo_detectado:
@@ -307,8 +310,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "origen": nuevo_origen,  # Siempre actualiza origen si viene de link
             "link_pendiente": False
         }
-        logger.info(f"[LINK_FLOW] phone={phone} actualizando prospecto.codigo={codigo_detectado} origen={nuevo_origen}")
-        await _run_sync(actualizar_prospecto, phone, updates_prop)
+        logger.info(f"[LINK_FLOW] trace={trace_id} phone={phone} actualizando prospecto.codigo={codigo_detectado} origen={nuevo_origen}")
+        await _run_sync(actualizar_prospecto, phone, updates_prop, trace_id)
         
         # Registrar para anti-repetición en RAG
         await _run_sync(registrar_propiedades_vistas, phone, [codigo_detectado])
@@ -320,8 +323,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             ext_updates["codigo_yapo"] = codigo_externo
         elif plataforma_origen in ["MercadoLibre", "PortalInmobiliario"]:
             ext_updates["codigo_mercadolibre"] = codigo_externo
-        logger.info(f"[LINK_FLOW] phone={phone} sobrescritura externa={ext_updates}")
-        await _run_sync(actualizar_prospecto, phone, ext_updates)
+        logger.info(f"[LINK_FLOW] trace={trace_id} phone={phone} sobrescritura externa={ext_updates}")
+        await _run_sync(actualizar_prospecto, phone, ext_updates, trace_id)
 
     # --- NOTIFICACIÓN POR PROPIEDAD DESCONOCIDA ---
     if es_link and not propiedad and codigo_externo:

@@ -46,6 +46,7 @@ class LeadProcessingService:
         Calcula cluster_id y zone para un lead, buscando datos en universo_cartera si es necesario.
         """
         prospecto = lead_doc.get("prospecto", {}) or {}
+        trace_id = str(lead_doc.get("trace_id") or lead_doc.get("prospecto", {}).get("trace_id") or lead_doc.get("phone") or "")[:8]
         if prospecto.get("link_detectado") is True:
             logger.info(f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} con link_detectado=True. Se omite classify.")
             return {}
@@ -71,7 +72,7 @@ class LeadProcessingService:
             # Unimos los últimos mensajes para buscar links/códigos
             all_text = " ".join([m.get("content", "") for m in lead_doc.get("messages", [])[-5:]])
             logger.info(f"[PROCESS_SERVICE] historial_text={all_text}")
-            found_link, prop_match, platform, code_raw = analizar_mensaje_para_link(all_text)
+            found_link, prop_match, platform, code_raw = analizar_mensaje_para_link(all_text, lead_doc.get("phone"))
             logger.info(
                 f"[PROCESS_SERVICE] found_link={found_link} platform={platform} "
                 f"prop_match={(prop_match.get('codigo') if prop_match else None)} code_raw={code_raw}"

@@ -1,11 +1,13 @@
 # chatbot/link_extractor.py → VERSIÓN CON BÚSQUEDA PRIORIZADA POR PLATAFORMA + codigo_procasa
 import re
+import logging
 from typing import Tuple, Optional
 from .storage import get_db
 from .utils import safe_int_conversion
 from config import Config
 
 URL_RE = re.compile(r'https?://[^\s<>\]\)"]+', re.IGNORECASE)
+logger = logging.getLogger(__name__)
 
 
 def detectar_plataforma(url: str) -> str:
@@ -70,7 +72,7 @@ def extraer_codigo_internacional(mensaje: str) -> Optional[str]:
 
 
 
-def analizar_mensaje_para_link(mensaje: str, phone=None) -> Tuple[bool, Optional[dict], str, Optional[str]]:
+def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -> Tuple[bool, Optional[dict], str, Optional[str]]:
     """
     Analiza el mensaje buscando URLs y busca la propiedad en la DB.
     Prioriza el campo de búsqueda según la plataforma detectada en la URL.
@@ -79,6 +81,11 @@ def analizar_mensaje_para_link(mensaje: str, phone=None) -> Tuple[bool, Optional
     urls = URL_RE.findall(mensaje)
     db = get_db()
     coleccion = db[Config.COLLECTION_NAME]
+    logger.info(f"[LINK_TRACE] trace={trace_id or 'no-trace'} phone={phone} inicio_resolucion_link")
+    logger.info(
+        f"[LINK_EXTRACT]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
+        f"mensaje_original={mensaje}\nurls_encontradas={urls}"
+    )
     
     for url in urls:
         # Limpieza básica
@@ -93,6 +100,11 @@ def analizar_mensaje_para_link(mensaje: str, phone=None) -> Tuple[bool, Optional
         print(f"\n[INFO] Plataforma detectada: {plataforma} | Buscando en {Config.COLLECTION_NAME}")
         print(f"[LINK_DEBUG] URL recibida: {url_clean}")
         print(f"[LINK_DEBUG] URL normalizada: {url_norm}")
+        logger.info(
+            f"[LINK_EXTRACT]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
+            f"url_original={url}\nurl_clean={url_clean}\nrepr_url_clean={repr(url_clean)}\n"
+            f"len_url_clean={len(url_clean)}\nplataforma_detectada={plataforma}"
+        )
         
         propiedad = None
         codigo_externo = None
@@ -108,12 +120,25 @@ def analizar_mensaje_para_link(mensaje: str, phone=None) -> Tuple[bool, Optional
         if plataforma == "Yapo":
             cod_yapo = extraer_codigo_yapo(url_clean)
             cod_ints = re.findall(r"\b(\d{9,10})\b", url_clean)
+            if cod_yapo:
+                logger.info(f"[LINK_ID]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncodigo_yapo={cod_yapo}")
+            else:
+                logger.info(f"[LINK_ID_FAIL]\ntrace={trace_id or 'no-trace'}\nphone={phone}\nurl={url_clean}")
+            query_usada = {"publicaciones.yapo.url_yapo": url_clean}
+            logger.info(
+                f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={Config.COLLECTION_NAME}\n"
+                f"filtro_exacto={query_usada}"
+            )
             prop = coleccion.find_one({"publicaciones.yapo.url_yapo": url_clean})
             debug_info["exact_match"] = bool(prop)
             debug_info["regex_match"] = False
             debug_info["urls_encontradas"] = []
             if not prop and cod_yapo:
                 regex_q = {"publicaciones.yapo.url_yapo": {"$regex": re.escape(cod_yapo) + r"$", "$options": "i"}}
+                logger.info(
+                    f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={Config.COLLECTION_NAME}\n"
+                    f"filtro_exacto={regex_q}"
+                )
                 prop = coleccion.find_one(regex_q)
                 debug_info["regex_match"] = bool(prop)
                 if prop:
@@ -135,17 +160,30 @@ def analizar_mensaje_para_link(mensaje: str, phone=None) -> Tuple[bool, Optional
             if not propiedad:
                 for i, q in enumerate([c for c in candidatos if c], 1):
                     print(f"[LINK_DEBUG] Yapo query #{i}: {q}")
+                    logger.info(
+                        f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={Config.COLLECTION_NAME}\n"
+                        f"filtro_exacto={q}"
+                    )
                     propiedad = coleccion.find_one(q)
                     if propiedad:
                         print(f"[LINK_DEBUG] Yapo match en query #{i} -> codigo={propiedad.get('codigo')}")
+                        logger.info(
+                            f"[LINK_QUERY_OK]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
+                            f"codigo_propiedad={propiedad.get('codigo')}\n"
+                            f"codigo_yapo={propiedad.get('codigo_yapo') or propiedad.get('publicaciones', {}).get('yapo', {}).get('codigo_yapo')}\n"
+                            f"ejecutivo={propiedad.get('ejecutivo')}\ncomuna={propiedad.get('comuna')}"
+                        )
                         break
             codigo_externo = cod_yapo
             if phone:
                 try:
                     from .storage import actualizar_prospecto
-                    actualizar_prospecto(phone, {"debug_link": debug_info})
+                    debug_info["query_usada"] = query_usada
+                    debug_info["resultado"] = "SUCCESS" if prop else "NOT_FOUND"
+                    debug_info["timestamp"] = __import__("datetime").datetime.now().isoformat()
+                    actualizar_prospecto(phone, {"debug_link": debug_info}, trace_id)
                 except Exception:
-                    pass
+                    logger.exception(f"[LINK_EXCEPTION] trace={trace_id or 'no-trace'} phone={phone} tipo_error=debug_persist mensaje=fallo_guardando_debug_link")
 
         elif plataforma == "Procasa":
             match_pc = re.search(r"/(\d+)$", url_clean)
@@ -227,9 +265,68 @@ def analizar_mensaje_para_link(mensaje: str, phone=None) -> Tuple[bool, Optional
 
         if propiedad:
             print(f"[EXITO] PROPIEDAD ENCONTRADA | Plataforma: {plataforma} | Código Procasa: {propiedad.get('codigo')}")
+            logger.info(
+                f"[LINK_QUERY_OK]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
+                f"codigo_propiedad={propiedad.get('codigo')}\n"
+                f"codigo_yapo={propiedad.get('codigo_yapo') or propiedad.get('publicaciones', {}).get('yapo', {}).get('codigo_yapo')}\n"
+                f"ejecutivo={propiedad.get('ejecutivo')}\ncomuna={propiedad.get('comuna')}"
+            )
+            logger.info(
+                f"[LINK_RESULT]\ntrace={trace_id or 'no-trace'}\nphone={phone}\nstatus=SUCCESS\n"
+                f"codigo_propiedad={propiedad.get('codigo')}\n"
+                f"origen={plataforma}"
+            )
+            logger.info(
+                f"[LINK_SUMMARY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\nurl_detectada=True\n"
+                f"plataforma={plataforma}\ncodigo_yapo={codigo_externo}\nquery_ok=True\n"
+                f"propiedad={propiedad.get('codigo')}\nstatus=SUCCESS"
+            )
             return True, propiedad, plataforma, url_clean
         else:
             print(f"[FALLO] NO se encontró propiedad con el link '{url_clean[:80]}'")
+            logger.info(
+                f"[LINK_QUERY_EMPTY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
+                f"codigo_yapo={codigo_externo}\ncollection={Config.COLLECTION_NAME}"
+            )
+            similares = []
+            try:
+                if codigo_externo:
+                    similares = list(coleccion.find(
+                        {"$or": [
+                            {"codigo_yapo": {"$regex": re.escape(str(codigo_externo)), "$options": "i"}},
+                            {"codigo_mercadolibre": {"$regex": re.escape(str(codigo_externo)), "$options": "i"}},
+                            {"codigo_internacional": {"$regex": re.escape(str(codigo_externo)), "$options": "i"}},
+                            {"publicaciones.codigo_internacional": {"$regex": re.escape(str(codigo_externo)), "$options": "i"}},
+                            {"publicaciones.yapo.url_yapo": {"$regex": re.escape(str(codigo_externo)), "$options": "i"}},
+                        ]},
+                        {"codigo": 1, "codigo_yapo": 1}
+                    ).limit(5))
+            except Exception:
+                logger.exception(f"[LINK_EXCEPTION] trace={trace_id or 'no-trace'} phone={phone} tipo_error=forensics mensaje=fallo_busqueda_similares")
+            try:
+                from .storage import actualizar_prospecto
+                debug_info["query_usada"] = {"publicaciones.yapo.url_yapo": url_clean}
+                debug_info["resultado"] = "NOT_FOUND"
+                debug_info["timestamp"] = __import__("datetime").datetime.now().isoformat()
+                debug_info["cantidad_matches_similares"] = len(similares)
+                debug_info["matches_similares"] = [str(x.get("codigo")) for x in similares[:5]]
+                actualizar_prospecto(phone, {"debug_link": debug_info}, trace_id)
+            except Exception:
+                logger.exception(f"[LINK_EXCEPTION] trace={trace_id or 'no-trace'} phone={phone} tipo_error=debug_persist mensaje=fallo_guardando_debug_link")
+            logger.info(
+                f"[LINK_FORENSICS]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
+                f"cantidad_matches_similares={len(similares)}\n"
+                f"codigos={[str(x.get('codigo')) for x in similares[:5]]}"
+            )
+            logger.info(
+                f"[LINK_RESULT]\ntrace={trace_id or 'no-trace'}\nphone={phone}\nstatus=NOT_FOUND\n"
+                f"codigo_propiedad=None\norigen={plataforma}"
+            )
+            logger.info(
+                f"[LINK_SUMMARY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\nurl_detectada=True\n"
+                f"plataforma={plataforma}\ncodigo_yapo={codigo_externo}\nquery_ok=False\n"
+                f"propiedad=None\nstatus=NOT_FOUND"
+            )
             return True, None, plataforma, codigo_externo
 
     return False, None, "", None

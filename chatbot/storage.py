@@ -161,7 +161,7 @@ def obtener_prospecto(phone: str) -> dict:
         return {}
     return doc.get("prospecto", {})
 
-def actualizar_prospecto(phone: str, datos: dict):
+def actualizar_prospecto(phone: str, datos: dict, trace_id: str = None):
     if not datos:
         return
 
@@ -180,6 +180,8 @@ def actualizar_prospecto(phone: str, datos: dict):
             update_fields["$set"][f"prospecto.{key}"] = str(value).strip()
 
     if update_fields["$set"]:
+        if trace_id:
+            logger.info(f"[PROSPECT_UPDATE] trace={trace_id} phone={phone} fields={list(update_fields['$set'].keys())}")
         db[COLLECTION_CONVERSATIONS].update_one(
             {"phone": phone},
             update_fields,

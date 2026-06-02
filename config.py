@@ -44,18 +44,18 @@ class Config:
     TEST_PHONE = os.getenv("TEST_PHONE")
 
     # === Modelos DeepSeek / compatibilidad heredada ===
-    DEEPSEEK_MODEL_FAST = os.getenv("DEEPSEEK_MODEL_FAST", os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"))
-    DEEPSEEK_MODEL_REASONER = os.getenv("DEEPSEEK_MODEL_REASONER", DEEPSEEK_MODEL_FAST)
-    DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", os.getenv("GROK_BASE_URL", "https://api.deepseek.com"))
-    DEEPSEEK_TEMPERATURE = float(os.getenv("DEEPSEEK_TEMPERATURE", os.getenv("GROK_TEMPERATURE", "0.1")))
+    DEEPSEEK_MODEL_FAST = os.getenv("DEEPSEEK_MODEL_FAST") or os.getenv("DEEPSEEK_MODEL") or "deepseek-v4-flash"
+    DEEPSEEK_MODEL_REASONER = os.getenv("DEEPSEEK_MODEL_REASONER") or DEEPSEEK_MODEL_FAST
+    DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("GROK_BASE_URL") or "https://api.deepseek.com"
+    DEEPSEEK_TEMPERATURE = float(os.getenv("DEEPSEEK_TEMPERATURE") or os.getenv("GROK_TEMPERATURE") or "0.1")
     
-    DEEPSEEK_MAX_TOKENS_FAST = int(os.getenv("DEEPSEEK_MAX_TOKENS_FAST", 1500))
-    DEEPSEEK_TIMEOUT_FAST = int(os.getenv("DEEPSEEK_TIMEOUT_FAST", 30))
+    DEEPSEEK_MAX_TOKENS_FAST = int(os.getenv("DEEPSEEK_MAX_TOKENS_FAST") or "1500")
+    DEEPSEEK_TIMEOUT_FAST = int(os.getenv("DEEPSEEK_TIMEOUT_FAST") or "30")
     
-    DEEPSEEK_MAX_TOKENS_REASONER = int(os.getenv("DEEPSEEK_MAX_TOKENS_REASONER", 4096))
-    DEEPSEEK_TIMEOUT_REASONER = int(os.getenv("DEEPSEEK_TIMEOUT_REASONER", 60))
+    DEEPSEEK_MAX_TOKENS_REASONER = int(os.getenv("DEEPSEEK_MAX_TOKENS_REASONER") or "4096")
+    DEEPSEEK_TIMEOUT_REASONER = int(os.getenv("DEEPSEEK_TIMEOUT_REASONER") or "60")
     
-    DEEPSEEK_RESPONSE_FORMAT = os.getenv("DEEPSEEK_RESPONSE_FORMAT", "")
+    DEEPSEEK_RESPONSE_FORMAT = os.getenv("DEEPSEEK_RESPONSE_FORMAT") or ""
 
     # Alias heredados para no romper módulos existentes durante la migración
     GROK_MODEL = DEEPSEEK_MODEL_FAST

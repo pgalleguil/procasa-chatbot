@@ -301,7 +301,7 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
     query = {
         "details.es_propietario_directo": True,
         "$or": [
-            {"status": {"$ne": "inactive", "suspect"}},
+            {"status": {"$nin": ["inactive", "suspect"]}},
             {"gestion.estado": {"$nin": ["NUEVO", None]}}
         ]
     }

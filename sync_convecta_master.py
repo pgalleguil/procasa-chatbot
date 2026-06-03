@@ -40,6 +40,38 @@ def cv(v):
     s = str(v).strip()
     return s if s not in ("", "nan", "None", "-") else None
 
+def normalize_for_compare(val):
+    if val is None:
+        return None
+        
+    s = str(val).strip()
+    # Normalize multiple internal spaces to a single space
+    s = re.sub(r'\s+', ' ', s)
+    s = s.lower()
+    
+    # Handle empties and null equivalents
+    if s in ("", "-", "nan", "none", "null"):
+        return None
+        
+    # Financial and numeric cleanup
+    # Remove $, UF, CLP, % and their surrounding spaces
+    s_clean = re.sub(r'\$|uf|clp|%', '', s).strip()
+    
+    # Remove thousand separators (.) and commas (,) if it looks like a number
+    if re.match(r'^[\d.,\s]+$', s_clean):
+        s_clean = s_clean.replace('.', '').replace(',', '').strip()
+    
+    # Cast to numeric if possible
+    try:
+        if '.' in s_clean:
+            return float(s_clean)
+        else:
+            return int(s_clean)
+    except ValueError:
+        pass
+        
+    return s_clean if s_clean else None
+
 def format_name(v):
     s = cv(v)
     return s.title() if s else None
@@ -305,18 +337,30 @@ def upsert_doc(coll, doc, dict_pub, model_nlp=None, oficina_target="PROCASA SUCR
         for field in TRACKED_FIELDS:
             old_val = existing.get(field)
             new_val = doc.get(field)
-            safe_old = str(old_val).strip().lower() if old_val is not None else ""
-            safe_new = str(new_val).strip().lower() if new_val is not None else ""
-            if safe_old != safe_new:
-                doc["historial_cambios"].append({
-                    "fecha": datetime.now().isoformat(),
-                    "campo": field,
-                    "valor_anterior": old_val,
-                    "valor_nuevo": new_val
-                })
-                cambios_count += 1
-                if field == "ejecutivo" and doc.get("oficina") == "PROCASA SUCRE":
-                    print(f" [CAMBIO EJECUTIVO - PROCASA SUCRE] Código {codigo}: {old_val} -> {new_val}")
+            
+            norm_old = normalize_for_compare(old_val)
+            norm_new = normalize_for_compare(new_val)
+            
+            if norm_old != norm_new:
+                # Evitar registrar si el último cambio es idéntico a lo que vamos a registrar
+                skip = False
+                if doc["historial_cambios"]:
+                    last_change = doc["historial_cambios"][-1]
+                    if (last_change.get("campo") == field and 
+                        normalize_for_compare(last_change.get("valor_anterior")) == norm_old and 
+                        normalize_for_compare(last_change.get("valor_nuevo")) == norm_new):
+                        skip = True
+                
+                if not skip:
+                    doc["historial_cambios"].append({
+                        "fecha": datetime.now().isoformat(),
+                        "campo": field,
+                        "valor_anterior": old_val,
+                        "valor_nuevo": new_val
+                    })
+                    cambios_count += 1
+                    if field == "ejecutivo" and doc.get("oficina") == "PROCASA SUCRE":
+                        print(f" [CAMBIO EJECUTIVO - PROCASA SUCRE] Código {codigo}: {old_val} -> {new_val}")
 
     # Snapshot explícito de cambios críticos para campañas (solo oficina target)
     oficina_actual = str(doc.get("oficina") or existing.get("oficina") or "").strip()

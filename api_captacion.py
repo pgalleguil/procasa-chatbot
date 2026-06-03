@@ -298,7 +298,13 @@ def get_next_action_recommendation(score, diff_pct, dias, publicador, comuna, pr
 
 def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None):
     db = get_db()
-    query = {"details.es_propietario_directo": True}
+    query = {
+        "details.es_propietario_directo": True,
+        "$or": [
+            {"status": {"$ne": "inactive", "suspect"}},
+            {"gestion.estado": {"$nin": ["NUEVO", None]}}
+        ]
+    }
     
     # RBAC & Filtering
     if user_role in ["admin", "supervisor"]:

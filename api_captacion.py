@@ -1471,8 +1471,18 @@ def distribute_sourced_leads():
     db = get_db()
     
     # 1. Buscar ejecutivos y sus comunas (normalizadas)
-    ejecutivos_raw = list(db["usuarios"].find({"comunas_interes": {"$exists": True, "$not": {"$size": 0}}}))
+    ejecutivos_raw = [
+        u for u in db["usuarios"].find()
+        if isinstance(u.get("comunas_interes"), list)
+        and len(u.get("comunas_interes", [])) > 0
+    ]
+    
+    logger.info(f"[DISTRIBUCION] Detectados {len(ejecutivos_raw)} ejecutivos con comunas de interes configuradas.")
+    if ejecutivos_raw:
+        logger.info(f"[DISTRIBUCION] Nombres: {[e.get('nombre') for e in ejecutivos_raw]}")
+        
     if not ejecutivos_raw:
+        logger.info("[DISTRIBUCION] Abortando: 0 ejecutivos disponibles.")
         return 0
         
     # 2. Mapear comunas normalizadas a ejecutivos
@@ -1488,9 +1498,14 @@ def distribute_sourced_leads():
     query = {
         "details.es_propietario_directo": True,
         "gestion.ejecutivo_asignado": None,
-        "gestion.estado": "NUEVO"
+        "$or": [
+            {"gestion.estado": "NUEVO"},
+            {"gestion.estado": {"$exists": False}},
+            {"gestion": {"$exists": False}}
+        ]
     }
     props = list(db["yapo_propiedades"].find(query))
+    logger.info(f"[DISTRIBUCION] {len(props)} propiedades candidatas a distribuir.")
     
     assigned_count = 0
     # Round-robin simplificado por comuna
@@ -1545,6 +1560,7 @@ def distribute_sourced_leads():
         exec_counters[target_exec] += 1
         assigned_count += 1
         
+    logger.info(f"[DISTRIBUCION] Proceso finalizado. Asignadas finalmente: {assigned_count}")
     return assigned_count
 
 def get_personal_templates(user_name):

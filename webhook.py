@@ -43,6 +43,25 @@ from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+
+# ========================= THREAD POOL CONTROLADO =========================
+# Pool separado para request web (evita que tareas batch bloqueen respuestas HTTP).
+_WEB_THREAD_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="procasa_web")
+# Pool separado para workers de procesamiento de leads.
+_WORKER_THREAD_POOL = ThreadPoolExecutor(max_workers=5, thread_name_prefix="procasa_worker")
+# Pool dedicado para tareas periódicas (cache warmer) para evitar competir con workers.
+_WARMER_THREAD_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="procasa_warmer")
+
+# === NUEVAS IMPORTACIONES PARA GOOGLE ===
+import httpx 
+from urllib.parse import urlencode
+
+import requests
+from fastapi import FastAPI, Cookie, Request, HTTPException, Depends, status, Form, Header, Query, BackgroundTasks
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 
 # === TUS MÓDULOS PROPIOS ===
@@ -52,7 +71,7 @@ from api_leads_intelligence import get_leads_executive_report, get_specific_lead
 from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent
 from api_captacion import (
     get_captacion_list, get_captacion_detail, update_captacion_status, update_contact_info,
-    distribute_sourced_leads, format_relative_time as format_captacion_time,
+    distribute_sourced_leads, release_stale_captaciones, format_relative_time as format_captacion_time,
     get_personal_templates, save_personal_template, delete_personal_template
 )
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate, resolve_property_code
@@ -1179,337 +1198,6 @@ async def campana_respuesta(
     mode: str = Query("live")
 ):
     return await handle_campana_respuesta(request, email, accion, codigos, campana, mode, token)
-
-@app.get("/api/reporte_real")
-async def api_reporte_real():
-    from api_reporte_real import get_reporte_real
-    data = get_reporte_real()
-    return data
-    
-
-# ========================= 10. RUTAS CAPTACIÓN (NUEVO) =========================
-
-@app.get("/captacion", response_class=HTMLResponse)
-async def view_captaciones(
-    request: Request,
-    comuna: str = Query(None),
-    estado: str = Query(None),
-    ejecutivo: str = Query(None),
-    page: int = Query(1, ge=1)
-):
-    from chatbot.storage import get_async_db
-    adb = get_async_db()
-    user = await get_current_user_doc(request)
-    
-    if not user:
-        return RedirectResponse(url="/?error=sesion_invalida")
-
-    user_role = user.get("rol", "agente")
-    user_name = user.get("nombre", "")
-    
-    limit = 10
-    loop = asyncio.get_running_loop()
-    list_task = loop.run_in_executor(
-        _WEB_THREAD_POOL,
-        lambda: get_captacion_list(
-            user_role=user_role,
-            user_name=user_name,
-            page=page,
-            limit=limit,
-            comuna_filter=comuna,
-            status_filter=estado,
-            executive_filter=ejecutivo
-        )
-    )
-    exec_task = get_unique_executives() if user_role in ["admin", "supervisor"] else asyncio.sleep(0, result=[])
-    items_total, executives = await asyncio.gather(list_task, exec_task)
-    items, total_count = items_total
-    
-    # KPIs adicionales para el resumen (basados en el ejecutivo/permisos, no en los filtros actuales de lista)
-    base_query = {"details.es_propietario_directo": True}
-    if user_role not in ["admin", "supervisor"]:
-        base_query["gestion.ejecutivo_asignado"] = user_name
-    elif ejecutivo and ejecutivo != "Todos":
-        base_query["gestion.ejecutivo_asignado"] = ejecutivo
-
-    in_gestion_count, captados_count = await asyncio.gather(
-        adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "GESTION"}),
-        adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"})
-    )
-    total_pages = (total_count + limit - 1) // limit
-
-    return templates.TemplateResponse("captacion_list.html", {
-        "request": request,
-        "items": items,
-        "total_count": total_count,
-        "in_gestion_count": in_gestion_count,
-        "captados_count": captados_count,
-        "user_role": user_role,
-        "user_name": user_name,
-        "current_comuna": comuna,
-        "current_estado": estado,
-        "current_ejecutivo": ejecutivo,
-        "executives": executives,
-        "pagination": {
-            "current_page": page,
-            "total_pages": total_pages,
-            "has_next": page < total_pages,
-            "has_prev": page > 1
-        }
-    })
-
-@app.get("/captacion/{obj_id}", response_class=HTMLResponse)
-async def view_captacion_detail_route(request: Request, obj_id: str):
-    user = await get_current_user_doc(request)
-    
-    if not user:
-        return RedirectResponse(url="/?error=sesion_invalida")
-
-    user_role = user.get("rol", "agente")
-    user_name = user.get("nombre", "")
-
-
-
-    loop = asyncio.get_running_loop()
-    data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_captacion_detail(obj_id))
-    if not data:
-        return HTMLResponse("Propiedad no encontrada")
-
-    # RBAC Check
-    user_name = user.get("nombre", "")
-    if user.get("rol") == "agente":
-        assigned = data.get("gestion", {}).get("ejecutivo_asignado")
-        if assigned and user_name.lower() not in assigned.lower():
-            return RedirectResponse(url="/captacion?error=no_asignada")
-
-    # Ya no calculamos el matching aquí (se hace vía AJAX)
-    
-    return templates.TemplateResponse("captacion_detail.html", {
-        "request": request,
-        "prop": data,
-        "user_name": user_name,
-        "user_role": user.get("rol", "agente")
-    })
-
-# --- PROTECCIÓN ANTI-SPAM PARA MATCHING ---
-PENDING_MATCHING_REQUESTS = {} # obj_id -> timestamp
-
-@app.get("/api/captacion/{obj_id}/matching")
-async def api_get_matching_leads(request: Request, obj_id: str):
-    await get_current_user(request)
-
-    from api_captacion import get_captacion_detail, get_matching_leads_analysis, get_cached_value, set_cached_value
-
-    loop = asyncio.get_running_loop()
-
-    cache_key = f"matching_{obj_id}"
-    cached_data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_cached_value(cache_key))
-    if cached_data:
-        return cached_data
-
-    now = time.time()
-    if obj_id in PENDING_MATCHING_REQUESTS:
-        last_req = PENDING_MATCHING_REQUESTS[obj_id]
-        if now - last_req < 5:
-            return {"status": "processing", "message": "Ya se esta calculando el matching. Por favor espere."}
-
-    PENDING_MATCHING_REQUESTS[obj_id] = now
-
-    try:
-        data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_captacion_detail(obj_id))
-        if not data:
-            raise HTTPException(status_code=404, detail="Propiedad no encontrada")
-
-        ma = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_matching_leads_analysis(data))
-
-        response_data = {
-            "exact": ma.get("exact", 0),
-            "zone": ma.get("zone", 0),
-            "broad": ma.get("broad", 0),
-            "matching_analysis": ma,
-            "ma": ma,
-            "zone_name": ma.get("zone_name", "Sin zona"),
-            "pitch_text": ma.get("pitch_text", "")
-        }
-
-        await loop.run_in_executor(_WEB_THREAD_POOL, lambda: set_cached_value(cache_key, response_data, expire_seconds=300))
-
-        return response_data
-    finally:
-        if obj_id in PENDING_MATCHING_REQUESTS:
-            del PENDING_MATCHING_REQUESTS[obj_id]
-@app.post("/api/captacion/update")
-async def api_update_captacion(request: Request):
-    try:
-        await get_current_user(request)
-        data = await request.json()
-        obj_id = data.get("id")
-        status = data.get("status")
-        notes = data.get("notes")
-        next_followup = data.get("next_followup")
-        channel = data.get("channel")
-        outcome = data.get("outcome")
-        user_name = data.get("user_name", "Sistema")
-        
-        if not obj_id or not status:
-            raise HTTPException(status_code=400, detail="Faltan datos")
-            
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            _WEB_THREAD_POOL,
-            lambda: update_captacion_status(
-                obj_id,
-                status,
-                notes,
-                channel=channel,
-                outcome=outcome,
-                user_name=user_name,
-                next_followup=next_followup
-            )
-        )
-        return {"status": "ok"} if result else {"status": "error", "message": "Operación retornó falso"}
-    except HTTPException:
-        # Re-lanzar 401/403/400 para que el cliente y el handler global los manejen correctamente
-        raise
-    except Exception as e:
-        logger.error(f"Error updating captacion: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/captacion/contact")
-async def api_update_captacion_contact(request: Request):
-    try:
-        await get_current_user(request)
-        data = await request.json()
-        obj_id = data.get("id")
-        if not obj_id:
-            raise HTTPException(status_code=400, detail="Falta ID")
-        
-        # Check user name in session or payload
-        user_name = data.get("user_name")
-        if not user_name:
-            user_doc = await get_current_user_doc(request)
-            user_name = user_doc.get("nombre", user_doc.get("username", "Sistema")) if user_doc else "Sistema"
-        
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            _WEB_THREAD_POOL,
-            lambda: update_contact_info(
-                obj_id,
-                nombre=data.get("nombre"),
-                telefono=data.get("telefono"),
-                email=data.get("email"),
-                notas=data.get("notas"),
-                user_name=user_name
-            )
-        )
-        return {"status": "ok"} if result else {"status": "error", "message": "Operación retornó falso"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating captacion contact: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/captacion/log_action")
-async def api_captacion_log_action(request: Request):
-    username_str = await get_current_user(request)
-    user_doc = await get_current_user_doc(request)
-    actual_name = user_doc.get("nombre", username_str) if user_doc else "Sistema"
-    
-    data = await request.json()
-    obj_id = data.get("id")
-    action = data.get("action")
-    channel = data.get("channel")
-    message = data.get("message")
-    phone = data.get("phone")
-    result = data.get("result")
-    template_used = data.get("template_used")
-    
-    if not obj_id or not action:
-        raise HTTPException(status_code=400, detail="Faltan datos")
-        
-    try:
-        from api_captacion import log_captacion_activity
-        loop = asyncio.get_running_loop()
-        success = await loop.run_in_executor(
-            _WEB_THREAD_POOL,
-            lambda: log_captacion_activity(obj_id, actual_name, action, channel, message, phone, result, template_used)
-        )
-        return {"status": "ok"} if success else {"status": "error"}
-    except Exception as e:
-        logger.error(f"Error logging captacion action: {e}")
-        return {"status": "error", "message": str(e)}
-
-@app.get("/api/captacion/templates/personal")
-async def api_get_personal_templates(request: Request):
-    username_str = await get_current_user(request)
-    user_doc = await get_current_user_doc(request)
-    actual_name = user_doc.get("nombre", username_str) if user_doc else username_str
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_personal_templates(actual_name))
-
-@app.post("/api/captacion/templates/personal")
-async def api_save_personal_template(request: Request):
-    username_str = await get_current_user(request)
-    user_doc = await get_current_user_doc(request)
-    actual_name = user_doc.get("nombre", username_str) if user_doc else username_str
-    
-    data = await request.json()
-    loop = asyncio.get_running_loop()
-    tid = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: save_personal_template(actual_name, data))
-    return {"status": "ok", "id": tid}
-
-@app.delete("/api/captacion/templates/personal")
-async def api_delete_personal_template(request: Request):
-    username_str = await get_current_user(request)
-    user_doc = await get_current_user_doc(request)
-    actual_name = user_doc.get("nombre", username_str) if user_doc else username_str
-    
-    data = await request.json()
-    tid = data.get("id")
-    if not tid:
-        raise HTTPException(status_code=400, detail="Falta ID")
-        
-    loop = asyncio.get_running_loop()
-    success = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: delete_personal_template(tid, actual_name))
-    return {"status": "ok"} if success else {"status": "error"}
-
-@app.post("/api/captacion/distribute")
-async def api_distribute_captacion(request: Request):
-    user = await get_current_user_doc(request)
-    
-    if user.get("rol") not in ["admin", "supervisor"]:
-        raise HTTPException(status_code=403, detail="No autorizado")
-        
-    loop = asyncio.get_running_loop()
-    count = await loop.run_in_executor(_WORKER_THREAD_POOL, distribute_sourced_leads)
-    return {"status": "ok", "assigned": count}
-
-async def captacion_distribution_loop():
-    logger.info("[BACKGROUND] Iniciando loop de distribución de captaciones...")
-    while True:
-        try:
-            background_tasks_status["captacion_distributor"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
-            background_tasks_status["captacion_distributor"]["status"] = "running"
-            
-            loop = asyncio.get_running_loop()
-            count = await loop.run_in_executor(_WORKER_THREAD_POOL, distribute_sourced_leads)
-            if count > 0:
-                logger.info(f"[BACKGROUND] Se asignaron {count} nuevas captaciones automáticamente.")
-                
-            # Ejecutar cada 1 hora
-            await asyncio.sleep(3600)
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            background_tasks_status["captacion_distributor"]["status"] = "error"
-            logger.error(f"[BACKGROUND] Error en distribuidor de captaciones: {e}")
-            await asyncio.sleep(60)
-
-# ========================= 6. RUTAS CRM (MODIFICADAS PARA HORA LOCAL) =========================
-
-@app.get("/crm", response_class=HTMLResponse)
 async def view_crm_list(
     request: Request, 
     estado: str = None, 

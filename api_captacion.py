@@ -1463,6 +1463,68 @@ def get_matching_leads_count(prop_data):
     analysis = get_matching_leads_analysis(prop_data)
     return analysis["exact"] + analysis["zone"] + analysis["broad"]
 
+SLA_CAPTACION_DIAS = 5  # Días de inactividad antes de liberar una captación asignada
+
+def release_stale_captaciones(sla_dias=SLA_CAPTACION_DIAS):
+    """
+    Libera captaciones asignadas que llevan más de `sla_dias` días sin gestión efectiva.
+
+    Una captación se considera inactiva si:
+      - Tiene gestion.ejecutivo_asignado definido
+      - Su gestion.estado es NUEVO o GESTION
+      - No tiene gestion.fecha_ultima_gestion, O dicha fecha es anterior al umbral SLA
+
+    Al liberarla:
+      - gestion.ejecutivo_asignado se pone a None (vuelve al pool de distribución)
+      - gestion.estado se mantiene como NUEVO (para que sea redistribuida)
+      - Se registra gestion.liberada_por_sla = True y gestion.fecha_liberacion
+
+    No modifica: round-robin, dashboard, sistema de leads, ni lógica comercial.
+    """
+    db = get_db()
+    now_utc = datetime.now(timezone.utc)
+    umbral = now_utc - timedelta(days=sla_dias)
+    umbral_iso = umbral.isoformat()
+
+    query = {
+        "details.es_propietario_directo": True,
+        "gestion.ejecutivo_asignado": {"$exists": True, "$ne": None},
+        "gestion.estado": {"$in": ["NUEVO", "GESTION"]},
+        "$or": [
+            # Sin ninguna gestión registrada y asignada hace más de SLA días
+            {
+                "gestion.fecha_ultima_gestion": {"$exists": False},
+                "gestion.fecha_asignacion": {"$lt": umbral_iso}
+            },
+            # Con última gestión más antigua que el umbral (ISO string)
+            {"gestion.fecha_ultima_gestion": {"$lt": umbral_iso}},
+            # Con última gestión más antigua que el umbral (datetime nativo de Mongo)
+            {"gestion.fecha_ultima_gestion": {"$lt": umbral}}
+        ]
+    }
+
+    result = db["yapo_propiedades"].update_many(
+        query,
+        {"$set": {
+            "gestion.ejecutivo_asignado": None,
+            "gestion.estado": "NUEVO",
+            "gestion.liberada_por_sla": True,
+            "gestion.fecha_liberacion": now_utc.isoformat()
+        }}
+    )
+
+    liberadas = result.modified_count
+    if liberadas > 0:
+        logger.info(
+            f"[SLA] {liberadas} captacion(es) liberadas por inactividad "
+            f"(>{sla_dias} dias sin gestion). Vuelven al pool de distribución."
+        )
+    else:
+        logger.info(f"[SLA] Sin captaciones inactivas para liberar (umbral: {sla_dias} dias).")
+
+    return liberadas
+
+
 def distribute_sourced_leads():
     """
     Distribuye propiedades 'NUEVO' sin ejecutivo a los ejecutivos basados en comunas_interes.

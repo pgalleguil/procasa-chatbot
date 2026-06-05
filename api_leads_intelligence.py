@@ -47,7 +47,7 @@ def _get_cached(key: str):
         db = get_db()
         doc = db["cache_store"].find_one({"_id": key})
         if doc:
-            logger.info(f"CACHE: hit [{key}]")
+            logger.debug(f"CACHE: hit [{key}]")
             return doc.get("data")
     except Exception as e:
         logger.warning(f"CACHE: error en get [{key}]: {e}")
@@ -143,7 +143,7 @@ def get_leads_executive_report():
     """
     cached = _get_cached(_REPORT_CACHE_KEY)
     if cached:
-        logger.info("LEADS_INTELLIGENCE: cache hit")
+        logger.debug("LEADS_INTELLIGENCE: cache hit")
         return cached
 
     import time
@@ -397,7 +397,7 @@ def get_leads_executive_report():
         }
 
         t_end = time.perf_counter()
-        logger.info(f"[PERF] LEADS_INTELLIGENCE: computed via $facet in {(t_end - t_start)*1000:.1f}ms (cache miss), caching for 5min")
+        logger.debug(f"[PERF] LEADS_INTELLIGENCE: computed via $facet in {(t_end - t_start)*1000:.1f}ms (cache miss), caching for 5min")
         _set_cached(_REPORT_CACHE_KEY, result)
         return result
 

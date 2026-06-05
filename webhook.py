@@ -2286,7 +2286,7 @@ async def cache_prewarmer_loop():
                 timeout=8.0
             )
             elapsed_ms = (time.time() - t0) * 1000
-            logger.info(f"[CACHE_WARMER] LEADS_INTELLIGENCE: cache pre-warmed en {elapsed_ms:.0f}ms")
+            logger.debug(f"[CACHE_WARMER] LEADS_INTELLIGENCE: cache pre-warmed en {elapsed_ms:.0f}ms")
             # Liberar lock explícitamente tras warm exitoso.
             await loop_ref.run_in_executor(_WORKER_THREAD_POOL, lambda: db["cache_locks"].update_one({"_id": lock_key}, {"$set": {"expires_at": now_utc}}))
         except asyncio.TimeoutError:

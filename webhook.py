@@ -271,7 +271,7 @@ async def advanced_perf_middleware(request: Request, call_next):
         if not request.url.path.startswith("/static/") and not request.url.path.startswith("/contracts_pdf/"):
             content_length = response.headers.get("content-length", "unknown")
             log_str = f"[HTTP_PERF] request_id={request_id} user={user} method={request.method} path={request.url.path} total={duration_ms:.0f}ms status={response.status_code} size={content_length}"
-            logger.info(log_str)
+            logger.debug(log_str)
             
             if duration_ms > 3000:
                 logger.error(f"[SLOW_REQUEST] ERROR: request_id={request_id} path={request.url.path} duration={duration_ms:.0f}ms")
@@ -285,12 +285,19 @@ async def advanced_perf_middleware(request: Request, call_next):
             status_level = "OK" if snap["mongo_sync_on_loop"] == 0 and snap["event_loop_blocked"] == 0 else "DEGRADED"
             if snap["mongo_sync_on_loop"] > 5 or snap["event_loop_blocked"] > 5:
                 status_level = "CRITICAL"
-            logger.info(
+                
+            summary_msg = (
                 f"[REQUEST_SUMMARY]\ntrace={request_id}\n"
                 f"mongo_calls=none\nmongo_sync_violations={snap['mongo_sync_on_loop']}\n"
                 f"event_loop_blocked={snap['event_loop_blocked']}\n"
                 f"duration_ms={duration_ms:.0f}\nstatus={status_level}"
             )
+            if status_level == "CRITICAL":
+                logger.error(summary_msg)
+            elif status_level == "DEGRADED":
+                logger.warning(summary_msg)
+            else:
+                logger.debug(summary_msg)
         except Exception:
             logger.exception(f"[REQUEST_SUMMARY] trace={request_id} error=summary_failed")
         return response

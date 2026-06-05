@@ -2259,7 +2259,7 @@ async def cache_prewarmer_loop():
                     expires_at = expires_at.replace(tzinfo=timezone.utc)
                 ttl_left = (expires_at - now_utc).total_seconds()
                 if ttl_left > 120:
-                    logger.info(f"[CACHE_WARMER] Skip: cache vigente ({ttl_left:.0f}s restantes)")
+                    logger.debug(f"[CACHE_WARMER] Skip: cache vigente ({ttl_left:.0f}s restantes)")
                     await asyncio.sleep(60)
                     continue
 
@@ -2273,7 +2273,7 @@ async def cache_prewarmer_loop():
                 )
             lock_doc = await loop_ref.run_in_executor(_WORKER_THREAD_POOL, _acquire_lock)
             if not lock_doc:
-                logger.info("[CACHE_WARMER] Skip: lock activo en otra instancia")
+                logger.debug("[CACHE_WARMER] Skip: lock activo en otra instancia")
                 await asyncio.sleep(60)
                 continue
 
@@ -2360,10 +2360,17 @@ async def event_loop_monitor_loop():
                 status_level = "OK" if snap["mongo_sync_on_loop"] == 0 and snap["event_loop_blocked"] == 0 else "DEGRADED"
                 if snap["mongo_sync_on_loop"] > 5 or snap["event_loop_blocked"] > 5:
                     status_level = "CRITICAL"
-                logger.info(
+                # Solo loguear en INFO/WARNING si hay degradación; OK va a DEBUG para no contaminar
+                summary_msg = (
                     f"[HEALTH_SUMMARY]\nmongo_sync_on_loop={snap['mongo_sync_on_loop']}\n"
                     f"event_loop_blocked={snap['event_loop_blocked']}\nstatus={status_level}"
                 )
+                if status_level == "CRITICAL":
+                    logger.error(summary_msg)
+                elif status_level == "DEGRADED":
+                    logger.warning(summary_msg)
+                else:
+                    logger.debug(summary_msg)
             except Exception:
                 logger.exception("[HEALTH_SUMMARY] error=failed_to_emit")
 
@@ -2389,12 +2396,16 @@ async def threadpool_forensics_loop():
                 snapshot = (active_threads, max_workers, queued)
                 prev = last_snapshot.get(name)
                 now = time.time()
-                # Reducir ruido: log solo cuando cambia estado o cada 60s como heartbeat.
-                if prev != snapshot or (now - last_heartbeat_log) >= 60:
+                # Log solo cuando cambia estado (INFO); heartbeat periódico va a DEBUG para no contaminar.
+                if prev != snapshot:
                     logger.info(
                         f"[THREADPOOL_FORENSICS] pool={name} active={active_threads} max={max_workers} queued={queued}"
                     )
-                    last_snapshot[name] = snapshot
+                elif (now - last_heartbeat_log) >= 60:
+                    logger.debug(
+                        f"[THREADPOOL_FORENSICS] pool={name} active={active_threads} max={max_workers} queued={queued}"
+                    )
+                last_snapshot[name] = snapshot
                 # Saturación real sostenida: evitar alertas por picos breves de cola=1.
                 is_saturated_now = (
                     queued >= 3 and

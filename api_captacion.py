@@ -1593,32 +1593,9 @@ def distribute_sourced_leads():
             }}
         )
         
-        try:
-            from chatbot.storage import save_pending_notification
-            from chatbot.lead_router import get_executive_phone
-            t_phone = get_executive_phone(target_exec) if target_exec else "+56900000000"
-            
-            raw_phone = details.get("whatsapp_phone") or p.get("whatsapp_phone") or p.get("phone") or ""
-            clean_phone = "".join(filter(str.isdigit, str(raw_phone)))
-            if clean_phone.startswith("9") and len(clean_phone) == 9:
-                clean_phone = "56" + clean_phone
-            elif not clean_phone.startswith("56") and len(clean_phone) == 11 and clean_phone.startswith("569"):
-                pass # it's already ok
-                
-            alert = {
-                "phone": "+" + clean_phone if clean_phone else "",
-                "property_code": "CAPTACION_NUEVA",
-                "lead_type": "AsignacionCaptacion",
-                "target_name": target_exec,
-                "target_phone": t_phone,
-                "nombre": details.get("publicador", "Propietario"),
-                "last_message": f"Nueva captacion asignada en {comuna_norm}."
-            }
-            save_pending_notification(alert)
-        except Exception as e:
-            import logging
-            logging.error(f"Error saving notification for captacion: {e}")
-            
+        # NOTA: Las captaciones son un módulo independiente de leads de ventas.
+        # NO se envían notificaciones al equipo por asignación automática de captaciones.
+        # La distribución es silenciosa; los ejecutivos la ven en el panel /captacion.
         exec_counters[target_exec] += 1
         assigned_count += 1
         

@@ -1,0 +1,912 @@
+==================================================================
+SECCIÓN 1: PANORAMA GENERAL
+==================================================================
+TOTAL ANALIZADOS (Ayer y Hoy): 2539
+DUEÑOS: 97
+CORREDORES: 2442
+
+==================================================================
+SECCIÓN 2: CORREDORES EXCLUSIVOS POR PROFILE_ID
+==================================================================
+Corredores donde (seller_profile_id EXISTE) Y (seller_is_pro = True)
+PERO (broker_brand = N/A) Y (company_name = N/A)
+
+CANTIDAD: 140
+PORCENTAJE SOBRE CORREDORES: 5.7%
+
+==================================================================
+SECCIÓN 3: MUESTRA ALEATORIA (100 CASOS)
+==================================================================
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/en-arriendo-casa-2-pisos-villa-pucara/25923349
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13783258
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/arriendo-local-comercial-excelente-ubicacion/32489504
+PUBLICADOR: Francisco Gerardo Soto
+SELLER_PROFILE_ID: 13897325
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo/27159481
+PUBLICADOR: carolina ramirez carreño
+SELLER_PROFILE_ID: 14230713
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/amplia-casa-a-pasos-de-plaza-de-armas/26559381
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14047032
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-de-2-dorm-en-talca/32387330
+PUBLICADOR: María Patricia Cepeda
+SELLER_PROFILE_ID: 17631803
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-5-dorm-en-talca/32182387
+PUBLICADOR: Lucia Letelier
+SELLER_PROFILE_ID: 17111388
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/amplia-casa-con-estacionamiento-y-patio-metro-v-valdes/32440205
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 17668347
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-de-1-dorm-en-la-florida/32158349
+PUBLICADOR: Efi Rent
+SELLER_PROFILE_ID: 14880503
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-nueva-en-brisas-de-san-miguel-talca/26881190
+PUBLICADOR: Aida
+SELLER_PROFILE_ID: 14153128
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-excelente-casa-hacienda-esmeralda/25879039
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13765490
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-edificio-paz-aire-urbano-en-talca/32387190
+PUBLICADOR: Lucía Eugenia Luengo
+SELLER_PROFILE_ID: 17631803
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-edificio-plaza-independencia/25846817
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13752252
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-sector-alto-las-cruces/27988428
+PUBLICADOR: Patricia
+SELLER_PROFILE_ID: 13759202
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa/26687210
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14093064
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/acojedora-casa-en-excelente-sector-residencial-de/25851720
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13753593
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/oportunidad-venta-departamento-comuna-macul/32253918
+PUBLICADOR: blanca martinez valerio
+SELLER_PROFILE_ID: 13726048
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-de-departamento/26101102
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13882242
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-casa-villa-bicentenario-talca/25867928
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13759786
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-avenida-isidoro-del-solar-280-talca/32431256
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13722617
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/arriendo-bodega/30622756
+PUBLICADOR: Richard CS
+SELLER_PROFILE_ID: 13725240
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-casa-en-parcela-sector-alto-las-cruces/25866440
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13759202
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-villa-bicentenario-xi/26707475
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14099740
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-frente-universidad-de-talca-4d-2b/25867835
+PUBLICADOR: Pedro Mansilla
+SELLER_PROFILE_ID: 13759746
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-talca/26819254
+PUBLICADOR: Isabel Novoa
+SELLER_PROFILE_ID: 14134718
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-casa-parque-las-rastras-iv/26101021
+PUBLICADOR: karina
+SELLER_PROFILE_ID: 13882183
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/parcela-en-venta-en-talca/32182599
+PUBLICADOR: Maria Teresa Jimenez
+SELLER_PROFILE_ID: 17111388
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial/26715698
+PUBLICADOR: Jeremias Opazo
+SELLER_PROFILE_ID: 14102436
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento-disponible-desde-enero/26099669
+PUBLICADOR: Carolina Verdugo
+SELLER_PROFILE_ID: 13881436
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/barrio-norte/25940643
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13789953
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-2-pisos/26017689
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13851835
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-de-3-dorm-en-talca/32390325
+PUBLICADOR: Jacqueline Diaz
+SELLER_PROFILE_ID: 17631803
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-talca-de-3-dormitorios-y-2-banos/26860264
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14146899
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-de-2-dorm-en-macul/32327643
+PUBLICADOR: Magdalena López
+SELLER_PROFILE_ID: 14880503
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-edificio-altos-de-lircay/26676168
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14089355
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-edificio-gran-roble/27905468
+PUBLICADOR: Paula Garrido
+SELLER_PROFILE_ID: 13737531
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/se-arriendan-locales-comerciales-en-talca/31911278
+PUBLICADOR: Carlos Vasquez
+SELLER_PROFILE_ID: 14851899
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/edificio-empar/27951640
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14438866
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/se-vende-casa-en-la-florida/28114644
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14525388
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-de-3d-y-2b-en-talca/32466549
+PUBLICADOR: Cristian Andrés Rojas
+SELLER_PROFILE_ID: 17631803
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/venta-directa-con-propietario-depto-3-dormitorios/25846648
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13752192
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-amoblado-cerca-de-utal/25996843
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13840755
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-avenida-macul-con-nicanor-molinare/32426153
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13722617
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/vendo-departamento/30957071
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13759327
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-condominio-portal-las-rastras-talca/31663421
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 16533404
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-calle-5-sur-sector-centro-talca/31022868
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 16533404
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/disponible-a-contar-del-1-de-junio-2023/27019180
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14194804
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/galpon/27016254
+PUBLICADOR: Alfredo Martinez Correa
+SELLER_PROFILE_ID: 14194005
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/casa-o-departamento-en-el-centro/26807505
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14056327
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/hogar-ideal-para-tu-familia-en-la-florida-3d-2b/32185100
+PUBLICADOR: Mariannis Rojas
+SELLER_PROFILE_ID: 17439103
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/duena-arrienda-depto-nuevo-en-mirador-del-country/26136856
+PUBLICADOR: Jacqueline
+SELLER_PROFILE_ID: 13894212
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/se-arrienda-casa-en-parque-san-valentin-talca/27990506
+PUBLICADOR: Luz Eliana Cáceres Chamorro
+SELLER_PROFILE_ID: 13950870
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-2-dormitorios/27992680
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14460827
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/casa-o-local-comercial/26141496
+PUBLICADOR: Propietarios 
+SELLER_PROFILE_ID: 13895845
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/busco-casa-en-arriendo/25888476
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13769550
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-mariposa-seminuevo-en-macul/32158231
+PUBLICADOR: Pamela J.
+SELLER_PROFILE_ID: 14880503
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/se-arrienda-departamento-condominio-mirador-urbano/26095326
+PUBLICADOR: juan ignacio
+SELLER_PROFILE_ID: 13878846
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-de-1-dorm-en-talca/32387201
+PUBLICADOR: María Patricia Cepeda
+SELLER_PROFILE_ID: 17631803
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-en-talca/25879628
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13763805
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-apto-para-vivir-y-o-negocio/26881472
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14153217
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/1-ambiente-semi-amoblado-ubicado-en-plaza-armas/32075243
+PUBLICADOR: Francisco Gerardo Soto
+SELLER_PROFILE_ID: 13897325
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-macul-3500-quilin-centro-civico/31957910
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 16533404
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-gran-roble/25954636
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13799677
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento-en-talca-frente-a-mall-plaz/26139582
+PUBLICADOR: Catalina Andre Palominos Sepulveda
+SELLER_PROFILE_ID: 13895046
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-casa-sector-bicentenario/26781155
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14123035
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/galpon/26759484
+PUBLICADOR: ximena vasquez
+SELLER_PROFILE_ID: 14093565
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/se-arrienda-departamento-en-talca/25901507
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13776689
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-condominio-don-alfonso-en-talca/32387301
+PUBLICADOR: Lucía Eugenia Luengo
+SELLER_PROFILE_ID: 17631803
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/departamento-1-piso-con-estacionamiento-condominio-san-luis-la-florida/32367249
+PUBLICADOR: Luis Viera Silva
+SELLER_PROFILE_ID: 13730271
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/depto-amoblado-central-talca/31824228
+PUBLICADOR: Carlos Vasquez
+SELLER_PROFILE_ID: 14851899
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-vivienda-bicentenario/27912993
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14419672
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-condominio-las-rastras-de-4-dorm-en-talca/32387350
+PUBLICADOR: María Patricia Cepeda
+SELLER_PROFILE_ID: 17631803
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arrienda-casa-a-empresas-dona-josefa/26141841
+PUBLICADOR: Alexis Villalobos Alvarado
+SELLER_PROFILE_ID: 13896027
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento-central-3d-2b-bodega-y-estacionamiento/32483885
+PUBLICADOR: Angela Angela
+SELLER_PROFILE_ID: 16683486
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-con-estacionamiento-1d-1b-excelente-estado/32159200
+PUBLICADOR: Schmidt Corredores
+SELLER_PROFILE_ID: 14880503
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-sector-oriente-3-dormitorios-2-banos/26095595
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13879023
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/renta-hermoso-departamento-en-edificio-de-lujos/28200949
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14584328
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-casa-habitacion/26099167
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13881112
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-amoblado-edificio-aire-urbano/28186574
+PUBLICADOR: Daniela Rodríguez Olate
+SELLER_PROFILE_ID: 14147890
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/se-arrienda-casa-en-uno-oriente/26793968
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14127012
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-arrendamos-hermosa-casa-en-valles-del-country/31175046
+PUBLICADOR: Viva Talca
+SELLER_PROFILE_ID: 13861765
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-3-dorm-en-la-florida/32158538
+PUBLICADOR: Magdalena López
+SELLER_PROFILE_ID: 14880503
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-120-500m2-para-institucion-o-empresa-pasos-ruta-5-sur-2-norte-talca/32505285
+PUBLICADOR: Sergio Ramos
+SELLER_PROFILE_ID: 13743910
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-casa-3d3b-altos-del-parque-detras-ucm/25862598
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13757599
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-casa-en-condominio-alto-maule/25884848
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13768420
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-casa-para-empresas/25876788
+PUBLICADOR: Marcela
+SELLER_PROFILE_ID: 13764337
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-metro-los-quillayes/32470043
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 16533404
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-amplio-departamento/25915698
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13780717
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-avenida-colin-talca/26141415
+PUBLICADOR: Propietarios 
+SELLER_PROFILE_ID: 13895806
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/depto-la-florida-2-dormitorios-2-banos-estacionamiento-bodeg/32331203
+PUBLICADOR: Total Casa
+SELLER_PROFILE_ID: 14880503
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/se-arrienda-vivienda/26096777
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13879766
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-avenida-8-sur-con-29-oriente/27183483
+PUBLICADOR: Propietarios 
+SELLER_PROFILE_ID: 14229868
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-habitacion-ubicada-en-santa-rita-a-15-minutos-de-talca-entorno-campestre/32248661
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 14134749
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/arriendo-local-comercial-en-el-centro-o-bodega/28021923
+PUBLICADOR: Propietarios 
+SELLER_PROFILE_ID: 14423831
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/local-arrendamos-local-comercial-en-11-oriente-3-sur/31597682
+PUBLICADOR: Viva Talca
+SELLER_PROFILE_ID: 13861765
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/galpon-de-trabajo/27216643
+PUBLICADOR: Alfredo Martinez Correa
+SELLER_PROFILE_ID: 14194005
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/3-dormitorio-jose-miguel-carrera-130-la-florida/32156624
+PUBLICADOR: Dargeth Reyes
+SELLER_PROFILE_ID: 14880503
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento/32149902
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 13732289
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/depto-1d/27150664
+PUBLICADOR: Constanza Vergara
+SELLER_PROFILE_ID: 14228727
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/camino-de-la-plegaria-n-6786-la-florida/31789882
+PUBLICADOR: Oficina Ossandon
+SELLER_PROFILE_ID: 13738200
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-talca/28175560
+PUBLICADOR: Lucía Luengo
+SELLER_PROFILE_ID: 13862168
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+---
+
+==================================================================
+SECCIÓN 4: AUDITORÍA HTML DE LA MUESTRA
+==================================================================
+Archivos HTML Encontrados y Leídos: 100 de 100
+/user/profile/id/ existe en: 100
+contact_logo existe en: 0
+advertiser-avatar existe en: 0
+Badge 'Profesional' existe en: 6
+
+==================================================================
+SECCIÓN 5: ANÁLISIS DE PERSONA NATURAL
+==================================================================
+Dentro de los casos detectados exclusivamente por PROFILE_ID:
+Publicadores que parecen Persona Natural: 61
+Porcentaje de Personas Naturales afectadas: 43.6%
+
+==================================================================
+SECCIÓN 6: TOP 100 PUBLICADORES (EXCLUSIVOS PROFILE_ID)
+==================================================================
+N/A -> 63
+María Patricia Cepeda -> 6
+Propietarios  -> 5
+Viva Talca -> 3
+Carlos Vasquez -> 3
+Lucía Eugenia Luengo -> 3
+María Pia Muñoz -> 2
+Francisco Gerardo Soto -> 2
+Alfredo Martinez Correa -> 2
+Pedro Mansilla -> 2
+Magdalena López -> 2
+Lucia Letelier -> 1
+Viviana -> 1
+Maria Teresa Jimenez -> 1
+Sergio Ramos -> 1
+Pamela Diaz Peredo -> 1
+Isabel Novoa -> 1
+Carolina Verdugo -> 1
+salvadorcanelon25 -> 1
+Alexis Villalobos Alvarado -> 1
+Jacqueline -> 1
+Marcela -> 1
+carolina ramirez carreño -> 1
+karina -> 1
+ximena vasquez -> 1
+Daniela Rodríguez Olate -> 1
+Paula Garrido -> 1
+Patricia -> 1
+Maule Inmobiliario -> 1
+Cristian Andrés Rojas -> 1
+Angela Angela -> 1
+Lucía Luengo -> 1
+Jacqueline Diaz -> 1
+Fernando Araque -> 1
+juan ignacio -> 1
+Angela -> 1
+Constanza Gonzalez -> 1
+Aida -> 1
+Luz Eliana Cáceres Chamorro -> 1
+Jeremias Opazo -> 1
+Richard CS -> 1
+Catalina Andre Palominos Sepulveda -> 1
+loretogutierrezarellano -> 1
+Constanza Vergara -> 1
+marilen -> 1
+Efi Rent -> 1
+Pamela J. -> 1
+Dargeth Reyes -> 1
+Mariannis Rojas -> 1
+Oficina Ossandon -> 1
+Alejandro Jara -> 1
+Schmidt Corredores -> 1
+blanca martinez valerio -> 1
+Pablo Valdes -> 1
+Luis Viera Silva -> 1
+Patricia Villanueva Núñez -> 1
+Ángel Ovalles -> 1
+Total Casa -> 1
+
+==================================================================
+SECCIÓN 7: CONCLUSIÓN AUTOMÁTICA
+==================================================================
+1. ¿seller_profile_id aparece en casi todos los avisos de Yapo?
+-> SÍ. La ruta /user/profile/id/ parece ser universal para dueños y corredores.
+
+2. ¿seller_is_pro está siendo derivado automáticamente desde seller_profile_id?
+-> MUY PROBABLE. Casi ningún HTML tiene el badge 'Profesional' visual real, pero seller_is_pro es True en la base de datos.
+
+3. ¿Cuántos corredores dependen exclusivamente de estas señales?
+-> 140 corredores (5.7% del total de corredores).
+
+4. ¿Existe evidencia estadística de que profile_id está sobreclasificando personas naturales?
+-> EVIDENCIA MODERADA. El 43.6% parecen personas naturales.

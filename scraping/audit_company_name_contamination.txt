@@ -1,0 +1,413 @@
+==================================================================
+RESULTADOS AUDITORÍA: CONTAMINACIÓN COMPANY_NAME
+==================================================================
+TOTAL REGISTROS ANALIZADOS: 2389
+
+1. Registros con company_name == publicador: 768
+2. Registros con company_name == broker_brand: 1104
+3. Registros con company_name que contienen palabras empresariales: 1084
+4. Registros con company_name que parece persona (igual a publicador y sin keywords): 415
+
+==================================================================
+5. EJEMPLOS DE COMPANY_NAME == PUBLICADOR (Hasta 100)
+==================================================================
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/en-venta-hermosa-casa-en-parque-san-valentin-3d-2b-talca/32388174
+PUBLICADOR: Claudia Ortíz
+COMPANY_NAME: Claudia Ortíz
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/vendo-casa-villa-san-agustin-sector-sur-poniente/25895941
+PUBLICADOR: ARLETTE GARRIDO MIÑO
+COMPANY_NAME: ARLETTE GARRIDO MIÑO
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/terreno-en-venta-en-talca-subiendo-el-cerro-la-virgen/32409947
+PUBLICADOR: Jacqueline Diaz
+COMPANY_NAME: Jacqueline Diaz
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-5-dorm-en-talca/32135199
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-en-talca/25870993
+PUBLICADOR: Flavioignacio Larajofre
+COMPANY_NAME: Flavioignacio Larajofre
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-centro-civico-talca/32393536
+PUBLICADOR: Presencia propiedades
+COMPANY_NAME: Presencia propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-de-2-dorm-en-talca-46m2/32135031
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-las-rastras/31682147
+PUBLICADOR: Propiedades Peumo
+COMPANY_NAME: Propiedades Peumo
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/en-venta-hermosa-casa-en-condominio-piedra-verde-sur-pte/32388289
+PUBLICADOR: Cima Propiedades
+COMPANY_NAME: Cima Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/parcela-en-venta-en-loteo-santa-margarita-talca/32388253
+PUBLICADOR: Aldana y Torres Propiedades
+COMPANY_NAME: Aldana y Torres Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-3-dormitorios-cercana-a-santo-tomas-talca/32387502
+PUBLICADOR: Claudia Ortíz
+COMPANY_NAME: Claudia Ortíz
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-loteo-prosperidad-talca-remodelada-duplex/32156930
+PUBLICADOR: Celinda Gómez - Nidum Gestión inmobiliaria
+COMPANY_NAME: Celinda Gómez - Nidum Gestión inmobiliaria
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-2d-2b-1e-centro-talca-plaza-las-heras/32388196
+PUBLICADOR: FDB Propiedades
+COMPANY_NAME: FDB Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-de-2d-2b-1e-1b-centro-talca/32388194
+PUBLICADOR: FDB Propiedades
+COMPANY_NAME: FDB Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/se-vende-casa-en-villa-bicentenario-de-talca/32200695
+PUBLICADOR: Rusot Propiedades
+COMPANY_NAME: Rusot Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/vende-casa-loteo-san-andres-iv/26954050
+PUBLICADOR: Claudio Esteban Rosales Bravo
+COMPANY_NAME: Claudio Esteban Rosales Bravo
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-de-2-dorm-en-talca/32135170
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-san-miguel-de-colin/32481389
+PUBLICADOR: Fuenzalida Propiedades - Concepción
+COMPANY_NAME: Fuenzalida Propiedades - Concepción
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/se-vende-terreno-urbano-de-600-m2-en-alameda/32389364
+PUBLICADOR: Nara Propiedades
+COMPANY_NAME: Nara Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa/25809325
+PUBLICADOR: Claudia Castro Ugarte
+COMPANY_NAME: Claudia Castro Ugarte
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/propiedad-en-venta-sector-residencial-dona-ignacia-i/32388221
+PUBLICADOR: Presencia propiedades
+COMPANY_NAME: Presencia propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/se-vende-propiedad-en-poblacion-cooperativa-calaf-talca/32388243
+PUBLICADOR: Flor de los Santos Peraza
+COMPANY_NAME: Flor de los Santos Peraza
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-3-dorm-en-centro-talca/32220947
+PUBLICADOR: Nexxos Chile
+COMPANY_NAME: Nexxos Chile
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/parcela-condominio-en-venta-en-talca/32135172
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-4-dorm-y-piscina-en-talca/32388369
+PUBLICADOR: María Patricia Cepeda
+COMPANY_NAME: María Patricia Cepeda
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-3-dorm-en-talca/32487313
+PUBLICADOR: Claudia Ortíz
+COMPANY_NAME: Claudia Ortíz
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/venta-y-arriendo-hacienda-la-esmeralda-iii-talca/32400940
+PUBLICADOR: Presencia Propiedades
+COMPANY_NAME: Presencia Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-edificio-espacio-talca/31796102
+PUBLICADOR: Propiedades Peumo
+COMPANY_NAME: Propiedades Peumo
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-en-talca/32147875
+PUBLICADOR: PROCASA SUCRE
+COMPANY_NAME: Procasa Sucre
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-se-vende-departamento-en-edificio-aire-urbano/32314870
+PUBLICADOR: Viva Talca
+COMPANY_NAME: Viva Talca
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/oportunidad-en-parque-san-valentin/31682103
+PUBLICADOR: Propiedades Peumo
+COMPANY_NAME: Propiedades Peumo
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/se-vende-casa-ideal-locales-comerciales-independencia-talca/32388414
+PUBLICADOR: Aldana y Torres Propiedades
+COMPANY_NAME: Aldana y Torres Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/hermosa-y-remodelada-casa-en-villa-bicentenario-talca/32388319
+PUBLICADOR: Cima Propiedades
+COMPANY_NAME: Cima Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/parcela-en-venta-en-talca/32135071
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/sitio-en-venta-en-talca/32223649
+PUBLICADOR: Nexxos Chile
+COMPANY_NAME: Nexxos Chile
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-altos-del-country/32060157
+PUBLICADOR: Propiedades Peumo
+COMPANY_NAME: Propiedades Peumo
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-de-4-dorm-en-centro-de-talca/32221675
+PUBLICADOR: Nexxos Chile
+COMPANY_NAME: Nexxos Chile
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/terreno-de-350m2-2-casas-construidas-ubicacion-comercial/32388275
+PUBLICADOR: Presencia propiedades
+COMPANY_NAME: Presencia propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/hermosa-casa-en-venta-en-sector-nor-oriente-de-talca/32310540
+PUBLICADOR: Jaime Alberto Rossel
+COMPANY_NAME: Jaime Alberto Rossel
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/en-venta-estupenda-casa-en-pleno-corazon-de-talca-3d-2b/32387524
+PUBLICADOR: Claudia Ortíz
+COMPANY_NAME: Claudia Ortíz
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/terreno-urbano-en-venta-en-parcelas-hacienda-esmeralda-talca/32388352
+PUBLICADOR: Cima Propiedades
+COMPANY_NAME: Cima Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-se-vende-exclusiva-propiedad-en-loteo-prosperidad/32403051
+PUBLICADOR: Viva Talca
+COMPANY_NAME: Viva Talca
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/vende-estrategica-casa-local-comercial-talca/32177515
+PUBLICADOR: Carlos Vasquez
+COMPANY_NAME: Carlos Vasquez
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/venta-casa-sector-norte-de-talca/32489922
+PUBLICADOR: Francisco Gerardo Soto
+COMPANY_NAME: Francisco Gerardo Soto
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-4-dorm-en-talca/32135186
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/sitio-en-venta-en-talca/32135154
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/vendo-casa-en-huertos-de-san-miguel-talca/25962742
+PUBLICADOR: Paola Calderón Nilo
+COMPANY_NAME: Paola Calderón Nilo
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-4-dormitorios-2-banos-villa-dona-clara-talca/32387520
+PUBLICADOR: Claudia Ortíz
+COMPANY_NAME: Claudia Ortíz
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/terreno-urbano-en-venta/32233467
+PUBLICADOR: Liliana Lagos
+COMPANY_NAME: Liliana Lagos
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-aldea-campesina-panguilemu-talca/32330875
+PUBLICADOR: Bajos de Lircay Propiedades
+COMPANY_NAME: Bajos de Lircay Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-15-norte-sector-utal-en-talca/32388316
+PUBLICADOR: Lucía Eugenia Luengo
+COMPANY_NAME: Lucía Eugenia Luengo
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-plena-avda-villa-dona-ignacia-talca/32388247
+PUBLICADOR: Presencia Propiedades
+COMPANY_NAME: Presencia Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-3-dorm-en-talca/32135161
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-uso-habit-o-comercial-7d-3b-2e-centro-talca/32388265
+PUBLICADOR: FDB Propiedades
+COMPANY_NAME: FDB Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/2-sitios-con-rol-propio-valor-de-oportunidad-centro-en-talca/32388189
+PUBLICADOR: FDB Propiedades
+COMPANY_NAME: FDB Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-1-dorm-en-talca/32388419
+PUBLICADOR: Aldana y Torres Propiedades
+COMPANY_NAME: Aldana y Torres Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-central-en-venta-de-2-dorm-en-talca/32135098
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/terreno-urbano-sector-las-rastras/25878889
+PUBLICADOR: Yohana
+COMPANY_NAME: Yohana
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/terreno-construccion-en-venta-en-talca/32224066
+PUBLICADOR: Nexxos Chile
+COMPANY_NAME: Nexxos Chile
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/valles-del-country-4-dormitorios-2-banos/31396485
+PUBLICADOR: Bajos de Lircay Propiedades
+COMPANY_NAME: Bajos de Lircay Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/excelente-casa-nueva-en-loteo-140-m2-construidos/26815511
+PUBLICADOR: Emilia Herrera
+COMPANY_NAME: Emilia Herrera
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-277-m2-en-hacienda-esmeralda-las-rastras/32388208
+PUBLICADOR: Presencia propiedades
+COMPANY_NAME: Presencia propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/villa-pucara-4-dormitorios-2-banos/32387529
+PUBLICADOR: Bajos de Lircay Propiedades
+COMPANY_NAME: Bajos de Lircay Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/se-vende-parcela-en-alto-la-vina-sector-oriente-de-talca/32387447
+PUBLICADOR: Nara propiedades
+COMPANY_NAME: Nara propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-6-dorm-en-talca/32135168
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-dona-ignacia/26824482
+PUBLICADOR: Maicol andre
+COMPANY_NAME: Maicol andre
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-de-2-dormito-2-banos-en-talca/32388324
+PUBLICADOR: Cecilia Isabel Sepulveda
+COMPANY_NAME: Cecilia Isabel Sepulveda
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/parcela-en-venta-en-talca/32260632
+PUBLICADOR: KLUK Propiedades
+COMPANY_NAME: KLUK Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/vende-parcela-a-13-minutos-de-talca-camino-las-rastras/32158966
+PUBLICADOR: Celinda Gómez - Nidum Gestión inmobiliaria
+COMPANY_NAME: Celinda Gómez - Nidum Gestión inmobiliaria
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/vendo-departamento-2-dormitorios-1-bano/26099637
+PUBLICADOR: Alexis Parra
+COMPANY_NAME: Alexis Parra
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-talca/28138669
+PUBLICADOR: Lucía Luengo
+COMPANY_NAME: Lucía Luengo
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/vendo-departamento-condominio-don-carlos/26620377
+PUBLICADOR: claudia jara
+COMPANY_NAME: claudia jara
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-ideal-para-pension-universitaria-o-residencia-talca/32388242
+PUBLICADOR: Flor de los Santos Peraza
+COMPANY_NAME: Flor de los Santos Peraza
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-en-barrio-consolidado/31251130
+PUBLICADOR: Jaime Alberto Rossel
+COMPANY_NAME: Jaime Alberto Rossel
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-en-10-oriente-con-7-norte-en-talca/32224249
+PUBLICADOR: Nexxos Chile
+COMPANY_NAME: Nexxos Chile
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-de-2-dorm-en-talca/32462331
+PUBLICADOR: Jacqueline Diaz
+COMPANY_NAME: Jacqueline Diaz
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/se-vende-casa-en-brisas-del-maule/28103129
+PUBLICADOR: Claudia
+COMPANY_NAME: Claudia
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/se-vende-sitio-y-casa-en-talca-5-norte/32388322
+PUBLICADOR: Lucía Eugenia Luengo
+COMPANY_NAME: Lucía Eugenia Luengo
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-camino-a-coin-en-venta-talca/32135150
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-talca-edificio-progresur-central/32223881
+PUBLICADOR: Nexxos Chile
+COMPANY_NAME: Nexxos Chile
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-exclusivo-condominio-venta-de-7-dorm-en-talca/32135148
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/en-venta-casa-de-dos-pisos-en-villa-la-campina-talca/32388172
+PUBLICADOR: Flor de los Santos Peraza
+COMPANY_NAME: Flor de los Santos Peraza
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/sitio-urbano-con-casa-de-adobe-sector-norte-muy-cerca-plaza-las-heras/31827218
+PUBLICADOR: Bajos de Lircay Propiedades
+COMPANY_NAME: Bajos de Lircay Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-villa-buen-pastor/31810138
+PUBLICADOR: Propiedades Peumo
+COMPANY_NAME: Propiedades Peumo
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/sitio-norte/32227427
+PUBLICADOR: Vhopropiedades
+COMPANY_NAME: Vhopropiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-de-4-dorm-en-talca/32135092
+PUBLICADOR: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/se-vende-terreno-talca/25872021
+PUBLICADOR: Lorena Ramirez
+COMPANY_NAME: Lorena Ramirez
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-6-dorm-en-talca/32388258
+PUBLICADOR: María Patricia Cepeda
+COMPANY_NAME: María Patricia Cepeda
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/venta-de-casa-en-condominio-talca/32238312
+PUBLICADOR: Cénit Propiedades
+COMPANY_NAME: Cénit Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/estupenda-parcela-en-sector-tres-montes-talca/31614204
+PUBLICADOR: A4 Propiedades
+COMPANY_NAME: A4 Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/estupenda-casa-en-venta-parque-universitario-5d-3-b/32388175
+PUBLICADOR: Claudia Ortíz
+COMPANY_NAME: Claudia Ortíz
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/vendo-casa-en-nueva-horizonte/26576138
+PUBLICADOR: patatafritafria2303
+COMPANY_NAME: patatafritafria2303
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/venta-de-casa-sin-subsidio/25899586
+PUBLICADOR: sandra morales medel
+COMPANY_NAME: sandra morales medel
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-villa-los-conquistadores/31319035
+PUBLICADOR: Vhopropiedades
+COMPANY_NAME: Vhopropiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/parcela-en-venta-en-talca/32148021
+PUBLICADOR: PROCASA SUCRE
+COMPANY_NAME: Procasa Sucre
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/vendemos-hermosa-casa-en-villa-bicentenario-de-talca/32388395
+PUBLICADOR: Cima Propiedades
+COMPANY_NAME: Cima Propiedades
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-de-2-dorm-en-talca/32388323
+PUBLICADOR: Cecilia Isabel Sepulveda
+COMPANY_NAME: Cecilia Isabel Sepulveda
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-altos-del-country/31682105
+PUBLICADOR: Propiedades Peumo
+COMPANY_NAME: Propiedades Peumo
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-3-dorm-en-valles-de-talca/32450720
+PUBLICADOR: MAISMA PROPIEDADES
+COMPANY_NAME: MAISMA PROPIEDADES
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/tu-proximo-hogar-en-solar-del-parque-ii-cercano-a-todo/32514753
+PUBLICADOR: Tatiana Tamara tapia
+COMPANY_NAME: Tatiana Tamara tapia
+---

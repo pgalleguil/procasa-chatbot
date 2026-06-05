@@ -269,6 +269,9 @@ async def main():
         # Solo validar propiedades relevantes para captación: dueños directos o sin clasificar
         # Excluir corredoras ya clasificadas (details.es_propietario_directo: false) para no gastar proxies
         "details.es_propietario_directo": {"$ne": False},
+        # Excluir propiedades identificadas como corredoras por los ejecutivos
+        "gestion.estado": {"$ne": "Corredor"},
+        "gestion.estado_captacion": {"$ne": "Corredor"},
         "$or": [
             {"status": {"$exists": False}},
             {"last_verified": {"$exists": False}},

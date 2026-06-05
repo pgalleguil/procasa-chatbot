@@ -1636,6 +1636,15 @@ async def process_pending_leads_loop():
                     by_executive = {}
                     for p in pending:
                         lead_data = p.get("lead_data", {})
+                        
+                        # Fix Bug B: Ignore captacion notifications
+                        lead_type = lead_data.get("lead_type") or p.get("lead_type", "")
+                        notification_type = lead_data.get("notification_type") or p.get("notification_type", "")
+                        if notification_type == "captacion" or lead_type == "AsignacionCaptacion":
+                            logger.info(f"[BACKGROUND] Skipping captacion notification para {p.get('target_phone')}")
+                            await run_db("pending_notifications.mark_sent", mark_notification_sent, p["_id"])
+                            continue
+
                         target_phone = lead_data.get("target_phone") or p.get("target_phone")
                         
                         # Fix: Si no hay teléfono o es el dummy, intentamos re-enrutar antes de descartar

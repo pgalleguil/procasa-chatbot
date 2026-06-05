@@ -465,6 +465,32 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
         f"{contexto_extra}"
         f"📝 *Comentario*: {mensaje_usuario}\n\n"
         f"🔗 *Ver y Gestionar en CRM*:\n{crm_url}\n\n"
+    
+    nombre_cliente = lead_data.get("nombre", "Cliente Desconocido")
+    fono_cliente = lead_data.get("phone", "No disponible")
+    email_cliente = lead_data.get("email", "No disponible")
+    mensaje_usuario = lead_data.get("last_message", "Interesado en esta propiedad")
+
+    # Header dinámico según si es nuevo o seguimiento
+    header = "🚀 *¡Nuevo Lead Asignado!*" if is_new_assignment else "💬 *Actualización de Lead*"
+    
+    # Si es seguimiento, enfatizamos que ya tiene dueño
+    contexto_extra = ""
+    if not is_new_assignment:
+        contexto_extra = f"⚠️ _Este cliente ya está asignado a ti._\n"
+
+    crm_url = "https://procasa-chatbot-yr8d.onrender.com/"
+
+    template = (
+        f"{header}\n\n"
+        f"Hola {executive_name}, se ha asignado un nuevo lead a tu gestión. "
+        f"Realiza la gestión a la brevedad para maximizar la conversión. ⚡\n\n"
+        f"🏠 *Propiedad*: {property_code} | {operacion}\n"
+        f"📍 *Ubicación*: {comuna}, {region}\n"
+        f"👤 *Cliente*: {nombre_cliente}\n"
+        f"{contexto_extra}"
+        f"📝 *Comentario*: {mensaje_usuario}\n\n"
+        f"🔗 *Ver y Gestionar en CRM*:\n{crm_url}\n\n"
         f"💡 _Recuerda ingresar con tu correo corporativo Procasa._\n"
         f"¡Mucho éxito con la gestión! 🚀"
     )
@@ -478,11 +504,14 @@ def format_summary_whatsapp_template(leads_list: list, executive_name: str) -> s
     
     leads_details = ""
     for i, lead in enumerate(leads_list, 1):
-        nombre = lead.get("nombre") or lead.get("prospecto_nombre") or "Cliente Desconocido"
-        p_code = lead.get("property_code") or "S/N"
-        canal = lead.get("canal") or lead.get("source") or "Directo"
+        # Los items vienen como docs de pending_notifications: {"lead_data": {...}}
+        # Navegamos al nivel real con fallback al item directamente
+        ld = lead.get("lead_data") if isinstance(lead.get("lead_data"), dict) else lead
+        nombre = ld.get("nombre") or ld.get("prospecto_nombre") or "Cliente"
+        p_code = ld.get("property_code") or "S/N"
+        canal = ld.get("canal") or ld.get("source") or ld.get("origen") or "Directo"
         
-        leads_details += f"\n{i}. *{nombre}* - Casa: {p_code} ({canal})"
+        leads_details += f"\n{i}. *{nombre}* - Prop: {p_code} ({canal})"
 
     crm_url = "https://procasa-chatbot-yr8d.onrender.com/"
 

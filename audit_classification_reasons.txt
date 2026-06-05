@@ -1,0 +1,794 @@
+==================================================================
+SECCIÓN 1
+=========
+TOTAL ANALIZADOS: 2389
+DUEÑOS: 97
+CORREDORES: 2292
+
+==================================================================
+SECCIÓN 2
+=========
+CORREDORES CON PROFILE_ID: 1460
+CORREDORES CON SELLER_IS_PRO: 1460
+CORREDORES CON BROKER_BRAND: 1104
+CORREDORES CON COMPANY_NAME: 2026
+
+==================================================================
+SECCIÓN 3
+=========
+CORREDORES CLASIFICADOS ÚNICAMENTE POR UNA SEÑAL:
+SOLO PROFILE_ID: 0
+SOLO SELLER_IS_PRO: 0
+SOLO BROKER_BRAND: 0
+SOLO COMPANY_NAME: 706
+
+==================================================================
+SECCIÓN 4
+=========
+50 CORREDORES ALEATORIOS:
+
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/los-laureles-del-maule-arriendo-departamento/25875860
+PUBLICADOR: jannina javiera urzua astorga
+SELLER_PROFILE_ID: 13763805
+SELLER_IS_PRO: True
+BROKER_BRAND: jannina javiera urzua astorga
+COMPANY_NAME: jannina javiera urzua astorga
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/oportunidad-de-inversion-en-zona-residencial-160973/32361299
+PUBLICADOR: Aldana y Torres propiedades SpA
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Kutt Property
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/exclusivo-departamento-inteligente-frente-a-metro-macul/32516161
+PUBLICADOR: NICOLÁS ANDRÉS ROMÁN AYALA
+SELLER_PROFILE_ID: 14714569
+SELLER_IS_PRO: True
+BROKER_BRAND: Dataprop Propiedades
+COMPANY_NAME: Dataprop Propiedades
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-esquina-amplia-5d-2b-en-barrio-residencial-excelente-conectividad/32320106
+PUBLICADOR: Johanna
+SELLER_PROFILE_ID: 13751158
+SELLER_IS_PRO: True
+BROKER_BRAND: Johanna
+COMPANY_NAME: Johanna
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/arriendo-bodega-450-mt2-guardia-24-7/25870850
+PUBLICADOR: Jenifer Sánchez
+SELLER_PROFILE_ID: 13760745
+SELLER_IS_PRO: True
+BROKER_BRAND: Jenifer Sánchez
+COMPANY_NAME: Jenifer Sánchez
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/moderna-casa-en-sector-residencial-160863/32348129
+PUBLICADOR: Carolina Fuentes Gutiérrez
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Kutt Property
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-edificio-espacio-talca/31682145
+PUBLICADOR: Propiedades Peumo
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Propiedades Peumo
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/venta-de-casa-en-avenida-mexico-la-florida/32516804
+PUBLICADOR: Opalus Home Spa
+SELLER_PROFILE_ID: 14714569
+SELLER_IS_PRO: True
+BROKER_BRAND: Dataprop Propiedades
+COMPANY_NAME: Dataprop Propiedades
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/hermoso-depto-en-macul-4d-3b-1e-1b/32413925
+PUBLICADOR: Alexis Villegas
+SELLER_PROFILE_ID: 17439103
+SELLER_IS_PRO: True
+BROKER_BRAND: RE/MAX Synergy II
+COMPANY_NAME: RE/MAX Synergy II
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/amplia-gran-iluminacion-natural-villa-uc-149903/32067128
+PUBLICADOR: Loreto Arratia
+SELLER_PROFILE_ID: 13722309
+SELLER_IS_PRO: True
+BROKER_BRAND: Kutt Property
+COMPANY_NAME: Kutt Property
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-parcela-de-2-000-mts-sector-mercedes-talca/32393867
+PUBLICADOR: Jacqueline Diaz
+SELLER_PROFILE_ID: 17631803
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: Jacqueline Diaz
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-la-florida-sur-poniente-de-talca/32401837
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: N/A
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-sector-sur-poniente-94325/30596858
+PUBLICADOR: Sebastián Schulz
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Kutt Property
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-venta-1d-y-1b-macul-metro-carlos-valdovinos/32076593
+PUBLICADOR: Greta Astorga
+SELLER_PROFILE_ID: 17438644
+SELLER_IS_PRO: True
+BROKER_BRAND: Focus Propiedades
+COMPANY_NAME: Focus Propiedades
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/exclente-sector-santa-amalia-153550/32164448
+PUBLICADOR: Jose Luis Ubeda
+SELLER_PROFILE_ID: 13722309
+SELLER_IS_PRO: True
+BROKER_BRAND: Kutt Property
+COMPANY_NAME: Kutt Property
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/venta-depto-la-florida-2d-2b-1e-1bod/32508884
+PUBLICADOR: TEAM NUNES LEADER Nelly Nunes
+SELLER_PROFILE_ID: 13861520
+SELLER_IS_PRO: True
+BROKER_BRAND: RE MAX - CENTRAL
+COMPANY_NAME: RE MAX - CENTRAL
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/terreno-construccion-en-venta-en-talca/32224233
+PUBLICADOR: Nexxos Chile
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Nexxos Chile
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-rogas-magallanes-avda-la-florida/32521896
+PUBLICADOR: Fuenzalida Propiedades - La Reina
+SELLER_PROFILE_ID: 13722397
+SELLER_IS_PRO: True
+BROKER_BRAND: Fuenzalida Propiedades La Reina
+COMPANY_NAME: Fuenzalida Propiedades La Reina
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/terreno-urbano-en-venta-en-parcelas-hacienda-esmeralda-talca/32388352
+PUBLICADOR: Cima Propiedades
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Cima Propiedades
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/parcela-en-venta-con-moderna-casa-cerca-de-talca/32443600
+PUBLICADOR: Juan Espinoza Morán
+SELLER_PROFILE_ID: 14551689
+SELLER_IS_PRO: True
+BROKER_BRAND: Hoem Propiedades
+COMPANY_NAME: Hoem Propiedades
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/v-mackenna-8840-metro-rojas-magallanes-2d-2b-estac-bodeg/32361020
+PUBLICADOR: Metropolihouse Gestion Inmobiliaria
+SELLER_PROFILE_ID: 13725771
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: Metropolihouse Gestion Inmobiliaria
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-en-talca/32147673
+PUBLICADOR: PROCASA SUCRE
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Procasa Sucre
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-villa-dona-ignacia-i-sector-sur-poniente-de-talca/32399418
+PUBLICADOR: Juan Espinoza Morán
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Hoem Propiedades
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/3d-2b-est-bod-colombia-walker-martinez/31863833
+PUBLICADOR: Engel &amp;amp; Völkers La Florida
+SELLER_PROFILE_ID: 17273563
+SELLER_IS_PRO: True
+BROKER_BRAND: Engel&amp;Voelkers La Florida
+COMPANY_NAME: Engel&amp;Voelkers La Florida
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/parcela-urbana-en-venta-en-hacienda-esmeralda-las-rastras/32388356
+PUBLICADOR: Cima Propiedades
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Cima Propiedades
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-de-2-dorm-2-banos-1-estacion-en-macul/32157830
+PUBLICADOR: Carol Cabezas
+SELLER_PROFILE_ID: 14880503
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: Carol Cabezas
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-5-dorm-y-2-banos-en-la-florida/32421519
+PUBLICADOR: Ismael Orrego
+SELLER_PROFILE_ID: 14847044
+SELLER_IS_PRO: True
+BROKER_BRAND: eXp Chile
+COMPANY_NAME: eXp Chile
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/se-arrienda-local-comercial-1-sur-n-1014-local-5/32415240
+PUBLICADOR: Team Arellano - Iván Arellano Team Leader
+SELLER_PROFILE_ID: 14874635
+SELLER_IS_PRO: True
+BROKER_BRAND: RE/MAX PREMIER
+COMPANY_NAME: RE/MAX PREMIER
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-3-dorm-2-banos-bicentenario-talca/32387036
+PUBLICADOR: Bajos de Lircay Propiedades
+SELLER_PROFILE_ID: 17631803
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: Bajos de Lircay Propiedades
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-2-sur-talca/32224141
+PUBLICADOR: Nexxos Chile
+SELLER_PROFILE_ID: 17414461
+SELLER_IS_PRO: True
+BROKER_BRAND: Nexxos Chile
+COMPANY_NAME: Nexxos Chile
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/la-florida-casa-4-dormitorios-villa-italia/31809689
+PUBLICADOR: kap propiedades spa
+SELLER_PROFILE_ID: 14714569
+SELLER_IS_PRO: True
+BROKER_BRAND: Dataprop Propiedades
+COMPANY_NAME: Dataprop Propiedades
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/comodo-depto-con-excelente-conectividad-3d2b-167667/32507518
+PUBLICADOR: Nilson Mardones
+SELLER_PROFILE_ID: 13722309
+SELLER_IS_PRO: True
+BROKER_BRAND: Kutt Property
+COMPANY_NAME: Kutt Property
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-ubicada-en-7-oriente-72575/29773713
+PUBLICADOR: Sebastián Schulz
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Kutt Property
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-de-2-dorm-en-talca-46m2/32135031
+PUBLICADOR: Schorr Propiedades
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Schorr Propiedades
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/se-vende-sitio-y-casa-en-talca-5-norte/32388322
+PUBLICADOR: Lucía Eugenia Luengo
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Lucía Eugenia Luengo
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/oportunidad-de-inversion-en-centro-de-talca/32387504
+PUBLICADOR: Miguel Ramiro
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Grecop Corredores
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-centro-de-talca-158581/32292098
+PUBLICADOR: Marcelo Gaete Jiménez
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Kutt Property
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/oportunidad-2-casas-con-amplio-terreno-la-florida/32516707
+PUBLICADOR: VIVIAN LORETO ZÚÑIGA PINEDA
+SELLER_PROFILE_ID: 14714569
+SELLER_IS_PRO: True
+BROKER_BRAND: Dataprop Propiedades
+COMPANY_NAME: Dataprop Propiedades
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/invierte-en-una-zona-de-alta-demanda/32272741
+PUBLICADOR: Patricia Figueroa
+SELLER_PROFILE_ID: 14874941
+SELLER_IS_PRO: True
+BROKER_BRAND: RE/MAX - ICON
+COMPANY_NAME: RE/MAX - ICON
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/sin-comision-dpto-tipo-estudio-en-macul/32376212
+PUBLICADOR: Francisco Ferrer
+SELLER_PROFILE_ID: 14874817
+SELLER_IS_PRO: True
+BROKER_BRAND: RE/MAX - URBANO
+COMPANY_NAME: RE/MAX - URBANO
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/moderno-amplio-2d-2b-con-est-y-gran-bodega-167630/32506688
+PUBLICADOR: Jenny Bravo Adriasola
+SELLER_PROFILE_ID: 13722309
+SELLER_IS_PRO: True
+BROKER_BRAND: Kutt Property
+COMPANY_NAME: Kutt Property
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-amoblado-3-dormitorios-2-banos-en-barrio-utal/31994833
+PUBLICADOR: Jaime Alberto Rossel
+SELLER_PROFILE_ID: 14980666
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: Jaime Alberto Rossel
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/on-fire-atencion-inversionistas/32425800
+PUBLICADOR: Alejandra Badilla
+SELLER_PROFILE_ID: 16603752
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: Alejandra Badilla
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/parcela-en-venta-en-talca-8-760-m2-al-lado-de-la-ciudad/32388309
+PUBLICADOR: María Patricia Cepeda
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: María Patricia Cepeda
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-talca/32234821
+PUBLICADOR: Schorr Propiedades
+SELLER_PROFILE_ID: 14664885
+SELLER_IS_PRO: True
+BROKER_BRAND: Schorr Propiedades
+COMPANY_NAME: Schorr Propiedades
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/dpto-en-venta-2d-2b-1-estac-cubierto-en-la-florida/32143421
+PUBLICADOR: Grupo Premium Propiedades Santiago
+SELLER_PROFILE_ID: 13722619
+SELLER_IS_PRO: True
+BROKER_BRAND: Grupo Premium
+COMPANY_NAME: Grupo Premium
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* broker_brand
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-fincas/venta-de-hermosa-parcela-con-casa-colonial-en-talc/32437828
+PUBLICADOR: LARAYA Propiedades
+SELLER_PROFILE_ID: N/A
+SELLER_IS_PRO: False
+BROKER_BRAND: N/A
+COMPANY_NAME: Brokers Inmobiliarios
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/venta-amplio-departamento-en-rojas-magallanes-la-florida/32362318
+PUBLICADOR: La Corredora.cl
+SELLER_PROFILE_ID: 14880503
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: La Corredora.cl
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-con-gran-terreno-macul-futura-linea-8-metro/32466118
+PUBLICADOR: Myron Tarkowski
+SELLER_PROFILE_ID: 14880503
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: Myron Tarkowski
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* company_name
+---
+URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-2-pisos-en-macul-excelente-conectividad-e-infraestructura/32512435
+PUBLICADOR: N/A
+SELLER_PROFILE_ID: 16461990
+SELLER_IS_PRO: True
+BROKER_BRAND: N/A
+COMPANY_NAME: Propietario 
+ES_PROPIETARIO_DIRECTO: False
+MOTIVOS DETECTADOS:
+* profile_id
+* seller_is_pro
+* company_name
+---
+
+==================================================================
+SECCIÓN 5
+=========
+TOP 50 COMPANY_NAME
+
+Kutt Property -> 264
+Grecop Corredores -> 99
+Nexxos Chile -> 97
+Dataprop Propiedades -> 96
+Schorr Propiedades -> 69
+RE/MAX PREMIER -> 63
+Grupo Premium -> 56
+Propietario  -> 40
+AINA -> 39
+Houm Ventas -> 39
+Procasa Sucre -> 35
+Propiedades Peumo -> 34
+Engel&amp;Voelkers La Florida -> 31
+Easy Prop - Inmhogar Gestión Inmobiliaria -> 30
+FDB Propiedades -> 27
+eXp Chile -> 26
+Bajos de Lircay Propiedades -> 25
+Propiedades Galvarino -> 25
+Brokers Inmobiliarios -> 25
+Claudia Ortíz -> 23
+RE/MAX - TRUE HOME -> 20
+MAISMA PROPIEDADES -> 19
+RE/MAX - ECOPARTNERS -> 18
+Fuenzalida Plaza Egaña -> 18
+RE MAX - CENTRAL -> 16
+Presencia propiedades -> 15
+Jaime Alberto Rossel -> 14
+Cima Propiedades -> 13
+Cénit Propiedades -> 13
+María Patricia Cepeda -> 12
+Viva Talca -> 12
+Jaime Rossel -> 12
+Focus Propiedades -> 12
+RE/MAX - UNIQUE -> 12
+Jacqueline Diaz -> 11
+RE/MAX COSTANERA -> 11
+Fuenzalida Propiedades San Miguel -> 11
+Aldana y Torres Propiedades -> 10
+Rusot Propiedades -> 9
+Focolare Propiedades -> 9
+RE/MAX - PRO -> 9
+Alejandro Jaime V &amp; Asociados -> 9
+Hoem Propiedades -> 8
+Tatiana Tamara tapia -> 8
+Erwin Mayer-Beckh Leslie -> 8
+REMAX FIRST -> 8
+Francisco Campos -> 8
+Credilegal Inmobiliaria -> 7
+Fuenzalida Propiedades La Reina -> 7
+Cristian Andrés Rojas -> 7
+
+TOP 50 BROKER_BRAND
+
+Kutt Property -> 175
+Dataprop Propiedades -> 92
+Nexxos Chile -> 59
+AINA -> 39
+Houm Ventas -> 39
+Grupo Premium -> 38
+Grecop Corredores -> 34
+Engel&amp;Voelkers La Florida -> 31
+Easy Prop - Inmhogar Gestión Inmobiliaria -> 28
+eXp Chile -> 22
+Brokers Inmobiliarios -> 22
+Schorr Propiedades -> 21
+RE/MAX PREMIER -> 18
+Fuenzalida Plaza Egaña -> 18
+RE/MAX - TRUE HOME -> 17
+Propiedades Galvarino -> 16
+RE MAX - CENTRAL -> 16
+Focus Propiedades -> 12
+RE/MAX - UNIQUE -> 12
+RE/MAX COSTANERA -> 11
+Fuenzalida Propiedades San Miguel -> 11
+RE/MAX - PRO -> 9
+Alejandro Jaime V &amp; Asociados -> 9
+Focolare Propiedades -> 8
+Francisco Campos -> 8
+Procasa Sucre -> 8
+Propiedades Peumo -> 7
+RE/MAX - URBANO -> 7
+REMAX FIRST -> 7
+RE/MAX - REALTY -> 7
+Rusot Propiedades -> 6
+RE/MAX - GOLDEN -> 6
+Easy Prop - Property E2 Kay -> 6
+HyC Asociados -> 6
+RE/MAX Synergy II -> 6
+RE/MAX - PASSION -> 6
+RE/MAX - ONE -> 6
+Fuenzalida Propiedades La Reina -> 6
+Fuenzalida Propiedades Vicuña Mackenna -> 5
+Vivaqui Propiedades -> 5
+ProCasa Ricardo Vial -> 5
+Prestige Propiedades -> 5
+RE/MAX - PRINCIPAL -> 5
+Corretajes Prosal -> 5
+Jaime Rossel -> 4
+Paulina Medina -> 4
+RE/MAX - ECOPARTNERS -> 4
+RE/MAX CONTIGO -> 4
+RE/MAX CAPITAL -> 4
+RE/MAX - ELITE -> 4
+
+TOP 50 PUBLICADOR
+
+Schorr Propiedades -> 69
+Sebastián Schulz -> 59
+Team Arellano - Iván Arellano Team Leader -> 58
+Grupo Premium Propiedades Santiago -> 56
+Nexxos Chile -> 49
+Houm -> 39
+Claudia Ortíz -> 34
+Propiedades Peumo -> 34
+FDB Propiedades -> 34
+Cima Propiedades -> 30
+Jaime Alberto Rossel -> 29
+Bajos de Lircay Propiedades -> 28
+Galvarino Propiedades -> 25
+María Patricia Cepeda -> 24
+MAISMA PROPIEDADES -> 24
+Aldana y Torres propiedades SpA -> 19
+Presencia propiedades -> 18
+Jorge Pablo Caro Propiedades -> 18
+Fuenzalida Propiedades - Plaza Egaña -> 18
+PROCASA SUCRE -> 17
+Viva Talca -> 17
+Engel &amp;amp; Völkers La Florida -> 17
+Jacqueline Diaz -> 16
+Aldana y Torres Propiedades -> 16
+Tatiana Tamara tapia -> 15
+Verónica Reyes -> 15
+Lucía Eugenia Luengo -> 14
+Engel &amp; Völkers La Florida -> 14
+Cénit Propiedades -> 13
+Alejandra Herrera Propiedades -> 12
+AsyGes Propiedades -> 11
+Fuenzalida Propiedades - San Miguel -> 11
+Rusot Propiedades -> 9
+Claudio Andres Mellado Reyes -> 9
+Presencia Propiedades -> 9
+Credilegal Inmobiliaria -> 9
+Cristian Andrés Rojas -> 9
+Propietarios  -> 9
+Corredores del Maule. -> 8
+Moderna Properties SPA -> 8
+Miguel Ramiro -> 8
+VIVIAN LORETO ZÚÑIGA PINEDA -> 8
+Denisse Arriaza -> 8
+Francisco Campos -> 8
+DIAZ Y ASOCIADOS -> 7
+Celinda Gómez - Nidum Gestión inmobiliaria -> 7
+María Pia Muñoz -> 7
+Juan Espinoza Morán -> 7
+MAISMA PROPIEDADES SpA -> 7
+Patricia Ravera Zunino -> 7
+
+==================================================================
+SECCIÓN 6
+=========
+CONCLUSIONES AUTOMÁTICAS
+
+SEÑAL DOMINANTE:
+company_name
+
+SEÑAL SECUNDARIA:
+profile_id
+
+RIESGO:
+company_name está presente en el 88% de los corredores.

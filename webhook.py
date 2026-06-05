@@ -1641,7 +1641,7 @@ async def process_pending_leads_loop():
                         lead_type = lead_data.get("lead_type") or p.get("lead_type", "")
                         notification_type = lead_data.get("notification_type") or p.get("notification_type", "")
                         if notification_type == "captacion" or lead_type == "AsignacionCaptacion":
-                            logger.info(f"[BACKGROUND] Skipping captacion notification para {p.get('target_phone')}")
+                            logger.debug(f"[BACKGROUND] Skipping captacion notification para {p.get('target_phone')}")
                             await run_db("pending_notifications.mark_sent", mark_notification_sent, p["_id"])
                             continue
 

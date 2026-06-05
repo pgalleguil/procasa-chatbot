@@ -110,12 +110,12 @@ def _patch_mongo_forensics():
                         is_anomalous = (dt_ms >= 400.0) or (in_event_loop and not from_motor)
                         key = f"{name}:{self.name}:{caller}:{thread_name}:{str(in_event_loop).lower()}:{str(from_motor).lower()}"
                         if is_anomalous or _should_rate_log(key, 30.0):
-                            logger.info(
+                            logger.debug(
                                 f"[MONGO_OP] op={name} col={self.name} dur={dt_ms:.1f}ms "
                                 f"thread={thread_name}:{thread_id} caller={caller} stack={stack_hint} "
                                 f"in_event_loop={str(in_event_loop).lower()} from_motor={str(from_motor).lower()}"
                             )
-                            logger.info(
+                            logger.debug(
                                 f"[MONGO_OP_META] async_context={str(in_event_loop).lower()} "
                                 f"thread_type={'main' if thread_name.lower().startswith('main') else 'threadpool'} "
                                 f"safe={str((not in_event_loop) or from_motor).lower()} from_motor={str(from_motor).lower()}"

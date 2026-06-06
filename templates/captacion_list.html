@@ -870,6 +870,11 @@
                     <option value="DESCARTADO" {% if current_estado=='DESCARTADO' %}selected{% endif %}>Descartados
                     </option>
                 </select>
+                <select name="operacion" onchange="this.form.submit()">
+                    <option value="">Cualquier operación</option>
+                    <option value="VENTA" {% if current_operacion=='VENTA' %}selected{% endif %}>Venta</option>
+                    <option value="ARRIENDO" {% if current_operacion=='ARRIENDO' %}selected{% endif %}>Arriendo</option>
+                </select>
                 {% if user_role in ['supervisor', 'admin'] %}
                 <select name="ejecutivo" onchange="this.form.submit()">
                     <option value="">Cualquier Ejecutivo</option>
@@ -941,6 +946,8 @@
                     {% if current_comuna %}{% set base_url = base_url ~ "comuna=" ~ current_comuna ~ "&" %}{% endif %}
                     {% if current_estado %}{% set base_url = base_url ~ "estado=" ~ current_estado ~ "&" %}{% endif %}
                     {% if current_ejecutivo %}{% set base_url = base_url ~ "ejecutivo=" ~ current_ejecutivo ~ "&" %}{%
+                    endif %}
+                    {% if current_operacion %}{% set base_url = base_url ~ "operacion=" ~ current_operacion ~ "&" %}{%
                     endif %}
 
                     <a href="{{ base_url }}page={{ pagination.current_page - 1 }}"

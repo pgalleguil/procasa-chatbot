@@ -1219,23 +1219,21 @@ async def view_captaciones(
     loop = asyncio.get_running_loop()
 
     # Obtener comunas con propiedades asignadas al usuario
-    pipe_comunas = [
-        {"$match": {
-            "details.es_propietario_directo": True,
-            "$or": [
-                {"status": {"$nin": ["inactive", "suspect"]}},
-                {"gestion.estado": {"$nin": ["NUEVO", None]}}
-            ]
-        }},
-        {"$group": {"_id": "$details.comuna"}},
-        {"$sort": {"_id": 1}}
-    ]
+    base_filter = {
+        "details.es_propietario_directo": True,
+        "$or": [
+            {"status": {"$nin": ["inactive", "suspect"]}},
+            {"gestion.estado": {"$nin": ["NUEVO", None]}}
+        ]
+    }
     if user_role not in ["admin", "supervisor"]:
-        pipe_comunas[0]["$match"]["gestion.ejecutivo_asignado"] = user_name
-    comunas_disponibles = [
-        d["_id"] for d in await adb["yapo_propiedades"].aggregate(pipe_comunas).to_list(None)
-        if d["_id"]
-    ]
+        base_filter["gestion.ejecutivo_asignado"] = user_name
+    elif ejecutivo and ejecutivo != "Todos":
+        base_filter["gestion.ejecutivo_asignado"] = ejecutivo
+    comunas_disponibles = sorted([
+        c for c in await adb["yapo_propiedades"].distinct("details.comuna", base_filter)
+        if c
+    ])
 
     list_task = loop.run_in_executor(
         _WEB_THREAD_POOL,

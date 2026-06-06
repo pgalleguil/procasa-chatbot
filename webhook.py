@@ -1218,7 +1218,7 @@ async def view_captaciones(
     limit = 10
     loop = asyncio.get_running_loop()
 
-    # Obtener comunas con propiedades asignadas al usuario
+    # Obtener comunas con la MISMA query exacta de la lista
     base_filter = {
         "details.es_propietario_directo": True,
         "$or": [
@@ -1230,10 +1230,9 @@ async def view_captaciones(
         base_filter["gestion.ejecutivo_asignado"] = user_name
     elif ejecutivo and ejecutivo != "Todos":
         base_filter["gestion.ejecutivo_asignado"] = ejecutivo
-    comunas_disponibles = sorted([
-        c for c in await adb["yapo_propiedades"].distinct("details.comuna", base_filter)
-        if c
-    ])
+    raw = await adb["yapo_propiedades"].distinct("details.comuna", base_filter)
+    garbage = {None, "", "N/A", "null", "S/I"}
+    comunas_disponibles = sorted(c for c in raw if c and c not in garbage)
 
     list_task = loop.run_in_executor(
         _WEB_THREAD_POOL,

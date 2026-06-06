@@ -345,7 +345,7 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
     cursor = db["yapo_propiedades"].find(
         query, 
         {"descripcion": 0, "enlaces_fotos": 0, "historial": 0} 
-    ).sort("score_captacion", -1).skip(skip).limit(limit)
+    ).sort([("fecha_captura", -1), ("_id", -1)]).skip(skip).limit(limit)
     
     items_paginated = []
     for doc in cursor:
@@ -1108,6 +1108,24 @@ def ensure_leads_indexes():
             ("gestion.ejecutivo_asignado", 1),
             ("score_captacion", -1)
         ], name="idx_yapo_gestion_ejecutivo_score")
+
+        # Índices para ordenamiento por fecha de captura más reciente
+        db["yapo_propiedades"].create_index([
+            ("details.comuna_norm", 1), 
+            ("fecha_captura", -1)
+        ], name="idx_yapo_comuna_fecha_captura")
+        
+        db["yapo_propiedades"].create_index([
+            ("gestion.estado", 1),
+            ("details.comuna_norm", 1),
+            ("fecha_captura", -1)
+        ], name="idx_yapo_estado_comuna_fecha_captura")
+
+        db["yapo_propiedades"].create_index([
+            ("gestion.estado", 1),
+            ("gestion.ejecutivo_asignado", 1),
+            ("fecha_captura", -1)
+        ], name="idx_yapo_gestion_ejecutivo_fecha_captura")
 
         # ÍNDICE MAESTRO PARA MATCHING ENGINE (Leads)
         db["leads"].create_index([

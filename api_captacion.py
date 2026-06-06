@@ -296,6 +296,33 @@ def get_next_action_recommendation(score, diff_pct, dias, publicador, comuna, pr
             "icon": "chat"
         }
 
+
+def resolve_operacion(details: dict) -> str:
+    """
+    Determina VENTA o ARRIENDO priorizando datos explícitos del scraper
+    antes que heurísticas de precio.
+    """
+    tipo_op = (details.get("tipo_operacion") or "").lower()
+    if tipo_op == "venta":
+        return "VENTA"
+    if tipo_op == "arriendo":
+        return "ARRIENDO"
+
+    op = (details.get("operacion") or "").lower()
+    if "arr" in op:
+        return "ARRIENDO"
+
+    precio_uf = details.get("precio_uf")
+    if precio_uf is not None:
+        try:
+            if float(precio_uf) < 1000:
+                return "ARRIENDO"
+        except (ValueError, TypeError):
+            pass
+
+    return "VENTA"
+
+
 def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None):
     db = get_db()
     query = {
@@ -379,11 +406,7 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
             "url": doc.get("url"),
             "titulo": details.get("titulo", "Sin título"),
             "comuna": details.get("comuna", "S/I"),
-            "operacion": "ARRIENDO" if (
-                (details.get("tipo_operacion") and "ARR" in str(details.get("tipo_operacion")).upper()) or 
-                (details.get("operacion") and "ARR" in str(details.get("operacion")).upper()) or
-                (details.get("precio_uf") and float(details.get("precio_uf")) < 1000)
-            ) else "VENTA",
+            "operacion": resolve_operacion(details),
             "precio": str(details.get("precio", "S/I")).split("Ref.")[0].strip(),
             "precio_uf": details.get("precio_uf"),
             "uf_m2": doc.get("uf_m2_cache", 0),

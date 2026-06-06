@@ -1101,8 +1101,20 @@ async def extract_raw_data(page, url: str) -> dict:
     }
 
 
+def _extract_operation_from_url(url: str) -> str:
+    """Extrae tipo de operación (Venta/Arriendo) desde la URL de yapo.cl."""
+    if not url:
+        return "S/I"
+    url_lower = url.lower()
+    if "alquiler" in url_lower or "arriendo" in url_lower:
+        return "Arriendo"
+    if "venta" in url_lower:
+        return "Venta"
+    return "S/I"
+
+
 # ====================== PROCESAMIENTO IA (Sin Browser/Proxy) ======================
-async def process_with_ai(raw_data: dict, grok_client, uf_value: float = None, coll = None) -> dict:
+async def process_with_ai(raw_data: dict, grok_client, uf_value: float = None, coll = None, url: str = "") -> dict:
     """Procesamiento avanzado con IA para normalizar y enriquecer datos."""
     title = raw_data["title"]
     raw_desc = raw_data["raw_desc"]
@@ -1339,7 +1351,7 @@ Solo es true si tienes la certeza absoluta de que el vendedor es una persona nat
         "lat": lat_final,
         "lon": lon_final,
         "tipo_propiedad": tipo_prop,
-        "tipo_operacion": "Arriendo",
+        "tipo_operacion": _extract_operation_from_url(url),
         "titulo": title.strip()[:220],
         "precio": price,
         "precio_uf": p_uf,
@@ -1855,7 +1867,7 @@ async def main():
 
                             # === FASE 2: PROCESAMIENTO IA ===
                             try:
-                                details = await process_with_ai(raw_data, grok_client, uf_value, coll)
+                                details = await process_with_ai(raw_data, grok_client, uf_value, coll, url)
                                 if details:
                                     if details.get("is_duplicate"):
                                         stats["duplicates"] += 1

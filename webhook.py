@@ -1218,17 +1218,24 @@ async def view_captaciones(
     limit = 10
     loop = asyncio.get_running_loop()
 
-    # Obtener comunas disponibles para el filtro
-    if user_role in ["admin", "supervisor"]:
-        comunas_disponibles = sorted(set(
-            c.strip() for u in await adb["usuarios"].find(
-                {"comunas_interes": {"$exists": True, "$not": {"$size": 0}}},
-                {"comunas_interes": 1}
-            ).to_list(None)
-            for c in u.get("comunas_interes", [])
-        ))
-    else:
-        comunas_disponibles = user.get("comunas_interes", [])
+    # Obtener comunas con propiedades asignadas al usuario
+    pipe_comunas = [
+        {"$match": {
+            "details.es_propietario_directo": True,
+            "$or": [
+                {"status": {"$nin": ["inactive", "suspect"]}},
+                {"gestion.estado": {"$nin": ["NUEVO", None]}}
+            ]
+        }},
+        {"$group": {"_id": "$details.comuna"}},
+        {"$sort": {"_id": 1}}
+    ]
+    if user_role not in ["admin", "supervisor"]:
+        pipe_comunas[0]["$match"]["gestion.ejecutivo_asignado"] = user_name
+    comunas_disponibles = [
+        d["_id"] for d in await adb["yapo_propiedades"].aggregate(pipe_comunas).to_list(None)
+        if d["_id"]
+    ]
 
     list_task = loop.run_in_executor(
         _WEB_THREAD_POOL,

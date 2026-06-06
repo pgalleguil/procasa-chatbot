@@ -1202,7 +1202,6 @@ async def view_captaciones(
     comuna: str = Query(None),
     estado: str = Query(None),
     ejecutivo: str = Query(None),
-    operacion: str = Query(None),
     page: int = Query(1, ge=1)
 ):
     from chatbot.storage import get_async_db
@@ -1226,8 +1225,7 @@ async def view_captaciones(
             limit=limit,
             comuna_filter=comuna,
             status_filter=estado,
-            executive_filter=ejecutivo,
-            operacion_filter=operacion
+            executive_filter=ejecutivo
         )
     )
     exec_task = get_unique_executives() if user_role in ["admin", "supervisor"] else asyncio.sleep(0, result=[])
@@ -1258,7 +1256,6 @@ async def view_captaciones(
         "current_comuna": comuna,
         "current_estado": estado,
         "current_ejecutivo": ejecutivo,
-        "current_operacion": operacion,
         "executives": executives,
         "pagination": {
             "current_page": page,

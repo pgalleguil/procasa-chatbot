@@ -323,7 +323,7 @@ def resolve_operacion(details: dict) -> str:
     return "VENTA"
 
 
-def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None):
+def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None):
     db = get_db()
     query = {
         "details.es_propietario_directo": True,
@@ -346,18 +346,6 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
         
     if status_filter:
         query["gestion.estado"] = status_filter
-
-    if operacion_filter:
-        op = operacion_filter.lower()
-        operacion_or = [
-            {"details.tipo_operacion": {"$regex": f"^{op}", "$options": "i"}},
-            {"details.operacion": {"$regex": f"^{op}", "$options": "i"}},
-        ]
-        # Combinar con el $or existente mediante $and si ya hay $or, o reemplazar
-        if "$or" in query:
-            query = {"$and": [query, {"$or": operacion_or}]}
-        else:
-            query["$or"] = operacion_or
 
     # 1) CACHE COMBINADO por respuesta completa para evitar doble roundtrip de cache
     # (antes: read count cache + read list cache por request)

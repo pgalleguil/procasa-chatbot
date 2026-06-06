@@ -857,11 +857,12 @@
 
         <div class="table-container">
             <form action="/captacion" method="GET" class="filter-bar">
-                <div class="search-box">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                    <input type="text" name="comuna" placeholder="Buscar por comuna..."
-                        value="{{ current_comuna or '' }}">
-                </div>
+                <select name="comuna" onchange="this.form.submit()">
+                    <option value="">Cualquier comuna</option>
+                    {% for c in comunas_disponibles %}
+                    <option value="{{ c }}" {% if current_comuna==c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
                 <select name="estado" onchange="this.form.submit()">
                     <option value="">Cualquier estado</option>
                     <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos</option>

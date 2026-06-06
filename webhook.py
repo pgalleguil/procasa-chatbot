@@ -1217,19 +1217,6 @@ async def view_captaciones(
     
     limit = 10
     loop = asyncio.get_running_loop()
-
-    # Obtener comunas disponibles para el filtro
-    if user_role in ["admin", "supervisor"]:
-        comunas_disponibles = sorted(set(
-            c.strip() for u in await adb["usuarios"].find(
-                {"comunas_interes": {"$exists": True, "$not": {"$size": 0}}},
-                {"comunas_interes": 1}
-            ).to_list(None)
-            for c in u.get("comunas_interes", [])
-        ))
-    else:
-        comunas_disponibles = user.get("comunas_interes", [])
-
     list_task = loop.run_in_executor(
         _WEB_THREAD_POOL,
         lambda: get_captacion_list(
@@ -1272,7 +1259,6 @@ async def view_captaciones(
         "current_estado": estado,
         "current_ejecutivo": ejecutivo,
         "current_operacion": operacion,
-        "comunas_disponibles": comunas_disponibles,
         "executives": executives,
         "pagination": {
             "current_page": page,

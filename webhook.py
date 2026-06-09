@@ -1821,9 +1821,10 @@ async def check_scheduled_tasks_loop():
                         is_captacion = task.get("lead_type") == "captacion"
                         if is_captacion:
                             from bson import ObjectId
+                            obj_id = str(task.get("obj_id"))
                             lead = await run_db(
                                 "yapo_propiedades.find_one",
-                                lambda: db["yapo_propiedades"].find_one({"_id": ObjectId(task.get("obj_id"))})
+                                lambda: db["yapo_propiedades"].find_one({"_id": ObjectId(obj_id)})
                             )
                             if not lead:
                                 await run_db(
@@ -1832,11 +1833,11 @@ async def check_scheduled_tasks_loop():
                                         {"_id": task["_id"]},
                                         {"$set": {"status": "error", "error": "captacion_not_found"}}
                                     )
-                                )
+                            )
                                 continue
                             ejecutivo = lead.get("gestion", {}).get("ejecutivo_asignado")
                             lead_name = lead.get("details", {}).get("publicador", "Cliente")
-                            crm_link = f"https://www.procasa.cl/captacion/{task.get('obj_id')}"
+                            crm_link = f"{Config.CRM_BASE_URL}/captacion/{obj_id}"
                         else:
                             lead = await run_db(
                                 "leads.find_one",
@@ -1861,6 +1862,22 @@ async def check_scheduled_tasks_loop():
                         exec_phone = await run_in_threadpool(get_executive_phone, ejecutivo)
                         if not exec_phone or exec_phone == "+56900000000":
                             continue
+
+                        if is_captacion:
+                            # Si hay tareas duplicadas históricas para la misma captación,
+                            # dejamos solo una activa para evitar triple envío.
+                            await run_db(
+                                "crm_tasks.compact_captacion_duplicates",
+                                lambda: db["crm_tasks"].update_many(
+                                    {
+                                        "lead_type": "captacion",
+                                        "obj_id": str(task.get("obj_id")),
+                                        "status": "pending",
+                                        "_id": {"$ne": task["_id"]}
+                                    },
+                                    {"$set": {"status": "completed", "resolved_at": now.isoformat(), "resolution": "superseded_duplicate"}}
+                                )
+                            )
                             
                         msg_text = (
                             f"⏰ *Recordatorio CRM: {ejecutivo}*\n\n"

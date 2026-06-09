@@ -1,0 +1,96 @@
+==================================================================
+AUDITORÍA DE FAKE OWNERS (Corredores Camuflados) - 2026-06-05 22:01:34 UTC
+==================================================================
+Total de propiedades marcadas como dueño analizadas: 3077
+
+==================================================================
+1. ALERTA MULTI-PUBLICADORES (Mismo Perfil con 3+ Propiedades)
+==================================================================
+Se encontraron 118 cuentas con 3 o más propiedades activas.
+-> Publicador: N/A (Profile: N/A) | Total Avisos: 991
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-avenida-santa-maria-providencia-hotel-sheraton-de-santiago/31695772
+-> Publicador: Sebastián Schulz (Profile: N/A) | Total Avisos: 42
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/se-vende-departamento-en-edificio-camino-real-139791/31835480
+-> Publicador: HomieRent (Profile: N/A) | Total Avisos: 24
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/ref-re-arriendo-dpto-2d-2b-e-b-macul/32061648
+-> Publicador: Claudia Ortíz (Profile: N/A) | Total Avisos: 24
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-en-venta-2-dormitorios-2-banos-centro-d-talca/32387430
+-> Publicador: Jaime Alberto Rossel (Profile: N/A) | Total Avisos: 22
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-faustino-gonzalez-talca/31560194
+-> Publicador: Agente  (Profile: N/A) | Total Avisos: 20
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-ines-de-suarez/32035666
+-> Publicador: Propietarios  (Profile: N/A) | Total Avisos: 20
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/arriendo-estacionamiento-providencia/25867211
+-> Publicador: Claudia Ortíz (Profile: 17631803) | Total Avisos: 20
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/en-arriendo-local-comercial-centro-de-talca-5-ote-1-y-2-sur/32387474
+-> Publicador: Sebastián Schulz (Profile: 13722309) | Total Avisos: 19
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/centrica-casa-en-venta-72575/29773713
+-> Publicador: Tatiana Tamara tapia (Profile: N/A) | Total Avisos: 15
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/parcela-con-casa-mediterranea-en-pencahue/32387283
+-> Publicador: María Patricia Cepeda (Profile: N/A) | Total Avisos: 15
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-3-dorm-en-talca/32387254
+-> Publicador: María Patricia Cepeda (Profile: 17631803) | Total Avisos: 14
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-comercial-plaza-de-armas/32387161
+-> Publicador: Lucía Eugenia Luengo (Profile: N/A) | Total Avisos: 12
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/en-venta-casa-con-taller-de-alimentos-alameda-en-talca/32387405
+-> Publicador: Flor de los Santos Peraza (Profile: N/A) | Total Avisos: 12
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/venta-departamento-nuevo-en-condominio-mirador-del-country/32387351
+-> Publicador: Iván Herrera (Profile: 13722309) | Total Avisos: 12
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-a-pasos-de-av-macul-av-quilin-163639/32413760
+-> Publicador: Jacqueline Diaz (Profile: N/A) | Total Avisos: 10
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-lotes-y-terrenos/terreno-en-venta-en-talca-subiendo-el-cerro-la-virgen/32409947
+-> Publicador: Claudio Andres Mellado Reyes (Profile: N/A) | Total Avisos: 9
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/vende-amplia-casa-sector-las-rastras-talca-71145/29748024
+-> Publicador: Viva Talca (Profile: N/A) | Total Avisos: 9
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-se-vende-departamento-en-edificio-aire-urbano/32314870
+-> Publicador: Jaime Alberto Rossel (Profile: 14980666) | Total Avisos: 9
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento-avda-lircay-frente-utal/30807313
+-> Publicador: Denisse Arriaza (Profile: 13722309) | Total Avisos: 9
+   Ejemplo URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/oportunidad-inversion-dpto-vicente-valdes-168045/32519952
+
+==================================================================
+2. NOMBRES GENÉRICOS SOSPECHOSOS
+==================================================================
+Se encontraron 24 casos.
+-> Nombre: Agente  | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-ines-de-suarez/32035666
+-> Nombre: Agente  | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-metro-monsenor-eyzaguirre/32026332
+-> Nombre: Agente  | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/factoria-italia-1539-11/29715504
+-> Nombre: Agente  | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/domingo-faustino-sar-1-bod-2884-1/31895023
+-> Nombre: Agente  | URL: https://www.yapo.cl/bienes-raices-alquiler-comercios/estacionamiento-el-cerro-1731-providencia/31807738
+-> Nombre: Propietario | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/parque-vicuna-mackenna-a/32050996
+-> Nombre: Agente  | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/alcalde-carlos-aldun-1-est-1-bod-3475-1/32049690
+-> Nombre: Agente  | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-metro-baquedano/32070621
+-> Nombre: Agente  | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-3-dormitorios-estacionamiento-sin-ga/32070002
+-> Nombre: Agente  | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/ref-re-re0004569-arriendo-dpto-1d-1b-bodega-san-miguel-promo/31915557
+-> Nombre: Agente  | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/vargas-buston-760-1-est-1139-4/31980621
+-> Nombre: Agente  | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/depto-2d-2b-estac-y-bodega-metro-125471/31513510
+-> Nombre: Propietario | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-2d-2b-la-florida/26900713
+-> Nombre: Propietario | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/amplio-dpto-san-miguel-trato-directo-con-dueno/26101132
+-> Nombre: Propietario | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/se-arrienda-depto-interior/27186510
+
+==================================================================
+3. LENGUAJE DE CORREDOR EN DESCRIPCIÓN (Se escaparon del filtro)
+==================================================================
+Se encontraron 15 casos.
+-> Publicador: N/A | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/zanartu-980-depto-1-dorm-con-terraza-50-dscto-por-1-o-2-meses/31439186
+-> Publicador: Mariella | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-con-el-mejor-club-house-4-pisos-d/31947231
+-> Publicador: N/A | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/se-arrienda-departamento-sin-comisiones/26097991
+-> Publicador: N/A | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/dpto-1d-1b-nunoa-arriendo-sin-comision-corretaje/25872812
+-> Publicador: Rédita Corporate Property Solutions | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-metro-camino-agricola/32065044
+-> Publicador: Roberto | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-depto-home-estudio-departamental-927/26827783
+-> Publicador: Eduardo Triviño | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-2-dormitorios-amp-8211-2-banos/26742139
+-> Publicador: Mauricio Labrin | Palabras: ['horario de oficina'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/se-arrienda-excelente-departamento-est-y-bodega/31904942
+-> Publicador: Marcelo Valdés Figueroa | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento-estacion-central/27223214
+-> Publicador: marisol salinas fonseca | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-1d-1b/26776570
+-> Publicador: Javier Henriquez | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/oportunidad-metro-vicente-valdes/31883638
+-> Publicador: Raquel Lizana | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-octava-avenida-san-miguel-3-d-2b/25850517
+-> Publicador: Denisse Quidiante | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento-2d-2-b-1-estac-bodega/26793341
+-> Publicador: Cariola Kroneberg - Constanza Cariola | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-inglaterra-fresia-metro-mirador/31077454
+-> Publicador: Cariola Kroneberg - Constanza Cariola | Palabras: ['comision'] | URL: https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-inglaterra-fresia-metro-mirador/31586769
+
+==================================================================
+CONCLUSIONES Y PRÓXIMOS PASOS
+==================================================================
+- Si la sección 1 está llena, significa que hay corredores usando perfiles anónimos de 'dueño'.
+  Solución sugerida: En is_likely_broker(), si no podemos saber cuántas propiedades tiene,
+  podríamos endurecer la revisión semántica. Otra opción es hacer un cruce post-scraping.

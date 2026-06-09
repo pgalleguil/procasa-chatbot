@@ -1,6 +1,7 @@
 # retiro/handler.py → Versión PREMIUM DEFINITIVA con BLOQUEO SELECTIVO para correos internos (23-12-2025)
 
 import logging
+import asyncio
 import smtplib
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -221,15 +222,20 @@ async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
         logger.warning(f"Bloqueado intento de confirmación desde correo no autorizado: {email_norm} (IP: {ip}) - Propiedad {codigo_norm}")
         return pantalla_acceso_denegado(codigo_norm)
 
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
+    def _get_db():
+        client = MongoClient(Config.MONGO_URI)
+        return client[Config.DB_NAME]
+
+    db = await asyncio.to_thread(_get_db)
     col = db["retiros_propiedades"]
-    
+
     # Verificar si ya existe el retiro
-    ya_confirmado = col.find_one({
-        "codigo_propiedad": codigo_norm,
-        "accion": "retiro_confirmado"
-    })
+    ya_confirmado = await asyncio.to_thread(
+        lambda: col.find_one({
+            "codigo_propiedad": codigo_norm,
+            "accion": "retiro_confirmado"
+        })
+    )
 
     if ya_confirmado:
         return HTMLResponse(f"""
@@ -251,36 +257,40 @@ async def handle_retiro_confirmacion(email: str, codigo: str, ip: str):
         """)
 
     # Datos del ejecutivo
-    prop_data = db[Config.COLLECTION_NAME].find_one({"codigo": codigo_norm})
+    prop_data = await asyncio.to_thread(lambda: db[Config.COLLECTION_NAME].find_one({"codigo": codigo_norm}))
     email_ejecutivo = prop_data.get("email_ejecutivo") if prop_data else None
 
     # Hora local Chile para guardar en DB
     ahora_chile = datetime.now(TZ_CHILE)
 
     # Actualización en MongoDB
-    col.update_one(
-        {"codigo_propiedad": codigo_norm},
-        {
-            "$set": {
-                "email_propietario": email_norm,
-                "accion": "retiro_confirmado",
-                "fecha_confirmacion": datetime.utcnow(),
-                "fecha_chile": ahora_chile,
-                "ip": ip,
-                "ley": "19.799",
-                "fecha_actualizacion": datetime.utcnow()
+    await asyncio.to_thread(
+        lambda: col.update_one(
+            {"codigo_propiedad": codigo_norm},
+            {
+                "$set": {
+                    "email_propietario": email_norm,
+                    "accion": "retiro_confirmado",
+                    "fecha_confirmacion": datetime.utcnow(),
+                    "fecha_chile": ahora_chile,
+                    "ip": ip,
+                    "ley": "19.799",
+                    "fecha_actualizacion": datetime.utcnow()
+                },
+                "$setOnInsert": {
+                    "documento": "Carta_Retiro_Procasa.pdf",
+                    "fecha_envio": datetime.utcnow()
+                }
             },
-            "$setOnInsert": { 
-                "documento": "Carta_Retiro_Procasa.pdf", 
-                "fecha_envio": datetime.utcnow() 
-            }
-        },
-        upsert=True
+            upsert=True
+        )
     )
 
-    db[Config.COLLECTION_NAME].update_one(
-        {"codigo": codigo_norm},
-        {"$set": { "disponible": False, "fecha_no_disponible": datetime.utcnow(), "motivo": "retiro_propietario" }}
+    await asyncio.to_thread(
+        lambda: db[Config.COLLECTION_NAME].update_one(
+            {"codigo": codigo_norm},
+            {"$set": { "disponible": False, "fecha_no_disponible": datetime.utcnow(), "motivo": "retiro_propietario" }}
+        )
     )
 
     enviar_notificacion_interna("RETIRO FIRMADO", email_norm, codigo_norm, email_ejecutivo, ip)
@@ -322,28 +332,33 @@ async def handle_solicitud_contacto(email: str, codigo: str, ip: str):
         logger.warning(f"Bloqueado intento de solicitud de contacto desde correo no autorizado: {email_norm} (IP: {ip}) - Propiedad {codigo_norm}")
         return pantalla_acceso_denegado(codigo_norm)
 
-    client = MongoClient(Config.MONGO_URI)
-    db = client[Config.DB_NAME]
-    
-    prop_data = db[Config.COLLECTION_NAME].find_one({"codigo": codigo_norm})
+    def _get_db():
+        client = MongoClient(Config.MONGO_URI)
+        return client[Config.DB_NAME]
+
+    db = await asyncio.to_thread(_get_db)
+
+    prop_data = await asyncio.to_thread(lambda: db[Config.COLLECTION_NAME].find_one({"codigo": codigo_norm}))
     email_ejecutivo = prop_data.get("email_ejecutivo") if prop_data else None
 
     # Hora local Chile para guardar en DB
     ahora_chile = datetime.now(TZ_CHILE)
 
-    db["retiros_propiedades"].update_one(
-        {"codigo_propiedad": codigo_norm},
-        {
-            "$set": {
-                "email_propietario": email_norm,
-                "accion": "solicitud_contacto_ejecutivo",
-                "fecha": datetime.utcnow(),
-                "fecha_chile": ahora_chile,
-                "ip": ip,
-                "fecha_actualizacion": datetime.utcnow()
-            }
-        },
-        upsert=True
+    await asyncio.to_thread(
+        lambda: db["retiros_propiedades"].update_one(
+            {"codigo_propiedad": codigo_norm},
+            {
+                "$set": {
+                    "email_propietario": email_norm,
+                    "accion": "solicitud_contacto_ejecutivo",
+                    "fecha": datetime.utcnow(),
+                    "fecha_chile": ahora_chile,
+                    "ip": ip,
+                    "fecha_actualizacion": datetime.utcnow()
+                }
+            },
+            upsert=True
+        )
     )
 
     enviar_notificacion_interna("SOLICITUD DE CONTACTO", email_norm, codigo_norm, email_ejecutivo, ip)

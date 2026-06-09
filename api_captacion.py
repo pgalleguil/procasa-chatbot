@@ -688,12 +688,20 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
             # Localize to Chile
             if execute_at.tzinfo is None:
                 execute_at = CHILE_TZ.localize(execute_at)
+
+            obj_id_str = str(obj_id)
+            # Deduplicación por captación: el teléfono es un dummy, así que
+            # usamos obj_id para evitar crear 2 o 3 recordatorios para la misma gestión.
+            db["crm_tasks"].update_many(
+                {"lead_type": "captacion", "obj_id": obj_id_str, "status": "pending"},
+                {"$set": {"status": "completed", "resolved_at": now, "resolution": "superseded"}}
+            )
                 
             task = {
                 "task_id": str(uuid.uuid4()),
                 "lead_type": "captacion",
                 "phone": "+56900000000",
-                "obj_id": str(obj_id),
+                "obj_id": obj_id_str,
                 "target_name": user_name,
                 "type": "REMINDER_CAPTACION",
                 "status": "pending",

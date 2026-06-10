@@ -266,11 +266,17 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     # El cursor es el valor de last_event_at del último item visible.
     #
     # Primer carga (cursor_last_event_at=None): trae los más recientes.
-    # Carga siguiente: trae los que tienen last_event_at < cursor.
+    # Carga siguiente: trae los que tienen el valor del cursor menor al último item visible.
     # ------------------------------------------------------------------
-    # Siempre usamos created_at como cursor principal porque el usuario quiere orden por asignaci\u00f3n m\u00e1s reciente
-    sort_criteria = [("created_at", -1)]
+    # "Más Recientes" debe ordenar por fecha de asignación del ejecutivo.
+    # Usamos lifecycle.assigned_at como fuente principal y dejamos fallback a fecha_asignacion/created_at.
+    sort_field = "created_at"
     cursor_field = "created_at"
+    if ordenar_por == "fecha":
+        sort_field = "lifecycle.assigned_at"
+        cursor_field = "lifecycle.assigned_at"
+
+    sort_criteria = [(sort_field, -1)]
 
     # Proyección mínima — solo campos necesarios para el listado
     PROJECTION = {
@@ -443,6 +449,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         
         # Identificar ejecutivo y timestamp real para visualización
         ejecutivo = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
+        sort_ts = lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion") or lead.get("created_at")
         
         if last_ts:
             try: 
@@ -524,7 +531,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             "ultima_accion_note": last_action_note,
             "ejecutivo_nombre": ejecutivo or UNASSIGNED_LABEL,
             "fecha_asignacion_relativa": format_relative_time(lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion")),
-            "stage": lead.get("stage") or "new"
+            "stage": lead.get("stage") or "new",
+            "sort_timestamp": sort_ts
         })
     
     # 5. RETORNAR RESULTADOS

@@ -24,6 +24,13 @@ ROCIO_ALIAGA = "Rocío Aliaga"
 
 EXECUTIVES_ON_VACATION = []
 
+# Ejecutivas temporalmente inactivas.
+# Para revertir el desvío, basta con quitar el nombre de esta lista.
+TEMPORARILY_INACTIVE_EXECUTIVES = [ROCIO_ALIAGA, RAQUEL_CHENEAUX]
+
+# Reemplazo por defecto cuando una ejecutiva está ausente.
+DEFAULT_VACATION_REPLACEMENT = ERIKA_GARRIDO
+
 # Mapeo de reemplazos para asignaciones directas (fuera de Round Robin)
 VACATION_REPLACEMENTS = {
     ERIKA_GARRIDO: RAQUEL_CHENEAUX
@@ -35,15 +42,20 @@ def is_raquel_unavailable() -> bool:
     effective_time = get_next_business_slot(now)
     return effective_time.weekday() in [0, 2]
 
+def is_executive_temporarily_inactive(name: str) -> bool:
+    """Indica si una ejecutiva debe ser derivada por ausencia o vacaciones."""
+    return name in TEMPORARILY_INACTIVE_EXECUTIVES or name in EXECUTIVES_ON_VACATION
+
 def get_active_executive(name: str, norm_comuna: str = "") -> str:
     """Retorna el reemplazo si el ejecutivo está en vacaciones, o si no está disponible, deriva a RR."""
-    if name in EXECUTIVES_ON_VACATION:
+    if is_executive_temporarily_inactive(name):
         replacement = VACATION_REPLACEMENTS.get(name)
         if replacement:
             logger.info(f"[VACATION] Redirigiendo asignación de {name} a su reemplazo: {replacement}")
             name = replacement
         else:
-            return get_next_round_robin_executive(norm_comuna)
+            logger.info(f"[VACATION] Redirigiendo asignacion de {name} a reemplazo por defecto: {DEFAULT_VACATION_REPLACEMENT}")
+            name = DEFAULT_VACATION_REPLACEMENT
             
     if name == RAQUEL_CHENEAUX and is_raquel_unavailable():
         logger.info(f"[VACATION] {name} no trabaja hoy (Lunes o Miércoles). Derivando a Round Robin.")
@@ -125,7 +137,7 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
         candidate = ROUND_ROBIN_TEAM[next_index]
         
         # Filtro Vacaciones: Saltar si está en vacaciones
-        if candidate in EXECUTIVES_ON_VACATION:
+        if is_executive_temporarily_inactive(candidate):
             logger.info(f"[ROUTER] Saltando a {candidate} (En modo vacaciones).")
             continue
             

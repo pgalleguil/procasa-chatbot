@@ -304,43 +304,49 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     }
 
     paginated_query = query_with_state.copy()
+    cursor_dt = None
     if cursor_last_event_at:
         try:
             cursor_dt = datetime.fromisoformat(cursor_last_event_at.replace("Z", "+00:00"))
-            # El cursor puede estar guardado como Datetime o como String ISO en la base de datos
-            cursor_condition = {
-                "$or": [
-                    {cursor_field: {"$lt": cursor_dt}},
-                    {cursor_field: {"$lt": cursor_last_event_at}}
-                ]
-            }
-            if "$and" in paginated_query:
-                # Hacer una copia superficial de la lista $and para no mutar el dict original
-                paginated_query["$and"] = list(paginated_query["$and"])
-                paginated_query["$and"].append(cursor_condition)
-            else:
-                paginated_query["$and"] = [cursor_condition]
         except Exception as e:
             logger.warning(f"CRM: cursor inválido ignorado: {e}")
-            # Si el cursor es inválido, arranca desde el principio (seguro)
+            cursor_dt = None
 
     if use_effective_assignment_sort:
         sort_pipeline = [
             {"$match": paginated_query},
             {"$addFields": {
                 "effective_assigned_at": {
-                    "$ifNull": [
-                        "$lifecycle.assigned_at",
-                        {"$ifNull": ["$fecha_asignacion", "$created_at"]}
-                    ]
+                    "$let": {
+                        "vars": {
+                            "assigned": {"$convert": {"input": "$lifecycle.assigned_at", "to": "date", "onError": None, "onNull": None}},
+                            "fallback_assigned": {"$convert": {"input": "$fecha_asignacion", "to": "date", "onError": None, "onNull": None}},
+                            "created": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
+                        },
+                        "in": {"$ifNull": ["$$assigned", {"$ifNull": ["$$fallback_assigned", "$$created"]}]}
+                    }
                 }
             }},
+        ]
+        if cursor_dt:
+            sort_pipeline.append({"$match": {"effective_assigned_at": {"$lt": cursor_dt}}})
+        sort_pipeline.extend([
             {"$sort": {"effective_assigned_at": -1}},
             {"$limit": limit},
             {"$project": PROJECTION | {"effective_assigned_at": 1}}
-        ]
+        ])
         leads_list = await db["leads"].aggregate(sort_pipeline).to_list(length=limit)
     else:
+        if cursor_dt:
+            paginated_query = {
+                "$and": [
+                    paginated_query,
+                    {"$or": [
+                        {cursor_field: {"$lt": cursor_dt}},
+                        {cursor_field: {"$lt": cursor_last_event_at}}
+                    ]}
+                ]
+            }
         leads_cursor = db["leads"].find(paginated_query, PROJECTION)\
                                   .sort(sort_criteria)\
                                   .limit(limit)

@@ -272,9 +272,11 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     # Usamos lifecycle.assigned_at como fuente principal y dejamos fallback a fecha_asignacion/created_at.
     sort_field = "created_at"
     cursor_field = "created_at"
+    use_effective_assignment_sort = False
     if ordenar_por == "fecha":
-        sort_field = "lifecycle.assigned_at"
-        cursor_field = "lifecycle.assigned_at"
+        sort_field = "effective_assigned_at"
+        cursor_field = "effective_assigned_at"
+        use_effective_assignment_sort = True
 
     sort_criteria = [(sort_field, -1)]
 
@@ -322,10 +324,27 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             logger.warning(f"CRM: cursor inválido ignorado: {e}")
             # Si el cursor es inválido, arranca desde el principio (seguro)
 
-    leads_cursor = db["leads"].find(paginated_query, PROJECTION)\
-                              .sort(sort_criteria)\
-                              .limit(limit)
-    leads_list = await leads_cursor.to_list(length=limit)
+    if use_effective_assignment_sort:
+        sort_pipeline = [
+            {"$match": paginated_query},
+            {"$addFields": {
+                "effective_assigned_at": {
+                    "$ifNull": [
+                        "$lifecycle.assigned_at",
+                        {"$ifNull": ["$fecha_asignacion", "$created_at"]}
+                    ]
+                }
+            }},
+            {"$sort": {"effective_assigned_at": -1}},
+            {"$limit": limit},
+            {"$project": PROJECTION | {"effective_assigned_at": 1}}
+        ]
+        leads_list = await db["leads"].aggregate(sort_pipeline).to_list(length=limit)
+    else:
+        leads_cursor = db["leads"].find(paginated_query, PROJECTION)\
+                                  .sort(sort_criteria)\
+                                  .limit(limit)
+        leads_list = await leads_cursor.to_list(length=limit)
 
     leads_procesados = []
     # (KPI counts are already calculated via optimized MongoDB queries above)
@@ -449,7 +468,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         
         # Identificar ejecutivo y timestamp real para visualización
         ejecutivo = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
-        sort_ts = lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion") or lead.get("created_at")
+        sort_ts = lead.get("effective_assigned_at") or lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion") or lead.get("created_at")
         
         if last_ts:
             try: 

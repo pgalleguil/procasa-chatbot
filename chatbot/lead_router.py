@@ -31,6 +31,9 @@ TEMPORARILY_INACTIVE_EXECUTIVES = [ROCIO_ALIAGA, RAQUEL_CHENEAUX]
 # Reemplazo por defecto cuando una ejecutiva está ausente.
 DEFAULT_VACATION_REPLACEMENT = ERIKA_GARRIDO
 
+# Reparto especial para los casos de Raquel entre las dos disponibles.
+SPECIAL_RAQUEL_TEAM = [ERIKA_GARRIDO, MARIELA_ARRIAGADA]
+
 # Mapeo de reemplazos para asignaciones directas (fuera de Round Robin)
 VACATION_REPLACEMENTS = {
     ERIKA_GARRIDO: RAQUEL_CHENEAUX
@@ -46,15 +49,30 @@ def is_executive_temporarily_inactive(name: str) -> bool:
     """Indica si una ejecutiva debe ser derivada por ausencia o vacaciones."""
     return name in TEMPORARILY_INACTIVE_EXECUTIVES or name in EXECUTIVES_ON_VACATION
 
+def get_special_raquel_replacement() -> str:
+    """Alterna entre Erika y Mariela para reemplazar a Raquel."""
+    db = get_db()
+    state_col = db["lead_routing_state"]
+    state = state_col.find_one({"id": "raquel_special_rr"})
+    last_index = state.get("last_index", -1) if state else -1
+    next_index = (last_index + 1) % len(SPECIAL_RAQUEL_TEAM)
+    candidate = SPECIAL_RAQUEL_TEAM[next_index]
+    state_col.update_one(
+        {"id": "raquel_special_rr"},
+        {"$set": {"last_index": next_index}},
+        upsert=True
+    )
+    return candidate
+
 def get_active_executive(name: str, norm_comuna: str = "") -> str:
     """Retorna el reemplazo si el ejecutivo está en vacaciones, o si no está disponible, deriva a RR."""
     if is_executive_temporarily_inactive(name):
-        replacement = VACATION_REPLACEMENTS.get(name)
-        if replacement:
-            logger.info(f"[VACATION] Redirigiendo asignación de {name} a su reemplazo: {replacement}")
+        if name == RAQUEL_CHENEAUX:
+            replacement = get_special_raquel_replacement()
+            logger.info(f"[VACATION] Redirigiendo asignación de {name} al reemplazo especial: {replacement}")
             name = replacement
         else:
-            logger.info(f"[VACATION] Redirigiendo asignacion de {name} a reemplazo por defecto: {DEFAULT_VACATION_REPLACEMENT}")
+            logger.info(f"[VACATION] Redirigiendo asignación de {name} a reemplazo por defecto: {DEFAULT_VACATION_REPLACEMENT}")
             name = DEFAULT_VACATION_REPLACEMENT
             
     if name == RAQUEL_CHENEAUX and is_raquel_unavailable():

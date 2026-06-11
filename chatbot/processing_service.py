@@ -214,7 +214,7 @@ class LeadProcessingService:
         return False
 
     @staticmethod
-    def reassign_if_needed(lead_doc: Dict[str, Any]) -> Dict[str, Any]:
+    def reassign_if_needed(lead_doc: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
         """
         Intenta asignar un ejecutivo si el lead está "No Asignado".
         """
@@ -227,7 +227,7 @@ class LeadProcessingService:
             return {} # Ya tiene asignado
 
         # NUEVO: Solo asignar si el lead tiene "mérito" (intención o novedad)
-        if not LeadProcessingService.is_worthy_of_assignment(lead_doc):
+        if not force and not LeadProcessingService.is_worthy_of_assignment(lead_doc):
             logger.debug(f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} descartado para auto-asignación (Baja intención/Histórico)")
             return {}
 
@@ -348,7 +348,7 @@ class LeadProcessingService:
 
             # Asignación
             if force or needs_assignment:
-                assignment = LeadProcessingService.reassign_if_needed(lead)
+                assignment = LeadProcessingService.reassign_if_needed(lead, force=force)
                 update_data.update(assignment)
 
             if update_data:

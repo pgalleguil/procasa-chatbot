@@ -334,7 +334,7 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
 
     if not prop and property_code:
         logger.warning(f"[ROUTER] Propiedad {property_code} NO encontrada en {Config.COLLECTION_NAME}. Usando fallback.")
-        target_executive_name = UNASSIGNED_LABEL
+        target_executive_name = get_next_round_robin_executive(norm_comuna)
         
         # --- Alerta de Propiedad Faltante (Solicitado por usuario) ---
         try:
@@ -355,7 +355,8 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
             logger.error(f"[ROUTER] Error al programar alerta de propiedad faltante: {e_alert}")
 
     elif not prop:
-        target_executive_name = ""
+        logger.info("[ROUTER] Lead sin propiedad confirmada. Aplicando fallback a Round Robin.")
+        target_executive_name = get_next_round_robin_executive(norm_comuna)
     else:
         original_executive = prop.get("ejecutivo", "")
         logger.info(f"[ROUTER] Propiedad encontrada. Ejecutivo original en ficha: '{original_executive}'")
@@ -431,11 +432,6 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
     # FALLBACK DE EMERGENCIA: Si no hay teléfono o es No Asignado, asignamos a Round Robin
     # PERO: Respetamos la decisión de dejarlo como pendiente si la propiedad NO EXISTE (Rule refinement)
     if target_executive_name == UNASSIGNED_LABEL or target_executive_name == "":
-        if not prop:
-            # PROPIEDAD DESCONOCIDA: No asignar automáticamente. Dejar que el Admin lo vea.
-            logger.warning(f"[ROUTER] Propiedad '{property_code}' desconocida. Dejando lead como '{UNASSIGNED_LABEL}'.")
-            return UNASSIGNED_LABEL, None
-            
         logger.warning(f"[ROUTER] Fallback: Sin ejecutivo válido. Asignando a Round Robin (RM).")
         target_executive_name = get_next_round_robin_executive("")
         phone = get_executive_phone(target_executive_name)

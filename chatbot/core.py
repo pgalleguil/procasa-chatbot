@@ -73,6 +73,99 @@ def formatear_ficha_tecnica(propiedad):
     Descripción: {propiedad.get('descripcion_clean', '')[:300]}...
     """
 
+
+def _buscar_propiedad_en_universo(db, raw_value, portal: str | None = None):
+    """
+    Intenta resolver una propiedad en universo_cartera usando un valor crudo
+    que puede ser código interno, código internacional o URL.
+    """
+    if not raw_value:
+        return None
+
+    value = str(raw_value).strip()
+    if not value:
+        return None
+
+    value_int = safe_int_conversion(value)
+    portal = (portal or "").strip()
+    portal_specific_queries = []
+    if portal == "Yapo":
+        portal_specific_queries.extend([
+            {"publicaciones.yapo.url_yapo": value},
+            {"publicaciones.yapo.url_yapo": {"$regex": re.escape(value), "$options": "i"}},
+            {"url_yapo": value},
+            {"url_yapo": {"$regex": re.escape(value), "$options": "i"}},
+            {"publicaciones.yapo.codigo_yapo": value},
+            {"publicaciones.yapo.codigo_yapo": value_int},
+            {"codigo_yapo": value},
+            {"codigo_yapo": value_int},
+        ])
+    elif portal == "MercadoLibre":
+        portal_specific_queries.extend([
+            {"publicaciones.portal_inmobiliario.url_mercado_libre": value},
+            {"publicaciones.portal_inmobiliario.url_mercado_libre": {"$regex": re.escape(value), "$options": "i"}},
+            {"codigo_mercadolibre": value},
+            {"codigo_mercadolibre": value_int},
+            {"publicaciones.portal_inmobiliario.codigo_pi": value},
+            {"publicaciones.portal_inmobiliario.codigo_pi": value_int},
+            {"codigo_pi": value},
+            {"codigo_pi": value_int},
+        ])
+    elif portal == "PortalInmobiliario":
+        portal_specific_queries.extend([
+            {"publicaciones.portal_inmobiliario.url_pi": value},
+            {"publicaciones.portal_inmobiliario.url_pi": {"$regex": re.escape(value), "$options": "i"}},
+            {"publicaciones.portal_inmobiliario.codigo_pi": value},
+            {"publicaciones.portal_inmobiliario.codigo_pi": value_int},
+            {"codigo_pi": value},
+            {"codigo_pi": value_int},
+            {"codigo_mercadolibre": value},
+            {"codigo_mercadolibre": value_int},
+        ])
+    elif portal == "TocToc":
+        portal_specific_queries.extend([
+            {"publicaciones.toctoc.url_toctoc": value},
+            {"publicaciones.toctoc.url_toctoc": {"$regex": re.escape(value), "$options": "i"}},
+            {"toctoc.enlace": value},
+            {"toctoc.enlace": {"$regex": re.escape(value), "$options": "i"}},
+        ])
+    elif portal == "Procasa":
+        portal_specific_queries.extend([
+            {"publicaciones.procasa.url_procasa": value},
+            {"publicaciones.procasa.url_procasa": {"$regex": re.escape(value), "$options": "i"}},
+        ])
+
+    queries = portal_specific_queries + [
+        {"codigo": value},
+        {"codigo": value_int},
+        {"codigo_pi": value},
+        {"codigo_pi": value_int},
+        {"codigo_mercadolibre": value},
+        {"codigo_mercadolibre": value_int},
+        {"codigo_yapo": value},
+        {"codigo_yapo": value_int},
+        {"codigo_internacional": value},
+        {"codigo_internacional": value_int},
+        {"publicaciones.codigo_internacional": value},
+        {"publicaciones.codigo_internacional": value_int},
+        {"publicaciones.yapo.codigo_yapo": value},
+        {"publicaciones.yapo.codigo_yapo": value_int},
+        {"publicaciones.portal_inmobiliario.codigo_pi": value},
+        {"publicaciones.portal_inmobiliario.codigo_pi": value_int},
+        {"publicaciones.procasa.url_procasa": {"$regex": re.escape(value), "$options": "i"}},
+        {"publicaciones.yapo.url_yapo": {"$regex": re.escape(value), "$options": "i"}},
+        {"publicaciones.portal_inmobiliario.url_pi": {"$regex": re.escape(value), "$options": "i"}},
+        {"publicaciones.portal_inmobiliario.url_mercado_libre": {"$regex": re.escape(value), "$options": "i"}},
+        {"toctoc.enlace": {"$regex": re.escape(value), "$options": "i"}},
+        {"publicaciones.toctoc.enlace": {"$regex": re.escape(value), "$options": "i"}},
+    ]
+
+    for query in queries:
+        prop = db[Config.COLLECTION_NAME].find_one(query)
+        if prop:
+            return prop
+    return None
+
 # ==========================================
 #   PROCESADOR PRINCIPAL
 # ==========================================
@@ -240,6 +333,48 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         f"temp_prop_comuna={(temp_prop.get('comuna') if temp_prop else None)}"
     )
 
+    # 0. Resolución temprana de propiedad aunque NO haya URL.
+    #    Esto usa el código ya guardado en prospecto o lo que exista en el historial.
+    if not propiedad:
+        db_props = await _run_sync(get_db)
+        candidatos_propiedad = []
+
+        # Código ya conocido del prospecto
+        if prospecto_actual.get("codigo"):
+            candidatos_propiedad.append(prospecto_actual.get("codigo"))
+
+        # Códigos detectados en el mensaje actual o historial reciente
+        for fuente in [original_message, " ".join([m.get("content", "") for m in historial[-8:]])]:
+            if not fuente:
+                continue
+            urls_detectadas = URL_RE.findall(fuente)
+            candidatos_propiedad.extend(urls_detectadas)
+
+            cod_int = extraer_codigo_internacional(fuente)
+            if cod_int:
+                candidatos_propiedad.append(cod_int)
+
+            for cod_short in re.findall(r"\b(\d{4,6})\b", fuente):
+                candidatos_propiedad.append(cod_short)
+
+        vistos = set()
+        for raw_candidate in candidatos_propiedad:
+            candidate = str(raw_candidate).strip()
+            if not candidate or candidate in vistos:
+                continue
+            vistos.add(candidate)
+            prop_match = await _run_sync(_buscar_propiedad_en_universo, db_props, candidate, plataforma_origen if hay_url else None)
+            if prop_match:
+                propiedad = prop_match
+                codigo_detectado = str(prop_match.get("codigo"))
+                if not nuevo_origen:
+                    nuevo_origen = "WhatsApp"
+                logger.info(
+                    f"[PROPERTY_RESOLVE] trace={trace_id} phone={phone} "
+                    f"match_por_contexto={candidate} codigo={codigo_detectado} comuna={prop_match.get('comuna')}"
+                )
+                break
+
     if es_link and temp_prop:
         _codigo_antes = prospecto_actual.get('codigo')
         propiedad = temp_prop
@@ -259,21 +394,13 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         codigo_externo = codigo_externo_raw
         await _run_sync(actualizar_prospecto, phone, {"link_detectado": True}, trace_id)
 
-    # 2. Si no viene un enlace, intentar detectar CODIGO INTERNACIONAL (9+ dígitos)
+    # 2. Si no viene un enlace y todavía no resolvimos propiedad, intentar detectar CODIGO INTERNACIONAL (9+ dígitos)
     if not propiedad and not hay_url:
         cod_int = extraer_codigo_internacional(original_message)
         if cod_int:
             db_props = await _run_sync(get_db)
             _antes_int = prospecto_actual.get('codigo')
-            propiedad = await _run_sync(
-                db_props[Config.COLLECTION_NAME].find_one,
-                {
-                    "$or": [
-                        {"codigo_internacional": cod_int},
-                        {"publicaciones.codigo_internacional": cod_int}
-                    ]
-                }
-            )
+            propiedad = await _run_sync(_buscar_propiedad_en_universo, db_props, cod_int, plataforma_origen if hay_url else None)
             if propiedad:
                 codigo_detectado = str(propiedad.get("codigo"))
                 nuevo_origen = "WhatsApp (Int Code)"
@@ -285,22 +412,14 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                     f"valor_nuevo={codigo_detectado} comuna={propiedad.get('comuna')} origen=CODIGO_INTERNACIONAL"
                 )
 
-    # 3. Si no viene un enlace, buscar código numérico explícito corto (4-6 dígitos)
+    # 3. Si no viene un enlace y seguimos sin propiedad, buscar código numérico explícito corto (4-6 dígitos)
     if not propiedad and not hay_url:
         match = re.search(r"\b(\d{4,6})\b", original_message)
         if match:
             cod = match.group(1)
             db_props = await _run_sync(get_db)
             _antes_short = prospecto_actual.get('codigo')
-            propiedad = await _run_sync(
-                db_props[Config.COLLECTION_NAME].find_one,
-                {"$or": [
-                    {"codigo": cod},
-                    {"codigo": safe_int_conversion(cod)},
-                    {"codigo_procasa": cod},
-                    {"codigo_procasa": safe_int_conversion(cod)},
-                ]}
-            )
+            propiedad = await _run_sync(_buscar_propiedad_en_universo, db_props, cod, plataforma_origen if hay_url else None)
             if propiedad:
                 codigo_detectado = str(propiedad.get("codigo"))
                 if not prospecto_actual.get("origen"):

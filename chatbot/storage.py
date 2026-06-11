@@ -294,6 +294,29 @@ def obtener_propiedades_vistas(phone: str) -> List[str]:
 
 def save_pending_notification(lead_data: dict):
     db = get_db()
+    lead_phone = lead_data.get("lead_phone") or lead_data.get("phone")
+    lead_type = lead_data.get("lead_type")
+
+    # Evitar duplicados del mismo lead/tipo: si ya existe un pendiente, se actualiza.
+    if lead_phone and lead_type:
+        existing = db[COLLECTION_PENDING_NOTIFICATIONS].find_one({
+            "status": "pending",
+            "lead_data.lead_phone": lead_phone,
+            "lead_data.lead_type": lead_type,
+        })
+        if existing:
+            db[COLLECTION_PENDING_NOTIFICATIONS].update_one(
+                {"_id": existing["_id"]},
+                {
+                    "$set": {
+                        "lead_data": lead_data,
+                        "created_at": datetime.now(CHILE_TZ).isoformat(),
+                        "status": "pending",
+                    }
+                }
+            )
+            return
+
     notification = {
         "lead_data": lead_data,
         "created_at": datetime.now(CHILE_TZ).isoformat(),

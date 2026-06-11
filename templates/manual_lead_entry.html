@@ -8,6 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/css/intlTelInput.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
 
     <style>
@@ -245,6 +246,78 @@
             cursor: not-allowed;
         }
 
+        /* intl-tel-input overrides */
+        .iti {
+            width: 100%;
+            display: block;
+        }
+
+        .iti__flag {
+            background-image: url("https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/img/flags.png");
+        }
+
+        @media (min-resolution: 2x) {
+            .iti__flag {
+                background-image: url("https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/img/flags@2x.png");
+            }
+        }
+
+        .iti__dropdown-content {
+            background-color: var(--bg-card) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 8px !important;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4) !important;
+            overflow: hidden !important;
+        }
+
+        .iti__search-input {
+            background-color: var(--input-bg) !important;
+            color: var(--input-text) !important;
+            border: 1px solid var(--input-border) !important;
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-top: 5px;
+            margin-bottom: 5px;
+        }
+
+        .iti__country-list {
+            background-color: var(--bg-card) !important;
+            color: var(--text-primary) !important;
+            border: none !important;
+            margin-top: 0 !important;
+            border-bottom-left-radius: 8px !important;
+            border-bottom-right-radius: 8px !important;
+        }
+
+        .iti__country.iti__highlight {
+            background-color: rgba(99, 102, 241, 0.1) !important;
+        }
+
+        .iti__selected-dial-code {
+            color: var(--input-text) !important;
+            font-weight: 600;
+        }
+
+        .iti__search-input:focus {
+            outline: none !important;
+            border-color: var(--accent) !important;
+            box-shadow: 0 0 0 1px var(--accent) !important;
+        }
+
+        .iti__country-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .iti__country-list::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .iti__country-list::-webkit-scrollbar-thumb {
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+
         .status-badge {
             display: inline-flex;
             align-items: center;
@@ -327,13 +400,9 @@
                         <!-- TELÉFONO -->
                         <div class="col-md-6">
                             <label class="form-label">Teléfono (Opcional si tiene Email)</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-transparent border-end-0"
-                                    style="border-color: var(--input-border); color: var(--text-secondary);">+56</span>
-                                <input type="text" id="phone" name="phone" class="form-control border-start-0"
-                                    placeholder="9 1234 5678">
-                            </div>
-                            <p class="small text-secondary mt-1">Sin el +56, solo los 9 dígitos.</p>
+                            <input type="tel" id="phone" name="phone" class="form-control"
+                                placeholder="Ingresa un teléfono internacional">
+                            <p class="small text-secondary mt-1">Por defecto inicia en Chile, pero puedes cambiar el país.</p>
                         </div>
 
                         <!-- CÓDIGO PROPIEDAD -->
@@ -405,10 +474,12 @@
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.14/js/intlTelInput.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
     <script>
         let isVerified = false;
         let lastVerifiedData = { phone: '', email: '', property_code: '' };
+        let phoneIntl = null;
 
         function normalizePropertyCode(raw) {
             return (raw || '').toString().trim().replace(/\./g, '').replace(/\s+/g, '');
@@ -454,17 +525,6 @@
                     this.value = this.value.toLowerCase().split(' ').map(s => s.charAt(0).toUpperCase() + s.substring(1)).join(' ');
                 }
                 
-                if (id === 'phone') {
-                    // Limpiar todo lo que no sea dígito
-                    let digits = this.value.replace(/\D/g, "");
-                    // Si tiene más de 9 dígitos (ej: 569...), nos quedamos con los últimos 9
-                    if (digits.length >= 9) {
-                        this.value = digits.slice(-9);
-                    } else {
-                        this.value = digits;
-                    }
-                }
-
                 if (id === 'property_code') {
                     this.value = normalizePropertyCode(this.value);
                 }
@@ -477,7 +537,7 @@
 
         // VERIFICACIÓN DE DUPLICADOS
         document.getElementById('btnVerify').addEventListener('click', async () => {
-            const phone = document.getElementById('phone').value.trim();
+            const phone = getPhoneData();
             const email = document.getElementById('email').value.trim();
             const resolvedCode = await resolvePropertyCodeIfNeeded(true);
             const propertyCode = document.getElementById('property_code').value.trim();
@@ -503,9 +563,7 @@
             statusDiv.innerHTML = '';
 
             try {
-                const cleanDigits = phone ? phone.replace(/[^0-9]/g, "") : "";
-                // Normalizamos con +56 para la verificación también
-                const normalizedPhone = cleanDigits.length === 9 ? "56" + cleanDigits : cleanDigits;
+                const normalizedPhone = normalizePhoneForLead(phone);
 
                 let url = `/api/leads/check-duplicate?property_code=${propertyCode}`;
                 if (normalizedPhone) url += `&phone=${normalizedPhone}`;
@@ -556,7 +614,7 @@
         // RESET VERIFICATION ONLY IF CRITICAL FIELDS CHANGE FROM LAST VERIFIED STATE
         ['phone', 'property_code'].forEach(id => {
             document.getElementById(id).addEventListener('input', () => {
-                const currentVal = document.getElementById(id).value.trim();
+                const currentVal = id === 'phone' ? normalizePhoneForLead(getPhoneData()) : document.getElementById(id).value.trim();
                 // Si el valor actual es diferente al que se verificó, invalidamos
                 if (currentVal !== (id === 'phone' ? lastVerifiedData.phone : lastVerifiedData.property_code)) {
                     isVerified = false;
@@ -597,9 +655,7 @@
 
             // Clean phone if present
             if (data.phone) {
-                let digits = data.phone.replace(/\D/g, "");
-                // Normalización con +56 (Backend ya se encarga del + pero lo enviamos limpio aquí para consistencia)
-                data.phone = (digits.length === 9) ? "56" + digits : digits;
+                data.phone = normalizePhoneForLead(data.phone);
             }
 
             data.property_code = normalizePropertyCode(data.property_code);
@@ -655,6 +711,27 @@
             }).showToast();
         }
 
+        function getPhoneData() {
+            const phoneInput = document.getElementById('phone');
+            if (!phoneInput) return '';
+            if (phoneIntl) {
+                try {
+                    const number = phoneIntl.getNumber();
+                    if (number && number.trim()) return number;
+                } catch (e) { }
+            }
+            return phoneInput.value || '';
+        }
+
+        function normalizePhoneForLead(raw) {
+            const digits = (raw || '').toString().replace(/\D/g, '');
+            if (!digits) return '';
+            if (digits.startsWith('56') && digits.length >= 10) return `+${digits}`;
+            if (raw && raw.toString().trim().startsWith('+')) return `+${digits}`;
+            if (digits.length === 9 || digits.length === 8) return `+56${digits}`;
+            return `+${digits}`;
+        }
+
         function toggleTheme() {
             const html = document.documentElement;
             const current = html.getAttribute('data-theme');
@@ -668,6 +745,24 @@
         const savedTheme = localStorage.getItem('theme') || 'dark';
         document.documentElement.setAttribute('data-theme', savedTheme);
         document.getElementById('themeIcon').className = savedTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const phoneInputField = document.querySelector("#phone");
+            if (window.intlTelInput && phoneInputField) {
+                try {
+                    phoneIntl = window.intlTelInput(phoneInputField, {
+                        initialCountry: "cl",
+                        preferredCountries: ["cl", "ar", "co", "pe", "us", "es"],
+                        separateDialCode: true,
+                        nationalMode: false,
+                        autoInsertDialCode: true,
+                        countrySearch: true
+                    });
+                } catch (e) {
+                    console.warn("[manual-leads] intlTelInput init failed, fallback to plain phone input", e);
+                }
+            }
+        });
     </script>
 </body>
 

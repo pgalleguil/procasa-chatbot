@@ -1234,7 +1234,7 @@ async def view_captaciones(
     )
     exec_task = get_unique_executives() if user_role in ["admin", "supervisor"] else asyncio.sleep(0, result=[])
     items_total, executives = await asyncio.gather(list_task, exec_task)
-    items, total_count = items_total
+    items, total_count, available_ops = items_total
     
     # KPIs adicionales para el resumen (basados en el ejecutivo/permisos, no en los filtros actuales de lista)
     base_query = {"details.es_propietario_directo": True}
@@ -1243,18 +1243,24 @@ async def view_captaciones(
     elif ejecutivo and ejecutivo != "Todos":
         base_query["gestion.ejecutivo_asignado"] = ejecutivo
 
+    estados_gestion = ["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "GESTION"]
+    estados_captado = ["Captado", "CAPTADO"]
+    estados_descartado = ["Corredor", "Teléfono inválido", "Descartado", "Propiedad no disponible", "Publicación expirada", "No interesado", "DESCARTADO"]
+
     import time
-    cache_key = f"stats_{user_role}_{user_name}_{ejecutivo}"
+    cache_key = f"stats_v2_{user_role}_{user_name}_{ejecutivo}"
     cache_store = getattr(app.state, 'captacion_stats_cache', {})
     now = time.time()
     if cache_key in cache_store and now - cache_store[cache_key]['time'] < 300:
         in_gestion_count = cache_store[cache_key]['in_gestion_count']
         captados_count = cache_store[cache_key]['captados_count']
+        descartados_count = cache_store[cache_key]['descartados_count']
         comunas_clean = cache_store[cache_key]['comunas_clean']
     else:
-        in_gestion_count, captados_count, comunas_list = await asyncio.gather(
-            adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "GESTION"}),
-            adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"}),
+        in_gestion_count, captados_count, descartados_count, comunas_list = await asyncio.gather(
+            adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": {"$in": estados_gestion}}),
+            adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": {"$in": estados_captado}}),
+            adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": {"$in": estados_descartado}}),
             adb["yapo_propiedades"].distinct("details.comuna", base_query)
         )
         from api_captacion import normalize_commune
@@ -1263,6 +1269,7 @@ async def view_captaciones(
             'time': now,
             'in_gestion_count': in_gestion_count,
             'captados_count': captados_count,
+            'descartados_count': descartados_count,
             'comunas_clean': comunas_clean
         }
         app.state.captacion_stats_cache = cache_store
@@ -1275,7 +1282,9 @@ async def view_captaciones(
         "total_count": total_count,
         "in_gestion_count": in_gestion_count,
         "captados_count": captados_count,
+        "descartados_count": descartados_count,
         "comunas": comunas_clean,
+        "available_ops": available_ops,
         "user_role": user_role,
         "user_name": user_name,
         "current_comuna": comuna,

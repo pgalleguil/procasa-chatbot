@@ -341,6 +341,9 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
             query["details.comuna"] = {"$in": matching}
         else:
             query["details.comuna_norm"] = norm
+            
+    import copy
+    query_for_ops = copy.deepcopy(query)
         
     if status_filter:
         query["gestion.estado"] = status_filter
@@ -369,19 +372,28 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
     )
     cached_response = get_cached_value(response_cache_key)
     if cached_response is not None:
-        return cached_response.get("items", []), cached_response.get("total_count", 0)
+        return cached_response.get("items", []), cached_response.get("total_count", 0), cached_response.get("available_ops", ["venta", "arriendo"])
 
-    # 2) Miss: contar + traer paginados
-    # Count se cachea por filtro (no por página) para evitar contar en cada navegación.
+    # 2) Miss: contar + traer paginados + ops
     count_cache_key = (
-        f"captacion_count_{user_role}_{user_name}_{comuna_filter}_{status_filter}_{executive_filter}_{operacion_filter}_{telefono_filter}"
+        f"captacion_count_v2_{user_role}_{user_name}_{comuna_filter}_{status_filter}_{executive_filter}_{operacion_filter}_{telefono_filter}"
     )
-    cached_count = get_cached_value(count_cache_key)
-    if cached_count is not None:
-        total_count = cached_count
+    cached_count_data = get_cached_value(count_cache_key)
+    if isinstance(cached_count_data, dict):
+        total_count = cached_count_data.get("count", 0)
+        available_ops = cached_count_data.get("ops", ["venta", "arriendo"])
     else:
         total_count = db["yapo_propiedades"].count_documents(query)
-        set_cached_value(count_cache_key, total_count, expire_seconds=180)
+        # Compute available ops
+        raw_ops1 = db["yapo_propiedades"].distinct("details.tipo_operacion", query_for_ops)
+        raw_ops2 = db["yapo_propiedades"].distinct("details.operacion", query_for_ops)
+        all_o = set(str(o).lower() for o in (raw_ops1 + raw_ops2) if o)
+        available_ops = []
+        if any("venta" in o for o in all_o): available_ops.append("venta")
+        if any("arriend" in o for o in all_o): available_ops.append("arriendo")
+        if not available_ops: available_ops = ["venta", "arriendo"]
+        
+        set_cached_value(count_cache_key, {"count": total_count, "ops": available_ops}, expire_seconds=180)
     skip = (page - 1) * limit
     cursor = db["yapo_propiedades"].find(
         query, 
@@ -438,10 +450,10 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
     # TTL corto para navegación y filtros repetidos, con un único objeto.
     set_cached_value(
         response_cache_key,
-        {"items": items_paginated, "total_count": total_count},
+        {"items": items_paginated, "total_count": total_count, "available_ops": available_ops},
         expire_seconds=45
     )
-    return items_paginated, total_count
+    return items_paginated, total_count, available_ops
 
 def get_captacion_detail(obj_id):
     from bson import ObjectId

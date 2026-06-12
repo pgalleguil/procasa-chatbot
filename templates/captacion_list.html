@@ -870,8 +870,12 @@
                 </select>
                 <select name="operacion" onchange="this.form.submit()">
                     <option value="">Todas las operaciones</option>
+                    {% if 'venta' in available_ops %}
                     <option value="venta" {% if current_operacion=='venta' %}selected{% endif %}>Venta</option>
+                    {% endif %}
+                    {% if 'arriendo' in available_ops %}
                     <option value="arriendo" {% if current_operacion=='arriendo' %}selected{% endif %}>Arriendo</option>
+                    {% endif %}
                 </select>
                 <select name="estado" onchange="this.form.submit()">
                     <option value="">Cualquier estado</option>

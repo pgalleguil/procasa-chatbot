@@ -2004,8 +2004,14 @@ def asegurar_indices_db():
             ])
         except Exception as e:
             logger.warning(f"Error creando índice comuna_norm: {e}")
-        # Índice para Market Insights
-        db["universo_cartera"].create_index([("comuna", 1), ("tipo", 1)])
+        # Índice compuesto cubriente para get_market_insights():
+        # cubre $match(comuna, tipo, precio_uf>0, m2_total>0) → index-only scan
+        try:
+            db["universo_cartera"].create_index([
+                ("comuna", 1), ("tipo", 1), ("precio_uf", 1), ("m2_total", 1)
+            ], name="idx_uc_market_insights")
+        except Exception:
+            db["universo_cartera"].create_index([("comuna", 1), ("tipo", 1)])
         # Índices para respuestas de campañas por email
         db[Config.COLLECTION_CONTACTOS].create_index([("email_propietario_lc", 1)], name="idx_contactos_email_lc")
         db[Config.COLLECTION_CAMPANAS_LOG].create_index([("token", 1)], name="idx_campanas_token")

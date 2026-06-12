@@ -132,7 +132,7 @@ def get_market_insights(comuna, tipo_propiedad):
         "total_available": total_market,
         "demand_level": "Alta" if total_market > 50 else "Media" 
     }
-    set_cached_value(cache_key, res, expire_seconds=900) # 15 min
+    set_cached_value(cache_key, res, expire_seconds=3600) # 60 min: datos de mercado no cambian tan rápido
     return res
 
 def calculate_lead_score_captacion(details, market_stats):
@@ -465,6 +465,14 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
 def get_captacion_detail(obj_id):
     from bson import ObjectId
     from bson.errors import InvalidId
+
+    # --- CACÉ L1 (45s): Evita el double-hit cuando el endpoint /matching
+    # se llama inmediatamente después del render de la página HTML. ---
+    _detail_cache_key = f"detail_full_{obj_id}"
+    _cached = _l1_get(_detail_cache_key)
+    if _cached is not None:
+        return _cached
+
     db = get_db()
     
     try:
@@ -636,7 +644,8 @@ def get_captacion_detail(obj_id):
                 "canal": n.get("canal", "Desconocido")
             })
 
-    return {
+
+    _result = {
         "id": str(doc["_id"]),
         "ma": ma,
         "titulo": details.get("titulo"),
@@ -653,7 +662,7 @@ def get_captacion_detail(obj_id):
         "probabilidad": prob,
         "motivos_score": motivos,
         "wa_templates": wa_templates,
-        "vendedor_nombre": vendedor_nombre, 
+        "vendedor_nombre": vendedor_nombre,
         "vendedor_telefono": vendedor_telefono,
         "vendedor_email": vendedor_email,
         "notas_contacto": notas_contacto,
@@ -680,6 +689,10 @@ def get_captacion_detail(obj_id):
         "tipo": details.get("tipo_propiedad") or details.get("tipo"),
         "operacion": details.get("tipo_operacion") or details.get("operacion")
     }
+    # Guardar en L1 cache (45s): el endpoint /matching que dispara el browser
+    # al cargar la página obtiene el resultado sin queries a MongoDB.
+    _l1_set(_detail_cache_key, _result, expire_seconds=45)
+    return _result
 
 def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=None, user_name="Sistema", next_followup=None):
     db = get_db()

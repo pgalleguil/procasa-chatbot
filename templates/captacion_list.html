@@ -857,19 +857,37 @@
 
         <div class="table-container">
             <form action="/captacion" method="GET" class="filter-bar">
+                <div class="search-box">
+                    <i class="fa-solid fa-phone"></i>
+                    <input type="text" name="telefono" placeholder="Buscar teléfono..."
+                        value="{{ current_telefono or '' }}">
+                </div>
                 <select name="comuna" onchange="this.form.submit()">
                     <option value="">Todas las comunas</option>
                     {% for c in comunas %}
                     <option value="{{ c }}" {% if current_comuna == c %}selected{% endif %}>{{ c }}</option>
                     {% endfor %}
                 </select>
+                <select name="operacion" onchange="this.form.submit()">
+                    <option value="">Todas las operaciones</option>
+                    <option value="venta" {% if current_operacion=='venta' %}selected{% endif %}>Venta</option>
+                    <option value="arriendo" {% if current_operacion=='arriendo' %}selected{% endif %}>Arriendo</option>
+                </select>
                 <select name="estado" onchange="this.form.submit()">
                     <option value="">Cualquier estado</option>
-                    <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos</option>
-                    <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gestión</option>
-                    <option value="CAPTADO" {% if current_estado=='CAPTADO' %}selected{% endif %}>Captados</option>
-                    <option value="DESCARTADO" {% if current_estado=='DESCARTADO' %}selected{% endif %}>Descartados
-                    </option>
+                    <option value="Por contactar" {% if current_estado=='Por contactar' %}selected{% endif %}>Por contactar</option>
+                    <option value="Contacto exitoso" {% if current_estado=='Contacto exitoso' %}selected{% endif %}>Contacto exitoso</option>
+                    <option value="Sin respuesta" {% if current_estado=='Sin respuesta' %}selected{% endif %}>Sin respuesta</option>
+                    <option value="Teléfono inválido" {% if current_estado=='Teléfono inválido' %}selected{% endif %}>Teléfono inválido</option>
+                    <option value="Corredor" {% if current_estado=='Corredor' %}selected{% endif %}>Corredor</option>
+                    <option value="Propiedad no disponible" {% if current_estado=='Propiedad no disponible' %}selected{% endif %}>Propiedad no disponible</option>
+                    <option value="Publicación expirada" {% if current_estado=='Publicación expirada' %}selected{% endif %}>Publicación expirada</option>
+                    <option value="No interesado" {% if current_estado=='No interesado' %}selected{% endif %}>No interesado</option>
+                    <option value="Reunión agendada" {% if current_estado=='Reunión agendada' %}selected{% endif %}>Reunión agendada</option>
+                    <option value="Captado" {% if current_estado=='Captado' %}selected{% endif %}>Captado</option>
+                    <option value="Descartado" {% if current_estado=='Descartado' %}selected{% endif %}>Descartado</option>
+                    <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos (Legado)</option>
+                    <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gestión (Legado)</option>
                 </select>
                 {% if user_role in ['supervisor', 'admin'] %}
                 <select name="ejecutivo" onchange="this.form.submit()">

@@ -311,19 +311,7 @@ def resolve_operacion(details: dict) -> str:
     op = (details.get("operacion") or "").lower()
     if "arr" in op:
         return "ARRIENDO"
-
-    precio_uf = details.get("precio_uf")
-    if precio_uf is not None:
-        try:
-            if float(precio_uf) < 1000:
-                return "ARRIENDO"
-        except (ValueError, TypeError):
-            pass
-
-    return "VENTA"
-
-
-def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None):
+def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None):
     db = get_db()
     query = {
         "details.es_propietario_directo": True,
@@ -346,12 +334,28 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
         
     if status_filter:
         query["gestion.estado"] = status_filter
+        
+    if operacion_filter:
+        import re
+        if operacion_filter.lower() == "venta":
+            query.setdefault("$and", []).append({"$or": [{"details.tipo_operacion": re.compile(r"venta", re.I)}, {"details.operacion": re.compile(r"venta", re.I)}]})
+        elif operacion_filter.lower() == "arriendo":
+            query.setdefault("$and", []).append({"$or": [{"details.tipo_operacion": re.compile(r"arriend", re.I)}, {"details.operacion": re.compile(r"arriend", re.I)}]})
+            
+    if telefono_filter:
+        import re
+        query.setdefault("$and", []).append({"$or": [
+            {"whatsapp_phone": re.compile(telefono_filter, re.I)},
+            {"details.whatsapp_phone": re.compile(telefono_filter, re.I)},
+            {"details.vendedor_id": re.compile(telefono_filter, re.I)},
+            {"details.telefono": re.compile(telefono_filter, re.I)}
+        ]})
 
     # 1) CACHE COMBINADO por respuesta completa para evitar doble roundtrip de cache
     # (antes: read count cache + read list cache por request)
     response_cache_key = (
         f"captacion_resp_{user_role}_{user_name}_{comuna_filter}_{status_filter}_"
-        f"{executive_filter}_{page}_{limit}"
+        f"{executive_filter}_{operacion_filter}_{telefono_filter}_{page}_{limit}"
     )
     cached_response = get_cached_value(response_cache_key)
     if cached_response is not None:
@@ -360,7 +364,7 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
     # 2) Miss: contar + traer paginados
     # Count se cachea por filtro (no por página) para evitar contar en cada navegación.
     count_cache_key = (
-        f"captacion_count_{user_role}_{user_name}_{comuna_filter}_{status_filter}_{executive_filter}"
+        f"captacion_count_{user_role}_{user_name}_{comuna_filter}_{status_filter}_{executive_filter}_{operacion_filter}_{telefono_filter}"
     )
     cached_count = get_cached_value(count_cache_key)
     if cached_count is not None:

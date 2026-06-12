@@ -1202,6 +1202,8 @@ async def view_captaciones(
     comuna: str = Query(None),
     estado: str = Query(None),
     ejecutivo: str = Query(None),
+    operacion: str = Query(None),
+    telefono: str = Query(None),
     page: int = Query(1, ge=1)
 ):
     from chatbot.storage import get_async_db
@@ -1225,7 +1227,9 @@ async def view_captaciones(
             limit=limit,
             comuna_filter=comuna,
             status_filter=estado,
-            executive_filter=ejecutivo
+            executive_filter=ejecutivo,
+            operacion_filter=operacion,
+            telefono_filter=telefono
         )
     )
     exec_task = get_unique_executives() if user_role in ["admin", "supervisor"] else asyncio.sleep(0, result=[])
@@ -1242,11 +1246,11 @@ async def view_captaciones(
     in_gestion_count, captados_count, comunas_list = await asyncio.gather(
         adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "GESTION"}),
         adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"}),
-        adb["yapo_propiedades"].distinct("details.comuna", base_query)
+        adb["yapo_propiedades"].distinct("details.comuna_norm", base_query)
     )
     total_pages = (total_count + limit - 1) // limit
     
-    comunas_clean = sorted([c for c in set(comunas_list) if c and str(c).strip() and str(c).lower() != "s/i"])
+    comunas_clean = sorted([str(c).title() for c in set(comunas_list) if c and str(c).strip() and str(c).lower() != "s/i"])
 
     return templates.TemplateResponse("captacion_list.html", {
         "request": request,
@@ -1260,6 +1264,8 @@ async def view_captaciones(
         "current_comuna": comuna,
         "current_estado": estado,
         "current_ejecutivo": ejecutivo,
+        "current_operacion": operacion,
+        "current_telefono": telefono,
         "executives": executives,
         "pagination": {
             "current_page": page,

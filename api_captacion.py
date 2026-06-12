@@ -346,7 +346,14 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
     query_for_ops = copy.deepcopy(query)
         
     if status_filter:
-        query["gestion.estado"] = status_filter
+        if status_filter == "GRUPO_GESTION":
+            query["gestion.estado"] = {"$in": ["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "GESTION"]}
+        elif status_filter == "GRUPO_CAPTADO":
+            query["gestion.estado"] = {"$in": ["Captado", "CAPTADO"]}
+        elif status_filter == "GRUPO_DESCARTADO":
+            query["gestion.estado"] = {"$in": ["Corredor", "Teléfono inválido", "Descartado", "Propiedad no disponible", "Publicación expirada", "No interesado", "DESCARTADO"]}
+        else:
+            query["gestion.estado"] = status_filter
         
     if operacion_filter:
         import re

@@ -269,6 +269,12 @@
             transition: all 0.25s ease;
             position: relative;
             overflow: hidden;
+            cursor: pointer;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
         }
 
         .kpi-card::before {
@@ -825,28 +831,223 @@
         </div>
 
         <div class="kpi-grid">
-            <div class="kpi-card total">
+            <div class="kpi-card total" onclick="window.location.href='/captacion'">
                 <div class="kpi-icon"><i class="fa-solid fa-layer-group"></i></div>
                 <div>
                     <div class="kpi-value">{{ total_count }}</div>
                     <div class="kpi-label">Disponibles</div>
                 </div>
             </div>
-            <div class="kpi-card gestion">
+            <div class="kpi-card gestion" onclick="filterByGrupoEstado('GRUPO_GESTION')">
                 <div class="kpi-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
                 <div>
                     <div class="kpi-value">{{ in_gestion_count or '0' }}</div>
                     <div class="kpi-label">En Gestión</div>
                 </div>
             </div>
-            <div class="kpi-card captado">
+            <div class="kpi-card captado" onclick="filterByGrupoEstado('GRUPO_CAPTADO')">
                 <div class="kpi-icon"><i class="fa-solid fa-trophy"></i></div>
                 <div>
                     <div class="kpi-value">{{ captados_count or '0' }}</div>
                     <div class="kpi-label">Captados</div>
                 </div>
             </div>
-            <div class="kpi-card descartado">
+            <div class="kpi-card descartado" onclick="filterByGrupoEstado('GRUPO_DESCARTADO')">
+                <div class="kpi-icon"><i class="fa-solid fa-ban"></i></div>
+                <div>
+                    <div class="kpi-value">{{ descartados_count or '0' }}</div>
+                    <div class="kpi-label">Descartados</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <form action="/captacion" method="GET" class="filter-bar">
+                <div class="search-box">
+                    <i class="fa-solid fa-phone"></i>
+                    <input type="text" name="telefono" placeholder="Buscar teléfono..."
+                        value="{{ current_telefono or '' }}">
+                </div>
+                <select name="comuna" onchange="this.form.submit()">
+                    <option value="">Todas las comunas</option>
+                    {% for c in comunas %}
+                    <option value="{{ c }}" {% if current_comuna == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+                <select name="operacion" onchange="this.form.submit()">
+                    <option value="">Todas las operaciones</option>
+                    {% if 'venta' in available_ops %}
+                    <option value="venta" {% if current_operacion=='venta' %}selected{% endif %}>Venta</option>
+                    {% endif %}
+                    {% if 'arriendo' in available_ops %}
+                    <option value="arriendo" {% if current_operacion=='arriendo' %}selected{% endif %}>Arriendo</option>
+                    {% endif %}
+                </select>
+                <select name="estado" onchange="this.form.submit()">
+                    <option value="">Cualquier estado</option>
+                    <option value="Por contactar" {% if current_estado=='Por contactar' %}selected{% endif %}>Por contactar</option>
+                    <option value="Contacto exitoso" {% if current_estado=='Contacto exitoso' %}selected{% endif %}>Contacto exitoso</option>
+                    <option value="Sin respuesta" {% if current_estado=='Sin respuesta' %}selected{% endif %}>Sin respuesta</option>
+                    <option value="Teléfono inválido" {% if current_estado=='Teléfono inválido' %}selected{% endif %}>Teléfono inválido</option>
+                    <option value="Corredor" {% if current_estado=='Corredor' %}selected{% endif %}>Corredor</option>
+                    <option value="Propiedad no disponible" {% if current_estado=='Propiedad no disponible' %}selected{% endif %}>Propiedad no disponible</option>
+                    <option value="Publicación expirada" {% if current_estado=='Publicación expirada' %}selected{% endif %}>Publicación expirada</option>
+                    <option value="No interesado" {% if current_estado=='No interesado' %}selected{% endif %}>No interesado</option>
+                    <option value="Reunión agendada" {% if current_estado=='Reunión agendada' %}selected{% endif %}>Reunión agendada</option>
+                    <option value="Captado" {% if current_estado=='Captado' %}selected{% endif %}>Captado</option>
+                    <option value="Descartado" {% if current_estado=='Descartado' %}selected{% endif %}>Descartado</option>
+                    <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos (Legado)</option>
+                    <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gestión (Legado)</option>
+                </select>
+                {% if user_role in ['supervisor', 'admin'] %}
+                <select name="ejecutivo" onchange="this.form.submit()">
+                    <option value="">Cualquier Ejecutivo</option>
+                    {% for exec in executives %}
+                    <option value="{{ exec }}" {% if current_ejecutivo==exec %}selected{% endif %}>{{ exec }}</option>
+                    {% endfor %}
+                </select>
+                {% endif %}
+                <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
+            </form>
+
+            <div class="table-responsive">
+                <table class="prop-table">
+                    <thead>
+                        <tr>
+                            <th>Comuna</th>
+                            <th>Operación</th>
+                            <th class="text-center">Precio</th>
+                            <th class="text-center">Estado</th>
+                            <th class="text-center">Antiguedad</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr onclick="location.href='/captacion/{{ item.id }}'">
+                            <td data-label="Comuna"><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</td>
+                            <td data-label="Operación">
+                                {% if 'VEN' in item.operacion %}
+                                <span class="badge-custom" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2);">VENTA</span>
+                                {% else %}
+                                <span class="badge-custom" style="background: rgba(99, 102, 241, 0.1); color: var(--accent); border: 1px solid rgba(99, 102, 241, 0.2);">ARRIENDO</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center" data-label="Precio">
+                                <div class="fw-bold">
+                                    {% if item.precio_uf %}
+                                    UF {{ "%.1f"|format(item.precio_uf|float) }}
+                                    {% else %}
+                                    S/I
+                                    {% endif %}
+                                </div>
+                                {% if item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
+                                <div class="small text-secondary">{{ item.precio }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="text-center" data-label="Estado">
+                                <span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span>
+                            </td>
+                            <td class="text-center" data-label="Antiguedad">
+                                <div class="small fw-bold">Hace {{ item.dias_en_portal }} días</div>
+                                <div class="small text-secondary" style="font-size: 0.75rem;">{{ item.fecha_str }}</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- PAGINACIÓN (Homologada a crm_leads_list) -->
+            {% if pagination.total_pages > 1 %}
+            <div class="pagination-container">
+                <div class="pagination-info">
+                    Mostrando {{ (pagination.current_page - 1) * 10 + 1 }} -
+                    {{ [pagination.current_page * 10, total_count]|min }}
+                    de {{ total_count }} captaciones
+                </div>
+                <div class="pagination-controls">
+                    {% set base_url = "?" %}
+                    {% if current_comuna %}{% set base_url = base_url ~ "comuna=" ~ current_comuna ~ "&" %}{% endif %}
+                    {% if current_estado %}{% set base_url = base_url ~ "estado=" ~ current_estado ~ "&" %}{% endif %}
+                    {% if current_ejecutivo %}{% set base_url = base_url ~ "ejecutivo=" ~ current_ejecutivo ~ "&" %}{%
+                    endif %}
+
+                    <a href="{{ base_url }}page={{ pagination.current_page - 1 }}"
+                        class="page-btn {{ 'disabled' if not pagination.has_prev }}">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </a>
+
+                    {% for p in range(1, pagination.total_pages + 1) %}
+                    {% if p == 1 or p == pagination.total_pages or (p >= pagination.current_page - 2 and p <=
+                        pagination.current_page + 2) %} <a href="{{ base_url }}page={{ p }}"
+                        class="page-btn {{ 'active' if p == pagination.current_page }}">
+                        {{ p }}
+                        </a>
+                        {% elif p == 2 or p == pagination.total_pages - 1 %}
+                        <span class="page-btn disabled">...</span>
+                        {% endif %}
+                        {% endfor %}
+
+                        <a href="{{ base_url }}page={{ pagination.current_page + 1 }}"
+                            class="page-btn {{ 'disabled' if not pagination.has_next }}">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function toggleTheme() {
+            const html = document.documentElement;
+            const icon = document.getElementById("themeIcon");
+            const target = html.getAttribute("data-theme") === "light" ? "dark" : "light";
+            html.setAttribute("data-theme", target);
+            localStorage.setItem("theme", target);
+            if (icon) {
+                if (target === "light") {
+                    icon.className = "fa-solid fa-moon";
+                } else {
+                    icon.className = "fa-solid fa-sun";
+                }
+            }
+        }
+
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.toggle('mobile-open');
+            overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
+        }
+
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth <= 768) toggleMobileMenu();
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const saved = localStorage.getItem('theme');
+            if (saved) {
+                document.documentElement.setAttribute('data-theme', saved);
+                const icon = document.getElementById("themeIcon");
+                if (icon) {
+                    if (saved === "light") {
+                        icon.className = "fa-solid fa-moon";
+                    } else {
+                        icon.className = "fa-solid fa-sun";
+                </div>
+            </div>
+            <div class="kpi-card captado" onclick="filterByGrupoEstado('GRUPO_CAPTADO')">
+                <div class="kpi-icon"><i class="fa-solid fa-trophy"></i></div>
+                <div>
+                    <div class="kpi-value">{{ captados_count or '0' }}</div>
+                    <div class="kpi-label">Captados</div>
+                </div>
+            </div>
+            <div class="kpi-card descartado" onclick="filterByGrupoEstado('GRUPO_DESCARTADO')">
                 <div class="kpi-icon"><i class="fa-solid fa-ban"></i></div>
                 <div>
                     <div class="kpi-value">{{ descartados_count or '0' }}</div>
@@ -1036,6 +1237,24 @@
                 }
             }
         });
+        
+        function filterByGrupoEstado(grupo) {
+            const form = document.querySelector('.filter-bar');
+            if (form) {
+                let select = form.querySelector('select[name="estado"]');
+                if (select) {
+                    let option = select.querySelector(`option[value="${grupo}"]`);
+                    if (!option) {
+                        option = document.createElement('option');
+                        option.value = grupo;
+                        option.text = "Filtro: " + grupo.replace('GRUPO_', '');
+                        select.appendChild(option);
+                    }
+                    select.value = grupo;
+                    form.submit();
+                }
+            }
+        }
     </script>
 </body>
 

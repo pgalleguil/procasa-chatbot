@@ -330,7 +330,13 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
         query["gestion.ejecutivo_asignado"] = user_name
     
     if comuna_filter:
-        query["details.comuna_norm"] = normalize_commune(comuna_filter)
+        norm = normalize_commune(comuna_filter)
+        raw_comunas = db["yapo_propiedades"].distinct("details.comuna")
+        matching = [c for c in raw_comunas if c and normalize_commune(c) == norm]
+        if matching:
+            query["details.comuna"] = {"$in": matching}
+        else:
+            query["details.comuna_norm"] = norm
         
     if status_filter:
         query["gestion.estado"] = status_filter

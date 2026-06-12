@@ -1246,11 +1246,12 @@ async def view_captaciones(
     in_gestion_count, captados_count, comunas_list = await asyncio.gather(
         adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "GESTION"}),
         adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"}),
-        adb["yapo_propiedades"].distinct("details.comuna_norm", base_query)
+        adb["yapo_propiedades"].distinct("details.comuna", base_query)
     )
     total_pages = (total_count + limit - 1) // limit
     
-    comunas_clean = sorted([str(c).title() for c in set(comunas_list) if c and str(c).strip() and str(c).lower() != "s/i"])
+    from api_captacion import normalize_commune
+    comunas_clean = sorted(list(set([normalize_commune(c).title() for c in comunas_list if c and str(c).strip() and str(c).lower() != "s/i"])))
 
     return templates.TemplateResponse("captacion_list.html", {
         "request": request,

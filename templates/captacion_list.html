@@ -273,8 +273,12 @@
         }
 
         .kpi-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+            transform: translateY(-6px) scale(1.02);
+            box-shadow: 0 16px 32px rgba(0, 0, 0, 0.25);
+        }
+
+        .kpi-card:active {
+            transform: translateY(-2px) scale(0.99);
         }
 
         .kpi-card::before {
@@ -301,11 +305,6 @@
 
         .kpi-card.descartado::before {
             background: var(--danger-color);
-        }
-
-        .kpi-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
         }
 
         .kpi-icon {
@@ -597,27 +596,15 @@
             font-size: 0.7rem;
             text-transform: uppercase;
             letter-spacing: 0.04em;
-        }
-
-        .badge-nuevo {
-            background: rgba(59, 130, 246, 0.12);
-            color: #3b82f6;
-        }
-
-        .badge-gestion {
-            background: rgba(245, 158, 11, 0.12);
-            color: #f59e0b;
-        }
-
-        .badge-captado {
-            background: rgba(16, 185, 129, 0.12);
-            color: #10b981;
-        }
-
-        .badge-descartado {
-            background: rgba(239, 68, 68, 0.12);
-            color: #ef4444;
-        }
+        }        /* BADGES DE ESTADOS: Agrupados por color de tarjeta */
+        /* Naranja → EN GESTIÓN */
+        .badge-gestion { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+        /* Verde → CAPTADO */
+        .badge-captado { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+        /* Rojo → DESCARTADO */
+        .badge-descartado { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+        /* Azul → Sin contactar aún */
+        .badge-nuevo { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.25); }
 
         .opp-badge {
             font-size: 0.62rem;
@@ -1110,23 +1097,15 @@
                     <thead>
                         <tr>
                             <th>Comuna</th>
-                            <th>Operación</th>
                             <th class="text-center">Precio</th>
                             <th class="text-center">Estado</th>
-                            <th class="text-center">Antiguedad</th>
+                            <th class="text-center">Antigüedad</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for item in items %}
                         <tr onclick="location.href='/captacion/{{ item.id }}'">
                             <td data-label="Comuna"><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</td>
-                            <td data-label="Operación">
-                                {% if 'VEN' in item.operacion %}
-                                <span class="badge-custom" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2);">VENTA</span>
-                                {% else %}
-                                <span class="badge-custom" style="background: rgba(99, 102, 241, 0.1); color: var(--accent); border: 1px solid rgba(99, 102, 241, 0.2);">ARRIENDO</span>
-                                {% endif %}
-                            </td>
                             <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}
@@ -1140,9 +1119,18 @@
                                 {% endif %}
                             </td>
                             <td class="text-center" data-label="Estado">
-                                <span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span>
+                                {% set e = item.estado %}
+                                {% if e in ['Por contactar', 'Contacto exitoso', 'Sin respuesta', 'Reunión agendada', 'GESTION'] %}
+                                    <span class="badge-custom badge-gestion">{{ e }}</span>
+                                {% elif e in ['Captado', 'CAPTADO'] %}
+                                    <span class="badge-custom badge-captado">{{ e }}</span>
+                                {% elif e in ['Corredor', 'Teléfono inválido', 'Descartado', 'Propiedad no disponible', 'Publicación expirada', 'No interesado', 'DESCARTADO'] %}
+                                    <span class="badge-custom badge-descartado">{{ e }}</span>
+                                {% else %}
+                                    <span class="badge-custom badge-nuevo">{{ e }}</span>
+                                {% endif %}
                             </td>
-                            <td class="text-center" data-label="Antiguedad">
+                            <td class="text-center" data-label="Antigüedad">
                                 <div class="small fw-bold">Hace {{ item.dias_en_portal }} días</div>
                                 <div class="small text-secondary" style="font-size: 0.75rem;">{{ item.fecha_str }}</div>
                             </td>

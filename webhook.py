@@ -1243,15 +1243,31 @@ async def view_captaciones(
     elif ejecutivo and ejecutivo != "Todos":
         base_query["gestion.ejecutivo_asignado"] = ejecutivo
 
-    in_gestion_count, captados_count, comunas_list = await asyncio.gather(
-        adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "GESTION"}),
-        adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"}),
-        adb["yapo_propiedades"].distinct("details.comuna", base_query)
-    )
+    import time
+    cache_key = f"stats_{user_role}_{user_name}_{ejecutivo}"
+    cache_store = getattr(app.state, 'captacion_stats_cache', {})
+    now = time.time()
+    if cache_key in cache_store and now - cache_store[cache_key]['time'] < 300:
+        in_gestion_count = cache_store[cache_key]['in_gestion_count']
+        captados_count = cache_store[cache_key]['captados_count']
+        comunas_clean = cache_store[cache_key]['comunas_clean']
+    else:
+        in_gestion_count, captados_count, comunas_list = await asyncio.gather(
+            adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "GESTION"}),
+            adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"}),
+            adb["yapo_propiedades"].distinct("details.comuna", base_query)
+        )
+        from api_captacion import normalize_commune
+        comunas_clean = sorted(list(set([normalize_commune(c).title() for c in comunas_list if c and str(c).strip() and str(c).lower() != "s/i"])))
+        cache_store[cache_key] = {
+            'time': now,
+            'in_gestion_count': in_gestion_count,
+            'captados_count': captados_count,
+            'comunas_clean': comunas_clean
+        }
+        app.state.captacion_stats_cache = cache_store
+        
     total_pages = (total_count + limit - 1) // limit
-    
-    from api_captacion import normalize_commune
-    comunas_clean = sorted(list(set([normalize_commune(c).title() for c in comunas_list if c and str(c).strip() and str(c).lower() != "s/i"])))
 
     return templates.TemplateResponse("captacion_list.html", {
         "request": request,

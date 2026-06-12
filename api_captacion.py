@@ -331,7 +331,11 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
     
     if comuna_filter:
         norm = normalize_commune(comuna_filter)
-        raw_comunas = db["yapo_propiedades"].distinct("details.comuna")
+        raw_comunas_cache_key = "all_raw_comunas_v2"
+        raw_comunas = get_cached_value(raw_comunas_cache_key)
+        if raw_comunas is None:
+            raw_comunas = db["yapo_propiedades"].distinct("details.comuna")
+            set_cached_value(raw_comunas_cache_key, raw_comunas, expire_seconds=3600)
         matching = [c for c in raw_comunas if c and normalize_commune(c) == norm]
         if matching:
             query["details.comuna"] = {"$in": matching}

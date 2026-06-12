@@ -632,17 +632,20 @@ def get_captacion_detail(obj_id):
     ]
 
 
-    # Formatear historial estructurado (Restaurado)
+    # Formatear historial estructurado (Restaurado y limitado a 50)
     historial = []
     notas_raw = gestion.get("notas", [])
     if isinstance(notas_raw, list):
-        for n in notas_raw:
+        # Tomar solo los últimos 50 (los más recientes suelen estar al final)
+        for n in notas_raw[-50:]:
             historial.append({
                 "fecha": format_relative_time(n.get("timestamp")),
                 "nota": n.get("content", ""),
                 "usuario": n.get("usuario", "Sistema"),
                 "canal": n.get("canal", "Desconocido")
             })
+        # Si queremos que aparezcan los más recientes arriba en la vista:
+        historial.reverse()
 
 
     _result = {

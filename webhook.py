@@ -1239,11 +1239,14 @@ async def view_captaciones(
     elif ejecutivo and ejecutivo != "Todos":
         base_query["gestion.ejecutivo_asignado"] = ejecutivo
 
-    in_gestion_count, captados_count = await asyncio.gather(
+    in_gestion_count, captados_count, comunas_list = await asyncio.gather(
         adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "GESTION"}),
-        adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"})
+        adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": "CAPTADO"}),
+        adb["yapo_propiedades"].distinct("details.comuna", base_query)
     )
     total_pages = (total_count + limit - 1) // limit
+    
+    comunas_clean = sorted([c for c in set(comunas_list) if c and str(c).strip() and str(c).lower() != "s/i"])
 
     return templates.TemplateResponse("captacion_list.html", {
         "request": request,
@@ -1251,6 +1254,7 @@ async def view_captaciones(
         "total_count": total_count,
         "in_gestion_count": in_gestion_count,
         "captados_count": captados_count,
+        "comunas": comunas_clean,
         "user_role": user_role,
         "user_name": user_name,
         "current_comuna": comuna,

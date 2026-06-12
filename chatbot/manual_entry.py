@@ -67,15 +67,25 @@ def check_lead_duplicate(phone: Optional[str], property_code: str, email: Option
     db = get_db()
     property_code = str(property_code).strip()
     
-    # 1. Normalización de teléfono a los últimos 9 dígitos (Standard Chile)
+    # 1. Normalización flexible de teléfono:
+    # - Conserva teléfonos internacionales completos cuando vienen en E.164.
+    # - Para compatibilidad operativa, también generamos una versión de búsqueda
+    #   por últimos dígitos para detectar el mismo contacto aunque cambie el formato.
     phone_last_9 = None
+    phone_digits = None
     if phone:
-        digits = "".join(filter(str.isdigit, str(phone)))
-        if len(digits) >= 9:
-            phone_last_9 = digits[-9:]
+        phone_str = str(phone).strip()
+        phone_digits = "".join(filter(str.isdigit, phone_str))
+        if len(phone_digits) >= 9:
+            phone_last_9 = phone_digits[-9:]
 
-    # 2. Búsqueda por Email (exacto) o Teléfono (últimos 9 dígitos)
+    # 2. Búsqueda por Email (exacto) o Teléfono
     query_filters = []
+    if phone_digits:
+        if phone_str.startswith("+"):
+            query_filters.append({"phone": phone_str})
+        else:
+            query_filters.append({"phone": {"$regex": re.escape(phone_digits) + "$"}})
     if phone_last_9:
         query_filters.append({"phone": {"$regex": phone_last_9 + "$"}})
     if email:
@@ -122,11 +132,16 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
     """
     db = get_db()
     import re
-    phone_digits = re.sub(r"\D", "", data.get("phone", ""))
-    
-    # Normalización para Chile: si tiene 9 dígitos, anteponemos +56
-    # Si ya tiene prefijo o es internacional, nos aseguramos que empiece con +
-    if len(phone_digits) == 9:
+    raw_phone = str(data.get("phone", "") or "").strip()
+    phone_digits = re.sub(r"\D", "", raw_phone)
+
+    # Normalización flexible:
+    # - Si viene en formato internacional explícito, lo preservamos.
+    # - Si viene como número local chileno de 8/9 dígitos, le agregamos +56.
+    # - Si viene solo con dígitos internacionales sin +, lo guardamos como +<digits>.
+    if raw_phone.startswith("+") and phone_digits:
+        phone = "+" + phone_digits
+    elif len(phone_digits) in (8, 9):
         phone = "+56" + phone_digits
     elif phone_digits:
         phone = "+" + phone_digits

@@ -72,6 +72,97 @@ def normalize_for_compare(val):
         
     return s_clean if s_clean else None
 
+def normalize_history_entry(entry):
+    if not isinstance(entry, dict):
+        return None
+    campo = entry.get("campo")
+    if not campo:
+        return None
+
+    valor_anterior = entry.get("valor_anterior")
+    valor_nuevo = entry.get("valor_nuevo")
+    if normalize_for_compare(valor_anterior) == normalize_for_compare(valor_nuevo):
+        return None
+
+    return {
+        "fecha": entry.get("fecha") or datetime.now().isoformat(),
+        "campo": campo,
+        "valor_anterior": valor_anterior,
+        "valor_nuevo": valor_nuevo,
+    }
+
+INITIAL_LOAD_FIELDS = {
+    "nombre_propietario",
+    "movil_propietario",
+    "movil_propietario_2",
+    "movil_propietario_3",
+    "email_propietario",
+}
+
+PRICE_CHANGE_THRESHOLD_PCT = 1.0
+
+def to_number_for_threshold(val):
+    norm = normalize_for_compare(val)
+    return norm if isinstance(norm, (int, float)) else None
+
+def price_change_is_material(old_val, new_val, threshold_pct=PRICE_CHANGE_THRESHOLD_PCT):
+    old_num = to_number_for_threshold(old_val)
+    new_num = to_number_for_threshold(new_val)
+    if old_num is None or new_num is None:
+        return True
+    if old_num == 0:
+        return new_num != 0
+    delta_pct = abs(new_num - old_num) / abs(old_num) * 100.0
+    return delta_pct >= threshold_pct
+
+def deduplicate_historial_cambios(historial):
+    limpio = []
+    vistos = set()
+    first_seen_by_field = {}
+
+    for entry in historial or []:
+        entry_norm = normalize_history_entry(entry)
+        if not entry_norm:
+            continue
+        first_seen_by_field.setdefault(entry_norm["campo"], entry_norm)
+
+    for entry in historial or []:
+        entry_norm = normalize_history_entry(entry)
+        if not entry_norm:
+            continue
+
+        campo = entry_norm["campo"]
+        if campo in ("precio_clp", "precio_uf") and not price_change_is_material(
+            entry_norm.get("valor_anterior"),
+            entry_norm.get("valor_nuevo"),
+        ):
+            continue
+        if campo in INITIAL_LOAD_FIELDS:
+            first_entry = first_seen_by_field.get(campo)
+            if first_entry and normalize_for_compare(first_entry.get("valor_anterior")) is None:
+                continue
+
+        key = (
+            campo,
+            normalize_for_compare(entry_norm["valor_anterior"]),
+            normalize_for_compare(entry_norm["valor_nuevo"]),
+        )
+        if key in vistos:
+            continue
+
+        vistos.add(key)
+        limpio.append(entry_norm)
+
+    return limpio
+
+def has_real_tracked_values(doc):
+    if not doc:
+        return False
+    for field in TRACKED_FIELDS:
+        if normalize_for_compare(doc.get(field)) is not None:
+            return True
+    return False
+
 def format_name(v):
     s = cv(v)
     return s.title() if s else None
@@ -330,13 +421,27 @@ def upsert_doc(coll, doc, dict_pub, model_nlp=None, oficina_target="PROCASA SUCR
         doc["publicaciones"] = publicaciones
 
     # Auditoria de historial
-    doc["historial_cambios"] = list(existing.get("historial_cambios", [])) if existing else []
+    doc["historial_cambios"] = deduplicate_historial_cambios(
+        list(existing.get("historial_cambios", [])) if existing else []
+    )
 
     cambios_count = 0
-    if existing:
+    # No auditar la primera carga real de datos: si el documento todavía no
+    # tenía valores tracked, eso es inicialización, no cambio.
+    auditar_cambios = bool(existing) and has_real_tracked_values(existing)
+
+    if auditar_cambios:
         for field in TRACKED_FIELDS:
+            # Solo auditar campos que realmente vienen en el payload actual.
+            # Si un campo no viene en el Excel, no debe interpretarse como cambio.
+            if field not in doc:
+                continue
+
             old_val = existing.get(field)
             new_val = doc.get(field)
+
+            if field in ("precio_clp", "precio_uf") and not price_change_is_material(old_val, new_val):
+                continue
             
             norm_old = normalize_for_compare(old_val)
             norm_new = normalize_for_compare(new_val)
@@ -494,8 +599,38 @@ def master_sync(oficina_target="PROCASA SUCRE"):
     print("Proceso finalizado correctamente.")
 
 
+def limpiar_historial_cambios(coll, oficina_target=None):
+    query = {}
+    if oficina_target:
+        query["oficina"] = oficina_target
+
+    total = 0
+    actualizados = 0
+    for doc in coll.find(query, {"historial_cambios": 1}):
+        total += 1
+        historial_original = doc.get("historial_cambios", [])
+        historial_limpio = deduplicate_historial_cambios(historial_original)
+        if historial_limpio != historial_original:
+            coll.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"historial_cambios": historial_limpio}}
+            )
+            actualizados += 1
+
+    print(f"Historiales revisados: {total}")
+    print(f"Historiales corregidos: {actualizados}")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--oficina-target", default="PROCASA SUCRE", help="Oficina para snapshots críticos y bajas automáticas")
+    ap.add_argument("--limpiar-historial", action="store_true", help="Limpia y deduplica historial_cambios sin ejecutar la sincronización")
     args = ap.parse_args()
-    master_sync(oficina_target=args.oficina_target)
+    client = MongoClient(Config.MONGO_URI)
+    db = client[Config.DB_NAME]
+    coll = db["universo_cartera"]
+
+    if args.limpiar_historial:
+        limpiar_historial_cambios(coll, oficina_target=args.oficina_target)
+    else:
+        master_sync(oficina_target=args.oficina_target)

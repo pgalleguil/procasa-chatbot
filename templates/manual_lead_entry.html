@@ -718,17 +718,21 @@
                 try {
                     const number = phoneIntl.getNumber();
                     if (number && number.trim()) return number;
+                    const dialCode = phoneIntl.getSelectedCountryData?.().dialCode || '';
+                    const digits = (phoneInput.value || '').replace(/\D/g, '');
+                    if (dialCode && digits) return `+${dialCode}${digits}`;
                 } catch (e) { }
             }
             return phoneInput.value || '';
         }
 
         function normalizePhoneForLead(raw) {
-            const digits = (raw || '').toString().replace(/\D/g, '');
+            const rawText = (raw || '').toString().trim();
+            const digits = rawText.replace(/\D/g, '');
             if (!digits) return '';
+            if (rawText.startsWith('+')) return `+${digits}`;
             if (digits.startsWith('56') && digits.length >= 10) return `+${digits}`;
-            if (raw && raw.toString().trim().startsWith('+')) return `+${digits}`;
-            if (digits.length === 9 || digits.length === 8) return `+56${digits}`;
+            if (digits.length === 8 || digits.length === 9) return `+56${digits}`;
             return `+${digits}`;
         }
 
@@ -757,6 +761,10 @@
                         nationalMode: false,
                         autoInsertDialCode: true,
                         countrySearch: true
+                    });
+                    phoneInputField.addEventListener('countrychange', () => {
+                        const current = getPhoneData();
+                        if (current) phoneInputField.value = current;
                     });
                 } catch (e) {
                     console.warn("[manual-leads] intlTelInput init failed, fallback to plain phone input", e);

@@ -67,7 +67,7 @@
             display: flex;
             flex-direction: column;
             white-space: nowrap;
-            backdrop-filter: blur(20px);
+            background-color: var(--bg-sidebar);
         }
 
         .sidebar:hover {
@@ -116,7 +116,7 @@
             text-decoration: none;
             margin: 4px 12px;
             border-radius: 16px;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             height: 50px;
             overflow: hidden;
             width: calc(100% - 24px);
@@ -129,14 +129,14 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            transition: all 0.3s ease-out;
+            transition: color 0.3s ease-out, transform 0.3s ease-out;
         }
 
         .nav-link span {
             margin-left: 0px;
             opacity: 0;
             transform: translateX(-10px);
-            transition: all 0.3s;
+            transition: opacity 0.3s, transform 0.3s;
             font-weight: 600;
             font-size: 0.95rem;
         }
@@ -174,7 +174,6 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             max-width: 800px;
             margin: 0 auto;
-            backdrop-filter: blur(10px);
         }
 
         .form-label {

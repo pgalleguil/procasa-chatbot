@@ -1103,8 +1103,8 @@ def build_html(
         brecha_ic_val = float(brecha_pub_cierre_ic) if brecha_pub_cierre_ic is not None else None
         score_presion_txt = f"{score_presion_val:.0f}/100" if (score_presion_val is not None and score_presion_val > 0) else "No disponible"
         brecha_ic_txt = f"{brecha_ic_val:+.1f}%".replace(".", ",") if (brecha_ic_val is not None and abs(brecha_ic_val) >= 0.1) else "No disponible"
-        ufm2_pub_txt = f"{fmt_dec(uf_m2_publicacion_actual, 2)} UF/m2" if uf_m2_publicacion_actual is not None else "No disponible"
-        ufm2_cierre_txt = f"{fmt_dec(uf_m2_venta_efectiva_actual, 2)} UF/m2" if uf_m2_venta_efectiva_actual is not None else "No disponible"
+        ufm2_pub_txt = f"{fmt_dec(uf_m2_publicacion_actual, 2)} UF/m2" if uf_m2_publicacion_actual not in (None, 0, 0.0) else "No disponible"
+        ufm2_cierre_txt = f"{fmt_dec(uf_m2_venta_efectiva_actual, 2)} UF/m2" if uf_m2_venta_efectiva_actual not in (None, 0, 0.0) else "No disponible"
         activas_txt = f"{int(publicaciones_activas):,}".replace(",", ".") if publicaciones_activas is not None else "No disponible"
         variacion_ufm2_12m = prop.get("variacion_uf_m2_12m")
         variacion_ufm2_12m_txt = (

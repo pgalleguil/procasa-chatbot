@@ -2,6 +2,7 @@
 import logging
 from datetime import datetime
 from typing import Dict, Any, Tuple, Optional
+import re
 from .storage import get_db, log_event, save_pending_notification
 from .constants import CHILE_TZ, PipelineStage, InteractionType
 from .lead_router import find_responsible_executive

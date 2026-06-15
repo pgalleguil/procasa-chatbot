@@ -485,11 +485,13 @@
             return (raw || '').toString().trim().replace(/\./g, '').replace(/\s+/g, '');
         }
 
+        let lastResolvedCode = '';
         async function resolvePropertyCodeIfNeeded(showNotFoundToast = true) {
             const propertyInput = document.getElementById('property_code');
             const original = propertyInput.value || '';
             const normalized = normalizePropertyCode(original);
             if (!normalized) return { ok: false, empty: true };
+            if (normalized === lastResolvedCode) return { ok: true, propertyCode: normalized };
 
             // Siempre limpiamos puntos/espacios al salir o validar
             propertyInput.value = normalized;
@@ -502,6 +504,7 @@
                 const data = await response.json();
                 if (data.status === 'ok' && data.property_code) {
                     propertyInput.value = String(data.property_code).trim();
+                    lastResolvedCode = propertyInput.value;
                     return { ok: true, propertyCode: propertyInput.value, matchedBy: data.matched_by };
                 }
                 if (showNotFoundToast) {

@@ -269,7 +269,11 @@ def extract_ufm2_from_page(page_text: str) -> Dict[str, float]:
         re.IGNORECASE | re.DOTALL,
     )
     if not m_block:
-        m_block = re.search(r"Evoluci[oó]n [^\n]*publicaciones en venta(.*?)Portales inmobiliarios", page_text, re.IGNORECASE | re.DOTALL)
+        m_block = re.search(
+            r"Evoluci[oó]n [^\n]*publicaciones en venta[^\n]*?(.*?)(?:¿C[oó]mo leo este gr[aá]fico|Evoluci[oó]n [^\n]*publicaciones en arriendo)", 
+            page_text, 
+            re.IGNORECASE | re.DOTALL
+        )
     
     if m_block:
         block_venta = m_block.group(1)

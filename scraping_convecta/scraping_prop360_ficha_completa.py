@@ -1118,6 +1118,50 @@ async def extract_estado(page: Page, codigo: str, audit: dict) -> dict:
     resultado["ultima_actualizacion"] = await extract_ultima_actualizacion(page, codigo, audit)
     return resultado
 
+def _bitacora_xpath(idx: int, suffix: str) -> str:
+    return f'//*[@id="timeLine"]/div[{idx}]/div[2]/div{suffix}'
+
+async def extract_bitacora(page: Page, codigo: str, audit: dict, max_items: int = 50) -> list[dict]:
+    resultado = []
+    audit.setdefault("campos_esperados", []).extend(["bitacora"])
+
+    try:
+        await page.wait_for_selector("#timeLine", timeout=10000)
+    except Exception:
+        return resultado
+
+    for idx in range(1, max_items + 1):
+        try:
+            valor_loc = page.locator(_bitacora_xpath(idx, "[3]/span"))
+            quien_loc = page.locator(_bitacora_xpath(idx, "[2]/div/a"))
+            fecha_loc = page.locator(_bitacora_xpath(idx, "[2]/div/span"))
+
+            if await valor_loc.count() == 0 and await quien_loc.count() == 0 and await fecha_loc.count() == 0:
+                if idx == 1:
+                    continue
+                break
+
+            valor = await get_text(page, _bitacora_xpath(idx, "[3]/span"), codigo, f"bitacora_{idx}_valor", audit)
+            quien = await get_text(page, _bitacora_xpath(idx, "[2]/div/a"), codigo, f"bitacora_{idx}_quien", audit)
+            fecha = await get_text(page, _bitacora_xpath(idx, "[2]/div/span"), codigo, f"bitacora_{idx}_fecha", audit)
+
+            detalle = {
+                "indice": idx,
+                "valor": valor,
+                "quien": quien,
+                "fecha": fecha,
+            }
+
+            if any(v is not None for v in (valor, quien, fecha)):
+                resultado.append(detalle)
+            elif idx > 1:
+                break
+        except Exception:
+            if idx > 1:
+                break
+
+    return resultado
+
 async def scrape_ficha(page: Page, codigo: str, inspect: bool = False) -> dict | None:
     """
     Orquesta la extracción completa de una ficha.
@@ -1222,6 +1266,20 @@ async def scrape_ficha(page: Page, codigo: str, inspect: bool = False) -> dict |
     await save_debug_html(page, codigo, "estado")
     await save_debug_screenshot(page, codigo, "estado")
 
+    log.info(f"[{codigo}] Navegando a bitácora…")
+    bitacora = []
+    try:
+        xpath_menu_bitacora = '//*[@id="resumenRegistro"]/div/div[5]/ul/li[6]/a[1]'
+        await page.wait_for_selector(f"xpath={xpath_menu_bitacora}", timeout=15000)
+        await page.click(f"xpath={xpath_menu_bitacora}")
+        await asyncio.sleep(2)
+        bitacora = await extract_bitacora(page, codigo, audit)
+    except Exception as e:
+        log.warning(f"[{codigo}] Error al extraer bitácora: {e}")
+    _print_inspect("BITACORA", bitacora)
+    await save_debug_html(page, codigo, "bitacora")
+    await save_debug_screenshot(page, codigo, "bitacora")
+
     pestanas_fallidas = [
         tab for tab, ok_flag in [
             ("#tab_ubicacion",       tab_ubi_ok),
@@ -1260,6 +1318,7 @@ async def scrape_ficha(page: Page, codigo: str, inspect: bool = False) -> dict |
         "publicaciones":    publicaciones,
         "datos_propietario": datos_propietario,
         "estado":           estado,
+        "bitacora":         bitacora,
         "oficina":          oficina,
         "ultima_actualizacion": estado.get("ultima_actualizacion"),
         "precio_clp":       precio_clp,

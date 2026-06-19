@@ -50,6 +50,15 @@ tmp/
 __temp__/
 html_dumps/
 dashboard/
+debug_html/
+debug_screenshots/
+exports/
+scraping/
+scraping_convecta/
+scripts/
+scripts_legacy/
+tests/
+
 
 # Archivos del sistema
 .DS_Store

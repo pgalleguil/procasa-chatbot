@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 MARKET_STATS_CACHE = {} # Legacy - Now using shared_cache in DB
 _LOCAL_CACHE_L1 = {}
 
+def _invalidate_detail_cache(obj_id):
+    """Elimina el cache del detalle para forzar un render fresco tras un cambio."""
+    _LOCAL_CACHE_L1.pop(f"detail_full_{obj_id}", None)
+
 def _l1_get(key):
     rec = _LOCAL_CACHE_L1.get(key)
     if not rec:
@@ -542,7 +546,7 @@ def get_captacion_detail(obj_id):
 
 
     # Teléfono
-    raw_phone = details.get("whatsapp_phone") or doc.get("whatsapp_phone") or details.get("vendedor_id") or ""
+    raw_phone = details.get("whatsapp_phone") or doc.get("whatsapp_phone") or ""
     vendedor_telefono = "".join(filter(str.isdigit, str(raw_phone)))
     if vendedor_telefono.startswith("9") and len(vendedor_telefono) == 9:
         vendedor_telefono = "56" + vendedor_telefono
@@ -798,6 +802,7 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         {"_id": current_doc["_id"]},
         update_params
     )
+    _invalidate_detail_cache(obj_id)
     
     # Precomputación SaaS: Actualizar métricas de captación
     try:
@@ -885,6 +890,7 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
             {"_id": current_doc["_id"]},
             update_params
         )
+        _invalidate_detail_cache(obj_id)
         
         # LOG EVENT CENTRAL: Registro de Teléfono
         if telefono:
@@ -934,6 +940,7 @@ def log_captacion_activity(obj_id, user_name, action, channel, message, phone, r
             "gestion.notas": note_entry
         }, "$set": {"gestion.fecha_ultima_gestion": now}}
     )
+    _invalidate_detail_cache(obj_id)
     
     # LOG EVENT CENTRAL: Gestión de Captación
     try:

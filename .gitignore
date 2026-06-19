@@ -44,6 +44,8 @@ pruebas_*.py
 simular_*.py
 reporte*.py
 propiteq*.py
+fix_*.py
+
 # Carpetas temporales
 temp/
 tmp/

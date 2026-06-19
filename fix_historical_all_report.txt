@@ -1,9 +1,0 @@
-==================================================================
-REPORTE FINAL: SANEAMIENTO HISTÓRICO (2026-06-05 16:27:55 UTC)
-==================================================================
-Total de falsos corredores revisados: 5975
-Total de dueños reales recuperados:   1851
-Desglose de reparaciones:
-  -> Afectados por bug de company_name: 536
-  -> Afectados por bug de profile_id:   1315
-==================================================================

@@ -1,0 +1,108 @@
+{
+  "codigo": "16905",
+  "tipo_operacion": {
+    "tipo": "Departamento",
+    "rol": "01035-00158",
+    "venta": true,
+    "arriendo": false,
+    "precio_venta": {
+      "precio_uf": 3700
+    },
+    "precio_arriendo": {
+      "precio_clp": null
+    },
+    "gastos_comunes": 70000
+  },
+  "ubicacion": {
+    "region": "Metropolitana",
+    "comuna": "Ñuñoa",
+    "sector": "Simon Bolivar",
+    "calle": "Sucre 3022",
+    "numero": "3.022",
+    "unidad": "105",
+    "letra": "D",
+    "etapa": null,
+    "direccion_referencial": "Sucre 4020"
+  },
+  "caracteristicas": {
+    "suite": 1,
+    "dormitorios": 1,
+    "dormitorio_servicio": null,
+    "banos": 1,
+    "salas_estar": null,
+    "estacionamientos_cubiertos": null,
+    "estacionamientos_descubiertos": null,
+    "bodegas": null,
+    "superficie_terraza": null,
+    "superficie_util": 43.0,
+    "superficie_total": 43.0,
+    "orientacion": "Seleccione...",
+    "estacionamientos": null
+  },
+  "observaciones": {
+    "descripcion": "Acogedor departamento en venta por UF 3700 en Sucre , en la comuna de Ñuñoa. Esta propiedad cuenta con una excelente ubicación en el sector de Simón Bolívar, cercano a comercios, transporte público y áreas verdes.\n\nEl departamento tiene 1 dormitorio y 1 baño,1 estacionamiento con una distribución eficiente de sus 43 m2 construidos y útiles. Además, cuenta con una cocina integrada( equipada) y un espacio para sala de estar. Cabe destacar que no posee sistema de calefacción instalado.\nA cuatro cuadras Aprox. del metro Chile España.\n\nEste departamento es una excelente oportunidad para invertir en una zona consolidada y con alta demanda en Ñuñoa. Ideal para parejas o personas que buscan un lugar acogedor para vivir. Contáctanos para más información y coordinar una visita.",
+    "observaciones_internas": null,
+    "titulo": "Departamento en venta de 1 dorm.un baño , Estac. en Ñuñoa",
+    "forma_visita": "Departamento en venta de 1 dorm.un baño , Estac. en Ñuñoa"
+  },
+  "metadata": {
+    "status": "ok",
+    "fecha_scraping": "2026-06-15T22:43:16.291061",
+    "tipo_propiedad": "Departamento",
+    "tipo_propiedad_detectado": "Departamento",
+    "tabs": {
+      "tipo_operacion": true,
+      "ubicacion": true,
+      "caracteristicas": true,
+      "observaciones": true
+    },
+    "campos_esperados": [
+      "arriendo",
+      "dormitorios",
+      "calle",
+      "estacionamientos_cubiertos",
+      "estacionamientos_descubiertos",
+      "suite",
+      "comuna",
+      "salas_estar",
+      "numero",
+      "precio_arriendo",
+      "descripcion",
+      "bodegas",
+      "rol",
+      "superficie_total",
+      "letra",
+      "gastos_comunes",
+      "direccion_referencial",
+      "precio_venta",
+      "observaciones_internas",
+      "titulo",
+      "etapa",
+      "banos",
+      "superficie_util",
+      "orientacion",
+      "tipo",
+      "venta",
+      "region",
+      "dormitorio_servicio",
+      "sector",
+      "superficie_terraza",
+      "unidad"
+    ],
+    "campos_vacios": [
+      "observaciones_internas",
+      "salas_estar",
+      "precio_arriendo",
+      "etapa",
+      "bodegas",
+      "dormitorio_servicio",
+      "estacionamientos_cubiertos",
+      "estacionamientos_descubiertos",
+      "superficie_terraza"
+    ],
+    "selectors_failed": [],
+    "source_url": "https://procasa.prop360.cl/backOffice/propiedades/propEditar?i=16905",
+    "scraper": "scraping_prop360_ficha_completa.py",
+    "version": "1.2.0"
+  }
+}

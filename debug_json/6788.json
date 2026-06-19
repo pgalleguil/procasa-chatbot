@@ -1,0 +1,118 @@
+{
+  "codigo": "6788",
+  "tipo_operacion": {
+    "tipo": "Casa",
+    "rol": "06555-016",
+    "venta": true,
+    "arriendo": false,
+    "precio_venta": {
+      "precio_uf": 8300
+    },
+    "precio_arriendo": {
+      "precio_clp": null
+    },
+    "gastos_comunes": null
+  },
+  "ubicacion": {
+    "region": "Metropolitana",
+    "comuna": "San Miguel",
+    "sector": "Seleccione...",
+    "calle": "Décima Avenida 1460 Casa",
+    "numero": null,
+    "unidad": null,
+    "letra": null,
+    "etapa": null,
+    "direccion_referencial": "Tercera Transversal - Gran Avenida"
+  },
+  "caracteristicas": {
+    "suite": null,
+    "dormitorios": 6,
+    "dormitorio_servicio": null,
+    "banos": 2,
+    "salas_estar": null,
+    "estacionamientos_cubiertos": null,
+    "estacionamientos_descubiertos": null,
+    "bodegas": null,
+    "superficie_terraza": null,
+    "superficie_util": null,
+    "superficie_total": null,
+    "orientacion": "Norte",
+    "estacionamientos": null
+  },
+  "observaciones": {
+    "descripcion": ":. PROCASA - Código 46731 .: VENDE AMPLIA CASA SAN MIGUEL CON PATENTE COMERCIAL OFICINAS. Particulares e Inversionistas! 405 mt2 de terreno, 130 mt2 construidos.  Cuenta con dos casas y un departamento pequeño. Casa Principal: 130 mt2, 2 pisos, primer piso construcción sólida, segundo piso material liviano. 4 dormitorios, 1 baño, living comedor cocina, logia amplia y cómoda para instalación de lavadora. 12 años. Casa Interior: 70 mt2, construcción liviana. Cuenta con 2 dormitorios amplios, Living comedor, cocina logia. Departamento interior 30 mt2, 1 dormitorio, baño , cocina y logia pequeña. Conectividad absoluta a todos los servicios de primera necesidad, Transporte, Metro Ciudad del Niño, Lo Ovalle, Centros de Salud, Colegios, Restaurant, Estacion de servicio, supermercado, mall. Zona de Gran Plusvalía. Antejardín, patio y Estacionamiento para dos vehículos. Patente comercial ZONIFICACION Z1. Totalmente regularizada!  ¡Excelente oportunidad!  Agende cuanto antes su visita!",
+    "observaciones_internas": null,
+    "titulo": null,
+    "forma_visita": null
+  },
+  "metadata": {
+    "status": "ok",
+    "fecha_scraping": "2026-06-15T22:45:29.372530",
+    "tipo_propiedad": "Casa",
+    "tipo_propiedad_detectado": "Casa",
+    "tabs": {
+      "tipo_operacion": true,
+      "ubicacion": true,
+      "caracteristicas": true,
+      "observaciones": true
+    },
+    "campos_esperados": [
+      "dormitorios",
+      "region",
+      "tipo",
+      "observaciones_internas",
+      "precio_venta",
+      "estacionamientos_descubiertos",
+      "gastos_comunes",
+      "calle",
+      "banos",
+      "direccion_referencial",
+      "superficie_terraza",
+      "comuna",
+      "precio_arriendo",
+      "dormitorio_servicio",
+      "venta",
+      "arriendo",
+      "sector",
+      "superficie_util",
+      "letra",
+      "orientacion",
+      "titulo",
+      "numero",
+      "descripcion",
+      "bodegas",
+      "suite",
+      "superficie_total",
+      "unidad",
+      "salas_estar",
+      "rol",
+      "etapa",
+      "estacionamientos_cubiertos"
+    ],
+    "campos_vacios": [
+      "bodegas",
+      "suite",
+      "superficie_terraza",
+      "superficie_util",
+      "observaciones_internas",
+      "precio_arriendo",
+      "estacionamientos_descubiertos",
+      "superficie_total",
+      "unidad",
+      "salas_estar",
+      "etapa",
+      "dormitorio_servicio",
+      "letra",
+      "titulo",
+      "numero",
+      "gastos_comunes",
+      "estacionamientos_cubiertos"
+    ],
+    "selectors_failed": [
+      "xpath=//*[@id='tbMeliTitulo_1_2']"
+    ],
+    "source_url": "https://procasa.prop360.cl/backOffice/propiedades/propEditar?i=6788",
+    "scraper": "scraping_prop360_ficha_completa.py",
+    "version": "1.2.0"
+  }
+}

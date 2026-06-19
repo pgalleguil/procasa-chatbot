@@ -1,0 +1,119 @@
+{
+  "codigo": "6875",
+  "tipo_operacion": {
+    "tipo": "Oficina",
+    "rol": "00510-001",
+    "venta": false,
+    "arriendo": true,
+    "precio_venta": {
+      "precio_clp": null
+    },
+    "precio_arriendo": {
+      "precio_uf": 11803
+    },
+    "gastos_comunes": null
+  },
+  "ubicacion": {
+    "region": "Metropolitana",
+    "comuna": "Providencia",
+    "sector": "Seleccione...",
+    "calle": "Providencia 969 oficina PRIMER PISO",
+    "numero": null,
+    "unidad": null,
+    "letra": null,
+    "etapa": null,
+    "direccion_referencial": "Providencia - Huelen"
+  },
+  "caracteristicas": {
+    "suite": null,
+    "dormitorios": null,
+    "dormitorio_servicio": null,
+    "banos": 4,
+    "salas_estar": null,
+    "estacionamientos_cubiertos": null,
+    "estacionamientos_descubiertos": null,
+    "bodegas": null,
+    "superficie_terraza": null,
+    "superficie_util": null,
+    "superficie_total": null,
+    "orientacion": "Oriente",
+    "estacionamientos": null
+  },
+  "observaciones": {
+    "descripcion": "Procasa:.: Arrienda espectacular oficina, luminosa, grande, ubicada en pleno Providencia, ideal para empresas, gubernamental, empresas extranjeras. Es una gran inversión. Debe visitarla.",
+    "observaciones_internas": null,
+    "titulo": null,
+    "forma_visita": null
+  },
+  "metadata": {
+    "status": "ok",
+    "fecha_scraping": "2026-06-15T22:48:34.282647",
+    "tipo_propiedad": "Oficina",
+    "tipo_propiedad_detectado": "Oficina",
+    "tabs": {
+      "tipo_operacion": true,
+      "ubicacion": true,
+      "caracteristicas": true,
+      "observaciones": true
+    },
+    "campos_esperados": [
+      "dormitorio_servicio",
+      "tipo",
+      "sector",
+      "gastos_comunes",
+      "region",
+      "direccion_referencial",
+      "estacionamientos_cubiertos",
+      "superficie_util",
+      "dormitorios",
+      "rol",
+      "precio_venta",
+      "superficie_total",
+      "unidad",
+      "observaciones_internas",
+      "comuna",
+      "letra",
+      "banos",
+      "precio_arriendo",
+      "numero",
+      "venta",
+      "bodegas",
+      "orientacion",
+      "estacionamientos_descubiertos",
+      "calle",
+      "descripcion",
+      "titulo",
+      "etapa",
+      "superficie_terraza",
+      "arriendo",
+      "suite",
+      "salas_estar"
+    ],
+    "campos_vacios": [
+      "dormitorios",
+      "estacionamientos_descubiertos",
+      "precio_venta",
+      "estacionamientos_cubiertos",
+      "superficie_total",
+      "dormitorio_servicio",
+      "superficie_util",
+      "unidad",
+      "numero",
+      "superficie_terraza",
+      "gastos_comunes",
+      "titulo",
+      "etapa",
+      "salas_estar",
+      "observaciones_internas",
+      "suite",
+      "bodegas",
+      "letra"
+    ],
+    "selectors_failed": [
+      "xpath=//*[@id='tbMeliTitulo_1_2']"
+    ],
+    "source_url": "https://procasa.prop360.cl/backOffice/propiedades/propEditar?i=6875",
+    "scraper": "scraping_prop360_ficha_completa.py",
+    "version": "1.2.0"
+  }
+}

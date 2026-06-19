@@ -1,0 +1,166 @@
+{
+  "codigo": "7390",
+  "tipo_operacion": {
+    "tipo": "Casa",
+    "rol": "00120-000",
+    "venta": true,
+    "arriendo": false,
+    "precio_venta": {
+      "precio_clp": 85000000
+    },
+    "precio_arriendo": {
+      "precio_clp": null
+    },
+    "gastos_comunes": null
+  },
+  "ubicacion": {
+    "region": "Bío-Bío",
+    "comuna": "Chillán",
+    "sector": null,
+    "calle": "Republica 689",
+    "numero": null,
+    "unidad": null,
+    "letra": null,
+    "etapa": null,
+    "direccion_referencial": "Diego de Almagro - Laines"
+  },
+  "caracteristicas": {
+    "suite": null,
+    "dormitorios": 2,
+    "dormitorio_servicio": null,
+    "banos": 1,
+    "salas_estar": null,
+    "estacionamientos_cubiertos": null,
+    "estacionamientos_descubiertos": null,
+    "bodegas": null,
+    "ano_construccion": 1966,
+    "numero_pisos": 1,
+    "superficie_terraza": null,
+    "superficie_util": null,
+    "superficie_total": null,
+    "superficie_terreno": 300.0,
+    "superficie_construida": 60.0,
+    "orientacion": "Norte",
+    "estacionamientos": null
+  },
+  "observaciones": {
+    "descripcion": ":. PROCASA Propiedades (Código Interno 65476) .: Vende terreno con casa, sector Santa Elvira, a pasos de Vicente Méndez.    Ubicada en céntrico sector entre Avenidas Vicente Méndez y calle  victor Laines. 500 mt2 de terreno. 10 mt2 de frente, 50 mt2 de fondo.      Consta de 2 dormitorios, 1 baño. Sin estacionamiento.  Construcción de tipo chilena tradicional.  Alcantarillado y luz en perfecto estado  Amplio patio.  Sin deuda, y 100% saneada.    Cercana a Universidad de Concepción, clínicas y grandes supermercados. Centro a 5 minutos a pie.  No deje pasar esta imperdible oportunidad de inversión, se aceptan ofertas!  Agende visita con ejecutiva a cargo.  Código interno Procasa: 65476",
+    "observaciones_internas": null,
+    "titulo": null,
+    "forma_visita": null
+  },
+  "publicaciones": {
+    "procasa": {
+      "url_procasa": "https://www.procasa.cl/7390"
+    },
+    "portal_inmobiliario": {
+      "url_mercado_libre": "http://casa.mercadolibre.cl/MLC-3776555568-casa-en-venta-de-2-dorm-en-chillan-_JM",
+      "url_pi": "https://portalinmobiliario.cl//MLC-3776555568-casa-en-venta-de-2-dorm-en-chillan-_JM"
+    },
+    "toctoc": {
+      "url_toctoc": "https://www.toctoc.com/propiedades/compracorredorasr/casas/chillan/casa-en-venta-de-2-dorm-en-chillan/51716927f24aee7473ad13890fa358b1251193a6"
+    },
+    "yapo": {
+      "url_yapo": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-2-dorm-en-chillan/32148094"
+    }
+  },
+  "datos_propietario": {
+    "nombre": "Vasco Gonzalo Nuñez Valdes",
+    "email": "vasconunezv@gmail.com",
+    "rut": "11.657.447-0",
+    "comuna": "Valdivia",
+    "fecha": "01/01/2000",
+    "fono_1": null,
+    "fono_2": null,
+    "fono_3": "56952181680"
+  },
+  "estado": {
+    "ejecutivo": "Erika Garrido Varela"
+  },
+  "metadata": {
+    "status": "ok",
+    "fecha_scraping": "2026-06-16T00:05:42.845625",
+    "tipo_propiedad": "Casa",
+    "tipo_propiedad_detectado": "Casa",
+    "tabs": {
+      "tipo_operacion": true,
+      "ubicacion": true,
+      "caracteristicas": true,
+      "observaciones": true,
+      "portales": true
+    },
+    "campos_esperados": [
+      "arriendo",
+      "unidad",
+      "estacionamientos_descubiertos",
+      "precio_venta",
+      "superficie_util",
+      "sector",
+      "salas_estar",
+      "email",
+      "region",
+      "fecha",
+      "numero_pisos",
+      "rut",
+      "letra",
+      "bodegas",
+      "gastos_comunes",
+      "venta",
+      "tipo",
+      "dormitorios",
+      "observaciones_internas",
+      "descripcion",
+      "rol",
+      "superficie_total",
+      "numero",
+      "dormitorio_servicio",
+      "banos",
+      "calle",
+      "direccion_referencial",
+      "superficie_terreno",
+      "superficie_construida",
+      "ano_construccion",
+      "ejecutivo",
+      "orientacion",
+      "fono_2",
+      "precio_arriendo",
+      "fono_1",
+      "suite",
+      "titulo",
+      "superficie_terraza",
+      "fono_3",
+      "comuna",
+      "etapa",
+      "nombre",
+      "estacionamientos_cubiertos"
+    ],
+    "campos_vacios": [
+      "unidad",
+      "estacionamientos_descubiertos",
+      "superficie_util",
+      "sector",
+      "salas_estar",
+      "letra",
+      "bodegas",
+      "gastos_comunes",
+      "observaciones_internas",
+      "superficie_total",
+      "numero",
+      "dormitorio_servicio",
+      "fono_2",
+      "precio_arriendo",
+      "fono_1",
+      "suite",
+      "titulo",
+      "superficie_terraza",
+      "etapa",
+      "estacionamientos_cubiertos"
+    ],
+    "selectors_failed": [
+      "xpath=//*[@id='tbMeliTitulo_1_2']"
+    ],
+    "source_url": "https://procasa.prop360.cl/backOffice/propiedades/propEditar?i=7390",
+    "scraper": "scraping_prop360_ficha_completa.py",
+    "version": "1.2.0"
+  }
+}

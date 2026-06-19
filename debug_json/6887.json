@@ -1,0 +1,118 @@
+{
+  "codigo": "6887",
+  "tipo_operacion": {
+    "tipo": "Parcela",
+    "rol": "00507-811",
+    "venta": true,
+    "arriendo": false,
+    "precio_venta": {
+      "precio_clp": 580000000
+    },
+    "precio_arriendo": {
+      "precio_clp": null
+    },
+    "gastos_comunes": null
+  },
+  "ubicacion": {
+    "region": "Metropolitana",
+    "comuna": "Talagante",
+    "sector": "Seleccione...",
+    "calle": "caletera sur autopista del sol parcela 19 condominio los Quillayes parcela 19",
+    "numero": null,
+    "unidad": null,
+    "letra": null,
+    "etapa": null,
+    "direccion_referencial": "camino carampangue - camino lonquen"
+  },
+  "caracteristicas": {
+    "suite": null,
+    "dormitorios": 4,
+    "dormitorio_servicio": null,
+    "banos": 5,
+    "salas_estar": null,
+    "estacionamientos_cubiertos": null,
+    "estacionamientos_descubiertos": null,
+    "bodegas": null,
+    "superficie_terraza": null,
+    "superficie_util": null,
+    "superficie_total": null,
+    "orientacion": "Seleccione...",
+    "estacionamientos": null
+  },
+  "observaciones": {
+    "descripcion": "PROCASA Vende hermosa parcela de agrado en condominio de 5000 Mtrs2 y 592 mtrs2 construidos.  Casa, cuenta con living comedor separados, 4 dormitorios en suite 1 baño visita y dormitorio de servicio, además de 2 baños exterior en Quincho cerrado, Logia, Bodega y piscina, árboles frutales, riego automático, Termo panel en todas las ventanas y ventanales, puertas de madera masisa.  Cierre Perimetral de ladrillo.",
+    "observaciones_internas": null,
+    "titulo": null,
+    "forma_visita": null
+  },
+  "metadata": {
+    "status": "ok",
+    "fecha_scraping": "2026-06-15T22:49:25.733303",
+    "tipo_propiedad": "Parcela",
+    "tipo_propiedad_detectado": "Parcela",
+    "tabs": {
+      "tipo_operacion": true,
+      "ubicacion": true,
+      "caracteristicas": true,
+      "observaciones": true
+    },
+    "campos_esperados": [
+      "etapa",
+      "estacionamientos_descubiertos",
+      "gastos_comunes",
+      "precio_venta",
+      "calle",
+      "arriendo",
+      "numero",
+      "superficie_total",
+      "direccion_referencial",
+      "comuna",
+      "observaciones_internas",
+      "venta",
+      "titulo",
+      "orientacion",
+      "superficie_terraza",
+      "rol",
+      "letra",
+      "estacionamientos_cubiertos",
+      "unidad",
+      "precio_arriendo",
+      "dormitorios",
+      "region",
+      "banos",
+      "tipo",
+      "suite",
+      "dormitorio_servicio",
+      "bodegas",
+      "descripcion",
+      "superficie_util",
+      "salas_estar",
+      "sector"
+    ],
+    "campos_vacios": [
+      "etapa",
+      "estacionamientos_descubiertos",
+      "letra",
+      "estacionamientos_cubiertos",
+      "gastos_comunes",
+      "unidad",
+      "superficie_terraza",
+      "observaciones_internas",
+      "suite",
+      "precio_arriendo",
+      "dormitorio_servicio",
+      "titulo",
+      "bodegas",
+      "superficie_util",
+      "salas_estar",
+      "numero",
+      "superficie_total"
+    ],
+    "selectors_failed": [
+      "xpath=//*[@id='tbMeliTitulo_1_2']"
+    ],
+    "source_url": "https://procasa.prop360.cl/backOffice/propiedades/propEditar?i=6887",
+    "scraper": "scraping_prop360_ficha_completa.py",
+    "version": "1.2.0"
+  }
+}

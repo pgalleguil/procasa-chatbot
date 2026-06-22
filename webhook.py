@@ -1566,6 +1566,7 @@ async def view_crm_list(
     busqueda: str = None, 
     orden: str = "fecha", 
     ejecutivo: str = None,
+    temperatura: str = "HOT",
     cursor: str = Query(None, description="ISO timestamp del último lead visto (cursor-based pagination)")
 ):
     username = await get_current_user(request)
@@ -1587,6 +1588,7 @@ async def view_crm_list(
         user_role=user_role,
         user_name=user_name,
         ejecutivo_filter=ejecutivo,
+        temperatura_filter=temperatura,
         limit=limit,
         cursor_last_event_at=cursor
     )
@@ -1612,6 +1614,7 @@ async def view_crm_list(
         "user_name": user_name,
         "executives": executives,
         "current_ejecutivo": ejecutivo or "Todos",
+        "current_temperatura": temperatura,
         "pagination": {
             "total_count": total_count,
             "has_more": len(leads) == limit,

@@ -941,7 +941,25 @@
             </div>
 
             <!-- KPIs: -->
-            <div class="row g-3 mb-4 row-cols-1 row-cols-md-5">
+            <div class="row g-3 mb-4 row-cols-1 row-cols-md-4 row-cols-xl-7">
+                <div class="col">
+                    <div class="summary-card" style="border-bottom: 3px solid var(--accent-red);">
+                        <div>
+                            <div class="summary-value text-danger" id="kpi-hot" data-target="{{ kpis.hot }}">0</div>
+                            <div class="summary-label">Leads HOT 🔥</div>
+                        </div>
+                        <i class="fa-solid fa-fire fa-2x text-danger opacity-25"></i>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="summary-card" style="border-bottom: 3px solid var(--led-yellow);">
+                        <div>
+                            <div class="summary-value text-warning" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
+                            <div class="summary-label">Informativos 🟡</div>
+                        </div>
+                        <i class="fa-solid fa-info-circle fa-2x text-warning opacity-25"></i>
+                    </div>
+                </div>
                 <div class="col">
                     <div class="summary-card" style="border-bottom: 3px solid var(--led-gray);">
                         <div>
@@ -1002,6 +1020,12 @@
                         value="{{ request.query_params.get('busqueda', '') }}">
                 </div>
 
+                <select name="temperatura" onchange="this.form.submit()">
+                    <option value="HOT" {% if request.query_params.get('temperatura', 'HOT') == 'HOT' %}selected{% endif %}>🔥 Leads HOT (Prioridad Alta)</option>
+                    <option value="COLD" {% if request.query_params.get('temperatura') == 'COLD' %}selected{% endif %}>🟡 Leads Informativos / Exploratorios</option>
+                    <option value="Todos" {% if request.query_params.get('temperatura') == 'Todos' %}selected{% endif %}>👀 Ver Todos los Leads</option>
+                </select>
+
                 <select name="estado" onchange="this.form.submit()">
                     <option value="" {% if not request.query_params.get('estado') %}selected{% endif %}>Todos los
                         Estados</option>
@@ -1047,24 +1071,35 @@
             <div class="table-responsive">
                 <table class="crm-table">
                     <thead>
-                        <tr>
-                            <th width="16.6%">
+                            <th width="12%">Prioridad</th>
+                            <th width="14%">
                                 SLA / Tiempo
                                 <i class="fa-solid fa-circle-question ms-1 text-accent opacity-75"
                                     style="cursor: help; font-size: 0.85rem;" data-bs-toggle="tooltip"
                                     data-bs-custom-class="cloud-tooltip" data-bs-placement="top" data-bs-html="true"
                                     data-bs-title="<b>Métrica SLA: Prioridad Ejecutiva</b><br><br>Tiempo desde asignación hasta la primera gestión humana.<br><br>🟢 <b>Gestionado</b>: Ya tiene acción.<br>🟢 <b>En tiempo</b>: < 1 hora.<br>🟡 <b>Advertencia</b>: 1h - 2.5 horas.<br>🟠 <b>Próximo a Crítico</b>: 2.5h - 3 horas.<br>🔴 <b>Crítico</b>: > 3 horas."></i>
                             </th>
-                            <th width="16.6%">Cliente</th>
-                            <th width="16.6%">Propiedad</th>
-                            <th width="16.6%">Estado</th>
-                            <th width="16.6%">Última Acción</th>
-                            <th width="16.6%">Ejecutivo</th>
+                            <th width="14%">Cliente</th>
+                            <th width="14%">Propiedad</th>
+                            <th width="14%">Estado</th>
+                            <th width="17%">Última Acción</th>
+                            <th width="15%">Ejecutivo</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for lead in leads %}
                         <tr class="clickable-row" onclick="window.location.href='/crm/lead/{{ lead.phone }}'">
+                            <td data-label="Prioridad">
+                                <div class="fw-bold d-flex align-items-center" style="font-size: 0.95rem;">
+                                    {% if lead.lead_temperature == 'HOT' %}
+                                    <span class="text-danger"><i class="fa-solid fa-fire me-1"></i>Alta</span>
+                                    {% elif lead.lead_temperature == 'WARM' %}
+                                    <span class="text-warning"><i class="fa-solid fa-circle-dot me-1"></i>Media</span>
+                                    {% else %}
+                                    <span class="text-secondary"><i class="fa-regular fa-circle me-1"></i>Baja</span>
+                                    {% endif %}
+                                </div>
+                            </td>
                             <td data-label="SLA / Tiempo">
                                 <div class="d-flex align-items-center">
                                     {% if lead.sla_status == 'critical' %}

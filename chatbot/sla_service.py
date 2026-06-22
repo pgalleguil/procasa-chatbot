@@ -38,7 +38,8 @@ async def monitor_sla_thresholds():
             {"stage": None},
             {"stage": {"$exists": False}}
         ],
-        "ejecutivo_asignado": {"$exists": True, "$nin": unassigned_patterns}
+        "ejecutivo_asignado": {"$exists": True, "$nin": unassigned_patterns},
+        "lead_temperature": "HOT"
     }
     
     leads = await db["leads"].find(query, {"messages": 0, "stage_history": 0}).to_list(length=2000)
@@ -96,6 +97,7 @@ async def monitor_sla_thresholds():
             # 1. Tiempos de referencia
             raw_assigned = lead.get("lifecycle", {}).get("assigned_at")
             raw_created = lead.get("created_at")
+            raw_hot_since = lead.get("lifecycle", {}).get("hot_since")
             
             if not raw_assigned: continue 
 
@@ -107,6 +109,14 @@ async def monitor_sla_thresholds():
                     start_dt = datetime.fromisoformat(str(raw_assigned).replace("Z", ""))
                 
                 if start_dt.tzinfo is None: start_dt = CHILE_TZ.localize(start_dt)
+                
+                if raw_hot_since:
+                    if isinstance(raw_hot_since, datetime):
+                        hot_dt = raw_hot_since
+                    else:
+                        hot_dt = datetime.fromisoformat(str(raw_hot_since).replace("Z", ""))
+                    if hot_dt.tzinfo is None: hot_dt = CHILE_TZ.localize(hot_dt)
+                    start_dt = max(start_dt, hot_dt)
                 
                 if isinstance(raw_created, datetime):
                     created_dt = raw_created

@@ -1,4 +1,4 @@
-﻿# from pymongo import MongoClient (Replaced by singleton)
+# from pymongo import MongoClient (Replaced by singleton)
 from config import Config
 from datetime import datetime
 import pytz
@@ -138,6 +138,7 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
 # --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
 async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad",
                              user_role="agente", user_name="", ejecutivo_filter=None,
+                             temperatura_filter="HOT",
                              page=1, limit=10, cursor_last_event_at=None):
     from chatbot.storage import get_async_db
     db = get_async_db()
@@ -171,14 +172,22 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             regex_phone = re.compile(re.escape(clean_phone))
             query_parts.append({"phone": regex_phone})
         else:
-            # Búsqueda por nombre si no es teléfono
             regex_term = re.compile(re.escape(term), re.IGNORECASE)
             query_parts.append({"prospecto.nombre": regex_term})
     
+    if temperatura_filter and temperatura_filter != "Todos":
+        if temperatura_filter == "HOT":
+            query_parts.append({"lead_temperature": "HOT"})
+        elif temperatura_filter == "COLD":
+            query_parts.append({"lead_temperature": {"$ne": "HOT"}})
+            
     query = {"$and": query_parts} if query_parts else {}
-    
+
     # 2. SEPARATE KPI COUNTS (Globales para la búsqueda actual pero sin filtro de estado)
-    base_kpi_query = query.copy() # Query que incluye ejecutivo y término de búsqueda
+    # Creamos query_global_kpi SIN el filtro de temperatura para poder contar todo
+    query_global_kpi_parts = [q for q in query_parts if "lead_temperature" not in q]
+    global_kpi_query = {"$and": query_global_kpi_parts} if query_global_kpi_parts else {}
+    base_kpi_query = query.copy() # Con temperatura para los KPIs por etapa
     
     # --- FILTRO DE ESTADO ---
     query_with_state = query.copy()
@@ -210,28 +219,29 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
 
     # Pipeline de $facet consolida los 7 queries en 1 sola operación en el motor de base de datos
     facet_pipeline = [
-        {"$match": base_kpi_query},
         {"$facet": {
-            "global_total": [{"$count": "count"}],
+            "global_total": [{"$match": global_kpi_query}, {"$count": "count"}],
+            "total_hot": [{"$match": {"$and": [global_kpi_query, {"lead_temperature": "HOT"}]}}, {"$count": "count"}],
+            "total_cold": [{"$match": {"$and": [global_kpi_query, {"lead_temperature": {"$ne": "HOT"}}]}}, {"$count": "count"}],
             "total_pagina": [{"$match": query_with_state}, {"$count": "count"}],
             "sin_asignar": [
-                {"$match": {"$and": [{"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, unassigned_filter]}},
+                {"$match": {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, unassigned_filter]}},
                 {"$count": "count"}
             ],
             "nuevo": [
-                {"$match": {"$and": [{"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, assigned_filter]}},
+                {"$match": {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, assigned_filter]}},
                 {"$count": "count"}
             ],
             "gestion": [
-                {"$match": {"pipeline_stage": {"$in": [PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER, PipelineStage.NEGOTIATION, "gestion", "contacted"]}}},
+                {"$match": {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER, PipelineStage.NEGOTIATION, "gestion", "contacted"]}}]}},
                 {"$count": "count"}
             ],
             "visita": [
-                {"$match": {"pipeline_stage": {"$in": [PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE, "visita"]}}},
+                {"$match": {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE, "visita"]}}]}},
                 {"$count": "count"}
             ],
             "cerrado": [
-                {"$match": {"pipeline_stage": {"$in": [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST, "cerrado"]}}},
+                {"$match": {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST, "cerrado"]}}]}},
                 {"$count": "count"}
             ]
         }}
@@ -251,6 +261,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     
     kpi_counts = {
         "total": get_facet_count("global_total"), 
+        "hot": get_facet_count("total_hot"),
+        "cold": get_facet_count("total_cold"),
         "nuevo": get_facet_count("nuevo"), 
         "gestion": get_facet_count("gestion"), 
         "visita": get_facet_count("visita"), 
@@ -537,12 +549,26 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
              sla_status = "pending"
              sla_label = "Pendiente Asignación"
 
+        temp = lead.get("lead_temperature")
+        if not temp:
+            bi_res = lead.get("bi_analytics_global", {}).get("RESULTADO_CHAT")
+            temp = "HOT" if bi_res in ["VISITA_SOLICITADA", "VISITA_AGENDADA", "CONTACTO_HUMANO"] else "COLD"
+            
+        if temp == "HOT":
+            prioridad_badge = "🔥 Alta"
+        elif temp == "WARM":
+            prioridad_badge = "🟡 Media"
+        else:
+            prioridad_badge = "⚪ Baja"
+
         leads_procesados.append({
             "phone": raw_phone,
             "sla_status": sla_status,
             "sla_label": sla_label,
             "whatsapp_display": f"+{raw_phone}",
             "nombre": lead.get("prospecto", {}).get("nombre") or "Desconocido",
+            "prioridad_badge": prioridad_badge,
+            "lead_temperature": temp,
             "estado": estado_final,
             "estado_badge": config_estado["label"],
             "led_class": config_estado["led"],

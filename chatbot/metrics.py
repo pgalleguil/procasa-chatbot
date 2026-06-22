@@ -126,13 +126,27 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None):
             }
             action_label = type_labels.get(event_type, "Acción registrada")
         
+        # --- LEAD TEMPERATURE & DYNAMIC SLA ---
+        bi_data = lead.get("bi_analytics_global", {})
+        resultado_chat = bi_data.get("RESULTADO_CHAT", "")
+        old_temp = lead.get("lead_temperature")
+        
+        if resultado_chat in ["VISITA_SOLICITADA", "VISITA_AGENDADA", "CONTACTO_HUMANO"]:
+            new_temp = "HOT"
+        else:
+            new_temp = "COLD"
+            
         update_data = {
             "sla_status": sla_status,
             "priority_score": score,
             "priority_bucket": bucket,
             "last_action_label": action_label,
-            "updated_at_metrics": datetime.now(CHILE_TZ).isoformat()
+            "updated_at_metrics": datetime.now(CHILE_TZ).isoformat(),
+            "lead_temperature": new_temp
         }
+        
+        if new_temp == "HOT" and old_temp != "HOT":
+            update_data["lifecycle.hot_since"] = datetime.now(CHILE_TZ).isoformat()
         
         if event_at: update_data["last_event_at"] = event_at
         if event_type: update_data["last_event_type"] = event_type

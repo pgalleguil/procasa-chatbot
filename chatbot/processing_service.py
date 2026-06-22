@@ -226,10 +226,8 @@ class LeadProcessingService:
         if current_exec not in unassigned_labels:
             return {} # Ya tiene asignado
 
-        # NUEVO: Solo asignar si el lead tiene "mérito" (intención o novedad)
-        if not force and not LeadProcessingService.is_worthy_of_assignment(lead_doc):
-            logger.debug(f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} descartado para auto-asignación (Baja intención/Histórico)")
-            return {}
+        # NUEVO: Asignación universal. Todos los leads se asignan sin importar intención.
+        # Eliminada validación de is_worthy_of_assignment.
 
         property_code = prospecto.get("codigo") or lead_doc.get("codigo")
         comuna = prospecto.get("comuna") or lead_doc.get("comuna")
@@ -299,9 +297,13 @@ class LeadProcessingService:
             lead = db["leads"].find_one({"_id": query_id}, lead_projection)
             if not lead:
                 return False
-            if (lead.get("prospecto") or {}).get("link_detectado") is True:
-                logger.info(f"[PROCESS_SERVICE] Lead {lead.get('phone')} con link_detectado=True. Se omite process_lead.")
-                return False
+            prospecto_data = lead.get("prospecto") or {}
+            if prospecto_data.get("link_detectado") is True:
+                if prospecto_data.get("codigo") or lead.get("codigo"):
+                    logger.info(f"[PROCESS_SERVICE] Lead {lead.get('phone')} con link_detectado pero ya resuelto. Continuando asignación.")
+                else:
+                    logger.info(f"[PROCESS_SERVICE] Lead {lead.get('phone')} con link_detectado=True pendiente de scraping. Se omite process_lead.")
+                    return False
 
             # --- AUTO-ARCHIVADO DE LEADS ANTIGUOS (Solicitado por usuario) ---
             from datetime import timedelta
@@ -370,18 +372,27 @@ class LeadProcessingService:
                     from .lead_router import get_executive_phone
                     exec_phone = get_executive_phone(exec_name) if exec_name else "+56900000000"
                     
-                    structured_alert = {
-                        "phone": lead.get("phone"),
-                        "property_code": prop_code,
-                        "lead_type": "ReasignacionAutomatica",
-                        "target_name": exec_name,
-                        "target_phone": exec_phone,
-                        "nombre": prospecto_data.get("nombre") or lead.get("nombre", "Cliente"),
-                        "last_message": "Asignado automáticamente por el motor de distribución."
-                    }
-                    
-                    save_pending_notification(structured_alert)
-                    logger.info(f"[PROCESS_SERVICE] Notificacion pendiente estructurada guardada para {lead.get('phone')} (destinado a {exec_name})")
+                    temp = update_data.get("lead_temperature") or lead.get("lead_temperature")
+                    # If temperature is not set yet, fallback to recalculating
+                    if not temp:
+                        bi_res = lead.get("bi_analytics_global", {}).get("RESULTADO_CHAT")
+                        temp = "HOT" if bi_res in ["VISITA_SOLICITADA", "VISITA_AGENDADA", "CONTACTO_HUMANO"] else "COLD"
+                        
+                    if temp == "HOT" or force_notif:
+                        structured_alert = {
+                            "phone": lead.get("phone"),
+                            "property_code": prop_code,
+                            "lead_type": "ReasignacionAutomatica",
+                            "target_name": exec_name,
+                            "target_phone": exec_phone,
+                            "nombre": prospecto_data.get("nombre") or lead.get("nombre", "Cliente"),
+                            "last_message": "Asignado automáticamente por el motor de distribución."
+                        }
+                        
+                        save_pending_notification(structured_alert)
+                        logger.info(f"[PROCESS_SERVICE] Notificacion pendiente estructurada guardada para {lead.get('phone')} (destinado a {exec_name})")
+                    else:
+                        logger.info(f"[PROCESS_SERVICE] Lead {lead.get('phone')} asignado a {exec_name} silenciosamente (Temperatura: {temp}). No se envía alerta de reasignación.")
 
                 # --- NUEVO: STRUCTURED LOGGING PARA DECISIONES ---
                 import json

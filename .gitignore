@@ -61,6 +61,16 @@ scripts/
 scripts_legacy/
 tests/
 
+# Entornos virtuales Python (nunca deben subirse)
+venv/
+venv_temp/
+venv*/
+.venv/
+
+# Scripts temporales de diagnóstico/migración
+scratch/
+inspect_leads.py
+backfill*.py
 
 # Archivos del sistema
 .DS_Store

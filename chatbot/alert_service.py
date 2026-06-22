@@ -24,6 +24,16 @@ def should_send_alert(phone: str, lead_type: str, window_minutes: int) -> bool:
             alerts = json.loads(alerts.replace("'", "\""))
         except:
             alerts = {}
+            
+    # NUEVO: Anti-spam riguroso para evolución de leads (Caso 3)
+    # Si estamos intentando enviar una alerta HOT, validamos si ya se envió alguna vez
+    # cualquier alerta de la familia HOT para este prospecto. Si ya se envió, NO enviamos más.
+    HOT_ALERT_TYPES = ["InteresVisita", "SolicitudContacto"]
+    if lead_type in HOT_ALERT_TYPES:
+        for hot_type in HOT_ALERT_TYPES:
+            if alerts.get(hot_type):
+                logger.info(f"[ALERT] Bloqueando alerta '{lead_type}' porque el lead ya tuvo una alerta HOT previa ('{hot_type}')")
+                return False
     
     ts_iso = alerts.get(lead_type)
     

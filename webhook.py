@@ -2502,7 +2502,7 @@ async def threadpool_forensics_loop():
 async def daily_report_loop():
     """Loop de fondo para enviar el reporte de SLA y Captaciones una vez al día."""
     logger.info("[DAILY_REPORT] Iniciando monitor de reporte diario (SLA + Captaciones)...")
-    from chatbot.daily_report import check_and_run_daily_report
+    from chatbot.daily_report import check_and_run_daily_report, check_and_run_personalized_summary
     from chatbot.captacion_report import check_and_run_meta_diaria_report
     while True:
         try:
@@ -2510,10 +2510,23 @@ async def daily_report_loop():
                 "status": "running", 
                 "last_heartbeat": datetime.now(CHILE_TZ).isoformat()
             }
-            # Reporte 1: Leads críticos SLA (09:30 AM) - DESACTIVADO TEMPORALMENTE A PETICIÓN DEL USUARIO
-            # await check_and_run_daily_report()
-            # Reporte 2: Meta Diaria de Captaciones (09:00 AM)
+            # Reporte 1: Leads críticos SLA (09:30 AM)
+            await check_and_run_daily_report()
+            
+            # Reporte 2: Resumen Matutino Personalizado (09:00 AM)
+            await check_and_run_personalized_summary()
+            
+            # Reporte 3: Meta Diaria de Captaciones (09:00 AM)
             # await check_and_run_meta_diaria_report()  # DESACTIVADO A PETICIÓN DEL USUARIO
+            # Monitoreo de anomalias (cada lunes a las 08:00)
+            now = datetime.now(CHILE_TZ)
+            if now.weekday() == 0 and now.hour == 8 and now.minute < 5:
+                try:
+                    from scripts.monitor_anomalies import run_anomaly_check
+                    run_anomaly_check()
+                    logger.info("[DAILY_REPORT] Monitor de anomalias ejecutado (lunes 08:00).")
+                except Exception as em:
+                    logger.warning(f"[DAILY_REPORT] Error en monitor_anomalias: {em}")
         except Exception as e:
             logger.error(f"[DAILY_REPORT] Error en loop: {e}")
             if "daily_report" in background_tasks_status:

@@ -268,3 +268,136 @@ async def check_and_run_daily_report(force: bool = False):
         {"$set": {"last_run": today_str}},
         upsert=True
     )
+
+async def send_personalized_morning_summary():
+    """Calcula y envía el resumen diario personalizado a cada ejecutivo."""
+    db = get_db()
+    now_cl = datetime.now(CHILE_TZ)
+    yesterday = now_cl - timedelta(days=1)
+    
+    query = {
+        "$or": [
+            {"pipeline_stage": "NEW"},
+            {"stage": "nuevo"},
+            {"stage": "new"},
+            {"pipeline_stage": None},
+            {"stage": None},
+            {"created_at": {"$gte": yesterday.isoformat()}},
+            {"timestamp": {"$gte": yesterday.isoformat()}}
+        ],
+        "ejecutivo_asignado": {"$nin": [None, "", "No Asignado", "Sin Asignar", UNASSIGNED_LABEL]}
+    }
+    
+    leads = list(db["leads"].find(query))
+    if not leads:
+        return False
+
+    summary_by_exec = {}
+    for lead in leads:
+        exec_name = lead.get("ejecutivo_asignado")
+        if not exec_name: continue
+        exec_name = str(exec_name).strip().title()
+        
+        if exec_name not in summary_by_exec:
+            summary_by_exec[exec_name] = {
+                "new_hot": 0,
+                "new_cold": 0,
+                "pending_total": 0
+            }
+            
+        stage = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
+        temp = lead.get("lead_temperature") or "COLD"
+        is_pending = stage in ["NEW", "NUEVO", ""]
+        
+        created_at_val = lead.get("created_at") or lead.get("timestamp")
+        is_new = False
+        if created_at_val:
+            try:
+                if isinstance(created_at_val, str):
+                    created_dt = datetime.fromisoformat(created_at_val.replace('Z', '+00:00'))
+                else:
+                    created_dt = created_at_val
+                if created_dt.tzinfo is None:
+                    created_dt = CHILE_TZ.localize(created_dt)
+                else:
+                    created_dt = created_dt.astimezone(CHILE_TZ)
+                
+                if (now_cl - created_dt).total_seconds() < 86400:
+                    is_new = True
+            except: pass
+            
+        if is_pending:
+            summary_by_exec[exec_name]["pending_total"] += 1
+            
+        if is_new:
+            if temp == "HOT":
+                summary_by_exec[exec_name]["new_hot"] += 1
+            else:
+                summary_by_exec[exec_name]["new_cold"] += 1
+
+    from chatbot.lead_router import get_executive_phone
+    from chatbot.notification_service import NotificationService
+    
+    sent_count = 0
+    for exec_name, data in summary_by_exec.items():
+        if data["new_hot"] > 0 or data["new_cold"] > 0 or data["pending_total"] > 0:
+            target_phone = get_executive_phone(exec_name)
+            if not target_phone or target_phone == "+56900000000":
+                continue
+            
+            message_lines = [
+                "☀️ *Resumen Diario de Leads*",
+                f"Hola {exec_name}, este es tu resumen de inicio de jornada:",
+                "",
+                f"*Nuevos leads asignados (últimas 24h):* {data['new_hot'] + data['new_cold']}",
+                f"🔥 Alta Prioridad (HOT): {data['new_hot']}",
+                f"🔵 Informativos: {data['new_cold']}",
+                "",
+                f"*Total pendientes de gestión:* {data['pending_total']} leads.",
+                "",
+                "👉 Recuerda gestionar los leads HOT primero.",
+                "🔗 *Acceder al CRM:*",
+                f"{Config.CRM_BASE_URL}/crm"
+            ]
+            
+            message = "\n".join(message_lines)
+            success = await NotificationService.send_notification(
+                phone=target_phone,
+                message=message,
+                alert_type="daily_morning_summary",
+                meta={"executive": exec_name},
+                dedup_window_minutes=720 # Evitar envío múltiple en 12h
+            )
+            if success:
+                sent_count += 1
+                logger.info(f"[MORNING_SUMMARY] Enviado a {exec_name} ({target_phone})")
+                
+    return sent_count > 0
+
+async def check_and_run_personalized_summary(force: bool = False):
+    """Verifica si corresponde enviar el resumen matutino personalizado (09:00 AM)."""
+    db = get_db()
+    now_cl = datetime.now(CHILE_TZ)
+    
+    if not force and now_cl.weekday() >= 5:
+        return
+        
+    if not force:
+        total_minutes = now_cl.hour * 60 + now_cl.minute
+        if total_minutes < 9 * 60 or total_minutes > 10 * 60:
+            return
+            
+    today_str = now_cl.strftime("%Y-%m-%d")
+    
+    state = db["system_state"].find_one({"type": "morning_summary"})
+    if state and state.get("last_run") == today_str:
+        return
+        
+    logger.info(f"[MORNING_SUMMARY] Ejecutando resumen matutino personalizado ({today_str})...")
+    await send_personalized_morning_summary()
+    
+    db["system_state"].update_one(
+        {"type": "morning_summary"},
+        {"$set": {"last_run": today_str}},
+        upsert=True
+    )

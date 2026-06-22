@@ -373,10 +373,13 @@ class LeadProcessingService:
                     exec_phone = get_executive_phone(exec_name) if exec_name else "+56900000000"
                     
                     temp = update_data.get("lead_temperature") or lead.get("lead_temperature")
-                    # If temperature is not set yet, fallback to recalculating
+                    # If temperature is not set yet, fallback using active data sources (legacy bi_analytics_global removed)
                     if not temp:
-                        bi_res = lead.get("bi_analytics_global", {}).get("RESULTADO_CHAT")
-                        temp = "HOT" if bi_res in ["VISITA_SOLICITADA", "VISITA_AGENDADA", "CONTACTO_HUMANO"] else "COLD"
+                        last_intent_val = str(lead.get("last_intent", "")).upper()
+                        stage_val = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
+                        HOT_INTENT = {"ASK_VISIT", "GIVE_OFFER"}
+                        HOT_STAGES = {"VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION"}
+                        temp = "HOT" if (last_intent_val in HOT_INTENT or stage_val in HOT_STAGES) else "COLD"
                         
                     if temp == "HOT" or force_notif:
                         structured_alert = {

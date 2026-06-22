@@ -127,20 +127,17 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None):
             action_label = type_labels.get(event_type, "Acción registrada")
         
         # --- LEAD TEMPERATURE & DYNAMIC SLA ---
-        # Fuente 1: bi_analytics_global (análisis IA del chat completo)
-        bi_data = lead.get("bi_analytics_global", {})
-        resultado_chat = bi_data.get("RESULTADO_CHAT", "")
-        # Fuente 2: last_intent (intención detectada por el bot en tiempo real)
+        # Fuente de verdad: last_intent (detectado por bot en core.py via CrmService.update_intent)
+        # Fuente secundaria: pipeline_stage (confirmado manualmente por ejecutivo)
+        # NOTA: bi_analytics_global es campo legacy que ya no se usa en el flujo activo.
         last_intent = str(lead.get("last_intent", "")).upper()
-        # Fuente 3: pipeline_stage (si el humano ya confirmó visita)
-        pipeline_stage = lead.get("pipeline_stage", "")
+        pipeline_stage = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
         old_temp = lead.get("lead_temperature")
         
-        HOT_BI = {"VISITA_SOLICITADA", "VISITA_AGENDADA", "CONTACTO_HUMANO"}
         HOT_INTENT = {"ASK_VISIT", "GIVE_OFFER"}
         HOT_STAGES = {"VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION"}
         
-        if resultado_chat in HOT_BI or last_intent in HOT_INTENT or pipeline_stage in HOT_STAGES:
+        if last_intent in HOT_INTENT or pipeline_stage in HOT_STAGES:
             new_temp = "HOT"
         else:
             new_temp = "COLD"

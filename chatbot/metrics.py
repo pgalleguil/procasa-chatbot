@@ -139,6 +139,12 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None):
         
         if last_intent in HOT_INTENT or pipeline_stage in HOT_STAGES:
             new_temp = "HOT"
+        elif old_temp == "HOT":
+            # Si el lead ya era HOT, mantenerlo HOT a menos que se cierre o desuscriba
+            if pipeline_stage in ["CLOSED_LOST", "CLOSED_WON"] or last_intent == "UNSUBSCRIBE":
+                new_temp = "COLD"
+            else:
+                new_temp = "HOT"
         else:
             new_temp = "COLD"
             

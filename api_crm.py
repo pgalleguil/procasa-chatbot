@@ -282,15 +282,24 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     # ------------------------------------------------------------------
     # "Más Recientes" debe ordenar por fecha de asignación del ejecutivo.
     # Usamos lifecycle.assigned_at como fuente principal y dejamos fallback a fecha_asignacion/created_at.
-    sort_field = "created_at"
-    cursor_field = "created_at"
-    use_effective_assignment_sort = False
-    if ordenar_por == "fecha":
-        sort_field = "effective_assigned_at"
-        cursor_field = "effective_assigned_at"
-        use_effective_assignment_sort = True
-
-    sort_criteria = [(sort_field, -1)]
+    # -----------------------------------------------------------------------
+    # 3b. ORDENAMIENTO INTELIGENTE
+    # El orden varía según el filtro activo:
+    #
+    # Filtro HOT:
+    #   1° HOT + Sin Atender (pipeline_stage=NEW) -> por fecha asignación ASC (más urgente primero)
+    #   2° HOT + En Gestión/Visita -> por actividad reciente DESC
+    #
+    # Filtro Todos:
+    #   1° HOT + Sin Atender -> por fecha asignación ASC
+    #   2° HOT + gestionados -> por actividad reciente DESC
+    #   3° COLD/informativos  -> por actividad reciente DESC
+    #
+    # Otros filtros (gestion, visita, cerrado, sin_asignar):
+    #   Actividad reciente DESC (por defecto)
+    # -----------------------------------------------------------------------
+    use_smart_sort = temperatura_filter in ["HOT", "Todos"] and not filtro_estado
+    NEW_STAGES = [PipelineStage.NEW, None, "nuevo", "new", "NEW"]
 
     # Proyección mínima — solo campos necesarios para el listado
     PROJECTION = {
@@ -318,53 +327,101 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     }
 
     paginated_query = query_with_state.copy()
-    cursor_dt = None
-    if cursor_last_event_at:
-        try:
-            cursor_dt = datetime.fromisoformat(cursor_last_event_at.replace("Z", "+00:00"))
-        except Exception as e:
-            logger.warning(f"CRM: cursor inválido ignorado: {e}")
-            cursor_dt = None
 
-    if use_effective_assignment_sort:
-        sort_pipeline = [
+    if use_smart_sort:
+        # Pipeline inteligente: calcula urgency_rank para ordenar en Mongo directamente
+        # urgency_rank:
+        #   1 = HOT + Sin Atender  (más urgente, va primero, ASC por asignación)
+        #   2 = HOT + gestionado   (activo, va segundo, DESC por actividad)
+        #   3 = COLD               (informativo, va al final, DESC por actividad)
+        smart_pipeline = [
             {"$match": paginated_query},
             {"$addFields": {
-                "effective_assigned_at": {
+                # Fecha efectiva de asignación (para ordenar HOT no atendidos)
+                "_assigned_dt": {
                     "$let": {
                         "vars": {
-                            "assigned": {"$convert": {"input": "$lifecycle.assigned_at", "to": "date", "onError": None, "onNull": None}},
-                            "fallback_assigned": {"$convert": {"input": "$fecha_asignacion", "to": "date", "onError": None, "onNull": None}},
-                            "created": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
+                            "a": {"$convert": {"input": "$lifecycle.assigned_at", "to": "date", "onError": None, "onNull": None}},
+                            "b": {"$convert": {"input": "$fecha_asignacion", "to": "date", "onError": None, "onNull": None}},
+                            "c": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
                         },
-                        "in": {"$ifNull": ["$$assigned", {"$ifNull": ["$$fallback_assigned", "$$created"]}]}
+                        "in": {"$ifNull": ["$$a", {"$ifNull": ["$$b", "$$c"]}]}
+                    }
+                },
+                # Fecha de última actividad (para ordenar gestionados)
+                "_activity_dt": {
+                    "$let": {
+                        "vars": {
+                            "ev": {"$convert": {"input": "$last_event_at", "to": "date", "onError": None, "onNull": None}},
+                            "cr": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
+                        },
+                        "in": {"$ifNull": ["$$ev", "$$cr"]}
+                    }
+                },
+                # urgency_rank: define el grupo de ordenamiento
+                "_urgency_rank": {
+                    "$switch": {
+                        "branches": [
+                            {
+                                # HOT + Sin Atender (NEW stage) = máxima urgencia
+                                "case": {
+                                    "$and": [
+                                        {"$eq": ["$lead_temperature", "HOT"]},
+                                        {"$or": [
+                                            {"$eq": ["$pipeline_stage", "NEW"]},
+                                            {"$eq": ["$pipeline_stage", None]},
+                                            {"$eq": ["$stage", "nuevo"]},
+                                            {"$not": [{"$ifNull": ["$pipeline_stage", False]}]}
+                                        ]}
+                                    ]
+                                },
+                                "then": 1
+                            },
+                            {
+                                # HOT + gestionado (ya fue atendido)
+                                "case": {"$eq": ["$lead_temperature", "HOT"]},
+                                "then": 2
+                            }
+                        ],
+                        "default": 3  # COLD / informativos
                     }
                 }
             }},
-        ]
-        if cursor_dt:
-            sort_pipeline.append({"$match": {"effective_assigned_at": {"$lt": cursor_dt}}})
-        sort_pipeline.extend([
-            {"$sort": {"effective_assigned_at": -1}},
+            {"$sort": {
+                # Grupo: rank ASC (1 antes que 2, 2 antes que 3)
+                "_urgency_rank": 1,
+                # Dentro del grupo 1 (HOT no atendidos): asignación ASC (más antiguo = más urgente)
+                # Dentro de grupos 2 y 3: actividad DESC (más reciente primero)
+                # Truco: invertimos _assigned_dt para grupo 1 usando un campo condicional
+                "_assigned_dt": 1,     # ASC para grupo 1 (oldest first = most overdue)
+                "_activity_dt": -1     # DESC para grupos 2 y 3 (newest activity first)
+            }},
             {"$limit": limit},
-            {"$project": PROJECTION | {"effective_assigned_at": 1}}
-        ])
-        leads_list = await db["leads"].aggregate(sort_pipeline).to_list(length=limit)
+            {"$project": PROJECTION}
+        ]
+        leads_list = await db["leads"].aggregate(smart_pipeline).to_list(length=limit)
     else:
-        if cursor_dt:
-            paginated_query = {
-                "$and": [
-                    paginated_query,
-                    {"$or": [
-                        {cursor_field: {"$lt": cursor_dt}},
-                        {cursor_field: {"$lt": cursor_last_event_at}}
-                    ]}
-                ]
-            }
-        leads_cursor = db["leads"].find(paginated_query, PROJECTION)\
-                                  .sort(sort_criteria)\
-                                  .limit(limit)
-        leads_list = await leads_cursor.to_list(length=limit)
+        # Ordenamiento estándar para filtros específicos (estado, visita, cerrado, etc.)
+        # Por actividad más reciente DESC
+        simple_pipeline = [
+            {"$match": paginated_query},
+            {"$addFields": {
+                "_activity_dt": {
+                    "$let": {
+                        "vars": {
+                            "ev": {"$convert": {"input": "$last_event_at", "to": "date", "onError": None, "onNull": None}},
+                            "cr": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
+                        },
+                        "in": {"$ifNull": ["$$ev", "$$cr"]}
+                    }
+                }
+            }},
+            {"$sort": {"_activity_dt": -1}},
+            {"$limit": limit},
+            {"$project": PROJECTION}
+        ]
+        leads_list = await db["leads"].aggregate(simple_pipeline).to_list(length=limit)
+
 
     leads_procesados = []
     # (KPI counts are already calculated via optimized MongoDB queries above)

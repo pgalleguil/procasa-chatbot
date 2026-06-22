@@ -1022,7 +1022,7 @@
 
                 <select name="temperatura" onchange="this.form.submit()">
                     <option value="HOT" {% if request.query_params.get('temperatura', 'HOT') == 'HOT' %}selected{% endif %}>🔥 Leads HOT (Prioridad Alta)</option>
-                    <option value="COLD" {% if request.query_params.get('temperatura') == 'COLD' %}selected{% endif %}>🟡 Leads Informativos / Exploratorios</option>
+                    <option value="COLD" {% if request.query_params.get('temperatura') == 'COLD' %}selected{% endif %}>🔵 Leads Informativos / Exploratorios</option>
                     <option value="Todos" {% if request.query_params.get('temperatura') == 'Todos' %}selected{% endif %}>👀 Ver Todos los Leads</option>
                 </select>
 
@@ -1096,7 +1096,7 @@
                                     {% elif lead.lead_temperature == 'WARM' %}
                                     <span class="text-warning"><i class="fa-solid fa-circle-dot me-1"></i>Media</span>
                                     {% else %}
-                                    <span class="text-secondary"><i class="fa-regular fa-circle me-1"></i>Baja</span>
+                                    <span class="text-info"><i class="fa-solid fa-circle-info me-1"></i>Informativo</span>
                                     {% endif %}
                                 </div>
                             </td>

@@ -313,6 +313,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         "created_at": 1,
         "fecha_asignacion": 1,
         "datos_propiedad.codigo": 1,
+        "lead_temperature": 1,
+        "bi_analytics_global.RESULTADO_CHAT": 1,
     }
 
     paginated_query = query_with_state.copy()

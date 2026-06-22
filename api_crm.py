@@ -501,12 +501,21 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         # (SaaS Performance: Metrics are precomputed in lead doc)
         config_estado = state_map.get(estado_final, state_map[PipelineStage.CONTACTED])
 
+        # 1. TEMPERATURA Y PRIORIDAD (Fallback para leads antiguos)
+        temp = lead.get("lead_temperature")
+        if not temp:
+            bi_res = lead.get("bi_analytics_global", {}).get("RESULTADO_CHAT")
+            temp = "HOT" if bi_res in ["VISITA_SOLICITADA", "VISITA_AGENDADA", "CONTACTO_HUMANO"] else "COLD"
+            lead["lead_temperature"] = temp
+
         # 5. SLA / TIEMPO DE RESPUESTA
-        # Corrección funcional: para "Sin Atender" priorizamos SIEMPRE el cálculo real
-        # con minutos hábiles desde asignación para no mostrar falsos "En tiempo".
         sla_status = lead.get("sla_status", "good")
-        if estado_final == PipelineStage.NEW:
-            start_time = lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
+        
+        # Omitir cálculo de SLA crítico para leads informativos/fríos
+        if temp != "HOT":
+            sla_status = "informativo"
+        elif estado_final == PipelineStage.NEW:
+            start_time = lead.get("lifecycle", {}).get("hot_since") or lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
             if start_time:
                 try:
                     if isinstance(start_time, str):
@@ -540,7 +549,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             "warning": "Advertencia",
             "good": "En tiempo",
             "pending": "Pendiente Asignación",
-            "fulfilled": "Gestionado"
+            "fulfilled": "Gestionado",
+            "informativo": "No Aplica SLA"
         }
         sla_label = sla_labels_map.get(sla_status, "En tiempo")
         
@@ -549,17 +559,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
              sla_status = "pending"
              sla_label = "Pendiente Asignación"
 
-        temp = lead.get("lead_temperature")
-        if not temp:
-            bi_res = lead.get("bi_analytics_global", {}).get("RESULTADO_CHAT")
-            temp = "HOT" if bi_res in ["VISITA_SOLICITADA", "VISITA_AGENDADA", "CONTACTO_HUMANO"] else "COLD"
-            
         if temp == "HOT":
             prioridad_badge = "🔥 Alta"
-        elif temp == "WARM":
-            prioridad_badge = "🟡 Media"
         else:
-            prioridad_badge = "⚪ Baja"
+            prioridad_badge = "🟡 Media"
 
         leads_procesados.append({
             "phone": raw_phone,

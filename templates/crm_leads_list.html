@@ -1117,6 +1117,9 @@
                                     {% elif lead.sla_status == 'fulfilled' %}
                                     <i class="fa-solid fa-check-circle text-success"></i>
                                     <span class="fw-bold text-success ms-2">{{ lead.sla_label }}</span>
+                                    {% elif lead.sla_status == 'informativo' %}
+                                    <i class="fa-solid fa-minus text-secondary opacity-50"></i>
+                                    <span class="text-secondary ms-2 fst-italic">{{ lead.sla_label }}</span>
                                     {% else %}
                                     <div class="led-indicator led-green" style="opacity: 0.8;"></div>
                                     <span class="fw-bold ms-2">{{ lead.sla_label }}</span>

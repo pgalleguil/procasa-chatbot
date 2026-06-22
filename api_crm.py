@@ -315,6 +315,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         "datos_propiedad.codigo": 1,
         "lead_temperature": 1,
         "bi_analytics_global.RESULTADO_CHAT": 1,
+        "last_intent": 1,
     }
 
     paginated_query = query_with_state.copy()
@@ -503,11 +504,20 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         # (SaaS Performance: Metrics are precomputed in lead doc)
         config_estado = state_map.get(estado_final, state_map[PipelineStage.CONTACTED])
 
-        # 1. TEMPERATURA Y PRIORIDAD (Fallback para leads antiguos)
+        # 1. TEMPERATURA Y PRIORIDAD
+        # Usa el campo persistido si existe; si no, calcula por todas las fuentes disponibles
         temp = lead.get("lead_temperature")
         if not temp:
-            bi_res = lead.get("bi_analytics_global", {}).get("RESULTADO_CHAT")
-            temp = "HOT" if bi_res in ["VISITA_SOLICITADA", "VISITA_AGENDADA", "CONTACTO_HUMANO"] else "COLD"
+            bi_res = lead.get("bi_analytics_global", {}).get("RESULTADO_CHAT", "")
+            last_intent_val = str(lead.get("last_intent", "")).upper()
+            stage_val = str(lead.get("pipeline_stage", "")).upper()
+            HOT_BI = {"VISITA_SOLICITADA", "VISITA_AGENDADA", "CONTACTO_HUMANO"}
+            HOT_INTENT = {"ASK_VISIT", "GIVE_OFFER"}
+            HOT_STAGES = {"VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION"}
+            if bi_res in HOT_BI or last_intent_val in HOT_INTENT or stage_val in HOT_STAGES:
+                temp = "HOT"
+            else:
+                temp = "COLD"
             lead["lead_temperature"] = temp
 
         # 5. SLA / TIEMPO DE RESPUESTA

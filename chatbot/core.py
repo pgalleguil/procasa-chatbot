@@ -28,6 +28,7 @@ from .utils import extraer_rut, extraer_email, safe_int_conversion, extraer_nomb
 from .utils import parse_bool
 from .alert_service import send_alert_once
 from .classifier import es_propietario, es_corredor_externo
+from .processing_service import LeadProcessingService
 
 # RAG IMPORT
 from .rag import buscar_propiedades, formatear_resultados_texto, buscar_semanticamente
@@ -521,6 +522,18 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
         # Registrar para anti-repetición en RAG
         await _run_sync(registrar_propiedades_vistas, phone, [codigo_detectado])
+
+        # Derivación pasiva al equipo cuando la propiedad ya quedó resuelta.
+        # No bloquea la respuesta del bot: se ejecuta en segundo plano.
+        if lead_doc_full.get("_id"):
+            asyncio.create_task(
+                asyncio.to_thread(
+                    LeadProcessingService.process_lead,
+                    lead_doc_full.get("_id"),
+                    False,
+                    False
+                )
+            )
 
     # === CORRECCIÓN: Guardar código externo aunque no esté en DB ===
     if codigo_externo and propiedad:

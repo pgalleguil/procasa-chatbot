@@ -7,7 +7,11 @@ from .storage import get_db, log_event, save_pending_notification
 from .constants import CHILE_TZ, PipelineStage, InteractionType
 from .lead_router import find_responsible_executive
 from .processing_service import LeadProcessingService
-from .property_lookup import find_property_by_any_identifier, PROPERTY_COLLECTION_NAME
+from .property_lookup import (
+    PROPERTY_COLLECTION_NAME,
+    build_property_lookup_queries,
+    find_property_by_any_identifier,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,22 +28,24 @@ def resolve_property_code(raw_code: str) -> Dict[str, Any]:
     if not code:
         return {"status": "error", "message": "Código vacío"}
 
-    # 1) Búsqueda directa por código interno
+    # Búsqueda robusta usando la misma lógica del router.
     prop = find_property_by_any_identifier(db, code, PROPERTY_COLLECTION_NAME)
     if prop and prop.get("codigo"):
+        matched_by = "codigo"
+        lookup_queries = build_property_lookup_queries(code)
+        for query in lookup_queries[:12]:
+            if db[PROPERTY_COLLECTION_NAME].find_one(query):
+                if "source_url" in str(query) or "metadata.source_url" in str(query):
+                    matched_by = "source_url"
+                elif "codigo_internacional" in str(query):
+                    matched_by = "codigo_internacional"
+                elif "codigo_pi" in str(query) or "codigo_mercadolibre" in str(query):
+                    matched_by = "codigo_externo"
+                break
         return {
             "status": "ok",
             "property_code": str(prop.get("codigo")),
-            "matched_by": "codigo"
-        }
-
-    # 2) Búsqueda por códigos internacionales (ej: TocToc)
-    prop = find_property_by_any_identifier(db, code, PROPERTY_COLLECTION_NAME)
-    if prop and prop.get("codigo"):
-        return {
-            "status": "ok",
-            "property_code": str(prop.get("codigo")),
-            "matched_by": "codigo_internacional"
+            "matched_by": matched_by
         }
 
     return {

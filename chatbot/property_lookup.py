@@ -43,6 +43,10 @@ def build_property_lookup_queries(raw_value: Any) -> list[Dict[str, Any]]:
         {"estado.ejecutivo": _regex(value)},
         {"publicaciones.procasa.url_procasa": value},
         {"publicaciones.procasa.url_procasa": _regex(value)},
+        {"metadata.source_url": value},
+        {"metadata.source_url": _regex(value)},
+        {"source_url": value},
+        {"source_url": _regex(value)},
         {"publicaciones.portal_inmobiliario.url_mercado_libre": value},
         {"publicaciones.portal_inmobiliario.url_mercado_libre": _regex(value)},
         {"publicaciones.portal_inmobiliario.url_pi": value},
@@ -72,6 +76,8 @@ def build_property_lookup_queries(raw_value: Any) -> list[Dict[str, Any]]:
     if "http" in value_lower or ".cl" in value_lower or "/" in value:
         queries.extend([
             {"publicaciones.procasa.url_procasa": _regex(value)},
+            {"metadata.source_url": _regex(value)},
+            {"source_url": _regex(value)},
             {"publicaciones.portal_inmobiliario.url_mercado_libre": _regex(value)},
             {"publicaciones.portal_inmobiliario.url_pi": _regex(value)},
             {"publicaciones.toctoc.url_toctoc": _regex(value)},

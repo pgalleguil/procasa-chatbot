@@ -10,6 +10,7 @@ from config import Config
 from typing import List, Dict, Optional
 from .constants import PipelineStage, InteractionType, EventType, CHILE_TZ
 import logging
+from uuid import uuid4
 from collections import deque
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,49 @@ _mongo_log_last_ts = {}
 _observability_lock = threading.Lock()
 _observability_metrics = {"mongo_sync_on_loop": 0, "event_loop_blocked": 0}
 _event_loop_blocked_ts = deque(maxlen=1000)
+
+
+def record_observability_event(event_type: str, payload: dict | None = None) -> str:
+    """
+    Registro pasivo de eventos del flujo en la colección event_log.
+    Nunca lanza error al caller.
+    """
+    try:
+        event = {
+            "id": str(uuid4()),
+            "event": event_type,
+            "timestamp": datetime.now(CHILE_TZ).isoformat(),
+        }
+        if payload:
+            event.update(payload)
+        db = get_db()
+        db["event_log"].insert_one(event)
+        return event["id"]
+    except Exception:
+        return ""
+
+
+def ensure_conversation_id(phone: str) -> str:
+    """
+    Garantiza un conversation_id persistente por lead.
+    Si no existe, crea uno y lo guarda en la conversación.
+    """
+    try:
+        db = get_db()
+        doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}, {"conversation_id": 1})
+        conversation_id = (doc or {}).get("conversation_id")
+        if conversation_id:
+            return str(conversation_id)
+
+        conversation_id = str(uuid4())
+        db[COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            {"$set": {"conversation_id": conversation_id}},
+            upsert=True
+        )
+        return conversation_id
+    except Exception:
+        return str(uuid4())
 
 
 async def run_in_threadpool(func, *args, **kwargs):

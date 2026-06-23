@@ -6,7 +6,7 @@ from .constants import CHILE_TZ, UNASSIGNED_LABEL
 from .lead_router import find_responsible_executive
 from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, URL_RE
 from config import Config
-from .storage import get_db, save_pending_notification
+from .storage import get_db, save_pending_notification, record_observability_event
 from api_captacion import (
     get_zone_for_comuna, normalize_commune_v2,
     _normalize_tipo, _normalize_operacion
@@ -246,6 +246,17 @@ class LeadProcessingService:
             return {}
 
         logger.info(f"[PROCESS_SERVICE] Re-asignado lead {lead_doc.get('phone')} a {exec_name}")
+        try:
+            record_observability_event("EXECUTIVE_ASSIGNED", {
+                "conversation_id": lead_doc.get("conversation_id") or lead_doc.get("phone"),
+                "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
+                "phone": lead_doc.get("phone"),
+                "executive": exec_name,
+                "assignment_type": assignment_type,
+                "property_code": property_code
+            })
+        except Exception:
+            pass
         
         from .lead_router import get_next_business_slot
         now_cl = datetime.now(CHILE_TZ)

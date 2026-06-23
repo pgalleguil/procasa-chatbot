@@ -3,7 +3,7 @@ import json
 import asyncio
 import pytz
 from datetime import datetime, timedelta
-from .storage import obtener_prospecto, actualizar_prospecto, save_pending_notification, run_in_threadpool
+from .storage import obtener_prospecto, actualizar_prospecto, save_pending_notification, run_in_threadpool, record_observability_event
 from .lead_router import find_responsible_executive, should_send_now, format_whatsapp_template
 from .lead_router import find_responsible_executive, should_send_now, format_whatsapp_template
 from .constants import CHILE_TZ
@@ -176,6 +176,17 @@ def _send_alert_once_sync(
         
         # Marcamos en DB para evitar spam (idempotencia local del servicio de alertas)
         mark_alert_sent(phone, lead_type)
+        try:
+            record_observability_event("ALERT_PERSISTED", {
+                "conversation_id": criteria.get("conversation_id") or phone,
+                "lead_id": criteria.get("_id"),
+                "phone": phone,
+                "alert_type": lead_type,
+                "target_name": exec_name,
+                "target_phone": exec_phone
+            })
+        except Exception:
+            pass
 
         logger.info(f"[ALERT] Guardando notificación persistente para {exec_name} sobre lead {phone} (Prop: {lead_data['property_code']}).")
         

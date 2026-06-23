@@ -15,7 +15,9 @@ from .storage import (
     establecer_nombre_usuario,
     registrar_propiedades_vistas, # NUEVA IMPORTACIÓN (Anti-repetición)
     obtener_propiedades_vistas,    # NUEVA IMPORTACIÓN (Anti-repetición)
-    log_event
+    log_event,
+    record_observability_event,
+    ensure_conversation_id
 )
 from .crm_service import CrmService
 from .constants import PipelineStage, InteractionType, LeadIntent, CHILE_TZ
@@ -217,6 +219,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     db = await _run_sync(get_db)
     lead_doc_full = await _run_sync(lambda: db["leads"].find_one({"phone": phone}) or {})
     prospecto_actual = lead_doc_full.get("prospecto", {})
+    conversation_id = lead_doc_full.get("conversation_id") or prospecto_actual.get("conversation_id")
+    if not conversation_id:
+        conversation_id = await _run_sync(ensure_conversation_id, phone)
+    await _run_sync(record_observability_event, "MESSAGE_RECEIVED", {
+        "conversation_id": conversation_id,
+        "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+        "phone": phone,
+        "message": original_message,
+        "is_from_me": bool(is_from_me)
+    })
 
     # NUEVO: Lógica de Reactivación (Si estaba archivado y vuelve a escribir)
     # Se considera lead nuevo para efectos de procesamiento.
@@ -305,6 +317,12 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     if updates_datos:
         await _run_sync(actualizar_prospecto, phone, updates_datos)
         prospecto_actual.update(updates_datos)
+        await _run_sync(record_observability_event, "DATA_EXTRACTED", {
+            "conversation_id": conversation_id,
+            "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            "phone": phone,
+            "extracted": updates_datos
+        })
 
     # =======================================================
     # 4. ANÁLISIS DE PROPIEDAD (LINK O CÓDIGO) - VERSIÓN CORREGIDA
@@ -389,6 +407,13 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             f"valor_nuevo={codigo_detectado} comuna={propiedad.get('comuna')} origen=LINK_EXTRACTOR"
         )
         await _run_sync(actualizar_prospecto, phone, {"link_detectado": True}, trace_id)
+        await _run_sync(record_observability_event, "PROPERTY_RESOLVED", {
+            "conversation_id": conversation_id,
+            "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            "phone": phone,
+            "property_id": codigo_detectado,
+            "source": "LINK"
+        })
     elif es_link and not temp_prop:
         nuevo_origen = plataforma_origen or "WhatsApp"
         codigo_externo = codigo_externo_raw
@@ -404,6 +429,13 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             if propiedad:
                 codigo_detectado = str(propiedad.get("codigo"))
                 nuevo_origen = "WhatsApp (Int Code)"
+                await _run_sync(record_observability_event, "PROPERTY_RESOLVED", {
+                    "conversation_id": conversation_id,
+                    "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                    "phone": phone,
+                    "property_id": codigo_detectado,
+                    "source": "INTERNATIONAL_CODE"
+                })
                 logger.info(
                     f"[PROPERTY_BEFORE] trace={trace_id} phone={phone} variable=propiedad valor_anterior={_antes_int}"
                 )
@@ -424,6 +456,13 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 codigo_detectado = str(propiedad.get("codigo"))
                 if not prospecto_actual.get("origen"):
                     nuevo_origen = "WhatsApp"
+                await _run_sync(record_observability_event, "PROPERTY_RESOLVED", {
+                    "conversation_id": conversation_id,
+                    "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                    "phone": phone,
+                    "property_id": codigo_detectado,
+                    "source": "SHORT_CODE"
+                })
                 logger.info(
                     f"[PROPERTY_BEFORE] trace={trace_id} phone={phone} variable=propiedad valor_anterior={_antes_short}"
                 )
@@ -738,21 +777,47 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     prospecto_actual = await _run_sync(obtener_prospecto, phone) or {} # Recargamos prospecto para lead score
     lead_doc = await _run_sync(CrmService.get_lead, phone) or {} # Obtenemos documento completo para score
     lead_score = await _run_sync(CrmService.calculate_score, lead_doc)
+    await _run_sync(record_observability_event, "INTENT_DETECTED", {
+        "conversation_id": conversation_id,
+        "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
+        "phone": phone,
+        "intent": intencion,
+        "lead_intent": str(selected_intent),
+        "score": lead_score
+    })
 
     # CORRECCIÓN DE TIEMPOS: 60 minutos para evitar spam de correo
     if intencion == "escalado_urgente":
+        await _run_sync(record_observability_event, "ALERT_TRIGGERED", {
+            "conversation_id": conversation_id,
+            "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
+            "phone": phone,
+            "alert_type": "EscaladoUrgente"
+        })
         asyncio.create_task(send_alert_once(phone=phone, lead_type="EscaladoUrgente", lead_score=lead_score,
                         criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
                         full_history=historial, window_minutes=60, lead_type_label="ESCALADO URGENTE"))
         metadata_tipo = {"tipo": "escalado_urgente", "intencion": intencion}
 
     elif intencion == "agendar_visita":
+        await _run_sync(record_observability_event, "ALERT_TRIGGERED", {
+            "conversation_id": conversation_id,
+            "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
+            "phone": phone,
+            "alert_type": "InteresVisita"
+        })
         asyncio.create_task(send_alert_once(phone=phone, lead_type="InteresVisita", lead_score=lead_score,
                         criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
                         full_history=historial, window_minutes=60, lead_type_label="Interés de Visita"))
         metadata_tipo = {"tipo": "gestion_visita", "intencion": intencion}
 
     elif intencion == "contacto_directo":
+        await _run_sync(record_observability_event, "ALERT_TRIGGERED", {
+            "conversation_id": conversation_id,
+            "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
+            "phone": phone,
+            "alert_type": "SolicitudContacto"
+        })
         asyncio.create_task(send_alert_once(phone=phone, lead_type="SolicitudContacto", lead_score=lead_score,
                         criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
                         full_history=historial, window_minutes=60, lead_type_label="Solicitud de Contacto"))
@@ -780,4 +845,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         len(respuesta or "")
     )
     await _run_sync(guardar_mensaje, phone, "assistant", respuesta, metadata_tipo)
+    await _run_sync(record_observability_event, "RESPONSE_SENT", {
+        "conversation_id": conversation_id,
+        "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
+        "phone": phone,
+        "intent": intencion,
+        "response_len": len(respuesta or "")
+    })
     return respuesta

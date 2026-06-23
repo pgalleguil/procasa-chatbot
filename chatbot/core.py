@@ -29,6 +29,7 @@ from .utils import parse_bool
 from .alert_service import send_alert_once
 from .classifier import es_propietario, es_corredor_externo
 from .processing_service import LeadProcessingService
+from .property_lookup import PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, get_prop_location, get_prop_operation
 
 # RAG IMPORT
 from .rag import buscar_propiedades, formatear_resultados_texto, buscar_semanticamente
@@ -138,36 +139,12 @@ def _buscar_propiedad_en_universo(db, raw_value, portal: str | None = None):
             {"publicaciones.procasa.url_procasa": {"$regex": re.escape(value), "$options": "i"}},
         ])
 
-    queries = portal_specific_queries + [
-        {"codigo": value},
-        {"codigo": value_int},
-        {"codigo_pi": value},
-        {"codigo_pi": value_int},
-        {"codigo_mercadolibre": value},
-        {"codigo_mercadolibre": value_int},
-        {"codigo_yapo": value},
-        {"codigo_yapo": value_int},
-        {"codigo_internacional": value},
-        {"codigo_internacional": value_int},
-        {"publicaciones.codigo_internacional": value},
-        {"publicaciones.codigo_internacional": value_int},
-        {"publicaciones.yapo.codigo_yapo": value},
-        {"publicaciones.yapo.codigo_yapo": value_int},
-        {"publicaciones.portal_inmobiliario.codigo_pi": value},
-        {"publicaciones.portal_inmobiliario.codigo_pi": value_int},
-        {"publicaciones.procasa.url_procasa": {"$regex": re.escape(value), "$options": "i"}},
-        {"publicaciones.yapo.url_yapo": {"$regex": re.escape(value), "$options": "i"}},
-        {"publicaciones.portal_inmobiliario.url_pi": {"$regex": re.escape(value), "$options": "i"}},
-        {"publicaciones.portal_inmobiliario.url_mercado_libre": {"$regex": re.escape(value), "$options": "i"}},
-        {"toctoc.enlace": {"$regex": re.escape(value), "$options": "i"}},
-        {"publicaciones.toctoc.enlace": {"$regex": re.escape(value), "$options": "i"}},
-    ]
-
-    for query in queries:
-        prop = db[Config.COLLECTION_NAME].find_one(query)
+    for query in portal_specific_queries:
+        prop = db[PROPERTY_COLLECTION_NAME].find_one(query)
         if prop:
             return prop
-    return None
+
+    return find_property_by_any_identifier(db, value, PROPERTY_COLLECTION_NAME)
 
 # ==========================================
 #   PROCESADOR PRINCIPAL

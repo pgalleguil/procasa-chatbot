@@ -9,6 +9,12 @@ from pymongo import MongoClient
 from config import Config
 from .storage import get_db
 from .utils import safe_int_conversion
+from .property_lookup import (
+    PROPERTY_COLLECTION_NAME,
+    find_property_by_any_identifier,
+    get_prop_executive,
+    get_prop_location,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -251,54 +257,10 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
     # BUSQUEDA ROBUSTA (String o Int)
     prop = None
     if property_code:
-        p_int = safe_int_conversion(property_code)
-        logger.info(f"[ROUTER] Buscando responsable para propiedad: '{property_code}' (int: {p_int})")
-        
-        # 1. Búsqueda Directa Exacta (Prioridad 1)
-        exact_query = {
-            "$or": [
-                {"codigo": property_code},
-                {"codigo": p_int},
-                {"codigo_pi": property_code},
-                {"codigo_pi": p_int},
-                {"codigo_mercadolibre": property_code},
-                {"codigo_mercadolibre": p_int},
-                {"codigo_yapo": property_code},
-                {"codigo_yapo": p_int},
-                {"codigo_internacional": property_code},
-                {"codigo_internacional": p_int},
-                {"publicaciones.codigo_internacional": property_code},
-                {"publicaciones.codigo_internacional": p_int},
-                {"publicaciones.yapo.codigo_yapo": property_code},
-                {"publicaciones.yapo.codigo_yapo": p_int},
-                {"publicaciones.portal_inmobiliario.codigo_pi": property_code},
-                {"publicaciones.portal_inmobiliario.codigo_pi": p_int},
-                {"publicaciones.procasa.url_procasa": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                {"publicaciones.yapo.url_yapo": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                {"publicaciones.portal_inmobiliario.url_mercado_libre": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-            ]
-        }
-        prop = db[Config.COLLECTION_NAME].find_one(exact_query)
+        logger.info(f"[ROUTER] Buscando responsable para propiedad: '{property_code}'")
+        prop = find_property_by_any_identifier(db, property_code, PROPERTY_COLLECTION_NAME)
 
-        # 2. Búsqueda por URL si no se encontró y si parece un ID largo o URL
-        if not prop and len(str(property_code)) >= 5:
-            url_query = {
-                "$or": [
-                    {"codigo_pi": property_code.replace("MLC", "") if isinstance(property_code, str) else property_code},
-                    {"publicaciones.portal_inmobiliario.codigo_pi": property_code},
-                    {"publicaciones.portal_inmobiliario.url_pi": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                    {"publicaciones.portal_inmobiliario.url_mercado_libre": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                    {"publicaciones.toctoc.url_toctoc": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                    {"publicaciones.toctoc.enlace": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                    {"publicaciones.yapo.url_yapo": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                    {"publicaciones.procasa.url_procasa": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                    {"toctoc.enlace": {"$regex": re.escape(str(property_code)), "$options": "i"}},
-                    {"url_yapo": {"$regex": re.escape(str(property_code)), "$options": "i"}}
-                ]
-            }
-            prop = db[Config.COLLECTION_NAME].find_one(url_query)
-
-        # 3. Respaldo: Si property_code parece link, extraer IDs y re-buscar
+        # Respaldo: Si property_code parece link, extraer IDs y re-buscar
         if not prop and ("http" in str(property_code).lower() or ".cl" in str(property_code).lower()):
             from .link_extractor import extraer_codigo_yapo, extraer_codigo_mercadolibre
             potential_ids = []
@@ -314,16 +276,10 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
             
             if potential_ids:
                 logger.info(f"[ROUTER] Intentando match profundo con IDs extraídos de URL: {list(set(potential_ids))}")
-                prop = db[Config.COLLECTION_NAME].find_one({
-                    "$or": [
-                        {"codigo": {"$in": potential_ids}},
-                        {"codigo": {"$in": [safe_int_conversion(x) for x in potential_ids]}},
-                        {"codigo_internacional": {"$in": potential_ids}},
-                        {"publicaciones.codigo_internacional": {"$in": potential_ids}},
-                        {"publicaciones.yapo.codigo_yapo": {"$in": potential_ids}},
-                        {"publicaciones.portal_inmobiliario.codigo_pi": {"$in": potential_ids}}
-                    ]
-                })
+                for candidate in potential_ids:
+                    prop = find_property_by_any_identifier(db, candidate, PROPERTY_COLLECTION_NAME)
+                    if prop:
+                        break
     
     region = ""
     norm_region = ""
@@ -333,7 +289,7 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
     phone = None
 
     if not prop and property_code:
-        logger.warning(f"[ROUTER] Propiedad {property_code} NO encontrada en {Config.COLLECTION_NAME}. Usando fallback.")
+        logger.warning(f"[ROUTER] Propiedad {property_code} NO encontrada en {PROPERTY_COLLECTION_NAME}. Usando fallback.")
         target_executive_name = get_next_round_robin_executive(norm_comuna)
         
         # --- Alerta de Propiedad Faltante (Solicitado por usuario) ---
@@ -347,7 +303,7 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
                 "property_code": property_code,
                 "lead_type": "MISSING_PROPERTY_ALERT",
                 "nombre": "Sistema de Alertas",
-                "last_message": f"⚠️ ATENCIÓN: Se recibió un lead{lead_info} para la propiedad '{property_code}', pero este código NO existe en la colección 'universo_cartera'. Es probable que la base de datos esté desactualizada."
+                "last_message": f"⚠️ ATENCIÓN: Se recibió un lead{lead_info} para la propiedad '{property_code}', pero este código NO existe en la colección '{PROPERTY_COLLECTION_NAME}'. Es probable que la base de datos esté desactualizada."
             }
             save_pending_notification(alert_payload)
             logger.info(f"[ROUTER] Alerta de propiedad faltante programada para el administrador.")
@@ -358,10 +314,11 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
         logger.info("[ROUTER] Lead sin propiedad confirmada. Aplicando fallback a Round Robin.")
         target_executive_name = get_next_round_robin_executive(norm_comuna)
     else:
-        original_executive = prop.get("ejecutivo", "")
+        original_executive = get_prop_executive(prop)
         logger.info(f"[ROUTER] Propiedad encontrada. Ejecutivo original en ficha: '{original_executive}'")
-        region = prop.get("region", "")
-        prop_comuna = prop.get("comuna", "")
+        location = get_prop_location(prop)
+        region = location["region"]
+        prop_comuna = location["comuna"]
         
         norm_region = normalize_text(region)
         norm_comuna = normalize_text(prop_comuna) if prop_comuna else norm_comuna
@@ -422,7 +379,7 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
     phone = get_executive_phone(target_executive_name)
     
     # If we couldn't find the phone for the target, but we had an original executive with phone in the property card?
-    # The property card in universo_cartera has 'email_ejecutivo' and 'movil_ejecutivo' sometimes.
+    # Algunas fichas nuevas todavía traen teléfonos de respaldo a nivel raíz.
     if not phone and target_executive_name == original_executive:
          phone = prop.get("movil_ejecutivo") or prop.get("fono_ejecutivo")
 

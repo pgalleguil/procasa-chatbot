@@ -5,6 +5,7 @@ from typing import Tuple, Optional
 from .storage import get_db
 from .utils import safe_int_conversion
 from config import Config
+from .property_lookup import PROPERTY_COLLECTION_NAME, find_property_by_any_identifier
 
 URL_RE = re.compile(r'https?://[^\s<>\]\)"]+', re.IGNORECASE)
 logger = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
     """
     urls = URL_RE.findall(mensaje)
     db = get_db()
-    coleccion = db[Config.COLLECTION_NAME]
+    coleccion = db[PROPERTY_COLLECTION_NAME]
     logger.info(f"[LINK_TRACE] trace={trace_id or 'no-trace'} phone={phone} inicio_resolucion_link")
     logger.info(
         f"[LINK_EXTRACT]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
@@ -97,7 +98,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
         # === PASO 1: Identificar plataforma ===
         plataforma = detectar_plataforma(url_clean)
         
-        print(f"\n[INFO] Plataforma detectada: {plataforma} | Buscando en {Config.COLLECTION_NAME}")
+        print(f"\n[INFO] Plataforma detectada: {plataforma} | Buscando en {PROPERTY_COLLECTION_NAME}")
         print(f"[LINK_DEBUG] URL recibida: {url_clean}")
         print(f"[LINK_DEBUG] URL normalizada: {url_norm}")
         logger.info(
@@ -126,20 +127,20 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 logger.info(f"[LINK_ID_FAIL]\ntrace={trace_id or 'no-trace'}\nphone={phone}\nurl={url_clean}")
             query_usada = {"publicaciones.yapo.url_yapo": url_clean}
             logger.info(
-                f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={Config.COLLECTION_NAME}\n"
+                f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={PROPERTY_COLLECTION_NAME}\n"
                 f"filtro_exacto={query_usada}"
             )
-            prop = coleccion.find_one({"publicaciones.yapo.url_yapo": url_clean})
+            prop = find_property_by_any_identifier(db, url_clean, PROPERTY_COLLECTION_NAME)
             debug_info["exact_match"] = bool(prop)
             debug_info["regex_match"] = False
             debug_info["urls_encontradas"] = []
             if not prop and cod_yapo:
                 regex_q = {"publicaciones.yapo.url_yapo": {"$regex": re.escape(cod_yapo) + r"$", "$options": "i"}}
                 logger.info(
-                    f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={Config.COLLECTION_NAME}\n"
+                    f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={PROPERTY_COLLECTION_NAME}\n"
                     f"filtro_exacto={regex_q}"
                 )
-                prop = coleccion.find_one(regex_q)
+                prop = find_property_by_any_identifier(db, cod_yapo, PROPERTY_COLLECTION_NAME)
                 debug_info["regex_match"] = bool(prop)
                 if prop:
                     debug_info["urls_encontradas"] = [prop.get("publicaciones", {}).get("yapo", {}).get("url_yapo") or prop.get("url_yapo")]
@@ -161,7 +162,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 for i, q in enumerate([c for c in candidatos if c], 1):
                     print(f"[LINK_DEBUG] Yapo query #{i}: {q}")
                     logger.info(
-                        f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={Config.COLLECTION_NAME}\n"
+                        f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={PROPERTY_COLLECTION_NAME}\n"
                         f"filtro_exacto={q}"
                     )
                     propiedad = coleccion.find_one(q)
@@ -286,7 +287,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
             print(f"[FALLO] NO se encontró propiedad con el link '{url_clean[:80]}'")
             logger.info(
                 f"[LINK_QUERY_EMPTY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
-                f"codigo_yapo={codigo_externo}\ncollection={Config.COLLECTION_NAME}"
+                f"codigo_yapo={codigo_externo}\ncollection={PROPERTY_COLLECTION_NAME}"
             )
             similares = []
             try:

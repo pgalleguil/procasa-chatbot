@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any, List
 from .constants import CHILE_TZ, UNASSIGNED_LABEL
 from .lead_router import find_responsible_executive
 from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, URL_RE
+from .property_lookup import PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, get_prop_location, get_prop_operation
 from config import Config
 from .storage import get_db, save_pending_notification, record_observability_event
 from api_captacion import (
@@ -86,12 +87,7 @@ class LeadProcessingService:
                 c_int = extraer_codigo_internacional(all_text)
                 if c_int:
                     db = LeadProcessingService._db()
-                    prop_int = db["universo_cartera"].find_one({
-                        "$or": [
-                            {"codigo_internacional": c_int},
-                            {"publicaciones.codigo_internacional": c_int}
-                        ]
-                    })
+                    prop_int = find_property_by_any_identifier(db, c_int, PROPERTY_COLLECTION_NAME)
                     logger.info(f"[PROCESS_SERVICE] query codigo_internacional={c_int} result={(prop_int.get('codigo') if prop_int else None)}")
                     if prop_int:
                         property_code = str(prop_int.get("codigo"))
@@ -101,16 +97,14 @@ class LeadProcessingService:
             try:
                 db = LeadProcessingService._db()
                 p_code_int = int(property_code) if str(property_code).isdigit() else None
-                prop = db["universo_cartera"].find_one({"codigo": p_code_int}) if p_code_int else None
-                if not prop:
-                    prop = db["universo_cartera"].find_one({"codigo": str(property_code)})
+                prop = find_property_by_any_identifier(db, property_code, PROPERTY_COLLECTION_NAME)
                 
                 if prop:
-                    details = prop.get("details", {})
-                    # Usar la comuna del scraping que suele tener acentos
-                    comuna = prop.get("comuna") or details.get("comuna")
-                    tipo = tipo or prop.get("tipo") or details.get("tipo_propiedad")
-                    operacion = operacion or prop.get("operacion") or details.get("operacion")
+                    location = get_prop_location(prop)
+                    operation = get_prop_operation(prop)
+                    comuna = comuna or location["comuna"]
+                    tipo = tipo or operation["tipo"]
+                    operacion = operacion or operation["operacion"]
             except Exception as e:
                 logger.warning(f"[PROCESS_SERVICE] Error buscando prop {property_code} para clasificar: {e}")
 

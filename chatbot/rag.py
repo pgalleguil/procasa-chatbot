@@ -9,6 +9,7 @@ from .storage import get_db
 from .utils import safe_int_conversion
 from .semantic_engine import generate_embedding
 from .geo_utils import get_neighboring_communes
+from .property_lookup import PROPERTY_COLLECTION_NAME
 
 import unicodedata
 from sklearn.metrics.pairwise import cosine_similarity
@@ -70,15 +71,24 @@ def normalizar_criterio(key: str, valor: str) -> Optional[str]:
     return valor
 
 def construir_query(criterios: Dict) -> Dict:
-    query = {}
+    clauses = []
     
     # 1. Operación
     op = normalizar_criterio("operacion", criterios.get("operacion"))
-    if op: query["operacion"] = op
+    if op:
+        clauses.append({"$or": [
+            {"operacion": op},
+            {"tipo_operacion.venta": True if op == "Venta" else False},
+            {"tipo_operacion.arriendo": True if op == "Arriendo" else False},
+        ]})
 
     # 2. Tipo de propiedad
     tipo = normalizar_criterio("tipo", criterios.get("tipo"))
-    if tipo: query["tipo"] = tipo
+    if tipo:
+        clauses.append({"$or": [
+            {"tipo": tipo},
+            {"tipo_operacion.tipo": tipo},
+        ]})
 
     # 3. Comuna (Multi-comuna)
     comuna = criterios.get("comuna")
@@ -86,34 +96,62 @@ def construir_query(criterios: Dict) -> Dict:
         if "," in comuna:
             comunas_lista = [c.strip() for c in comuna.split(",") if c.strip()]
             if comunas_lista:
-                query["comuna"] = {"$in": [re.compile(get_accent_regex(c), re.IGNORECASE) for c in comunas_lista]}
+                clauses.append({"$or": [
+                    {"comuna": {"$in": [re.compile(get_accent_regex(c), re.IGNORECASE) for c in comunas_lista]}},
+                    {"ubicacion.comuna": {"$in": [re.compile(get_accent_regex(c), re.IGNORECASE) for c in comunas_lista]}},
+                ]})
         else:
-            query["comuna"] = {"$regex": get_accent_regex(comuna), "$options": "i"}
+            comuna_regex = {"$regex": get_accent_regex(comuna), "$options": "i"}
+            clauses.append({"$or": [
+                {"comuna": comuna_regex},
+                {"ubicacion.comuna": comuna_regex},
+            ]})
 
     # 4. Precio (Rango inteligente)
     presupuesto = safe_int_conversion(criterios.get("presupuesto"))
     if presupuesto > 0:
         if presupuesto < 30000:
-            query["precio_uf"] = {"$lte": presupuesto * 1.15} # Reducido margen a 15%
+            clauses.append({"$or": [
+                {"precio_uf": {"$lte": presupuesto * 1.15}},
+                {"tipo_operacion.precio_venta.precio_uf": {"$lte": presupuesto * 1.15}},
+                {"tipo_operacion.precio_arriendo.precio_uf": {"$lte": presupuesto * 1.15}},
+            ]})
         else:
-            query["precio_clp"] = {"$lte": presupuesto * 1.15}
+            clauses.append({"$or": [
+                {"precio_clp": {"$lte": presupuesto * 1.15}},
+                {"tipo_operacion.precio_venta.precio_clp": {"$lte": presupuesto * 1.15}},
+                {"tipo_operacion.precio_arriendo.precio_clp": {"$lte": presupuesto * 1.15}},
+            ]})
 
     # 5. Dormitorios (mínimo)
     dorms = safe_int_conversion(criterios.get("dormitorios"))
     if dorms > 0:
-        query["dormitorios"] = {"$gte": dorms}
+        clauses.append({"$or": [
+            {"dormitorios": {"$gte": dorms}},
+            {"caracteristicas.dormitorios": {"$gte": dorms}},
+        ]})
 
     # 6. Baños (mínimo)
     banos = safe_int_conversion(criterios.get("banos"))
     if banos > 0:
-        query["banos"] = {"$gte": banos}
+        clauses.append({"$or": [
+            {"banos": {"$gte": banos}},
+            {"caracteristicas.banos": {"$gte": banos}},
+        ]})
         
     # 7. Estacionamientos (mínimo)
     estacionamientos = safe_int_conversion(criterios.get("estacionamientos"))
     if estacionamientos > 0:
-        query["estacionamientos"] = {"$gte": estacionamientos}
+        clauses.append({"$or": [
+            {"estacionamientos": {"$gte": estacionamientos}},
+            {"caracteristicas.estacionamientos": {"$gte": estacionamientos}},
+        ]})
 
-    return query
+    if not clauses:
+        return {}
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
 
 def buscar_propiedades(criterios: Dict, exclude_codes: List[str] = None, limit: int = 3) -> List[Dict]:
     """
@@ -122,13 +160,13 @@ def buscar_propiedades(criterios: Dict, exclude_codes: List[str] = None, limit: 
     limit: Máximo estricto (default 3).
     """
     db = get_db()
-    collection = db[Config.COLLECTION_NAME]
+    collection = db[PROPERTY_COLLECTION_NAME]
     
     query = construir_query(criterios)
     
     # AGREGADO: Exclusión de propiedades ya vistas
     if exclude_codes:
-        query["codigo"] = {"$nin": exclude_codes}
+        query = {"$and": [query, {"codigo": {"$nin": exclude_codes}}]} if query else {"codigo": {"$nin": exclude_codes}}
 
     if not query:
         return []
@@ -144,7 +182,7 @@ def buscar_propiedades(criterios: Dict, exclude_codes: List[str] = None, limit: 
 
     try:
         # Ordenamos por precio ascendente por defecto
-        cursor = collection.find(query, projection).sort("precio_uf", 1).limit(limit)
+        cursor = collection.find(query, projection).sort([("tipo_operacion.precio_venta.precio_uf", 1), ("precio_uf", 1)]).limit(limit)
         resultados = list(cursor)
         return resultados
     except Exception as e:

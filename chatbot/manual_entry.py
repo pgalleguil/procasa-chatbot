@@ -7,6 +7,7 @@ from .storage import get_db, log_event, save_pending_notification
 from .constants import CHILE_TZ, PipelineStage, InteractionType
 from .lead_router import find_responsible_executive
 from .processing_service import LeadProcessingService
+from .property_lookup import find_property_by_any_identifier, PROPERTY_COLLECTION_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +25,7 @@ def resolve_property_code(raw_code: str) -> Dict[str, Any]:
         return {"status": "error", "message": "Código vacío"}
 
     # 1) Búsqueda directa por código interno
-    prop = db["universo_cartera"].find_one(
-        {"$or": [{"codigo": code}, {"codigo": str(code)}]},
-        {"codigo": 1}
-    )
+    prop = find_property_by_any_identifier(db, code, PROPERTY_COLLECTION_NAME)
     if prop and prop.get("codigo"):
         return {
             "status": "ok",
@@ -36,17 +34,7 @@ def resolve_property_code(raw_code: str) -> Dict[str, Any]:
         }
 
     # 2) Búsqueda por códigos internacionales (ej: TocToc)
-    prop = db["universo_cartera"].find_one(
-        {
-            "$or": [
-                {"codigo_internacional": code},
-                {"codigo_internacional": str(code)},
-                {"publicaciones.codigo_internacional": code},
-                {"publicaciones.codigo_internacional": str(code)}
-            ]
-        },
-        {"codigo": 1}
-    )
+    prop = find_property_by_any_identifier(db, code, PROPERTY_COLLECTION_NAME)
     if prop and prop.get("codigo"):
         return {
             "status": "ok",

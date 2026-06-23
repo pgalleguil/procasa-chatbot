@@ -373,8 +373,10 @@ class LeadProcessingService:
 
                 db["leads"].update_one({"_id": query_id}, {"$set": update_data})
                 
-                # 3. Notificar si fue re-asignado o pedido explícitamente
-                if update_data.get("auto_reassigned") or force_notif:
+                # 3. Notificar solo si el lead realmente quedó HOT.
+                # La asignación sigue ocurriendo, pero el aviso al ejecutivo se reserva
+                # para leads con intención fuerte para evitar ruido en el equipo.
+                if update_data.get("auto_reassigned"):
                     # Evita un find_one adicional: armamos snapshot con los datos ya disponibles.
                     prospecto_data = lead.get("prospecto", {}) or {}
                     exec_name = update_data.get("ejecutivo_asignado") or update_data.get("prospecto.ejecutivo") or lead.get("ejecutivo_asignado") or prospecto_data.get("ejecutivo")
@@ -392,7 +394,7 @@ class LeadProcessingService:
                         HOT_STAGES = {"VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION"}
                         temp = "HOT" if (last_intent_val in HOT_INTENT or stage_val in HOT_STAGES) else "COLD"
                         
-                    if temp == "HOT" or force_notif:
+                    if temp == "HOT":
                         structured_alert = {
                             "phone": lead.get("phone"),
                             "property_code": prop_code,

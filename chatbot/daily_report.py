@@ -175,8 +175,11 @@ async def get_critical_leads_summary():
 
 async def send_daily_sla_report(group_id: str):
     """Genera y envía el reporte de SLA al grupo especificado."""
+    # Desactivado: no se envían más reportes al grupo de WhatsApp.
+    logger.info("[DAILY_REPORT] Envío al grupo desactivado por configuración.")
     if not group_id:
         return False
+    return False
 
     try:
         sorted_summary = await get_critical_leads_summary()
@@ -231,43 +234,8 @@ async def send_daily_sla_report(group_id: str):
 
 async def check_and_run_daily_report(force: bool = False):
     """Lógica de scheduler que verifica si toca enviar el reporte hoy."""
-    db = get_db()
-    now_cl = datetime.now(CHILE_TZ)
-    
-    # 1. Filtro de Días de Semana (Lunes a Viernes)
-    if not force and now_cl.weekday() >= 5: # 5=Sábado, 6=Domingo
-        return
-
-    # 2. Filtro de Horario estricto (Entre las 9:30 AM y 10:30 AM)
-    if not force:
-        # Se asegura de no enviarlo a media tarde si el servidor reinicia
-        total_minutes = now_cl.hour * 60 + now_cl.minute
-        if total_minutes < 9 * 60 + 30 or total_minutes > 10 * 60 + 30:
-            return
-
-    today_str = now_cl.strftime("%Y-%m-%d")
-    
-    # Evitar duplicados
-    state = db["system_state"].find_one({"type": "daily_report"})
-    if state and state.get("last_run") == today_str:
-        return
-
-    # Fallback al ID de grupo sacado del .env en caso que no esté seteado en Render
-    group_id = getattr(Config, "DAILY_REPORT_GROUP_ID", None)
-    if not group_id:
-        group_id = "56990152481-1598919271@g.us"
-        logger.warning(f"[DAILY_REPORT] Configuración DAILY_REPORT_GROUP_ID ausente. Usando fallback fijo: {group_id}")
-
-    logger.info(f"[DAILY_REPORT] Condiciones cumplidas. Ejecutando evaluación para reporte diario ({today_str})...")
-    await send_daily_sla_report(group_id)
-    
-    # IMPORTANTE: Ahora marcamos como "ejecutado hoy" SIN IMPORTAR el resultado, 
-    # para asegurar la regla estricta de evaluar solamente una vez a las 09:30 y no molestar el resto del día.
-    db["system_state"].update_one(
-        {"type": "daily_report"},
-        {"$set": {"last_run": today_str}},
-        upsert=True
-    )
+    logger.info("[DAILY_REPORT] Scheduler desactivado temporalmente. No se enviará reporte al grupo.")
+    return
 
 async def send_personalized_morning_summary():
     """Calcula y envía el resumen diario personalizado a cada ejecutivo."""
@@ -307,7 +275,11 @@ async def send_personalized_morning_summary():
             
         stage = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
         temp = lead.get("lead_temperature") or "COLD"
-        is_pending = stage in ["NEW", "NUEVO", ""]
+        is_pending = (
+            stage in ["NEW", "NUEVO", ""]
+            and not lead.get("last_event_type") in ["ASSIGNMENT", "HUMAN_NOTE", "GESTION_LOG", "SEND_WA_LEAD", "SEND_EMAIL_LEAD"]
+            and not lead.get("ejecutivo_asignado") in [None, "", "No Asignado", "Sin Asignar", UNASSIGNED_LABEL]
+        )
         
         created_at_val = lead.get("created_at") or lead.get("timestamp")
         is_new = False
@@ -376,28 +348,5 @@ async def send_personalized_morning_summary():
 
 async def check_and_run_personalized_summary(force: bool = False):
     """Verifica si corresponde enviar el resumen matutino personalizado (09:00 AM)."""
-    db = get_db()
-    now_cl = datetime.now(CHILE_TZ)
-    
-    if not force and now_cl.weekday() >= 5:
-        return
-        
-    if not force:
-        total_minutes = now_cl.hour * 60 + now_cl.minute
-        if total_minutes < 9 * 60 or total_minutes > 10 * 60:
-            return
-            
-    today_str = now_cl.strftime("%Y-%m-%d")
-    
-    state = db["system_state"].find_one({"type": "morning_summary"})
-    if state and state.get("last_run") == today_str:
-        return
-        
-    logger.info(f"[MORNING_SUMMARY] Ejecutando resumen matutino personalizado ({today_str})...")
-    await send_personalized_morning_summary()
-    
-    db["system_state"].update_one(
-        {"type": "morning_summary"},
-        {"$set": {"last_run": today_str}},
-        upsert=True
-    )
+    logger.info("[MORNING_SUMMARY] Envío al grupo desactivado temporalmente.")
+    return

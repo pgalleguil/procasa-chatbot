@@ -5,6 +5,7 @@ from config import Config
 from .utils import limpiar_telefono
 from .grok_client import client # Cliente OpenAI-compatible apuntando a DeepSeek
 from pymongo import MongoClient
+from .property_lookup import PROPERTY_COLLECTION_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ def es_propietario(phone: str) -> tuple[bool, str]:
         if len(limpio) == 9:
             variantes.append(limpio[1:])  # por si guardaron sin el 9 inicial
 
-        resultado = db[Config.COLLECTION_NAME].find_one(
+        resultado = db[PROPERTY_COLLECTION_NAME].find_one(
             {"movil_propietario": {"$in": variantes}},
             {"nombre_propietario": 1, "apellido_paterno_propietario": 1}
         )

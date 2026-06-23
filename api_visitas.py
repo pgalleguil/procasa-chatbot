@@ -17,6 +17,7 @@ from pathlib import Path
 
 from config import Config
 from chatbot.constants import CHILE_TZ
+from chatbot.property_lookup import PROPERTY_COLLECTION_NAME
 from chatbot.whatsapp_client import send_whatsapp_message
 
 from services.security_contracts import SecurityContracts
@@ -165,7 +166,7 @@ async def _enrich_with_property_data(data: dict) -> dict:
         try:
             from chatbot.storage import get_async_db
             adb = get_async_db()
-            prop_data = await adb["universo_cartera"].find_one({"codigo": prop_code})
+            prop_data = await adb[PROPERTY_COLLECTION_NAME].find_one({"codigo": prop_code})
             if prop_data:
                 data["_property_found"] = True
                 data["property_comuna"] = prop_data.get("comuna", "")

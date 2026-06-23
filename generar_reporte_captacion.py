@@ -1,25 +1,20 @@
 """
 generar_reporte_captacion.py
 ============================
-Genera un reporte Excel completo de captaciones con 6 hojas:
-  1. Resumen Ejecutivo
-  2. Gestión de Captaciones
-  3. Resultado de Gestión
-  4. Productividad Diaria
-  5. Seguimiento Comercial
-  6. Dashboard (gráficos y tablas visuales)
-
-Uso:
-    python generar_reporte_captacion.py
-    python generar_reporte_captacion.py --sla 3   (SLA personalizado en días)
-    python generar_reporte_captacion.py --output mi_reporte.xlsx
-
-Requisitos:
-    pip install openpyxl pymongo python-dotenv
+Genera un reporte Excel completo de captaciones con 6 hojas.
 """
 
 import sys
 import os
+import io
+
+# Forzar UTF-8 en consola Windows para evitar errores de encoding
+if hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'buffer'):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+
 import argparse
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
@@ -53,7 +48,7 @@ try:
     from openpyxl.utils import get_column_letter
     from openpyxl.chart import BarChart, PieChart, LineChart, Reference
     from openpyxl.chart.series import DataPoint
-    from openpyxl.chart.label import DataLabel
+    from openpyxl.chart.label import DataLabelList
 except ImportError:
     print("[ERROR] openpyxl no está instalado. Ejecuta: pip install openpyxl")
     sys.exit(1)
@@ -864,7 +859,7 @@ def hoja_dashboard(wb, captaciones):
     data3    = Reference(ws, min_col=2, min_row=row_est,   max_row=est_end)
     chart3.add_data(data3, titles_from_data=True)
     chart3.set_categories(labels3)
-    chart3.dataLabels = DataLabel()
+    chart3.dataLabels = DataLabelList()
     chart3.dataLabels.showPercent = True
     chart3.dataLabels.showCatName = False
 
@@ -984,14 +979,15 @@ def main():
     # Guardar
     try:
         wb.save(output_path)
-        print(f"\n✅ Reporte generado exitosamente:\n   {output_path}")
-        print(f"\n📊 Resumen:")
-        print(f"   • Total captaciones procesadas : {len(captaciones)}")
         gestionadas = sum(1 for c in captaciones if c["is_gestionada"])
-        print(f"   • Gestionadas                  : {gestionadas}")
-        print(f"   • Sin gestionar                : {len(captaciones) - gestionadas}")
-        ejecutivos = {c['ejecutivo'] for c in captaciones}
-        print(f"   • Ejecutivos encontrados       : {len(ejecutivos)}")
+        ejecutivos  = {c['ejecutivo'] for c in captaciones}
+        print("\n[OK] Reporte generado exitosamente:")
+        print(f"     {output_path}")
+        print("\n[RESUMEN]")
+        print(f"  Total captaciones procesadas : {len(captaciones)}")
+        print(f"  Gestionadas                  : {gestionadas}")
+        print(f"  Sin gestionar                : {len(captaciones) - gestionadas}")
+        print(f"  Ejecutivos encontrados       : {len(ejecutivos)}")
     except Exception as e:
         print(f"[ERROR] No se pudo guardar el archivo: {e}")
         sys.exit(1)

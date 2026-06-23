@@ -5,6 +5,7 @@ from config import Config
 from .utils import safe_int_conversion
 
 PROPERTY_COLLECTION_NAME = "universo_cartera_prop360"
+LEGACY_PROPERTY_COLLECTION_NAME = "universo_cartera"
 
 
 def _clean_text(value: Any) -> str:
@@ -103,6 +104,20 @@ def find_property_by_any_identifier(db, raw_value: Any, collection_name: str = P
         if prop:
             return prop
     return None
+
+
+def find_property_with_fallback(db, raw_value: Any):
+    """
+    Busca primero en la colección nueva y luego en la legacy.
+    Devuelve (propiedad, collection_name).
+    """
+    prop = find_property_by_any_identifier(db, raw_value, PROPERTY_COLLECTION_NAME)
+    if prop:
+        return prop, PROPERTY_COLLECTION_NAME
+    prop = find_property_by_any_identifier(db, raw_value, LEGACY_PROPERTY_COLLECTION_NAME)
+    if prop:
+        return prop, LEGACY_PROPERTY_COLLECTION_NAME
+    return None, None
 
 
 def get_prop_location(prop: Dict[str, Any]) -> Dict[str, Any]:

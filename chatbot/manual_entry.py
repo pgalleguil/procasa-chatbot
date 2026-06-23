@@ -11,6 +11,7 @@ from .property_lookup import (
     PROPERTY_COLLECTION_NAME,
     build_property_lookup_queries,
     find_property_by_any_identifier,
+    find_property_with_fallback,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def resolve_property_code(raw_code: str) -> Dict[str, Any]:
     if not code:
         return {"status": "error", "message": "Código vacío"}
 
-    # Búsqueda robusta usando la misma lógica del router.
+    # Búsqueda robusta primero en la colección nueva y luego en la legacy.
     lookup_queries = build_property_lookup_queries(code)
     logger.info(
         "[MANUAL_RESOLVE] queries=%s first_queries=%s",
@@ -42,13 +43,13 @@ def resolve_property_code(raw_code: str) -> Dict[str, Any]:
         lookup_queries[:8],
     )
 
-    prop = None
+    prop, matched_collection = find_property_with_fallback(db, code)
     matched_query = None
-    for query in lookup_queries:
-        prop = db[PROPERTY_COLLECTION_NAME].find_one(query)
-        if prop:
-            matched_query = query
-            break
+    if prop:
+        for query in lookup_queries:
+            if db[matched_collection].find_one(query):
+                matched_query = query
+                break
 
     if prop and prop.get("codigo"):
         matched_by = "unknown"
@@ -65,15 +66,17 @@ def resolve_property_code(raw_code: str) -> Dict[str, Any]:
             else:
                 matched_by = "codigo"
         logger.info(
-            "[MANUAL_RESOLVE] matched codigo=%s matched_by=%s matched_query=%s",
+            "[MANUAL_RESOLVE] matched codigo=%s collection=%s matched_by=%s matched_query=%s",
             prop.get("codigo"),
+            matched_collection,
             matched_by,
             matched_query,
         )
         return {
             "status": "ok",
             "property_code": str(prop.get("codigo")),
-            "matched_by": matched_by
+            "matched_by": matched_by,
+            "collection": matched_collection,
         }
 
     logger.warning(

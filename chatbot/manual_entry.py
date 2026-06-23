@@ -11,6 +11,8 @@ from .property_lookup import (
     PROPERTY_COLLECTION_NAME,
     build_property_lookup_queries,
     find_property_by_any_identifier,
+    get_prop_location,
+    get_prop_operation,
 )
 
 logger = logging.getLogger(__name__)
@@ -209,6 +211,8 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             ),
             "property_code": property_code,
         }
+    prop_location = get_prop_location(prop)
+    prop_operation = get_prop_operation(prop)
     
     if not phone and not email:
         return {"status": "error", "message": "Debe proporcionar al menos un Teléfono o un Email"}
@@ -341,19 +345,21 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
 
             db["leads"].update_one({"_id": existing_lead["_id"]}, update_payload)
             lead_id = str(existing_lead["_id"])
-            if background_tasks:
-                background_tasks.add_task(LeadProcessingService.process_lead, existing_lead["_id"])
-            else:
-                LeadProcessingService.process_lead(existing_lead["_id"])
+            if lead_temperature == "HOT":
+                if background_tasks:
+                    background_tasks.add_task(LeadProcessingService.process_lead, existing_lead["_id"])
+                else:
+                    LeadProcessingService.process_lead(existing_lead["_id"])
             
         else:
             # Insert brand new lead
             result = db["leads"].insert_one(lead_doc)
             lead_id = str(result.inserted_id)
-            if background_tasks:
-                background_tasks.add_task(LeadProcessingService.process_lead, result.inserted_id)
-            else:
-                LeadProcessingService.process_lead(result.inserted_id)
+            if lead_temperature == "HOT":
+                if background_tasks:
+                    background_tasks.add_task(LeadProcessingService.process_lead, result.inserted_id)
+                else:
+                    LeadProcessingService.process_lead(result.inserted_id)
             
         # 5. Log Event
         log_event(phone or email, "MANUAL_ENTRY", "supervisor", {
@@ -371,6 +377,8 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
                 "target_phone": exec_phone,
                 "target_name": exec_name,
                 "property_code": property_code,
+                "comuna": prop_location.get("comuna"),
+                "region": prop_location.get("region"),
                 "canal": origen,
                 "source": origen,
                 "lead_type": "ManualEntryHot",
@@ -378,6 +386,8 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
                 "lead_temperature": lead_temperature,
                 "assignment_type": assignment_type,
                 "codigo": property_code,
+                "operacion": prop_operation.get("operacion"),
+                "tipo": prop_operation.get("tipo"),
             }
             save_pending_notification(notification_data)
             logger.info(

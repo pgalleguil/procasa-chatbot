@@ -410,12 +410,12 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
     comuna = (
         lead_data.get("comuna")
         or prop_inline.get("comuna")
-        or "N/D"
+        or ""
     )
     region = (
         lead_data.get("region")
         or prop_inline.get("region")
-        or "N/D"
+        or ""
     )
     operacion = (
         lead_data.get("operacion")
@@ -440,12 +440,18 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
 
     crm_url = "https://procasa-chatbot-yr8d.onrender.com/"
 
+    ubicacion_lines = ""
+    if comuna:
+        ubicacion_lines += f"📍 *Comuna*: {comuna}\n"
+    if region:
+        ubicacion_lines += f"📍 *Región*: {region}\n"
+
     template = (
         f"{header}\n\n"
         f"Hola {executive_name}, se ha asignado un nuevo lead a tu gestión. "
         f"Realiza la gestión a la brevedad para maximizar la conversión. ⚡\n\n"
         f"🏠 *Propiedad*: {property_code} | {operacion}\n"
-        f"📍 *Ubicación*: {comuna}, {region}\n"
+        f"{ubicacion_lines}"
         f"👤 *Cliente*: {nombre_cliente}\n"
         f"{contexto_extra}"
         f"📝 *Comentario*: {mensaje_usuario}\n\n"

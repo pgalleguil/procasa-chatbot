@@ -88,21 +88,10 @@ def resolve_property_code(raw_code: str) -> Dict[str, Any]:
         "[MANUAL_RESOLVE] samples=%s",
         [q for q in lookup_queries[:10]],
     )
-    try:
-        save_pending_notification({
-            "target_phone": "+56983219804",
-            "target_name": "Pablo Galleguillos",
-            "lead_type": "MISSING_PROPERTY_ALERT",
-            "property_code": code,
-            "nombre": "Sistema de Alertas",
-            "last_message": f"⚠️ ATENCIÓN: Se intentó ingresar o verificar la propiedad '{code}', pero no existe en '{PROPERTY_COLLECTION_NAME}'. Revisar y actualizar cartera."
-        })
-        logger.info("[MANUAL_RESOLVE] alert_saved property_code=%s", code)
-    except Exception as e:
-        logger.warning("[MANUAL_RESOLVE] alert_save_failed code=%s error=%s", code, e)
     return {
         "status": "not_found",
-        "message": f"No existe propiedad para el código '{code}'"
+        "message": f"No existe propiedad para el código '{code}'",
+        "collection": PROPERTY_COLLECTION_NAME
     }
 
 def check_lead_duplicate(phone: Optional[str], property_code: str, email: Optional[str] = None) -> Tuple[str, Optional[str]]:
@@ -203,6 +192,22 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
 
     if not property_code:
         return {"status": "error", "message": "Código de Propiedad es obligatorio"}
+
+    prop = find_property_by_any_identifier(db, property_code, PROPERTY_COLLECTION_NAME)
+    if not prop:
+        logger.warning(
+            "[MANUAL_CREATE] property_missing code=%s collection=%s",
+            property_code,
+            PROPERTY_COLLECTION_NAME,
+        )
+        return {
+            "status": "error",
+            "message": (
+                f"La propiedad '{property_code}' no existe en '{PROPERTY_COLLECTION_NAME}'. "
+                "Primero actualiza la cartera y vuelve a intentar."
+            ),
+            "property_code": property_code,
+        }
     
     if not phone and not email:
         return {"status": "error", "message": "Debe proporcionar al menos un Teléfono o un Email"}

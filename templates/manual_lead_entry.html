@@ -514,9 +514,9 @@
                     return { ok: true, propertyCode: propertyInput.value, matchedBy: data.matched_by };
                 }
                 if (showNotFoundToast) {
-                    showToast("No existe ese código en cartera (ni por código internacional)", "warning");
+                    showToast("No existe en Prop360. Puedes continuar, pero revisa la cartera luego.", "warning");
                 }
-                return { ok: false, notFound: true, propertyCode: normalized };
+                return { ok: true, notFound: true, propertyCode: normalized };
             } catch (error) {
                 return { ok: true, propertyCode: normalized };
             }
@@ -553,9 +553,6 @@
 
             if (!propertyCode) {
                 showToast("Ingresa el código de propiedad", "warning");
-                return;
-            }
-            if (!resolvedCode.ok && resolvedCode.notFound) {
                 return;
             }
             if (!phone && !email) {

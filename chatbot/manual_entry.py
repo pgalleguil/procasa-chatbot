@@ -25,29 +25,62 @@ def resolve_property_code(raw_code: str) -> Dict[str, Any]:
     """
     db = get_db()
     code = str(raw_code or "").strip().replace(".", "").replace(" ", "")
+    logger.info(
+        "[MANUAL_RESOLVE] raw_code=%r normalized=%r collection=%s",
+        raw_code,
+        code,
+        PROPERTY_COLLECTION_NAME,
+    )
     if not code:
         return {"status": "error", "message": "Código vacío"}
 
     # Búsqueda robusta usando la misma lógica del router.
-    prop = find_property_by_any_identifier(db, code, PROPERTY_COLLECTION_NAME)
+    lookup_queries = build_property_lookup_queries(code)
+    logger.info(
+        "[MANUAL_RESOLVE] queries=%s first_queries=%s",
+        len(lookup_queries),
+        lookup_queries[:8],
+    )
+
+    prop = None
+    matched_query = None
+    for query in lookup_queries:
+        prop = db[PROPERTY_COLLECTION_NAME].find_one(query)
+        if prop:
+            matched_query = query
+            break
+
     if prop and prop.get("codigo"):
-        matched_by = "codigo"
-        lookup_queries = build_property_lookup_queries(code)
-        for query in lookup_queries[:12]:
-            if db[PROPERTY_COLLECTION_NAME].find_one(query):
-                if "source_url" in str(query) or "metadata.source_url" in str(query):
-                    matched_by = "source_url"
-                elif "codigo_internacional" in str(query):
-                    matched_by = "codigo_internacional"
-                elif "codigo_pi" in str(query) or "codigo_mercadolibre" in str(query):
-                    matched_by = "codigo_externo"
-                break
+        matched_by = "unknown"
+        if matched_query:
+            qstr = str(matched_query)
+            if "source_url" in qstr or "metadata.source_url" in qstr:
+                matched_by = "source_url"
+            elif "codigo_internacional" in qstr:
+                matched_by = "codigo_internacional"
+            elif "codigo_pi" in qstr or "codigo_mercadolibre" in qstr:
+                matched_by = "codigo_externo"
+            elif "ubicacion." in qstr or "estado." in qstr:
+                matched_by = "nested_field"
+            else:
+                matched_by = "codigo"
+        logger.info(
+            "[MANUAL_RESOLVE] matched codigo=%s matched_by=%s matched_query=%s",
+            prop.get("codigo"),
+            matched_by,
+            matched_query,
+        )
         return {
             "status": "ok",
             "property_code": str(prop.get("codigo")),
             "matched_by": matched_by
         }
 
+    logger.warning(
+        "[MANUAL_RESOLVE] not_found code=%s collection=%s",
+        code,
+        PROPERTY_COLLECTION_NAME,
+    )
     return {
         "status": "not_found",
         "message": f"No existe propiedad para el código '{code}'"

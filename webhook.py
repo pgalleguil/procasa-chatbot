@@ -691,11 +691,13 @@ async def api_check_duplicate(request: Request, phone: str = Query(None), proper
 @app.get("/api/leads/resolve-property-code")
 async def api_resolve_property_code(request: Request, code: str = Query(...)):
     await get_current_user(request)
+    logger.info("[API_RESOLVE] incoming code=%r user=%s", code, getattr(request.state, "user", None) and getattr(request.state.user, "get", lambda *_: None)("email"))
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         _WEB_THREAD_POOL,
         lambda: resolve_property_code(code)
     )
+    logger.info("[API_RESOLVE] result=%s", result)
     return result
 
 @app.post("/api/leads/manual")

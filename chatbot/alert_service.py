@@ -109,7 +109,17 @@ def _send_alert_once_sync(
             "rut": criteria.get("rut")
         }
 
-        # 2. ENRUTAMIENTO INTELIGENTE (SOLO SI NO ESTÁ ASIGNADO)
+        # 2. ENRUTAMIENTO INTELIGENTE
+        # Solo HOT/urgentes deben llegar al equipo por WhatsApp.
+        hot_alerts = {"EscaladoUrgente", "InteresVisita", "SolicitudContacto"}
+        if lead_type not in hot_alerts:
+            logger.info(
+                "[ALERT] Non-HOT alert skipped for WhatsApp routing: lead_type=%s phone=%s",
+                lead_type,
+                phone,
+            )
+            return
+
         # Buscamos quién es el responsable REAL (según reglas JPC, Región, etc.)
         is_missing_property = bool(criteria.get("link_pendiente")) or not criteria.get("codigo") or str(lead_data.get("property_code", "")).strip() in {"", "N/D", "None"}
         if is_missing_property:

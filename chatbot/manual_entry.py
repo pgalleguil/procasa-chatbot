@@ -189,6 +189,7 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
     email = data.get("email", "").strip()
     mensaje = data.get("mensaje", "").strip()
     origen = data.get("origen", data.get("channel", "Manual")) # Fallback to channel if origen missing
+    lead_temperature = str(data.get("lead_temperature", "COLD")).upper().strip()
 
     if not property_code:
         return {"status": "error", "message": "Código de Propiedad es obligatorio"}
@@ -254,6 +255,7 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
         "last_crm_update": now.isoformat(),
         "source_type": "manual",
         "origen": origen,
+        "lead_temperature": lead_temperature,
         "stage": PipelineStage.NEW,
         "pipeline_stage": PipelineStage.NEW,
         "ejecutivo_asignado": exec_name,
@@ -359,20 +361,42 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             "origen": origen
         })
 
-        # 6. Notify Executive
-        notification_data = {
-            "phone": final_phone,
-            "nombre": name,
-            "email": email,
-            "target_phone": exec_phone,
-            "target_name": exec_name,
-            "property_code": property_code,
-            "canal": origen,
-            "source": origen,
-            "lead_type": "ManualEntry",
-            "last_message": mensaje or f"Lead manual ingresado por supervisor"
-        }
-        save_pending_notification(notification_data)
+        # 6. Notification policy:
+        # Solo leads manuales marcados como HOT notifican al ejecutivo por WhatsApp.
+        if lead_temperature == "HOT":
+            notification_data = {
+                "phone": final_phone,
+                "nombre": name,
+                "email": email,
+                "target_phone": exec_phone,
+                "target_name": exec_name,
+                "property_code": property_code,
+                "canal": origen,
+                "source": origen,
+                "lead_type": "ManualEntryHot",
+                "last_message": mensaje or "Lead manual marcado como caliente por supervisor",
+                "lead_temperature": lead_temperature,
+                "assignment_type": assignment_type,
+                "codigo": property_code,
+            }
+            save_pending_notification(notification_data)
+            logger.info(
+                "[MANUAL_CREATE] whatsapp_notification_enqueued phone=%s property_code=%s assigned_to=%s source=%s temperature=%s",
+                final_phone,
+                property_code,
+                exec_name,
+                origen,
+                lead_temperature,
+            )
+        else:
+            logger.info(
+                "[MANUAL_CREATE] skipping_whatsapp_notification phone=%s property_code=%s assigned_to=%s source=%s temperature=%s",
+                final_phone,
+                property_code,
+                exec_name,
+                origen,
+                lead_temperature,
+            )
 
         return {
             "status": "ok", 

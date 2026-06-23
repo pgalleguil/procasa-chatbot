@@ -461,6 +461,16 @@
                             </select>
                         </div>
 
+                        <!-- TEMPERATURA -->
+                        <div class="col-md-6">
+                            <label class="form-label">Temperatura del Lead</label>
+                            <select name="lead_temperature" id="lead_temperature" class="form-select">
+                                <option value="COLD" selected>Frío (no enviar WhatsApp)</option>
+                                <option value="HOT">Caliente (enviar WhatsApp)</option>
+                            </select>
+                            <p class="small text-secondary mt-1">Por defecto queda en frío. Solo los calientes notifican al ejecutivo.</p>
+                        </div>
+
                         <!-- MENSAJE -->
                         <div class="col-12">
                             <label class="form-label">Mensaje o Nota Inicial (Opcional)</label>

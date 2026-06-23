@@ -11,7 +11,6 @@ from .property_lookup import (
     PROPERTY_COLLECTION_NAME,
     build_property_lookup_queries,
     find_property_by_any_identifier,
-    find_property_with_fallback,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,7 +34,7 @@ def resolve_property_code(raw_code: str) -> Dict[str, Any]:
     if not code:
         return {"status": "error", "message": "Código vacío"}
 
-    # Búsqueda robusta primero en la colección nueva y luego en la legacy.
+    # Búsqueda robusta únicamente en la colección nueva.
     lookup_queries = build_property_lookup_queries(code)
     logger.info(
         "[MANUAL_RESOLVE] queries=%s first_queries=%s",
@@ -43,13 +42,14 @@ def resolve_property_code(raw_code: str) -> Dict[str, Any]:
         lookup_queries[:8],
     )
 
-    prop, matched_collection = find_property_with_fallback(db, code)
+    prop = None
+    matched_collection = PROPERTY_COLLECTION_NAME
     matched_query = None
-    if prop:
-        for query in lookup_queries:
-            if db[matched_collection].find_one(query):
-                matched_query = query
-                break
+    for query in lookup_queries:
+        prop = db[PROPERTY_COLLECTION_NAME].find_one(query)
+        if prop:
+            matched_query = query
+            break
 
     if prop and prop.get("codigo"):
         matched_by = "unknown"
@@ -84,6 +84,22 @@ def resolve_property_code(raw_code: str) -> Dict[str, Any]:
         code,
         PROPERTY_COLLECTION_NAME,
     )
+    logger.info(
+        "[MANUAL_RESOLVE] samples=%s",
+        [q for q in lookup_queries[:10]],
+    )
+    try:
+        save_pending_notification({
+            "target_phone": "+56983219804",
+            "target_name": "Pablo Galleguillos",
+            "lead_type": "MISSING_PROPERTY_ALERT",
+            "property_code": code,
+            "nombre": "Sistema de Alertas",
+            "last_message": f"⚠️ ATENCIÓN: Se intentó ingresar o verificar la propiedad '{code}', pero no existe en '{PROPERTY_COLLECTION_NAME}'. Revisar y actualizar cartera."
+        })
+        logger.info("[MANUAL_RESOLVE] alert_saved property_code=%s", code)
+    except Exception as e:
+        logger.warning("[MANUAL_RESOLVE] alert_save_failed code=%s error=%s", code, e)
     return {
         "status": "not_found",
         "message": f"No existe propiedad para el código '{code}'"

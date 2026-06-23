@@ -111,7 +111,25 @@ def _send_alert_once_sync(
 
         # 2. ENRUTAMIENTO INTELIGENTE (SOLO SI NO ESTÁ ASIGNADO)
         # Buscamos quién es el responsable REAL (según reglas JPC, Región, etc.)
-        
+        is_missing_property = bool(criteria.get("link_pendiente")) or not criteria.get("codigo") or str(lead_data.get("property_code", "")).strip() in {"", "N/D", "None"}
+        if is_missing_property:
+            admin_phone = "56983219804"
+            admin_msg = (
+                f"🚨 *Propiedad No Encontrada*\n\n"
+                f"Lead: {criteria.get('nombre') or lead_data.get('phone')}\n"
+                f"Teléfono: {phone}\n"
+                f"Código: {lead_data.get('property_code', 'N/D')}\n\n"
+                f"El cliente envió un enlace o código que no existe en Prop360. "
+                f"Favor revisar y actualizar la cartera."
+            )
+            lead_data["target_phone"] = admin_phone
+            lead_data["target_name"] = "Pablo Galleguillos"
+            lead_data["is_new_assignment"] = False
+            lead_data["assignment_type"] = "MISSING_PROPERTY"
+            logger.info(f"[ALERT] Missing property detected. Routing alert to admin only for phone={phone}")
+            save_pending_notification(lead_data)
+            return
+
         from .constants import UNASSIGNED_LABEL
         assigned_exec = criteria.get("ejecutivo_asignado") or criteria.get("ejecutivo")
         

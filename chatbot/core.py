@@ -537,7 +537,12 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             phone=admin_phone,
             lead_type="MissingProperty",
             lead_score=0,
-            criteria={"nombre": "Admin Pablo", "codigo_faltante": codigo_externo},
+            criteria={
+                "nombre": "Admin Pablo",
+                "codigo_faltante": codigo_externo,
+                "link_pendiente": True,
+                "codigo": "",
+            },
             last_response=admin_msg,
             last_user_msg=original_message,
             full_history=[],

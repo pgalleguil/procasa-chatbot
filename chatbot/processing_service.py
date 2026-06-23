@@ -214,6 +214,9 @@ class LeadProcessingService:
         """
         prospecto = lead_doc.get("prospecto", {}) or {}
         current_exec = lead_doc.get("ejecutivo_asignado") or prospecto.get("ejecutivo")
+        if prospecto.get("link_pendiente") is True:
+            logger.info(f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} con link_pendiente=True. No se reasigna al equipo.")
+            return {}
         
         unassigned_labels = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
         

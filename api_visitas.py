@@ -188,13 +188,25 @@ async def _enrich_with_property_data(data: dict) -> dict:
                 op = get_prop_operation(prop_data)
                 data["property_tipo"] = op.get("tipo", "")
                 
-                precio_val = op.get("precio_clp") or prop_data.get("precio", "")
-                if precio_val:
+                resumen = prop_data.get("resumen", {}) or {}
+                precio_clp = op.get("precio_clp") or resumen.get("precio_clp") or prop_data.get("precio", "")
+                precio_uf = op.get("precio_uf") or resumen.get("precio_uf") or prop_data.get("precio_uf", "")
+                
+                if precio_clp:
                     try:
-                        precio_int = int(float(str(precio_val).replace(",",".").replace(" ","")))
+                        precio_int = int(float(str(precio_clp).replace(",",".").replace(" ","")))
                         data["precio"] = f"${precio_int:,}".replace(",",".")
                     except:
-                        data["precio"] = str(precio_val)
+                        data["precio"] = str(precio_clp)
+                elif precio_uf:
+                    try:
+                        precio_float = float(str(precio_uf).replace(",",".").replace(" ",""))
+                        if precio_float.is_integer():
+                            data["precio"] = f"{int(precio_float):,} UF".replace(",",".")
+                        else:
+                            data["precio"] = f"{precio_float:,.2f} UF".replace(",",".")
+                    except:
+                        data["precio"] = f"{precio_uf} UF"
                 else:
                     data["precio"] = ""
                 data["operacion"] = op.get("operacion", "")

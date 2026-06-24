@@ -103,13 +103,6 @@ def formatear_ficha_tecnica(propiedad):
     region  = ubicacion.get("region")  or propiedad.get("region")  or "N/D"
     comuna  = ubicacion.get("comuna")  or propiedad.get("comuna")  or "N/D"
     sector  = ubicacion.get("sector")  or propiedad.get("sector")  or ""
-    calle   = (
-        ubicacion.get("calle")
-        or ubicacion.get("direccion_referencial")
-        or propiedad.get("nombre_calle")
-        or propiedad.get("direccion")
-        or ""
-    )
 
     # ── Características ───────────────────────────────────────────────────────
     dormitorios      = caract.get("dormitorios")                 or propiedad.get("dormitorios")      or "N/D"
@@ -149,8 +142,6 @@ def formatear_ficha_tecnica(propiedad):
     ]
     if sector:
         lineas.append(f"Sector:             {sector}")
-    if calle:
-        lineas.append(f"Dirección ref.:     {calle}")
     lineas += [
         f"Precio:             {precio_uf_str} UF | {precio_clp_str}",
     ]

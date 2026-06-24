@@ -252,7 +252,6 @@ def _get_missing_required_contract_fields(d: dict):
         "precio_valor": "precio_valor",
         "moneda": "moneda",
         "comision": "comision",
-        "property_code": "property_code",
     }
     missing = []
     for field, source_key in required_map.items():

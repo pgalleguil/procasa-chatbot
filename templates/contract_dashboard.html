@@ -983,18 +983,6 @@
                                         </select>
                                     </div>
                                 </div>
-
-                                <div class="row g-3 mb-3">
-                                     <div class="col-lg-12 col-md-12">
-                                         <label class="form-label text-secondary small text-uppercase fw-bold">Código
-                                             Propiedad <span class="required-star">*</span></label>
-                                         <input type="text" class="form-control" name="property_code"
-                                             placeholder="Ej: 15482" required
-                                             oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();"
-                                             onblur="validateField(this); triggerPreview();">
-                                         <div class="invalid-feedback">Ingresa el código de propiedad.</div>
-                                     </div>
-                                 </div>
                             </form>
                         </div>
 
@@ -1327,7 +1315,7 @@
                     precio_valor: form.precio_valor.value,
                     moneda: form.moneda.value,
                     comision: form.comision.value,
-                    property_code: form.property_code.value,
+                    property_code: '',
                     origen: form.origen ? form.origen.value : '',
                     executive: form.executive ? form.executive.value : ''
                 };
@@ -1496,7 +1484,7 @@
                         precio_valor: form.precio_valor.value,
                         moneda: form.moneda.value,
                         comision: form.comision.value,
-                        property_code: form.property_code.value,
+                        property_code: '',
                         origen: form.origen ? form.origen.value : ''
                     }
                 });
@@ -1520,7 +1508,7 @@
                 precio_valor: form.precio_valor.value,
                 moneda: form.moneda.value,
                 comision: form.comision.value,
-                property_code: form.property_code.value,
+                property_code: '',
                 origen: form.origen ? form.origen.value : '',
                 executive: form.executive ? form.executive.value : ''
             };
@@ -1635,7 +1623,7 @@
             form.rol_predio.value = rol[1] || '';
             form.moneda.value = c?.property_data?.moneda || 'UF';
             form.comision.value = c?.property_data?.comision || '';
-            form.property_code.value = c?.property_code || '';
+            if (form.property_code) form.property_code.value = c?.property_code || '';
             if (form.origen) form.origen.value = c?.origen || '';
             if (form.executive) form.executive.value = c?.executive || c?.created_by || form.executive.value || '';
             if (c?.phone) {

@@ -378,6 +378,7 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
         target_executive_name = get_next_round_robin_executive("")
         phone = get_executive_phone(target_executive_name)
         
+        
     elif not phone:
         # NUEVA REGLA DE INTEGRIDAD: Si sabemos quién es, pero no está su teléfono, SE LO QUEDA IGUAL,
         # solo que el envío de Whatsapp fallará más abajo (y quedará guardado silenciosamente).
@@ -391,6 +392,23 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
     """
     # Importante: esta función puede llamarse desde contextos async.
     # Evitamos cualquier acceso sync a Mongo aquí para no bloquear event loop.
+    
+    # --- MENSAJE ESPECIAL PARA ADMIN (PROPIEDAD NO ENCONTRADA / LINK ROTO) ---
+    if lead_data.get("assignment_type") == "MISSING_PROPERTY" or lead_data.get("lead_type") == "MissingProperty":
+        nombre_cliente = lead_data.get("nombre")
+        telefono_cliente = lead_data.get("phone", "Desconocido")
+        comentario_cliente = lead_data.get("last_message", "")
+        cliente_texto = f"{nombre_cliente} ({telefono_cliente})" if nombre_cliente and nombre_cliente != "None" else telefono_cliente
+        
+        return (
+            f"🚨 *Alerta: Enlace o Propiedad No Encontrada*\n\n"
+            f"Hola {executive_name}, el asistente recibió un enlace o código que no existe en nuestra base de datos actualizada (Prop360).\n\n"
+            f"📌 *Detalles del caso:*\n"
+            f"👤 Cliente: {cliente_texto}\n"
+            f"📝 Mensaje recibido:\n{comentario_cliente}\n\n"
+            f"⚠️ _Por favor, revisa si es necesario actualizar la cartera o si la propiedad fue dada de baja._\n\n"
+            f"🔗 *Ver caso en CRM*:\nhttps://procasa-chatbot-yr8d.onrender.com/"
+        )
     prop_inline = lead_data.get("property_data", {}) if isinstance(lead_data, dict) else {}
     comuna = (
         lead_data.get("comuna")

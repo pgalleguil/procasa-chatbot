@@ -570,8 +570,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                         full_history=historial, window_minutes=60, lead_type_label="Propiedad No Encontrada"))
 
         respuesta_link_pendiente = (
-            "Gracias por compartir el enlace. No pude identificar la propiedad en este momento. "
-            "Si quieres, envíame el enlace nuevamente o dime qué tipo de propiedad buscas y te ayudo."
+            "Gracias por compartir el enlace. En este momento no pude identificar la propiedad en nuestra base de datos, "
+            "pero **ya he notificado internamente a nuestro administrador** para que revise el caso en detalle. "
+            "Apenas actualicemos la información, un ejecutivo se pondrá en contacto contigo. "
+            "Si lo prefieres, también puedes contarme qué tipo de propiedad buscas y te ayudaré con otras opciones."
         )
         await _run_sync(guardar_mensaje, phone, "assistant", respuesta_link_pendiente, {
             "tipo": "link_no_encontrado",

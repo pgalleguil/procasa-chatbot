@@ -893,11 +893,22 @@
                                     <div class="col-lg-6 col-md-6">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Código de
                                             Propiedad <span class="required-star">*</span></label>
-                                        <input type="text" class="form-control" name="property_code"
+                                        <input type="text" class="form-control" name="property_code" id="propertyCodeInput"
                                             placeholder="Ej: 15482" required
                                             oninput="this.value=this.value.replace(/[^0-9]/g,''); triggerPreview();"
-                                            onblur="validateField(this); triggerPreview();">
+                                            onblur="validateField(this); triggerPreview(); lookupProperty(this.value);">
                                         <div class="invalid-feedback">Ingresa el código.</div>
+                                    </div>
+                                    <div class="col-12 mt-3 d-none" id="propertyDetailsContainer">
+                                        <div class="p-3 bg-light rounded border border-info">
+                                            <h6 class="text-info fw-bold mb-2"><i class="fa-solid fa-house"></i> Detalles de la Propiedad</h6>
+                                            <div class="row text-sm">
+                                                <div class="col-md-6 mb-1"><strong>Tipo Propiedad:</strong> <span id="propTypeDisplay">-</span></div>
+                                                <div class="col-md-6 mb-1"><strong>Región:</strong> <span id="propRegionDisplay">-</span></div>
+                                                <div class="col-md-6 mb-1"><strong>Comuna:</strong> <span id="propComunaDisplay">-</span></div>
+                                                <div class="col-md-6 mb-1"><strong>Precio:</strong> <span id="propPriceDisplay">-</span></div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </form>
@@ -1595,6 +1606,32 @@
 
             html += '</div>';
             return html;
+        }
+
+        async function lookupProperty(code) {
+            code = code.trim();
+            const container = document.getElementById('propertyDetailsContainer');
+            if (!container) return;
+            if (!code) {
+                container.classList.add('d-none');
+                return;
+            }
+            try {
+                const res = await fetch(`/api/property-lookup/${encodeURIComponent(code)}`);
+                const json = await res.json();
+                if (res.ok && json.success) {
+                    document.getElementById('propTypeDisplay').textContent = json.data.tipo || '-';
+                    document.getElementById('propRegionDisplay').textContent = json.data.region || '-';
+                    document.getElementById('propComunaDisplay').textContent = json.data.comuna || '-';
+                    document.getElementById('propPriceDisplay').textContent = json.data.precio || '-';
+                    container.classList.remove('d-none');
+                } else {
+                    container.classList.add('d-none');
+                }
+            } catch (e) {
+                console.error("Error fetching property data:", e);
+                container.classList.add('d-none');
+            }
         }
 
         async function refreshStatuses() {

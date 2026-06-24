@@ -165,15 +165,30 @@ async def _enrich_with_property_data(data: dict) -> dict:
     if prop_code:
         try:
             from chatbot.storage import get_async_db
+            from chatbot.property_lookup import (
+                build_property_lookup_queries,
+                get_prop_location,
+                get_prop_operation
+            )
             adb = get_async_db()
-            prop_data = await adb[PROPERTY_COLLECTION_NAME].find_one({"codigo": prop_code})
+            
+            prop_data = None
+            for query in build_property_lookup_queries(prop_code):
+                prop_data = await adb[PROPERTY_COLLECTION_NAME].find_one(query)
+                if prop_data:
+                    break
+                    
             if prop_data:
                 data["_property_found"] = True
-                data["property_comuna"] = prop_data.get("comuna", "")
-                data["property_region"] = prop_data.get("region", "")
-                data["property_tipo"] = prop_data.get("tipo", "")
-                # Buscar precio en precio_clp primero, luego fallback a precio
-                precio_val = prop_data.get("precio_clp") or prop_data.get("precio", "")
+                
+                loc = get_prop_location(prop_data)
+                data["property_comuna"] = loc.get("comuna", "")
+                data["property_region"] = loc.get("region", "")
+                
+                op = get_prop_operation(prop_data)
+                data["property_tipo"] = op.get("tipo", "")
+                
+                precio_val = op.get("precio_clp") or prop_data.get("precio", "")
                 if precio_val:
                     try:
                         precio_int = int(float(str(precio_val).replace(",",".").replace(" ","")))
@@ -182,13 +197,37 @@ async def _enrich_with_property_data(data: dict) -> dict:
                         data["precio"] = str(precio_val)
                 else:
                     data["precio"] = ""
-                data["operacion"] = prop_data.get("operacion", "")
+                data["operacion"] = op.get("operacion", "")
             else:
                 data["_property_found"] = False
         except Exception as e:
             logger.warning(f"[ENRICH] Error enriqueciendo propiedad {prop_code}: {e}")
             data["_property_found"] = False
     return data
+
+@router.get("/api/property-lookup/{code}")
+async def property_lookup_api(code: str):
+    """
+    Looks up property details to feed into the frontend form.
+    """
+    try:
+        data = {"property_code": code}
+        enriched = await _enrich_with_property_data(data)
+        if enriched.get("_property_found"):
+            return {
+                "success": True,
+                "data": {
+                    "comuna": enriched.get("property_comuna", ""),
+                    "region": enriched.get("property_region", ""),
+                    "tipo": enriched.get("property_tipo", ""),
+                    "precio": enriched.get("precio", ""),
+                    "operacion": enriched.get("operacion", "")
+                }
+            }
+        return {"success": False, "error": "Property not found"}
+    except Exception as e:
+        logger.error(f"Error looking up property {code}: {e}")
+        return {"success": False, "error": str(e)}
 
 @router.post("/api/preview")
 async def preview_contract(request: Request):

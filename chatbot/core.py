@@ -561,6 +561,14 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "codigo": None
         }, trace_id)
         logger.info(f"[LINK_FLOW] trace={trace_id} phone={phone} link sin match. Marcado link_pendiente=True")
+        
+        # Enviar alerta silenciosa al admin sobre el link roto o propiedad faltante
+        prospecto_temporal = dict(prospecto_actual)
+        prospecto_temporal["link_pendiente"] = True
+        asyncio.create_task(send_alert_once(phone=phone, lead_type="MissingProperty", lead_score=0,
+                        criteria=prospecto_temporal, last_response="", last_user_msg=original_message,
+                        full_history=historial, window_minutes=60, lead_type_label="Propiedad No Encontrada"))
+
         respuesta_link_pendiente = (
             "Gracias por compartir el enlace. No pude identificar la propiedad en este momento. "
             "Si quieres, envíame el enlace nuevamente o dime qué tipo de propiedad buscas y te ayudo."

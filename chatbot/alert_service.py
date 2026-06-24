@@ -106,12 +106,15 @@ def _send_alert_once_sync(
             "email": criteria.get("email"),
             "last_message": last_user_msg,
             "property_code": criteria.get("codigo", "N/D"),
-            "rut": criteria.get("rut")
+            "rut": criteria.get("rut"),
+            "operacion": criteria.get("operacion"),
+            "comuna": criteria.get("comuna"),
+            "region": criteria.get("region")
         }
 
         # 2. ENRUTAMIENTO INTELIGENTE
         # Solo HOT/urgentes deben llegar al equipo por WhatsApp.
-        hot_alerts = {"EscaladoUrgente", "InteresVisita", "SolicitudContacto"}
+        hot_alerts = {"EscaladoUrgente", "InteresVisita", "SolicitudContacto", "MissingProperty"}
         if lead_type not in hot_alerts:
             logger.info(
                 "[ALERT] Non-HOT alert skipped for WhatsApp routing: lead_type=%s phone=%s",

@@ -408,12 +408,9 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
         or "Operación no especificada"
     )
     
-
-    
-    nombre_cliente = lead_data.get("nombre", "Cliente Desconocido")
-    fono_cliente = lead_data.get("phone", "No disponible")
-    email_cliente = lead_data.get("email", "No disponible")
-    mensaje_usuario = lead_data.get("last_message", "Interesado en esta propiedad")
+    nombre_cliente = lead_data.get("nombre")
+    if not nombre_cliente or nombre_cliente == "None":
+        nombre_cliente = ""
 
     # Header dinámico según si es nuevo o seguimiento
     header = "🚀 *¡Nuevo Lead Asignado!*" if is_new_assignment else "💬 *Actualización de Lead*"
@@ -431,13 +428,17 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
     if region:
         ubicacion_lines += f"📍 *Región*: {region}\n"
 
+    cliente_line = f"👤 *Cliente*: {nombre_cliente}\n" if nombre_cliente else ""
+
+    mensaje_usuario = lead_data.get("last_message", "Interesado en esta propiedad")
+
     template = (
         f"{header}\n\n"
         f"Hola {executive_name}, se ha asignado un nuevo lead a tu gestión. "
         f"Realiza la gestión a la brevedad para maximizar la conversión. ⚡\n\n"
         f"🏠 *Propiedad*: {property_code} | {operacion}\n"
         f"{ubicacion_lines}"
-        f"👤 *Cliente*: {nombre_cliente}\n"
+        f"{cliente_line}"
         f"{contexto_extra}"
         f"📝 *Comentario*: {mensaje_usuario}\n\n"
         f"🔗 *Ver y Gestionar en CRM*:\n{crm_url}\n\n"

@@ -84,6 +84,11 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
     coleccion = db[PROPERTY_COLLECTION_NAME]
     logger.info(f"[LINK_TRACE] trace={trace_id or 'no-trace'} phone={phone} inicio_resolucion_link")
     logger.info(
+        f"[LINK_TRACE_META]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
+        f"collection={PROPERTY_COLLECTION_NAME}\n"
+        f"url_count={len(urls)}"
+    )
+    logger.info(
         f"[LINK_EXTRACT]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
         f"mensaje_original={mensaje}\nurls_encontradas={urls}"
     )
@@ -105,6 +110,12 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
             f"[LINK_EXTRACT]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
             f"url_original={url}\nurl_clean={url_clean}\nrepr_url_clean={repr(url_clean)}\n"
             f"len_url_clean={len(url_clean)}\nplataforma_detectada={plataforma}"
+        )
+        logger.info(
+            f"[LINK_NORMALIZED]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
+            f"url_lower={url_lower}\nurl_norm={url_norm}\n"
+            f"has_www={'www.' in url_clean.lower()}\nhas_https={url_clean.lower().startswith('https://')}\n"
+            f"has_http={url_clean.lower().startswith('http://')}"
         )
         
         propiedad = None
@@ -129,6 +140,12 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
             logger.info(
                 f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={PROPERTY_COLLECTION_NAME}\n"
                 f"filtro_exacto={query_usada}"
+            )
+            logger.info(
+                f"[LINK_QUERY_CONTEXT]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
+                f"codigo_yapo={cod_yapo}\n"
+                f"codigo_internacional_detectado={cod_ints}\n"
+                f"se_busca_solo_en=publicaciones.yapo.url_yapo"
             )
             prop = find_property_by_any_identifier(db, url_clean, PROPERTY_COLLECTION_NAME)
             debug_info["exact_match"] = bool(prop)
@@ -178,9 +195,18 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                             f"[LINK_QUERY_OK]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
                             f"codigo_propiedad={propiedad.get('codigo')}\n"
                             f"codigo_yapo={propiedad.get('codigo_yapo') or propiedad.get('publicaciones', {}).get('yapo', {}).get('codigo_yapo')}\n"
-                            f"ejecutivo={propiedad.get('ejecutivo')}\ncomuna={propiedad.get('comuna')}"
+                            f"ejecutivo={propiedad.get('ejecutivo')}\ncomuna={propiedad.get('comuna')}\n"
+                            f"yapo_url_db={(propiedad.get('publicaciones', {}).get('yapo', {}).get('url_yapo') or propiedad.get('yapo', {}).get('url_yapo') or propiedad.get('url_yapo'))}"
                         )
                         break
+                if not propiedad:
+                    logger.info(
+                        f"[LINK_QUERY_FAIL]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
+                        f"se_probo_query_exacto={url_clean}\n"
+                        f"codigo_yapo={cod_yapo}\n"
+                        f"collection={PROPERTY_COLLECTION_NAME}\n"
+                        f"buscado_en=['yapo.url_yapo','publicaciones.yapo.url_yapo','url_yapo','codigo_yapo']"
+                    )
             codigo_externo = cod_yapo
             if phone:
                 try:
@@ -188,6 +214,8 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                     debug_info["query_usada"] = query_usada
                     debug_info["resultado"] = "SUCCESS" if prop else "NOT_FOUND"
                     debug_info["timestamp"] = __import__("datetime").datetime.now().isoformat()
+                    debug_info["collection"] = PROPERTY_COLLECTION_NAME
+                    debug_info["ruta_prioritaria"] = "publicaciones.yapo.url_yapo"
                     actualizar_prospecto(phone, {"debug_link": debug_info}, trace_id)
                 except Exception:
                     logger.exception(f"[LINK_EXCEPTION] trace={trace_id or 'no-trace'} phone={phone} tipo_error=debug_persist mensaje=fallo_guardando_debug_link")

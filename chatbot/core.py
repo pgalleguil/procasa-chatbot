@@ -325,7 +325,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     logger.info(
         f"[LINK_FLOW] trace={trace_id} phone={phone} hay_url={hay_url} plataforma={plataforma_origen} "
         f"temp_prop={(temp_prop.get('codigo') if temp_prop else None)} "
-        f"codigo_externo_raw={codigo_externo_raw} collection={Config.COLLECTION_NAME}"
+        f"codigo_externo_raw={codigo_externo_raw} collection={PROPERTY_COLLECTION_NAME}"
     )
     logger.info(
         f"[PROPERTY_TRACE] origen=LINK_EXTRACTOR_RESULT trace={trace_id} phone={phone} "

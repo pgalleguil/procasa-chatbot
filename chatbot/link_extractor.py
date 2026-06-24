@@ -131,7 +131,6 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
         # === PASO 2: RESOLUCIÓN DETERMINÍSTICA POR PLATAFORMA ===
         if plataforma == "Yapo":
             cod_yapo = extraer_codigo_yapo(url_clean)
-            cod_ints = re.findall(r"\b(\d{9,10})\b", url_clean)
             if cod_yapo:
                 logger.info(f"[LINK_ID]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncodigo_yapo={cod_yapo}")
             else:
@@ -144,43 +143,21 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
             logger.info(
                 f"[LINK_QUERY_CONTEXT]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
                 f"codigo_yapo={cod_yapo}\n"
-                f"codigo_internacional_detectado={cod_ints}\n"
                 f"se_busca_solo_en=publicaciones.yapo.url_yapo"
             )
             prop = find_property_by_any_identifier(db, url_clean, PROPERTY_COLLECTION_NAME)
-            debug_info["exact_match"] = bool(prop)
+            propiedad = prop
+            debug_info["exact_match"] = bool(propiedad)
             debug_info["regex_match"] = False
             debug_info["urls_encontradas"] = []
-            if not prop and cod_yapo:
-                regex_q = {"$or": [
-                    {"yapo.url_yapo": {"$regex": re.escape(cod_yapo) + r"$", "$options": "i"}},
-                    {"publicaciones.yapo.url_yapo": {"$regex": re.escape(cod_yapo) + r"$", "$options": "i"}},
-                ]}
-                logger.info(
-                    f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={PROPERTY_COLLECTION_NAME}\n"
-                    f"filtro_exacto={regex_q}"
-                )
-                prop = find_property_by_any_identifier(db, cod_yapo, PROPERTY_COLLECTION_NAME)
-                debug_info["regex_match"] = bool(prop)
-                if prop:
-                    debug_info["urls_encontradas"] = [prop.get("publicaciones", {}).get("yapo", {}).get("url_yapo") or prop.get("url_yapo")]
             candidatos = [
                 {"yapo.url_yapo": url_clean},
                 {"yapo.url_yapo": url_regex},
-                {"yapo.codigo_yapo": cod_yapo} if cod_yapo else None,
                 {"publicaciones.yapo.url_yapo": url_clean},
                 {"publicaciones.yapo.url_yapo": url_regex},
                 {"url_yapo": url_regex},
                 {"url_yapo": url_clean},
-                {"publicaciones.yapo.codigo_yapo": cod_yapo} if cod_yapo else None,
-                {"codigo_yapo": cod_yapo} if cod_yapo else None,
             ]
-            for cod_int in cod_ints:
-                candidatos.extend([
-                    {"codigo_internacional": cod_int},
-                    {"publicaciones.codigo_internacional": cod_int},
-                {"publicaciones.yapo.codigo_internacional": cod_int},
-                ])
             if not propiedad:
                 for i, q in enumerate([c for c in candidatos if c], 1):
                     print(f"[LINK_DEBUG] Yapo query #{i}: {q}")
@@ -212,7 +189,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 try:
                     from .storage import actualizar_prospecto
                     debug_info["query_usada"] = query_usada
-                    debug_info["resultado"] = "SUCCESS" if prop else "NOT_FOUND"
+                    debug_info["resultado"] = "SUCCESS" if propiedad else "NOT_FOUND"
                     debug_info["timestamp"] = __import__("datetime").datetime.now().isoformat()
                     debug_info["collection"] = PROPERTY_COLLECTION_NAME
                     debug_info["ruta_prioritaria"] = "publicaciones.yapo.url_yapo"

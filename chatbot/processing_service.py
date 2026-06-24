@@ -63,7 +63,7 @@ class LeadProcessingService:
         # 2. Si falta comuna pero tenemos código, buscar en universo_cartera
         property_code = prospecto.get("codigo") or lead_doc.get("codigo")
         logger.info(
-            f"[PROCESS_SERVICE] phone={lead_doc.get('phone')} collection={Config.COLLECTION_NAME} "
+            f"[PROCESS_SERVICE] phone={lead_doc.get('phone')} collection={PROPERTY_COLLECTION_NAME} "
             f"prospecto.codigo={prospecto.get('codigo')} lead.codigo={lead_doc.get('codigo')}"
         )
         

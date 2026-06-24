@@ -135,7 +135,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 logger.info(f"[LINK_ID]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncodigo_yapo={cod_yapo}")
             else:
                 logger.info(f"[LINK_ID_FAIL]\ntrace={trace_id or 'no-trace'}\nphone={phone}\nurl={url_clean}")
-            query_usada = {"$or": [{"yapo.url_yapo": url_clean}, {"publicaciones.yapo.url_yapo": url_clean}]}
+            query_usada = {"publicaciones.yapo.url_yapo": url_clean}
             logger.info(
                 f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={PROPERTY_COLLECTION_NAME}\n"
                 f"filtro_exacto={query_usada}"
@@ -145,18 +145,13 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 f"codigo_yapo={cod_yapo}\n"
                 f"se_busca_solo_en=publicaciones.yapo.url_yapo"
             )
-            prop = find_property_by_any_identifier(db, url_clean, PROPERTY_COLLECTION_NAME)
+            prop = coleccion.find_one(query_usada)
             propiedad = prop
             debug_info["exact_match"] = bool(propiedad)
             debug_info["regex_match"] = False
             debug_info["urls_encontradas"] = []
             candidatos = [
-                {"yapo.url_yapo": url_clean},
-                {"yapo.url_yapo": url_regex},
-                {"publicaciones.yapo.url_yapo": url_clean},
                 {"publicaciones.yapo.url_yapo": url_regex},
-                {"url_yapo": url_regex},
-                {"url_yapo": url_clean},
             ]
             if not propiedad:
                 for i, q in enumerate([c for c in candidatos if c], 1):
@@ -173,7 +168,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                             f"codigo_propiedad={propiedad.get('codigo')}\n"
                             f"codigo_yapo={propiedad.get('codigo_yapo') or propiedad.get('publicaciones', {}).get('yapo', {}).get('codigo_yapo')}\n"
                             f"ejecutivo={propiedad.get('ejecutivo')}\ncomuna={propiedad.get('comuna')}\n"
-                            f"yapo_url_db={(propiedad.get('publicaciones', {}).get('yapo', {}).get('url_yapo') or propiedad.get('yapo', {}).get('url_yapo') or propiedad.get('url_yapo'))}"
+                            f"yapo_url_db={(propiedad.get('publicaciones', {}).get('yapo', {}).get('url_yapo') or propiedad.get('url_yapo'))}"
                         )
                         break
                 if not propiedad:
@@ -182,7 +177,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                         f"se_probo_query_exacto={url_clean}\n"
                         f"codigo_yapo={cod_yapo}\n"
                         f"collection={PROPERTY_COLLECTION_NAME}\n"
-                        f"buscado_en=['yapo.url_yapo','publicaciones.yapo.url_yapo','url_yapo','codigo_yapo']"
+                        f"buscado_en=['publicaciones.yapo.url_yapo']"
                     )
             codigo_externo = cod_yapo
             if phone:

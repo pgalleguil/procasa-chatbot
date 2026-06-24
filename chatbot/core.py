@@ -39,6 +39,15 @@ from .prompts import SYSTEM_PROMPT_PROSPECTO
 logger = logging.getLogger(__name__)
 
 # ==========================================
+
+# RAG IMPORT
+from .rag import buscar_propiedades, formatear_resultados_texto, buscar_semanticamente
+# Importamos el prompt maestro con las reglas estrictas (No horarios, no inventar)
+from .prompts import SYSTEM_PROMPT_PROSPECTO 
+
+logger = logging.getLogger(__name__)
+
+# ==========================================
 #   LEAD SCORE (DELEGADO A CRM SERVICE)
 # ==========================================
 # La función local calcular_lead_score se ha eliminado en favor de CrmService.calculate_score
@@ -49,33 +58,132 @@ logger = logging.getLogger(__name__)
 def formatear_ficha_tecnica(propiedad):
     """
     Formato estándar para inyectar en el prompt cuando hay una propiedad específica.
+    Compatible con el esquema anidado del scraper prop360 (tipo_operacion, ubicacion,
+    caracteristicas, observaciones) y con el esquema plano antiguo.
     """
-    precio_clp = safe_int_conversion(propiedad.get('precio_clp', 0))
-    gastos_comunes = safe_int_conversion(propiedad.get('gastos_comunes', 0))
-    
-    return f"""
-    Código: {propiedad.get('codigo', 'N/D')}
-    Tipo: {propiedad.get('tipo', 'Departamento').title()}
-    Operación: {propiedad.get('operacion', 'Venta').title()}
-    Comuna: {propiedad.get('comuna', 'Santiago').title()}
-    Precio: {propiedad.get('precio_uf', 'N/D')} UF | ${precio_clp:,}
-    Metros útiles: {propiedad.get('m2_utiles', 'N/D')} m²
-    Metros totales: {propiedad.get('m2_totales', 'N/D')} m²
-    Terraza: {propiedad.get('m2_terraza', '0')} m²
-    Dormitorios: {propiedad.get('dormitorios', 'N/D')}
-    Baños: {propiedad.get('banos', 'N/D')}
-    Estacionamientos: {propiedad.get('estacionamientos', '0')}
-    Bodega: {'Sí' if str(propiedad.get('bodega','')).lower() in ['sí','si','1'] else 'No'}
-    Gastos comunes: ${gastos_comunes:,}
-    Orientación: {propiedad.get('orientacion', 'No especificada')}
-    Calefacción: {propiedad.get('calefaccion', 'No especificada')}
-    Piscina: {propiedad.get('piscina', 'No')}
-    Quincho: {'Sí' if str(propiedad.get('quincho','')).lower() in ['sí','si','1'] else 'No'}
-    Gimnasio: {'Sí' if str(propiedad.get('gimnasio','')).lower() in ['sí','si','1'] else 'No'}
-    Ubicación Referencial: {propiedad.get('nombre_calle', '')}
-    Amenities: {propiedad.get('amenities_text', '')[:200]}...
-    Descripción: {propiedad.get('descripcion_clean', '')[:300]}...
-    """
+    # ── Sub-documentos del nuevo esquema ─────────────────────────────────────
+    tipo_op   = propiedad.get("tipo_operacion") or {}
+    ubicacion = propiedad.get("ubicacion") or {}
+    caract    = propiedad.get("caracteristicas") or {}
+    obs       = propiedad.get("observaciones") or {}
+    estado    = propiedad.get("estado") or {}
+
+    # ── Tipo y operación ──────────────────────────────────────────────────────
+    tipo      = tipo_op.get("tipo") or propiedad.get("tipo") or "N/D"
+    es_venta  = tipo_op.get("venta") or False
+    es_arriendo = tipo_op.get("arriendo") or False
+    if es_venta:
+        operacion = "Venta"
+    elif es_arriendo:
+        operacion = "Arriendo"
+    else:
+        operacion = propiedad.get("operacion") or "N/D"
+
+    # ── Precios ───────────────────────────────────────────────────────────────
+    precio_bloque_venta   = tipo_op.get("precio_venta") or {}
+    precio_bloque_arriendo = tipo_op.get("precio_arriendo") or {}
+    precio_bloque = precio_bloque_venta if es_venta else precio_bloque_arriendo
+
+    precio_clp_raw = (
+        precio_bloque.get("precio_clp")
+        or propiedad.get("precio_clp")
+    )
+    precio_uf_raw = (
+        precio_bloque.get("precio_uf")
+        or propiedad.get("precio_uf")
+    )
+    gastos_comunes_raw = tipo_op.get("gastos_comunes") or propiedad.get("gastos_comunes") or 0
+
+    precio_clp     = safe_int_conversion(precio_clp_raw) or 0
+    gastos_comunes = safe_int_conversion(gastos_comunes_raw) or 0
+    precio_uf_str  = str(precio_uf_raw) if precio_uf_raw is not None else "N/D"
+    precio_clp_str = f"${precio_clp:,}" if precio_clp else "N/D"
+
+    # ── Ubicación ─────────────────────────────────────────────────────────────
+    region  = ubicacion.get("region")  or propiedad.get("region")  or "N/D"
+    comuna  = ubicacion.get("comuna")  or propiedad.get("comuna")  or "N/D"
+    sector  = ubicacion.get("sector")  or propiedad.get("sector")  or ""
+    calle   = (
+        ubicacion.get("calle")
+        or ubicacion.get("direccion_referencial")
+        or propiedad.get("nombre_calle")
+        or propiedad.get("direccion")
+        or ""
+    )
+
+    # ── Características ───────────────────────────────────────────────────────
+    dormitorios      = caract.get("dormitorios")                 or propiedad.get("dormitorios")      or "N/D"
+    banos            = caract.get("banos")                       or propiedad.get("banos")            or "N/D"
+    sup_util         = caract.get("superficie_util")             or propiedad.get("m2_utiles")        or "N/D"
+    sup_total        = caract.get("superficie_total")            or propiedad.get("m2_totales")       or "N/D"
+    sup_terreno      = caract.get("superficie_terreno")          or propiedad.get("superficie_terreno") or "N/D"
+    sup_construida   = caract.get("superficie_construida")       or propiedad.get("superficie_construida") or "N/D"
+    sup_terraza      = caract.get("superficie_terraza")          or propiedad.get("m2_terraza")       or "N/D"
+    estac_cub        = caract.get("estacionamientos_cubiertos")  or propiedad.get("estacionamientos") or 0
+    estac_desc       = caract.get("estacionamientos_descubiertos") or 0
+    estacionamientos = (safe_int_conversion(estac_cub) or 0) + (safe_int_conversion(estac_desc) or 0)
+    bodegas          = caract.get("bodegas")                     or propiedad.get("bodega")           or 0
+    orientacion      = caract.get("orientacion")                 or propiedad.get("orientacion")      or "N/D"
+    ano_construccion = caract.get("ano_construccion")            or propiedad.get("ano_construccion") or "N/D"
+    num_pisos        = caract.get("numero_pisos")                or propiedad.get("numero_pisos")     or "N/D"
+
+    # ── Observaciones y descripción ───────────────────────────────────────────
+    descripcion = (
+        obs.get("descripcion")
+        or propiedad.get("descripcion_clean")
+        or propiedad.get("descripcion")
+        or ""
+    )
+    titulo = obs.get("titulo") or propiedad.get("titulo") or ""
+
+    # ── Ejecutivo ─────────────────────────────────────────────────────────────
+    ejecutivo = estado.get("ejecutivo") or propiedad.get("ejecutivo") or "N/D"
+
+    # ── Construir texto ───────────────────────────────────────────────────────
+    lineas = [
+        f"Código interno:     {propiedad.get('codigo', 'N/D')}",
+        f"Tipo:               {tipo}",
+        f"Operación:          {operacion}",
+        f"Región:             {region}",
+        f"Comuna:             {comuna}",
+    ]
+    if sector:
+        lineas.append(f"Sector:             {sector}")
+    if calle:
+        lineas.append(f"Dirección ref.:     {calle}")
+    lineas += [
+        f"Precio:             {precio_uf_str} UF | {precio_clp_str}",
+    ]
+    if gastos_comunes:
+        lineas.append(f"Gastos comunes:     ${gastos_comunes:,}")
+    lineas += [
+        f"Dormitorios:        {dormitorios}",
+        f"Baños:              {banos}",
+        f"Sup. útil:          {sup_util} m²",
+        f"Sup. total:         {sup_total} m²",
+    ]
+    if sup_terreno and sup_terreno != "N/D":
+        lineas.append(f"Sup. terreno:       {sup_terreno} m²")
+    if sup_construida and sup_construida != "N/D":
+        lineas.append(f"Sup. construida:    {sup_construida} m²")
+    if sup_terraza and sup_terraza != "N/D":
+        lineas.append(f"Terraza:            {sup_terraza} m²")
+    lineas += [
+        f"Estacionamientos:   {estacionamientos if estacionamientos else 'N/D'}",
+        f"Bodegas:            {bodegas if bodegas else 'No'}",
+        f"Orientación:        {orientacion}",
+    ]
+    if ano_construccion != "N/D":
+        lineas.append(f"Año construcción:   {ano_construccion}")
+    if num_pisos != "N/D":
+        lineas.append(f"N° pisos:           {num_pisos}")
+    lineas.append(f"Ejecutivo a cargo:  {ejecutivo}")
+    if titulo:
+        lineas.append(f"Título:             {titulo}")
+    if descripcion:
+        lineas.append(f"Descripción:        {descripcion[:400]}")
+
+    return "\n    ".join(lineas)
 
 
 def _buscar_propiedad_en_universo(db, raw_value, portal: str | None = None):
@@ -480,13 +588,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
     # Actualizar prospecto si encontramos propiedad nueva
     if propiedad and codigo_detectado:
+        prop_loc = get_prop_location(propiedad)
+        prop_op = get_prop_operation(propiedad)
         updates_prop = {
             "ultimo_mensaje": datetime.now(CHILE_TZ).isoformat(),
             "codigo": codigo_detectado,
-            "precio_uf": propiedad.get("precio_uf"),
-            "comuna": propiedad.get("comuna"),
-            "tipo": propiedad.get("tipo"),
-            "operacion": propiedad.get("operacion"),
+            "precio_uf": prop_op.get("precio_uf"),
+            "comuna": prop_loc.get("comuna"),
+            "tipo": prop_op.get("tipo"),
+            "operacion": prop_op.get("operacion"),
             "origen": nuevo_origen,  # Siempre actualiza origen si viene de link
             "link_pendiente": False
         }

@@ -177,7 +177,8 @@ def buscar_propiedades(criterios: Dict, exclude_codes: List[str] = None, limit: 
         "_id": 0, "codigo": 1, "operacion": 1, "tipo": 1, "comuna": 1, 
         "precio_uf": 1, "precio_clp": 1, "dormitorios": 1, "banos": 1, 
         "m2_utiles": 1, "descripcion_clean": 1, "nombre_calle": 1,
-        "amenities": 1 # Traemos amenities para el prompt natural
+        "amenities": 1,
+        "tipo_operacion": 1, "ubicacion": 1, "caracteristicas": 1, "observaciones": 1
     }
 
     try:
@@ -194,25 +195,34 @@ def formatear_resultados_texto(propiedades: List[Dict]) -> str:
     if not propiedades:
         return ""
 
+    from .property_lookup import get_prop_location, get_prop_operation
+    
     texto = "--- INICIO LISTADO PROPIEDADES ENCONTRADAS (RAG) ---\n"
     for p in propiedades:
+        prop_loc = get_prop_location(p)
+        prop_op = get_prop_operation(p)
+        caract = p.get("caracteristicas") or {}
+        obs = p.get("observaciones") or {}
+        
+        dormitorios = caract.get("dormitorios") or p.get("dormitorios") or "N/D"
+        banos = caract.get("banos") or p.get("banos") or "N/D"
+        sup_util = caract.get("superficie_util") or p.get("m2_utiles") or "N/D"
+        descripcion = obs.get("descripcion") or p.get("descripcion_clean") or ""
+        
         texto += (
             f"- Código: {p.get('codigo')}\n"
-            f"  Tipo: {p.get('tipo')} en {p.get('operacion')}\n"
-            f"  Comuna: {p.get('comuna')}\n"
-            f"  Precio: UF {p.get('precio_uf')} (aprox CLP {p.get('precio_clp')})\n"
-            f"  Programa: {p.get('dormitorios')} dorms, {p.get('banos')} baños\n"
-            f"  Superficie: {p.get('m2_utiles')} m2 útiles\n"
-            f"  Amenities/Desc: {str(p.get('descripcion_clean', ''))[:250]}...\n"
+            f"  Tipo: {prop_op.get('tipo')} en {prop_op.get('operacion')}\n"
+            f"  Comuna: {prop_loc.get('comuna')}\n"
+            f"  Precio: UF {prop_op.get('precio_uf')} (aprox CLP {prop_op.get('precio_clp')})\n"
+            f"  Programa: {dormitorios} dorms, {banos} baños\n"
+            f"  Superficie: {sup_util} m2 útiles\n"
+            f"  Amenities/Desc: {str(descripcion)[:250]}...\n"
             f"  Link: https://www.procasa.cl/{p.get('codigo')}\n\n"
         )
     texto += "--- FIN LISTADO ---"
     return texto
 
-
-# =============================================================================
-# BÚSQUEDA HÍBRIDA (Structured Filters + Semantic Ranking)
-# =============================================================================
+# =======================================================================================================
 
 # Patrones regex para extraer filtros duros del texto libre
 _RE_DORMS = re.compile(r'(\d)\s*(?:dormitorio|dorm|pieza|habitaci[oó]n)', re.IGNORECASE)
@@ -435,7 +445,8 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
             "vector_descripcion": 1, "codigo": 1, "oficina": 1,
             "comuna": 1, "operacion": 1, "tipo": 1, "precio_uf": 1, "precio_clp": 1,
             "dormitorios": 1, "banos": 1, "m2_utiles": 1, "descripcion_clean": 1,
-            "nombre_calle": 1
+            "nombre_calle": 1,
+            "tipo_operacion": 1, "ubicacion": 1, "caracteristicas": 1, "observaciones": 1
         }
 
         candidatos = list(collection.find(mongo_query, projection).limit(2000))

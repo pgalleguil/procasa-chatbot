@@ -4,7 +4,7 @@ from typing import Any, Dict, Iterable, Optional
 from config import Config
 from .utils import safe_int_conversion
 
-PROPERTY_COLLECTION_NAME = "universo_cartera_pro360"
+PROPERTY_COLLECTION_NAME = "universo_cartera_prop360"
 
 
 def _clean_text(value: Any) -> str:

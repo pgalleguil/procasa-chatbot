@@ -151,7 +151,8 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 logger.info(f"[LINK_ID]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncodigo_yapo={cod_yapo}")
             else:
                 logger.info(f"[LINK_ID_FAIL]\ntrace={trace_id or 'no-trace'}\nphone={phone}\nurl={url_clean}")
-            query_usada = {"publicaciones.yapo.url_yapo": ruta_yapo}
+            # La BD guarda url_yapo como URL completa → buscar por URL completa, ruta relativa y código numérico
+            query_usada = {"publicaciones.yapo.url_yapo": url_clean}
             logger.info(
                 f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={PROPERTY_COLLECTION_NAME}\n"
                 f"filtro_exacto={query_usada}"
@@ -160,16 +161,25 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 f"[LINK_QUERY_CONTEXT]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
                 f"codigo_yapo={cod_yapo}\n"
                 f"ruta_yapo={ruta_yapo}\n"
-                f"se_busca_solo_en=publicaciones.yapo.url_yapo"
+                f"url_clean={url_clean}\n"
+                f"se_busca_en=publicaciones.yapo.url_yapo (URL completa + ruta + código)"
             )
             prop = coleccion.find_one(query_usada)
             propiedad = prop
             debug_info["exact_match"] = bool(propiedad)
             debug_info["regex_match"] = False
             debug_info["urls_encontradas"] = []
+            # Candidatos en orden de especificidad: URL completa → ruta relativa → regex por código
             candidatos = [
-                {"publicaciones.yapo.url_yapo": ruta_yapo},
-                {"publicaciones.yapo.url_yapo": {"$regex": re.escape(ruta_yapo) + r"$", "$options": "i"}},
+                {"publicaciones.yapo.url_yapo": url_clean},                                                          # URL completa exacta (como la guarda el scraper)
+                {"publicaciones.yapo.url_yapo": {"$regex": re.escape(url_clean) + r"/?$", "$options": "i"}},        # URL completa con regex
+                {"publicaciones.yapo.url_yapo": ruta_yapo},                                                          # Ruta relativa (sin dominio)
+                {"publicaciones.yapo.url_yapo": {"$regex": re.escape(ruta_yapo) + r"$", "$options": "i"}},          # Ruta relativa con regex
+                {"publicaciones.yapo.url_yapo": {"$regex": re.escape(cod_yapo) + r"$", "$options": "i"}} if cod_yapo else None,  # Solo el código numérico
+                {"codigo_yapo": cod_yapo} if cod_yapo else None,                                                     # Campo raíz codigo_yapo
+                {"publicaciones.yapo.codigo_yapo": cod_yapo} if cod_yapo else None,                                  # Campo anidado codigo_yapo
+                {"yapo.url_yapo": url_clean},                                                                        # Esquema antiguo
+                {"url_yapo": url_clean},                                                                              # Esquema plano
             ]
             if not propiedad:
                 for i, q in enumerate([c for c in candidatos if c], 1):

@@ -121,7 +121,11 @@ def _send_alert_once_sync(
             return
 
         # Buscamos quién es el responsable REAL (según reglas JPC, Región, etc.)
-        is_missing_property = bool(criteria.get("link_pendiente")) or not criteria.get("codigo") or str(lead_data.get("property_code", "")).strip() in {"", "N/D", "None"}
+        raw_link_pendiente = criteria.get("link_pendiente")
+        is_link_pendiente = str(raw_link_pendiente).lower() == "true" if isinstance(raw_link_pendiente, str) else bool(raw_link_pendiente)
+        
+        is_missing_property = is_link_pendiente or not criteria.get("codigo") or str(lead_data.get("property_code", "")).strip() in {"", "N/D", "None"}
+        
         if is_missing_property:
             admin_phone = "56983219804"
             admin_msg = (

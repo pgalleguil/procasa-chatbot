@@ -266,7 +266,10 @@ def actualizar_prospecto(phone: str, datos: dict, trace_id: str = None):
     update_fields = {"$set": {}}
     for key, value in datos.items():
         if value not in [None, "", "desconocido"]:
-            update_fields["$set"][f"prospecto.{key}"] = str(value).strip()
+            if isinstance(value, (bool, int, float, list, dict)):
+                update_fields["$set"][f"prospecto.{key}"] = value
+            else:
+                update_fields["$set"][f"prospecto.{key}"] = str(value).strip()
 
     if update_fields["$set"]:
         if trace_id:

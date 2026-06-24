@@ -4,7 +4,7 @@ from typing import Any, Dict, Iterable, Optional
 from config import Config
 from .utils import safe_int_conversion
 
-PROPERTY_COLLECTION_NAME = "universo_cartera_prop360"
+PROPERTY_COLLECTION_NAME = "universo_cartera_pro360"
 
 
 def _clean_text(value: Any) -> str:
@@ -35,25 +35,30 @@ def build_property_lookup_queries(raw_value: Any) -> list[Dict[str, Any]]:
         {"codigo": value},
         {"codigo": value_int},
         {"codigo": {"$in": [value, value_int]}},
+        {"publicaciones.yapo.url_yapo": value},
+        {"yapo.url_yapo": value},
+        {"url_yapo": value},
+        {"publicaciones.portal_inmobiliario.url_pi": value},
+        {"publicaciones.portal_inmobiliario.url_mercado_libre": value},
+        {"publicaciones.procasa.url_procasa": value},
+        {"publicaciones.toctoc.url_toctoc": value},
         {"ubicacion.comuna": value},
         {"ubicacion.comuna": _regex(value)},
         {"ubicacion.region": value},
         {"ubicacion.region": _regex(value)},
         {"estado.ejecutivo": value},
         {"estado.ejecutivo": _regex(value)},
-        {"publicaciones.procasa.url_procasa": value},
         {"publicaciones.procasa.url_procasa": _regex(value)},
         {"metadata.source_url": value},
         {"metadata.source_url": _regex(value)},
         {"source_url": value},
         {"source_url": _regex(value)},
-        {"publicaciones.portal_inmobiliario.url_mercado_libre": value},
         {"publicaciones.portal_inmobiliario.url_mercado_libre": _regex(value)},
-        {"publicaciones.portal_inmobiliario.url_pi": value},
         {"publicaciones.portal_inmobiliario.url_pi": _regex(value)},
-        {"publicaciones.toctoc.url_toctoc": value},
         {"publicaciones.toctoc.url_toctoc": _regex(value)},
-        {"publicaciones.yapo.url_yapo": value},
+        {"yapo.url_yapo": _regex(value)},
+        {"yapo.codigo_yapo": value},
+        {"yapo.codigo_yapo": value_int},
         {"publicaciones.yapo.url_yapo": _regex(value)},
         {"publicaciones.codigo_internacional": value},
         {"publicaciones.codigo_internacional": value_int},
@@ -75,12 +80,15 @@ def build_property_lookup_queries(raw_value: Any) -> list[Dict[str, Any]]:
 
     if "http" in value_lower or ".cl" in value_lower or "/" in value:
         queries.extend([
+            {"publicaciones.yapo.url_yapo": value},
+            {"yapo.url_yapo": value},
             {"publicaciones.procasa.url_procasa": _regex(value)},
             {"metadata.source_url": _regex(value)},
             {"source_url": _regex(value)},
             {"publicaciones.portal_inmobiliario.url_mercado_libre": _regex(value)},
             {"publicaciones.portal_inmobiliario.url_pi": _regex(value)},
             {"publicaciones.toctoc.url_toctoc": _regex(value)},
+            {"yapo.url_yapo": _regex(value)},
             {"publicaciones.yapo.url_yapo": _regex(value)},
         ])
 

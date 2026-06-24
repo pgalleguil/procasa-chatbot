@@ -223,12 +223,25 @@ class LeadProcessingService:
         if current_exec not in unassigned_labels:
             return {} # Ya tiene asignado
 
-        # NUEVO: Asignación universal. Todos los leads se asignan sin importar intención.
-        # Eliminada validación de is_worthy_of_assignment.
-
         property_code = prospecto.get("codigo") or lead_doc.get("codigo")
         comuna = prospecto.get("comuna") or lead_doc.get("comuna")
         zone = lead_doc.get("zone", "unknown")
+
+        if not property_code:
+            logger.info(
+                f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} sin propiedad confirmada. "
+                "Se omite asignación automática."
+            )
+            return {}
+
+        db = LeadProcessingService._db()
+        prop = find_property_by_any_identifier(db, property_code, PROPERTY_COLLECTION_NAME)
+        if not prop:
+            logger.info(
+                f"[PROCESS_SERVICE] Propiedad {property_code} no encontrada en {PROPERTY_COLLECTION_NAME}. "
+                "Se omite asignación automática."
+            )
+            return {}
 
         exec_name, exec_phone, assignment_type = find_responsible_executive(
             property_code=str(property_code) if property_code else None, 

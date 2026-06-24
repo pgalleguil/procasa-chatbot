@@ -289,30 +289,15 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
     phone = None
 
     if not prop and property_code:
-        logger.warning(f"[ROUTER] Propiedad {property_code} NO encontrada en {PROPERTY_COLLECTION_NAME}. Usando fallback.")
-        target_executive_name = get_next_round_robin_executive(norm_comuna)
-        
-        # --- Alerta de Propiedad Faltante (Solicitado por usuario) ---
-        try:
-            from .storage import save_pending_notification
-            # Notificar a Pablo Galleguillos (+56983219804)
-            lead_info = f" del cliente {lead_name} ({lead_phone})" if lead_phone else ""
-            alert_payload = {
-                "target_phone": "+56983219804",
-                "target_name": "Pablo Galleguillos",
-                "property_code": property_code,
-                "lead_type": "MISSING_PROPERTY_ALERT",
-                "nombre": "Sistema de Alertas",
-                "last_message": f"⚠️ ATENCIÓN: Se recibió un lead{lead_info} para la propiedad '{property_code}', pero este código NO existe en la colección '{PROPERTY_COLLECTION_NAME}'. Es probable que la base de datos esté desactualizada."
-            }
-            save_pending_notification(alert_payload)
-            logger.info(f"[ROUTER] Alerta de propiedad faltante programada para el administrador.")
-        except Exception as e_alert:
-            logger.error(f"[ROUTER] Error al programar alerta de propiedad faltante: {e_alert}")
+        logger.warning(
+            f"[ROUTER] Propiedad {property_code} NO encontrada en {PROPERTY_COLLECTION_NAME}. "
+            "No se asigna ejecutivo."
+        )
+        return UNASSIGNED_LABEL, None, "MISSING_PROPERTY"
 
     elif not prop:
-        logger.info("[ROUTER] Lead sin propiedad confirmada. Aplicando fallback a Round Robin.")
-        target_executive_name = get_next_round_robin_executive(norm_comuna)
+        logger.info("[ROUTER] Lead sin propiedad confirmada. Se deja sin asignar.")
+        return UNASSIGNED_LABEL, None, "NO_PROPERTY"
     else:
         original_executive = get_prop_executive(prop)
         logger.info(f"[ROUTER] Propiedad encontrada. Ejecutivo original en ficha: '{original_executive}'")

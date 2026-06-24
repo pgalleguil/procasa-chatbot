@@ -95,14 +95,18 @@ def _buscar_propiedad_en_universo(db, raw_value, portal: str | None = None):
     portal_specific_queries = []
     if portal == "Yapo":
         portal_specific_queries.extend([
+            {"yapo.url_yapo": value},
+            {"yapo.url_yapo": {"$regex": re.escape(value), "$options": "i"}},
+            {"yapo.codigo_yapo": value},
+            {"yapo.codigo_yapo": value_int},
             {"publicaciones.yapo.url_yapo": value},
             {"publicaciones.yapo.url_yapo": {"$regex": re.escape(value), "$options": "i"}},
             {"url_yapo": value},
             {"url_yapo": {"$regex": re.escape(value), "$options": "i"}},
-            {"publicaciones.yapo.codigo_yapo": value},
-            {"publicaciones.yapo.codigo_yapo": value_int},
             {"codigo_yapo": value},
             {"codigo_yapo": value_int},
+            {"publicaciones.yapo.codigo_yapo": value},
+            {"publicaciones.yapo.codigo_yapo": value_int},
         ])
     elif portal == "MercadoLibre":
         portal_specific_queries.extend([

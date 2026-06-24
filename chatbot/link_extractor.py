@@ -125,7 +125,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 logger.info(f"[LINK_ID]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncodigo_yapo={cod_yapo}")
             else:
                 logger.info(f"[LINK_ID_FAIL]\ntrace={trace_id or 'no-trace'}\nphone={phone}\nurl={url_clean}")
-            query_usada = {"publicaciones.yapo.url_yapo": url_clean}
+            query_usada = {"$or": [{"yapo.url_yapo": url_clean}, {"publicaciones.yapo.url_yapo": url_clean}]}
             logger.info(
                 f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={PROPERTY_COLLECTION_NAME}\n"
                 f"filtro_exacto={query_usada}"
@@ -135,7 +135,10 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
             debug_info["regex_match"] = False
             debug_info["urls_encontradas"] = []
             if not prop and cod_yapo:
-                regex_q = {"publicaciones.yapo.url_yapo": {"$regex": re.escape(cod_yapo) + r"$", "$options": "i"}}
+                regex_q = {"$or": [
+                    {"yapo.url_yapo": {"$regex": re.escape(cod_yapo) + r"$", "$options": "i"}},
+                    {"publicaciones.yapo.url_yapo": {"$regex": re.escape(cod_yapo) + r"$", "$options": "i"}},
+                ]}
                 logger.info(
                     f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={PROPERTY_COLLECTION_NAME}\n"
                     f"filtro_exacto={regex_q}"
@@ -145,6 +148,9 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 if prop:
                     debug_info["urls_encontradas"] = [prop.get("publicaciones", {}).get("yapo", {}).get("url_yapo") or prop.get("url_yapo")]
             candidatos = [
+                {"yapo.url_yapo": url_clean},
+                {"yapo.url_yapo": url_regex},
+                {"yapo.codigo_yapo": cod_yapo} if cod_yapo else None,
                 {"publicaciones.yapo.url_yapo": url_clean},
                 {"publicaciones.yapo.url_yapo": url_regex},
                 {"url_yapo": url_regex},
@@ -306,7 +312,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 logger.exception(f"[LINK_EXCEPTION] trace={trace_id or 'no-trace'} phone={phone} tipo_error=forensics mensaje=fallo_busqueda_similares")
             try:
                 from .storage import actualizar_prospecto
-                debug_info["query_usada"] = {"publicaciones.yapo.url_yapo": url_clean}
+                debug_info["query_usada"] = {"$or": [{"yapo.url_yapo": url_clean}, {"publicaciones.yapo.url_yapo": url_clean}]}
                 debug_info["resultado"] = "NOT_FOUND"
                 debug_info["timestamp"] = __import__("datetime").datetime.now().isoformat()
                 debug_info["cantidad_matches_similares"] = len(similares)

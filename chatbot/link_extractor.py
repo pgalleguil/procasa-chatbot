@@ -34,6 +34,21 @@ def normalizar_url(url: str) -> str:
     return url.lower()
 
 
+def extraer_ruta_yapo(url: str) -> str:
+    """
+    Convierte una URL completa de Yapo a la ruta relativa que suele guardar la BD.
+    Ej:
+      https://www.yapo.cl/bienes-raices-.../32148052
+      -> bienes-raices-.../32148052
+    """
+    if not url:
+        return ""
+    limpio = normalizar_url(url)
+    if limpio.startswith("yapo.cl/"):
+        limpio = limpio[len("yapo.cl/"):]
+    return limpio.lstrip("/")
+
+
 def construir_patron_url(url: str) -> dict:
     """
     Construye un patrón flexible para matchear la URL aunque cambie http/https o www.
@@ -131,11 +146,12 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
         # === PASO 2: RESOLUCIÓN DETERMINÍSTICA POR PLATAFORMA ===
         if plataforma == "Yapo":
             cod_yapo = extraer_codigo_yapo(url_clean)
+            ruta_yapo = extraer_ruta_yapo(url_clean)
             if cod_yapo:
                 logger.info(f"[LINK_ID]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncodigo_yapo={cod_yapo}")
             else:
                 logger.info(f"[LINK_ID_FAIL]\ntrace={trace_id or 'no-trace'}\nphone={phone}\nurl={url_clean}")
-            query_usada = {"publicaciones.yapo.url_yapo": url_clean}
+            query_usada = {"publicaciones.yapo.url_yapo": ruta_yapo}
             logger.info(
                 f"[LINK_QUERY]\ntrace={trace_id or 'no-trace'}\nphone={phone}\ncollection={PROPERTY_COLLECTION_NAME}\n"
                 f"filtro_exacto={query_usada}"
@@ -143,6 +159,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
             logger.info(
                 f"[LINK_QUERY_CONTEXT]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
                 f"codigo_yapo={cod_yapo}\n"
+                f"ruta_yapo={ruta_yapo}\n"
                 f"se_busca_solo_en=publicaciones.yapo.url_yapo"
             )
             prop = coleccion.find_one(query_usada)
@@ -151,7 +168,8 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
             debug_info["regex_match"] = False
             debug_info["urls_encontradas"] = []
             candidatos = [
-                {"publicaciones.yapo.url_yapo": url_regex},
+                {"publicaciones.yapo.url_yapo": ruta_yapo},
+                {"publicaciones.yapo.url_yapo": {"$regex": re.escape(ruta_yapo) + r"$", "$options": "i"}},
             ]
             if not propiedad:
                 for i, q in enumerate([c for c in candidatos if c], 1):
@@ -175,6 +193,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                     logger.info(
                         f"[LINK_QUERY_FAIL]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
                         f"se_probo_query_exacto={url_clean}\n"
+                        f"ruta_yapo={ruta_yapo}\n"
                         f"codigo_yapo={cod_yapo}\n"
                         f"collection={PROPERTY_COLLECTION_NAME}\n"
                         f"buscado_en=['publicaciones.yapo.url_yapo']"
@@ -188,6 +207,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                     debug_info["timestamp"] = __import__("datetime").datetime.now().isoformat()
                     debug_info["collection"] = PROPERTY_COLLECTION_NAME
                     debug_info["ruta_prioritaria"] = "publicaciones.yapo.url_yapo"
+                    debug_info["ruta_yapo"] = ruta_yapo
                     actualizar_prospecto(phone, {"debug_link": debug_info}, trace_id)
                 except Exception:
                     logger.exception(f"[LINK_EXCEPTION] trace={trace_id or 'no-trace'} phone={phone} tipo_error=debug_persist mensaje=fallo_guardando_debug_link")

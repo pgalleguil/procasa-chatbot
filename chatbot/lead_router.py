@@ -38,7 +38,7 @@ TEMPORARILY_INACTIVE_EXECUTIVES = [ROCIO_ALIAGA, RAQUEL_CHENEAUX]
 DEFAULT_VACATION_REPLACEMENT = ERIKA_GARRIDO
 
 # Reparto especial para los casos de Raquel entre las dos disponibles.
-SPECIAL_RAQUEL_TEAM = [ERIKA_GARRIDO, MARIELA_ARRIAGADA]
+SPECIAL_RAQUEL_TEAM = [MARIELA_ARRIAGADA]
 
 # Mapeo de reemplazos para asignaciones directas (fuera de Round Robin)
 VACATION_REPLACEMENTS = {

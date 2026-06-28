@@ -883,7 +883,7 @@
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Tipo
                                             Convenio <span class="required-star">*</span></label>
                                         <select class="form-select" name="tipo" required
-                                            onchange="validateField(this); triggerPreview()">
+                                            onchange="handleTipoChange(this); validateField(this); triggerPreview()">
                                             <option value="" selected>Selecciona tipo de operación</option>
                                             <option value="Venta">Autorización de Venta</option>
                                             <option value="Venta Exclusiva">Autorización de Venta Exclusiva</option>
@@ -971,16 +971,20 @@
                                             </select>
                                         </div>
                                     </div>
-                                    <div class="col-lg-3 col-md-6">
+                                    <div class="col-lg-3 col-md-6" id="comisionWrapper">
                                         <label class="form-label text-secondary small text-uppercase fw-bold">Comisión
                                             <span class="required-star">*</span></label>
-                                        <select class="form-select" name="comision" required
+                                        <select class="form-select" name="comision" id="comisionSelect" required
                                             onchange="validateField(this); triggerPreview();">
                                             <option value="" selected>Selecciona comisión</option>
                                             <option value="1%">1%</option>
                                             <option value="1.5%">1.5%</option>
                                             <option value="2%">2%</option>
+                                            <option value="50%">50%</option>
                                         </select>
+                                        <div id="comisionLockedNote" class="d-none mt-1" style="font-size:0.78rem; color: var(--accent);">
+                                            <i class="fa-solid fa-lock me-1"></i>Comisión fija para convenios de arriendo.
+                                        </div>
                                     </div>
                                 </div>
                             </form>
@@ -1159,6 +1163,41 @@
 
         if (localStorage.getItem('theme') === 'light') toggleTheme();
 
+        /**
+         * Gestiona la comisión según el tipo de convenio.
+         * Para arriendos, se fija automáticamente en 50% y el campo queda bloqueado.
+         * Para ventas, se restituye la selección manual.
+         */
+        function handleTipoChange(tipoSelect) {
+            const tipoVal = tipoSelect.value;
+            const comisionSel = document.getElementById('comisionSelect');
+            const comisionNote = document.getElementById('comisionLockedNote');
+            const isArriendo = (tipoVal === 'Arriendo' || tipoVal === 'Arriendo y Administración');
+
+            if (isArriendo) {
+                // Fijar comisión en 50% y bloquear el campo
+                comisionSel.value = '50%';
+                comisionSel.disabled = true;
+                comisionSel.style.opacity = '0.6';
+                comisionSel.style.cursor = 'not-allowed';
+                // Asegurar is-valid para que no bloquee el envío
+                comisionSel.classList.remove('is-invalid');
+                comisionSel.classList.add('is-valid');
+                comisionNote.classList.remove('d-none');
+            } else {
+                // Restituir selector libre para ventas
+                comisionSel.disabled = false;
+                comisionSel.style.opacity = '';
+                comisionSel.style.cursor = '';
+                // Si el valor actual es 50% (venía de arriendo), limpiar la selección
+                if (comisionSel.value === '50%') {
+                    comisionSel.value = '';
+                    comisionSel.classList.remove('is-valid');
+                }
+                comisionNote.classList.add('d-none');
+            }
+        }
+
         function capitalizeName(input) {
             let val = input.value.toLowerCase().replace(/\s+/g, ' ').trim();
             input.value = val.replace(/(^|\s)\S/g, l => l.toUpperCase());
@@ -1215,6 +1254,7 @@
                 if (el.id === 'phoneInput') return;
                 if (el.closest('.iti')) return;
                 if (el.type === 'hidden') return;
+                if (el.disabled) return; // campos bloqueados (ej: comisión en arriendo)
                 if (el.required && !el.value.trim()) {
                     isValid = false;
                     const label = el.closest('.col-lg-1, .col-lg-2, .col-lg-3, .col-lg-4, .col-lg-5, .col-lg-6, .col-lg-8, .col-md-6')?.querySelector('label')?.innerText || el.name;

@@ -209,7 +209,7 @@ def _normalize_contract_fields(d: dict) -> dict:
     valid_tipos = {"Venta", "Venta Exclusiva", "Arriendo", "Arriendo y Administración"}
     d["tipo"] = tipo if tipo in valid_tipos else "Arriendo"
     comision_raw = str(d.get("comision", "2")).replace("%", "").replace(",", ".").strip()
-    if comision_raw not in {"1", "1.0", "1.5", "2", "2.0"}:
+    if comision_raw not in {"1", "1.0", "1.5", "2", "2.0", "50"}:
         comision_raw = "2"
     if comision_raw in {"1.0", "2.0"}:
         comision_raw = comision_raw.split(".")[0]
@@ -332,6 +332,17 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         
         server_timestamp = SecurityContracts.generate_server_timestamp()
             
+        # Obtener datos del ejecutivo para guardar en el documento y habilitar CC en emails
+        user_doc = await adb["usuarios"].find_one({"username": created_by}) if created_by else None
+        if user_doc:
+            exec_nombre = user_doc.get("nombre", created_by)
+            exec_email = user_doc.get("email", "")
+            exec_telefono = user_doc.get("phone") or user_doc.get("telefono", "")
+        else:
+            exec_nombre = created_by or ""
+            exec_email = ""
+            exec_telefono = ""
+
         contract_doc = {
             "contract_code": contract_code,
             "origen": data.get("origen", "Captación Interna"),
@@ -353,6 +364,12 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                 "moneda": data.get("moneda", "UF"),
                 "comision": data.get("comision", "")
             },
+            "executive_data": {
+                "nombre": exec_nombre,
+                "email": exec_email,
+                "telefono": exec_telefono
+            },
+            "executive_display": exec_nombre,
             "status": "created",
             "security": {
                 "original_hash": None, # Calculado en background
@@ -788,15 +805,25 @@ async def send_contract(contract_code: str, request: Request):
     link = f"{base_url}/contracts/view/{token}"
     
     nombre = contract.get('client_data', {}).get('nombre', contract.get('cliente_nombre', ''))
-    direccion = contract.get('property_data', {}).get('direccion', contract.get('propiedad_direccion', ''))
-    
-    mensaje = f"""Hola, este enlace es personal, confidencial e intransferible.
+    tipo_raw = contract.get('property_data', {}).get('tipo', '')
+    tipo_label = {
+        'Venta': 'Autorización de Venta',
+        'Venta Exclusiva': 'Autorización de Venta Exclusiva',
+        'Arriendo': 'Autorización de Arriendo',
+        'Arriendo y Administración': 'Autorización de Arriendo y Administración'
+    }.get(tipo_raw, 'Convenio de Corretaje')
+    property_code_display = contract.get('property_code', '')
+    prop_suffix = f"\nhttps://www.procasa.cl/{property_code_display}" if property_code_display else ""
 
-Al acceder y firmar el documento, usted declara ser el titular del número telefónico al que fue enviado este mensaje y acepta el contrato asociado a su propiedad.
+    mensaje = f"""Hola {nombre} 👋
 
-Este proceso utiliza firma electrónica conforme a la Ley 19.799.
+Necesitamos que revise y firme digitalmente su {tipo_label}.{prop_suffix}
 
-👉 Ingrese aquí para revisar y firmar:
+🔒 Este enlace es personal, confidencial e intransferible. Al ingresar y firmar el documento, usted confirma ser el titular de este número telefónico y acepta las condiciones del convenio de corretaje.
+
+La firma electrónica utilizada en este proceso se encuentra respaldada por la Ley N° 19.799 sobre Documentos y Firma Electrónica.
+
+👉 Revise y firme aquí:
 {link}"""
     
     # Guardar mensaje dentro del mismo documento del contrato
@@ -1028,9 +1055,13 @@ async def request_otp(token: str, request: Request, background_tasks: Background
         }
     )
     
-    mensaje = f"""Tu c\u00f3digo de verificaci\u00f3n para firmar tu contrato es: *{otp}*
+    nombre_cliente = contract.get('client_data', {}).get('nombre', '').split()[0] if contract.get('client_data', {}).get('nombre') else ''
+    mensaje = f"""{'Hola ' + nombre_cliente + ', tu c' if nombre_cliente else 'C'}ódigo de verificación para firmar tu Convenio de Corretaje es:
 
-Este c\u00f3digo es personal, v\u00e1lido por 5 minutos y no debe compartirse con terceros."""
+🔑 *{otp}*
+
+⏳ Válido por 5 minutos.
+🔒 No compartas este código con nadie."""
     
     try:
         await adb["contracts"].update_one(
@@ -1441,11 +1472,12 @@ def notify_client_bg(contract_code: str, phone: str, client_email: str, nombre: 
     )
 
     # WhatsApp confirmation
-    mensaje_conf = """Confirmamos la aceptación electrónica de tu contrato conforme a la Ley 19.799.
+    nombre_cliente = contract.get('client_data', {}).get('nombre', '') if contract else ''
+    mensaje_conf = f"""✅ ¡Proceso completado con éxito{',' + ' ' + nombre_cliente.split()[0] if nombre_cliente else ''}!
 
-Se ha registrado la fecha, hora, dirección IP y verificación de identidad asociada a esta aceptación.
+Tu Convenio de Corretaje fue firmado electrónicamente y registrado de forma segura conforme a la Ley N° 19.799.
 
-En breve recibirás una copia del documento firmado."""
+📄 En breve recibirás una copia del documento firmado en tu correo electrónico."""
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -1512,20 +1544,30 @@ def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_b
         msg["Cc"] = cc_str
         msg["Subject"] = asunto
 
-        body = f"""Estimado/a {nombre},
+        verify_token_val = contract.get('security', {}).get('verify_token', contract_code) if contract else contract_code
+        verify_url_email = f"{Config.CRM_BASE_URL}/contracts/verify/{verify_token_val}"
+        tipo_raw_email = contract.get('property_data', {}).get('tipo', '') if contract else ''
+        tipo_label_email = {
+            'Venta': 'Autorización de Venta',
+            'Venta Exclusiva': 'Autorización de Venta Exclusiva',
+            'Arriendo': 'Autorización de Arriendo',
+            'Arriendo y Administración': 'Autorización de Arriendo y Administración'
+        }.get(tipo_raw_email, 'Convenio de Corretaje')
 
-Adjunto encontrará el documento de su convenio de corretaje firmado electrónicamente conforme a la Ley 19.799.
+        body = f"""Estimado/a {nombre}:
 
-Detalles del convenio:
+Junto con saludar, adjuntamos el Convenio de Corretaje correspondiente a la propiedad N° {prop_label} ({tipo_label_email}), el cual ha sido firmado electrónicamente conforme a la Ley N° 19.799 sobre Documentos y Firma Electrónica.
+
+Detalle del convenio:
 • Propiedad: {prop_label}
-• Código de verificación: {contract_code}
+• Código del convenio: {contract_code}
 
-Puede verificar la autenticidad del documento en:
-{Config.CRM_BASE_URL}/contracts/verify/{contract_code}
+Para validar la autenticidad del documento, puede ingresar al siguiente enlace:
+{verify_url_email}
 
-Si tiene alguna duda, no dude en contactarnos.
+Ante cualquier consulta, quedamos atentos para ayudarle.
 
-Saludos,
+Saludos cordiales,
 Equipo Procasa Sucre"""
 
         msg.attach(MIMEText(body, "plain", "utf-8"))

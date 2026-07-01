@@ -221,7 +221,21 @@ class LeadProcessingService:
         unassigned_labels = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
         
         if current_exec not in unassigned_labels:
-            return {} # Ya tiene asignado
+            from .lead_router import get_active_executive, get_next_business_slot
+            comuna_lead = prospecto.get("comuna") or lead_doc.get("comuna") or ""
+            effective_exec = get_active_executive(current_exec, comuna_lead)
+            if effective_exec != current_exec:
+                logger.info(f"[PROCESS_SERVICE] Ejecutivo histórico {current_exec} no disponible. Reasignando a {effective_exec}.")
+                now_cl = datetime.now(CHILE_TZ)
+                assigned_at = get_next_business_slot(now_cl)
+                return {
+                    "ejecutivo_asignado": effective_exec,
+                    "prospecto.ejecutivo": effective_exec,
+                    "lifecycle.assigned_at": assigned_at.isoformat(),
+                    "auto_reassigned": True,
+                    "assignment_type": "VACATION_REASSIGNMENT"
+                }
+            return {} # Ya tiene asignado y sigue activo
 
         property_code = prospecto.get("codigo") or lead_doc.get("codigo")
         comuna = prospecto.get("comuna") or lead_doc.get("comuna")

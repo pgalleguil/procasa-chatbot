@@ -1,0 +1,423 @@
+# Configuración del Decision Engine V2
+# Archivo de configuración externo — todas las reglas se definen aquí
+# No es necesario modificar código para agregar nuevas marcas, términos o umbrales
+
+engine:
+  version: "2.0.0"
+  nombre: "Decision Engine V2 — Yapo.cl Classifier"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ETAPA 1: REGLAS ABSOLUTAS (NIVEL A)
+# ═══════════════════════════════════════════════════════════════════════════
+# Cualquier regla que se active aquí termina inmediatamente con CORREDOR.
+etapa_1_reglas_absolutas:
+  reglas:
+    # 1a: Términos explícitos de corredor/profesional inmobiliario
+    - tipo: termino_explicito
+      nivel: A
+      peso: 10
+      confianza: 0.99
+      activa: true
+      modo: contiene
+      fuentes:
+        - descripcion
+        - titulo
+        - publicador
+        - full_text
+        - footer
+      terminos:
+        - "corredor de propiedades"
+        - "corredora de propiedades"
+        - "corretaje de propiedades"
+        - "agente inmobiliario"
+        - "agente de propiedades"
+        - "agente inmobiliaria"
+        - "broker inmobiliario"
+        - "broker de propiedades"
+        - "corredor independiente"
+        - "corredora independiente"
+
+    # 1b: Marcas/franquicias conocidas (nacionales e internacionales)
+    - tipo: marca_conocida
+      nivel: A
+      peso: 10
+      confianza: 0.99
+      activa: true
+      modo: contiene
+      fuentes:
+        - publicador
+        - company_name
+        - broker_brand
+        - descripcion
+        - logo_alt
+        - full_text
+        - footer
+      marcas:
+        # Internacionales
+        - "remax"
+        - "re/max"
+        - "century 21"
+        - "c21"
+        - "keller williams"
+        - "coldwell banker"
+        - "engel & völkers"
+        - "engel volkers"
+        - "engel völkers"
+        - "sotheby"
+        - "sotheby's"
+        - "realty"
+        - "zillow"
+        # Nacionales grandes
+        - "houm"
+        - "procasa"
+        - "nexxos"
+        - "fuenzalida"
+        - "assetplan"
+        - "toctoc"
+        - "toctoc"
+        - "isbast"
+        - "buscapro"
+        - "habitab"
+        - "grupocasa"
+        - "copro"
+        - "one propiedades"
+        - "kutt property"
+        - "maca propiedades"
+        - "pizarro propiedades"
+        - "mateo sanchez"
+        - "pablo cassini"
+        - "skyline"
+        - "morandé"
+        # Plataformas
+        - "buydepa"
+        - "homierent"
+        - "plusrent"
+        - "rentahouse"
+        - "findep"
+        - "arrendaplus"
+        - "mueve chile"
+
+    # 1c: Razones sociales y formas legales
+    - tipo: razon_social
+      nivel: A
+      peso: 10
+      confianza: 0.98
+      activa: true
+      modo: regex
+      fuentes:
+        - publicador
+        - company_name
+      patron: "\\b(spa|ltda|eirl|s\\.a\\.?|asociados|group|partners|holding)\\b"
+      terminos: []
+
+    # 1d: Badge Profesional real
+    - tipo: badge_profesional
+      nivel: A
+      peso: 10
+      confianza: 0.99
+      activa: true
+      fuentes:
+        - seller_is_pro
+      terminos: []
+
+    # 1e: Logo corporativo con alt text o src de marca conocida
+    - tipo: logo_corporativo
+      nivel: A
+      peso: 10
+      confianza: 0.98
+      activa: true
+      fuentes:
+        - logo_alt
+        - html_completo
+      marcas:
+        - "remax"
+        - "century 21"
+        - "keller williams"
+        - "coldwell banker"
+        - "houm"
+        - "procasa"
+        - "engel"
+        - "sotheby"
+        - "assetplan"
+
+    # 1f: Términos de corretaje explícitos en nombre de usuario
+    - tipo: identidad_corredor
+      nivel: A
+      peso: 10
+      confianza: 0.98
+      activa: true
+      modo: contiene
+      fuentes:
+        - publicador
+        - company_name
+      terminos:
+        - "corredor"
+        - "corredora"
+        - "corretaje"
+        - "inmobiliaria"
+        - "broker"
+        - "real estate"
+        - "property"
+
+    # 1g: Razones sociales complementarias en descripción
+    - tipo: razon_social_desc
+      nivel: A
+      peso: 10
+      confianza: 0.95
+      activa: true
+      modo: contiene
+      fuentes:
+        - descripcion
+        - full_text
+      terminos:
+        - "spa"
+        - "ltda"
+        - "eirl"
+        - "limitada"
+      excepciones:
+        - "no spa"
+        - "sin spa"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ETAPA 2: PERFIL DEL ANUNCIANTE
+# ═══════════════════════════════════════════════════════════════════════════
+etapa_2_perfil:
+  activa: true
+  componentes:
+    propiedades_activas:
+      peso_max: 4
+      umbrales: {1: 0, 2: 1, 3: 2, 5: 3, 11: 4}
+      descripcion: "Cantidad de propiedades activas del mismo publicador"
+    diversidad_geografica:
+      peso_max: 2
+      umbrales: {1: 0, 2: 1, 4: 2}
+      descripcion: "Cantidad de comunas distintas"
+    diversidad_tipos:
+      peso_max: 2
+      umbrales: {1: 0, 2: 1, 3: 2}
+      descripcion: "Cantidad de tipos de propiedad distintos"
+    persistencia_temporal:
+      peso_max: 2
+      umbrales: {30: 0, 180: 1, 181: 2}
+      descripcion: "Antigüedad de la primera publicación (en días)"
+  umbrales_decision:
+    corredor_fuerte: 8
+    corredor_moderado: 4
+    sin_evidencia: 0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ETAPA 3: ANÁLISIS DE CONTENIDO
+# ═══════════════════════════════════════════════════════════════════════════
+etapa_3_contenido:
+  activa: true
+  categorias:
+    - nombre: terminos_gestion
+      peso: 2
+      confianza: 0.80
+      nivel: C
+      fuentes:
+        - descripcion
+        - full_text
+        - footer
+      terminos:
+        - "agenda tu visita"
+        - "agendar visita"
+        - "agende su visita"
+        - "coordinar visita"
+        - "coordinamos visitas"
+        - "coordina tu visita"
+        - "solicita tu visita"
+        - "solicite su visita"
+        - "visita nuestro catálogo"
+        - "visite nuestro sitio"
+        - "contáctanos"
+        - "contáctenos"
+        - "contáctame"
+        - "llámanos"
+        - "escríbenos"
+
+    - nombre: terminos_intermediacion
+      peso: 2
+      confianza: 0.75
+      nivel: C
+      fuentes:
+        - descripcion
+        - full_text
+      terminos:
+        - "comisión"
+        - "comision"
+        - "honorarios"
+        - "corretaje"
+        - "comisión + iva"
+        - "comisión más iva"
+        - "2% comisión"
+        - "3% comisión"
+      excepciones:
+        - "sin comisión"
+        - "sin comision"
+        - "no comisión"
+        - "no comision"
+        - "sin honorarios"
+        - "no cobro comisión"
+
+    - nombre: lenguaje_corporativo
+      peso: 2
+      confianza: 0.75
+      nivel: C
+      fuentes:
+        - descripcion
+        - full_text
+        - footer
+      terminos:
+        - "nuestro equipo"
+        - "nuestros asesores"
+        - "nuestras propiedades"
+        - "nuestro catálogo"
+        - "nuestro sitio"
+        - "nuestra empresa"
+        - "nuestra oficina"
+        - "disponemos"
+        - "gestionamos"
+        - "administramos"
+        - "te asesoramos"
+        - "los asesoramos"
+        - "ejecutivo"
+        - "ejecutivos"
+        - "ejecutiva"
+        - "departamento comercial"
+        - "área comercial"
+
+    - nombre: codigos_internos
+      peso: 2
+      confianza: 0.80
+      nivel: C
+      fuentes:
+        - descripcion
+        - full_text
+      terminos:
+        - "código propiedad"
+        - "codigo propiedad"
+        - "código interno"
+        - "codigo interno"
+        - "id propiedad"
+        - "ref:"
+        - "referencia:"
+        - "código:"
+      modo: contiene
+
+    - nombre: contexto_ingles
+      peso: 2
+      confianza: 0.70
+      nivel: C
+      fuentes:
+        - descripcion
+        - full_text
+      terminos:
+        - "real estate"
+        - "broker"
+        - "realtor"
+        - "showing"
+        - "for sale"
+        - "for rent"
+        - "investment"
+        - "property"
+        - "agent"
+
+    - nombre: terminos_oportunidad
+      peso: 1
+      confianza: 0.50
+      nivel: D
+      fuentes:
+        - descripcion
+        - full_text
+      terminos:
+        - "oportunidad"
+        - "oportunidad única"
+        - "inversión"
+        - "inversion"
+        - "plusvalía"
+        - "plusvalia"
+        - "rentabilidad"
+        - "no dejes pasar"
+        - "aprovecha"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SCORING
+# ═══════════════════════════════════════════════════════════════════════════
+scoring:
+  pesos_maximos:
+    etapa_2_perfil: 10
+    etapa_3_contenido: 10
+    etapa_4_relaciones: 10
+    etapa_5_html: 10
+
+  umbrales_decision:
+    corredor_seguro:
+      score_total: 8
+      condicion: "2+ fuentes distintas con señales"
+      confianza: 0.95
+    corredor_alta:
+      score_total: 7
+      condicion: "al menos 1 fuente con señal fuerte"
+      confianza: 0.85
+    corredor_moderado:
+      score_total: 5
+      condicion: "3+ señales acumuladas de distintas fuentes"
+      confianza: 0.75
+    zona_gris_superior:
+      score_total: 4
+      condicion: "señales sin fuente fuerte única — continuar a etapa 5 o 6"
+      confianza: 0.50
+    zona_gris_inferior:
+      score_total: 3
+      condicion: "señales débiles dispersas — continuar a etapa 5 o 6"
+      confianza: 0.40
+    dueno_moderado:
+      score_total: 2
+      condicion: "sin señales de corredor, perfil compatible con dueño"
+      confianza: 0.65
+    dueno_seguro:
+      score_total: 1
+      condicion: "sin ninguna señal de corredor, perfil de dueño"
+      confianza: 0.75
+
+  penalizaciones:
+    - condicion: "trato_directo_encontrado"
+      descripcion: "'Trato directo con dueño' — señal de corredor camuflado"
+      ajuste: -1
+    - condicion: "sin_comision_encontrado"
+      descripcion: "'Sin comisión' — señal ambigua, corredores también lo usan"
+      ajuste: -1
+    - condicion: "nombre_generico_yapo"
+      descripcion: "Nombre genérico 'Agente'/'Vendedor'/'Yapo' — no suma dueño"
+      ajuste: 0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# UMBRALES GENERALES
+# ═══════════════════════════════════════════════════════════════════════════
+umbrales:
+  corredor_seguro: 8
+  corredor: 7
+  corredor_moderado: 5
+  zona_gris_superior: 4
+  zona_gris_inferior: 3
+  dueno: 2
+  dueno_seguro: 1
+
+  # Si el score total está entre zona_gris_inferior y zona_gris_superior,
+  # el flujo continúa a etapas superiores (Etapa 5: HTML, Etapa 6: IA)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ETAPA 6: IA
+# ═══════════════════════════════════════════════════════════════════════════
+etapa_6_ia:
+  activa: true
+  confianza_minima: 0.70
+  confianza_maxima_dueno: 0.80
+  modelo: "deepseek-v4-flash"
+  temperature: 0.0
+  max_tokens: 500
+  contextos:
+    titulo_max_chars: 200
+    descripcion_max_chars: 4000
+    html_max_chars: 8000

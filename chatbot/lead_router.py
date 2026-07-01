@@ -53,7 +53,16 @@ def is_raquel_unavailable() -> bool:
 
 def is_executive_temporarily_inactive(name: str) -> bool:
     """Indica si una ejecutiva debe ser derivada por ausencia o vacaciones."""
-    return name in TEMPORARILY_INACTIVE_EXECUTIVES or name in EXECUTIVES_ON_VACATION
+    if not name:
+        return False
+    norm_name = normalize_text(name)
+    inactive_team = [normalize_text(n) for n in TEMPORARILY_INACTIVE_EXECUTIVES + EXECUTIVES_ON_VACATION]
+    
+    # Check if any inactive executive name is contained within the normalized name (e.g. 'rocio aliaga' in 'rocio aliaga valz')
+    for inactive in inactive_team:
+        if inactive and (inactive in norm_name or norm_name in inactive):
+            return True
+    return False
 
 def get_special_raquel_replacement() -> str:
     """Alterna entre Erika y Mariela para reemplazar a Raquel."""
@@ -72,8 +81,9 @@ def get_special_raquel_replacement() -> str:
 
 def get_active_executive(name: str, norm_comuna: str = "") -> str:
     """Retorna el reemplazo si el ejecutivo está en vacaciones, o si no está disponible, deriva a RR."""
+    norm_name = normalize_text(name)
     if is_executive_temporarily_inactive(name):
-        if name == RAQUEL_CHENEAUX:
+        if normalize_text(RAQUEL_CHENEAUX) in norm_name:
             replacement = get_special_raquel_replacement()
             logger.info(f"[VACATION] Redirigiendo asignación de {name} al reemplazo especial: {replacement}")
             name = replacement
@@ -81,7 +91,8 @@ def get_active_executive(name: str, norm_comuna: str = "") -> str:
             logger.info(f"[VACATION] Redirigiendo asignación de {name} a reemplazo por defecto: {DEFAULT_VACATION_REPLACEMENT}")
             name = DEFAULT_VACATION_REPLACEMENT
             
-    if name == RAQUEL_CHENEAUX and is_raquel_unavailable():
+    # Check again if the new/current name is Raquel and she is unavailable today
+    if normalize_text(RAQUEL_CHENEAUX) in normalize_text(name) and is_raquel_unavailable():
         logger.info(f"[VACATION] {name} no trabaja hoy (Lunes o Miércoles). Derivando a Round Robin.")
         return get_next_round_robin_executive(norm_comuna)
 

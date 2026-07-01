@@ -55,9 +55,12 @@ logger = logging.getLogger(__name__)
 # ==========================================
 #   FORMATO FICHA TÉCNICA (RESTITUÍDO)
 # ==========================================
-def formatear_ficha_tecnica(propiedad):
+def formatear_ficha_tecnica(propiedad: dict, lead_executive: str = None) -> str:
     """
-    Formato estándar para inyectar en el prompt cuando hay una propiedad específica.
+    Toma un diccionario con datos de propiedad y lo formatea como un texto claro
+    para inyectarlo al contexto del LLM.
+    Se omite al ejecutivo original de la propiedad para evitar falsas expectativas,
+    mostrando solo al ejecutivo efectivamente asignado al lead si existe.
     Compatible con el esquema anidado del scraper prop360 (tipo_operacion, ubicacion,
     caracteristicas, observaciones) y con el esquema plano antiguo.
     """
@@ -129,8 +132,9 @@ def formatear_ficha_tecnica(propiedad):
     )
     titulo = obs.get("titulo") or propiedad.get("titulo") or ""
 
-    # ── Ejecutivo ─────────────────────────────────────────────────────────────
-    ejecutivo = estado.get("ejecutivo") or propiedad.get("ejecutivo") or "N/D"
+    # ── Ejecutivo (Solo si hay asignación efectiva al lead) ─────────────
+    # Se ignora intencionalmente estado.get("ejecutivo") para no confundir al LLM.
+    ejecutivo = lead_executive if (lead_executive and lead_executive not in ["No Asignado", "Sin Asignar", None, ""]) else None
 
     # ── Construir texto ───────────────────────────────────────────────────────
     lineas = [
@@ -168,7 +172,8 @@ def formatear_ficha_tecnica(propiedad):
         lineas.append(f"Año construcción:   {ano_construccion}")
     if num_pisos != "N/D":
         lineas.append(f"N° pisos:           {num_pisos}")
-    lineas.append(f"Ejecutivo a cargo:  {ejecutivo}")
+    if ejecutivo:
+        lineas.append(f"Ejecutivo asignado: {ejecutivo}")
     if titulo:
         lineas.append(f"Título:             {titulo}")
     if descripcion:
@@ -707,11 +712,30 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     else:
         system_parts.append("[ESTADO] ¡Tenemos todos los datos (Nombre, RUT, Email)! Solo coordina preferencia de hora (No confirmes, solo registra).")
 
+    # --- CONTEXTO 1.5: EVALUAR EJECUTIVO HISTÓRICO EFECTIVO ---
+    current_exec = lead_doc_full.get("ejecutivo_asignado") or prospecto_actual.get("ejecutivo")
+    effective_exec = None
+    if current_exec and current_exec not in ["No Asignado", "Sin Asignar", None, ""]:
+        # Verificamos que siga disponible
+        from .lead_router import get_active_executive
+        comuna_lead = prospecto_actual.get("comuna") or (propiedad.get("comuna") if propiedad else "")
+        effective_exec = get_active_executive(current_exec, comuna_lead)
+        # Si fue reasignado, actualizamos tempranamente en la BD y en las variables
+        if effective_exec != current_exec:
+            logger.info(f"[CORE] Reasignación temprana detectada de {current_exec} a {effective_exec} por indisponibilidad.")
+            await _run_sync(
+                db["leads"].update_one,
+                {"phone": phone},
+                {"$set": {"ejecutivo_asignado": effective_exec, "prospecto.ejecutivo": effective_exec}}
+            )
+            lead_doc_full["ejecutivo_asignado"] = effective_exec
+            prospecto_actual["ejecutivo"] = effective_exec
+
     # --- CONTEXTO 2: INFORMACIÓN DE PROPIEDADES (PRIORIDAD: ESPECÍFICA > BÚSQUEDA) ---
     
     # CASO A: Propiedad Específica (Link o Código)
     if propiedad:
-        ficha_texto = formatear_ficha_tecnica(propiedad)
+        ficha_texto = formatear_ficha_tecnica(propiedad, lead_executive=effective_exec)
         system_parts.append(f"""
         [DATOS OFICIALES DE LA PROPIEDAD ACTIVA]
         {ficha_texto}
@@ -828,7 +852,6 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                     f"datos_seguros={datos_seguros}"
                 )
                 await _run_sync(actualizar_prospecto, phone, datos_seguros)
-
     except Exception as e:
         logger.error(f"Error Grok: {e}")
         intencion = "consulta_general"
@@ -838,7 +861,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # 7. EXCEPCIÓN: FORZAR FICHA (RESPALDO ORIGINAL)
     # =======================================================
     if propiedad and "ficha" in original_message.lower():
-         ficha_completa = formatear_ficha_tecnica(propiedad)
+         ficha_completa = formatear_ficha_tecnica(propiedad, lead_executive=effective_exec)
          respuesta = f"Aquí tienes el resumen técnico completo:\n\n{ficha_completa}"
 
     # =======================================================

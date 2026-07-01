@@ -1166,13 +1166,20 @@
         /**
          * Gestiona la comisión según el tipo de convenio.
          * Para arriendos, se fija automáticamente en 50% y el campo queda bloqueado.
-         * Para ventas, se restituye la selección manual.
+         * Para ventas, se restituye la selección manual y se oculta la opción 50%.
          */
         function handleTipoChange(tipoSelect) {
             const tipoVal = tipoSelect.value;
             const comisionSel = document.getElementById('comisionSelect');
             const comisionNote = document.getElementById('comisionLockedNote');
             const isArriendo = (tipoVal === 'Arriendo' || tipoVal === 'Arriendo y Administración');
+
+            // Asegurar que la opción 50% esté visible solo para arriendo
+            Array.from(comisionSel.options).forEach(opt => {
+                if (opt.value === '50%') {
+                    opt.style.display = isArriendo ? '' : 'none';
+                }
+            });
 
             if (isArriendo) {
                 // Fijar comisión en 50% y bloquear el campo
@@ -1680,6 +1687,10 @@
             const precio = String(c?.property_data?.precio || '').replace(/[^\d.,]/g, '');
             form.precio_valor.value = precio;
             hasInteracted = true;
+            
+            // Trigger comision logic based on tipo
+            handleTipoChange(form.tipo);
+            
             const modal = new bootstrap.Modal(document.getElementById('modalNewContract'));
             modal.show();
             triggerPreview();

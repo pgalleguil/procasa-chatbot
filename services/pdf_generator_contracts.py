@@ -1,4 +1,4 @@
-﻿import os
+import os
 import io
 import qrcode
 from pathlib import Path
@@ -221,7 +221,8 @@ class PDFGenerator:
             ["M\u00e9todo de lectura:", evidence_data.get('read_method', 'scroll')],
             ["Tiempo de lectura del documento:", f"{evidence_data.get('read_time_seconds', 0)} segundos"],
             ["Confirmaci\u00f3n de visualizaci\u00f3n completa:", evidence_data.get('scrolled_to_bottom', 'S\u00ed')],
-            ["Hash SHA256 del documento:", str(evidence_data.get('timeline_hash', ''))[:12] + "..."]
+            ["Hash Original del documento (SHA256):", evidence_data.get('original_hash', '')],
+            ["Hash del Proceso (Timeline SHA256):", evidence_data.get('timeline_hash', '')]
         ]
         
         t = Table(data, colWidths=[2.5*inch, 4*inch])

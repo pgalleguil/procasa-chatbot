@@ -398,7 +398,7 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             "created_by": created_by,
             "executive": executive
         }
-        
+
         if existing:
             contract_doc["version"] = existing.get("version", 1) + 1
             contract_doc["timeline"] = existing.get("timeline", []) + contract_doc["timeline"]
@@ -408,31 +408,31 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             old_security["original_pdf_path"] = str(perm_original_path)
             contract_doc["security"] = old_security
             contract_doc["status"] = existing.get("status", "created")
+
+        try:
+            from chatbot.storage import get_db
+            local_db = get_db()
+            pdf_b = PDFGenerator.generate_original_contract(data)
+            orig_hash = SecurityContracts.hash_document(pdf_b)
+            t_dir = BASE_DIR / "tmp" / "contracts" / contract_code
+            t_dir.mkdir(parents=True, exist_ok=True)
+            with open(t_dir / "contrato_original.pdf", "wb") as f:
+                f.write(pdf_b)
+            with open(perm_original_path, "wb") as f:
+                f.write(pdf_b)
+            contract_doc["security"]["original_hash"] = orig_hash
             
-            await adb["contracts"].replace_one({"contract_code": contract_code}, contract_doc)
-        else:
-            await adb["contracts"].insert_one(contract_doc)
-
-        def generate_original_pdf_bg(data_dict, p_code, p_path):
-            try:
-                from chatbot.storage import get_db
-                local_db = get_db()
-                pdf_b = PDFGenerator.generate_original_contract(data_dict)
-                orig_hash = SecurityContracts.hash_document(pdf_b)
-                t_dir = BASE_DIR / "tmp" / "contracts" / p_code
-                t_dir.mkdir(parents=True, exist_ok=True)
-                with open(t_dir / "contrato_original.pdf", "wb") as f:
-                    f.write(pdf_b)
-                with open(p_path, "wb") as f:
-                    f.write(pdf_b)
-                local_db["contracts"].update_one(
-                    {"contract_code": p_code},
-                    {"$set": {"security.original_hash": orig_hash}}
-                )
-            except Exception as e:
-                logger.error(f"[BG TASK] Error generando original: {e}")
-
-        background_tasks.add_task(generate_original_pdf_bg, data, contract_code, perm_original_path)
+            # update in db
+            if existing:
+                await adb["contracts"].replace_one({"contract_code": contract_code}, contract_doc)
+            else:
+                await adb["contracts"].insert_one(contract_doc)
+        except Exception as e:
+            logger.error(f"[PDF] Error generando original sincronamente: {e}")
+            if existing:
+                await adb["contracts"].replace_one({"contract_code": contract_code}, contract_doc)
+            else:
+                await adb["contracts"].insert_one(contract_doc)
             
         base_url = str(request.base_url).rstrip('/')
         url_firma = f"{base_url}/contracts/view/{contract_code}"
@@ -1612,7 +1612,12 @@ async def delete_contract(contract_code: str):
 @router.get("/verify/{contract_code}", response_class=HTMLResponse)
 async def verify_contract(contract_code: str, request: Request):
     db = get_db()
-    contract = db["contracts"].find_one({"contract_code": contract_code})
+    contract = db["contracts"].find_one({
+        "$or": [
+            {"contract_code": contract_code},
+            {"security.verify_token": contract_code}
+        ]
+    })
     if not contract:
         return HTMLResponse("<h1>Contrato no encontrado</h1>", status_code=404)
         

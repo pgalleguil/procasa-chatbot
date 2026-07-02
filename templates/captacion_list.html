@@ -927,6 +927,8 @@
                                 </div>
                                 {% if item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
                                 <div class="small text-secondary">{{ item.precio }}</div>
+                                {% elif item.precio_clp_raw and item.precio and 'UF' in item.precio|upper %}
+                                <div class="small text-secondary">${{ "{:,}".format(item.precio_clp_raw)|replace(",",".") }}</div>
                                 {% endif %}
                             </td>
                             <td class="text-center" data-label="Estado">
@@ -1114,6 +1116,8 @@
                                 </div>
                                 {% if item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
                                 <div class="small text-secondary">{{ item.precio }}</div>
+                                {% elif item.precio_clp_raw and item.precio and 'UF' in item.precio|upper %}
+                                <div class="small text-secondary">${{ "{:,}".format(item.precio_clp_raw)|replace(",",".") }}</div>
                                 {% endif %}
                             </td>
                             <td class="text-center" data-label="Estado">

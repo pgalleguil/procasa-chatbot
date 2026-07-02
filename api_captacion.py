@@ -318,10 +318,70 @@ def resolve_operacion(details: dict) -> str:
 def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None):
     db = get_db()
     query = {
-        "details.es_propietario_directo": True,
-        "$or": [
+        "$and": [
+            {"details.es_propietario_directo": True},
+            {"details.es_corredor": {"$ne": True}},
+            {"$or": [
+                {"gestion.ejecutivo_asignado": None},
+                {"gestion.ejecutivo_asignado": {"$exists": False}},
+                {"gestion.ejecutivo_asignado": ""},
+            ]},
+            {"$or": [
+                {"gestion.estado": "NUEVO"},
+                {"gestion.estado": {"$exists": False}},
+                {"gestion": {"$exists": False}},
+            ]},
             {"status": {"$nin": ["inactive", "suspect"]}},
-            {"gestion.estado": {"$nin": ["NUEVO", None]}}
+            {"$and": [
+            {"$or": [
+                    {"$and": [
+                        {"$or": [
+                            {"classification_state": {"$ne": "INCIERTO"}},
+                            {"classification_state": {"$exists": False}},
+                        ]},
+                        {"$or": [
+                            {"details.classification_state": {"$ne": "INCIERTO"}},
+                            {"details.classification_state": {"$exists": False}},
+                        ]},
+                    ]},
+                ]},
+                {"$or": [
+                    {"$and": [
+                        {"$or": [
+                            {"needs_rescrape": {"$ne": True}},
+                            {"needs_rescrape": {"$exists": False}},
+                        ]},
+                        {"$or": [
+                            {"details.needs_rescrape": {"$ne": True}},
+                            {"details.needs_rescrape": {"$exists": False}},
+                        ]},
+                    ]},
+                ]},
+                {"$or": [
+                    {"url": {"$regex": r"/\d+$"}},
+                    {"details.url": {"$regex": r"/\d+$"}},
+                ]},
+                {"details.comuna": {"$nin": [None, "", "N/A", "S/I"]}},
+                {"details.precio": {"$nin": [None, "", "N/A", "S/I"]}},
+                {"$or": [
+                    {"$and": [
+                        {"$or": [
+                            {"details.html_validation_status": "VALID"},
+                            {"html_validation_status": "VALID"},
+                        ]},
+                    ]},
+                    {"$and": [
+                        {"$or": [
+                            {"details.html_validation_status": {"$exists": False}},
+                            {"html_validation_status": {"$exists": False}},
+                        ]},
+                        {"$or": [
+                            {"details.html_path": {"$exists": True, "$ne": ""}},
+                            {"html_path": {"$exists": True, "$ne": ""}},
+                        ]},
+                    ]},
+                ]},
+            ]},
         ]
     }
     

@@ -22,6 +22,13 @@ from config import Config
 
 from playwright_stealth import Stealth
 
+from scraping.html_validator import validate_html, HtmlErrorType
+from scraping.commercial_patterns import (
+    scan_broker_signals, has_any_commercial_signal, get_marca_match,
+    has_legal_identifier, has_company_name, detect_commercial_patterns,
+    MARCAS_CONOCIDAS, CORREDORAS_CHILENAS, INMOBILIARIAS, SERVICIOS_ADICIONALES
+)
+
 async def apply_stealth(page):
     """Aplica técnicas de sigilo al navegador."""
     await Stealth().apply_stealth_async(page)
@@ -315,7 +322,8 @@ _BROKER_ABREVIATIONS = {"sa", "spa", "kw", "c21", "id", "p&g", "pgr", "m2", "sii
 SELLER_CACHE = {} # { "nombre_normalizado": { "es_broker": bool, "timestamp": float } }
 
 def broker_score(seller_name: str, description: str, company_name: str = "N/A", seller_type: str = "N/A") -> float:
-    """Calcula un score (0.0 a 1.0) para determinar si es corredor basándose en nombre, empresa, descripción y tipo."""
+    """Calcula un score (0.0 a 1.0) para determinar si es corredor.
+    Usa patrones semánticos y familias de términos."""
     score = 0.0
     s_name = normalize_text(seller_name).lower()
     c_name = normalize_text(company_name).lower()
@@ -329,10 +337,24 @@ def broker_score(seller_name: str, description: str, company_name: str = "N/A", 
         else:
             if kw in s_name or kw in c_name:
                 score += 0.8
-                
+
     if re.search(r'\by\s+cia\b|\bltda\b|\bs\.a\b|\bspa\b|\beirl\b|real estate|properties', s_name + " " + c_name):
         score += 0.7
-        
+
+    # Patrones semánticos
+    pattern_result = scan_broker_signals(seller_name, description, company_name)
+    combined = pattern_result["combined_score"]
+    if combined >= 6:
+        score += 0.8
+    elif combined >= 3:
+        score += 0.5
+    elif combined >= 1:
+        score += 0.3
+
+    if pattern_result["full"]["has_cross_match"]:
+        score += 0.4
+
+    # Términos comerciales adicionales
     commercial_terms = [
         "comision", "honorarios", "corretaje", "orden de visita", 
         "corredor de propiedades", "gestion de arriendo", "exclusividad",
@@ -343,7 +365,7 @@ def broker_score(seller_name: str, description: str, company_name: str = "N/A", 
     for term in commercial_terms:
         if term in formatted_desc:
             score += 0.35
-            
+
     s_type = normalize_text(seller_type).lower()
     if s_type == "agente" or "inmobiliar" in s_type or "corredor" in s_type:
         score += 0.5
@@ -360,15 +382,12 @@ def broker_score(seller_name: str, description: str, company_name: str = "N/A", 
     return max(0.0, min(1.0, score))
 
 def is_likely_broker(seller_name: str, description: str, company_name: str = "N/A") -> bool:
-    """Detecta si un vendedor es realmente un corredor basándose en nombre y descripción."""
-    # 1. Normalizar textos
+    """Detecta si un vendedor es realmente un corredor usando patrones semánticos."""
     s_name = normalize_text(seller_name).lower()
     c_name = normalize_text(company_name).lower()
     full_text = normalize_text(f"{seller_name} {company_name} {description}").lower()
     
-    # 2. Verificar palabras clave (Usando Regex \b para TODAS las palabras cortas o sospechosas)
     for kw in _BROKER_KEYWORDS:
-        # Si la palabra es corta o propensa a falsos positivos (como apellidos que son partes de otras palabras)
         if len(kw) <= 5 or kw in _BROKER_ABREVIATIONS:
             if re.search(rf'\b{re.escape(kw)}\b', f"{s_name} {c_name}"):
                 return True
@@ -376,11 +395,17 @@ def is_likely_broker(seller_name: str, description: str, company_name: str = "N/
             if kw in s_name or kw in c_name:
                 return True
             
-    # 3. Patrones semánticos de empresas
     if re.search(r'\by\s+cia\b|\bltda\b|\bs\.a\b|\bspa\b|\beirl\b', s_name):
         return True
-        
-    # 4. Análisis de la descripción completa (Términos críticos - con límites de palabra para evitar errores)
+
+    # Patrones semánticos
+    pattern_result = scan_broker_signals(seller_name, description, company_name)
+    if pattern_result["combined_score"] >= 6:
+        return True
+    if pattern_result["full"]["has_cross_match"]:
+        return True
+
+    # Términos comerciales en descripción
     broker_terms = [
         "comision", "honorarios", "corretaje", "orden de visita", 
         "corredor de propiedades", "gestion de arriendo", "exclusividad",
@@ -392,11 +417,8 @@ def is_likely_broker(seller_name: str, description: str, company_name: str = "N/
         if term in formatted_desc:
             return True
             
-    # 5. Handle Yapo's default anonymous name "Agente" / "Vendedor"
-    # Only flag as broker if the description has some minimal professional context
     generic_names = ["agente", "vendedor"]
     if any(gn == s_name for gn in generic_names):
-        # We need more proof from the description
         context_clues = ["inmobiliario", "inmobiliaria", "propiedades", "oficina", "visita", "suf"]
         for cc in context_clues:
             if cc in formatted_desc:
@@ -556,9 +578,29 @@ def _parse_html_fast(html: str, url: str = "") -> dict | None:
     """Extrae datos de un HTML de detalle yapo.cl usando JSON-LD + regex (sin JS).
     Versión INDUSTRIAL: Incluye 'The Observer' (Source Tracking) y 'Quality Scoring'."""
 
-    if not html or "</body>" not in html.lower():
-        logging.warning("⚠️ _parse_html_fast: HTML truncado o inválido (sin </body>). Ignorando.")
-        return None
+    # ── VALIDACIÓN DE INTEGRIDAD DEL HTML ─────────────────────────────
+    validation = validate_html(html, url=url)
+    if not validation.is_valid:
+        logging.warning(f"⚠️ _parse_html_fast: HTML inválido ({validation.error_type.value}): {validation.error_detail}")
+        return {
+            "source": "validation_failed",
+            "html_validation_status": validation.error_type.value,
+            "html_validation_detail": validation.error_detail,
+            "html_content_length": validation.content_length,
+            "html_http_status": validation.http_status,
+            "region": "N/A", "comuna": "N/A", "sector": "N/A",
+            "lat": "N/A", "lon": "N/A",
+            "m2_total_str": "N/A", "m2_util_str": "N/A",
+            "gastos_comunes_str": "N/A",
+            "dormitorios_str": "N/A", "banos_str": "N/A",
+            "estacionamientos_str": "N/A",
+            "title": "N/A", "price": "N/A",
+            "publicador": "N/A", "raw_desc": "N/A",
+            "tipo_propiedad": "N/A",
+            "list_time": "N/A", "seller_id": "N/A", "seller_type": "N/A",
+            "company_name": "N/A", "images_url": [], "piscina_str": "N/A",
+            "direccion": "N/A",
+        }
 
     def _clean(s: str) -> str:
         if not s:
@@ -1024,10 +1066,16 @@ async def extract_fast_path(url: str, client) -> tuple:
         html = resp.content.decode('utf-8', 'ignore')
         res = _parse_html_fast(html)
         if res:
-            # OPTIMIZACIÓN: Guardamos HTML localmente, no en MongoDB
-            html_path = save_html_locally(html, url)
-            res["html_path"] = html_path
-            res["html_dump"] = html # Lo mantenemos temporalmente para la IA en este thread
+            validation_status = res.get("html_validation_status", "VALID")
+            if validation_status == "VALID":
+                # HTML válido — guardar y continuar
+                html_path = save_html_locally(html, url)
+                res["html_path"] = html_path
+                res["html_dump"] = html
+                return res, size_bytes
+
+            # HTML inválido — retornar con estado técnico
+            res["html_dump"] = html
             return res, size_bytes
         return None, size_bytes
     except ProxyBlockedError as e:
@@ -1129,20 +1177,27 @@ async def extract_raw_data(page, url: str) -> dict:
     result = _parse_html_fast(html)
 
     if result:
-        # OPTIMIZACIÓN: Guardamos HTML localmente, no en MongoDB
-        html_path = save_html_locally(html, url)
-        result["html_path"] = html_path
-        result["html_dump"] = html # Mantenemos para IA
-        # Log ultra-compacto
-        logging.debug(f"🌐 Data: d={result['dormitorios_str']} b={result['banos_str']} m2={result['m2_total_str']}")
+        validation_status = result.get("html_validation_status", "VALID")
+
+        if validation_status == "VALID":
+            # HTML válido — guardar y continuar
+            html_path = save_html_locally(html, url)
+            result["html_path"] = html_path
+            result["html_dump"] = html
+            logging.debug(f"🌐 Data: d={result['dormitorios_str']} b={result['banos_str']} m2={result['m2_total_str']}")
+            return result
+
+        # HTML inválido — no guardar, retornar con estado técnico
+        logging.warning(f"⚠️ Browser: HTML inválido ({validation_status}) para {url[-40:]}")
+        result["html_dump"] = html
         return result
 
     # ── Fallback mínimo si el HTML del browser tampoco sirvió ───────────────
-    # (Caso extremo: página muy dinámica o bloqueada parcialmente)
     logging.warning(f"⚠️ Browser: _parse_html_fast no extrajo datos de {url[-40:]}")
     return {
         "source": "browser_fallback_empty",
-        "html_dump": html if len(html) > 10 else None, # Si es casi vacío, que la IA ni lo intente
+        "html_validation_status": "NO_PARSE_RESULT",
+        "html_dump": html if len(html) > 10 else None,
         "region": "N/A", "comuna": "N/A", "sector": "N/A",
         "lat": "N/A", "lon": "N/A",
         "m2_total_str": "N/A", "m2_util_str": "N/A",
@@ -1170,9 +1225,95 @@ def _extract_operation_from_url(url: str) -> str:
     return "S/I"
 
 
+# ====================== VALIDACIÓN IA PARA CASOS BORDERLINE ======================
+async def _improved_ai_classification_validation(
+    title: str,
+    publicador: str,
+    company_name: str,
+    raw_desc: str,
+    grok_client
+) -> bool:
+    """
+    Cuando las reglas clasifican como DUEÑO pero hay señales comerciales débiles,
+    la IA analiza la descripción y determina si realmente es propietario directo.
+    Retorna True si la IA considera que NO es propietario directo (corredor/incierto).
+    """
+    prompt = f"""Eres un validador de clasificaciones inmobiliarias.
+Las reglas automáticas clasificaron este anuncio como DUEÑO DIRECTO, pero se detectaron
+posibles señales comerciales. Revisa si realmente es un particular o un corredor.
+
+REGLAS:
+- Lenguaje comercial ("coordinar visitas", "contactar", "agendar", "ejecutivo") → NO dueño.
+- Nombre corporativo ("Corredores", "Propiedades", "Inmobiliaria") → NO dueño.
+- Si hay dudas pero hay señales comerciales → NO dueño (responde false).
+- Solo true si es claramente un particular vendiendo su propiedad.
+
+Título: {title}
+Publicador: {publicador}
+Empresa: {company_name}
+
+Descripción:
+{raw_desc[:2000]}
+
+Responde SOLO con JSON:
+{{"no_es_directo": true/false, "razon": "breve explicación"}}"""
+
+    try:
+        resp = await grok_client.chat.completions.create(
+            model=Config.GROK_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=300,
+            response_format={"type": "json_object"}
+        )
+        result = json.loads(resp.choices[0].message.content)
+        return result.get("no_es_directo", False)
+    except Exception:
+        return False
+
+
 # ====================== PROCESAMIENTO IA (Sin Browser/Proxy) ======================
 async def process_with_ai(raw_data: dict, grok_client, uf_value: float = None, coll = None, url: str = "") -> dict:
     """Procesamiento avanzado con IA para normalizar y enriquecer datos."""
+
+    # ── VALIDACIÓN DE INTEGRIDAD ─────────────────────────────────────────
+    # Si el HTML no es válido, NO clasificar — devolver estado técnico.
+    validation_status = raw_data.get("html_validation_status", "VALID")
+    if validation_status != "VALID":
+        logging.warning(f"⛔ process_with_ai: HTML inválido ({validation_status}) — omitiendo clasificación.")
+        now_ts = datetime.now(timezone.utc).isoformat()
+        return {
+            "portal": CONFIG["portal_name"],
+            "html_validation_status": validation_status,
+            "html_validation_detail": raw_data.get("html_validation_detail", ""),
+            "comuna": "N/A",
+            "region": "N/A",
+            "tipo_propiedad": "N/A",
+            "tipo_operacion": _extract_operation_from_url(url),
+            "titulo": "N/A",
+            "precio": "N/A",
+            "publicador": "N/A",
+            "company_name": "N/A",
+            "nombre_ejecutivo": "N/A",
+            "nombre_corredora": "N/A",
+            "descripcion": f"HTML inválido: {validation_status}",
+            "classification_state": "INCIERTO",
+            "es_propietario_directo": False,
+            "es_corredor": False,
+            "es_incierto": True,
+            "score_corredor": 0,
+            "score_dueno": 0,
+            "motivos_corredor": [],
+            "motivos_dueno": [],
+            "confianza_propietario": 0.0,
+            "enlaces_fotos": [],
+            "content_hash": "N/A",
+            "fecha_scraping": now_ts,
+            "fecha_ultima_vista": now_ts,
+            "metadata": {"html_error": validation_status},
+            "used_ai": False,
+        }
+
     title = raw_data["title"]
     raw_desc = raw_data["raw_desc"]
     publicador = raw_data["publicador"]
@@ -1399,6 +1540,26 @@ Solo es true si tienes la certeza absoluta de que el vendedor es una persona nat
                 meta["audit_recovered"] = recovered
                 logging.info(f"✨ [AUDITOR] Recuperado: {', '.join(recovered)}")
 
+    # ── VALIDACIÓN IA PARA CASOS DUEÑO CON SEÑALES COMERCIALES ──────
+    es_directo_base = False if (
+        str(raw_data.get("seller_type", "")).lower() == "agente" or 
+        is_likely_broker(publicador, raw_desc, raw_data.get("company_name", "N/A")) or
+        is_likely_broker(publicador, raw_desc, extracted.get("nombre_corredora", "N/A"))
+    ) else extracted.get("es_propietario_directo", False)
+
+    if es_directo_base:
+        commercial_signals = has_any_commercial_signal(
+            publicador, raw_desc, company_name
+        )
+        if commercial_signals:
+            logging.info(f"🔍 [AI VALIDATION] Dueño con señales comerciales: {publicador[:30]}")
+            ai_validation = await _improved_ai_classification_validation(
+                title, publicador, company_name, raw_desc, grok_client
+            )
+            if ai_validation:
+                es_directo_base = False
+                logging.info(f"🤖 [AI VALIDATION] IA elevó a corredor/incierto: {publicador[:30]}")
+
     # Merge de resultados y persistencia
     return {
         "portal": CONFIG["portal_name"],
@@ -1423,11 +1584,7 @@ Solo es true si tienes la certeza absoluta de que el vendedor es una persona nat
         "bodega": extracted.get("bodega", False),
         "piscina": extracted.get("piscina", False),
         "descripcion": normalize_text(extracted.get("resumen_limpio", raw_desc), CONFIG["desc_max_chars"]),
-        "es_propietario_directo": False if (
-            str(raw_data.get("seller_type", "")).lower() == "agente" or 
-            is_likely_broker(publicador, raw_desc, raw_data.get("company_name", "N/A")) or
-            is_likely_broker(publicador, raw_desc, extracted.get("nombre_corredora", "N/A"))
-        ) else extracted.get("es_propietario_directo", False),
+        "es_propietario_directo": es_directo_base,
         "confianza_propietario": 1.0 if (
             str(raw_data.get("seller_type", "")).lower() == "agente" or 
             is_likely_broker(publicador, raw_desc, raw_data.get("company_name", "N/A"))
@@ -1921,6 +2078,38 @@ async def main():
                                     try: await page.close()
                                     except: pass
                                     page = None
+
+                            # === VALIDACIÓN DE HTML: Retry temporal o guardar error ===
+                            html_status = raw_data.get("html_validation_status", "VALID") if raw_data else "VALID"
+                            temp_errors = [
+                                "SERVER_ERROR_500", "ACCESS_DENIED_403", "CLIENT_ERROR_4XX",
+                                "CAPTCHA_CHALLENGE", "MAINTENANCE_PAGE", "EMPTY_HTML",
+                                "TRUNCATED_HTML", "INVALID_ENCODING", "PAGE_NOT_FOUND",
+                            ]
+                            if html_status in temp_errors:
+                                retries = doc.get("retries", 0)
+                                if retries < CONFIG["max_retries_per_url"]:
+                                    wait_backoff = min(2 ** retries * 10, 120)
+                                    logging.warning(f"⏳ [{html_status}] Reintento #{retries+1} en {wait_backoff}s para {url[-30:]}")
+                                    await asyncio.sleep(wait_backoff)
+                                    await queue_coll.update_one(
+                                        {"url": url},
+                                        {"$set": {"status": "pending", "last_error": f"TempError:{html_status}"},
+                                         "$inc": {"retries": 1}}
+                                    )
+                                else:
+                                    logging.warning(f"⛔ [{html_status}] Máximos reintentos alcanzados ({CONFIG['max_retries_per_url']}). Almacenando con estado técnico.")
+                                    temp_details = await process_with_ai(raw_data, grok_client, uf_value, coll, url)
+                                    if temp_details:
+                                        await coll.update_one(
+                                            {"url": url},
+                                            {"$set": {"url": url, "details": temp_details, "origen": "yapo.cl", "fecha_captura": datetime.now(timezone.utc)}},
+                                            upsert=True
+                                        )
+                                    await queue_coll.update_one({"url": url}, {"$set": {"status": "completed"}})
+                                stats["processed"] += 1
+                                print_dashboard()
+                                continue
 
                             # === FASE 2: PROCESAMIENTO IA ===
                             try:

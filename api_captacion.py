@@ -446,6 +446,7 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
             "operacion": resolve_operacion(details),
             "precio": str(details.get("precio", "S/I")).split("Ref.")[0].strip(),
             "precio_uf": details.get("precio_uf"),
+            "precio_clp_raw": details.get("precio_clp_raw"),
             "uf_m2": doc.get("uf_m2_cache", 0),
             "estado": gestion.get("estado", "NUEVO"),
             "ejecutivo": gestion.get("ejecutivo_asignado") or "Sin asignar",

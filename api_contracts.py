@@ -1313,8 +1313,10 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         verify_token = str(uuid.uuid4()).replace("-", "")
         verify_url = f"{base_url}/contracts/verify/{verify_token}"
 
+        transaction_uuid = str(uuid.uuid4())
         evidence_data = {
             "contract_code": contract_code,
+            "transaction_uuid": transaction_uuid,
             "verify_token": verify_token,
             "server_timestamp": server_timestamp,
             "ip": ip,
@@ -1325,7 +1327,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
             "server_hmac": server_hmac,
             "timeline_hash": timeline_hash,
             "read_time_seconds": read_time,
-            "scrolled_to_bottom": "S\u00ed" if scrolled_to_bottom else "No",
+            "scrolled_to_bottom": "Sí" if scrolled_to_bottom else "No",
             "read_method": read_method
         }
 

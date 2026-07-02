@@ -569,7 +569,9 @@ def _parse_html_fast(html: str) -> dict | None:
     jsonld_data = {}
     for jm in re.findall(r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', html, re.DOTALL):
         try:
-            jd = json.loads(jm)
+            # Limpiar caracteres de control (< 0x20 excepto tab) que Yapo mete en strings
+            jm_clean = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\n\r]', '', jm)
+            jd = json.loads(jm_clean)
             if jd.get("@type") == "Product":
                 jsonld_data = jd
                 break
@@ -587,9 +589,17 @@ def _parse_html_fast(html: str) -> dict | None:
     price_currency = offers.get("priceCurrency", "")
     if price_raw:
         if price_currency.upper() == "CLF":
-            # Es UF
+            try:
+                uf_val = float(price_raw)
+            except:
+                uf_val = 0
             price_str = f"UF {price_raw}"
             sources["price"] = "json-ld-uf"
+            # Sanity check: UF < 1 es sospechoso (probablemente Yapo tiene mal el dato)
+            if uf_val > 0 and uf_val < 1.0:
+                sources["price"] = "json-ld-uf-suspect"
+                # No marcamos como inválido, dejamos que los fallbacks HTML intenten
+                # encontrar un mejor precio (og:title, HTML, etc.)
         else:
             # Asumir CLP u otros
             price_str = f"${int(price_raw):,}".replace(",", ".")
@@ -633,7 +643,10 @@ def _parse_html_fast(html: str) -> dict | None:
         r'class="[^"]*product-comments[^"]*"[^>]*>(.*?)</(?:div|p|span)>',
         r'class="[^"]*d3-property-info__description-text[^"]*"[^>]*>(.*?)</(?:p|div)>',
         r'class="[^"]*d3-property-about__text[^"]*"[^>]*>(.*?)</(?:p|div|span)>',
-        r'id="[^"]*description[^"]*"[^>]*>(.*?)</(?:p|div|span)>'
+        r'id="[^"]*description[^"]*"[^>]*>(.*?)</(?:p|div|span)>',
+        r'class="[^"]*d3-property-description[^"]*"[^>]*>(.*?)</(?:div|p|span)>',
+        r'itemprop="description"[^>]*>(.*?)</(?:div|p|span)>',
+        r'class="[^"]*property-description[^"]*"[^>]*>(.*?)</(?:div|p|span)>',
     ]
     for pattern in desc_containers:
         full_desc_match = re.search(pattern, html, re.DOTALL)
@@ -651,7 +664,8 @@ def _parse_html_fast(html: str) -> dict | None:
             title = _clean(h1_match.group(1))
             sources["title"] = "h1-html"
     
-    if price_str == "N/A":
+    need_price_fallback = (price_str == "N/A" or sources.get("price") == "json-ld-uf-suspect")
+    if need_price_fallback:
         p_match = re.search(r'class="[^"]*d3-property-info__price[^"]*"[^>]*>(.*?)</span>', html, re.DOTALL)
         if p_match:
             price_str = _clean(p_match.group(1))
@@ -798,7 +812,14 @@ def _parse_html_fast(html: str) -> dict | None:
         seller_type = adv_match.group(1)
         sources["seller_type"] = "ads-targeting"
 
-    images = re.findall(r'"contentUrl":\s*"([^"]+)"', html) or re.findall(r'class="d3-property-info__images--container".*?src="([^"]+)"', html, re.DOTALL)
+    images = re.findall(r'"contentUrl":\s*"([^"]+)"', html)
+    if not images:
+        images = re.findall(r'class="d3-property-info__images--container"[^>]*>(.*?)</div>', html, re.DOTALL)
+        if images:
+            images = re.findall(r'(?:src|data-src)="([^"]+)"', images[0])
+            if not images:
+                images = re.findall(r'(?:src|data-src)="([^"]+)"', html)
+                images = [u for u in images if "photos.encuentra24.com" in u and "t_or_fh" in u]
     if images: sources["images"] = "html-images"
 
     # Seller formatting

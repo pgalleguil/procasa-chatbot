@@ -208,21 +208,32 @@ class PDFGenerator:
         except:
             chile_time = server_ts_utc
             
+        # Acortar user_agent para que no rompa el layout
+        ua_display = evidence_data.get('user_agent', '')[:70]
+
+        hash_style = ParagraphStyle(
+            'HashCell', parent=styles['Normal'],
+            fontSize=6.5, leading=9, wordWrap='CJK'
+        )
+        orig_hash_p = Paragraph(evidence_data.get('original_hash', ''), hash_style)
+        timeline_hash_p = Paragraph(evidence_data.get('timeline_hash', ''), hash_style)
+
         data = [
-            ["C\u00f3digo \u00fanico del contrato:", evidence_data.get('contract_code', '')],
+            ["Código único del contrato:", evidence_data.get('contract_code', '')],
+            ["UUID de Transacción:", evidence_data.get('transaction_uuid', 'N/A')],
             ["Nombre completo:", nombre],
             ["RUT:", rut],
-            ["Correo electr\u00f3nico:", email],
-            ["Tel\u00e9fono:", phone],
-            ["Direcci\u00f3n IP:", evidence_data.get('ip', '')],
+            ["Correo electrónico:", email],
+            ["Teléfono:", phone],
+            ["Dirección IP:", evidence_data.get('ip', '')],
             ["Fecha y hora exacta:", chile_time],
             ["Zona horaria:", evidence_data.get('timezone', "America/Santiago (CLT)")],
-            ["Dispositivo/Navegador:", evidence_data.get('user_agent', '')[:60]],
-            ["M\u00e9todo de lectura:", evidence_data.get('read_method', 'scroll')],
+            ["Dispositivo/Navegador:", ua_display],
+            ["Método de lectura:", evidence_data.get('read_method', 'scroll')],
             ["Tiempo de lectura del documento:", f"{evidence_data.get('read_time_seconds', 0)} segundos"],
-            ["Confirmaci\u00f3n de visualizaci\u00f3n completa:", evidence_data.get('scrolled_to_bottom', 'S\u00ed')],
-            ["Hash Original del documento (SHA256):", evidence_data.get('original_hash', '')],
-            ["Hash del Proceso (Timeline SHA256):", evidence_data.get('timeline_hash', '')]
+            ["Confirmación de visualización completa:", evidence_data.get('scrolled_to_bottom', 'Sí')],
+            ["Hash Original del documento (SHA256):", orig_hash_p],
+            ["Hash del Proceso / Timeline (SHA256):", timeline_hash_p]
         ]
         
         t = Table(data, colWidths=[2.5*inch, 4*inch])
@@ -230,6 +241,7 @@ class PDFGenerator:
             ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
             ('TEXTCOLOR', (0,0), (-1,-1), colors.black),
             ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
             ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
             ('FONTNAME', (1,0), (1,-1), 'Helvetica'),
             ('FONTSIZE', (0,0), (-1,-1), 8),

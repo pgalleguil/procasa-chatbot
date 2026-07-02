@@ -920,7 +920,7 @@
                             <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}
-                                    UF {{ "%.1f"|format(item.precio_uf|float) }}
+                                    UF {{ item.precio_uf if item.precio_uf is integer else "%.1f"|format(item.precio_uf) }}
                                     {% else %}
                                     S/I
                                     {% endif %}
@@ -1107,7 +1107,7 @@
                             <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}
-                                    UF {{ "%.1f"|format(item.precio_uf|float) }}
+                                    UF {{ item.precio_uf if item.precio_uf is integer else "%.1f"|format(item.precio_uf) }}
                                     {% else %}
                                     S/I
                                     {% endif %}

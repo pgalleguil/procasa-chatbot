@@ -521,7 +521,38 @@ def _parse_yapo_date(date_str: str) -> str:
     return date_str
 
 
-def _parse_html_fast(html: str) -> dict | None:
+_TIPO_PROPIEDAD_URL_MAP = {
+    "apartamentos": "Departamento",
+    "departamento": "Departamento",
+    "casas": "Casa",
+    "casa": "Casa",
+    "oficinas": "Oficina",
+    "oficina": "Oficina",
+    "locales-comerciales": "Local Comercial",
+    "local-comercial": "Local Comercial",
+    "parcelas": "Parcela",
+    "parcela": "Parcela",
+    "terrenos": "Terreno",
+    "terreno": "Terreno",
+    "estacionamientos": "Estacionamiento",
+    "estacionamiento": "Estacionamiento",
+    "bodegas": "Bodega",
+    "bodega": "Bodega",
+    "propiedades-industrial": "Propiedad Industrial",
+    "penthouse": "Penthouse",
+    "loft": "Loft",
+}
+
+def _extract_tipo_propiedad_from_url(url: str) -> str:
+    if not url:
+        return "N/A"
+    url_lower = url.lower()
+    for keyword, tp in _TIPO_PROPIEDAD_URL_MAP.items():
+        if keyword in url_lower:
+            return tp
+    return "N/A"
+
+def _parse_html_fast(html: str, url: str = "") -> dict | None:
     """Extrae datos de un HTML de detalle yapo.cl usando JSON-LD + regex (sin JS).
     Versión INDUSTRIAL: Incluye 'The Observer' (Source Tracking) y 'Quality Scoring'."""
 
@@ -692,6 +723,11 @@ def _parse_html_fast(html: str) -> dict | None:
         tp_tmp = bc_texts[3]
         tipo_propiedad = tp_tmp[:-1] if tp_tmp.endswith('s') and len(tp_tmp) > 4 else tp_tmp
         sources["tipo_propiedad"] = "breadcrumb"
+    if tipo_propiedad == "N/A" and url:
+        u_tp = _extract_tipo_propiedad_from_url(url)
+        if u_tp != "N/A":
+            tipo_propiedad = u_tp
+            sources["tipo_propiedad"] = "url"
 
     # ── 3. d3-property-insight: Dormitorios, Baños, m² ───────────────────────
     insight: dict[str, str] = {}

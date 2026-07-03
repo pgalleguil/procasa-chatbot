@@ -5,7 +5,6 @@ import pytz
 from datetime import datetime, timedelta
 from .storage import obtener_prospecto, actualizar_prospecto, save_pending_notification, run_in_threadpool, record_observability_event
 from .lead_router import find_responsible_executive, should_send_now, format_whatsapp_template
-from .lead_router import find_responsible_executive, should_send_now, format_whatsapp_template
 from .constants import CHILE_TZ
 from .notification_service import NotificationService
 
@@ -14,6 +13,13 @@ logger = logging.getLogger(__name__)
 # --- LOCK PARA EVITAR DUPLICADOS DURANTE EL DELAY ---
 # Estructura: {(phone, lead_type): timestamp_inicio}
 actively_processing_alerts = {}
+
+INVALID_PROPERTY_CODES = {"", "N/D", "NONE", "NULL", "S/N", "ND"}
+
+def _has_valid_property_code(value) -> bool:
+    if value is None:
+        return False
+    return str(value).strip().upper() not in INVALID_PROPERTY_CODES
 
 def should_send_alert(phone: str, lead_type: str, window_minutes: int) -> bool:
     prospecto = obtener_prospecto(phone) or {}
@@ -127,7 +133,11 @@ def _send_alert_once_sync(
         raw_link_pendiente = criteria.get("link_pendiente")
         is_link_pendiente = str(raw_link_pendiente).lower() == "true" if isinstance(raw_link_pendiente, str) else bool(raw_link_pendiente)
         
-        is_missing_property = is_link_pendiente or not criteria.get("codigo") or str(lead_data.get("property_code", "")).strip() in {"", "N/D", "None"}
+        is_missing_property = (
+            is_link_pendiente
+            or not _has_valid_property_code(criteria.get("codigo"))
+            or not _has_valid_property_code(lead_data.get("property_code"))
+        )
         
         if is_missing_property:
             admin_phone = "56983219804"
@@ -170,6 +180,13 @@ def _send_alert_once_sync(
              lead_data["target_phone"] = exec_phone
              lead_data["assignment_type"] = assignment_type
              is_new_assignment = True
+             if assignment_type in {"MISSING_PROPERTY", "NO_PROPERTY"} or exec_name == UNASSIGNED_LABEL:
+                 logger.info(
+                     "[ALERT] Router no encontro propiedad valida para phone=%s property_code=%s. No se asigna ejecutivo.",
+                     phone,
+                     lead_data.get("property_code"),
+                 )
+                 return
              logger.info(f"[ALERT] Ruteo: Ejecutivo determinado: {exec_name} | Teléfono: {exec_phone} | Es nuevo: {is_new_assignment}")
 
         # --- NUEVO: ASIGNACIÓN ROBUSTA (Enterprise Point 2.1) ---

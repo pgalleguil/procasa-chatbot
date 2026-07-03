@@ -16,6 +16,8 @@ from bson import ObjectId
 
 logger = logging.getLogger(__name__)
 
+INVALID_PROPERTY_CODES = {"", "N/D", "NONE", "NULL", "S/N", "ND"}
+
 class LeadProcessingService:
     @staticmethod
     def _db():
@@ -40,6 +42,13 @@ class LeadProcessingService:
         }
         c = mapping.get(c, c)
         return c.upper()
+
+    @staticmethod
+    def _is_valid_property_code(property_code: Any) -> bool:
+        if property_code is None:
+            return False
+        code = str(property_code).strip().upper()
+        return code not in INVALID_PROPERTY_CODES
 
     @staticmethod
     def classify(lead_doc: Dict[str, Any]) -> Dict[str, Any]:
@@ -68,7 +77,7 @@ class LeadProcessingService:
         )
         
         # [AUTOMATION] Si no hay código, intentar extraerlo de los mensajes (historial)
-        if not property_code and lead_doc.get("messages"):
+        if not LeadProcessingService._is_valid_property_code(property_code) and lead_doc.get("messages"):
             logger.info(f"[PROCESS_SERVICE] Intentando RE-IDENTIFICAR lead {lead_doc.get('phone')} desde historial...")
             # Unimos los últimos mensajes para buscar links/códigos
             all_text = " ".join([m.get("content", "") for m in lead_doc.get("messages", [])[-5:]])
@@ -93,7 +102,7 @@ class LeadProcessingService:
                         property_code = str(prop_int.get("codigo"))
                         logger.info(f"[PROCESS_SERVICE] ¡Match por Cód Internacional en historial! Código: {property_code}")
 
-        if not comuna and property_code:
+        if not comuna and LeadProcessingService._is_valid_property_code(property_code):
             try:
                 db = LeadProcessingService._db()
                 p_code_int = int(property_code) if str(property_code).isdigit() else None
@@ -166,7 +175,11 @@ class LeadProcessingService:
                 pass
         
         prospecto = lead_doc.get("prospecto", {})
-        has_property_code = prospecto.get("codigo") or lead_doc.get("codigo") or lead_doc.get("property_code")
+        has_property_code = (
+            LeadProcessingService._is_valid_property_code(prospecto.get("codigo"))
+            or LeadProcessingService._is_valid_property_code(lead_doc.get("codigo"))
+            or LeadProcessingService._is_valid_property_code(lead_doc.get("property_code"))
+        )
         if has_property_code or lead_doc.get("url"):
             behavior_score += 15
             
@@ -241,7 +254,7 @@ class LeadProcessingService:
         comuna = prospecto.get("comuna") or lead_doc.get("comuna")
         zone = lead_doc.get("zone", "unknown")
 
-        if not property_code:
+        if not LeadProcessingService._is_valid_property_code(property_code):
             logger.info(
                 f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} sin propiedad confirmada. "
                 "Se omite asignación automática."

@@ -895,7 +895,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # --- NUEVA LÓGICA DE INTENCIÓN (ENTERPRISE) ---
     intent_map = {
         "agendar_visita": LeadIntent.ASK_VISIT,
-        "contacto_directo": LeadIntent.ASK_INFO,
+        "contacto_directo": LeadIntent.ASK_CONTACT,
         "escalado_urgente": LeadIntent.ASK_INFO, # Fallback a info + alerta
         "consulta_general": LeadIntent.ASK_INFO
     }

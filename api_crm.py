@@ -1,6 +1,8 @@
 # from pymongo import MongoClient (Replaced by singleton)
 from config import Config
 from datetime import datetime
+import ast
+import json
 import pytz
 import re
 import uuid
@@ -105,6 +107,46 @@ from chatbot.crm_service import CrmService
 from chatbot.utils import calculate_business_minutes
 from chatbot.constants import PipelineStage, InteractionType, UNASSIGNED_LABEL
 
+HOT_INTENTS_CRM = {"ASK_VISIT", "ASK_CONTACT", "GIVE_OFFER"}
+HOT_STAGES_CRM = {"VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION"}
+COMMERCIAL_ALERT_TYPES_CRM = {"InteresVisita", "SolicitudContacto", "EscaladoUrgente", "LeadHotWhatsapp"}
+CRM_HOT_QUERY = {
+    "$or": [
+        {"lead_temperature": "HOT"},
+        {"last_intent": {"$in": list(HOT_INTENTS_CRM)}},
+        {"pipeline_stage": {"$in": list(HOT_STAGES_CRM)}},
+        {"stage": {"$in": list(HOT_STAGES_CRM)}},
+        *[{f"prospecto.alerts_sent.{alert_type}": {"$exists": True}} for alert_type in COMMERCIAL_ALERT_TYPES_CRM],
+        *[{f"alerts_sent.{alert_type}": {"$exists": True}} for alert_type in COMMERCIAL_ALERT_TYPES_CRM],
+    ]
+}
+
+def _normalize_alerts_sent_for_crm(alerts_sent):
+    if isinstance(alerts_sent, dict):
+        return alerts_sent
+    if isinstance(alerts_sent, str):
+        try:
+            parsed = json.loads(alerts_sent)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            try:
+                parsed = ast.literal_eval(alerts_sent)
+                return parsed if isinstance(parsed, dict) else {}
+            except Exception:
+                return {}
+    return {}
+
+def is_crm_hot_signal(lead):
+    """Mirror metrics.py HOT rules so the CRM never shows a commercial alert as cold."""
+    if lead.get("lead_temperature") == "HOT":
+        return True
+    last_intent = str(lead.get("last_intent") or "").upper()
+    stage = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
+    prospecto = lead.get("prospecto") or {}
+    alerts_sent = _normalize_alerts_sent_for_crm(prospecto.get("alerts_sent") or lead.get("alerts_sent"))
+    has_commercial_alert = any(alert_type in alerts_sent for alert_type in COMMERCIAL_ALERT_TYPES_CRM)
+    return last_intent in HOT_INTENTS_CRM or stage in HOT_STAGES_CRM or has_commercial_alert
+
 # log_crm_event se mantiene como alias por compatibilidad pero usa storage
 def log_crm_event(phone, event_type, agent="Sistema", meta_data=None):
     # Adaptador para usar storage.log_event
@@ -175,17 +217,20 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             regex_term = re.compile(re.escape(term), re.IGNORECASE)
             query_parts.append({"prospecto.nombre": regex_term})
     
+    temperature_query = None
     if temperatura_filter and temperatura_filter != "Todos":
         if temperatura_filter == "HOT":
-            query_parts.append({"lead_temperature": "HOT"})
+            temperature_query = CRM_HOT_QUERY
+            query_parts.append(temperature_query)
         elif temperatura_filter == "COLD":
-            query_parts.append({"lead_temperature": {"$ne": "HOT"}})
+            temperature_query = {"$nor": [CRM_HOT_QUERY]}
+            query_parts.append(temperature_query)
             
     query = {"$and": query_parts} if query_parts else {}
 
     # 2. SEPARATE KPI COUNTS (Globales para la búsqueda actual pero sin filtro de estado)
     # Creamos query_global_kpi SIN el filtro de temperatura para poder contar todo
-    query_global_kpi_parts = [q for q in query_parts if "lead_temperature" not in q]
+    query_global_kpi_parts = [q for q in query_parts if q is not temperature_query]
     global_kpi_query = {"$and": query_global_kpi_parts} if query_global_kpi_parts else {}
     base_kpi_query = query.copy() # Con temperatura para los KPIs por etapa
     
@@ -221,8 +266,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     facet_pipeline = [
         {"$facet": {
             "global_total": [{"$match": global_kpi_query}, {"$count": "count"}],
-            "total_hot": [{"$match": {"$and": [global_kpi_query, {"lead_temperature": "HOT"}]}}, {"$count": "count"}],
-            "total_cold": [{"$match": {"$and": [global_kpi_query, {"lead_temperature": {"$ne": "HOT"}}]}}, {"$count": "count"}],
+            "total_hot": [{"$match": {"$and": [global_kpi_query, CRM_HOT_QUERY]}}, {"$count": "count"}],
+            "total_cold": [{"$match": {"$and": [global_kpi_query, {"$nor": [CRM_HOT_QUERY]}]}}, {"$count": "count"}],
             "total_pagina": [{"$match": query_with_state}, {"$count": "count"}],
             "sin_asignar": [
                 {"$match": {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, unassigned_filter]}},
@@ -310,6 +355,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         "prospecto.codigo_yapo": 1,
         "prospecto.codigo_mercadolibre": 1,
         "prospecto.ultimo_mensaje": 1,
+        "prospecto.alerts_sent": 1,
         "pipeline_stage": 1,
         "stage": 1,
         "crm_estado": 1,
@@ -324,6 +370,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         "datos_propiedad.codigo": 1,
         "lead_temperature": 1,
         "last_intent": 1,
+        "alerts_sent": 1,
     }
 
     paginated_query = query_with_state.copy()
@@ -565,12 +612,13 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         # last_intent es guardado por core.py -> CrmService.update_intent() en cada mensaje.
         # bi_analytics_global es legacy y no se usa en el flujo activo.
         temp = lead.get("lead_temperature")
-        if not temp:
+        if temp != "HOT" and is_crm_hot_signal(lead):
+            temp = "HOT"
+            lead["lead_temperature"] = temp
+        elif not temp:
             last_intent_val = str(lead.get("last_intent", "")).upper()
             stage_val = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
-            HOT_INTENT = {"ASK_VISIT", "GIVE_OFFER"}
-            HOT_STAGES = {"VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION"}
-            if last_intent_val in HOT_INTENT or stage_val in HOT_STAGES:
+            if last_intent_val in HOT_INTENTS_CRM or stage_val in HOT_STAGES_CRM:
                 temp = "HOT"
             else:
                 temp = "COLD"

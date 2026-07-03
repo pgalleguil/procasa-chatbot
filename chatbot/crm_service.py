@@ -179,6 +179,7 @@ class CrmService:
         # 3. Intención (LeadIntent - Datos de Negocio)
         intent = lead.get("last_intent")
         if intent == LeadIntent.ASK_VISIT: score += 40
+        elif intent == LeadIntent.ASK_CONTACT: score += 35
         elif intent == LeadIntent.GIVE_OFFER: score += 35
         elif intent == LeadIntent.ASK_PRICE: score += 20
         elif intent == LeadIntent.ASK_INFO: score += 15

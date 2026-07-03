@@ -28,6 +28,7 @@ class LeadIntent(str, Enum):
     ASK_VISIT = "ASK_VISIT"    # Quiero agendar
     ASK_PRICE = "ASK_PRICE"    # ¿Cuánto vale?
     ASK_INFO = "ASK_INFO"      # Dame más detalles
+    ASK_CONTACT = "ASK_CONTACT"
     GIVE_OFFER = "GIVE_OFFER"  # Quiero hacer una oferta
     COMPLAINT = "COMPLAINT"    # Reclamo
     UNSUBSCRIBE = "UNSUBSCRIBE" # No molestar más

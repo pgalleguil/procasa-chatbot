@@ -3,10 +3,31 @@ from datetime import datetime
 from .constants import CHILE_TZ, PipelineStage
 from .utils import calculate_business_minutes
 import logging
+import ast
+import json
 
 logger = logging.getLogger(__name__)
 
 HOT_LEAD_NOTIFICATION_TYPE = "LeadHotWhatsapp"
+COMMERCIAL_ALERT_TYPES = ["InteresVisita", "SolicitudContacto", "EscaladoUrgente"]
+
+def _normalize_alerts_sent(alerts_sent):
+    if isinstance(alerts_sent, dict):
+        return alerts_sent
+    if isinstance(alerts_sent, str):
+        try:
+            return json.loads(alerts_sent)
+        except Exception:
+            try:
+                parsed = ast.literal_eval(alerts_sent)
+                return parsed if isinstance(parsed, dict) else {}
+            except Exception:
+                return {}
+    return {}
+
+def _has_commercial_alert(alerts_sent) -> bool:
+    alerts = _normalize_alerts_sent(alerts_sent)
+    return any(alerts.get(t) for t in COMMERCIAL_ALERT_TYPES)
 
 def calculate_priority(lead_doc, now=None):
     """
@@ -135,11 +156,13 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None):
         last_intent = str(lead.get("last_intent", "")).upper()
         pipeline_stage = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
         old_temp = lead.get("lead_temperature")
+        alerts_sent = lead.get("prospecto", {}).get("alerts_sent") or {}
+        has_commercial_alert = _has_commercial_alert(alerts_sent)
         
-        HOT_INTENT = {"ASK_VISIT", "GIVE_OFFER"}
+        HOT_INTENT = {"ASK_VISIT", "ASK_CONTACT", "GIVE_OFFER"}
         HOT_STAGES = {"VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION"}
         
-        if last_intent in HOT_INTENT or pipeline_stage in HOT_STAGES:
+        if last_intent in HOT_INTENT or pipeline_stage in HOT_STAGES or has_commercial_alert:
             new_temp = "HOT"
         elif old_temp == "HOT":
             # Si el lead ya era HOT, mantenerlo HOT a menos que se cierre o desuscriba
@@ -201,9 +224,14 @@ def _enqueue_hot_lead_notification(lead):
     try:
         from .constants import UNASSIGNED_LABEL
         from .lead_router import get_executive_phone
-        from .storage import save_pending_notification
+        from .storage import get_db, save_pending_notification
 
         prospecto = lead.get("prospecto", {}) or {}
+        alerts_sent = prospecto.get("alerts_sent") or {}
+        if _has_commercial_alert(alerts_sent):
+            logger.info(f"[HOT_LEAD] Lead {lead.get('phone')} ya tenia alerta comercial enviada. No se duplica WhatsApp HOT.")
+            return
+
         exec_name = lead.get("ejecutivo_asignado") or prospecto.get("ejecutivo")
         unassigned = {UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", "Sin asignar", "N/A", "", None}
         if exec_name in unassigned:
@@ -238,6 +266,20 @@ def _enqueue_hot_lead_notification(lead):
             "is_new_assignment": False,
             "lead_temperature": "HOT",
         }
+
+        db = get_db()
+        existing = db["pending_notifications"].find_one({
+            "$or": [
+                {"lead_data.phone": lead.get("phone")},
+                {"lead_data.lead_phone": lead.get("phone")},
+            ],
+            "lead_data.lead_type": {"$in": ["LeadHotWhatsapp", "InteresVisita", "SolicitudContacto"]},
+            "status": {"$in": ["pending", "sent"]},
+        })
+        if existing:
+            logger.info(f"[HOT_LEAD] Lead {lead.get('phone')} ya tiene notificacion comercial registrada. No se duplica.")
+            return
+
         save_pending_notification(notification_data)
         logger.info(f"[HOT_LEAD] Notificacion HOT encolada para {exec_name} por lead {lead.get('phone')}.")
     except Exception as e:

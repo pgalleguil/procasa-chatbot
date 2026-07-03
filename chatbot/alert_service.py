@@ -34,7 +34,7 @@ def should_send_alert(phone: str, lead_type: str, window_minutes: int) -> bool:
     # NUEVO: Anti-spam riguroso para evolución de leads (Caso 3)
     # Si estamos intentando enviar una alerta HOT, validamos si ya se envió alguna vez
     # cualquier alerta de la familia HOT para este prospecto. Si ya se envió, NO enviamos más.
-    HOT_ALERT_TYPES = ["InteresVisita", "SolicitudContacto"]
+    HOT_ALERT_TYPES = ["InteresVisita", "SolicitudContacto", "EscaladoUrgente", "LeadHotWhatsapp"]
     if lead_type in HOT_ALERT_TYPES:
         for hot_type in HOT_ALERT_TYPES:
             if alerts.get(hot_type):
@@ -226,8 +226,6 @@ def _send_alert_once_sync(
         # en la base de datos inmediatamente. El loop de fondo 'process_pending_leads_loop'
         # se encargará de enviarla en el momento correcto, asegurando persistencia si el servidor se reinicia.
         
-        # Marcamos en DB para evitar spam (idempotencia local del servicio de alertas)
-        mark_alert_sent(phone, lead_type)
         try:
             record_observability_event("ALERT_PERSISTED", {
                 "conversation_id": criteria.get("conversation_id") or phone,
@@ -248,6 +246,8 @@ def _send_alert_once_sync(
         lead_data["is_new_assignment"] = is_new_assignment
         
         save_pending_notification(lead_data)
+        # Marcamos solo despues de persistir la notificacion que enviara el loop de WhatsApp.
+        mark_alert_sent(phone, lead_type)
         
         # Opcional: Si queremos mantener un pequeño delay antes de que el loop lo procese, 
         # podríamos agregar un campo 'send_after' a save_pending_notification, 

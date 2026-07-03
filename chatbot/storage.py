@@ -348,7 +348,10 @@ def save_pending_notification(lead_data: dict):
     if lead_phone and lead_type:
         existing = db[COLLECTION_PENDING_NOTIFICATIONS].find_one({
             "status": "pending",
-            "lead_data.lead_phone": lead_phone,
+            "$or": [
+                {"lead_data.lead_phone": lead_phone},
+                {"lead_data.phone": lead_phone},
+            ],
             "lead_data.lead_type": lead_type,
         })
         if existing:

@@ -6,6 +6,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+HOT_LEAD_NOTIFICATION_TYPE = "LeadHotWhatsapp"
+
 def calculate_priority(lead_doc, now=None):
     """
     Calcula sla_status y priority_score en O(1) basándose solo en los datos del lead.
@@ -157,7 +159,8 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None):
             "lead_temperature": new_temp
         }
         
-        if new_temp == "HOT" and old_temp != "HOT":
+        became_hot = new_temp == "HOT" and old_temp != "HOT"
+        if became_hot:
             update_data["lifecycle.hot_since"] = datetime.now(CHILE_TZ).isoformat()
         
         if event_at: update_data["last_event_at"] = event_at
@@ -183,9 +186,62 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None):
 
         # Use _id for exact matching instead of potentially un-prefixed phone
         db["leads"].update_one({"_id": lead["_id"]}, {"$set": update_data})
+
+        if became_hot:
+            _enqueue_hot_lead_notification(lead)
         
     except Exception as e:
         logger.error(f"Error updating lead metrics for {phone}: {e}")
+
+def _enqueue_hot_lead_notification(lead):
+    """
+    A lead can be assigned while still cold and become hot later as the chat evolves.
+    When that transition happens, notify the already assigned executive.
+    """
+    try:
+        from .constants import UNASSIGNED_LABEL
+        from .lead_router import get_executive_phone
+        from .storage import save_pending_notification
+
+        prospecto = lead.get("prospecto", {}) or {}
+        exec_name = lead.get("ejecutivo_asignado") or prospecto.get("ejecutivo")
+        unassigned = {UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", "Sin asignar", "N/A", "", None}
+        if exec_name in unassigned:
+            logger.info(f"[HOT_LEAD] Lead {lead.get('phone')} quedo HOT pero no tiene ejecutivo asignado.")
+            return
+
+        exec_phone = get_executive_phone(exec_name)
+        if not exec_phone or exec_phone == "+56900000000":
+            logger.warning(f"[HOT_LEAD] Lead {lead.get('phone')} quedo HOT pero {exec_name} no tiene telefono valido.")
+            return
+
+        property_code = (
+            lead.get("property_code")
+            or lead.get("codigo")
+            or prospecto.get("codigo")
+            or prospecto.get("codigo_interno")
+        )
+        messages = lead.get("messages") or []
+        last_message = ""
+        if messages:
+            last_message = str(messages[-1].get("content") or "")
+
+        notification_data = {
+            "phone": lead.get("phone"),
+            "lead_phone": lead.get("phone"),
+            "property_code": property_code,
+            "lead_type": HOT_LEAD_NOTIFICATION_TYPE,
+            "target_name": exec_name,
+            "target_phone": exec_phone,
+            "nombre": prospecto.get("nombre") or lead.get("nombre") or "Cliente",
+            "last_message": last_message or "El lead se convirtio en HOT durante la conversacion.",
+            "is_new_assignment": False,
+            "lead_temperature": "HOT",
+        }
+        save_pending_notification(notification_data)
+        logger.info(f"[HOT_LEAD] Notificacion HOT encolada para {exec_name} por lead {lead.get('phone')}.")
+    except Exception as e:
+        logger.error(f"[HOT_LEAD] Error encolando notificacion HOT para {lead.get('phone')}: {e}", exc_info=True)
 
 def update_captacion_metrics(db, obj_id):
     """

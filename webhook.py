@@ -1363,7 +1363,7 @@ async def view_captaciones(
             "has_next": page < total_pages,
             "has_prev": page > 1
         }
-    })
+    }, headers={"Content-Type": "text/html; charset=utf-8"})
 
 @app.get("/captacion/{obj_id}", response_class=HTMLResponse)
 async def view_captacion_detail_route(request: Request, obj_id: str):
@@ -1396,7 +1396,7 @@ async def view_captacion_detail_route(request: Request, obj_id: str):
         "prop": data,
         "user_name": user_name,
         "user_role": user.get("rol", "agente")
-    })
+    }, headers={"Content-Type": "text/html; charset=utf-8"})
 
 # --- PROTECCIÓN ANTI-SPAM PARA MATCHING ---
 PENDING_MATCHING_REQUESTS = {} # obj_id -> timestamp

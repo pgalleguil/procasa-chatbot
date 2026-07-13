@@ -1,0 +1,73 @@
+=== templates/captacion_detail.html ===
+  L6: <title>Procasa | Detalle de Captaci├│n</title>
+  L753: .badge-nuevo {
+  L1027: <img src="/static/logo.png?v=1.0.1" alt="PROCASA" style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padd
+  L1049: <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesi├│n</span>
+  L1056: <!-- HEADER ROW: EJECUTIVO ASIGNADO -->
+  L1065: <span class="info-label m-0">Ejecutivo Asignado:</span>
+  L1068: <i class="fa-solid fa-user-tie me-2"></i>{{ prop.gestion.ejecutivo_asignado or 'Sin asignar' }}
+  L1102: {'id': 'contact', 'label': 'Contacto', 'match': ['Por contactar', 'Sin respuesta', 'Tel├®fono inv├ílido',
+  L1103: 'GESTION', 'NUEVO', 'DETECTADO', 'INTENTO DE CONTACTO']},
+  L1104: {'id': 'negotiate', 'label': 'Negociaci├│n', 'match': ['Contacto exitoso', 'Reuni├│n agendada',
+  L1106: {'id': 'close', 'label': 'Cierre', 'match': ['Captado', 'Descartado', 'Propiedad no disponible', 'No
+  L1107: interesado', 'Corredor', 'Publicaci├│n expirada']}
+  L1184: class="badge {{ 'badge-nuevo' if prop.gestion.estado == 'NUEVO' else 'badge-gestion' }} badge-custom">
+  L1237: onclick="const desc=this.previousElementSibling; const isExpanded = desc.style.webkitLineClamp === 'unset'; desc.style.webkitLineClamp = isExpanded ? 
+  L1270: <i class="fa-solid fa-address-card"></i> Gesti├│n del Propietario
+  L1277: value="{{ prop.vendedor_nombre }}" placeholder="Nombre del propietario" />
+  L1302: value="{{ prop.vendedor_email or '' }}" placeholder="email@propietario.cl" />
+  L1312: <label class="info-label">Notas de contacto</label>
+  L1314: placeholder="Notas internas sobre el contacto...">
+  L1315: {{ prop.notas_contacto or '' }}</textarea>
+  L1323: <i class="fa-solid fa-floppy-disk"></i> GUARDAR DATOS DE CONTACTO
+  L1336: <label class="info-label">Pr├│ximo Contacto</label>
+  L1340: <input type="text" id="proximo-contacto"
+  L1573: <h5 class="modal-title" id="commTitle">WhatsApp a Propietario</h5>
+  L1606: <i class="fa-solid fa-star me-1"></i> Guardar como plantilla personal
+  L1650: <p class="mb-4 text-secondary">┬┐Cu├íl fue el resultado de tu contacto reci├®n realizado?</p>
+  L1652: <div class="p-3 border rounded-3xl" onclick="saveFeedback('Contacto Exitoso')"
+  L1657: class="mt-2 d-block text-white fw-bold" style="font-size: 0.85rem;">Contacto
+  L1692: onclick="saveFeedbackFromText()">Guardar Nota</button>
+  L1863: alert("Error al guardar: " + e.message);
+  L1879: next_followup: document.getElementById('proximo-contacto').value
+  L1941: text: "Hola [[nombre]], vi tu propiedad en [[sector]] y tengo una manera de mostrarla directamente a personas que ya est├ín buscando ah├¡.\n\nSoy [[ag
+  L1954: subject: "Contacto de Procasa - Propiedad en [[sector]]",
+  L1955: text: "Hola [[nombre]], soy [[agente]] de Procasa.\n\nVi tu propiedad en [[sector]] y me gust├│. Estamos trabajando con compradores en esa zona. ┬┐Sig
+  L1982: text: "┬┐El precio que tienes publicado es el que necesitas cerrar o est├ís abierto a calibrarlo seg├║n lo que est├í pasando hoy en el mercado?"
+  L1994: id: "valor_filtro_real",
+  L1995: label: "Filtro de compradores Ô¡É",
+  L1998: subject: "Nuestra metodolog├¡a de filtrado en Procasa",
+  L2003: label: "Red Interna Procasa",
+  L2005: subject: "Acceso a la red interna de Procasa",
+  L2006: text: "En Procasa somos una de la redes de corretaje mas grande del pa├¡s contamos con n├║merosos clientes en proceso activo.\n\nTu propiedad se muest
+  L2020: text: "Una de las cosas que m├ís valoran nuestros propietarios:\n\nVes en tiempo real cu├ínta gente vio tu aviso y cu├íntos est├ín pre-calificados.\n\
+  L2026: subject: "Matches detectados para tu propiedad",
+  L2037: text: "Te puedo mostrar en 3 minutos c├│mo est├ín posicionadas propiedades como la tuya ahora mismo.\n\nSi te hace sentido, hablamos despu├®s. ┬┐Te lo
+  L2043: text: "Tengo un espacio hoy o ma├▒ana en la ma├▒ana para mostrarte la estrategia.\n\n┬┐Cu├íl te viene mejor para una llamada de 5 minutos?"
+  L2049: text: "Esta semana entraron nuevos compradores en [[sector]]. Estas ventanas no duran.\n\n┬┐Lo vemos pronto?"
+  L2077: text: "Hola [[nombre]], ┬┐c├│mo est├ís?\n\nHace un tiempo vimos tu propiedad y justo ahora entraron nuevos compradores buscando en [[sector]].\n\n┬┐Si
+  L2086: id: "followup_dato_nuevo",
+  L2087: label: "Dato nuevo",
+  L2095: id: "obj_corredor",
+  L2096: label: "Tiene Corredor",
+  L2104: text: "Claro.\n\nPublicar lo puede hacer cualquiera. El problema es que el 80% de los contactos no puede comprar.\n\nNosotros trabajamos sobre el 20% 
+  L2128: text: "Entiendo la preocupaci├│n.\n\nNuestro cruce de datos puede mostrarte si est├í alineado o si hay espacio para mejorar.\n\n┬┐Quieres ver la compa
+  L2134: text: "Claro, el timing importa.\n\nSolo te digo que esta semana entraron nuevos compradores en [[sector]]. Si quieres, te mantengo al tanto sin compr
+  L2152: text: "Normal.\n\nLa diferencia no est├í en la comisi├│n, est├í en qui├®n trae compradores reales.\n\nD├®jame mostrarte en 3 minutos c├│mo quedar├¡a c
+  L2185: const _leadStage = _leadDiasPortal <= 7 ? 'nuevo' : _leadDiasPortal <= 30 ? 'activo' : 'estancado';
+  L2188: nuevo: { cat: 'hooks', tid: 'gancho_insight_especifico' },
+  L2194: nuevo: 'Enviar primer mensaje',
+  L2229: alert("Escribe un mensaje primero.");
+  L2261: if (!confirm("┬┐Seguro que quieres eliminar esta plantilla?")) return;
+  L2348: tab.id === 'personal' || // Siempre mostrar todas las personales
+  L2354: // Ocultar si est├í vac├¡o (excepto si estamos en modo edici├│n o queremos forzarlo)
+  L2413: title="Eliminar plantilla"
+  L2478: const safeName = (safeNameEl && safeNameEl.value) ? safeNameEl.value : "Propietario";
+  L2481: const sector = "{{ prop.sector_name|default(prop.comuna)|default('') }}";
+  L2530: btn.innerHTML = isWA ? '<i class="fa-brands fa-whatsapp"></i> Abrir WhatsApp' : '<i class="fa-solid fa-envelope"></i> Abrir Correo';
+  L2581: // Mostrar toast de confirmaci├│n inmediato
+  L2588: // Abrir modal de bit├ícora despu├®s de 1s
+  L2603: 'Contacto Exitoso': 'CONTACTO EXITOSO',
+  L2605: 'No Interesado': 'DESCARTADO',
+  L2679: // Guardar para los modales
+  L2746: <div style="font-size: 0.75rem; color: var(--text-secondary);">Misma comuna + tipo + operaci├│n + rango de precio ┬▒30%</div>

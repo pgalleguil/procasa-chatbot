@@ -1,11 +1,11 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="es" data-theme="dark">
 
 <head>
     <meta charset="UTF-8" />
-    <title>Procasa | Detalle de Captaci├│n</title>
+    <title>Procasa | Detalle de Captación</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Preconnect a CDNs para reducir latencia de conexi├│n inicial -->
+    <!-- Preconnect a CDNs para reducir latencia de conexión inicial -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1021,11 +1021,11 @@
     <div id="sidebarOverlay"
         style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;"
         onclick="toggleMobileMenu()"></div>
-    <!-- SIDEBAR (Mismo men├║, sin cambios en estructura) -->
+    <!-- SIDEBAR (Mismo menú, sin cambios en estructura) -->
     <nav class="sidebar" id="sidebar">
         <div class="brand">
             <img src="/static/logo.png?v=1.0.1" alt="PROCASA" style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;" onerror="this.style.display = 'none'" />
-            <span>MEN├Ü</span>
+            <span>MENÚ</span>
         </div>
 
         {% if user_role in ['supervisor', 'admin'] %}
@@ -1037,7 +1037,7 @@
         <a href="/captacion" class="nav-link active"><i class="fa-solid fa-house-circle-check"></i>
             <span>Captaciones</span></a>
         <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
-        <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>├ôrdenes de Visita</span></a>
+        <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
 
         <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="
           toggleTheme();
@@ -1046,7 +1046,7 @@
             <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
         </a>
         <a href="/logout" class="nav-link logout">
-            <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesi├│n</span>
+            <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
         </a>
     </nav>
 
@@ -1059,7 +1059,7 @@
                 <div class="hamburger-mobile" onclick="toggleMobileMenu()">
                     <i class="fa-solid fa-bars"></i>
                 </div>
-                <h4 class="text-white m-0 fw-bold">Detalle de Captaci├│n</h4>
+                <h4 class="text-white m-0 fw-bold">Detalle de Captación</h4>
             </div>
             <div class="d-flex align-items-center gap-3 detail-header-right">
                 <span class="info-label m-0">Ejecutivo Asignado:</span>
@@ -1070,13 +1070,13 @@
             </div>
         </div>
 
-        <!-- PR├ôXIMA ACCI├ôN -->
+        <!-- PRÓXIMA ACCIÓN -->
         {% if prop.next_action %}
         <div class="card-custom mb-4"
             style="background: rgba(245, 158, 11, 0.05); border-color: rgba(245, 158, 11, 0.2); padding: 20px 24px;">
             <div class="d-flex justify-content-between align-items-start">
                 <div>
-                    <div class="info-label" style="color: #f59e0b;"><i class="fa-solid fa-bolt me-2"></i>PR├ôXIMA ACCI├ôN
+                    <div class="info-label" style="color: #f59e0b;"><i class="fa-solid fa-bolt me-2"></i>PRÓXIMA ACCIÓN
                         RECOMENDADA</div>
                     <h5 class="fw-bold text-white mt-2 mb-1">{{ prop.next_action.title }}</h5>
                     <p class="text-secondary m-0" style="font-size: 0.95rem;">{{ prop.next_action.reason }}</p>
@@ -1099,12 +1099,12 @@
             "></div>
 
                 {% set stages = [
-                {'id': 'contact', 'label': 'Contacto', 'match': ['Por contactar', 'Sin respuesta', 'Tel├®fono inv├ílido',
+                {'id': 'contact', 'label': 'Contacto', 'match': ['Por contactar', 'Sin respuesta', 'Teléfono inválido',
                 'GESTION', 'NUEVO', 'DETECTADO', 'INTENTO DE CONTACTO']},
-                {'id': 'negotiate', 'label': 'Negociaci├│n', 'match': ['Contacto exitoso', 'Reuni├│n agendada',
-                'INTERESADO EN TASACI├ôN', 'TASACI├ôN ENVIADA']},
+                {'id': 'negotiate', 'label': 'Negociación', 'match': ['Contacto exitoso', 'Reunión agendada',
+                'INTERESADO EN TASACIÓN', 'TASACIÓN ENVIADA']},
                 {'id': 'close', 'label': 'Cierre', 'match': ['Captado', 'Descartado', 'Propiedad no disponible', 'No
-                interesado', 'Corredor', 'Publicaci├│n expirada']}
+                interesado', 'Corredor', 'Publicación expirada']}
                 ] %}
                 {% for s in stages %}
                 {% set is_active = prop.estado_captacion in s.match %}
@@ -1161,7 +1161,7 @@
                 ">
                             {% if prop.score_captacion >= 80 %}Alta Prioridad{% elif
                             prop.score_captacion >= 50 %}Propiedad Analizada{% else
-                            %}Captaci├│n Compleja{% endif %}
+                            %}Captación Compleja{% endif %}
                         </h2>
                         <div style="
                   font-size: 0.9rem;
@@ -1192,18 +1192,18 @@
               border-bottom: 1px solid var(--border-color);
             ">
                     <div class="col-md-4">
-                        <span class="info-label"><i class="fa-solid fa-house-user me-2"></i>Distribuci├│n</span>
+                        <span class="info-label"><i class="fa-solid fa-house-user me-2"></i>Distribución</span>
                         <div class="fw-bold text-primary m-0" style="font-size: 1.1rem">
                             <i class="fa-solid fa-bed me-1 text-secondary"></i>{{
                             prop.dormitorios or '0' }} |
                             <i class="fa-solid fa-shower me-1 text-secondary ms-1"></i>{{
                             prop.banos or '0' }} |
                             <i class="fa-solid fa-ruler-combined me-1 text-secondary ms-1"></i>{{ prop.m2_total or '0'
-                            }}m┬▓
+                            }}m²
                         </div>
                     </div>
                     <div class="col-md-4">
-                        <span class="info-label"><i class="fa-solid fa-tag me-2"></i>OPERACI├ôN</span>
+                        <span class="info-label"><i class="fa-solid fa-tag me-2"></i>OPERACIÓN</span>
                         <div class="fw-bold text-primary m-0 text-truncate" style="font-size: 1.1rem">
                             {% if prop.details.operacion %}
                             {{ prop.details.operacion|upper }}
@@ -1215,7 +1215,7 @@
                                 prop.gestion.label_antiguedad or 'Publicado' }} Hace</span>
                             <div class="fw-bold text-{{ 'danger' if (prop.gestion.dias_en_portal|default(0)|int) > 30 else 'success' }} m-0"
                                 style="font-size: 1.1rem">
-                                {{ prop.gestion.dias_en_portal or '0' }} d├¡as
+                                {{ prop.gestion.dias_en_portal or '0' }} días
                             </div>
                         </div>
                     </div>
@@ -1234,8 +1234,8 @@
                         </p>
                         <button class="btn btn-link p-0 mt-2 fw-bold text-decoration-none d-flex align-items-center"
                             style="color: var(--accent); font-size: 0.9rem"
-                            onclick="const desc=this.previousElementSibling; const isExpanded = desc.style.webkitLineClamp === 'unset'; desc.style.webkitLineClamp = isExpanded ? '2' : 'unset'; this.querySelector('span').innerText = isExpanded ? 'Ver descripci├│n completa' : 'Ocultar descripci├│n'; this.querySelector('i').className = isExpanded ? 'fa-solid fa-chevron-down ms-2' : 'fa-solid fa-chevron-up ms-2';">
-                            <span>Ver descripci├│n completa</span>
+                            onclick="const desc=this.previousElementSibling; const isExpanded = desc.style.webkitLineClamp === 'unset'; desc.style.webkitLineClamp = isExpanded ? '2' : 'unset'; this.querySelector('span').innerText = isExpanded ? 'Ver descripción completa' : 'Ocultar descripción'; this.querySelector('i').className = isExpanded ? 'fa-solid fa-chevron-down ms-2' : 'fa-solid fa-chevron-up ms-2';">
+                            <span>Ver descripción completa</span>
                             <i class="fa-solid fa-chevron-down ms-2"></i>
                         </button>
 
@@ -1263,11 +1263,11 @@
 
             <!-- 3. CONTENT SECTION -->
             <div class="content-section">
-                <!-- Columna Izquierda: Gesti├│n -->
+                <!-- Columna Izquierda: Gestión -->
                 <div class="left-column">
                     <div class="card-custom">
                         <div class="section-title">
-                            <i class="fa-solid fa-address-card"></i> Gesti├│n del Propietario
+                            <i class="fa-solid fa-address-card"></i> Gestión del Propietario
                         </div>
 
                         <div class="row g-4">
@@ -1278,7 +1278,7 @@
                             </div>
 
                             <div class="col-md-6">
-                                <label class="info-label">Tel├®fono</label>
+                                <label class="info-label">Teléfono</label>
                                 <div class="input-group">
                                     <input type="text" id="wa-telefono" class="form-control"
                                         value="{{ prop.vendedor_telefono }}" placeholder="56912345678" />
@@ -1333,7 +1333,7 @@
 
                         <div class="row g-4">
                             <div class="col-md-6">
-                                <label class="info-label">Pr├│ximo Contacto</label>
+                                <label class="info-label">Próximo Contacto</label>
                                 <div class="input-group">
                                     <span class="input-group-text border-end-0"><i
                                             class="fa-regular fa-calendar"></i></span>
@@ -1357,9 +1357,9 @@
                             </div>
 
                             <div class="col-12">
-                                <label class="info-label">Bit├ícora</label>
+                                <label class="info-label">Bitácora</label>
                                 <textarea class="form-control" id="notes" rows="3"
-                                    placeholder="Escribe el resultado de tu gesti├│n aqu├¡..."></textarea>
+                                    placeholder="Escribe el resultado de tu gestión aquí..."></textarea>
                             </div>
 
                             <div class="col-12 mt-2">
@@ -1377,7 +1377,7 @@
                 <div class="right-column">
                     <div class="card-custom">
                         <div class="section-title">
-                            <i class="fa-solid fa-chart-line"></i> An├ílisis de Mercado
+                            <i class="fa-solid fa-chart-line"></i> Análisis de Mercado
                         </div>
 
                         <div class="p-4 rounded-3xl mb-4" style="
@@ -1431,7 +1431,7 @@
                     background: rgba(255, 255, 255, 0.03);
                     border: 1px solid var(--border-color);
                   ">
-                                    <div class="info-label">Precio UF/m┬▓</div>
+                                    <div class="info-label">Precio UF/m²</div>
                                     <div class="fs-4 fw-bold text-white">{{ prop.uf_m2 }}</div>
                                     <div class="text-success mt-1" style="font-size: 0.75rem; font-weight: 700">
                                         <i class="fa-solid fa-caret-down me-1"></i>{{
@@ -1449,7 +1449,7 @@
                                         {{ prop.market_stats.avg_uf_m2 }}
                                     </div>
                                     <div class="text-secondary mt-1" style="font-size: 0.75rem; font-weight: 700">
-                                        UF/m┬▓
+                                        UF/m²
                                     </div>
                                 </div>
                             </div>
@@ -1460,7 +1460,7 @@
                 border: 1px solid rgba(99, 102, 241, 0.1);
               ">
                             <div class="info-label text-primary mb-3">
-                                <i class="fa-solid fa-sparkles me-2"></i>Puntos Cr├¡ticos IA
+                                <i class="fa-solid fa-sparkles me-2"></i>Puntos Críticos IA
                             </div>
                             <div class="d-flex flex-column gap-2">
                                 {% for motivo in prop.motivos_score %}
@@ -1486,7 +1486,7 @@
                     </div>
 
 
-                    <!-- PANEL: INTELIGENCIA DE DEMANDA (3 CAPAS) - CARGA AS├ìNCRONA -->
+                    <!-- PANEL: INTELIGENCIA DE DEMANDA (3 CAPAS) - CARGA ASÍNCRONA -->
                     <div class="card-custom" id="matching-analysis-container">
                         <div class="section-title">
                             <i class="fa-solid fa-chart-line"></i> Inteligencia de Demanda
@@ -1516,8 +1516,8 @@
                                 {% for item in prop.historial %}
                                 <div class="tl-item">
                                     <div class="tl-icon"
-                                        style="border-color: {% if 'Llamad' in item.nota or 'tel├®fono' in item.canal|lower %}#3b82f6{% elif 'WhatsApp' in item.canal or 'wa' in item.canal %}#25d366{% elif 'correo' in item.canal|lower or 'email' in item.canal|lower %}#8b5cf6{% else %}var(--accent){% endif %};">
-                                        {% if 'Llamad' in item.nota or 'tel├®fono' in item.canal|lower %}
+                                        style="border-color: {% if 'Llamad' in item.nota or 'teléfono' in item.canal|lower %}#3b82f6{% elif 'WhatsApp' in item.canal or 'wa' in item.canal %}#25d366{% elif 'correo' in item.canal|lower or 'email' in item.canal|lower %}#8b5cf6{% else %}var(--accent){% endif %};">
+                                        {% if 'Llamad' in item.nota or 'teléfono' in item.canal|lower %}
                                         <i class="fa-solid fa-phone"></i>
                                         {% elif 'WhatsApp' in item.canal or 'wa' in item.canal %}
                                         <i class="fa-brands fa-whatsapp"></i>
@@ -1530,7 +1530,7 @@
                                     <div class="tl-content">
                                         <div class="d-flex justify-content-between align-items-center mb-2">
                                             <span class="fw-bold text-white" style="font-size: 0.95rem">
-                                                {{ item.nota.split(' - ')[0] if ' - ' in item.nota else 'Actualizaci├│n'
+                                                {{ item.nota.split(' - ')[0] if ' - ' in item.nota else 'Actualización'
                                                 }}
                                             </span>
                                             <span class="badge"
@@ -1552,7 +1552,7 @@
                                     <div class="tl-icon"><i class="fa-solid fa-info"></i></div>
                                     <div class="tl-content text-center py-4">
                                         <div class="text-secondary" style="font-size: 0.9rem;">
-                                            No hay historial registrado a├║n.
+                                            No hay historial registrado aún.
                                         </div>
                                     </div>
                                 </div>
@@ -1598,7 +1598,7 @@
                             <div id="messageContainer">
                                 <label class="info-label mb-2">MENSAJE:</label>
                                 <textarea class="form-control modern-scrollbar" id="commMessage" rows="5"
-                                    placeholder="Escribe tu mensaje aqu├¡..."></textarea>
+                                    placeholder="Escribe tu mensaje aquí..."></textarea>
                                 <div class="d-flex justify-content-end mt-2">
                                     <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3"
                                         onclick="saveAsPersonalTemplate()"
@@ -1641,13 +1641,13 @@
                     <div class="modal-content">
                         <div class="modal-header">
                             <h5 class="modal-title"><i
-                                    class="fa-solid fa-clock-rotate-left me-2 text-warning"></i>Bit├ícora de
-                                Gesti├│n</h5>
+                                    class="fa-solid fa-clock-rotate-left me-2 text-warning"></i>Bitácora de
+                                Gestión</h5>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
                                 aria-label="Close"></button>
                         </div>
                         <div class="modal-body text-center">
-                            <p class="mb-4 text-secondary">┬┐Cu├íl fue el resultado de tu contacto reci├®n realizado?</p>
+                            <p class="mb-4 text-secondary">¿Cuál fue el resultado de tu contacto recién realizado?</p>
                             <div class="d-grid gap-3" style="grid-template-columns: repeat(2, 1fr);">
                                 <div class="p-3 border rounded-3xl" onclick="saveFeedback('Contacto Exitoso')"
                                     style="cursor:pointer; border-color: var(--border-color) !important; background: rgba(255,255,255,0.02); transition: 0.2s;"
@@ -1665,12 +1665,12 @@
                                         class="mt-2 d-block text-white fw-bold" style="font-size: 0.85rem;">Sin
                                         Respuesta</span>
                                 </div>
-                                <div class="p-3 border rounded-3xl" onclick="saveFeedback('Agend├│ Visita')"
+                                <div class="p-3 border rounded-3xl" onclick="saveFeedback('Agendó Visita')"
                                     style="cursor:pointer; border-color: var(--border-color) !important; background: rgba(255,255,255,0.02); transition: 0.2s;"
                                     onmouseover="this.style.background='rgba(99, 102, 241, 0.1)'"
                                     onmouseout="this.style.background='rgba(255,255,255,0.02)'">
                                     <i class="fa-solid fa-calendar-check text-primary fs-2"></i><br><span
-                                        class="mt-2 d-block text-white fw-bold" style="font-size: 0.85rem;">Agend├│
+                                        class="mt-2 d-block text-white fw-bold" style="font-size: 0.85rem;">Agendó
                                         Visita</span>
                                 </div>
                                 <div class="p-3 border rounded-3xl" onclick="saveFeedback('No Interesado')"
@@ -1683,7 +1683,7 @@
                                 </div>
                             </div>
                             <textarea class="form-control mt-4" id="feedbackNotes" rows="2"
-                                placeholder="Opcional: Detalles adicionales de la gesti├│n..."></textarea>
+                                placeholder="Opcional: Detalles adicionales de la gestión..."></textarea>
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"
@@ -1699,7 +1699,7 @@
             <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
             <script src="https://cdn.jsdelivr.net/npm/flatpickr" defer></script>
             <script>
-                // Scripts originales de inicializaci├│n
+                // Scripts originales de inicialización
                 document.addEventListener("DOMContentLoaded", () => {
                     flatpickr(".flatpickr-date", {
                         enableTime: true,
@@ -1743,14 +1743,14 @@
                         btnCall.disabled = !canUsePhone;
                         btnCall.style.opacity = canUsePhone ? "1" : "0.5";
                         btnCall.style.cursor = canUsePhone ? "pointer" : "not-allowed";
-                        btnCall.title = !phone ? "Ingrese un tel├®fono" : (phoneChanged ? "Guarde los cambios para activar" : "Llamar");
+                        btnCall.title = !phone ? "Ingrese un teléfono" : (phoneChanged ? "Guarde los cambios para activar" : "Llamar");
                     }
                     if (btnWA) {
                         const canUsePhone = phone && !phoneChanged;
                         btnWA.disabled = !canUsePhone;
                         btnWA.style.opacity = canUsePhone ? "1" : "0.5";
                         btnWA.style.cursor = canUsePhone ? "pointer" : "not-allowed";
-                        btnWA.title = !phone ? "Ingrese un tel├®fono" : (phoneChanged ? "Guarde los cambios para activar" : "WhatsApp");
+                        btnWA.title = !phone ? "Ingrese un teléfono" : (phoneChanged ? "Guarde los cambios para activar" : "WhatsApp");
                     }
                     if (btnEmail) {
                         const canUseEmail = email && !emailChanged;
@@ -1766,7 +1766,7 @@
                     navigator.clipboard.writeText(pitch).then(() => {
                         const btn = event.currentTarget;
                         const orig = btn.innerHTML;
-                        btn.innerHTML = '<i class="fa-solid fa-check"></i> ┬íCopiado!';
+                        btn.innerHTML = '<i class="fa-solid fa-check"></i> ¡Copiado!';
                         btn.style.background = 'rgba(16, 185, 129, 0.2)';
                         btn.style.color = '#10b981';
                         setTimeout(() => {
@@ -1782,7 +1782,7 @@
                             ta.select();
                             document.execCommand('copy');
                             ta.style.display = 'none';
-                            alert("┬íMensaje copiado!");
+                            alert("¡Mensaje copiado!");
                         }
                     });
                 }
@@ -1919,174 +1919,174 @@
                             hooks: [
                                 {
                                     id: "gancho_insight_especifico",
-                                    label: "Insight Espec├¡fico Ô¡É",
+                                    label: "Insight Específico ⭐",
                                     recommended: true,
                                     channel: ["wa", "email"],
-                                    subject: "An├ílisis sobre tu propiedad en [[sector]]",
-                                    text: "Hola [[nombre]], estuve revisando tu propiedad en [[sector]] y me llam├│ la atenci├│n algo puntual ­ƒæÇ\n\nEst├í muy alineada con lo que est├ín buscando activos ahora, especialmente por precio y metraje.\n\n┬┐A├║n la tienes disponible?"
+                                    subject: "Análisis sobre tu propiedad en [[sector]]",
+                                    text: "Hola [[nombre]], estuve revisando tu propiedad en [[sector]] y me llamó la atención algo puntual 👀\n\nEstá muy alineada con lo que están buscando activos ahora, especialmente por precio y metraje.\n\n¿Aún la tienes disponible?"
                                 },
                                 {
                                     id: "gancho_movimiento_zona",
-                                    label: "Movimiento en tu zona Ô¡É",
+                                    label: "Movimiento en tu zona ⭐",
                                     recommended: true,
                                     channel: ["wa", "email"],
                                     subject: "Novedades sobre el mercado en [[sector]]",
-                                    text: "Hola [[nombre]], pas├│ algo interesante en [[sector]] esta semana ­ƒæÇ\n\nEl perfil de comprador activo cambi├│ y tu propiedad encaja mejor que otras.\n\n┬┐Sigue disponible para contarte?"
+                                    text: "Hola [[nombre]], pasó algo interesante en [[sector]] esta semana 👀\n\nEl perfil de comprador activo cambió y tu propiedad encaja mejor que otras.\n\n¿Sigue disponible para contarte?"
                                 },
                                 {
                                     id: "gancho_posicionamiento",
                                     label: "Posicionamiento directo",
                                     channel: ["wa", "email"],
                                     subject: "Estrategia para tu propiedad en [[sector]]",
-                                    text: "Hola [[nombre]], vi tu propiedad en [[sector]] y tengo una manera de mostrarla directamente a personas que ya est├ín buscando ah├¡.\n\nSoy [[agente]] de Procasa. ┬┐Sigue disponible?"
+                                    text: "Hola [[nombre]], vi tu propiedad en [[sector]] y tengo una manera de mostrarla directamente a personas que ya están buscando ahí.\n\nSoy [[agente]] de Procasa. ¿Sigue disponible?"
                                 },
                                 {
                                     id: "gancho_pregunta_corta",
                                     label: "Pregunta Corta",
                                     channel: ["wa", "email"],
                                     subject: "Consulta sobre propiedad en [[sector]]",
-                                    text: "Hola [[nombre]], vi tu propiedad en [[sector]].\n\n┬┐A├║n la tienes disponible?"
+                                    text: "Hola [[nombre]], vi tu propiedad en [[sector]].\n\n¿Aún la tienes disponible?"
                                 },
                                 {
                                     id: "gancho_suave",
-                                    label: "Gancho Fr├¡o",
+                                    label: "Gancho Frío",
                                     channel: ["wa", "email"],
                                     subject: "Contacto de Procasa - Propiedad en [[sector]]",
-                                    text: "Hola [[nombre]], soy [[agente]] de Procasa.\n\nVi tu propiedad en [[sector]] y me gust├│. Estamos trabajando con compradores en esa zona. ┬┐Sigue disponible?"
+                                    text: "Hola [[nombre]], soy [[agente]] de Procasa.\n\nVi tu propiedad en [[sector]] y me gustó. Estamos trabajando con compradores en esa zona. ¿Sigue disponible?"
                                 }
                             ],
 
                             response: [
                                 {
                                     id: "respuesta_suave_1",
-                                    label: "Calificaci├│n Suave 1",
+                                    label: "Calificación Suave 1",
                                     channel: ["wa", "email"],
-                                    text: "Buen├¡simo ­ƒæì\n\nPara no hacerte perder tiempo: ┬┐tienes intenci├│n de vender pronto o m├ís bien est├ís evaluando opciones todav├¡a?"
+                                    text: "Buenísimo 👍\n\nPara no hacerte perder tiempo: ¿tienes intención de vender pronto o más bien estás evaluando opciones todavía?"
                                 },
                                 {
                                     id: "respuesta_suave_2",
-                                    label: "Calificaci├│n Suave 2",
+                                    label: "Calificación Suave 2",
                                     channel: ["wa", "email"],
-                                    text: "Perfecto. Una pregunta r├ípida: ┬┐el motivo principal es cambio de vivienda, inversi├│n o algo familiar?\n\nAs├¡ entiendo c├│mo ayudarte mejor."
+                                    text: "Perfecto. Una pregunta rápida: ¿el motivo principal es cambio de vivienda, inversión o algo familiar?\n\nAsí entiendo cómo ayudarte mejor."
                                 },
                                 {
                                     id: "respuesta_directa",
-                                    label: "Calificaci├│n Directa",
+                                    label: "Calificación Directa",
                                     channel: ["wa", "email"],
-                                    text: "Entendido.\n\n┬┐Has tenido visitas o interesados reales hasta ahora?\n\nEso me dice mucho del posicionamiento actual."
+                                    text: "Entendido.\n\n¿Has tenido visitas o interesados reales hasta ahora?\n\nEso me dice mucho del posicionamiento actual."
                                 },
                                 {
                                     id: "respuesta_precio",
                                     label: "Pregunta por Precio",
                                     channel: ["wa", "email"],
-                                    text: "┬┐El precio que tienes publicado es el que necesitas cerrar o est├ís abierto a calibrarlo seg├║n lo que est├í pasando hoy en el mercado?"
+                                    text: "¿El precio que tienes publicado es el que necesitas cerrar o estás abierto a calibrarlo según lo que está pasando hoy en el mercado?"
                                 },
                                 {
                                     id: "respuesta_visitas",
                                     label: "Pregunta por Visitas",
                                     channel: ["wa", "email"],
-                                    text: "┬┐Cu├íntas visitas has tenido? Y de esas, ┬┐alguna lleg├│ a oferta?\n\nCon eso veo d├│nde est├í el cuello de botella real."
+                                    text: "¿Cuántas visitas has tenido? Y de esas, ¿alguna llegó a oferta?\n\nCon eso veo dónde está el cuello de botella real."
                                 }
                             ],
 
                             proposal: [
                                 {
                                     id: "valor_filtro_real",
-                                    label: "Filtro de compradores Ô¡É",
+                                    label: "Filtro de compradores ⭐",
                                     recommended: true,
                                     channel: ["wa", "email"],
-                                    subject: "Nuestra metodolog├¡a de filtrado en Procasa",
-                                    text: "La diferencia real no es publicar. Eso lo hace cualquiera.\n\nEs qui├®n te trae compradores que ya pueden comprar.\n\nNosotros filtramos antes de que pisen tu propiedad.\n\n┬┐Te muestro c├│mo se ve eso en tu caso?"
+                                    subject: "Nuestra metodología de filtrado en Procasa",
+                                    text: "La diferencia real no es publicar. Eso lo hace cualquiera.\n\nEs quién te trae compradores que ya pueden comprar.\n\nNosotros filtramos antes de que pisen tu propiedad.\n\n¿Te muestro cómo se ve eso en tu caso?"
                                 },
                                 {
                                     id: "valor_red_interna",
                                     label: "Red Interna Procasa",
                                     channel: ["wa", "email"],
                                     subject: "Acceso a la red interna de Procasa",
-                                    text: "En Procasa somos una de la redes de corretaje mas grande del pa├¡s contamos con n├║merosos clientes en proceso activo.\n\nTu propiedad se muestra tambi├®n en esa base interna, no solo en portales.\n\n┬┐Quieres que te explique c├│mo funciona?"
+                                    text: "En Procasa somos una de la redes de corretaje mas grande del país contamos con númerosos clientes en proceso activo.\n\nTu propiedad se muestra también en esa base interna, no solo en portales.\n\n¿Quieres que te explique cómo funciona?"
                                 },
                                 {
                                     id: "valor_marketing_pro",
                                     label: "Marketing Profesional",
                                     channel: ["wa", "email"],
                                     subject: "Estrategia de marketing para tu propiedad",
-                                    text: "Si lleva tiempo publicada, probablemente est├í perdi├®ndose entre miles de avisos.\n\nUsamos posicionamiento premium + campa├▒as dirigidas.\n\n┬┐Hablamos 5 minutos sobre c├│mo mejorar su visibilidad?"
+                                    text: "Si lleva tiempo publicada, probablemente está perdiéndose entre miles de avisos.\n\nUsamos posicionamiento premium + campañas dirigidas.\n\n¿Hablamos 5 minutos sobre cómo mejorar su visibilidad?"
                                 },
                                 {
                                     id: "valor_panel_gestion",
-                                    label: "Panel de Gesti├│n",
+                                    label: "Panel de Gestión",
                                     channel: ["wa", "email"],
                                     subject: "Control total de tu venta en tiempo real",
-                                    text: "Una de las cosas que m├ís valoran nuestros propietarios:\n\nVes en tiempo real cu├ínta gente vio tu aviso y cu├íntos est├ín pre-calificados.\n\n┬┐Quieres que te muestre c├│mo quedar├¡a para la tuya?"
+                                    text: "Una de las cosas que más valoran nuestros propietarios:\n\nVes en tiempo real cuánta gente vio tu aviso y cuántos están pre-calificados.\n\n¿Quieres que te muestre cómo quedaría para la tuya?"
                                 },
                                 {
                                     id: "valor_cruce_datos",
                                     label: "Cruce de Datos",
                                     channel: ["wa", "email"],
                                     subject: "Matches detectados para tu propiedad",
-                                    text: "Nuestro sistema cruza tu propiedad con requerimientos reales de compradores activos.\n\nPor eso detectamos matches que otros no ven.\n\n┬┐Te gustar├¡a ver los perfiles que ya tenemos?"
+                                    text: "Nuestro sistema cruza tu propiedad con requerimientos reales de compradores activos.\n\nPor eso detectamos matches que otros no ven.\n\n¿Te gustaría ver los perfiles que ya tenemos?"
                                 }
                             ],
 
                             closing: [
                                 {
                                     id: "cierre_micro_compromiso",
-                                    label: "Micro-Compromiso Ô¡É",
+                                    label: "Micro-Compromiso ⭐",
                                     recommended: true,
                                     channel: "wa",
-                                    text: "Te puedo mostrar en 3 minutos c├│mo est├ín posicionadas propiedades como la tuya ahora mismo.\n\nSi te hace sentido, hablamos despu├®s. ┬┐Te lo muestro por aqu├¡?"
+                                    text: "Te puedo mostrar en 3 minutos cómo están posicionadas propiedades como la tuya ahora mismo.\n\nSi te hace sentido, hablamos después. ¿Te lo muestro por aquí?"
                                 },
                                 {
                                     id: "cierre_directo",
                                     label: "Cierre Directo",
                                     channel: "wa",
-                                    text: "Tengo un espacio hoy o ma├▒ana en la ma├▒ana para mostrarte la estrategia.\n\n┬┐Cu├íl te viene mejor para una llamada de 5 minutos?"
+                                    text: "Tengo un espacio hoy o mañana en la mañana para mostrarte la estrategia.\n\n¿Cuál te viene mejor para una llamada de 5 minutos?"
                                 },
                                 {
                                     id: "urgencia",
                                     label: "Urgencia Inteligente",
                                     channel: "wa",
-                                    text: "Esta semana entraron nuevos compradores en [[sector]]. Estas ventanas no duran.\n\n┬┐Lo vemos pronto?"
+                                    text: "Esta semana entraron nuevos compradores en [[sector]]. Estas ventanas no duran.\n\n¿Lo vemos pronto?"
                                 },
                                 {
                                     id: "cierre_analisis",
-                                    label: "An├ílisis Gratis",
+                                    label: "Análisis Gratis",
                                     channel: "wa",
-                                    text: "Ya prepar├® una comparativa con propiedades similares a la tuya en [[sector]].\n\n┬┐Te la env├¡o por aqu├¡ o prefieres que te explique los puntos clave en 3 minutos?"
+                                    text: "Ya preparé una comparativa con propiedades similares a la tuya en [[sector]].\n\n¿Te la envío por aquí o prefieres que te explique los puntos clave en 3 minutos?"
                                 }
                             ],
 
                             followup: [
                                 {
                                     id: "followup_cierre_vecino",
-                                    label: "Se vendi├│ una similar Ô¡É",
+                                    label: "Se vendió una similar ⭐",
                                     recommended: true,
                                     channel: "wa",
-                                    text: "Hola [[nombre]], te escribo porque esta semana se vendi├│ una propiedad muy similar a la tuya en [[sector]] m├ís r├ípido de lo esperado ­ƒæÇ\n\nEso cambi├│ el tipo de compradores que est├ín quedando disponibles.\n\n┬┐Quieres que te cuente c├│mo te afecta?"
+                                    text: "Hola [[nombre]], te escribo porque esta semana se vendió una propiedad muy similar a la tuya en [[sector]] más rápido de lo esperado 👀\n\nEso cambió el tipo de compradores que están quedando disponibles.\n\n¿Quieres que te cuente cómo te afecta?"
                                 },
                                 {
                                     id: "followup_quemada",
                                     label: "Propiedad Quemada",
                                     channel: "wa",
-                                    text: "Hola [[nombre]], not├® que tu propiedad en [[sector]] lleva un tiempo publicada.\n\nLos algoritmos de los portales la est├ín desplazando hacia abajo por los d├¡as que lleva.\n\nTenemos forma de resetear el posicionamiento. ┬┐Te cuento c├│mo lo hacemos?"
+                                    text: "Hola [[nombre]], noté que tu propiedad en [[sector]] lleva un tiempo publicada.\n\nLos algoritmos de los portales la están desplazando hacia abajo por los días que lleva.\n\nTenemos forma de resetear el posicionamiento. ¿Te cuento cómo lo hacemos?"
                                 },
                                 {
                                     id: "reactivacion",
-                                    label: "Reactivaci├│n",
+                                    label: "Reactivación",
                                     channel: "wa",
-                                    text: "Hola [[nombre]], ┬┐c├│mo est├ís?\n\nHace un tiempo vimos tu propiedad y justo ahora entraron nuevos compradores buscando en [[sector]].\n\n┬┐Sigues evaluando vender?"
+                                    text: "Hola [[nombre]], ¿cómo estás?\n\nHace un tiempo vimos tu propiedad y justo ahora entraron nuevos compradores buscando en [[sector]].\n\n¿Sigues evaluando vender?"
                                 },
                                 {
                                     id: "followup_suave",
                                     label: "Recordatorio suave",
                                     channel: "wa",
-                                    text: "Hola [[nombre]], solo paso a saludar.\n\nSeguimos con clientes buscando en tu zona. ┬┐C├│mo va el proceso?\n\nSin compromiso, aqu├¡ estoy si necesitas apoyo."
+                                    text: "Hola [[nombre]], solo paso a saludar.\n\nSeguimos con clientes buscando en tu zona. ¿Cómo va el proceso?\n\nSin compromiso, aquí estoy si necesitas apoyo."
                                 },
                                 {
                                     id: "followup_dato_nuevo",
                                     label: "Dato nuevo",
                                     channel: "wa",
-                                    text: "Hola [[nombre]], te escribo porque pas├│ algo interesante en [[sector]] ­ƒæÇ\n\n┬┐Sigues con la propiedad disponible? Hay un detalle que creo que te conviene saber."
+                                    text: "Hola [[nombre]], te escribo porque pasó algo interesante en [[sector]] 👀\n\n¿Sigues con la propiedad disponible? Hay un detalle que creo que te conviene saber."
                                 }
                             ],
 
@@ -2095,37 +2095,37 @@
                                     id: "obj_corredor",
                                     label: "Tiene Corredor",
                                     channel: "wa",
-                                    text: "Excelente que ya tengas apoyo.\n\nSolo una consulta r├ípida: ┬┐te est├í enviando reportes claros de cu├ínta gente ve el aviso versus cu├íntos consultan?\n\nSi sientes que est├í lento, podemos darte una segunda opini├│n sin compromiso."
+                                    text: "Excelente que ya tengas apoyo.\n\nSolo una consulta rápida: ¿te está enviando reportes claros de cuánta gente ve el aviso versus cuántos consultan?\n\nSi sientes que está lento, podemos darte una segunda opinión sin compromiso."
                                 },
                                 {
                                     id: "obj_publicada",
                                     label: "Ya la tengo publicada",
                                     channel: "wa",
-                                    text: "Claro.\n\nPublicar lo puede hacer cualquiera. El problema es que el 80% de los contactos no puede comprar.\n\nNosotros trabajamos sobre el 20% que s├¡. Ah├¡ cambia el resultado."
+                                    text: "Claro.\n\nPublicar lo puede hacer cualquiera. El problema es que el 80% de los contactos no puede comprar.\n\nNosotros trabajamos sobre el 20% que sí. Ahí cambia el resultado."
                                 },
                                 {
                                     id: "obj_comision",
-                                    label: "No quiero pagar comisi├│n",
+                                    label: "No quiero pagar comisión",
                                     channel: "wa",
-                                    text: "Lo entiendo.\n\nPero lo que importa es el neto que te queda y el tiempo. Cada mes sin vender tiene un costo real.\n\nMi trabajo es que recibas el cheque m├íximo en el menor tiempo. ┬┐Comparamos los escenarios?"
+                                    text: "Lo entiendo.\n\nPero lo que importa es el neto que te queda y el tiempo. Cada mes sin vender tiene un costo real.\n\nMi trabajo es que recibas el cheque máximo en el menor tiempo. ¿Comparamos los escenarios?"
                                 },
                                 {
                                     id: "obj_vender_yo",
                                     label: "Prefiero vender yo mismo",
                                     channel: "wa",
-                                    text: "Perfecto, lo respeto.\n\nCuida mucho la validaci├│n legal de los oferentes: ah├¡ es donde m├ís ventas se caen hoy.\n\nSi te trabas con el estudio de t├¡tulos o la promesa, ll├ímame y te doy una mano sin costo para que no pierdas la operaci├│n."
+                                    text: "Perfecto, lo respeto.\n\nCuida mucho la validación legal de los oferentes: ahí es donde más ventas se caen hoy.\n\nSi te trabas con el estudio de títulos o la promesa, llámame y te doy una mano sin costo para que no pierdas la operación."
                                 },
                                 {
                                     id: "obj_no_confio",
-                                    label: "No conf├¡o en inmobiliarias",
+                                    label: "No confío en inmobiliarias",
                                     channel: "wa",
-                                    text: "Te entiendo, hay malas experiencias.\n\nFirmamos todo antes de empezar y trabajamos 100% transparente.\n\nSolo en el ├║ltimo mes cerramos 3 propiedades en [[sector]] que llevaban m├ís de 90 d├¡as estancadas. ┬┐Te cuento brevemente qu├® cambi├│?"
+                                    text: "Te entiendo, hay malas experiencias.\n\nFirmamos todo antes de empezar y trabajamos 100% transparente.\n\nSolo en el último mes cerramos 3 propiedades en [[sector]] que llevaban más de 90 días estancadas. ¿Te cuento brevemente qué cambió?"
                                 },
                                 {
                                     id: "obj_precio_bajo",
                                     label: "El precio es muy bajo",
                                     channel: "wa",
-                                    text: "Entiendo la preocupaci├│n.\n\nNuestro cruce de datos puede mostrarte si est├í alineado o si hay espacio para mejorar.\n\n┬┐Quieres ver la comparativa actual?"
+                                    text: "Entiendo la preocupación.\n\nNuestro cruce de datos puede mostrarte si está alineado o si hay espacio para mejorar.\n\n¿Quieres ver la comparativa actual?"
                                 },
                                 {
                                     id: "obj_esperar",
@@ -2137,43 +2137,43 @@
                                     id: "obj_visita",
                                     label: "Ya tengo visita agendada",
                                     channel: "wa",
-                                    text: "┬íExcelente!\n\nMientras tanto, ┬┐quieres info de otros interesados activos para negociar desde mejor posici├│n?"
+                                    text: "¡Excelente!\n\nMientras tanto, ¿quieres info de otros interesados activos para negociar desde mejor posición?"
                                 },
                                 {
                                     id: "obj_herencia",
                                     label: "Es herencia / familiar",
                                     channel: "wa",
-                                    text: "Entiendo, son casos especiales.\n\nTrabajamos con mucho respeto y discreci├│n. ┬┐Quieres que te cuente c├│mo lo hemos manejado en otros casos?"
+                                    text: "Entiendo, son casos especiales.\n\nTrabajamos con mucho respeto y discreción. ¿Quieres que te cuente cómo lo hemos manejado en otros casos?"
                                 },
                                 {
                                     id: "obj_barato",
-                                    label: "Me ofrecieron m├ís barato",
+                                    label: "Me ofrecieron más barato",
                                     channel: "wa",
-                                    text: "Normal.\n\nLa diferencia no est├í en la comisi├│n, est├í en qui├®n trae compradores reales.\n\nD├®jame mostrarte en 3 minutos c├│mo quedar├¡a con nosotros."
+                                    text: "Normal.\n\nLa diferencia no está en la comisión, está en quién trae compradores reales.\n\nDéjame mostrarte en 3 minutos cómo quedaría con nosotros."
                                 },
                                 {
                                     id: "obj_tasacion",
-                                    label: "Ya tengo tasaci├│n",
+                                    label: "Ya tengo tasación",
                                     channel: "wa",
-                                    text: "Genial.\n\nNosotros complementamos eso con demanda real. ┬┐Quieres ver c├│mo encaja con nuestra base de compradores activos?"
+                                    text: "Genial.\n\nNosotros complementamos eso con demanda real. ¿Quieres ver cómo encaja con nuestra base de compradores activos?"
                                 },
                                 {
                                     id: "obj_miedo_no_vender",
                                     label: "Miedo de que no se venda",
                                     channel: "wa",
-                                    text: "Es normal la duda.\n\nSolo en el ├║ltimo mes cerramos 3 propiedades en [[sector]] que llevaban m├ís de 90 d├¡as estancadas.\n\nLa clave fue el cruce de datos. ┬┐Te cuento qu├® cambi├│ en esos casos?"
+                                    text: "Es normal la duda.\n\nSolo en el último mes cerramos 3 propiedades en [[sector]] que llevaban más de 90 días estancadas.\n\nLa clave fue el cruce de datos. ¿Te cuento qué cambió en esos casos?"
                                 },
                                 {
                                     id: "obj_tiempo",
                                     label: "No tengo tiempo",
                                     channel: "wa",
-                                    text: "Te entiendo perfectamente.\n\nNosotros filtramos, coordinamos visitas y te informamos solo con lo que importa.\n\nT├║ solo apruebas las ofertas."
+                                    text: "Te entiendo perfectamente.\n\nNosotros filtramos, coordinamos visitas y te informamos solo con lo que importa.\n\nTú solo apruebas las ofertas."
                                 },
                                 {
                                     id: "obj_exclusividad",
                                     label: "No quiero exclusividad",
                                     channel: "wa",
-                                    text: "No hay problema.\n\nSolo te sugiero centralizarlo para no quemar la propiedad con varios precios distintos en los portales, lo cual baja el valor percibido.\n\n┬┐Probamos 30 d├¡as y ves los resultados?"
+                                    text: "No hay problema.\n\nSolo te sugiero centralizarlo para no quemar la propiedad con varios precios distintos en los portales, lo cual baja el valor percibido.\n\n¿Probamos 30 días y ves los resultados?"
                                 }
                             ]
                         }
@@ -2183,7 +2183,7 @@
                 // --- LEAD TIMING CONTEXT (inyectado desde Jinja) ---
                 const _leadDiasPortal = parseInt("{{ prop.gestion.dias_en_portal|default(0)|int }}") || 0;
                 const _leadStage = _leadDiasPortal <= 7 ? 'nuevo' : _leadDiasPortal <= 30 ? 'activo' : 'estancado';
-                // Map stage ÔåÆ best hook template id
+                // Map stage → best hook template id
                 const _stageToTemplate = {
                     nuevo: { cat: 'hooks', tid: 'gancho_insight_especifico' },
                     activo: { cat: 'hooks', tid: 'gancho_movimiento_zona' },
@@ -2192,7 +2192,7 @@
                 // Contextual CTA label
                 const _ctaLabels = {
                     nuevo: 'Enviar primer mensaje',
-                    activo: 'Continuar conversaci├│n',
+                    activo: 'Continuar conversación',
                     estancado: 'Reactivar lead'
                 };
                 (function setCtaLabel() {
@@ -2249,7 +2249,7 @@
                             await fetchPersonalTemplates();
                             renderCommTabs(currentCommTarget);
                             loadTemplates(currentCommTarget, 'personal');
-                            alert("Ô£à Plantilla guardada en 'Personalizados'");
+                            alert("✅ Plantilla guardada en 'Personalizados'");
                         }
                     } catch (e) {
                         console.error("Save template failed", e);
@@ -2258,7 +2258,7 @@
 
                 async function deletePersonalTemplate(id, event) {
                     if (event) event.stopPropagation();
-                    if (!confirm("┬┐Seguro que quieres eliminar esta plantilla?")) return;
+                    if (!confirm("¿Seguro que quieres eliminar esta plantilla?")) return;
 
                     try {
                         const response = await fetch('/api/captacion/templates/personal', {
@@ -2312,10 +2312,10 @@
 
                         renderCommTabs(target);
 
-                        // Zero-Decision: auto-seleccionar template seg├║n etapa del lead
+                        // Zero-Decision: auto-seleccionar template según etapa del lead
                         const defaultTid = "{{ default_template_id|default('') }}";
                         if (defaultTid) {
-                            // Override expl├¡cito desde backend
+                            // Override explícito desde backend
                             let foundCat = 'hooks';
                             for (let cat in commTemplates[target].data) {
                                 if (commTemplates[target].data[cat].some(t => t.id === defaultTid)) {
@@ -2325,7 +2325,7 @@
                             }
                             loadTemplates(target, foundCat, defaultTid);
                         } else {
-                            // Auto-selecci├│n inteligente por etapa del lead
+                            // Auto-selección inteligente por etapa del lead
                             const stageMap = _stageToTemplate[_leadStage] || { cat: 'hooks', tid: 'gancho_insight_especifico' };
                             // Actualizar tab activo visualmente
                             const tabs = document.querySelectorAll('.stage-tab');
@@ -2351,7 +2351,7 @@
                             (Array.isArray(t.channel) && t.channel.includes(currentCommChannel))
                         ).length;
 
-                        // Ocultar si est├í vac├¡o (excepto si estamos en modo edici├│n o queremos forzarlo)
+                        // Ocultar si está vacío (excepto si estamos en modo edición o queremos forzarlo)
                         if (count === 0) return;
 
                         const btn = document.createElement('button');
@@ -2403,10 +2403,10 @@
                             if (cta) cta.textContent = _ctaLabels[_leadStage] || 'Enviar mensaje';
                         };
                         const recBadge = tpl.recommended
-                            ? `<span style="font-size:0.6rem;background:rgba(16,185,129,0.15);color:#10b981;padding:1px 6px;border-radius:10px;font-weight:600;">Ô¡É Recomendado</span>`
+                            ? `<span style="font-size:0.6rem;background:rgba(16,185,129,0.15);color:#10b981;padding:1px 6px;border-radius:10px;font-weight:600;">⭐ Recomendado</span>`
                             : ``;
                         const stageHint = tpl.recommended && _leadStage === 'estancado' && tpl.id && tpl.id.includes('followup')
-                            ? `<span style="font-size:0.6rem;color:#f59e0b;">ÔÜá´©Å F-UP 48h sin respuesta</span>`
+                            ? `<span style="font-size:0.6rem;color:#f59e0b;">⚠️ F-UP 48h sin respuesta</span>`
                             : ``;
                         const delBtn = tpl.is_personal
                             ? `<button class="btn btn-link text-danger p-0 ms-2 opacity-50 hover-opacity-100" 
@@ -2444,7 +2444,7 @@
 
                 function openAndSelectTemplate(tid) {
                     openCommPanel('owner', 'wa');
-                    // Buscamos en qu├® pesta├▒a est├í el tid
+                    // Buscamos en qué pestaña está el tid
                     let foundCategory = 'hooks';
                     for (let cat in commTemplates.owner.data) {
                         if (commTemplates.owner.data[cat].some(t => t.id === tid)) {
@@ -2477,7 +2477,7 @@
                     const safeNameEl = document.getElementById('contact-nombre');
                     const safeName = (safeNameEl && safeNameEl.value) ? safeNameEl.value : "Propietario";
 
-                    // Variables din├ímicas (Fase 5)
+                    // Variables dinámicas (Fase 5)
                     const sector = "{{ prop.sector_name|default(prop.comuna)|default('') }}";
                     const demanda = parseInt("{{ prop.total_leads|default(0) }}");
                     const dias_pub = parseInt("{{ prop.days_published|default(0) }}");
@@ -2578,14 +2578,14 @@
 
                 let feedbackTimeout = null;
                 function triggerFeedbackTimeout() {
-                    // Mostrar toast de confirmaci├│n inmediato
+                    // Mostrar toast de confirmación inmediato
                     const toast = document.getElementById('postSendToast');
                     if (toast) {
                         toast.style.display = 'flex';
-                        toast.innerHTML = '<i class="fa-brands fa-whatsapp"></i> Mensaje enviado Ô£ö &nbsp;<small style="opacity:0.8;font-weight:400;">Pr├│x. seguimiento: +24h</small>';
+                        toast.innerHTML = '<i class="fa-brands fa-whatsapp"></i> Mensaje enviado ✔ &nbsp;<small style="opacity:0.8;font-weight:400;">Próx. seguimiento: +24h</small>';
                         setTimeout(() => { toast.style.display = 'none'; }, 4000);
                     }
-                    // Abrir modal de bit├ícora despu├®s de 1s
+                    // Abrir modal de bitácora después de 1s
                     clearTimeout(feedbackTimeout);
                     feedbackTimeout = setTimeout(() => {
                         const fbModal = new bootstrap.Modal(document.getElementById('feedbackModal'));
@@ -2597,11 +2597,11 @@
                     const notesVal = document.getElementById('feedbackNotes').value;
                     const combined = resultStr + (notesVal ? " - " + notesVal : "");
                     const currentNotes = document.getElementById('notes').value;
-                    document.getElementById('notes').value = (currentNotes ? currentNotes + "\\n" : "") + "­ƒô× " + combined;
+                    document.getElementById('notes').value = (currentNotes ? currentNotes + "\\n" : "") + "📞 " + combined;
 
                     const statusMap = {
                         'Contacto Exitoso': 'CONTACTO EXITOSO',
-                        'Agend├│ Visita': 'REUNI├ôN AGENDADA',
+                        'Agendó Visita': 'REUNIÓN AGENDADA',
                         'No Interesado': 'DESCARTADO',
                         'Sin Respuesta': 'GESTION'
                     };
@@ -2618,7 +2618,7 @@
                 function saveFeedbackFromText() {
                     const notesVal = document.getElementById('feedbackNotes').value;
                     if (notesVal) {
-                        saveFeedback('Gesti├│n General');
+                        saveFeedback('Gestión General');
                     } else {
                         const fbModal = bootstrap.Modal.getInstance(document.getElementById('feedbackModal'));
                         if (fbModal) {
@@ -2636,7 +2636,7 @@
                             <h3 id="modalTitle" class="text-white fw-bold mb-1" style="font-size: 1.4rem;">Clientes
                                 activos compatibles con esta propiedad
                             </h3>
-                            <p id="modalSubtitle" class="text-secondary small mb-0">Mostrando los m├ís activos y
+                            <p id="modalSubtitle" class="text-secondary small mb-0">Mostrando los más activos y
                                 compatibles</p>
                         </div>
                         <div class="text-white fs-2 pointer" onclick="closeLeadModal()"
@@ -2653,14 +2653,14 @@
                     <div class="mt-4 text-center">
                         <p class="text-secondary italic small" style="opacity: 0.5;">
                             <i class="fa-solid fa-lock me-1"></i>
-                            Clientes gestionados por nuestro equipo bajo pol├¡ticas de confidencialidad.
+                            Clientes gestionados por nuestro equipo bajo políticas de confidencialidad.
                         </p>
                     </div>
                 </div>
             </div>
 
             <script>
-                // --- AJUSTE: CARGA AS├ìNCRONA DE MATCHING ---
+                // --- AJUSTE: CARGA ASÍNCRONA DE MATCHING ---
                 let matchingLeadsData = { top: [], exact: [], zone: [], broad: [] };
                 let matchingLeadsCounts = { exact: 0, zone: 0, broad: 0 };
                 let matchingLeadsFilters = {};
@@ -2685,7 +2685,7 @@
                             broad: ma.broad_leads || []
                         };
                         
-                        // Si exact_leads est├í vac├¡o en zona, usar zone_leads si existe
+                        // Si exact_leads está vacío en zona, usar zone_leads si existe
                         if (ma.zone_leads) matchingLeadsData.zone = ma.zone_leads;
 
                         matchingLeadsCounts = {
@@ -2703,7 +2703,7 @@
                         container.classList.remove('d-none');
                     } catch (err) {
                         console.error('Matching Error:', err);
-                        loader.innerHTML = '<p class="text-danger">Error cargando el an├ílisis. Por favor recarga.</p>';
+                        loader.innerHTML = '<p class="text-danger">Error cargando el análisis. Por favor recarga.</p>';
                     }
                 }
 
@@ -2730,35 +2730,35 @@
                     const score = ma.demand_score || 0;
                     let scoreHtml = '';
                     if (score >= 30) {
-                        scoreHtml = '<div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3" style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2);"><span style="font-size:1rem;">­ƒöÑ</span><div><div style="font-size:0.72rem; font-weight:700; color:#10b981;">Alta oportunidad ┬À Contactar ahora</div><div style="font-size:0.68rem; color:var(--text-secondary);">Demanda activa detectable en esta zona</div></div></div>';
+                        scoreHtml = '<div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3" style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2);"><span style="font-size:1rem;">🔥</span><div><div style="font-size:0.72rem; font-weight:700; color:#10b981;">Alta oportunidad · Contactar ahora</div><div style="font-size:0.68rem; color:var(--text-secondary);">Demanda activa detectable en esta zona</div></div></div>';
                     } else if (score >= 10) {
-                        scoreHtml = '<div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);"><span style="font-size:1rem;">ÔÜí</span><div><div style="font-size:0.72rem; font-weight:700; color:#f59e0b;">Demanda media ┬À Vale la pena contactar</div><div style="font-size:0.68rem; color:var(--text-secondary);">Hay interesados en zona compatible</div></div></div>';
+                        scoreHtml = '<div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);"><span style="font-size:1rem;">⚡</span><div><div style="font-size:0.72rem; font-weight:700; color:#f59e0b;">Demanda media · Vale la pena contactar</div><div style="font-size:0.68rem; color:var(--text-secondary);">Hay interesados en zona compatible</div></div></div>';
                     } else {
-                        scoreHtml = '<div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3" style="background: rgba(107,114,128,0.08); border: 1px solid rgba(107,114,128,0.15);"><span style="font-size:1rem;">­ƒöì</span><div><div style="font-size:0.72rem; font-weight:700; color:#6b7280;">Revisar precio antes de contactar</div><div style="font-size:0.68rem; color:var(--text-secondary);">Baja demanda detectada actualmente</div></div></div>';
+                        scoreHtml = '<div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3" style="background: rgba(107,114,128,0.08); border: 1px solid rgba(107,114,128,0.15);"><span style="font-size:1rem;">🔍</span><div><div style="font-size:0.72rem; font-weight:700; color:#6b7280;">Revisar precio antes de contactar</div><div style="font-size:0.68rem; color:var(--text-secondary);">Baja demanda detectada actualmente</div></div></div>';
                     }
 
                     container.innerHTML = `
                         <div class="d-flex flex-column gap-3 mb-3">
                             <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl" onclick="openLeadModal('exact')" style="background: ${data.exact > 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.02)'}; border: 1px solid ${data.exact > 0 ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-color)'};">
-                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">­ƒÄ»</div>
+                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">🎯</div>
                                 <div class="flex-grow-1">
                                     <div class="fw-bold" style="font-size: 0.85rem; color: ${data.exact > 0 ? '#10b981' : 'var(--text-secondary)'};">Coincidencias exactas</div>
-                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Misma comuna + tipo + operaci├│n + rango de precio ┬▒30%</div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Misma comuna + tipo + operación + rango de precio ±30%</div>
                                 </div>
                                 <div style="font-size: 1.5rem; font-weight: 800; color: ${data.exact > 0 ? '#10b981' : 'var(--text-secondary)'}; text-align: right;">${data.exact}</div>
                             </div>
 
                             <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl" onclick="openLeadModal('zone')" style="background: ${data.zone > 0 ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255,255,255,0.02)'}; border: 1px solid ${data.zone > 0 ? 'rgba(99, 102, 241, 0.2)' : 'var(--border-color)'};">
-                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">­ƒôì</div>
+                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">📍</div>
                                 <div class="flex-grow-1">
                                     <div class="fw-bold" style="font-size: 0.85rem; color: ${data.zone > 0 ? 'var(--accent)' : 'var(--text-secondary)'};">En tu zona (${data.zone_name || 'Sin zona'})</div>
-                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Misma macro-zona geogr├ífica</div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Misma macro-zona geográfica</div>
                                 </div>
                                 <div style="font-size: 1.5rem; font-weight: 800; color: ${data.zone > 0 ? 'var(--accent)' : 'var(--text-secondary)'}; text-align: right;">${data.zone}</div>
                             </div>
 
                             <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl" onclick="openLeadModal('broad')" style="background: ${data.broad > 0 ? 'rgba(245, 158, 11, 0.06)' : 'rgba(255,255,255,0.02)'}; border: 1px solid ${data.broad > 0 ? 'rgba(245, 158, 11, 0.15)' : 'var(--border-color)'};">
-                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">­ƒöì</div>
+                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">🔍</div>
                                 <div class="flex-grow-1">
                                     <div class="fw-bold" style="font-size: 0.85rem; color: ${data.broad > 0 ? '#f59e0b' : 'var(--text-secondary)'};">Base de Prospectos</div>
                                     <div style="font-size: 0.75rem; color: var(--text-secondary);">${data.broad} clientes activos asimilables</div>
@@ -2790,7 +2790,7 @@
 
                     document.getElementById('modalTitle').innerText = "Clientes activos compatibles con esta propiedad";
                     const totalCount = matchingLeadsCounts[type] || (type === 'top' ? matchingLeadsData['top'].length : 0);
-                    document.getElementById('modalSubtitle').innerText = `Mostrando los perfiles m├ís compatibles (${totalCount})`;
+                    document.getElementById('modalSubtitle').innerText = `Mostrando los perfiles más compatibles (${totalCount})`;
 
                     const isArriendo = {{ 'true' if (prop.details.operacion and 'ARR' in prop.details.operacion|upper) or (not prop.details.operacion and prop.details.precio_uf and prop.details.precio_uf < 1000) else 'false' }};
                     const activeThreshold = isArriendo ? 30 : 60;
@@ -2819,7 +2819,7 @@
                             const prevLead = tbody.lastElementChild;
                             if (prevLead && prevLead.dataset.recent === 'true' && !isRecent) {
                                 const sep = document.createElement('div');
-                                sep.innerHTML = `<div style="font-size:0.7rem;color:#6b7280;text-transform:uppercase;letter-spacing:1px;padding:4px 0 2px;border-top:1px solid rgba(255,255,255,0.07);margin-top:2px;">ÔÜ¬ Hist├│ricos (m├ís de ${activeThreshold} d├¡as sin actividad)</div>`;
+                                sep.innerHTML = `<div style="font-size:0.7rem;color:#6b7280;text-transform:uppercase;letter-spacing:1px;padding:4px 0 2px;border-top:1px solid rgba(255,255,255,0.07);margin-top:2px;">⚪ Históricos (más de ${activeThreshold} días sin actividad)</div>`;
                                 tbody.appendChild(sep);
                             }
 
@@ -2836,13 +2836,13 @@
                                     </div>
                                     <div class="d-flex flex-wrap gap-2 mt-2">
                                         <span class="badge rounded-pill" style="background: ${qColor}20; color: ${qColor}; font-weight: 500;"><i class="fa-solid fa-bullseye me-1"></i>${qText}</span>
-                                        ${isRecent ? '<span class="badge rounded-pill" style="background:rgba(16,185,129,0.12);color:#10b981;font-weight:500;"><i class="fa-solid fa-bolt me-1"></i>Activo</span>' : '<span class="badge rounded-pill" style="background:rgba(107,114,128,0.12);color:#6b7280;font-weight:500;"><i class="fa-solid fa-clock me-1"></i>Hist├│rico</span>'}
-                                        <span class="badge rounded-pill" style="background: rgba(99, 102, 241, 0.1); color: #818cf8; font-weight: 500;"><i class="fa-solid fa-headset me-1"></i>En gesti├│n por equipo</span>
+                                        ${isRecent ? '<span class="badge rounded-pill" style="background:rgba(16,185,129,0.12);color:#10b981;font-weight:500;"><i class="fa-solid fa-bolt me-1"></i>Activo</span>' : '<span class="badge rounded-pill" style="background:rgba(107,114,128,0.12);color:#6b7280;font-weight:500;"><i class="fa-solid fa-clock me-1"></i>Histórico</span>'}
+                                        <span class="badge rounded-pill" style="background: rgba(99, 102, 241, 0.1); color: #818cf8; font-weight: 500;"><i class="fa-solid fa-headset me-1"></i>En gestión por equipo</span>
                                     </div>
                                 </div>
                                 <div class="text-end" style="min-width: 80px;">
                                     <div class="text-secondary" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px;">Actividad</div>
-                                    <div class="fw-bold" style="font-size: 1rem; color: ${daysColor};">${lead.days_old == 0 ? 'Hoy' : lead.days_old + ' d├¡as'}</div>
+                                    <div class="fw-bold" style="font-size: 1rem; color: ${daysColor};">${lead.days_old == 0 ? 'Hoy' : lead.days_old + ' días'}</div>
                                 </div>`;
                             tbody.appendChild(row);
                         });

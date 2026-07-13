@@ -61,6 +61,7 @@ scripts/
 scripts_legacy/
 tests/
 scraper*/
+reports/
 
 # Entornos virtuales Python (nunca deben subirse)
 venv/

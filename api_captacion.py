@@ -1676,9 +1676,68 @@ def release_stale_captaciones(sla_dias=SLA_CAPTACION_DIAS):
 
 
 def distribute_sourced_leads():
-    """Distribuye propiedades nuevas sin asignar. Versión simplificada; usar assign_captacion_properties.py."""
-    from assign_captacion_properties import assign_new_captaciones
-    return assign_new_captaciones()
+    """Distribuye propiedades nuevas sin asignar. Versión simplificada para background loop."""
+    from bson import ObjectId
+    db = get_db()
+    coll = get_captacion_collection(db)
+
+    agents = list(db["usuarios"].find({
+        "is_active": True,
+        "rol": "agente",
+        "comunas_interes_norm": {"$exists": True, "$ne": []}
+    }))
+    if not agents:
+        logger.info("[DISTRIBUCION] 0 agentes elegibles.")
+        return 0
+
+    comuna_to_agents = {}
+    for a in agents:
+        aid = str(a["_id"])
+        for cn in a.get("comunas_interes_norm", []):
+            comuna_to_agents.setdefault(cn, []).append(aid)
+
+    eligible_query = {
+        "origen": "toctoc",
+        "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]},
+        "$or": [
+            {"gestion.ejecutivo_id": {"$exists": False}},
+            {"gestion.ejecutivo_id": None},
+        ]
+    }
+    props = list(coll.find(eligible_query, {"comuna_slug": 1, "comuna": 1}))
+    logger.info(f"[DISTRIBUCION] {len(props)} propiedades sin asignar.")
+
+    assigned = 0
+    now = datetime.now(timezone.utc)
+    wl = {a["_id"]: 0 for a in agents}
+
+    for p in props:
+        slug = p.get("comuna_slug") or normalize_commune_canonical(p.get("comuna") or "")
+        if not slug:
+            continue
+        candidates = comuna_to_agents.get(slug, [])
+        if not candidates:
+            continue
+        # Ponderado: menor workload
+        best = min(candidates, key=lambda aid: wl.get(aid, 0))
+        wl[best] = wl.get(best, 0) + 1
+
+        from bson import ObjectId
+        oid = p["_id"] if isinstance(p["_id"], ObjectId) else ObjectId(p["_id"])
+        coll.update_one(
+            {"_id": oid, "$or": [{"gestion.ejecutivo_id": {"$exists": False}}, {"gestion.ejecutivo_id": None}]},
+            {"$set": {
+                "gestion.ejecutivo_id": best,
+                "gestion.ejecutivo_asignado": db["usuarios"].find_one({"_id": ObjectId(best) if len(best) == 24 else best}).get("nombre", ""),
+                "gestion.fecha_asignacion": now,
+                "gestion.asignacion_version": "v1_weighted_commune_background",
+                "gestion.estado": "NUEVO",
+            }}
+        )
+        assigned += 1
+
+    logger.info(f"[DISTRIBUCION] Asignadas: {assigned}")
+    return assigned
 
 def get_personal_templates(user_name):
     """Retorna las plantillas personalizadas de un usuario."""

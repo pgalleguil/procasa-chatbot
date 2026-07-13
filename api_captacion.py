@@ -413,7 +413,7 @@ def resolve_operacion(details: dict) -> str:
     op = (details.get("operacion") or "").lower()
     if "arr" in op:
         return "ARRIENDO"
-def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, classification_filter=None):
+def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, classification_filter=None):
     db = get_db()
     coll = get_captacion_collection(db)
     
@@ -426,17 +426,30 @@ def get_captacion_list(user_role="agente", user_name="", page=1, limit=10, comun
     # RBAC & Filtering
     if user_role in ["admin", "supervisor"]:
         if executive_filter and executive_filter not in ["Todos", "", None]:
-            query["$or"] = [
-                {"gestion.ejecutivo_id": executive_filter},
-                {"gestion.ejecutivo_email": executive_filter},
-                {"gestion.ejecutivo_asignado": executive_filter},
-            ]
+            if executive_filter == "__unassigned__":
+                query["$or"] = [
+                    {"gestion.ejecutivo_id": {"$exists": False}},
+                    {"gestion.ejecutivo_id": None},
+                ]
+            else:
+                query["$or"] = [
+                    {"gestion.ejecutivo_id": executive_filter},
+                    {"gestion.ejecutivo_email": executive_filter},
+                    {"gestion.ejecutivo_asignado": executive_filter},
+                ]
     elif user_role == "agente":
-        query["$or"] = [
-            {"gestion.ejecutivo_id": user_name},
-            {"gestion.ejecutivo_email": user_name},
-            {"gestion.ejecutivo_asignado": user_name},
-        ]
+        or_clauses = []
+        if user_id:
+            or_clauses.append({"gestion.ejecutivo_id": user_id})
+        if user_email:
+            or_clauses.append({"gestion.ejecutivo_email": user_email})
+        if user_name:
+            or_clauses.append({"gestion.ejecutivo_asignado": user_name})
+        if or_clauses:
+            query["$or"] = or_clauses
+        else:
+            # Sin identificador, no devolver nada
+            query["_id"] = None
     
     if comuna_filter:
         norm = normalize_commune_canonical(comuna_filter)

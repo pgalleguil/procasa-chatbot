@@ -1240,6 +1240,8 @@ async def view_captaciones(
         lambda: get_captacion_list(
             user_role=user_role,
             user_name=user_name,
+            user_id=user_id,
+            user_email=user_email,
             page=page,
             limit=limit,
             comuna_filter=comuna,
@@ -1250,8 +1252,28 @@ async def view_captaciones(
             classification_filter=classification
         )
     )
-    exec_task = get_unique_executives() if user_role in ["admin", "supervisor"] else asyncio.sleep(0, result=[])
-    items_total, executives = await asyncio.gather(list_task, exec_task)
+    if user_role in ["admin", "supervisor"]:
+        loop2 = asyncio.get_running_loop()
+        exec_task = loop2.run_in_executor(
+            None,
+            lambda: list(get_sync_db()["usuarios"].find(
+                {"is_active": True, "rol": "agente", "comunas_interes_norm": {"$exists": True, "$ne": []}},
+                {"nombre": 1, "email": 1}
+            ).sort("nombre", 1))
+        )
+        items_total, exec_cursor = await asyncio.gather(list_task, exec_task)
+        executives = []
+        for u in exec_cursor:
+            executives.append({
+                "_id": str(u["_id"]),
+                "nombre": u.get("nombre", ""),
+                "email": u.get("email", ""),
+            })
+        # Add "Sin asignar" option
+        executives.insert(0, {"_id": "__unassigned__", "nombre": "Sin asignar", "email": ""})
+    else:
+        items_total = await list_task
+        executives = []
     items, total_count, available_ops = items_total
     
     # Diagnóstico temporal

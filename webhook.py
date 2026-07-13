@@ -1864,7 +1864,7 @@ async def check_scheduled_tasks_loop():
                             from bson import ObjectId
                             obj_id = str(task.get("obj_id"))
                             lead = await run_db(
-                                "yapo_propiedades.find_one",
+                                "propiedades_captacion.find_one",
                                 lambda: Config.get_captacion_collection(db).find_one({"_id": ObjectId(obj_id)})
                             )
                             if not lead:
@@ -1999,7 +1999,7 @@ def asegurar_indices_db():
                     ("score_captacion", -1)
                 ], name="idx_yapo_gestion_ejecutivo_score")
             else:
-                logger.warning(f"Error creando índice yapo_propiedades: {idx_e}")
+                logger.warning(f"Error creando índice propiedades_captacion: {idx_e}")
                 
         # Índice para Búsqueda por Comuna Normalizada + Score
         try:

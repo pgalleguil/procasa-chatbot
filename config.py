@@ -58,13 +58,9 @@ class Config:
     DEEPSEEK_RESPONSE_FORMAT = os.getenv("DEEPSEEK_RESPONSE_FORMAT") or ""
 
     # === DeepSeek Adjudicator (scraper classification) ===
-    _raw_adjudicator_model = (os.getenv("DEEPSEEK_ADJUDICATOR_MODEL") or DEEPSEEK_MODEL_FAST or "deepseek-v4-flash")
-    if "pro" in _raw_adjudicator_model.lower():
-        raise RuntimeError(
-            f"DeepSeek Pro model '{_raw_adjudicator_model}' is not allowed for Yapo adjudicator. "
-            "Set DEEPSEEK_ADJUDICATOR_MODEL=deepseek-v4-flash in .env"
-        )
-    DEEPSEEK_ADJUDICATOR_MODEL = _raw_adjudicator_model
+    # NOTA: No hereda de DEEPSEEK_MODEL ni DEEPSEEK_MODEL_FAST.
+    # El adjudicador debe ser siempre deepseek-v4-flash, independientemente del modelo del chatbot.
+    DEEPSEEK_ADJUDICATOR_MODEL = os.getenv("DEEPSEEK_ADJUDICATOR_MODEL", "deepseek-v4-flash")
     DEEPSEEK_ADJUDICATOR_ENABLED = os.getenv("DEEPSEEK_ADJUDICATOR_ENABLED", "false").lower() == "true"
     DEEPSEEK_ADJUDICATOR_TIMEOUT = int(os.getenv("DEEPSEEK_ADJUDICATOR_TIMEOUT") or "12")
     DEEPSEEK_ADJUDICATOR_MAX_CALLS = int(os.getenv("DEEPSEEK_ADJUDICATOR_MAX_CALLS") or "50")
@@ -80,6 +76,17 @@ class Config:
     @staticmethod
     def get_captacion_collection(db):
         return db[Config.CAPTACION_COLLECTION_NAME]
+
+    @staticmethod
+    def validate_adjudicator_model() -> None:
+        """Valida que el modelo del adjudicador sea deepseek-v4-flash.
+        Debe llamarse solo al inicializar el scraper/clasificador, NO al importar config."""
+        model = Config.DEEPSEEK_ADJUDICATOR_MODEL
+        if "pro" in model.lower():
+            raise RuntimeError(
+                f"DeepSeek Pro model '{model}' is not allowed for Yapo adjudicator. "
+                "Set DEEPSEEK_ADJUDICATOR_MODEL=deepseek-v4-flash in .env"
+            )
 
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"
     EMBEDDING_DIM = 384

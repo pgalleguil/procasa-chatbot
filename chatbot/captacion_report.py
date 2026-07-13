@@ -37,7 +37,7 @@ async def get_daily_progress_stats(target_date: datetime) -> dict:
     end_utc = end_of_day.astimezone(pytz.utc).replace(tzinfo=None)
 
     # 1. Ejecutivos configurados (Stock activo)
-    active_stock_execs = db["yapo_propiedades"].distinct("gestion.ejecutivo_asignado", {"details.es_propietario_directo": True})
+    active_stock_execs = db[Config.CAPTACION_COLLECTION_NAME].distinct("gestion.ejecutivo_asignado", {"details.es_propietario_directo": True})
     active_stock_names = {name.strip().title() for name in active_stock_execs if name and name.strip()}
     
     # Lista maestra de captación — defensiva: None guard en ambas fuentes
@@ -112,7 +112,7 @@ async def get_daily_progress_stats(target_date: datetime) -> dict:
     yapo_end = end_of_day.astimezone(pytz.utc)
     
     # Buscamos propiedades que hayan tenido ALGUN cambio recientemente
-    yapo_cursor = db["yapo_propiedades"].find({
+    yapo_cursor = db[Config.CAPTACION_COLLECTION_NAME].find({
         "$or": [
             {"gestion.fecha_ultima_gestion": {"$gte": yapo_start, "$lte": yapo_end}},
             {"gestion.notas.timestamp": {"$gte": yapo_start, "$lte": yapo_end}},

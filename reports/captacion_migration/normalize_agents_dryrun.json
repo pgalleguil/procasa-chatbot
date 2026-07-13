@@ -1,0 +1,101 @@
+[
+  {
+    "_id": "6989c6309dd2ba54e478196b",
+    "nombre": "Susana Ensignia",
+    "comunas_interes": [
+      "Ñuñoa",
+      "Providencia",
+      "La Reina",
+      "Las Condes",
+      "Vitacura",
+      "Macul",
+      "Santiago Centro"
+    ],
+    "comunas_interes_norm": [
+      "nunoa",
+      "providencia",
+      "la-reina",
+      "las-condes",
+      "vitacura",
+      "macul",
+      "santiago-centro"
+    ]
+  },
+  {
+    "_id": "6989c6309dd2ba54e478196c",
+    "nombre": "Mariela Arriagada",
+    "comunas_interes": [
+      "Santiago Centro",
+      "Providencia",
+      "Ñuñoa",
+      "Macul",
+      "San Miguel"
+    ],
+    "comunas_interes_norm": [
+      "santiago-centro",
+      "providencia",
+      "nunoa",
+      "macul",
+      "san-miguel"
+    ]
+  },
+  {
+    "_id": "6989c6309dd2ba54e478196d",
+    "nombre": "Erika Garrido",
+    "comunas_interes": [
+      "La Florida",
+      "Ñuñoa",
+      "puente alto",
+      "peñalolén",
+      "penalolen",
+      "macul",
+      "providencia",
+      "las condes",
+      "la reina"
+    ],
+    "comunas_interes_norm": [
+      "la-florida",
+      "nunoa",
+      "puente-alto",
+      "penalolen",
+      "macul",
+      "providencia",
+      "las-condes",
+      "la-reina"
+    ]
+  },
+  {
+    "_id": "698b7a829dd2ba54e4782edb",
+    "nombre": "Raquel Cheneaux",
+    "comunas_interes": [
+      "Las Condes",
+      "Ñuñoa",
+      "La Reina",
+      "Vitacura",
+      "Providencia",
+      "La Florida",
+      "Peñalolén",
+      "Macul"
+    ],
+    "comunas_interes_norm": [
+      "las-condes",
+      "nunoa",
+      "la-reina",
+      "vitacura",
+      "providencia",
+      "la-florida",
+      "penalolen",
+      "macul"
+    ]
+  },
+  {
+    "_id": "699653a96a099d6e9612d519",
+    "nombre": "Paula Morales",
+    "comunas_interes": [
+      "Talca"
+    ],
+    "comunas_interes_norm": [
+      "talca"
+    ]
+  }
+]

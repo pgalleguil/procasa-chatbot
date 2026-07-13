@@ -1260,10 +1260,10 @@ async def view_captaciones(
         comunas_clean = cache_store[cache_key]['comunas_clean']
     else:
         in_gestion_count, captados_count, descartados_count, comunas_list = await asyncio.gather(
-            adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": {"$in": estados_gestion}}),
-            adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": {"$in": estados_captado}}),
-            adb["yapo_propiedades"].count_documents({**base_query, "gestion.estado": {"$in": estados_descartado}}),
-            adb["yapo_propiedades"].distinct("details.comuna", base_query)
+            adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_gestion}}),
+            adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_captado}}),
+            adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_descartado}}),
+            adb[Config.CAPTACION_COLLECTION_NAME].distinct("details.comuna", base_query)
         )
         from api_captacion import normalize_commune
         comunas_clean = sorted(list(set([normalize_commune(c).title() for c in comunas_list if c and str(c).strip() and str(c).lower() != "s/i"])))
@@ -1865,7 +1865,7 @@ async def check_scheduled_tasks_loop():
                             obj_id = str(task.get("obj_id"))
                             lead = await run_db(
                                 "yapo_propiedades.find_one",
-                                lambda: db["yapo_propiedades"].find_one({"_id": ObjectId(obj_id)})
+                                lambda: Config.get_captacion_collection(db).find_one({"_id": ObjectId(obj_id)})
                             )
                             if not lead:
                                 await run_db(
@@ -1980,7 +1980,7 @@ def asegurar_indices_db():
         # --- OPTIMIZACIÓN CAPTACIÓN ---
         # Índice Compuesto para Lista (Estado + Ejecutivo + Score)
         try:
-            db["yapo_propiedades"].create_index([
+            Config.get_captacion_collection(db).create_index([
                 ("gestion.estado", 1), 
                 ("gestion.ejecutivo_asignado", 1), 
                 ("score_captacion", -1)
@@ -1989,11 +1989,11 @@ def asegurar_indices_db():
             if "IndexOptionsConflict" in str(idx_e):
                 logger.warning("IndexOptionsConflict detectado. Eliminando índice antiguo...")
                 try:
-                    db["yapo_propiedades"].drop_index("idx_yapo_gestion_ejecutivo_score")
-                    db["yapo_propiedades"].drop_index("gestion.estado_1_gestion.ejecutivo_asignado_1_score_captacion_-1")
+                    Config.get_captacion_collection(db).drop_index("idx_yapo_gestion_ejecutivo_score")
+                    Config.get_captacion_collection(db).drop_index("gestion.estado_1_gestion.ejecutivo_asignado_1_score_captacion_-1")
                 except:
                     pass
-                db["yapo_propiedades"].create_index([
+                Config.get_captacion_collection(db).create_index([
                     ("gestion.estado", 1), 
                     ("gestion.ejecutivo_asignado", 1), 
                     ("score_captacion", -1)
@@ -2003,7 +2003,7 @@ def asegurar_indices_db():
                 
         # Índice para Búsqueda por Comuna Normalizada + Score
         try:
-            db["yapo_propiedades"].create_index([
+            Config.get_captacion_collection(db).create_index([
                 ("details.comuna_norm", 1), 
                 ("score_captacion", -1)
             ])

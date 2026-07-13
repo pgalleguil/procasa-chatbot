@@ -60,6 +60,7 @@ scraping_convecta/
 scripts/
 scripts_legacy/
 tests/
+scraper*/
 
 # Entornos virtuales Python (nunca deben subirse)
 venv/

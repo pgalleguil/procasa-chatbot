@@ -1,0 +1,118 @@
+{
+  "nombre_antiguo": "yapo_propiedades",
+  "nombre_nuevo": "propiedades_captacion",
+  "total_docs": 7519,
+  "toctoc": 2403,
+  "yapo": 5116,
+  "asignadas": 820,
+  "ds_asignadas": 40,
+  "in_asignadas": 780,
+  "yapo_asignadas": 0,
+  "indexes": [
+    {
+      "name": "_id_",
+      "key": {
+        "_id": 1
+      },
+      "unique": false
+    },
+    {
+      "name": "origen_1_listing_id_1",
+      "key": {
+        "origen": 1,
+        "listing_id": 1
+      },
+      "unique": true
+    },
+    {
+      "name": "idx_yapo_comuna_score",
+      "key": {
+        "details.comuna_norm": 1,
+        "score_captacion": -1
+      },
+      "unique": false
+    },
+    {
+      "name": "idx_yapo_estado_comuna_score",
+      "key": {
+        "gestion.estado": 1,
+        "details.comuna_norm": 1,
+        "score_captacion": -1
+      },
+      "unique": false
+    },
+    {
+      "name": "idx_yapo_gestion_ejecutivo_score",
+      "key": {
+        "gestion.estado": 1,
+        "gestion.ejecutivo_asignado": 1,
+        "score_captacion": -1
+      },
+      "unique": false
+    },
+    {
+      "name": "idx_yapo_comuna_fecha_captura",
+      "key": {
+        "details.comuna_norm": 1,
+        "fecha_captura": -1
+      },
+      "unique": false
+    },
+    {
+      "name": "idx_yapo_estado_comuna_fecha_captura",
+      "key": {
+        "gestion.estado": 1,
+        "details.comuna_norm": 1,
+        "fecha_captura": -1
+      },
+      "unique": false
+    },
+    {
+      "name": "idx_yapo_gestion_ejecutivo_fecha_captura",
+      "key": {
+        "gestion.estado": 1,
+        "gestion.ejecutivo_asignado": 1,
+        "fecha_captura": -1
+      },
+      "unique": false
+    },
+    {
+      "name": "idx_captacion_asignacion",
+      "key": {
+        "origen": 1,
+        "classification.state": 1,
+        "comuna_slug": 1,
+        "gestion.ejecutivo_id": 1,
+        "gestion.estado": 1
+      },
+      "unique": false
+    },
+    {
+      "name": "idx_captacion_agente_listado",
+      "key": {
+        "gestion.ejecutivo_id": 1,
+        "gestion.estado": 1,
+        "comuna_slug": 1,
+        "updated_at": -1
+      },
+      "unique": false
+    },
+    {
+      "name": "idx_captacion_clasificacion",
+      "key": {
+        "origen": 1,
+        "classification.state": 1,
+        "comuna_slug": 1
+      },
+      "unique": false
+    }
+  ],
+  "old_collection_exists": false,
+  "new_collection_exists": true,
+  "agent_distribution": {
+    "Erika Garrido": 266,
+    "Mariela Arriagada": 243,
+    "Raquel Cheneaux": 167,
+    "Susana Ensignia": 144
+  }
+}

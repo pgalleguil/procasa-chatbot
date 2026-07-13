@@ -34,6 +34,7 @@ if PROJECT_DIR not in sys.path:
 try:
     from chatbot.storage import get_db
     from chatbot.constants import CHILE_TZ
+    from config import Config
 except ImportError as e:
     print(f"[ERROR] No se pudo importar módulos del proyecto: {e}")
     print("Asegúrate de ejecutar desde el directorio raíz del proyecto.")
@@ -208,7 +209,7 @@ def cargar_captaciones(db):
         "details.fecha_scraping": 1,
     }
 
-    cursor = db["yapo_propiedades"].find(query, projection)
+    cursor = db[Config.CAPTACION_COLLECTION_NAME].find(query, projection)
     captaciones = []
 
     for doc in cursor:

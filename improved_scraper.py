@@ -1,4 +1,5 @@
 import os
+import sys
 import argparse
 import asyncio
 import random
@@ -6,11 +7,20 @@ import logging
 import re
 import json
 import hashlib
+import warnings
 from datetime import datetime, timezone, timedelta
 from unicodedata import normalize
 from urllib.parse import urljoin, urlparse, urlunparse
 from itertools import cycle
 from collections import defaultdict
+
+warnings.warn(
+    "improved_scraper.py está DEPRECATED. "
+    "Usa scraping/scraping_yapo_proxys.py en su lugar. "
+    "Este archivo se eliminará en una versión futura.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 from curl_cffi import requests as curl_requests
 from fake_useragent import UserAgent
@@ -1363,8 +1373,16 @@ async def process_with_ai(raw_data: dict, grok_client, uf_value: float = None, c
     if score >= 0.75 or SELLER_CACHE[s_key]["is_broker"]:
         SELLER_CACHE[s_key]["is_broker"] = True
         logging.info(f"🚫 [SKIP] Broker/PRO Dominante (Score: {score:.2f}, Veces: {SELLER_CACHE[s_key]['count']}): {publicador[:20]}")
-        precio_clp = clean_num(price)
-        precio_uf = round(precio_clp / uf_value, 2) if (precio_clp and uf_value) else None
+        p_uf, p_clp = parse_price_components(price)
+        if p_uf is not None:
+            precio_uf = p_uf
+            precio_clp = int(p_uf * uf_value) if uf_value else None
+        elif p_clp is not None:
+            precio_clp = p_clp
+            precio_uf = round(p_clp / uf_value, 2) if uf_value else None
+        else:
+            precio_clp = None
+            precio_uf = None
         return {
             "is_duplicate": False, 
             "es_propietario_directo": False, 
@@ -1386,8 +1404,16 @@ async def process_with_ai(raw_data: dict, grok_client, uf_value: float = None, c
 
     if has_critical and is_confident_classification:
         logging.info(f"⚡ Saltando IA: Datos completos y clasificación firme (Score: {score:.2f}) para {title[:30]}...")
-        precio_clp = clean_num(price)
-        precio_uf = round(precio_clp / uf_value, 2) if (precio_clp and uf_value) else None
+        p_uf, p_clp = parse_price_components(price)
+        if p_uf is not None:
+            precio_uf = p_uf
+            precio_clp = int(p_uf * uf_value) if uf_value else None
+        elif p_clp is not None:
+            precio_clp = p_clp
+            precio_uf = round(p_clp / uf_value, 2) if uf_value else None
+        else:
+            precio_clp = None
+            precio_uf = None
         
         is_direct = is_owner_local
         confianza_prop = 1.0 if is_broker_local else 0.95
@@ -1629,10 +1655,12 @@ async def extract_links_with_scroll(page, max_scrolls: int, delay_s: float) -> s
     return links
 
 async def main():
-    parser = argparse.ArgumentParser(description="Yapo Scraper INDUSTRIAL v5 - Persistent Queue + Stealth")
-    parser.add_argument("--use-proxies", action="store_true")
-    parser.add_argument("--concurrency", type=int, default=CONFIG["max_concurrency"])
-    parser.add_argument("--max-pages", type=int, default=CONFIG["max_pages"])
+    print("=" * 70)
+    print("improved_scraper.py está DEPRECADO y BLOQUEADO.")
+    print("Usa: python scraping/scraping_yapo_proxys.py [opciones]")
+    print("Este archivo se eliminará en una versión futura.")
+    print("=" * 70)
+    sys.exit(1)
     parser.add_argument("--force-discovery", action="store_true", help="Forzar búsqueda de links")
     args = parser.parse_args()
 

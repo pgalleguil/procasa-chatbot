@@ -57,13 +57,35 @@ class Config:
     
     DEEPSEEK_RESPONSE_FORMAT = os.getenv("DEEPSEEK_RESPONSE_FORMAT") or ""
 
+    # === DeepSeek Adjudicator (scraper classification) ===
+    _raw_adjudicator_model = (os.getenv("DEEPSEEK_ADJUDICATOR_MODEL") or DEEPSEEK_MODEL_FAST or "deepseek-v4-flash")
+    if "pro" in _raw_adjudicator_model.lower():
+        raise RuntimeError(
+            f"DeepSeek Pro model '{_raw_adjudicator_model}' is not allowed for Yapo adjudicator. "
+            "Set DEEPSEEK_ADJUDICATOR_MODEL=deepseek-v4-flash in .env"
+        )
+    DEEPSEEK_ADJUDICATOR_MODEL = _raw_adjudicator_model
+    DEEPSEEK_ADJUDICATOR_ENABLED = os.getenv("DEEPSEEK_ADJUDICATOR_ENABLED", "false").lower() == "true"
+    DEEPSEEK_ADJUDICATOR_TIMEOUT = int(os.getenv("DEEPSEEK_ADJUDICATOR_TIMEOUT") or "12")
+    DEEPSEEK_ADJUDICATOR_MAX_CALLS = int(os.getenv("DEEPSEEK_ADJUDICATOR_MAX_CALLS") or "50")
+    DEEPSEEK_ADJUDICATOR_MAX_TOKENS = int(os.getenv("DEEPSEEK_ADJUDICATOR_MAX_TOKENS") or "300")
+    DEEPSEEK_ADJUDICATOR_THINKING = os.getenv("DEEPSEEK_ADJUDICATOR_THINKING", "false").lower() == "true"
+    DEEPSEEK_ADJUDICATOR_PROMPT_VERSION = os.getenv("DEEPSEEK_ADJUDICATOR_PROMPT_VERSION") or "v0.2_flash_no_thinking"
+
     # Alias heredados para no romper módulos existentes durante la migración
     GROK_MODEL = DEEPSEEK_MODEL_FAST
     GROK_BASE_URL = DEEPSEEK_BASE_URL
     GROK_TEMPERATURE = DEEPSEEK_TEMPERATURE
 
+    @staticmethod
+    def get_captacion_collection(db):
+        return db[Config.CAPTACION_COLLECTION_NAME]
+
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"
     EMBEDDING_DIM = 384
+
+    # === Colección de captación ===
+    CAPTACION_COLLECTION_NAME = os.getenv("CAPTACION_COLLECTION_NAME", "propiedades_captacion")
 
     # === Parámetros de búsqueda ===
     MAX_DOCS = 1000

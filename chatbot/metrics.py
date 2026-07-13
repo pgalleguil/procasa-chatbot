@@ -1,5 +1,6 @@
 # chatbot/metrics.py
 from datetime import datetime
+from config import Config
 from .constants import CHILE_TZ, PipelineStage
 from .utils import calculate_business_minutes
 import logging
@@ -305,7 +306,7 @@ def update_captacion_metrics(db, obj_id):
             
         from api_captacion import calculate_lead_score_captacion, get_market_insights
         
-        doc = db["yapo_propiedades"].find_one({"_id": query_id})
+        doc = db[Config.CAPTACION_COLLECTION_NAME].find_one({"_id": query_id})
         if not doc: return
         
         details = doc.get("details", {})
@@ -315,7 +316,7 @@ def update_captacion_metrics(db, obj_id):
         market = get_market_insights(c, t)
         score, prob, motivos, uf_m2, diff_pct = calculate_lead_score_captacion(details, market)
         
-        db["yapo_propiedades"].update_one(
+        db[Config.CAPTACION_COLLECTION_NAME].update_one(
             {"_id": query_id},
             {"$set": {
                 "score_captacion": score,

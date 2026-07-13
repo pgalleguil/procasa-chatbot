@@ -426,7 +426,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     # RBAC & Filtering
     if user_role in ["admin", "supervisor"]:
         if executive_filter and executive_filter not in ["Todos", "", None]:
-            if executive_filter == "__unassigned__":
+            if executive_filter in ["Sin asignar", "__unassigned__"]:
                 query["$or"] = [
                     {"gestion.ejecutivo_id": {"$exists": False}},
                     {"gestion.ejecutivo_id": None},
@@ -466,12 +466,14 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     if status_filter:
         terminal_states = ["Captado", "CAPTADO", "Descartado", "DESCARTADO", "Corredor",
                           "Teléfono inválido", "Propiedad no disponible", "Publicación expirada", "No interesado"]
-        if status_filter == "GRUPO_GESTION":
+        if status_filter in ("GRUPO_GESTION", "GESTION"):
             query["gestion.estado"] = {"$in": ["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "GESTION", "NUEVO"]}
-        elif status_filter == "GRUPO_CAPTADO":
+        elif status_filter in ("GRUPO_CAPTADO", "CAPTADO"):
             query["gestion.estado"] = {"$in": ["Captado", "CAPTADO"]}
-        elif status_filter == "GRUPO_DESCARTADO":
+        elif status_filter in ("GRUPO_DESCARTADO", "DESCARTADO"):
             query["gestion.estado"] = {"$in": terminal_states}
+        elif status_filter == "NUEVO":
+            query["gestion.estado"] = "NUEVO"
         else:
             query["gestion.estado"] = status_filter
     
@@ -554,6 +556,14 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         elif op_raw and "vent" in str(op_raw).lower():
             op_display = "VENTA"
         
+        # Calcular UF/m2
+        uf_m2_val = 0
+        pu = norm["precio_uf"]
+        doc_details = doc.get("details", {}) or {}
+        m2 = doc_details.get("m2_total") or doc_details.get("m2_construidos") or 0
+        if pu and m2 and float(m2) > 0:
+            uf_m2_val = round(float(pu) / float(m2), 1)
+
         items_paginated.append({
             "id": norm["id"],
             "url": norm["url"],
@@ -563,6 +573,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             "operacion": op_display,
             "precio": str(norm["precio"]).split("Ref.")[0].strip() if norm["precio"] else "S/I",
             "precio_uf": norm["precio_uf"],
+            "uf_m2": uf_m2_val,
             "estado": gestion.get("estado", "NUEVO"),
             "ejecutivo": gestion.get("ejecutivo_asignado") or "Sin asignar",
             "ejecutivo_id": gestion.get("ejecutivo_id"),

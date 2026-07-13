@@ -1255,28 +1255,27 @@ async def view_captaciones(
     def _fetch_executives():
         from chatbot.storage import get_db
         db = get_db()
-        return list(db["usuarios"].find(
+        result = list(db["usuarios"].find(
             {"is_active": True, "rol": "agente", "comunas_interes_norm": {"$exists": True, "$ne": []}},
-            {"nombre": 1, "email": 1}
+            {"nombre": 1}
         ).sort("nombre", 1))
+        names = [u.get("nombre", "") for u in result if u.get("nombre")]
+        names.insert(0, "Sin asignar")
+        return names
 
     if user_role in ["admin", "supervisor"]:
         loop2 = asyncio.get_running_loop()
         exec_task = loop2.run_in_executor(None, _fetch_executives)
-        items_total, exec_cursor = await asyncio.gather(list_task, exec_task)
-        executives = []
-        for u in exec_cursor:
-            executives.append({
-                "_id": str(u["_id"]),
-                "nombre": u.get("nombre", ""),
-                "email": u.get("email", ""),
-            })
-        # Add "Sin asignar" option
-        executives.insert(0, {"_id": "__unassigned__", "nombre": "Sin asignar", "email": ""})
+        items_total, executives = await asyncio.gather(list_task, exec_task)
     else:
         items_total = await list_task
         executives = []
     items, total_count, available_ops = items_total
+    
+    # Alinear con nombre de variables del template original
+    current_comuna = comuna
+    current_estado = estado
+    current_ejecutivo = ejecutivo if ejecutivo and ejecutivo != "Todos" else ""
     
     # Diagnóstico temporal
     from chatbot.storage import get_db as get_sync_db
@@ -1354,17 +1353,16 @@ async def view_captaciones(
         "available_ops": available_ops,
         "user_role": user_role,
         "user_name": user_name,
-        "comuna_filter": comuna,
-        "status_filter": estado,
-        "executive_filter": ejecutivo,
-        "classification_filter": classification,
-        "operacion_filter": operacion,
-        "telefono_filter": telefono,
+        "current_comuna": current_comuna,
+        "current_estado": current_estado,
+        "current_ejecutivo": current_ejecutivo,
         "executives": executives,
-        "page": page,
-        "total_pages": total_pages,
-        "has_next": page < total_pages,
-        "has_prev": page > 1
+        "pagination": {
+            "current_page": page,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1
+        }
     })
 
 @app.get("/captacion/{obj_id}", response_class=HTMLResponse)

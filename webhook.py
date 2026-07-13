@@ -202,6 +202,18 @@ async def lifespan(app: FastAPI):
     crear_admin_si_no_existe()
     asegurar_indices_db()
     
+    # Invalidar cachés antiguos de captación (versiones pre-migración)
+    try:
+        from chatbot.storage import get_db
+        _db_clean = get_db()
+        result = _db_clean["system_cache"].delete_many({
+            "_id": {"$regex": "^(captacion_resp_|captacion_count_|all_raw_comunas_)"}
+        })
+        if result.deleted_count > 0:
+            logger.info(f"Cachés de captación antiguos invalidados: {result.deleted_count}")
+    except Exception as e:
+        logger.warning(f"No se pudieron invalidar cachés antiguos: {e}")
+    
     # El modelo de embeddings se cargará bajo demanda para ahorrar RAM en el arranque
     logger.info("Startup completo. Modelo de embeddings se cargará en el primer uso.")
     
@@ -1206,6 +1218,7 @@ async def view_captaciones(
     ejecutivo: str = Query(None),
     operacion: str = Query(None),
     telefono: str = Query(None),
+    classification: str = Query(None),
     page: int = Query(1, ge=1)
 ):
     from chatbot.storage import get_async_db
@@ -1217,6 +1230,8 @@ async def view_captaciones(
 
     user_role = user.get("rol", "agente")
     user_name = user.get("nombre", "")
+    user_id = str(user["_id"])
+    user_email = user.get("email", "")
     
     limit = 10
     loop = asyncio.get_running_loop()
@@ -1231,26 +1246,52 @@ async def view_captaciones(
             status_filter=estado,
             executive_filter=ejecutivo,
             operacion_filter=operacion,
-            telefono_filter=telefono
+            telefono_filter=telefono,
+            classification_filter=classification
         )
     )
     exec_task = get_unique_executives() if user_role in ["admin", "supervisor"] else asyncio.sleep(0, result=[])
     items_total, executives = await asyncio.gather(list_task, exec_task)
     items, total_count, available_ops = items_total
     
-    # KPIs adicionales para el resumen (basados en el ejecutivo/permisos, no en los filtros actuales de lista)
-    base_query = {"details.es_propietario_directo": True}
+    # Diagnóstico temporal
+    from chatbot.storage import get_db as get_sync_db
+    sync_db = get_sync_db()
+    base_eligible = Config.get_captacion_collection(sync_db).count_documents({
+        "origen": "toctoc",
+        "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]}
+    })
+    logger.info(
+        f"[CAPTACION] collection={Config.CAPTACION_COLLECTION_NAME} "
+        f"user_id={user_id[:8]}... role={user_role} "
+        f"base_eligible={base_eligible} rbac_count={total_count} "
+        f"items_returned={len(items)} page={page}"
+    )
+    
+    # KPIs con consulta Toctoc-compatible
+    base_query = {
+        "origen": "toctoc",
+        "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]}
+    }
     if user_role not in ["admin", "supervisor"]:
-        base_query["gestion.ejecutivo_asignado"] = user_name
+        base_query["$or"] = [
+            {"gestion.ejecutivo_id": user_id},
+            {"gestion.ejecutivo_email": user_email},
+            {"gestion.ejecutivo_asignado": user_name},
+        ]
     elif ejecutivo and ejecutivo != "Todos":
-        base_query["gestion.ejecutivo_asignado"] = ejecutivo
+        base_query["$or"] = [
+            {"gestion.ejecutivo_id": ejecutivo},
+            {"gestion.ejecutivo_email": ejecutivo},
+            {"gestion.ejecutivo_asignado": ejecutivo},
+        ]
 
-    estados_gestion = ["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "GESTION"]
+    estados_gestion = ["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "GESTION", "NUEVO"]
     estados_captado = ["Captado", "CAPTADO"]
     estados_descartado = ["Corredor", "Teléfono inválido", "Descartado", "Propiedad no disponible", "Publicación expirada", "No interesado", "DESCARTADO"]
 
     import time
-    cache_key = f"stats_v2_{user_role}_{user_name}_{ejecutivo}"
+    cache_key = f"stats_v4_{user_role}_{user_id}_{ejecutivo}"
     cache_store = getattr(app.state, 'captacion_stats_cache', {})
     now = time.time()
     if cache_key in cache_store and now - cache_store[cache_key]['time'] < 300:
@@ -1263,10 +1304,10 @@ async def view_captaciones(
             adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_gestion}}),
             adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_captado}}),
             adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_descartado}}),
-            adb[Config.CAPTACION_COLLECTION_NAME].distinct("details.comuna", base_query)
+            adb[Config.CAPTACION_COLLECTION_NAME].distinct("comuna", base_query)
         )
-        from api_captacion import normalize_commune
-        comunas_clean = sorted(list(set([normalize_commune(c).title() for c in comunas_list if c and str(c).strip() and str(c).lower() != "s/i"])))
+        from api_captacion import normalize_commune_canonical
+        comunas_clean = sorted(list(set([normalize_commune_canonical(c) for c in comunas_list if c])))
         cache_store[cache_key] = {
             'time': now,
             'in_gestion_count': in_gestion_count,
@@ -1289,18 +1330,17 @@ async def view_captaciones(
         "available_ops": available_ops,
         "user_role": user_role,
         "user_name": user_name,
-        "current_comuna": comuna,
-        "current_estado": estado,
-        "current_ejecutivo": ejecutivo,
-        "current_operacion": operacion,
-        "current_telefono": telefono,
+        "comuna_filter": comuna,
+        "status_filter": estado,
+        "executive_filter": ejecutivo,
+        "classification_filter": classification,
+        "operacion_filter": operacion,
+        "telefono_filter": telefono,
         "executives": executives,
-        "pagination": {
-            "current_page": page,
-            "total_pages": total_pages,
-            "has_next": page < total_pages,
-            "has_prev": page > 1
-        }
+        "page": page,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_prev": page > 1
     })
 
 @app.get("/captacion/{obj_id}", response_class=HTMLResponse)

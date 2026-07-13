@@ -17,14 +17,18 @@
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
             --accent: #6366f1;
-            --accent-hover: #4f46e5;
+            --accent-hover: #818cf8;
             --owner-color: #f59e0b;
+            --owner-color-hover: #d97706;
+            --notes-color: #2dd4bf;
             --danger-color: #ef4444;
             --success-color: #22c55e;
-            --border-color: #334155;
-            --sidebar-width: 200px;
-            --sidebar-width-collapsed: 70px;
+            --border-color: rgba(255, 255, 255, 0.05);
+            --sidebar-width: 240px;
+            --sidebar-width-collapsed: 80px;
             --transition-speed: 0.3s;
+            --wa-color: #25d366;
+            --email-color: #3b82f6;
             --input-bg: #334155;
             --input-border: #475569;
             --input-text: #fff;
@@ -36,15 +40,12 @@
             --bg-sidebar: #0f172a;
             --text-primary: #1e293b;
             --text-secondary: #475569;
-            --accent: #4f46e5;
-            --accent-hover: #4338ca;
-            --owner-color: #d97706;
-            --danger-color: #dc2626;
-            --success-color: #059669;
             --border-color: #e2e8f0;
             --input-bg: #ffffff;
             --input-border: #cbd5e1;
             --input-text: #1e293b;
+            --accent: #4f46e5;
+            --accent-hover: #4338ca;
         }
 
         body {
@@ -55,45 +56,47 @@
             transition: background-color 0.3s, color 0.3s;
         }
 
-        /* SIDEBAR ÔÇö Clon exacto de crm_lead_detail.html */
+        /* SIDEBAR */
         .sidebar {
             width: var(--sidebar-width-collapsed);
-            background: var(--bg-sidebar);
             height: 100vh;
             position: fixed;
             left: 0;
             top: 0;
-            padding: 20px 0;
+            padding: 30px 0;
             border-right: 1px solid var(--border-color);
-            z-index: 1100;
-            transition: width var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1050;
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
             display: flex;
             flex-direction: column;
             white-space: nowrap;
+            backdrop-filter: blur(20px);
         }
 
         .sidebar:hover {
             width: var(--sidebar-width);
-            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
+            box-shadow: 20px 0 40px rgba(0, 0, 0, 0.2);
         }
 
         .brand {
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: #fff;
-            margin-bottom: 2rem;
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 2.5rem;
             display: flex;
             align-items: center;
-            height: 50px;
+            height: 80px;
             padding: 0;
             overflow: hidden;
+            letter-spacing: -0.02em;
         }
 
-        .brand i {
-            min-width: var(--sidebar-width-collapsed);
+        .brand i,
+        .brand img {
+            width: var(--sidebar-width-collapsed);
+            flex-shrink: 0;
             text-align: center;
-            font-size: 1.8rem;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -102,7 +105,7 @@
         .brand span {
             margin-left: -10px;
             opacity: 0;
-            transition: opacity 0.2s;
+            transition: opacity 0.3s;
         }
 
         .sidebar:hover .brand span {
@@ -110,49 +113,36 @@
         }
 
         .nav-link {
-            color: #cbd5e1;
-            padding: 12px 0;
+            color: var(--text-secondary);
+            padding: 14px 0;
             display: flex;
             align-items: center;
             text-decoration: none;
-            margin-bottom: 5px;
-            transition: all 0.2s;
-            height: 48px;
+            margin: 4px 12px;
+            border-radius: 16px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            height: 50px;
             overflow: hidden;
-            width: 100%;
-            border-radius: 0;
+            width: calc(100% - 24px);
         }
 
         .nav-link i {
-            min-width: var(--sidebar-width-collapsed);
+            min-width: calc(var(--sidebar-width-collapsed) - 24px);
             text-align: center;
             font-size: 1.25rem;
             display: flex;
             justify-content: center;
             align-items: center;
-            transition: all 0.25s ease-out;
-        }
-
-        .nav-link:hover i {
-            transform: scale(1.1);
-        }
-
-        .nav-link.theme-toggle:hover i {
-            transform: rotate(180deg) scale(1.1);
-            color: var(--owner-color);
-        }
-
-        .nav-link.logout:hover i {
-            transform: scale(1.15);
-            color: var(--danger-color);
+            transition: all 0.3s ease-out;
         }
 
         .nav-link span {
-            margin-left: -10px;
+            margin-left: 0px;
             opacity: 0;
             transform: translateX(-10px);
-            transition: all 0.2s;
-            font-weight: 500;
+            transition: all 0.3s;
+            font-weight: 600;
+            font-size: 0.95rem;
         }
 
         .sidebar:hover .nav-link span {
@@ -161,72 +151,46 @@
         }
 
         .nav-link:hover {
-            background: rgba(99, 102, 241, 0.1);
-            color: var(--accent);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
         }
 
         .nav-link.active {
-            background: var(--accent);
-            color: white;
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent) !important;
         }
 
+        .nav-link.active i {
+            color: var(--accent);
+        }
+
+        /* Toggle Tema & Logout */
         .nav-link.theme-toggle {
             margin-top: auto;
-            background: transparent;
+        }
+
+        .nav-link.theme-toggle:hover i {
+            transform: rotate(180deg) scale(1.1);
+            color: #f59e0b;
         }
 
         .nav-link.theme-toggle:hover {
             background: rgba(245, 158, 11, 0.1);
-            color: var(--owner-color);
+            color: #f59e0b;
         }
 
         .nav-link.logout {
             margin-top: 5px;
-            color: var(--text-secondary);
+        }
+
+        .nav-link.logout:hover i {
+            transform: scale(1.15);
+            color: #ef4444;
         }
 
         .nav-link.logout:hover {
             background: rgba(239, 68, 68, 0.1);
-            color: var(--danger-color);
-        }
-
-        /* Media Query M├│viles */
-        @media (max-width: 768px) {
-            .sidebar {
-                width: 0;
-                left: -260px;
-                transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            }
-
-            .sidebar.mobile-open {
-                width: 260px;
-                left: 0 !important;
-                box-shadow: 10px 0 30px rgba(0, 0, 0, 0.8);
-            }
-
-            .main-content {
-                margin-left: 0 !important;
-                padding: 15px;
-            }
-
-            .sidebar:hover {
-                width: 0;
-                box-shadow: none;
-            }
-
-            .sidebar.mobile-open:hover {
-                width: 260px;
-            }
-
-            .nav-link span,
-            .brand span {
-                opacity: 1 !important;
-                transform: translateX(0) !important;
-            }
-
-            .hamburger-mobile {
-                display: flex !important;
-            }
+            color: #ef4444;
         }
 
         .hamburger-mobile {
@@ -265,10 +229,7 @@
             font-weight: 800;
             font-size: 1.8rem;
             margin: 0;
-            background: linear-gradient(135deg, var(--accent), #a855f7);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: var(--text-primary);
         }
 
         .page-header p {
@@ -308,6 +269,16 @@
             transition: all 0.25s ease;
             position: relative;
             overflow: hidden;
+            cursor: pointer;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-6px) scale(1.02);
+            box-shadow: 0 16px 32px rgba(0, 0, 0, 0.25);
+        }
+
+        .kpi-card:active {
+            transform: translateY(-2px) scale(0.99);
         }
 
         .kpi-card::before {
@@ -334,11 +305,6 @@
 
         .kpi-card.descartado::before {
             background: var(--danger-color);
-        }
-
-        .kpi-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
         }
 
         .kpi-icon {
@@ -486,49 +452,124 @@
             transform: translateY(-1px);
         }
 
-        /* PROPERTY TABLE */
+        /* PROPERTY TABLE (Homologada a crm-table) */
         .prop-table {
             width: 100%;
             border-collapse: separate;
-            border-spacing: 0 6px;
+            border-spacing: 0 8px;
         }
 
         .prop-table th {
-            padding: 12px 16px;
-            font-weight: 700;
             color: var(--text-secondary);
-            font-size: 0.72rem;
+            font-weight: 600;
+            font-size: 0.8rem;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
-            border-bottom: 2px solid var(--border-color);
+            padding: 10px 15px;
+            border-bottom: none;
         }
 
         .prop-table tbody tr {
-            background: var(--bg-card);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 12px;
             cursor: pointer;
-            transition: all 0.2s;
-            border-radius: 10px;
         }
 
         .prop-table tbody tr:hover {
-            background: rgba(99, 102, 241, 0.04);
-            transform: scale(1.003);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+            transform: translateY(-3px);
+            box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+            position: relative;
+        }
+
+        .prop-table tbody tr:hover td {
+            background-color: rgba(99, 102, 241, 0.08);
         }
 
         .prop-table td {
-            padding: 14px 16px;
-            border-top: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            padding: 15px;
             vertical-align: middle;
+            border-top: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
             font-size: 0.9rem;
+            /* Elevaci├│n sutil para despegarlo del fondo */
+            box-shadow: inset 0 0 0 9999px rgba(255, 255, 255, 0.045);
         }
 
         .prop-table td:first-child {
+            border-left: 1px solid var(--border-color);
             border-radius: 10px 0 0 10px;
         }
 
         .prop-table td:last-child {
+            border-right: 1px solid var(--border-color);
             border-radius: 0 10px 10px 0;
+        }
+
+        /* PAGINATION (Homologada) */
+        .pagination-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            margin-top: 10px;
+            border-top: 1px solid var(--border-color);
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .pagination-info {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .pagination-controls {
+            display: flex;
+            gap: 5px;
+        }
+
+        .page-btn {
+            min-width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .page-btn:hover:not(.disabled) {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .page-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .page-btn.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .page-btn i {
+            font-size: 0.8rem;
+        }
+
+        @media (max-width: 768px) {
+            .pagination-container {
+                flex-direction: column;
+                text-align: center;
+            }
         }
 
         .prop-title {
@@ -555,27 +596,15 @@
             font-size: 0.7rem;
             text-transform: uppercase;
             letter-spacing: 0.04em;
-        }
-
-        .badge-nuevo {
-            background: rgba(59, 130, 246, 0.12);
-            color: #3b82f6;
-        }
-
-        .badge-gestion {
-            background: rgba(245, 158, 11, 0.12);
-            color: #f59e0b;
-        }
-
-        .badge-captado {
-            background: rgba(16, 185, 129, 0.12);
-            color: #10b981;
-        }
-
-        .badge-descartado {
-            background: rgba(239, 68, 68, 0.12);
-            color: #ef4444;
-        }
+        }        /* BADGES DE ESTADOS: Agrupados por color de tarjeta */
+        /* Naranja ÔåÆ EN GESTI├ôN */
+        .badge-gestion { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+        /* Verde ÔåÆ CAPTADO */
+        .badge-captado { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+        /* Rojo ÔåÆ DESCARTADO */
+        .badge-descartado { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+        /* Azul ÔåÆ Sin contactar a├║n */
+        .badge-nuevo { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.25); }
 
         .opp-badge {
             font-size: 0.62rem;
@@ -662,29 +691,109 @@
             animation: fadeInUp 0.5s ease 0.2s forwards;
             opacity: 0;
         }
+        @media (max-width: 768px) {
+            .sidebar {
+                left: -260px;
+                width: 260px;
+                transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .sidebar:hover { width: 260px; box-shadow: none; }
+            .sidebar.mobile-open {
+                left: 0;
+                box-shadow: 10px 0 30px rgba(0,0,0,0.8);
+                z-index: 1200;
+            }
+            .sidebar.mobile-open:hover { width: 260px; }
+            .sidebar .brand span,
+            .sidebar .nav-link span { opacity: 1 !important; transform: translateX(0) !important; }
+            .main-content { margin-left: 0 !important; padding: 12px; }
+            .hamburger-mobile { display: flex !important; }
+            .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+            .kpi-grid { grid-template-columns: repeat(2,1fr); gap: 10px; }
+            .pagination-container { flex-direction: column; text-align: center; }
+
+            /* TABLA ÔåÆ CARDS en m├│vil */
+            .table-responsive { overflow-x: visible; }
+            .prop-table thead { display: none; }
+            .prop-table, .prop-table tbody, .prop-table tr, .prop-table td {
+                display: block;
+                width: 100%;
+            }
+            .prop-table tbody tr {
+                background: var(--bg-tertiary);
+                border: 1px solid var(--border-color);
+                border-radius: 14px;
+                margin-bottom: 12px;
+                padding: 14px 16px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                cursor: pointer;
+                transition: transform 0.2s, box-shadow 0.2s;
+            }
+            .prop-table tbody tr:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+            }
+            .prop-table td {
+                border: none !important;
+                box-shadow: none !important;
+                padding: 4px 0;
+                background: transparent !important;
+                font-size: 0.88rem;
+                border-radius: 0 !important;
+            }
+            /* Etiqueta antes de cada celda */
+            .prop-table td[data-label]::before {
+                content: attr(data-label) " ";
+                font-weight: 700;
+                color: var(--text-secondary);
+                font-size: 0.75rem;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                display: inline;
+            }
+            /* Filtros: stack vertical */
+            .filter-bar {
+                flex-direction: column;
+                gap: 8px;
+            }
+            .filter-bar .search-box,
+            .filter-bar select,
+            .filter-bar .btn-filter {
+                width: 100% !important;
+                min-width: unset;
+            }
+        }
     </style>
 </head>
 
 <body>
+    <div id="sidebarOverlay" onclick="toggleMobileMenu()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;"></div>
+    <!-- SIDEBAR (Mismo men├║, sin cambios en estructura) -->
     <nav class="sidebar" id="sidebar">
         <div class="brand">
-            <i class="fa-solid fa-house-chimney-crack"></i>
-            <span>PROCASA</span>
+            <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
+                style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
+                onerror="this.style.display='none'"> <span>MEN├Ü</span>
         </div>
 
         {% if user_role in ['supervisor', 'admin'] %}
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
+        <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
+                Manual</span></a>
         {% endif %}
 
         <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
 
-        {% if user_role in ['supervisor', 'admin'] %}
         <a href="/captacion" class="nav-link active"><i class="fa-solid fa-house-circle-check"></i>
             <span>Captaciones</span></a>
-        {% endif %}
+        <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
+        <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>├ôrdenes de Visita</span></a>
 
-        <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="toggleTheme()">
-            <i class="fa-solid fa-moon"></i> <span>Modo Claro/Oscuro</span>
+        <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="
+          toggleTheme();
+          return false;
+        ">
+            <i class="fa-solid fa-moon" id="themeIcon"></i> <span>Tema</span>
         </a>
         <a href="/logout" class="nav-link logout">
             <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesi├│n</span>
@@ -694,34 +803,41 @@
     <div class="main-content">
         <div class="page-header">
             <div>
-                <h2><i class="fa-solid fa-house-circle-check me-2"></i> Captaciones</h2>
-                <p>Inmuebles detectados para prospecci├│n comercial</p>
+                <div class="d-flex align-items-center">
+                    <div class="hamburger-mobile" onclick="toggleMobileMenu()" style="margin-right:12px;">
+                        <i class="fa-solid fa-bars"></i>
+                    </div>
+                    <div>
+                        <h2>Captaciones</h2>
+                        <p>Propiedades detectadas para prospecci├│n</p>
+                    </div>
+                </div>
             </div>
         </div>
 
         <div class="kpi-grid">
-            <div class="kpi-card total">
+            <div class="kpi-card total" onclick="window.location.href='/captacion'">
                 <div class="kpi-icon"><i class="fa-solid fa-layer-group"></i></div>
                 <div>
                     <div class="kpi-value">{{ total_count }}</div>
                     <div class="kpi-label">Disponibles</div>
                 </div>
             </div>
-            <div class="kpi-card gestion">
+            <div class="kpi-card gestion" onclick="filterByGrupoEstado('GRUPO_GESTION')">
                 <div class="kpi-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
                 <div>
                     <div class="kpi-value">{{ in_gestion_count or '0' }}</div>
                     <div class="kpi-label">En Gesti├│n</div>
                 </div>
             </div>
-            <div class="kpi-card captado">
+            <div class="kpi-card captado" onclick="filterByGrupoEstado('GRUPO_CAPTADO')">
                 <div class="kpi-icon"><i class="fa-solid fa-trophy"></i></div>
                 <div>
                     <div class="kpi-value">{{ captados_count or '0' }}</div>
                     <div class="kpi-label">Captados</div>
                 </div>
             </div>
-            <div class="kpi-card descartado">
+            <div class="kpi-card descartado" onclick="filterByGrupoEstado('GRUPO_DESCARTADO')">
                 <div class="kpi-icon"><i class="fa-solid fa-ban"></i></div>
                 <div>
                     <div class="kpi-value">{{ descartados_count or '0' }}</div>
@@ -733,17 +849,40 @@
         <div class="table-container">
             <form action="/captacion" method="GET" class="filter-bar">
                 <div class="search-box">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                    <input type="text" name="comuna" placeholder="Buscar por comuna..."
-                        value="{{ current_comuna or '' }}">
+                    <i class="fa-solid fa-phone"></i>
+                    <input type="text" name="telefono" placeholder="Buscar tel├®fono..."
+                        value="{{ current_telefono or '' }}">
                 </div>
+                <select name="comuna" onchange="this.form.submit()">
+                    <option value="">Todas las comunas</option>
+                    {% for c in comunas %}
+                    <option value="{{ c }}" {% if current_comuna == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+                <select name="operacion" onchange="this.form.submit()">
+                    <option value="">Todas las operaciones</option>
+                    {% if 'venta' in available_ops %}
+                    <option value="venta" {% if current_operacion=='venta' %}selected{% endif %}>Venta</option>
+                    {% endif %}
+                    {% if 'arriendo' in available_ops %}
+                    <option value="arriendo" {% if current_operacion=='arriendo' %}selected{% endif %}>Arriendo</option>
+                    {% endif %}
+                </select>
                 <select name="estado" onchange="this.form.submit()">
                     <option value="">Cualquier estado</option>
-                    <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos</option>
-                    <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gesti├│n</option>
-                    <option value="CAPTADO" {% if current_estado=='CAPTADO' %}selected{% endif %}>Captados</option>
-                    <option value="DESCARTADO" {% if current_estado=='DESCARTADO' %}selected{% endif %}>Descartados
-                    </option>
+                    <option value="Por contactar" {% if current_estado=='Por contactar' %}selected{% endif %}>Por contactar</option>
+                    <option value="Contacto exitoso" {% if current_estado=='Contacto exitoso' %}selected{% endif %}>Contacto exitoso</option>
+                    <option value="Sin respuesta" {% if current_estado=='Sin respuesta' %}selected{% endif %}>Sin respuesta</option>
+                    <option value="Tel├®fono inv├ílido" {% if current_estado=='Tel├®fono inv├ílido' %}selected{% endif %}>Tel├®fono inv├ílido</option>
+                    <option value="Corredor" {% if current_estado=='Corredor' %}selected{% endif %}>Corredor</option>
+                    <option value="Propiedad no disponible" {% if current_estado=='Propiedad no disponible' %}selected{% endif %}>Propiedad no disponible</option>
+                    <option value="Publicaci├│n expirada" {% if current_estado=='Publicaci├│n expirada' %}selected{% endif %}>Publicaci├│n expirada</option>
+                    <option value="No interesado" {% if current_estado=='No interesado' %}selected{% endif %}>No interesado</option>
+                    <option value="Reuni├│n agendada" {% if current_estado=='Reuni├│n agendada' %}selected{% endif %}>Reuni├│n agendada</option>
+                    <option value="Captado" {% if current_estado=='Captado' %}selected{% endif %}>Captado</option>
+                    <option value="Descartado" {% if current_estado=='Descartado' %}selected{% endif %}>Descartado</option>
+                    <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos (Legado)</option>
+                    <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gesti├│n (Legado)</option>
                 </select>
                 {% if user_role in ['supervisor', 'admin'] %}
                 <select name="ejecutivo" onchange="this.form.submit()">
@@ -760,56 +899,44 @@
                 <table class="prop-table">
                     <thead>
                         <tr>
-                            <th>Propiedad</th>
                             <th>Comuna</th>
-                            <th class="text-center">Precio (UF)</th>
-                            <th class="text-center">UF/m┬▓</th>
-                            <th class="text-center">Score</th>
+                            <th>Operaci├│n</th>
+                            <th class="text-center">Precio</th>
                             <th class="text-center">Estado</th>
-                            <th>Detectado</th>
+                            <th class="text-center">Antiguedad</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for item in items %}
                         <tr onclick="location.href='/captacion/{{ item.id }}'">
-                            <td>
-                                <span class="prop-title">{{ item.titulo }}</span>
-                                <div class="prop-seller"><i class="fa-solid fa-user-tag me-1 opacity-50"></i>{{
-                                    item.vendedor }}</div>
-                            </td>
-                            <td><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</td>
-                            <td class="text-center">
-                                <div class="fw-bold">{{ item.precio_uf or 'S/I' }}</div>
-                                <div class="small text-secondary">{{ item.precio }}</div>
-                            </td>
-                            <td class="text-center">
-                                <div class="fw-bold">{{ item.uf_m2 or '-' }}</div>
-                                {% if item.uf_m2 > 0 and item.uf_m2 < 60 %} <span class="opp-badge"><i
-                                        class="fa-solid fa-arrow-trend-up me-1"></i>Oportunidad</span>
-                                    {% endif %}
-                            </td>
-                            <td class="text-center">
-                                <div class="fw-bold"
-                                    style="color: {% if item.score_captacion >= 80 %}#ef4444{% elif item.score_captacion >= 50 %}#f59e0b{% else %}#3b82f6{% endif %}">
-                                    {{ item.score_captacion }}
-                                </div>
-                                {% if item.score_captacion >= 80 %}
-                                <span class="badge"
-                                    style="background: rgba(239, 68, 68, 0.1); color: #ef4444; font-size: 0.65rem;">­ƒöÑ
-                                    HOT</span>
-                                {% elif item.score_captacion >= 65 %}
-                                <span class="badge"
-                                    style="background: rgba(245, 158, 11, 0.1); color: #f59e0b; font-size: 0.65rem;">ÔÜí
-                                    ALTA</span>
+                            <td data-label="Comuna"><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</td>
+                            <td data-label="Operaci├│n">
+                                {% if 'VEN' in item.operacion %}
+                                <span class="badge-custom" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2);">VENTA</span>
+                                {% else %}
+                                <span class="badge-custom" style="background: rgba(99, 102, 241, 0.1); color: var(--accent); border: 1px solid rgba(99, 102, 241, 0.2);">ARRIENDO</span>
                                 {% endif %}
                             </td>
-                            <td class="text-center">
+                            <td class="text-center" data-label="Precio">
+                                <div class="fw-bold">
+                                    {% if item.precio_uf %}
+                                    UF {{ item.precio_uf if item.precio_uf is integer else "%.1f"|format(item.precio_uf) }}
+                                    {% else %}
+                                    S/I
+                                    {% endif %}
+                                </div>
+                                {% if item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
+                                <div class="small text-secondary">{{ item.precio }}</div>
+                                {% elif item.precio_clp_raw and item.precio and 'UF' in item.precio|upper %}
+                                <div class="small text-secondary">${{ "{:,}".format(item.precio_clp_raw)|replace(",",".") }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="text-center" data-label="Estado">
                                 <span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span>
                             </td>
-                            <td>
-                                <div class="small fw-bold">{{ item.fecha_detectado }}</div>
-                                <div class="small text-secondary"><i class="fa-solid fa-clock me-1 opacity-50"></i>{{
-                                    item.dias_en_portal or '?' }} d.</div>
+                            <td class="text-center" data-label="Antiguedad">
+                                <div class="small fw-bold">Hace {{ item.dias_en_portal }} d├¡as</div>
+                                <div class="small text-secondary" style="font-size: 0.75rem;">{{ item.fecha_str }}</div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -817,23 +944,43 @@
                 </table>
             </div>
 
+            <!-- PAGINACI├ôN (Homologada a crm_leads_list) -->
             {% if pagination.total_pages > 1 %}
-            <nav class="mt-4">
-                <ul class="pagination justify-content-center">
-                    {% if pagination.has_prev %}
-                    <li class="page-item"><a class="page-link"
-                            href="?page={{ pagination.current_page - 1 }}&comuna={{ current_comuna or '' }}&estado={{ current_estado or '' }}&ejecutivo={{ current_ejecutivo or '' }}"><i
-                                class="fa-solid fa-chevron-left"></i></a></li>
-                    {% endif %}
-                    <li class="page-item active"><a class="page-link" href="#">{{ pagination.current_page }} / {{
-                            pagination.total_pages }}</a></li>
-                    {% if pagination.has_next %}
-                    <li class="page-item"><a class="page-link"
-                            href="?page={{ pagination.current_page + 1 }}&comuna={{ current_comuna or '' }}&estado={{ current_estado or '' }}&ejecutivo={{ current_ejecutivo or '' }}"><i
-                                class="fa-solid fa-chevron-right"></i></a></li>
-                    {% endif %}
-                </ul>
-            </nav>
+            <div class="pagination-container">
+                <div class="pagination-info">
+                    Mostrando {{ (pagination.current_page - 1) * 10 + 1 }} -
+                    {{ [pagination.current_page * 10, total_count]|min }}
+                    de {{ total_count }} captaciones
+                </div>
+                <div class="pagination-controls">
+                    {% set base_url = "?" %}
+                    {% if current_comuna %}{% set base_url = base_url ~ "comuna=" ~ current_comuna ~ "&" %}{% endif %}
+                    {% if current_estado %}{% set base_url = base_url ~ "estado=" ~ current_estado ~ "&" %}{% endif %}
+                    {% if current_ejecutivo %}{% set base_url = base_url ~ "ejecutivo=" ~ current_ejecutivo ~ "&" %}{%
+                    endif %}
+
+                    <a href="{{ base_url }}page={{ pagination.current_page - 1 }}"
+                        class="page-btn {{ 'disabled' if not pagination.has_prev }}">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </a>
+
+                    {% for p in range(1, pagination.total_pages + 1) %}
+                    {% if p == 1 or p == pagination.total_pages or (p >= pagination.current_page - 2 and p <=
+                        pagination.current_page + 2) %} <a href="{{ base_url }}page={{ p }}"
+                        class="page-btn {{ 'active' if p == pagination.current_page }}">
+                        {{ p }}
+                        </a>
+                        {% elif p == 2 or p == pagination.total_pages - 1 %}
+                        <span class="page-btn disabled">...</span>
+                        {% endif %}
+                        {% endfor %}
+
+                        <a href="{{ base_url }}page={{ pagination.current_page + 1 }}"
+                            class="page-btn {{ 'disabled' if not pagination.has_next }}">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </a>
+                </div>
+            </div>
             {% endif %}
         </div>
     </div>
@@ -842,15 +989,262 @@
     <script>
         function toggleTheme() {
             const html = document.documentElement;
-            const target = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-            html.setAttribute('data-theme', target);
-            localStorage.setItem('theme', target);
+            const icon = document.getElementById("themeIcon");
+            const target = html.getAttribute("data-theme") === "light" ? "dark" : "light";
+            html.setAttribute("data-theme", target);
+            localStorage.setItem("theme", target);
+            if (icon) {
+                if (target === "light") {
+                    icon.className = "fa-solid fa-moon";
+                } else {
+                    icon.className = "fa-solid fa-sun";
+                }
+            }
         }
+
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.toggle('mobile-open');
+            overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
+        }
+
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth <= 768) toggleMobileMenu();
+            });
+        });
 
         document.addEventListener('DOMContentLoaded', () => {
             const saved = localStorage.getItem('theme');
-            if (saved) document.documentElement.setAttribute('data-theme', saved);
+            if (saved) {
+                document.documentElement.setAttribute('data-theme', saved);
+                const icon = document.getElementById("themeIcon");
+                if (icon) {
+                    if (saved === "light") {
+                        icon.className = "fa-solid fa-moon";
+                    } else {
+                        icon.className = "fa-solid fa-sun";
+                </div>
+            </div>
+            <div class="kpi-card captado" onclick="filterByGrupoEstado('GRUPO_CAPTADO')">
+                <div class="kpi-icon"><i class="fa-solid fa-trophy"></i></div>
+                <div>
+                    <div class="kpi-value">{{ captados_count or '0' }}</div>
+                    <div class="kpi-label">Captados</div>
+                </div>
+            </div>
+            <div class="kpi-card descartado" onclick="filterByGrupoEstado('GRUPO_DESCARTADO')">
+                <div class="kpi-icon"><i class="fa-solid fa-ban"></i></div>
+                <div>
+                    <div class="kpi-value">{{ descartados_count or '0' }}</div>
+                    <div class="kpi-label">Descartados</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <form action="/captacion" method="GET" class="filter-bar">
+                <div class="search-box">
+                    <i class="fa-solid fa-phone"></i>
+                    <input type="text" name="telefono" placeholder="Buscar tel├®fono..."
+                        value="{{ current_telefono or '' }}">
+                </div>
+                <select name="comuna" onchange="this.form.submit()">
+                    <option value="">Todas las comunas</option>
+                    {% for c in comunas %}
+                    <option value="{{ c }}" {% if current_comuna == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+                <select name="operacion" onchange="this.form.submit()">
+                    <option value="">Todas las operaciones</option>
+                    {% if 'venta' in available_ops %}
+                    <option value="venta" {% if current_operacion=='venta' %}selected{% endif %}>Venta</option>
+                    {% endif %}
+                    {% if 'arriendo' in available_ops %}
+                    <option value="arriendo" {% if current_operacion=='arriendo' %}selected{% endif %}>Arriendo</option>
+                    {% endif %}
+                </select>
+                <select name="estado" onchange="this.form.submit()">
+                    <option value="">Cualquier estado</option>
+                    <option value="Por contactar" {% if current_estado=='Por contactar' %}selected{% endif %}>Por contactar</option>
+                    <option value="Contacto exitoso" {% if current_estado=='Contacto exitoso' %}selected{% endif %}>Contacto exitoso</option>
+                    <option value="Sin respuesta" {% if current_estado=='Sin respuesta' %}selected{% endif %}>Sin respuesta</option>
+                    <option value="Tel├®fono inv├ílido" {% if current_estado=='Tel├®fono inv├ílido' %}selected{% endif %}>Tel├®fono inv├ílido</option>
+                    <option value="Corredor" {% if current_estado=='Corredor' %}selected{% endif %}>Corredor</option>
+                    <option value="Propiedad no disponible" {% if current_estado=='Propiedad no disponible' %}selected{% endif %}>Propiedad no disponible</option>
+                    <option value="Publicaci├│n expirada" {% if current_estado=='Publicaci├│n expirada' %}selected{% endif %}>Publicaci├│n expirada</option>
+                    <option value="No interesado" {% if current_estado=='No interesado' %}selected{% endif %}>No interesado</option>
+                    <option value="Reuni├│n agendada" {% if current_estado=='Reuni├│n agendada' %}selected{% endif %}>Reuni├│n agendada</option>
+                    <option value="Captado" {% if current_estado=='Captado' %}selected{% endif %}>Captado</option>
+                    <option value="Descartado" {% if current_estado=='Descartado' %}selected{% endif %}>Descartado</option>
+                    <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos (Legado)</option>
+                    <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gesti├│n (Legado)</option>
+                </select>
+                {% if user_role in ['supervisor', 'admin'] %}
+                <select name="ejecutivo" onchange="this.form.submit()">
+                    <option value="">Cualquier Ejecutivo</option>
+                    {% for exec in executives %}
+                    <option value="{{ exec }}" {% if current_ejecutivo==exec %}selected{% endif %}>{{ exec }}</option>
+                    {% endfor %}
+                </select>
+                {% endif %}
+                <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
+            </form>
+
+            <div class="table-responsive">
+                <table class="prop-table">
+                    <thead>
+                        <tr>
+                            <th>Comuna</th>
+                            <th class="text-center">Precio</th>
+                            <th class="text-center">Estado</th>
+                            <th class="text-center">Antig├╝edad</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr onclick="location.href='/captacion/{{ item.id }}'">
+                            <td data-label="Comuna"><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</td>
+                            <td class="text-center" data-label="Precio">
+                                <div class="fw-bold">
+                                    {% if item.precio_uf %}
+                                    UF {{ item.precio_uf if item.precio_uf is integer else "%.1f"|format(item.precio_uf) }}
+                                    {% else %}
+                                    S/I
+                                    {% endif %}
+                                </div>
+                                {% if item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
+                                <div class="small text-secondary">{{ item.precio }}</div>
+                                {% elif item.precio_clp_raw and item.precio and 'UF' in item.precio|upper %}
+                                <div class="small text-secondary">${{ "{:,}".format(item.precio_clp_raw)|replace(",",".") }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="text-center" data-label="Estado">
+                                {% set e = item.estado %}
+                                {% if e in ['Por contactar', 'Contacto exitoso', 'Sin respuesta', 'Reuni├│n agendada', 'GESTION'] %}
+                                    <span class="badge-custom badge-gestion">{{ e }}</span>
+                                {% elif e in ['Captado', 'CAPTADO'] %}
+                                    <span class="badge-custom badge-captado">{{ e }}</span>
+                                {% elif e in ['Corredor', 'Tel├®fono inv├ílido', 'Descartado', 'Propiedad no disponible', 'Publicaci├│n expirada', 'No interesado', 'DESCARTADO'] %}
+                                    <span class="badge-custom badge-descartado">{{ e }}</span>
+                                {% else %}
+                                    <span class="badge-custom badge-nuevo">{{ e }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center" data-label="Antig├╝edad">
+                                <div class="small fw-bold">Hace {{ item.dias_en_portal }} d├¡as</div>
+                                <div class="small text-secondary" style="font-size: 0.75rem;">{{ item.fecha_str }}</div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- PAGINACI├ôN -->
+            {% if pagination.total_pages > 1 %}
+            <div class="pagination-container">
+                <div class="pagination-info">
+                    Mostrando {{ (pagination.current_page - 1) * 10 + 1 }} -
+                    {{ [pagination.current_page * 10, total_count]|min }}
+                    de {{ total_count }} captaciones
+                </div>
+                <div class="pagination-controls">
+                    {% set base_url = "?" %}
+                    {% if current_comuna %}{% set base_url = base_url ~ "comuna=" ~ current_comuna ~ "&" %}{% endif %}
+                    {% if current_estado %}{% set base_url = base_url ~ "estado=" ~ current_estado ~ "&" %}{% endif %}
+                    {% if current_ejecutivo %}{% set base_url = base_url ~ "ejecutivo=" ~ current_ejecutivo ~ "&" %}{%
+                    endif %}
+
+                    <a href="{{ base_url }}page={{ pagination.current_page - 1 }}"
+                        class="page-btn {{ 'disabled' if not pagination.has_prev }}">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </a>
+
+                    {% for p in range(1, pagination.total_pages + 1) %}
+                    {% if p == 1 or p == pagination.total_pages or (p >= pagination.current_page - 2 and p <=
+                        pagination.current_page + 2) %} <a href="{{ base_url }}page={{ p }}"
+                        class="page-btn {{ 'active' if p == pagination.current_page }}">
+                        {{ p }}
+                        </a>
+                        {% elif p == 2 or p == pagination.total_pages - 1 %}
+                        <span class="page-btn disabled">...</span>
+                        {% endif %}
+                        {% endfor %}
+
+                        <a href="{{ base_url }}page={{ pagination.current_page + 1 }}"
+                            class="page-btn {{ 'disabled' if not pagination.has_next }}">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function toggleTheme() {
+            const html = document.documentElement;
+            const icon = document.getElementById("themeIcon");
+            const target = html.getAttribute("data-theme") === "light" ? "dark" : "light";
+            html.setAttribute("data-theme", target);
+            localStorage.setItem("theme", target);
+            if (icon) {
+                if (target === "light") {
+                    icon.className = "fa-solid fa-moon";
+                } else {
+                    icon.className = "fa-solid fa-sun";
+                }
+            }
+        }
+
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.toggle('mobile-open');
+            overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
+        }
+
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth <= 768) toggleMobileMenu();
+            });
         });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const saved = localStorage.getItem('theme');
+            if (saved) {
+                document.documentElement.setAttribute('data-theme', saved);
+                const icon = document.getElementById("themeIcon");
+                if (icon) {
+                    if (saved === "light") {
+                        icon.className = "fa-solid fa-moon";
+                    } else {
+                        icon.className = "fa-solid fa-sun";
+                    }
+                }
+            }
+        });
+        
+        function filterByGrupoEstado(grupo) {
+            const form = document.querySelector('.filter-bar');
+            if (form) {
+                let select = form.querySelector('select[name="estado"]');
+                if (select) {
+                    let option = select.querySelector(`option[value="${grupo}"]`);
+                    if (!option) {
+                        option = document.createElement('option');
+                        option.value = grupo;
+                        option.text = "Filtro: " + grupo.replace('GRUPO_', '');
+                        select.appendChild(option);
+                    }
+                    select.value = grupo;
+                    form.submit();
+                }
+            }
+        }
     </script>
 </body>
 

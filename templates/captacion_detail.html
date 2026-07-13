@@ -5,24 +5,27 @@
     <meta charset="UTF-8" />
     <title>Procasa | Detalle de Captaci├│n</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Preconnect a CDNs para reducir latencia de conexi├│n inicial -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
         rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
-    <link rel="stylesheet" href="https://npmcdn.com/flatpickr/dist/themes/dark.css" />
+    <!-- npmcdn.com era obsoleto y muy lento; reemplazado por jsdelivr -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css" />
 
     <style>
         :root {
-            --bg-body: #09090b;
-            /* zinc-950 */
-            --bg-card: rgba(24, 24, 27, 0.4);
-            /* zinc-900/40 */
-            --bg-sidebar: #09090b;
-            --text-primary: #f4f4f5;
-            /* zinc-100 */
-            --text-secondary: #a1a1aa;
-            /* zinc-400 */
+            --bg-body: #0f172a;
+            --bg-card: #1e293b;
+            --bg-sidebar: #020617;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
             --accent: #6366f1;
             /* indigo-500 */
             --accent-hover: #818cf8;
@@ -39,21 +42,21 @@
             --transition-speed: 0.3s;
             --wa-color: #25d366;
             --email-color: #3b82f6;
-            --input-bg: rgba(24, 24, 27, 0.5);
-            --input-border: rgba(255, 255, 255, 0.1);
-            --input-text: #f4f4f5;
+            --input-bg: #334155;
+            --input-border: #475569;
+            --input-text: #fff;
         }
 
         [data-theme="light"] {
-            --bg-body: #f8fafc;
-            --bg-card: rgba(255, 255, 255, 0.7);
-            --bg-sidebar: #ffffff;
-            --text-primary: #0f172a;
-            --text-secondary: #64748b;
-            --border-color: rgba(0, 0, 0, 0.05);
-            --input-bg: rgba(255, 255, 255, 0.5);
-            --input-border: rgba(0, 0, 0, 0.1);
-            --input-text: #0f172a;
+            --bg-body: #f1f5f9;
+            --bg-card: #ffffff;
+            --bg-sidebar: #0f172a;
+            --text-primary: #1e293b;
+            --text-secondary: #475569;
+            --border-color: #e2e8f0;
+            --input-bg: #ffffff;
+            --input-border: #cbd5e1;
+            --input-text: #1e293b;
             --accent: #4f46e5;
             --accent-hover: #4338ca;
         }
@@ -103,7 +106,7 @@
             display: flex;
             flex-direction: column;
             white-space: nowrap;
-            backdrop-filter: blur(20px);
+            
         }
 
         .sidebar:hover {
@@ -118,7 +121,7 @@
             margin-bottom: 2.5rem;
             display: flex;
             align-items: center;
-            height: 50px;
+            height: 80px;
             padding: 0;
             overflow: hidden;
             letter-spacing: -0.02em;
@@ -126,7 +129,8 @@
 
         .brand i,
         .brand img {
-            min-width: var(--sidebar-width-collapsed);
+            width: var(--sidebar-width-collapsed);
+            flex-shrink: 0;
             text-align: center;
             display: flex;
             justify-content: center;
@@ -224,6 +228,21 @@
             color: #ef4444;
         }
 
+        .hamburger-mobile {
+            display: none;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-right: 12px;
+        }
+
         /* MAIN CONTENT */
         .main-content {
             margin-left: var(--sidebar-width-collapsed);
@@ -256,6 +275,72 @@
             }
         }
 
+        @media (max-width: 768px) {
+            .sidebar {
+                left: -260px;
+                width: 260px;
+                transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+
+            .sidebar:hover {
+                width: 260px;
+                box-shadow: none;
+            }
+
+            .sidebar.mobile-open {
+                left: 0;
+                z-index: 1200;
+                box-shadow: 10px 0 30px rgba(0, 0, 0, 0.8);
+            }
+
+            .sidebar.mobile-open:hover {
+                width: 260px;
+            }
+
+            .sidebar .brand span,
+            .sidebar .nav-link span {
+                opacity: 1 !important;
+                transform: translateX(0) !important;
+            }
+
+            .main-content {
+                margin-left: 0 !important;
+                padding: 12px;
+            }
+
+            .hamburger-mobile {
+                display: flex !important;
+            }
+
+            .detail-header {
+                flex-direction: column;
+                align-items: flex-start !important;
+                gap: 10px;
+            }
+
+            .detail-header-right {
+                width: 100%;
+                justify-content: flex-start !important;
+                flex-wrap: wrap;
+                gap: 8px !important;
+            }
+
+            .card-custom {
+                padding: 16px;
+                border-radius: 20px;
+                margin-bottom: 16px;
+            }
+
+            .hero-card {
+                border-radius: 20px;
+            }
+
+            .section-title {
+                font-size: 1rem;
+                margin-bottom: 14px;
+            }
+        }
+
         /* CARDS & COMPONENTS */
         .card-custom {
             background: var(--bg-card);
@@ -265,7 +350,7 @@
             margin-bottom: 32px;
             transition: 0.3s ease;
             position: relative;
-            backdrop-filter: blur(24px);
+            
             box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.2);
         }
 
@@ -375,7 +460,7 @@
             flex-shrink: 0;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
             border: 2px solid rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
+            
         }
 
         .score-alta {
@@ -407,7 +492,7 @@
             font-size: 1.1rem;
             font-weight: 800;
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            backdrop-filter: blur(10px);
+            
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
         }
 
@@ -451,7 +536,7 @@
             width: 100%;
             height: 100%;
             background-color: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(8px);
+            
             animation: fadeIn 0.3s ease;
         }
 
@@ -533,7 +618,7 @@
             width: 100%;
             height: 100%;
             background-color: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(8px);
+            
             animation: fadeIn 0.3s ease;
         }
 
@@ -728,7 +813,7 @@
             background-color: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 24px;
-            backdrop-filter: blur(24px);
+            
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             color: var(--text-primary);
         }
@@ -852,6 +937,14 @@
         }
 
         /* Post-send toast */
+        .tiny-count {
+            font-size: 0.7rem;
+            opacity: 0.7;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1px 5px;
+            border-radius: 8px;
+        }
+
         #postSendToast {
             position: fixed;
             bottom: 28px;
@@ -925,27 +1018,26 @@
 </head>
 
 <body>
+    <div id="sidebarOverlay"
+        style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1100;"
+        onclick="toggleMobileMenu()"></div>
     <!-- SIDEBAR (Mismo men├║, sin cambios en estructura) -->
     <nav class="sidebar" id="sidebar">
         <div class="brand">
-            <img src="/static/logo.png" alt="PROCASA" style="
-            max-height: 30px;
-            width: auto;
-            min-width: var(--sidebar-width-collapsed);
-            object-fit: contain;
-            padding: 0 15px;
-          " onerror="this.style.display = 'none'" />
-            <span>PROCASA</span>
+            <img src="/static/logo.png?v=1.0.1" alt="PROCASA" style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;" onerror="this.style.display = 'none'" />
+            <span>MEN├Ü</span>
         </div>
 
-        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
         {% if user_role in ['supervisor', 'admin'] %}
+        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
         <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
                 Manual</span></a>
         {% endif %}
         <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
         <a href="/captacion" class="nav-link active"><i class="fa-solid fa-house-circle-check"></i>
             <span>Captaciones</span></a>
+        <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
+        <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>├ôrdenes de Visita</span></a>
 
         <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="
           toggleTheme();
@@ -962,9 +1054,14 @@
     <div class="main-content">
 
         <!-- HEADER ROW: EJECUTIVO ASIGNADO -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h4 class="text-white m-0 fw-bold">Detalle de Captaci├│n</h4>
-            <div class="d-flex align-items-center gap-3">
+        <div class="d-flex justify-content-between align-items-center mb-4 detail-header">
+            <div class="d-flex align-items-center">
+                <div class="hamburger-mobile" onclick="toggleMobileMenu()">
+                    <i class="fa-solid fa-bars"></i>
+                </div>
+                <h4 class="text-white m-0 fw-bold">Detalle de Captaci├│n</h4>
+            </div>
+            <div class="d-flex align-items-center gap-3 detail-header-right">
                 <span class="info-label m-0">Ejecutivo Asignado:</span>
                 <span class="badge"
                     style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); font-size: 0.9rem; padding: 6px 12px; border-radius: 8px;">
@@ -1001,15 +1098,16 @@
               z-index: 1;
             "></div>
 
-                {% set stages = [ {'id': 'detect', 'label': 'Detecci├│n', 'match':
-                ['NUEVO', 'DETECTADO']}, {'id': 'contact', 'label': 'Contacto',
-                'match': ['POR CONTACTAR', 'INTENTO DE CONTACTO', 'SIN RESPUESTA',
-                'GESTION']}, {'id': 'negotiate', 'label': 'Negociaci├│n', 'match':
-                ['CONTACTO EXITOSO', 'CORREDOR', 'INTERESADO EN TASACI├ôN', 'TASACI├ôN
-                ENVIADA', 'REUNI├ôN AGENDADA']}, {'id': 'close', 'label': 'Cierre',
-                'match': ['CAPTADO', 'DESCARTADO', 'PROPIEDAD NO DISPONIBLE', 'NO
-                INTERESADO']} ] %} {% for s in stages %} {% set is_active =
-                prop.estado_captacion in s.match %}
+                {% set stages = [
+                {'id': 'contact', 'label': 'Contacto', 'match': ['Por contactar', 'Sin respuesta', 'Tel├®fono inv├ílido',
+                'GESTION', 'NUEVO', 'DETECTADO', 'INTENTO DE CONTACTO']},
+                {'id': 'negotiate', 'label': 'Negociaci├│n', 'match': ['Contacto exitoso', 'Reuni├│n agendada',
+                'INTERESADO EN TASACI├ôN', 'TASACI├ôN ENVIADA']},
+                {'id': 'close', 'label': 'Cierre', 'match': ['Captado', 'Descartado', 'Propiedad no disponible', 'No
+                interesado', 'Corredor', 'Publicaci├│n expirada']}
+                ] %}
+                {% for s in stages %}
+                {% set is_active = prop.estado_captacion in s.match %}
                 <div class="d-flex flex-column align-items-center" style="z-index: 2; width: 80px">
                     <div class="macro-dot {{ 'active' if is_active else '' }}">
                         {{ loop.index }}
@@ -1242,20 +1340,19 @@
                                     <input type="text" id="proximo-contacto"
                                         class="form-control border-start-0 ps-0 flatpickr-date"
                                         placeholder="Seleccionar fecha"
-                                        value="{{ prop.gestion.proximo_contacto or '' }}" />
+                                        value="{{ prop.gestion.next_followup or '' }}" />
                                 </div>
                             </div>
 
                             <div class="col-md-6">
                                 <label class="info-label">Estado</label>
                                 <select class="form-select" id="statusSelect">
-                                    <option value="DETECTADO">DETECTADO / NUEVO</option>
-                                    <option value="POR CONTACTAR">POR CONTACTAR</option>
-                                    <option value="GESTION">EN GESTI├ôN</option>
-                                    <option value="CONTACTO EXITOSO">CONTACTO EXITOSO</option>
-                                    <option value="REUNI├ôN AGENDADA">REUNI├ôN AGENDADA</option>
-                                    <option value="CAPTADO">CAPTADO</option>
-                                    <option value="DESCARTADO">DESCARTADO</option>
+                                    {% for stage in prop.pipeline_stages %}
+                                    <option value="{{ stage }}" {% if prop.estado_captacion==stage %}selected{% endif
+                                        %}>
+                                        {{ stage }}
+                                    </option>
+                                    {% endfor %}
                                 </select>
                             </div>
 
@@ -1388,183 +1485,25 @@
                         </div>
                     </div>
 
-                    <!-- PANEL: INTELIGENCIA DE DEMANDA (3 CAPAS) -->
-                    <div class="card-custom">
+
+                    <!-- PANEL: INTELIGENCIA DE DEMANDA (3 CAPAS) - CARGA AS├ìNCRONA -->
+                    <div class="card-custom" id="matching-analysis-container">
                         <div class="section-title">
                             <i class="fa-solid fa-chart-line"></i> Inteligencia de Demanda
                         </div>
-
-                        {% set ma = ma or matching_analysis or {} %}
-                        {% set exact = ma.get('exact', 0) %}
-                        {% set zone = ma.get('zone', 0) %}
-                        {% set broad = ma.get('broad', 0) %}
-                        {% set exact_leads = ma.get('exact_leads', []) %}
-                        {% set zone_leads = ma.get('zone_leads', []) %}
-                        {% set broad_leads = ma.get('broad_leads', []) %}
-                        {% set score = ma.get('demand_score', 0) %}
-                        {% set zone_name = ma.get('zone_name', 'Sin zona') %}
-                        {% set pitch_text = ma.get('pitch_text', '') %}
-                        {% set pitch_level = ma.get('pitch_level', 'none') %}
-                        {% set filters = ma.get('applied_filters', {}) %}
-                        {% set total = exact + zone + broad %}
-
-                        {% if total > 0 %}
-                        <!-- 3 Niveles de Match -->
-                        <div class="d-flex flex-column gap-3 mb-3">
-                            <!-- Exact Match -->
-                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl"
-                                onclick="openLeadModal('exact')" style="
-                             background: {% if exact > 0 %}rgba(16, 185, 129, 0.08){% else %}rgba(255,255,255,0.02){% endif %};
-                             border: 1px solid {% if exact > 0 %}rgba(16, 185, 129, 0.2){% else %}var(--border-color){% endif %};
-                         ">
-                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">­ƒÄ»</div>
-                                <div class="flex-grow-1">
-                                    <div class="fw-bold"
-                                        style="font-size: 0.85rem; color: {% if exact > 0 %}#10b981{% else %}var(--text-secondary){% endif %};">
-                                        Coincidencias exactas
-                                    </div>
-                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">
-                                        Misma comuna + tipo + operaci├│n + rango de precio ┬▒30%
-                                    </div>
-                                </div>
-                                <div
-                                    style="font-size: 1.5rem; font-weight: 800; color: {% if exact > 0 %}#10b981{% else %}var(--text-secondary){% endif %}; text-align: right;">
-                                    {{ exact }}
-                                </div>
-                            </div>
-
-                            <!-- Zone Match -->
-                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl"
-                                onclick="openLeadModal('zone')" style="
-                             background: {% if zone > 0 %}rgba(99, 102, 241, 0.08){% else %}rgba(255,255,255,0.02){% endif %};
-                             border: 1px solid {% if zone > 0 %}rgba(99, 102, 241, 0.2){% else %}var(--border-color){% endif %};
-                         ">
-                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">­ƒôì</div>
-                                <div class="flex-grow-1">
-                                    <div class="fw-bold"
-                                        style="font-size: 0.85rem; color: {% if zone > 0 %}var(--accent){% else %}var(--text-secondary){% endif %};">
-                                        En tu zona ({{ zone_name }})
-                                    </div>
-                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">
-                                        Misma macro-zona geogr├ífica
-                                    </div>
-                                </div>
-                                <div
-                                    style="font-size: 1.5rem; font-weight: 800; color: {% if zone > 0 %}var(--accent){% else %}var(--text-secondary){% endif %}; text-align: right;">
-                                    {{ zone }}
-                                </div>
-                            </div>
-
-                            <!-- Broad Match -->
-                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl"
-                                onclick="openLeadModal('broad')" style="
-                             background: {% if broad > 0 %}rgba(245, 158, 11, 0.06){% else %}rgba(255,255,255,0.02){% endif %};
-                             border: 1px solid {% if broad > 0 %}rgba(245, 158, 11, 0.15){% else %}var(--border-color){% endif %};
-                         ">
-                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">­ƒöì</div>
-                                <div class="flex-grow-1">
-                                    <div class="fw-bold"
-                                        style="font-size: 0.85rem; color: {% if broad > 0 %}#f59e0b{% else %}var(--text-secondary){% endif %};">
-                                        Base de Prospectos
-                                    </div>
-                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">
-                                        {{ broad }} clientes activos asimilables
-                                    </div>
-                                    {% if ma.get('active_recent', 0) > 0 %}
-                                    <div class="mt-1 fw-bold" style="font-size: 0.70rem; color: #10b981;">
-                                        <i class="fa-solid fa-bolt me-1"></i>
-                                        {% set is_arriendo = (prop.details.operacion and 'ARR' in
-                                        prop.details.operacion|upper) or (not prop.details.operacion and
-                                        prop.details.precio_uf and prop.details.precio_uf < 1000) %} {{ ma.active_recent
-                                            }} activos en los ├║ltimos {{ 30 if is_arriendo else 60 }} d├¡as </div>
-                                            {% endif %}
-                                            {% if ma.get('high_match', 0) > 0 %}
-                                            <div class="mt-1 fw-bold" style="font-size: 0.70rem; color: #3b82f6;">
-                                                <i class="fa-solid fa-bullseye me-1"></i>
-                                                {{ ma.high_match }} alta compatibilidad
-                                            </div>
-                                            {% endif %}
-                                    </div>
-                                    <div
-                                        style="font-size: 1.5rem; font-weight: 800; color: {% if broad > 0 %}#f59e0b{% else %}var(--text-secondary){% endif %}; text-align: right;">
-                                        <i class="fa-solid fa-chevron-right fs-6"></i>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Demand Score -->
-                            <div class="p-3 rounded-3xl mb-3"
-                                style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color);">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <span class="info-label">Demand Score</span>
-                                    <span class="fw-bold" style="color: var(--accent); font-size: 1.1rem;">{{ score
-                                        }}</span>
-                                </div>
-                                <div
-                                    style="height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden;">
-                                    <div style="
-                                height: 100%;
-                                width: {{ [score / 50 * 100, 100]|min }}%;
-                                background: linear-gradient(90deg, #10b981, var(--accent), #f59e0b);
-                                border-radius: 3px;
-                                transition: width 0.5s ease;
-                            "></div>
-                                </div>
-                                <div class="d-flex justify-content-between mt-1"
-                                    style="font-size: 0.7rem; color: var(--text-secondary);">
-                                    <span>Baja</span>
-                                    <span>Alta</span>
-                                </div>
-                                <!-- Score ÔåÆ Acci├│n recomendada -->
-                                {% if score >= 30 %}
-                                <div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3"
-                                    style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2);">
-                                    <span style="font-size:1rem;">­ƒöÑ</span>
-                                    <div>
-                                        <div style="font-size:0.72rem; font-weight:700; color:#10b981;">Alta oportunidad
-                                            ┬À Contactar ahora</div>
-                                        <div style="font-size:0.68rem; color:var(--text-secondary);">Demanda activa
-                                            detectable en esta zona</div>
-                                    </div>
-                                </div>
-                                {% elif score >= 10 %}
-                                <div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3"
-                                    style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);">
-                                    <span style="font-size:1rem;">ÔÜí</span>
-                                    <div>
-                                        <div style="font-size:0.72rem; font-weight:700; color:#f59e0b;">Demanda media ┬À
-                                            Vale la pena contactar</div>
-                                        <div style="font-size:0.68rem; color:var(--text-secondary);">Hay interesados en
-                                            zona compatible</div>
-                                    </div>
-                                </div>
-                                {% else %}
-                                <div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3"
-                                    style="background: rgba(107,114,128,0.08); border: 1px solid rgba(107,114,128,0.15);">
-                                    <span style="font-size:1rem;">­ƒöì</span>
-                                    <div>
-                                        <div style="font-size:0.72rem; font-weight:700; color:#6b7280;">Revisar precio
-                                            antes de contactar</div>
-                                        <div style="font-size:0.68rem; color:var(--text-secondary);">Baja demanda
-                                            detectada actualmente</div>
-                                    </div>
-                                </div>
-                                {% endif %}
-                            </div>
-
-                            {% else %}
-                            <!-- No matches at all -->
-                            <div class="text-center p-4" style="opacity: 0.6;">
-                                <i class="fa-solid fa-chart-line fs-3 mb-2" style="color: var(--text-secondary);"></i>
-                                <p class="mb-2" style="font-size: 0.85rem; color: var(--text-secondary);">
-                                    Sin leads activos para este perfil actualmente.
-                                </p>
-                                <p class="mb-0" style="font-size: 0.75rem; color: var(--text-secondary);">
-                                    Zona: {{ zone_name }} ┬À Cluster: {{ ma.get('cluster_id', 'N/A') if ma else 'N/A' }}
-                                </p>
-                            </div>
-                            {% endif %}
+                        
+                        <!-- Loader -->
+                        <div id="matching-loader" class="text-center py-5">
+                            <div class="spinner-border text-primary mb-3" role="status"></div>
+                            <p class="text-secondary small">Cruzando datos con leads activos...</p>
                         </div>
+
+                        <!-- Content Area -->
+                        <div id="matching-content" class="d-none">
+                            <!-- JS: renderMatchingUI(data) -->
+                        </div>
+                    </div>
+
 
                         <div class="card-custom">
                             <div class="section-title">
@@ -1660,6 +1599,13 @@
                                 <label class="info-label mb-2">MENSAJE:</label>
                                 <textarea class="form-control modern-scrollbar" id="commMessage" rows="5"
                                     placeholder="Escribe tu mensaje aqu├¡..."></textarea>
+                                <div class="d-flex justify-content-end mt-2">
+                                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3"
+                                        onclick="saveAsPersonalTemplate()"
+                                        style="font-size: 0.75rem; border: 1px dashed var(--accent); color: var(--accent);">
+                                        <i class="fa-solid fa-star me-1"></i> Guardar como plantilla personal
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <div class="modal-footer d-flex justify-content-end gap-2">
@@ -1749,8 +1695,9 @@
                 </div>
             </div>
 
-            <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-            <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+            <!-- defer: el parser HTML no se bloquea mientras bajan estos scripts -->
+            <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
+            <script src="https://cdn.jsdelivr.net/npm/flatpickr" defer></script>
             <script>
                 // Scripts originales de inicializaci├│n
                 document.addEventListener("DOMContentLoaded", () => {
@@ -1910,7 +1857,7 @@
                                 btn.disabled = false;
                             }, 2000);
                         } else {
-                            throw new Error("Error en servidor");
+                            throw new Error(data.message || "Error en servidor");
                         }
                     } catch (e) {
                         alert("Error al guardar: " + e.message);
@@ -1946,7 +1893,7 @@
                                 window.location.reload();
                             }, 1000);
                         } else {
-                            throw new Error("Error en servidor");
+                            throw new Error(data.message || "Error en servidor");
                         }
                     } catch (e) {
                         alert("Error al actualizar: " + e.message);
@@ -1959,45 +1906,52 @@
                 const commTemplates = {
                     owner: {
                         tabs: [
-                            { id: 'hooks', label: '1. Iniciar (5)' },
-                            { id: 'response', label: '2. Respuesta (5)' },
-                            { id: 'proposal', label: '3. Propuesta (5)' },
-                            { id: 'closing', label: '4. Cierre (4)' },
-                            { id: 'followup', label: '5. Seguimiento (5)' },
-                            { id: 'objections', label: '6. Objeciones (14)' }
+                            { id: 'personal', label: 'Personalizados' },
+                            { id: 'hooks', label: '1. Iniciar' },
+                            { id: 'response', label: '2. Respuesta' },
+                            { id: 'proposal', label: '3. Propuesta' },
+                            { id: 'closing', label: '4. Cierre' },
+                            { id: 'followup', label: '5. Seguimiento' },
+                            { id: 'objections', label: '6. Objeciones' }
                         ],
                         data: {
+                            personal: [],
                             hooks: [
                                 {
                                     id: "gancho_insight_especifico",
                                     label: "Insight Espec├¡fico Ô¡É",
                                     recommended: true,
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "An├ílisis sobre tu propiedad en [[sector]]",
                                     text: "Hola [[nombre]], estuve revisando tu propiedad en [[sector]] y me llam├│ la atenci├│n algo puntual ­ƒæÇ\n\nEst├í muy alineada con lo que est├ín buscando activos ahora, especialmente por precio y metraje.\n\n┬┐A├║n la tienes disponible?"
                                 },
                                 {
                                     id: "gancho_movimiento_zona",
                                     label: "Movimiento en tu zona Ô¡É",
                                     recommended: true,
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Novedades sobre el mercado en [[sector]]",
                                     text: "Hola [[nombre]], pas├│ algo interesante en [[sector]] esta semana ­ƒæÇ\n\nEl perfil de comprador activo cambi├│ y tu propiedad encaja mejor que otras.\n\n┬┐Sigue disponible para contarte?"
                                 },
                                 {
                                     id: "gancho_posicionamiento",
                                     label: "Posicionamiento directo",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Estrategia para tu propiedad en [[sector]]",
                                     text: "Hola [[nombre]], vi tu propiedad en [[sector]] y tengo una manera de mostrarla directamente a personas que ya est├ín buscando ah├¡.\n\nSoy [[agente]] de Procasa. ┬┐Sigue disponible?"
                                 },
                                 {
                                     id: "gancho_pregunta_corta",
                                     label: "Pregunta Corta",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Consulta sobre propiedad en [[sector]]",
                                     text: "Hola [[nombre]], vi tu propiedad en [[sector]].\n\n┬┐A├║n la tienes disponible?"
                                 },
                                 {
                                     id: "gancho_suave",
                                     label: "Gancho Fr├¡o",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Contacto de Procasa - Propiedad en [[sector]]",
                                     text: "Hola [[nombre]], soy [[agente]] de Procasa.\n\nVi tu propiedad en [[sector]] y me gust├│. Estamos trabajando con compradores en esa zona. ┬┐Sigue disponible?"
                                 }
                             ],
@@ -2006,31 +1960,31 @@
                                 {
                                     id: "respuesta_suave_1",
                                     label: "Calificaci├│n Suave 1",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
                                     text: "Buen├¡simo ­ƒæì\n\nPara no hacerte perder tiempo: ┬┐tienes intenci├│n de vender pronto o m├ís bien est├ís evaluando opciones todav├¡a?"
                                 },
                                 {
                                     id: "respuesta_suave_2",
                                     label: "Calificaci├│n Suave 2",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
                                     text: "Perfecto. Una pregunta r├ípida: ┬┐el motivo principal es cambio de vivienda, inversi├│n o algo familiar?\n\nAs├¡ entiendo c├│mo ayudarte mejor."
                                 },
                                 {
                                     id: "respuesta_directa",
                                     label: "Calificaci├│n Directa",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
                                     text: "Entendido.\n\n┬┐Has tenido visitas o interesados reales hasta ahora?\n\nEso me dice mucho del posicionamiento actual."
                                 },
                                 {
                                     id: "respuesta_precio",
                                     label: "Pregunta por Precio",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
                                     text: "┬┐El precio que tienes publicado es el que necesitas cerrar o est├ís abierto a calibrarlo seg├║n lo que est├í pasando hoy en el mercado?"
                                 },
                                 {
                                     id: "respuesta_visitas",
                                     label: "Pregunta por Visitas",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
                                     text: "┬┐Cu├íntas visitas has tenido? Y de esas, ┬┐alguna lleg├│ a oferta?\n\nCon eso veo d├│nde est├í el cuello de botella real."
                                 }
                             ],
@@ -2040,31 +1994,36 @@
                                     id: "valor_filtro_real",
                                     label: "Filtro de compradores Ô¡É",
                                     recommended: true,
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Nuestra metodolog├¡a de filtrado en Procasa",
                                     text: "La diferencia real no es publicar. Eso lo hace cualquiera.\n\nEs qui├®n te trae compradores que ya pueden comprar.\n\nNosotros filtramos antes de que pisen tu propiedad.\n\n┬┐Te muestro c├│mo se ve eso en tu caso?"
                                 },
                                 {
                                     id: "valor_red_interna",
                                     label: "Red Interna Procasa",
-                                    channel: "wa",
-                                    text: "En Procasa somos m├ís de 100 agentes con clientes en proceso activo.\n\nTu propiedad se muestra tambi├®n en esa base interna, no solo en portales.\n\n┬┐Quieres que te explique c├│mo funciona?"
+                                    channel: ["wa", "email"],
+                                    subject: "Acceso a la red interna de Procasa",
+                                    text: "En Procasa somos una de la redes de corretaje mas grande del pa├¡s contamos con n├║merosos clientes en proceso activo.\n\nTu propiedad se muestra tambi├®n en esa base interna, no solo en portales.\n\n┬┐Quieres que te explique c├│mo funciona?"
                                 },
                                 {
                                     id: "valor_marketing_pro",
                                     label: "Marketing Profesional",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Estrategia de marketing para tu propiedad",
                                     text: "Si lleva tiempo publicada, probablemente est├í perdi├®ndose entre miles de avisos.\n\nUsamos posicionamiento premium + campa├▒as dirigidas.\n\n┬┐Hablamos 5 minutos sobre c├│mo mejorar su visibilidad?"
                                 },
                                 {
                                     id: "valor_panel_gestion",
                                     label: "Panel de Gesti├│n",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Control total de tu venta en tiempo real",
                                     text: "Una de las cosas que m├ís valoran nuestros propietarios:\n\nVes en tiempo real cu├ínta gente vio tu aviso y cu├íntos est├ín pre-calificados.\n\n┬┐Quieres que te muestre c├│mo quedar├¡a para la tuya?"
                                 },
                                 {
                                     id: "valor_cruce_datos",
                                     label: "Cruce de Datos",
-                                    channel: "wa",
+                                    channel: ["wa", "email"],
+                                    subject: "Matches detectados para tu propiedad",
                                     text: "Nuestro sistema cruza tu propiedad con requerimientos reales de compradores activos.\n\nPor eso detectamos matches que otros no ven.\n\n┬┐Te gustar├¡a ver los perfiles que ya tenemos?"
                                 }
                             ],
@@ -2241,13 +2200,93 @@
                     if (el) el.textContent = _ctaLabels[_leadStage] || 'Enviar mensaje';
                 })();
 
+                async function fetchPersonalTemplates() {
+                    try {
+                        const response = await fetch('/api/captacion/templates/personal');
+                        if (!response.ok) throw new Error("Error fetching templates");
+                        const data = await response.json();
+                        console.log("Personal templates data:", data);
+                        commTemplates.owner.data.personal = data.map(t => ({
+                            id: t._id,
+                            label: t.label,
+                            text: t.text,
+                            subject: t.subject || "",
+                            channel: t.channel || "wa",
+                            is_personal: true
+                        }));
+                        console.log("Mapped personal templates:", commTemplates.owner.data.personal);
+                        return true;
+                    } catch (e) {
+                        console.error("Personal templates fetch failed", e);
+                        return false;
+                    }
+                }
+
+                async function saveAsPersonalTemplate() {
+                    const text = document.getElementById('commMessage').value;
+                    const subject = document.getElementById('emailSubject').value;
+                    if (!text.trim()) {
+                        alert("Escribe un mensaje primero.");
+                        return;
+                    }
+
+                    const label = prompt("Dale un nombre a esta plantilla (ej: Mi saludo inicial):", "Plantilla Nueva");
+                    if (!label) return;
+
+                    try {
+                        const response = await fetch('/api/captacion/templates/personal', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                label: label,
+                                text: text,
+                                subject: subject,
+                                channel: currentCommChannel
+                            })
+                        });
+
+                        if (response.ok) {
+                            await fetchPersonalTemplates();
+                            renderCommTabs(currentCommTarget);
+                            loadTemplates(currentCommTarget, 'personal');
+                            alert("Ô£à Plantilla guardada en 'Personalizados'");
+                        }
+                    } catch (e) {
+                        console.error("Save template failed", e);
+                    }
+                }
+
+                async function deletePersonalTemplate(id, event) {
+                    if (event) event.stopPropagation();
+                    if (!confirm("┬┐Seguro que quieres eliminar esta plantilla?")) return;
+
+                    try {
+                        const response = await fetch('/api/captacion/templates/personal', {
+                            method: 'DELETE',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: id })
+                        });
+
+                        if (response.ok) {
+                            await fetchPersonalTemplates();
+                            renderCommTabs(currentCommTarget);
+                            loadTemplates(currentCommTarget, 'personal');
+                        }
+                    } catch (e) {
+                        console.error("Delete template failed", e);
+                    }
+                }
+
                 let currentCommTarget = 'owner';
                 let currentCommChannel = 'wa';
 
-                function openCommPanel(target, defaultChannel = 'wa') {
+                async function openCommPanel(target, defaultChannel = 'wa') {
                     try {
                         currentCommTarget = target;
                         currentCommChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel;
+
+                        // Cargar plantillas personales antes de renderizar
+                        await fetchPersonalTemplates();
 
                         const modalElement = document.getElementById('commModal');
                         if (!modalElement) {
@@ -2304,9 +2343,20 @@
                     const container = document.getElementById('commTabs');
                     container.innerHTML = "";
                     commTemplates[target].tabs.forEach((tab, index) => {
+                        const allTemplates = commTemplates[target].data[tab.id] || [];
+                        const count = allTemplates.filter(t =>
+                            tab.id === 'personal' || // Siempre mostrar todas las personales
+                            !t.channel ||
+                            t.channel === currentCommChannel ||
+                            (Array.isArray(t.channel) && t.channel.includes(currentCommChannel))
+                        ).length;
+
+                        // Ocultar si est├í vac├¡o (excepto si estamos en modo edici├│n o queremos forzarlo)
+                        if (count === 0) return;
+
                         const btn = document.createElement('button');
                         btn.className = `stage-tab ${index === 0 ? 'active' : ''}`;
-                        btn.innerText = tab.label;
+                        btn.innerHTML = `${tab.label} <span class="ms-1 tiny-count">(${count})</span>`;
                         btn.onclick = (e) => loadTemplates(target, tab.id, e.target);
                         container.appendChild(btn);
                     });
@@ -2328,7 +2378,11 @@
                     tplList.parentElement.classList.remove('d-none');
                     tplList.innerHTML = "";
 
-                    const templates = (commTemplates[target].data[category] || []).filter(t => t.channel === currentCommChannel);
+                    const templates = (commTemplates[target].data[category] || []).filter(t =>
+                        !t.channel ||
+                        t.channel === currentCommChannel ||
+                        (Array.isArray(t.channel) && t.channel.includes(currentCommChannel))
+                    );
 
                     if (templates.length === 0) {
                         tplList.innerHTML = '<div class="text-center p-3 text-secondary small">No hay plantillas para este canal.</div>';
@@ -2354,16 +2408,30 @@
                         const stageHint = tpl.recommended && _leadStage === 'estancado' && tpl.id && tpl.id.includes('followup')
                             ? `<span style="font-size:0.6rem;color:#f59e0b;">ÔÜá´©Å F-UP 48h sin respuesta</span>`
                             : ``;
+                        const delBtn = tpl.is_personal
+                            ? `<button class="btn btn-link text-danger p-0 ms-2 opacity-50 hover-opacity-100" 
+                                       title="Eliminar plantilla" 
+                                       onclick="deletePersonalTemplate('${tpl.id}', event)"
+                                       style="transition: opacity 0.2s; border:none; background:none;">
+                                <i class="fa-solid fa-trash-can" style="font-size:0.75rem;"></i>
+                               </button>`
+                            : ``;
+
                         card.innerHTML = `
                     <div class="tpl-info">
-                        <div class="d-flex align-items-center gap-1 mb-1">
-                            <span class="tpl-title">${tpl.label}</span>
-                            ${recBadge}
-                            ${stageHint}
+                        <div class="d-flex align-items-center justify-content-between mb-1" style="width: 100%;">
+                            <div class="d-flex align-items-center gap-1">
+                                <span class="tpl-title" style="color: var(--accent); font-weight: 600;">${tpl.label}</span>
+                                ${recBadge}
+                                ${stageHint}
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                ${delBtn}
+                                <i class="${tpl.is_personal ? 'fa-solid fa-user-pen' : (currentCommChannel === 'wa' ? 'fa-brands fa-whatsapp' : 'fa-solid fa-envelope')} text-secondary" style="font-size: 0.8rem; opacity: 0.5;"></i>
+                            </div>
                         </div>
                         <span class="tpl-preview">${tpl.text.substring(0, 50)}...</span>
                     </div>
-                    <i class="${currentCommChannel === 'wa' ? 'fa-brands fa-whatsapp' : 'fa-solid fa-envelope'} text-secondary"></i>
                 `;
                         tplList.appendChild(card);
 
@@ -2410,16 +2478,20 @@
                     const safeName = (safeNameEl && safeNameEl.value) ? safeNameEl.value : "Propietario";
 
                     // Variables din├ímicas (Fase 5)
-                    const sector = "{{ sector_name|default('') }}";
-                    const demanda = parseInt("{{ total_leads|default(0) }}");
-                    const dias_pub = parseInt("{{ days_published|default(0) }}");
-                    const precio_cbr = "{{ avg_cierre|default(0) }}";
+                    const sector = "{{ prop.sector_name|default(prop.comuna)|default('') }}";
+                    const demanda = parseInt("{{ prop.total_leads|default(0) }}");
+                    const dias_pub = parseInt("{{ prop.days_published|default(0) }}");
+                    const precio_cbr = "{{ prop.avg_cierre|default(0) }}";
+                    const agente = "{{ user_name|default('') }}";
 
                     let processed = text
+                        .replace(/\[\[nombre\]\]/g, safeName.split(' ')[0])
                         .replace(/\[\[vendedor\]\]/g, safeName.split(' ')[0])
                         .replace(/\{\{nombre\}\}/g, safeName.split(' ')[0])
                         .replace(/\[\[sector\]\]/g, sector || "tu zona")
                         .replace(/\{\{sector\}\}/g, sector || "tu zona")
+                        .replace(/\[\[agente\]\]/g, agente.split(' ')[0])
+                        .replace(/\{\{agente\}\}/g, agente.split(' ')[0])
                         .replace(/\[\[demanda\]\]/g, demanda > 0 ? demanda : "varios")
                         .replace(/\{\{demanda\}\}/g, demanda > 0 ? demanda : "varios")
                         .replace(/\{\{X\}\}/g, demanda > 0 ? demanda : "varios")
@@ -2588,119 +2660,222 @@
             </div>
 
             <script>
-                // Data injected from Backend
-                const _maData = {{ ma | tojson }};
-                const matchingLeadsData = {
-                    top: _maData.top_leads || [],
-                    exact: _maData.exact_leads || [],
-                    zone: _maData.zone_leads || [],
-                    broad: _maData.broad_leads || []
-                };
-                const matchingLeadsCounts = {
-                    exact: _maData.exact || 0,
-                    zone: _maData.zone || 0,
-                    broad: _maData.broad || 0
-                };
-                const matchingLeadsFilters = _maData.applied_filters || {};
-                const smartPitchText = _maData.pitch_text || "";
+                // --- AJUSTE: CARGA AS├ìNCRONA DE MATCHING ---
+                let matchingLeadsData = { top: [], exact: [], zone: [], broad: [] };
+                let matchingLeadsCounts = { exact: 0, zone: 0, broad: 0 };
+                let matchingLeadsFilters = {};
+                let smartPitchText = "";
+                
+                async function loadMatchingAnalysis() {
+                    const objId = "{{ prop._id or prop.id }}";
+                    const container = document.getElementById('matching-content');
+                    const loader = document.getElementById('matching-loader');
+                    
+                    try {
+                        const response = await fetch(`/api/captacion/${objId}/matching`);
+                        if (!response.ok) throw new Error('Error en la carga');
+                        const data = await response.json();
+                        
+                        // Guardar para los modales
+                        const ma = data.ma || data.matching_analysis || {};
+                        matchingLeadsData = {
+                            top: ma.top_leads || [],
+                            exact: ma.exact_leads || [],
+                            zone: ma.exact_leads || [], // Fallback
+                            broad: ma.broad_leads || []
+                        };
+                        
+                        // Si exact_leads est├í vac├¡o en zona, usar zone_leads si existe
+                        if (ma.zone_leads) matchingLeadsData.zone = ma.zone_leads;
+
+                        matchingLeadsCounts = {
+                            exact: data.exact || 0,
+                            zone: data.zone || 0,
+                            broad: data.broad || 0
+                        };
+                        matchingLeadsFilters = ma.applied_filters || {};
+                        smartPitchText = data.pitch_text || "";
+
+                        // Renderizar el contenido
+                        renderMatchingUI(data);
+                        
+                        loader.style.display = 'none';
+                        container.classList.remove('d-none');
+                    } catch (err) {
+                        console.error('Matching Error:', err);
+                        loader.innerHTML = '<p class="text-danger">Error cargando el an├ílisis. Por favor recarga.</p>';
+                    }
+                }
+
+                function renderMatchingUI(data) {
+                    const ma = data.ma || data.matching_analysis || {};
+                    const total = data.exact + data.zone + data.broad;
+                    const container = document.getElementById('matching-content');
+                    
+                    if (total === 0) {
+                        container.innerHTML = `
+                            <div class="text-center p-4" style="opacity: 0.6;">
+                                <i class="fa-solid fa-chart-line fs-3 mb-2" style="color: var(--text-secondary);"></i>
+                                <p class="mb-2" style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    Sin leads activos para este perfil actualmente.
+                                </p>
+                                <p class="mb-0" style="font-size: 0.75rem; color: var(--text-secondary);">
+                                    Zona: ${data.zone_name || 'Sin zona'}
+                                </p>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    const score = ma.demand_score || 0;
+                    let scoreHtml = '';
+                    if (score >= 30) {
+                        scoreHtml = '<div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3" style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2);"><span style="font-size:1rem;">­ƒöÑ</span><div><div style="font-size:0.72rem; font-weight:700; color:#10b981;">Alta oportunidad ┬À Contactar ahora</div><div style="font-size:0.68rem; color:var(--text-secondary);">Demanda activa detectable en esta zona</div></div></div>';
+                    } else if (score >= 10) {
+                        scoreHtml = '<div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3" style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2);"><span style="font-size:1rem;">ÔÜí</span><div><div style="font-size:0.72rem; font-weight:700; color:#f59e0b;">Demanda media ┬À Vale la pena contactar</div><div style="font-size:0.68rem; color:var(--text-secondary);">Hay interesados en zona compatible</div></div></div>';
+                    } else {
+                        scoreHtml = '<div class="mt-2 d-flex align-items-center gap-2 p-2 rounded-3" style="background: rgba(107,114,128,0.08); border: 1px solid rgba(107,114,128,0.15);"><span style="font-size:1rem;">­ƒöì</span><div><div style="font-size:0.72rem; font-weight:700; color:#6b7280;">Revisar precio antes de contactar</div><div style="font-size:0.68rem; color:var(--text-secondary);">Baja demanda detectada actualmente</div></div></div>';
+                    }
+
+                    container.innerHTML = `
+                        <div class="d-flex flex-column gap-3 mb-3">
+                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl" onclick="openLeadModal('exact')" style="background: ${data.exact > 0 ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.02)'}; border: 1px solid ${data.exact > 0 ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-color)'};">
+                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">­ƒÄ»</div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold" style="font-size: 0.85rem; color: ${data.exact > 0 ? '#10b981' : 'var(--text-secondary)'};">Coincidencias exactas</div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Misma comuna + tipo + operaci├│n + rango de precio ┬▒30%</div>
+                                </div>
+                                <div style="font-size: 1.5rem; font-weight: 800; color: ${data.exact > 0 ? '#10b981' : 'var(--text-secondary)'}; text-align: right;">${data.exact}</div>
+                            </div>
+
+                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl" onclick="openLeadModal('zone')" style="background: ${data.zone > 0 ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255,255,255,0.02)'}; border: 1px solid ${data.zone > 0 ? 'rgba(99, 102, 241, 0.2)' : 'var(--border-color)'};">
+                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">­ƒôì</div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold" style="font-size: 0.85rem; color: ${data.zone > 0 ? 'var(--accent)' : 'var(--text-secondary)'};">En tu zona (${data.zone_name || 'Sin zona'})</div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Misma macro-zona geogr├ífica</div>
+                                </div>
+                                <div style="font-size: 1.5rem; font-weight: 800; color: ${data.zone > 0 ? 'var(--accent)' : 'var(--text-secondary)'}; text-align: right;">${data.zone}</div>
+                            </div>
+
+                            <div class="match-card-btn d-flex align-items-center gap-3 p-3 rounded-3xl" onclick="openLeadModal('broad')" style="background: ${data.broad > 0 ? 'rgba(245, 158, 11, 0.06)' : 'rgba(255,255,255,0.02)'}; border: 1px solid ${data.broad > 0 ? 'rgba(245, 158, 11, 0.15)' : 'var(--border-color)'};">
+                                <div style="font-size: 1.6rem; width: 40px; text-align: center;">­ƒöì</div>
+                                <div class="flex-grow-1">
+                                    <div class="fw-bold" style="font-size: 0.85rem; color: ${data.broad > 0 ? '#f59e0b' : 'var(--text-secondary)'};">Base de Prospectos</div>
+                                    <div style="font-size: 0.75rem; color: var(--text-secondary);">${data.broad} clientes activos asimilables</div>
+                                    ${ma.active_recent > 0 ? `<div class="mt-1 fw-bold" style="font-size: 0.70rem; color: #10b981;"><i class="fa-solid fa-bolt me-1"></i>${ma.active_recent} activos recientemente</div>` : ''}
+                                </div>
+                                <div style="font-size: 1.5rem; font-weight: 800; color: ${data.broad > 0 ? '#f59e0b' : 'var(--text-secondary)'}; text-align: right;"><i class="fa-solid fa-chevron-right fs-6"></i></div>
+                            </div>
+
+                            <div class="p-3 rounded-3xl mb-3" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color);">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="info-label">Demand Score</span>
+                                    <span class="fw-bold" style="color: var(--accent); font-size: 1.1rem;">${score}</span>
+                                </div>
+                                <div style="height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden;">
+                                    <div style="height: 100%; width: ${Math.min(score / 50 * 100, 100)}%; background: linear-gradient(90deg, #10b981, var(--accent), #f59e0b); border-radius: 3px; transition: width 0.5s ease;"></div>
+                                </div>
+                                <div class="d-flex justify-content-between mt-1" style="font-size: 0.7rem; color: var(--text-secondary);"><span>Baja</span><span>Alta</span></div>
+                                ${scoreHtml}
+                            </div>
+                        </div>
+                    `;
+                }
 
                 function openLeadModal(type) {
                     let leads = matchingLeadsData[type] || [];
-
-                    // Si la categor├¡a espec├¡fica est├í vac├¡a pero hay conteo, 
-                    // intentamos filtrar de top_leads como fallback secundario
                     if (leads.length === 0 && type !== 'top') {
                         leads = (matchingLeadsData['top'] || []).filter(l => l.bucket === type);
                     }
 
-                    // Si sigue vac├¡o y es 'top', ya es top.
-
                     document.getElementById('modalTitle').innerText = "Clientes activos compatibles con esta propiedad";
-
                     const totalCount = matchingLeadsCounts[type] || (type === 'top' ? matchingLeadsData['top'].length : 0);
                     document.getElementById('modalSubtitle').innerText = `Mostrando los perfiles m├ís compatibles (${totalCount})`;
 
-                    // Threshold din├ímico seg├║n operaci├│n (30d arriendo, 60d venta)
-                    const activeThreshold = {{ 30 if (prop.details.operacion and 'ARR' in prop.details.operacion | upper) or(not prop.details.operacion and prop.details.precio_uf and prop.details.precio_uf < 1000) else 60
-                }};
+                    const isArriendo = {{ 'true' if (prop.details.operacion and 'ARR' in prop.details.operacion|upper) or (not prop.details.operacion and prop.details.precio_uf and prop.details.precio_uf < 1000) else 'false' }};
+                    const activeThreshold = isArriendo ? 30 : 60;
 
-                // Ordenar: activos primero, luego hist├│ricos por d├¡as_old
-                leads.sort((a, b) => {
-                    const aActive = (a.days_old !== undefined && a.days_old < activeThreshold);
-                    const bActive = (b.days_old !== undefined && b.days_old < activeThreshold);
-                    if (aActive && !bActive) return -1;
-                    if (!aActive && bActive) return 1;
-                    return (a.days_old || 999) - (b.days_old || 999);
-                });
-
-                const tbody = document.getElementById('leadTableBody');
-                tbody.innerHTML = '';
-
-                if (leads.length === 0) {
-                    tbody.innerHTML = '<div class="text-center py-5 text-secondary">No hay evidencia detallada para este nivel.</div>';
-                } else {
-                    leads.forEach(lead => {
-                        const qualColors = { 'high': '#10b981', 'medium': '#f59e0b', 'low': '#6b7280' };
-                        const qualTexts = { 'high': 'Alta compatibilidad', 'medium': 'Compatibilidad media', 'low': 'Perfil general' };
-                        const qColor = qualColors[lead.quality_label || 'low'];
-                        const qText = qualTexts[lead.quality_label || 'low'];
-
-                        const isRecent = lead.days_old !== undefined && lead.days_old < activeThreshold;
-
-                        // Insertar separador entre activos e hist├│ricos
-                        const prevLead = tbody.lastElementChild;
-                        if (prevLead && prevLead.dataset.recent === 'true' && !isRecent) {
-                            const sep = document.createElement('div');
-                            sep.innerHTML = `<div style="font-size:0.7rem;color:#6b7280;text-transform:uppercase;letter-spacing:1px;padding:4px 0 2px;border-top:1px solid rgba(255,255,255,0.07);margin-top:2px;">ÔÜ¬ Hist├│ricos (m├ís de ${activeThreshold} d├¡as sin actividad)</div>`;
-                            tbody.appendChild(sep);
-                        }
-
-                        // Color del contador de d├¡as
-                        const daysColor = isRecent ? '#10b981' : lead.days_old > 60 ? '#ef4444' : '#f59e0b';
-
-                        const row = document.createElement('div');
-                        row.className = 'd-flex justify-content-between align-items-center p-3 rounded-4';
-                        row.dataset.recent = isRecent ? 'true' : 'false';
-                        row.style.background = isRecent ? 'rgba(16,185,129,0.04)' : 'rgba(255,255,255,0.02)';
-                        row.style.border = `1px solid ${isRecent ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)'}`;
-
-                        row.innerHTML = `
-                        <div>
-                            <div class="text-white fw-bold mb-1" style="font-size: 1.05rem;">
-                                <i class="fa-solid fa-user-circle ${isRecent ? 'text-success' : 'text-secondary'} me-2"></i>${lead.full_name}
-                            </div>
-                            <div class="d-flex flex-wrap gap-2 mt-2">
-                                <span class="badge rounded-pill" style="background: ${qColor}20; color: ${qColor}; font-weight: 500;">
-                                    <i class="fa-solid fa-bullseye me-1"></i>${qText}
-                                </span>
-                                ${isRecent
-                                ? '<span class="badge rounded-pill" style="background:rgba(16,185,129,0.12);color:#10b981;font-weight:500;"><i class="fa-solid fa-bolt me-1"></i>Activo</span>'
-                                : '<span class="badge rounded-pill" style="background:rgba(107,114,128,0.12);color:#6b7280;font-weight:500;"><i class="fa-solid fa-clock me-1"></i>Hist├│rico</span>'
-                            }
-                                <span class="badge rounded-pill" style="background: rgba(99, 102, 241, 0.1); color: #818cf8; font-weight: 500;">
-                                    <i class="fa-solid fa-headset me-1"></i>En gesti├│n por equipo
-                                </span>
-                            </div>
-                        </div>
-                        <div class="text-end" style="min-width: 80px;">
-                            <div class="text-secondary" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px;">Actividad</div>
-                            <div class="fw-bold" style="font-size: 1rem; color: ${daysColor};">
-                                ${lead.days_old == 0 ? 'Hoy' : lead.days_old + ' d├¡as'}
-                            </div>
-                        </div>
-                    `;
-                        tbody.appendChild(row);
+                    leads.sort((a, b) => {
+                        const aActive = (a.days_old !== undefined && a.days_old < activeThreshold);
+                        const bActive = (b.days_old !== undefined && b.days_old < activeThreshold);
+                        if (aActive && !bActive) return -1;
+                        if (!aActive && bActive) return 1;
+                        return (a.days_old || 999) - (b.days_old || 999);
                     });
+
+                    const tbody = document.getElementById('leadTableBody');
+                    tbody.innerHTML = '';
+
+                    if (leads.length === 0) {
+                        tbody.innerHTML = '<div class="text-center py-5 text-secondary">No hay evidencia detallada para este nivel.</div>';
+                    } else {
+                        leads.forEach(lead => {
+                            const qualColors = { 'high': '#10b981', 'medium': '#f59e0b', 'low': '#6b7280' };
+                            const qualTexts = { 'high': 'Alta compatibilidad', 'medium': 'Compatibilidad media', 'low': 'Perfil general' };
+                            const qColor = qualColors[lead.quality_label || 'low'];
+                            const qText = qualTexts[lead.quality_label || 'low'];
+                            const isRecent = lead.days_old !== undefined && lead.days_old < activeThreshold;
+
+                            const prevLead = tbody.lastElementChild;
+                            if (prevLead && prevLead.dataset.recent === 'true' && !isRecent) {
+                                const sep = document.createElement('div');
+                                sep.innerHTML = `<div style="font-size:0.7rem;color:#6b7280;text-transform:uppercase;letter-spacing:1px;padding:4px 0 2px;border-top:1px solid rgba(255,255,255,0.07);margin-top:2px;">ÔÜ¬ Hist├│ricos (m├ís de ${activeThreshold} d├¡as sin actividad)</div>`;
+                                tbody.appendChild(sep);
+                            }
+
+                            const daysColor = isRecent ? '#10b981' : lead.days_old > 60 ? '#ef4444' : '#f59e0b';
+                            const row = document.createElement('div');
+                            row.className = 'd-flex justify-content-between align-items-center p-3 rounded-4';
+                            row.dataset.recent = isRecent ? 'true' : 'false';
+                            row.style.background = isRecent ? 'rgba(16,185,129,0.04)' : 'rgba(255,255,255,0.02)';
+                            row.style.border = `1px solid ${isRecent ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)'}`;
+                            row.innerHTML = `
+                                <div>
+                                    <div class="text-white fw-bold mb-1" style="font-size: 1.05rem;">
+                                        <i class="fa-solid fa-user-circle ${isRecent ? 'text-success' : 'text-secondary'} me-2"></i>${lead.full_name}
+                                    </div>
+                                    <div class="d-flex flex-wrap gap-2 mt-2">
+                                        <span class="badge rounded-pill" style="background: ${qColor}20; color: ${qColor}; font-weight: 500;"><i class="fa-solid fa-bullseye me-1"></i>${qText}</span>
+                                        ${isRecent ? '<span class="badge rounded-pill" style="background:rgba(16,185,129,0.12);color:#10b981;font-weight:500;"><i class="fa-solid fa-bolt me-1"></i>Activo</span>' : '<span class="badge rounded-pill" style="background:rgba(107,114,128,0.12);color:#6b7280;font-weight:500;"><i class="fa-solid fa-clock me-1"></i>Hist├│rico</span>'}
+                                        <span class="badge rounded-pill" style="background: rgba(99, 102, 241, 0.1); color: #818cf8; font-weight: 500;"><i class="fa-solid fa-headset me-1"></i>En gesti├│n por equipo</span>
+                                    </div>
+                                </div>
+                                <div class="text-end" style="min-width: 80px;">
+                                    <div class="text-secondary" style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px;">Actividad</div>
+                                    <div class="fw-bold" style="font-size: 1rem; color: ${daysColor};">${lead.days_old == 0 ? 'Hoy' : lead.days_old + ' d├¡as'}</div>
+                                </div>`;
+                            tbody.appendChild(row);
+                        });
+                    }
+                    document.getElementById('leadVerificationModal').style.display = 'block';
                 }
 
-                document.getElementById('leadVerificationModal').style.display = 'block';
-        }
+                function toggleMobileMenu() {
+                    const sidebar = document.getElementById('sidebar');
+                    const overlay = document.getElementById('sidebarOverlay');
+                    sidebar.classList.toggle('mobile-open');
+                    overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
+                }
+
+                document.querySelectorAll('.nav-link').forEach(link => {
+                    link.addEventListener('click', () => {
+                        if (window.innerWidth <= 768) {
+                            const sidebar = document.getElementById('sidebar');
+                            if (sidebar.classList.contains('mobile-open')) {
+                                toggleMobileMenu();
+                            }
+                        }
+                    });
+                });
 
                 function closeLeadModal() {
                     document.getElementById('leadVerificationModal').style.display = 'none';
                 }
 
-                // Global functions for older script blocks
+                // Cargar al iniciar
+                document.addEventListener('DOMContentLoaded', loadMatchingAnalysis);
+
+                // Global functions
                 window.openLeadModal = openLeadModal;
                 window.closeLeadModal = closeLeadModal;
             </script>

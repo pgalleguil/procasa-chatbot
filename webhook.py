@@ -1252,15 +1252,17 @@ async def view_captaciones(
             classification_filter=classification
         )
     )
+    def _fetch_executives():
+        from chatbot.storage import get_db
+        db = get_db()
+        return list(db["usuarios"].find(
+            {"is_active": True, "rol": "agente", "comunas_interes_norm": {"$exists": True, "$ne": []}},
+            {"nombre": 1, "email": 1}
+        ).sort("nombre", 1))
+
     if user_role in ["admin", "supervisor"]:
         loop2 = asyncio.get_running_loop()
-        exec_task = loop2.run_in_executor(
-            None,
-            lambda: list(get_sync_db()["usuarios"].find(
-                {"is_active": True, "rol": "agente", "comunas_interes_norm": {"$exists": True, "$ne": []}},
-                {"nombre": 1, "email": 1}
-            ).sort("nombre", 1))
-        )
+        exec_task = loop2.run_in_executor(None, _fetch_executives)
         items_total, exec_cursor = await asyncio.gather(list_task, exec_task)
         executives = []
         for u in exec_cursor:

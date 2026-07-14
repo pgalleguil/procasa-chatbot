@@ -1220,6 +1220,8 @@ async def view_captaciones(
     operacion: str = Query(None),
     telefono: str = Query(None),
     classification: str = Query(None),
+    sort_by: str = Query(None),
+    sort_dir: str = Query("desc"),
     page: int = Query(1, ge=1)
 ):
     from chatbot.storage import get_async_db
@@ -1250,7 +1252,9 @@ async def view_captaciones(
             executive_filter=ejecutivo,
             operacion_filter=operacion,
             telefono_filter=telefono,
-            classification_filter=classification
+            classification_filter=classification,
+            sort_by=sort_by,
+            sort_dir=sort_dir
         )
     )
     def _fetch_executives():
@@ -1357,6 +1361,8 @@ async def view_captaciones(
         "current_comuna": current_comuna,
         "current_estado": current_estado,
         "current_ejecutivo": current_ejecutivo,
+        "current_sort_by": sort_by or "",
+        "current_sort_dir": "asc" if sort_dir == "asc" else "desc",
         "executives": executives,
         "pagination": {
             "current_page": page,

@@ -908,6 +908,8 @@
                     {% endfor %}
                 </select>
                 {% endif %}
+                <input type="hidden" name="sort_by" value="{{ current_sort_by }}">
+                <input type="hidden" name="sort_dir" value="{{ current_sort_dir }}">
                 <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
             </form>
 
@@ -918,8 +920,8 @@
                             <th>Comuna</th>
                             <th>Origen</th>
                             <th>Operación</th>
-                            <th class="text-center sortable" data-col="precio" style="cursor:pointer;user-select:none;">Precio <i class="fa-solid fa-sort ms-1"></i></th>
-                            <th class="text-center sortable" data-col="confianza" style="cursor:pointer;user-select:none;">Confianza clasificación <i class="fa-solid fa-sort ms-1"></i></th>
+                            <th class="text-center sortable" data-col="precio" style="cursor:pointer;user-select:none;">Precio <i class="fa-solid {{ 'fa-sort-up' if current_sort_by == 'precio' and current_sort_dir == 'asc' else 'fa-sort-down' if current_sort_by == 'precio' else 'fa-sort' }} ms-1"></i></th>
+                            <th class="text-center sortable" data-col="confianza" style="cursor:pointer;user-select:none;">Confianza clasificación <i class="fa-solid {{ 'fa-sort-up' if current_sort_by == 'confianza' and current_sort_dir == 'asc' else 'fa-sort-down' if current_sort_by == 'confianza' else 'fa-sort' }} ms-1"></i></th>
                             <th class="text-center">Estado</th>
                             <th class="text-center">Antigüedad</th>
                         </tr>
@@ -971,6 +973,7 @@
                     {% if current_estado %}{% set base_url = base_url ~ "estado=" ~ current_estado ~ "&" %}{% endif %}
                     {% if current_ejecutivo %}{% set base_url = base_url ~ "ejecutivo=" ~ current_ejecutivo ~ "&" %}{%
                     endif %}
+                    {% if current_sort_by %}{% set base_url = base_url ~ "sort_by=" ~ current_sort_by ~ "&sort_dir=" ~ current_sort_dir ~ "&" %}{% endif %}
 
                     <a href="{{ base_url }}page={{ pagination.current_page - 1 }}"
                         class="page-btn {{ 'disabled' if not pagination.has_prev }}">
@@ -1243,40 +1246,17 @@
             }
         });
         
-        // Sort columns asc/desc on click
+        // Server-side sorting: applies before pagination to the full filtered dataset.
         document.querySelectorAll('.sortable').forEach(th => {
             th.addEventListener('click', function() {
-                const table = this.closest('table');
-                const tbody = table.querySelector('tbody');
-                const rows = Array.from(tbody.querySelectorAll('tr'));
-                const idx = Array.from(this.parentElement.children).indexOf(this);
-                const arrow = this.querySelector('i');
                 const col = this.dataset.col;
-                const isAsc = arrow.classList.contains('fa-sort-up') ? false :
-                              arrow.classList.contains('fa-sort-down') ? true : true;
-                
-                arrow.className = isAsc ? 'fa-solid fa-sort-up ms-1' : 'fa-solid fa-sort-down ms-1';
-                
-                rows.sort((a, b) => {
-                    let aVal, bVal;
-                    if (col === 'precio') {
-                        aVal = parseFloat(a.cells[idx]?.innerText?.trim().replace(/[^0-9.,]/g,'').replace(/\./g,'').replace(',','.')) || 0;
-                        bVal = parseFloat(b.cells[idx]?.innerText?.trim().replace(/[^0-9.,]/g,'').replace(/\./g,'').replace(',','.')) || 0;
-                    } else if (col === 'confianza') {
-                        let aTxt = a.cells[idx]?.innerText?.trim() || '';
-                        let bTxt = b.cells[idx]?.innerText?.trim() || '';
-                        aVal = aTxt === 'Dueño explícito' ? 0 : aTxt.endsWith('%') ? 100 - parseInt(aTxt) : 999;
-                        bVal = bTxt === 'Dueño explícito' ? 0 : bTxt.endsWith('%') ? 100 - parseInt(bTxt) : 999;
-                    } else {
-                        aVal = a.cells[idx]?.innerText?.trim().toLowerCase() || '';
-                        bVal = b.cells[idx]?.innerText?.trim().toLowerCase() || '';
-                    }
-                    if (typeof aVal === 'number') {
-                        return isAsc ? aVal - bVal : bVal - aVal;
-                    }
-                    return isAsc ? (aVal < bVal ? -1 : aVal > bVal ? 1 : 0) : (bVal < aVal ? -1 : bVal > aVal ? 1 : 0);
-                });
-                rows.forEach(row => tbody.appendChild(row));
+                const params = new URLSearchParams(window.location.search);
+                const currentCol = params.get('sort_by');
+                const currentDir = params.get('sort_dir') || 'desc';
+                params.set('sort_by', col);
+                params.set('sort_dir', currentCol === col && currentDir === 'desc' ? 'asc' : 'desc');
+                params.set('page', '1');
+                window.location.search = params.toString();
             });
         });
 

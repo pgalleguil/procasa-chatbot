@@ -419,7 +419,7 @@ def resolve_operacion(details: dict) -> str:
     op = (details.get("operacion") or "").lower()
     if "arr" in op:
         return "ARRIENDO"
-def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, classification_filter=None):
+def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, classification_filter=None, sort_by=None, sort_dir="desc"):
     db = get_db()
     coll = get_captacion_collection(db)
     
@@ -500,8 +500,9 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     # Cache
     response_cache_key = (
-        f"captacion_resp_v5_{user_role}_{user_name}_{comuna_filter}_{status_filter}_"
-        f"{executive_filter}_{operacion_filter}_{telefono_filter}_{classification_filter}_{page}_{limit}"
+        f"captacion_resp_v6_{user_role}_{user_name}_{comuna_filter}_{status_filter}_"
+        f"{executive_filter}_{operacion_filter}_{telefono_filter}_{classification_filter}_"
+        f"{sort_by}_{sort_dir}_{page}_{limit}"
     )
     cached = get_cached_value(response_cache_key)
     if cached is not None:
@@ -526,10 +527,15 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         available_ops = ["venta", "arriendo"]
     
     skip = (page - 1) * limit
+    sort_fields = {"precio": "precio_uf", "confianza": "classification.confidence"}
+    sort_field = sort_fields.get(sort_by)
+    sort_direction = 1 if str(sort_dir).lower() == "asc" else -1
+    mongo_sort = ([(sort_field, sort_direction), ("_id", -1)] if sort_field
+                  else [("updated_at", -1), ("_id", -1)])
     cursor = coll.find(
         query,
         {"descripcion": 0, "description": 0, "historial": 0}
-    ).sort([("updated_at", -1), ("_id", -1)]).skip(skip).limit(limit)
+    ).sort(mongo_sort).skip(skip).limit(limit)
     
     items_paginated = []
     for doc in cursor:

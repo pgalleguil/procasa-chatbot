@@ -589,7 +589,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     # Cache
     response_cache_key = (
-        f"captacion_resp_v9_{user_role}_{user_name}_{comuna_filters}_{status_filter}_"
+        f"captacion_resp_v10_{user_role}_{user_name}_{comuna_filters}_{status_filter}_"
         f"{executive_filter}_{operacion_filter}_{telefono_filter}_{classification_filter}_"
         f"{sort_by}_{sort_dir}_{page}_{limit}"
     )

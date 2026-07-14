@@ -183,6 +183,7 @@ def test_api_passes_display_fields_to_list_rows():
     assert '"owner_score_display": norm["owner_score_display"]' in content
     assert '"confianza": "classification.confidence"' in content
     assert '"owner_score": "classification.owner_score"' in content
+    assert 'captacion_resp_v10_' in content
 
 
 def test_low_sale_price_is_flagged_without_reclassifying_operation():

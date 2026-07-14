@@ -496,6 +496,12 @@
         }
 
         .price-cell { min-width: 150px; line-height: 1.2; }
+        .operation-text {
+            color: var(--text-primary);
+            font-size: .82rem;
+            font-weight: 600;
+            letter-spacing: .01em;
+        }
         .price-primary {
             color: var(--text-primary);
             font-weight: 700;
@@ -1029,11 +1035,7 @@
                             <td data-label="Comuna"><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</td>
                             <td data-label="Origen">{{ item.portal_label }}</td>
                             <td data-label="Operación">
-                                {% if 'VEN' in item.operacion %}
-                                <span class="badge-custom" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2);">VENTA</span>
-                                {% else %}
-                                <span class="badge-custom" style="background: rgba(99, 102, 241, 0.1); color: var(--accent); border: 1px solid rgba(99, 102, 241, 0.2);">ARRIENDO</span>
-                                {% endif %}
+                                <span class="operation-text">{{ item.operacion|title }}</span>
                             </td>
                             <td class="text-center price-cell" data-label="Precio">
                                 {% if item.precio_uf_display %}

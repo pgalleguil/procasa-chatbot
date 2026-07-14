@@ -178,3 +178,11 @@ def test_multi_commune_and_global_sort_controls_are_wired():
     assert 'data-col="antiguedad"' in template
     assert 'event.shiftKey' in template
     assert 'sort-priority' in template
+
+
+def test_operation_is_plain_neutral_text():
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'templates', 'captacion_list.html')
+    with open(template_path, 'r', encoding='utf-8') as f:
+        template = f.read()
+    assert '<span class="operation-text">{{ item.operacion|title }}</span>' in template
+    assert "background: rgba(16, 185, 129, 0.1); color: #10b981" not in template

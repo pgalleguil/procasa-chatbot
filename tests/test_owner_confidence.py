@@ -127,3 +127,14 @@ def test_html_standalone():
     with open(path, 'r', encoding='utf-8') as f:
         content = f.read()
     assert '{% extends' not in content, "Template must be standalone"
+
+
+def test_api_passes_display_fields_to_list_rows():
+    """Guard the two hand-off points that previously dropped the values."""
+    path = os.path.join(os.path.dirname(__file__), '..', 'api_captacion.py')
+    with open(path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    assert 'result.update(resolve_price_display(doc))' in content
+    assert 'result.update(build_owner_confidence_doc(doc))' in content
+    assert '"precio_display": norm["precio_display"]' in content
+    assert '"owner_confidence_display": norm["owner_confidence_display"]' in content

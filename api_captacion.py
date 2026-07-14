@@ -87,7 +87,7 @@ def normalize_captacion_document(doc):
     
     gestion = doc.get("gestion", {}) or {}
     
-    return {
+    result = {
         "id": str(doc["_id"]),
         "_id": doc["_id"],
         "listing_id": doc.get("listing_id"),
@@ -500,7 +500,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     # Cache
     response_cache_key = (
-        f"captacion_resp_v3_{user_role}_{user_name}_{comuna_filter}_{status_filter}_"
+        f"captacion_resp_v4_{user_role}_{user_name}_{comuna_filter}_{status_filter}_"
         f"{executive_filter}_{operacion_filter}_{telefono_filter}_{classification_filter}_{page}_{limit}"
     )
     cached = get_cached_value(response_cache_key)
@@ -579,6 +579,11 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             "operacion": op_display,
             "precio": str(norm["precio"]).split("Ref.")[0].strip() if norm["precio"] else "S/I",
             "precio_uf": norm["precio_uf"],
+            "precio_display": norm["precio_display"],
+            "owner_confidence_display": norm["owner_confidence_display"],
+            "owner_confidence_sort": norm["owner_confidence_sort"],
+            "owner_confidence_title": norm["owner_confidence_title"],
+            "owner_confidence_type": norm["owner_confidence_type"],
             "uf_m2": uf_m2_val,
             "estado": gestion.get("estado", "NUEVO"),
             "ejecutivo": gestion.get("ejecutivo_asignado") or "Sin asignar",

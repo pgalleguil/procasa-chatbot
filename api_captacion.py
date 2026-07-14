@@ -65,7 +65,9 @@ def normalize_captacion_document(doc):
     seller_name = first("seller_name", "publicador", "details.publicador", "details.vendedor_nombre") or ""
     contacto = first("contact_phone", "whatsapp_phone", "telefono", "details.telefono", "details.whatsapp_phone") or ""
     
-    fotos = first("images", "enlaces_fotos", "details.enlaces_fotos") or []
+    fotos = first("images", "enlaces_fotos", "details.enlaces_fotos", "image_urls") or []
+    if not fotos and isinstance(doc.get("main_image_url"), str) and doc["main_image_url"]:
+        fotos = [doc["main_image_url"]]
     if isinstance(fotos, int):
         fotos = []
     

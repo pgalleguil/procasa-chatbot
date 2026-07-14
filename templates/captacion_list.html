@@ -494,6 +494,13 @@
             margin-top: 4px;
             white-space: nowrap;
         }
+        .price-source-warning {
+            color: #f59e0b;
+            font-size: 0.68rem;
+            font-weight: 600;
+            margin-top: 3px;
+            white-space: nowrap;
+        }
 
         .prop-table tbody tr {
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -958,6 +965,11 @@
                                 {% if item.precio_clp_display %}
                                 <div class="price-secondary">${{ item.precio_clp_display }}</div>
                                 {% endif %}
+                                {% if item.price_source_warning %}
+                                <div class="price-source-warning" title="La operación indica venta, pero el monto publicado por el portal no parece un precio de venta.">
+                                    <i class="fa-solid fa-triangle-exclamation me-1"></i>{{ item.price_source_warning }}
+                                </div>
+                                {% endif %}
                             </td>
                             <td class="text-center" data-label="Confianza clasificación"
                                 data-sort="{{ item.owner_confidence_sort }}"
@@ -986,12 +998,7 @@
                     de {{ total_count }} captaciones
                 </div>
                 <div class="pagination-controls">
-                    {% set base_url = "?" %}
-                    {% if current_comuna %}{% set base_url = base_url ~ "comuna=" ~ current_comuna ~ "&" %}{% endif %}
-                    {% if current_estado %}{% set base_url = base_url ~ "estado=" ~ current_estado ~ "&" %}{% endif %}
-                    {% if current_ejecutivo %}{% set base_url = base_url ~ "ejecutivo=" ~ current_ejecutivo ~ "&" %}{%
-                    endif %}
-                    {% if current_sort_by %}{% set base_url = base_url ~ "sort_by=" ~ current_sort_by ~ "&sort_dir=" ~ current_sort_dir ~ "&" %}{% endif %}
+                    {% set base_url = pagination_base_url %}
 
                     <a href="{{ base_url }}page={{ pagination.current_page - 1 }}"
                         class="page-btn {{ 'disabled' if not pagination.has_prev }}">
@@ -1154,6 +1161,9 @@
                                         <div class="small text-secondary">${{ item.precio_clp_display }}</div>
                                 {% elif item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
                                 <div class="small text-secondary">{{ item.precio }}</div>
+                                 {% endif %}
+                                {% if item.price_source_warning %}
+                                <div class="price-source-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ item.price_source_warning }}</div>
                                 {% endif %}
                             </td>
                             <td class="text-center" data-label="Estado">
@@ -1187,11 +1197,7 @@
                     de {{ total_count }} captaciones
                 </div>
                 <div class="pagination-controls">
-                    {% set base_url = "?" %}
-                    {% if current_comuna %}{% set base_url = base_url ~ "comuna=" ~ current_comuna ~ "&" %}{% endif %}
-                    {% if current_estado %}{% set base_url = base_url ~ "estado=" ~ current_estado ~ "&" %}{% endif %}
-                    {% if current_ejecutivo %}{% set base_url = base_url ~ "ejecutivo=" ~ current_ejecutivo ~ "&" %}{%
-                    endif %}
+                    {% set base_url = pagination_base_url %}
 
                     <a href="{{ base_url }}page={{ pagination.current_page - 1 }}"
                         class="page-btn {{ 'disabled' if not pagination.has_prev }}">

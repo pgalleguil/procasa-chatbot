@@ -5,7 +5,11 @@ import sys, os, pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 os.chdir(os.path.join(os.path.dirname(__file__), '..'))
 
-from owner_confidence import build_owner_confidence_doc, resolve_price_display
+from owner_confidence import (
+    build_owner_confidence_doc,
+    detect_source_price_warning,
+    resolve_price_display,
+)
 
 
 def build_doc(state, sem_status, confidence):
@@ -140,3 +144,18 @@ def test_api_passes_display_fields_to_list_rows():
     assert '"precio_uf_display": norm["precio_uf_display"]' in content
     assert '"precio_clp_display": norm["precio_clp_display"]' in content
     assert '"owner_confidence_display": norm["owner_confidence_display"]' in content
+
+
+def test_low_sale_price_is_flagged_without_reclassifying_operation():
+    assert detect_source_price_warning("VENTA", 8.57, 350000) == "Precio inconsistente en origen"
+    assert detect_source_price_warning("ARRIENDO", 8.57, 350000) == ""
+    assert detect_source_price_warning("VENTA", 3500, 143000000) == ""
+
+
+def test_captacion_route_preserves_active_filters():
+    path = os.path.join(os.path.dirname(__file__), '..', 'webhook.py')
+    with open(path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    assert '"current_operacion": current_operacion' in content
+    assert '"current_telefono": current_telefono' in content
+    assert '"pagination_base_url": pagination_base_url' in content

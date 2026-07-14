@@ -8,7 +8,11 @@ import re
 from bson import ObjectId
 from chatbot.storage import get_db, log_event
 from chatbot.constants import CHILE_TZ, EventType
-from owner_confidence import build_owner_confidence_doc, resolve_price_display
+from owner_confidence import (
+    build_owner_confidence_doc,
+    detect_source_price_warning,
+    resolve_price_display,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -419,6 +423,9 @@ def resolve_operacion(details: dict) -> str:
     op = (details.get("operacion") or "").lower()
     if "arr" in op:
         return "ARRIENDO"
+    return "VENTA"
+
+
 def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, classification_filter=None, sort_by=None, sort_dir="desc"):
     db = get_db()
     coll = get_captacion_collection(db)
@@ -588,6 +595,9 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             "precio_display": norm["precio_display"],
             "precio_uf_display": norm["precio_uf_display"],
             "precio_clp_display": norm["precio_clp_display"],
+            "price_source_warning": detect_source_price_warning(
+                op_display, norm["precio_uf"], norm["precio_clp"]
+            ),
             "owner_confidence_display": norm["owner_confidence_display"],
             "owner_confidence_sort": norm["owner_confidence_sort"],
             "owner_confidence_title": norm["owner_confidence_title"],

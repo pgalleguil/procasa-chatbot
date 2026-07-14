@@ -1281,6 +1281,24 @@ async def view_captaciones(
     current_comuna = comuna
     current_estado = estado
     current_ejecutivo = ejecutivo if ejecutivo and ejecutivo != "Todos" else ""
+    current_operacion = (operacion or "").lower()
+    current_telefono = telefono or ""
+    current_classification = classification or ""
+
+    from urllib.parse import urlencode
+    pagination_query = {
+        key: value for key, value in {
+            "telefono": current_telefono,
+            "comuna": current_comuna,
+            "operacion": current_operacion,
+            "estado": current_estado,
+            "ejecutivo": current_ejecutivo,
+            "classification": current_classification,
+            "sort_by": sort_by or "",
+            "sort_dir": "asc" if sort_dir == "asc" else "desc",
+        }.items() if value
+    }
+    pagination_base_url = "?" + urlencode(pagination_query) + ("&" if pagination_query else "")
     
     # Diagnóstico temporal
     from chatbot.storage import get_db as get_sync_db
@@ -1361,8 +1379,12 @@ async def view_captaciones(
         "current_comuna": current_comuna,
         "current_estado": current_estado,
         "current_ejecutivo": current_ejecutivo,
+        "current_operacion": current_operacion,
+        "current_telefono": current_telefono,
+        "current_classification": current_classification,
         "current_sort_by": sort_by or "",
         "current_sort_dir": "asc" if sort_dir == "asc" else "desc",
+        "pagination_base_url": pagination_base_url,
         "executives": executives,
         "pagination": {
             "current_page": page,

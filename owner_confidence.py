@@ -92,3 +92,20 @@ def resolve_price_display(document):
         "precio_uf_display": uf_display,
         "precio_clp_display": clp_display,
     }
+
+
+def detect_source_price_warning(operation, precio_uf, precio_clp):
+    """Flag implausibly low sale prices without inventing a replacement value."""
+    if str(operation).upper() != "VENTA":
+        return ""
+    try:
+        uf = float(precio_uf or 0)
+    except (TypeError, ValueError):
+        uf = 0
+    try:
+        clp = float(precio_clp or 0)
+    except (TypeError, ValueError):
+        clp = 0
+    if (0 < uf < 100) or (0 < clp < 5_000_000):
+        return "Precio inconsistente en origen"
+    return ""

@@ -1214,7 +1214,7 @@ async def api_reporte_real():
 @app.get("/captacion", response_class=HTMLResponse)
 async def view_captaciones(
     request: Request,
-    comuna: str = Query(None),
+    comuna: list[str] = Query(None),
     estado: str = Query(None),
     ejecutivo: str = Query(None),
     operacion: str = Query(None),
@@ -1278,27 +1278,40 @@ async def view_captaciones(
     items, total_count, available_ops = items_total
     
     # Alinear con nombre de variables del template original
-    current_comuna = comuna
+    current_comunas = [c for c in (comuna or []) if c]
+    current_comuna = current_comunas[0] if len(current_comunas) == 1 else ""
     current_estado = estado
     current_ejecutivo = ejecutivo if ejecutivo and ejecutivo != "Todos" else ""
     current_operacion = (operacion or "").lower()
     current_telefono = telefono or ""
     current_classification = classification or ""
+    sort_keys = [s.strip() for s in str(sort_by or "").split(",") if s.strip()]
+    sort_dirs = [s.strip().lower() for s in str(sort_dir or "").split(",") if s.strip()]
+    current_sorts = {
+        key: {
+            "direction": sort_dirs[index] if index < len(sort_dirs) and sort_dirs[index] in ("asc", "desc") else "desc",
+            "priority": index + 1,
+        }
+        for index, key in enumerate(sort_keys)
+    }
 
     from urllib.parse import urlencode
     pagination_query = {
         key: value for key, value in {
             "telefono": current_telefono,
-            "comuna": current_comuna,
+            "comuna": current_comunas,
             "operacion": current_operacion,
             "estado": current_estado,
             "ejecutivo": current_ejecutivo,
             "classification": current_classification,
             "sort_by": sort_by or "",
-            "sort_dir": "asc" if sort_dir == "asc" else "desc",
+            "sort_dir": ",".join(
+                sort_dirs[index] if index < len(sort_dirs) and sort_dirs[index] in ("asc", "desc") else "desc"
+                for index in range(len(sort_keys))
+            ),
         }.items() if value
     }
-    pagination_base_url = "?" + urlencode(pagination_query) + ("&" if pagination_query else "")
+    pagination_base_url = "?" + urlencode(pagination_query, doseq=True) + ("&" if pagination_query else "")
     
     # Diagnóstico temporal
     from chatbot.storage import get_db as get_sync_db
@@ -1352,8 +1365,10 @@ async def view_captaciones(
             adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_descartado}}),
             adb[Config.CAPTACION_COLLECTION_NAME].distinct("comuna", base_query)
         )
-        from api_captacion import normalize_commune_canonical
-        comunas_clean = sorted(list(set([normalize_commune_canonical(c) for c in comunas_list if c])))
+        comunas_clean = sorted(
+            {str(c).strip() for c in comunas_list if c and str(c).strip()},
+            key=lambda value: value.casefold(),
+        )
         cache_store[cache_key] = {
             'time': now,
             'in_gestion_count': in_gestion_count,
@@ -1377,13 +1392,17 @@ async def view_captaciones(
         "user_role": user_role,
         "user_name": user_name,
         "current_comuna": current_comuna,
+        "current_comunas": current_comunas,
         "current_estado": current_estado,
         "current_ejecutivo": current_ejecutivo,
         "current_operacion": current_operacion,
         "current_telefono": current_telefono,
         "current_classification": current_classification,
         "current_sort_by": sort_by or "",
-        "current_sort_dir": "asc" if sort_dir == "asc" else "desc",
+        "current_sort_dir": ",".join(
+            current_sorts[key]["direction"] for key in sort_keys if key in current_sorts
+        ),
+        "current_sorts": current_sorts,
         "pagination_base_url": pagination_base_url,
         "executives": executives,
         "pagination": {

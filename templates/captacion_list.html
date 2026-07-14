@@ -481,6 +481,19 @@
             opacity: 1;
             color: var(--accent);
         }
+        .sort-priority {
+            background: var(--accent);
+            border-radius: 999px;
+            color: #fff;
+            display: inline-flex;
+            font-size: .62rem;
+            height: 17px;
+            justify-content: center;
+            margin-left: 4px;
+            min-width: 17px;
+            padding: 0 4px;
+            vertical-align: middle;
+        }
 
         .price-cell { min-width: 150px; line-height: 1.2; }
         .price-primary {
@@ -501,6 +514,58 @@
             margin-top: 3px;
             white-space: nowrap;
         }
+        .commune-picker {
+            position: relative;
+            min-width: 230px;
+        }
+        .commune-picker summary {
+            align-items: center;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            height: 42px;
+            justify-content: space-between;
+            list-style: none;
+            padding: 0 18px;
+            white-space: nowrap;
+        }
+        .commune-picker summary::-webkit-details-marker { display: none; }
+        .commune-picker summary::after {
+            content: '\f078';
+            font-family: 'Font Awesome 6 Free';
+            font-size: .72rem;
+            font-weight: 900;
+            margin-left: 14px;
+            opacity: .7;
+        }
+        .commune-picker[open] summary { border-color: var(--accent); }
+        .commune-options {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 14px 35px rgba(0,0,0,.28);
+            left: 0;
+            max-height: 300px;
+            min-width: 260px;
+            overflow-y: auto;
+            padding: 8px;
+            position: absolute;
+            top: calc(100% + 7px);
+            z-index: 20;
+        }
+        .commune-option {
+            align-items: center;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            gap: 10px;
+            padding: 9px 10px;
+        }
+        .commune-option:hover { background: rgba(99,102,241,.12); }
+        .commune-option input { accent-color: var(--accent); }
 
         .prop-table tbody tr {
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -791,6 +856,7 @@
                 gap: 8px;
             }
             .filter-bar .search-box,
+            .filter-bar .commune-picker,
             .filter-bar select,
             .filter-bar .btn-filter {
                 width: 100% !important;
@@ -887,12 +953,21 @@
                     <input type="text" name="telefono" placeholder="Buscar teléfono..."
                         value="{{ current_telefono or '' }}">
                 </div>
-                <select name="comuna" onchange="this.form.submit()">
-                    <option value="">Todas las comunas</option>
+                <details class="commune-picker">
+                    <summary>
+                        {% if current_comunas|length == 1 %}{{ current_comunas[0] }}
+                        {% elif current_comunas|length > 1 %}{{ current_comunas|length }} comunas seleccionadas
+                        {% else %}Todas las comunas{% endif %}
+                    </summary>
+                    <div class="commune-options">
                     {% for c in comunas %}
-                    <option value="{{ c }}" {% if current_comuna == c %}selected{% endif %}>{{ c }}</option>
+                    <label class="commune-option">
+                        <input type="checkbox" name="comuna" value="{{ c }}" {% if c in current_comunas %}checked{% endif %}>
+                        <span>{{ c }}</span>
+                    </label>
                     {% endfor %}
-                </select>
+                    </div>
+                </details>
                 <select name="operacion" onchange="this.form.submit()">
                     <option value="">Todas las operaciones</option>
                     {% if 'venta' in available_ops %}
@@ -935,13 +1010,17 @@
                 <table class="prop-table">
                     <thead>
                         <tr>
-                            <th>Comuna</th>
+                            {% set comuna_sort = current_sorts.get('comuna') %}
+                            <th class="sortable" data-col="comuna" title="Clic: ordenar solo por comuna. Shift + clic: agregar como criterio." style="cursor:pointer;user-select:none;">Comuna <i class="fa-solid {{ 'fa-sort-up' if comuna_sort and comuna_sort.direction == 'asc' else 'fa-sort-down' if comuna_sort else 'fa-sort' }} ms-1"></i>{% if comuna_sort %}<span class="sort-priority">{{ comuna_sort.priority }}</span>{% endif %}</th>
                             <th>Origen</th>
                             <th>Operación</th>
-                            <th class="text-center sortable" data-col="precio" style="cursor:pointer;user-select:none;">Precio <i class="fa-solid {{ 'fa-sort-up' if current_sort_by == 'precio' and current_sort_dir == 'asc' else 'fa-sort-down' if current_sort_by == 'precio' else 'fa-sort' }} ms-1"></i></th>
-                            <th class="text-center sortable" data-col="confianza" style="cursor:pointer;user-select:none;">Confianza clasificación <i class="fa-solid {{ 'fa-sort-up' if current_sort_by == 'confianza' and current_sort_dir == 'asc' else 'fa-sort-down' if current_sort_by == 'confianza' else 'fa-sort' }} ms-1"></i></th>
+                            {% set precio_sort = current_sorts.get('precio') %}
+                            <th class="text-center sortable" data-col="precio" title="Clic: ordenar solo por precio. Shift + clic: agregar como criterio." style="cursor:pointer;user-select:none;">Precio <i class="fa-solid {{ 'fa-sort-up' if precio_sort and precio_sort.direction == 'asc' else 'fa-sort-down' if precio_sort else 'fa-sort' }} ms-1"></i>{% if precio_sort %}<span class="sort-priority">{{ precio_sort.priority }}</span>{% endif %}</th>
+                            {% set confianza_sort = current_sorts.get('confianza') %}
+                            <th class="text-center sortable" data-col="confianza" title="Clic: ordenar solo por confianza. Shift + clic: agregar como criterio." style="cursor:pointer;user-select:none;">Confianza clasificación <i class="fa-solid {{ 'fa-sort-up' if confianza_sort and confianza_sort.direction == 'asc' else 'fa-sort-down' if confianza_sort else 'fa-sort' }} ms-1"></i>{% if confianza_sort %}<span class="sort-priority">{{ confianza_sort.priority }}</span>{% endif %}</th>
                             <th class="text-center">Estado</th>
-                            <th class="text-center">Antigüedad</th>
+                            {% set antiguedad_sort = current_sorts.get('antiguedad') %}
+                            <th class="text-center sortable" data-col="antiguedad" title="Clic: ordenar solo por antigüedad. Shift + clic: agregar como criterio." style="cursor:pointer;user-select:none;">Antigüedad <i class="fa-solid {{ 'fa-sort-up' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'fa-sort-down' if antiguedad_sort else 'fa-sort' }} ms-1"></i>{% if antiguedad_sort %}<span class="sort-priority">{{ antiguedad_sort.priority }}</span>{% endif %}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1091,12 +1170,21 @@
                     <input type="text" name="telefono" placeholder="Buscar teléfono..."
                         value="{{ current_telefono or '' }}">
                 </div>
-                <select name="comuna" onchange="this.form.submit()">
-                    <option value="">Todas las comunas</option>
+                <details class="commune-picker">
+                    <summary>
+                        {% if current_comunas|length == 1 %}{{ current_comunas[0] }}
+                        {% elif current_comunas|length > 1 %}{{ current_comunas|length }} comunas seleccionadas
+                        {% else %}Todas las comunas{% endif %}
+                    </summary>
+                    <div class="commune-options">
                     {% for c in comunas %}
-                    <option value="{{ c }}" {% if current_comuna == c %}selected{% endif %}>{{ c }}</option>
+                    <label class="commune-option">
+                        <input type="checkbox" name="comuna" value="{{ c }}" {% if c in current_comunas %}checked{% endif %}>
+                        <span>{{ c }}</span>
+                    </label>
                     {% endfor %}
-                </select>
+                    </div>
+                </details>
                 <select name="operacion" onchange="this.form.submit()">
                     <option value="">Todas las operaciones</option>
                     {% if 'venta' in available_ops %}
@@ -1130,6 +1218,8 @@
                     {% endfor %}
                 </select>
                 {% endif %}
+                <input type="hidden" name="sort_by" value="{{ current_sort_by }}">
+                <input type="hidden" name="sort_dir" value="{{ current_sort_dir }}">
                 <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
             </form>
 
@@ -1137,11 +1227,13 @@
                 <table class="prop-table">
                     <thead>
                         <tr>
-                            <th>Comuna</th>
+                            {% set comuna_sort = current_sorts.get('comuna') %}
+                            <th class="sortable" data-col="comuna" title="Clic: ordenar solo por comuna. Shift + clic: agregar como criterio." style="cursor:pointer;user-select:none;">Comuna <i class="fa-solid {{ 'fa-sort-up' if comuna_sort and comuna_sort.direction == 'asc' else 'fa-sort-down' if comuna_sort else 'fa-sort' }} ms-1"></i>{% if comuna_sort %}<span class="sort-priority">{{ comuna_sort.priority }}</span>{% endif %}</th>
                             <th>Origen</th>
                             <th class="text-center">Precio</th>
                             <th class="text-center">Estado</th>
-                            <th class="text-center">Antigüedad</th>
+                            {% set antiguedad_sort = current_sorts.get('antiguedad') %}
+                            <th class="text-center sortable" data-col="antiguedad" title="Clic: ordenar solo por antigüedad. Shift + clic: agregar como criterio." style="cursor:pointer;user-select:none;">Antigüedad <i class="fa-solid {{ 'fa-sort-up' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'fa-sort-down' if antiguedad_sort else 'fa-sort' }} ms-1"></i>{% if antiguedad_sort %}<span class="sort-priority">{{ antiguedad_sort.priority }}</span>{% endif %}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1272,13 +1364,30 @@
         
         // Server-side sorting: applies before pagination to the full filtered dataset.
         document.querySelectorAll('.sortable').forEach(th => {
-            th.addEventListener('click', function() {
+            th.addEventListener('click', function(event) {
                 const col = this.dataset.col;
                 const params = new URLSearchParams(window.location.search);
-                const currentCol = params.get('sort_by');
-                const currentDir = params.get('sort_dir') || 'desc';
-                params.set('sort_by', col);
-                params.set('sort_dir', currentCol === col && currentDir === 'desc' ? 'asc' : 'desc');
+                let columns = (params.get('sort_by') || '').split(',').filter(Boolean);
+                let directions = (params.get('sort_dir') || '').split(',').filter(Boolean);
+                while (directions.length < columns.length) directions.push('desc');
+                const existing = columns.indexOf(col);
+
+                if (event.shiftKey) {
+                    if (existing === -1) {
+                        columns.push(col);
+                        directions.push('desc');
+                    } else {
+                        directions[existing] = directions[existing] === 'desc' ? 'asc' : 'desc';
+                    }
+                } else {
+                    const nextDirection = existing === 0 && columns.length === 1 && directions[0] === 'desc'
+                        ? 'asc' : 'desc';
+                    columns = [col];
+                    directions = [nextDirection];
+                }
+
+                params.set('sort_by', columns.join(','));
+                params.set('sort_dir', directions.join(','));
                 params.set('page', '1');
                 window.location.search = params.toString();
             });

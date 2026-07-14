@@ -159,3 +159,22 @@ def test_captacion_route_preserves_active_filters():
     assert '"current_operacion": current_operacion' in content
     assert '"current_telefono": current_telefono' in content
     assert '"pagination_base_url": pagination_base_url' in content
+
+
+def test_multi_commune_and_global_sort_controls_are_wired():
+    api_path = os.path.join(os.path.dirname(__file__), '..', 'api_captacion.py')
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'templates', 'captacion_list.html')
+    with open(api_path, 'r', encoding='utf-8') as f:
+        api = f.read()
+    with open(template_path, 'r', encoding='utf-8') as f:
+        template = f.read()
+    assert 'comuna_filter if isinstance(comuna_filter, (list, tuple))' in api
+    assert '"comuna": "comuna_slug"' in api
+    assert 'any(key == "antiguedad" for key, _ in sort_specs)' in api
+    assert 'sort_by or "").split(",")' in api
+    assert '"$skip": skip' in api and '"$limit": limit' in api
+    assert 'type="checkbox" name="comuna"' in template
+    assert 'data-col="comuna"' in template
+    assert 'data-col="antiguedad"' in template
+    assert 'event.shiftKey' in template
+    assert 'sort-priority' in template

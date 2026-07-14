@@ -435,21 +435,25 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         "origen": "toctoc",
         "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]}
     }
+
+    def add_condition(condition):
+        """Combine independent filters without overwriting another $or."""
+        query.setdefault("$and", []).append(condition)
     
     # RBAC & Filtering
     if user_role in ["admin", "supervisor"]:
         if executive_filter and executive_filter not in ["Todos", "", None]:
             if executive_filter in ["Sin asignar", "__unassigned__"]:
-                query["$or"] = [
+                add_condition({"$or": [
                     {"gestion.ejecutivo_id": {"$exists": False}},
                     {"gestion.ejecutivo_id": None},
-                ]
+                ]})
             else:
-                query["$or"] = [
+                add_condition({"$or": [
                     {"gestion.ejecutivo_id": executive_filter},
                     {"gestion.ejecutivo_email": executive_filter},
                     {"gestion.ejecutivo_asignado": executive_filter},
-                ]
+                ]})
     elif user_role == "agente":
         or_clauses = []
         if user_id:
@@ -459,19 +463,25 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         if user_name:
             or_clauses.append({"gestion.ejecutivo_asignado": user_name})
         if or_clauses:
-            query["$or"] = or_clauses
+            add_condition({"$or": or_clauses})
         else:
             # Sin identificador, no devolver nada
             query["_id"] = None
     
-    if comuna_filter:
-        norm = normalize_commune_canonical(comuna_filter)
-        if norm:
-            query["$or"] = [
-                {"comuna_slug": norm},
-                {"comuna": re.compile(re.escape(comuna_filter), re.I)},
-                {"details.comuna_norm": norm},
-            ]
+    comuna_filters = comuna_filter if isinstance(comuna_filter, (list, tuple)) else [comuna_filter]
+    comuna_filters = [str(c).strip() for c in comuna_filters if c and str(c).strip()]
+    if comuna_filters:
+        commune_clauses = []
+        for commune in comuna_filters:
+            norm = normalize_commune_canonical(commune)
+            if norm:
+                commune_clauses.extend([
+                    {"comuna_slug": norm},
+                    {"comuna": re.compile(f"^{re.escape(commune)}$", re.I)},
+                    {"details.comuna_norm": norm},
+                ])
+        if commune_clauses:
+            add_condition({"$or": commune_clauses})
     
     if classification_filter and classification_filter != "Todos":
         query["classification.state"] = classification_filter
@@ -492,22 +502,22 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     if operacion_filter:
         op_pattern = re.compile(re.escape(operacion_filter), re.I)
-        query["$or"] = [
+        add_condition({"$or": [
             {"operacion": op_pattern},
             {"tipo_operacion": op_pattern},
-        ]
+        ]})
     
     if telefono_filter:
         tel_pattern = re.compile(re.escape(telefono_filter), re.I)
-        query["$or"] = [
+        add_condition({"$or": [
             {"contact_phone": tel_pattern},
             {"whatsapp_phone": tel_pattern},
             {"telefono": tel_pattern},
-        ]
+        ]})
     
     # Cache
     response_cache_key = (
-        f"captacion_resp_v6_{user_role}_{user_name}_{comuna_filter}_{status_filter}_"
+        f"captacion_resp_v7_{user_role}_{user_name}_{comuna_filters}_{status_filter}_"
         f"{executive_filter}_{operacion_filter}_{telefono_filter}_{classification_filter}_"
         f"{sort_by}_{sort_dir}_{page}_{limit}"
     )
@@ -534,15 +544,46 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         available_ops = ["venta", "arriendo"]
     
     skip = (page - 1) * limit
-    sort_fields = {"precio": "precio_uf", "confianza": "classification.confidence"}
-    sort_field = sort_fields.get(sort_by)
-    sort_direction = 1 if str(sort_dir).lower() == "asc" else -1
-    mongo_sort = ([(sort_field, sort_direction), ("_id", -1)] if sort_field
-                  else [("updated_at", -1), ("_id", -1)])
-    cursor = coll.find(
-        query,
-        {"descripcion": 0, "description": 0, "historial": 0}
-    ).sort(mongo_sort).skip(skip).limit(limit)
+    sort_fields = {
+        "comuna": "comuna_slug",
+        "precio": "precio_uf",
+        "confianza": "classification.confidence",
+    }
+    sort_keys = [s.strip() for s in str(sort_by or "").split(",") if s.strip()]
+    sort_dirs = [s.strip().lower() for s in str(sort_dir or "").split(",") if s.strip()]
+    sort_specs = []
+    for index, key in enumerate(sort_keys):
+        if key not in {*sort_fields, "antiguedad"} or key in [s[0] for s in sort_specs]:
+            continue
+        direction = 1 if index < len(sort_dirs) and sort_dirs[index] == "asc" else -1
+        sort_specs.append((key, direction))
+    projection = {"descripcion": 0, "description": 0, "historial": 0}
+    if any(key == "antiguedad" for key, _ in sort_specs):
+        # Antigüedad ascendente = menos días primero, por eso la fecha va
+        # descendente. $ifNull mantiene el orden global aunque falte updated_at.
+        aggregate_sort = {}
+        for key, direction in sort_specs:
+            aggregate_sort["_captacion_sort_date" if key == "antiguedad" else sort_fields[key]] = (
+                -direction if key == "antiguedad" else direction
+            )
+        aggregate_sort["_id"] = -1
+        cursor = coll.aggregate([
+            {"$match": query},
+            {"$addFields": {"_captacion_sort_date": {
+                "$ifNull": ["$updated_at", {
+                    "$ifNull": ["$fecha_publicacion", "$processed_at"]
+                }]
+            }}},
+            {"$sort": aggregate_sort},
+            {"$skip": skip},
+            {"$limit": limit},
+            {"$project": {"descripcion": 0, "description": 0, "historial": 0,
+                           "_captacion_sort_date": 0}},
+        ])
+    else:
+        mongo_sort = ([(sort_fields[key], direction) for key, direction in sort_specs] + [("_id", -1)]
+                      if sort_specs else [("updated_at", -1), ("_id", -1)])
+        cursor = coll.find(query, projection).sort(mongo_sort).skip(skip).limit(limit)
     
     items_paginated = []
     for doc in cursor:

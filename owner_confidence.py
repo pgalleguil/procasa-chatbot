@@ -10,22 +10,12 @@ def build_owner_confidence_doc(doc):
     owner_confidence_title, owner_confidence_type.
     """
     classification = doc.get("classification") or {}
-    semantic = classification.get("semantic_check") or {}
     state = classification.get("state") or classification.get("final_state") or ""
-    status = semantic.get("status") if isinstance(semantic, dict) else None
     confidence = classification.get("confidence")
 
-    if state == "DUE\u00d1O_SEGURO" and status == "SKIPPED_EXPLICIT_OWNER":
-        return {
-            "owner_confidence_display": "Due\u00f1o expl\u00edcito",
-            "owner_confidence_sort": 101,
-            "owner_confidence_title": (
-                "Evidencia expl\u00edcita de propietario encontrada en la publicaci\u00f3n"
-            ),
-            "owner_confidence_type": "explicit",
-        }
-
-    if state == "DUE\u00d1O_SEGURO" and status == "VALID":
+    # This is confidence in the resulting classification. Show it for both
+    # states distributed to the team. For INCIERTO it does not mean owner odds.
+    if state in {"DUE\u00d1O_SEGURO", "INCIERTO"}:
         try:
             value = float(confidence)
             if value <= 1:
@@ -35,7 +25,7 @@ def build_owner_confidence_doc(doc):
                 "owner_confidence_display": f"{round(value)}%",
                 "owner_confidence_sort": round(value),
                 "owner_confidence_title": (
-                    "Confianza de DeepSeek en la clasificaci\u00f3n DUE\u00d1O_SEGURO"
+                    f"Confianza del clasificador en el estado {state}"
                 ),
                 "owner_confidence_type": "percentage",
             }
@@ -46,7 +36,7 @@ def build_owner_confidence_doc(doc):
         "owner_confidence_display": "\u2014",
         "owner_confidence_sort": -1,
         "owner_confidence_title": (
-            "No existe una probabilidad de due\u00f1o calculada"
+            "No existe confianza de clasificaci\u00f3n calculada"
         ),
         "owner_confidence_type": "unknown",
     }

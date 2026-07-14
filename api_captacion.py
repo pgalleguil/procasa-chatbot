@@ -500,7 +500,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     # Cache
     response_cache_key = (
-        f"captacion_resp_v4_{user_role}_{user_name}_{comuna_filter}_{status_filter}_"
+        f"captacion_resp_v5_{user_role}_{user_name}_{comuna_filter}_{status_filter}_"
         f"{executive_filter}_{operacion_filter}_{telefono_filter}_{classification_filter}_{page}_{limit}"
     )
     cached = get_cached_value(response_cache_key)

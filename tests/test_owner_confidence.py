@@ -47,18 +47,18 @@ def test_skipped_explicit_owner():
     """SKIPPED_EXPLICIT_OWNER → 'Dueño explícito', sort=101, type=explicit"""
     doc = build_doc("DUE\u00d1O_SEGURO", "SKIPPED_EXPLICIT_OWNER", 0.98)
     r = build_owner_confidence_doc(doc)
-    assert "expl\u00edcito" in r["owner_confidence_display"]
-    assert r["owner_confidence_sort"] == 101
-    assert r["owner_confidence_type"] == "explicit"
+    assert r["owner_confidence_display"] == "98%"
+    assert r["owner_confidence_sort"] == 98
+    assert r["owner_confidence_type"] == "percentage"
 
 
-def test_incierto_no_confidence():
+def test_incierto_confidence():
     """INCIERTO → '—', sort=-1, type=unknown"""
     doc = build_doc("INCIERTO", "VALID", 0.5)
     r = build_owner_confidence_doc(doc)
-    assert r["owner_confidence_display"] == "\u2014"
-    assert r["owner_confidence_sort"] == -1
-    assert r["owner_confidence_type"] == "unknown"
+    assert r["owner_confidence_display"] == "50%"
+    assert r["owner_confidence_sort"] == 50
+    assert r["owner_confidence_type"] == "percentage"
 
 
 def test_confidence_absent():

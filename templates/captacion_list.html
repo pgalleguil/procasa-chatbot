@@ -919,7 +919,7 @@
                             <th>Origen</th>
                             <th>Operación</th>
                             <th class="text-center sortable" data-col="precio" style="cursor:pointer;user-select:none;">Precio <i class="fa-solid fa-sort ms-1"></i></th>
-                            <th class="text-center sortable" data-col="confianza" style="cursor:pointer;user-select:none;">Confianza dueño <i class="fa-solid fa-sort ms-1"></i></th>
+                            <th class="text-center sortable" data-col="confianza" style="cursor:pointer;user-select:none;">Confianza clasificación <i class="fa-solid fa-sort ms-1"></i></th>
                             <th class="text-center">Estado</th>
                             <th class="text-center">Antigüedad</th>
                         </tr>
@@ -939,7 +939,7 @@
                             <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">{{ item.precio_display }}</div>
                             </td>
-                            <td class="text-center" data-label="Confianza dueño"
+                            <td class="text-center" data-label="Confianza clasificación"
                                 data-sort="{{ item.owner_confidence_sort }}"
                                 title="{{ item.owner_confidence_title }}">
                                 {{ item.owner_confidence_display }}

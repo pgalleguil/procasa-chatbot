@@ -197,3 +197,27 @@ def test_commune_picker_can_be_closed():
     assert 'class="commune-picker-done">Listo</button>' in template
     assert "if (!picker.contains(event.target)) picker.removeAttribute('open')" in template
     assert "event.key === 'Escape'" in template
+
+
+def test_scheduled_captacion_reminder_uses_bitacora_and_clears_field():
+    api_path = os.path.join(os.path.dirname(__file__), '..', 'api_captacion.py')
+    webhook_path = os.path.join(os.path.dirname(__file__), '..', 'webhook.py')
+    with open(api_path, 'r', encoding='utf-8') as f:
+        api = f.read()
+    with open(webhook_path, 'r', encoding='utf-8') as f:
+        webhook = f.read()
+    assert 'str(notes).strip() if notes and str(notes).strip()' in api
+    assert '"gestion.next_followup": None' in webhook
+    assert 'crm_tasks.has_newer_captacion_reminder' in webhook
+
+
+def test_login_preserves_requested_contact_url():
+    webhook_path = os.path.join(os.path.dirname(__file__), '..', 'webhook.py')
+    login_path = os.path.join(os.path.dirname(__file__), '..', 'templates', 'login.html')
+    with open(webhook_path, 'r', encoding='utf-8') as f:
+        webhook = f.read()
+    with open(login_path, 'r', encoding='utf-8') as f:
+        login = f.read()
+    assert 'def _safe_login_next' in webhook
+    assert 'response.set_cookie("login_next"' in webhook
+    assert 'name="next" value="{{ next_url or \'\' }}"' in login

@@ -908,7 +908,10 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
                 "status": "pending",
                 "execute_at": execute_at,
                 "created_at": now,
-                "note": f"Contactar captación: {current_doc.get('details', {}).get('titulo', 'Sin título')} (Score: {current_doc.get('score_captacion', 0)})",
+                "note": (
+                    str(notes).strip() if notes and str(notes).strip()
+                    else f"Contactar captación: {current_doc.get('title') or current_doc.get('details', {}).get('titulo', 'Sin título')} (Score: {current_doc.get('score_captacion', 0)})"
+                ),
                 "agent": user_name
             }
             db["crm_tasks"].insert_one(task)

@@ -231,6 +231,7 @@
             {% endif %}
 
             <form method="POST" action="/login">
+                <input type="hidden" name="next" value="{{ next_url or '' }}">
                 <div class="form-floating mb-3 text-start">
                     <input type="text" class="form-control" id="username" name="username" placeholder="Usuario"
                         required>
@@ -249,7 +250,7 @@
 
             <div class="divider">O ingresa con</div>
 
-            <a href="/login/google" class="btn-google">
+            <a href="/login/google{% if next_url %}?next={{ next_url|urlencode }}{% endif %}" class="btn-google">
                 <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" width="20" height="20">
                 <span>Continuar con Google</span>
             </a>

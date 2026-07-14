@@ -35,7 +35,7 @@ _WARMER_THREAD_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="proc
 
 # === NUEVAS IMPORTACIONES PARA GOOGLE ===
 import httpx 
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import requests
 from fastapi import FastAPI, Cookie, Request, HTTPException, Depends, status, Form, Header, Query, BackgroundTasks
@@ -492,8 +492,17 @@ async def renew_session(user_name: str = Depends(get_current_user)):
 
 # ========================= 3. LOGIN CON GOOGLE =========================
 
+def _safe_login_next(value: str | None) -> str | None:
+    """Accept only local CRM paths as post-login destinations."""
+    if not value or not str(value).startswith("/") or str(value).startswith("//"):
+        return None
+    parsed = urlsplit(str(value))
+    if parsed.scheme or parsed.netloc:
+        return None
+    return parsed.path + (f"?{parsed.query}" if parsed.query else "")
+
 @app.get("/login/google")
-async def login_google():
+async def login_google(request: Request, next: str = Query(None)):
     params = {
         "client_id": Config.GOOGLE_CLIENT_ID,
         "response_type": "code",
@@ -504,7 +513,11 @@ async def login_google():
         "prompt": "select_account"
     }
     url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
-    return RedirectResponse(url)
+    response = RedirectResponse(url)
+    next_url = _safe_login_next(next) or _safe_login_next(request.cookies.get("login_next"))
+    if next_url:
+        response.set_cookie("login_next", next_url, httponly=True, secure=True, samesite="lax", max_age=600)
+    return response
 
 @app.get("/auth/google/callback")
 async def auth_google_callback(request: Request, code: str):
@@ -547,10 +560,12 @@ async def auth_google_callback(request: Request, code: str):
 
         user_sub = user["username"]
         user_rol = user.get("rol", "agente")
-        target_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
+        default_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
+        target_url = _safe_login_next(request.cookies.get("login_next")) or default_url
         access_token_jwt = create_access_token({"sub": user_sub})
         response = RedirectResponse(target_url, status_code=303)
         response.set_cookie(key="access_token", value=access_token_jwt, httponly=True, secure=True, samesite="lax", max_age=7200)
+        response.delete_cookie("login_next")
         logger.info("Conexion a MongoDB exitosa")
         logger.info(f"Sesion iniciada para {email} (Rol: {user_rol})")
         return response
@@ -563,17 +578,22 @@ async def auth_google_callback(request: Request, code: str):
 @app.head("/")
 @app.get("/")
 async def login_get(request: Request):
-    return templates.TemplateResponse(
+    next_url = _safe_login_next(request.query_params.get("next")) or _safe_login_next(request.cookies.get("login_next"))
+    response = templates.TemplateResponse(
         "login.html",
         {
             "request": request,
             "images": get_images(),
-            "error": None
+            "error": request.query_params.get("error"),
+            "next_url": next_url or "",
         }
     )
+    if next_url:
+        response.set_cookie("login_next", next_url, httponly=True, secure=True, samesite="lax", max_age=600)
+    return response
 
 @app.post("/login")
-async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
+async def login_post(request: Request, username: str = Form(...), password: str = Form(...), next: str = Form(None)):
     try:
         from chatbot.storage import get_async_db
         db = get_async_db()
@@ -582,7 +602,8 @@ async def login_post(request: Request, username: str = Form(...), password: str 
         
         if user and verify_password(password, user.get("hashed_password", "")):
             user_rol = user.get("rol", "agente")
-            target_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
+            default_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
+            target_url = _safe_login_next(next) or _safe_login_next(request.cookies.get("login_next")) or default_url
 
             token = create_access_token({"sub": username})
             
@@ -595,6 +616,7 @@ async def login_post(request: Request, username: str = Form(...), password: str 
                 samesite="lax", 
                 max_age=7200
             )
+            response.delete_cookie("login_next")
             return response
         
         return templates.TemplateResponse("login.html", {
@@ -1496,7 +1518,8 @@ async def api_get_matching_leads(request: Request, obj_id: str):
 @app.post("/api/captacion/update")
 async def api_update_captacion(request: Request):
     try:
-        await get_current_user(request)
+        username_str = await get_current_user(request)
+        user_doc = await get_current_user_doc(request)
         data = await request.json()
         obj_id = data.get("id")
         status = data.get("status")
@@ -1504,7 +1527,7 @@ async def api_update_captacion(request: Request):
         next_followup = data.get("next_followup")
         channel = data.get("channel")
         outcome = data.get("outcome")
-        user_name = data.get("user_name", "Sistema")
+        user_name = user_doc.get("nombre", username_str) if user_doc else username_str
         
         if not obj_id or not status:
             raise HTTPException(status_code=400, detail="Faltan datos")
@@ -1774,7 +1797,15 @@ async def unauthorized_exception_handler(request: Request, exc: HTTPException):
     if request.url.path.startswith("/api/"):
         from fastapi.responses import JSONResponse
         return JSONResponse({"status": "error", "message": "Sesión expirada o no autenticado"}, status_code=401)
-    return RedirectResponse(url="/?error=sesion_expirada")
+    requested_url = request.url.path
+    if request.url.query:
+        requested_url += f"?{request.url.query}"
+    response = RedirectResponse(url="/?" + urlencode({
+        "error": "sesion_expirada",
+        "next": requested_url,
+    }))
+    response.set_cookie("login_next", requested_url, httponly=True, secure=True, samesite="lax", max_age=600)
+    return response
 
 # ========================= 9. BACKGROUND LOOPS (REFACTORED) =========================
 
@@ -2053,6 +2084,29 @@ async def check_scheduled_tasks_loop():
                                     {"$set": {"status": "notified", "notified_at": now.isoformat(), "notification_sent_to": ejecutivo}}
                                 )
                             )
+                            if is_captacion:
+                                # Clear the visible reminder only when no newer
+                                # pending reminder exists for this captación.
+                                has_newer_task = await run_db(
+                                    "crm_tasks.has_newer_captacion_reminder",
+                                    lambda: db["crm_tasks"].count_documents({
+                                        "lead_type": "captacion",
+                                        "obj_id": str(task.get("obj_id")),
+                                        "status": "pending",
+                                        "_id": {"$ne": task["_id"]},
+                                    }) > 0,
+                                )
+                                if not has_newer_task:
+                                    await run_db(
+                                        "propiedades_captacion.clear_sent_followup",
+                                        lambda: Config.get_captacion_collection(db).update_one(
+                                            {"_id": lead["_id"]},
+                                            {"$set": {
+                                                "gestion.next_followup": None,
+                                                "gestion.next_followup_sent_at": now,
+                                            }},
+                                        ),
+                                    )
                             # Sleep breve para tareas
                             await asyncio.sleep(6)
                             

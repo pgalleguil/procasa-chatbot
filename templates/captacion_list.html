@@ -471,17 +471,39 @@
         .sortable:hover {
             color: var(--accent);
         }
-        .sortable i {
-            font-size: 0.7rem;
-            opacity: 0.5;
-            transition: opacity 0.2s;
+        .sort-indicator {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            margin-left: 6px;
+            border-radius: 7px;
+            color: var(--text-secondary);
+            background: rgba(148, 163, 184, 0.08);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            transition: all 0.2s ease;
+            vertical-align: middle;
         }
-        .sortable:hover i {
-            opacity: 1;
-        }
-        .sortable .fa-sort-up, .sortable .fa-sort-down {
-            opacity: 1;
+        .sort-indicator i { font-size: 0.68rem; }
+        .sortable:hover .sort-indicator,
+        .sort-indicator.active {
             color: var(--accent);
+            background: rgba(99, 102, 241, 0.14);
+            border-color: rgba(99, 102, 241, 0.28);
+        }
+
+        .price-cell { min-width: 150px; line-height: 1.2; }
+        .price-primary {
+            color: var(--text-primary);
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .price-secondary {
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            margin-top: 4px;
+            white-space: nowrap;
         }
 
         .prop-table tbody tr {
@@ -920,8 +942,8 @@
                             <th>Comuna</th>
                             <th>Origen</th>
                             <th>Operación</th>
-                            <th class="text-center sortable" data-col="precio" style="cursor:pointer;user-select:none;">Precio <i class="fa-solid {{ 'fa-sort-up' if current_sort_by == 'precio' and current_sort_dir == 'asc' else 'fa-sort-down' if current_sort_by == 'precio' else 'fa-sort' }} ms-1"></i></th>
-                            <th class="text-center sortable" data-col="confianza" style="cursor:pointer;user-select:none;">Confianza clasificación <i class="fa-solid {{ 'fa-sort-up' if current_sort_by == 'confianza' and current_sort_dir == 'asc' else 'fa-sort-down' if current_sort_by == 'confianza' else 'fa-sort' }} ms-1"></i></th>
+                            <th class="text-center sortable" data-col="precio" style="cursor:pointer;user-select:none;">Precio <span class="sort-indicator {{ 'active' if current_sort_by == 'precio' }}"><i class="fa-solid {{ 'fa-arrow-up-wide-short' if current_sort_by == 'precio' and current_sort_dir == 'asc' else 'fa-arrow-down-wide-short' }}"></i></span></th>
+                            <th class="text-center sortable" data-col="confianza" style="cursor:pointer;user-select:none;">Confianza clasificación <span class="sort-indicator {{ 'active' if current_sort_by == 'confianza' }}"><i class="fa-solid {{ 'fa-arrow-up-wide-short' if current_sort_by == 'confianza' and current_sort_dir == 'asc' else 'fa-arrow-down-wide-short' }}"></i></span></th>
                             <th class="text-center">Estado</th>
                             <th class="text-center">Antigüedad</th>
                         </tr>
@@ -938,8 +960,15 @@
                                 <span class="badge-custom" style="background: rgba(99, 102, 241, 0.1); color: var(--accent); border: 1px solid rgba(99, 102, 241, 0.2);">ARRIENDO</span>
                                 {% endif %}
                             </td>
-                            <td class="text-center" data-label="Precio">
-                                <div class="fw-bold">{{ item.precio_display }}</div>
+                            <td class="text-center price-cell" data-label="Precio">
+                                {% if item.precio_uf_display %}
+                                <div class="price-primary">UF {{ item.precio_uf_display }}</div>
+                                {% else %}
+                                <div class="price-primary">S/I</div>
+                                {% endif %}
+                                {% if item.precio_clp_display %}
+                                <div class="price-secondary">${{ item.precio_clp_display }}</div>
+                                {% endif %}
                             </td>
                             <td class="text-center" data-label="Confianza clasificación"
                                 data-sort="{{ item.owner_confidence_sort }}"

@@ -7,6 +7,8 @@ os.chdir(os.path.join(os.path.dirname(__file__), '..'))
 
 from owner_confidence import (
     build_owner_confidence_doc,
+    build_classification_confidence_doc,
+    build_owner_score_doc,
     detect_source_price_warning,
     resolve_price_display,
 )
@@ -29,7 +31,7 @@ def test_confidence_95_percent():
     r = build_owner_confidence_doc(doc)
     assert r["owner_confidence_display"] == "95%"
     assert r["owner_confidence_sort"] == 95
-    assert r["owner_confidence_type"] == "percentage"
+    assert r["owner_confidence_type"] == "technical_confidence"
 
 
 def test_confidence_82_string():
@@ -53,7 +55,7 @@ def test_skipped_explicit_owner():
     r = build_owner_confidence_doc(doc)
     assert r["owner_confidence_display"] == "98%"
     assert r["owner_confidence_sort"] == 98
-    assert r["owner_confidence_type"] == "percentage"
+    assert r["owner_confidence_type"] == "technical_confidence"
 
 
 def test_incierto_confidence():
@@ -62,37 +64,54 @@ def test_incierto_confidence():
     r = build_owner_confidence_doc(doc)
     assert r["owner_confidence_display"] == "50%"
     assert r["owner_confidence_sort"] == 50
-    assert r["owner_confidence_type"] == "percentage"
+    assert r["owner_confidence_type"] == "technical_confidence"
 
 
 def test_incierto_classifier_confidence_is_not_owner_probability():
     """30% de confianza en INCIERTO sigue siendo 50% de probabilidad de dueño."""
     doc = build_doc("INCIERTO", "VALID", 0.3)
     r = build_owner_confidence_doc(doc)
-    assert r["owner_confidence_display"] == "50%"
-    assert r["owner_confidence_sort"] == 50
+    assert r["owner_confidence_display"] == "30%"
+    assert r["owner_confidence_sort"] == 30
 
 
 def test_explicit_owner_probability_takes_precedence():
     doc = build_doc("INCIERTO", "VALID", 0.3)
     doc["classification"]["owner_probability"] = 0.65
     r = build_owner_confidence_doc(doc)
-    assert r["owner_confidence_display"] == "65%"
-    assert r["owner_confidence_sort"] == 65
+    assert r["owner_confidence_display"] == "30%"
+    assert r["owner_confidence_sort"] == 30
+
+
+def test_owner_score_takes_precedence_over_probability_and_confidence():
+    doc = build_doc("INCIERTO", "VALID", 0.3)
+    doc["classification"]["owner_probability"] = 0.5
+    doc["classification"]["owner_score"] = 72
+    confidence = build_classification_confidence_doc(doc)
+    score = build_owner_score_doc(doc)
+    assert confidence["classification_confidence_display"] == "30%"
+    assert score["owner_score_display"] == "72 pts"
+    assert score["owner_score_sort"] == 72
+
+
+def test_missing_values_show_si_without_fixed_50_fallback():
+    doc = {"classification": {"state": "INCIERTO"}}
+    assert build_classification_confidence_doc(doc)["classification_confidence_display"] == "S/I"
+    assert build_owner_score_doc(doc)["owner_score_display"] == "S/I"
 
 
 def test_confidence_absent():
     """Missing confidence → '—'"""
     doc = {"classification": {"state": "DUE\u00d1O_SEGURO", "semantic_check": {"status": "VALID"}}}
     r = build_owner_confidence_doc(doc)
-    assert r["owner_confidence_display"] == "\u2014"
+    assert r["owner_confidence_display"] == "S/I"
 
 
 def test_invalid_confidence_value():
     """Invalid confidence string → '—'"""
     doc = build_doc("DUE\u00d1O_SEGURO", "VALID", "INVALIDO")
     r = build_owner_confidence_doc(doc)
-    assert r["owner_confidence_display"] == "\u2014"
+    assert r["owner_confidence_display"] == "S/I"
 
 
 def test_confidence_never_empty():
@@ -160,6 +179,10 @@ def test_api_passes_display_fields_to_list_rows():
     assert '"precio_uf_display": norm["precio_uf_display"]' in content
     assert '"precio_clp_display": norm["precio_clp_display"]' in content
     assert '"owner_confidence_display": norm["owner_confidence_display"]' in content
+    assert '"classification_confidence_display": norm["classification_confidence_display"]' in content
+    assert '"owner_score_display": norm["owner_score_display"]' in content
+    assert '"confianza": "classification.confidence"' in content
+    assert '"owner_score": "classification.owner_score"' in content
 
 
 def test_low_sale_price_is_flagged_without_reclassifying_operation():

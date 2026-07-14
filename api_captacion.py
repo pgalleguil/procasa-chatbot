@@ -10,6 +10,8 @@ from chatbot.storage import get_db, log_event
 from chatbot.constants import CHILE_TZ, EventType
 from owner_confidence import (
     build_owner_confidence_doc,
+    build_classification_confidence_doc,
+    build_owner_score_doc,
     detect_source_price_warning,
     resolve_price_display,
 )
@@ -143,6 +145,8 @@ def normalize_captacion_document(doc):
     }
     result.update(resolve_price_display(doc))
     result.update(build_owner_confidence_doc(doc))
+    result.update(build_classification_confidence_doc(doc))
+    result.update(build_owner_score_doc(doc))
     return result
 
 
@@ -615,7 +619,8 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     sort_fields = {
         "comuna": "comuna_slug",
         "precio": "precio_uf",
-        "confianza": "classification.owner_probability",
+        "confianza": "classification.confidence",
+        "owner_score": "classification.owner_score",
     }
     sort_keys = [s.strip() for s in str(sort_by or "").split(",") if s.strip()]
     sort_dirs = [s.strip().lower() for s in str(sort_dir or "").split(",") if s.strip()]
@@ -712,6 +717,12 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             "owner_confidence_sort": norm["owner_confidence_sort"],
             "owner_confidence_title": norm["owner_confidence_title"],
             "owner_confidence_type": norm["owner_confidence_type"],
+            "classification_confidence_display": norm["classification_confidence_display"],
+            "classification_confidence_sort": norm["classification_confidence_sort"],
+            "classification_confidence_title": norm["classification_confidence_title"],
+            "owner_score_display": norm["owner_score_display"],
+            "owner_score_sort": norm["owner_score_sort"],
+            "owner_score_title": norm["owner_score_title"],
             "uf_m2": uf_m2_val,
             "estado": gestion.get("estado", "NUEVO"),
             "ejecutivo": gestion.get("ejecutivo_asignado") or "Sin asignar",

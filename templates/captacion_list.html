@@ -1061,7 +1061,9 @@
                             {% set precio_sort = current_sorts.get('precio') %}
                             <th class="text-center sortable" data-col="precio" title="Clic: agregar, cambiar dirección o quitar este criterio." style="cursor:pointer;user-select:none;">Precio <i class="fa-solid {{ 'fa-sort-up' if precio_sort and precio_sort.direction == 'asc' else 'fa-sort-down' if precio_sort else 'fa-sort' }} ms-1"></i>{% if precio_sort %}<span class="sort-priority">{{ precio_sort.priority }}</span>{% endif %}</th>
                             {% set confianza_sort = current_sorts.get('confianza') %}
-                            <th class="text-center sortable" data-col="confianza" title="Clic: agregar, cambiar dirección o quitar este criterio." style="cursor:pointer;user-select:none;">Confianza clasificación <i class="fa-solid {{ 'fa-sort-up' if confianza_sort and confianza_sort.direction == 'asc' else 'fa-sort-down' if confianza_sort else 'fa-sort' }} ms-1"></i>{% if confianza_sort %}<span class="sort-priority">{{ confianza_sort.priority }}</span>{% endif %}</th>
+                            <th class="text-center sortable" data-col="confianza" title="Confianza técnica en la categoría. Clic para ordenar." style="cursor:pointer;user-select:none;">Confianza clasificación <i class="fa-solid {{ 'fa-sort-up' if confianza_sort and confianza_sort.direction == 'asc' else 'fa-sort-down' if confianza_sort else 'fa-sort' }} ms-1"></i>{% if confianza_sort %}<span class="sort-priority">{{ confianza_sort.priority }}</span>{% endif %}</th>
+                            {% set owner_score_sort = current_sorts.get('owner_score') %}
+                            <th class="text-center sortable" data-col="owner_score" title="Score independiente basado en señales reales de dueño y corredor. Clic para ordenar." style="cursor:pointer;user-select:none;">Score dueño <i class="fa-solid {{ 'fa-sort-up' if owner_score_sort and owner_score_sort.direction == 'asc' else 'fa-sort-down' if owner_score_sort else 'fa-sort' }} ms-1"></i>{% if owner_score_sort %}<span class="sort-priority">{{ owner_score_sort.priority }}</span>{% endif %}</th>
                             <th class="text-center">Estado</th>
                             {% set antiguedad_sort = current_sorts.get('antiguedad') %}
                             <th class="text-center sortable" data-col="antiguedad" title="Clic: agregar, cambiar dirección o quitar este criterio." style="cursor:pointer;user-select:none;">Antigüedad <i class="fa-solid {{ 'fa-sort-up' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'fa-sort-down' if antiguedad_sort else 'fa-sort' }} ms-1"></i>{% if antiguedad_sort %}<span class="sort-priority">{{ antiguedad_sort.priority }}</span>{% endif %}</th>
@@ -1091,9 +1093,14 @@
                                 {% endif %}
                             </td>
                             <td class="text-center" data-label="Confianza clasificación"
-                                data-sort="{{ item.owner_confidence_sort }}"
-                                title="{{ item.owner_confidence_title }}">
-                                {{ item.owner_confidence_display }}
+                                data-sort="{{ item.classification_confidence_sort }}"
+                                title="{{ item.classification_confidence_title }}">
+                                {{ item.classification_confidence_display }}
+                            </td>
+                            <td class="text-center" data-label="Score dueño"
+                                data-sort="{{ item.owner_score_sort }}"
+                                title="{{ item.owner_score_title }}">
+                                {{ item.owner_score_display }}
                             </td>
                             <td class="text-center" data-label="Estado">
                                 <span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span>

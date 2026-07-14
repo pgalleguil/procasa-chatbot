@@ -103,10 +103,10 @@ class AppConfig:
     deepseek_description_tail_chars: int = field(default_factory=lambda: _env_int("DEEPSEEK_DESCRIPTION_TAIL_CHARS", 2500))
     deepseek_description_snippet_radius: int = field(default_factory=lambda: _env_int("DEEPSEEK_DESCRIPTION_SNIPPET_RADIUS", 350))
     uf_valor_clp: float = field(
-        default_factory=lambda: float(os.getenv("UF_VALOR_CLP", "40842.07"))
+        default_factory=lambda: float(os.getenv("UF_VALOR_CLP", "40844.79"))
     )
     uf_fecha: str = field(
-        default_factory=lambda: os.getenv("UF_FECHA", "2026-07-08")
+        default_factory=lambda: os.getenv("UF_FECHA", "2026-07-14")
     )
     request_timeout_seconds: int = field(default_factory=lambda: _env_int("REQUEST_TIMEOUT_SECONDS", 25))
     user_agent: str = field(

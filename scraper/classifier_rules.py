@@ -217,6 +217,17 @@ def classify_obvious_broker(extracted: dict[str, Any]) -> dict[str, Any] | None:
     if removed:
         return removed
 
+    seller_type = normalize_text(str(extracted.get("seller_type") or ""))
+    badges = normalize_text(str(extracted.get("contact_badges_text") or ""))
+    if seller_type in {"profesional", "empresa", "agente", "corredor"} and "profesional" in badges:
+        return {
+            "state": "CORREDOR_SEGURO",
+            "confidence": 0.99,
+            "reason": "El portal identifica estructuralmente al publicador como profesional.",
+            "evidence": [f"seller_type:{seller_type}", f"contact_badges_text:{badges}"],
+            "source": "structural_rules",
+        }
+
     brand = known_broker_brand_in_strong_fields(extracted)
     if brand:
         return brand

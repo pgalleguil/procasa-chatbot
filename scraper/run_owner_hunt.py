@@ -23,6 +23,7 @@ from discovery import discover_listing_urls
 from downloader import download_html
 from export_reports import export_batch_reports
 from extractor import extract_listing_fields
+from enrich import _enrich_property_fields
 from mongo_store import MongoStore
 from proxy_manager import ProxyManager
 
@@ -164,6 +165,8 @@ def _process_single_record(
     batch_id = str(record.get("batch_id") or config.generate_batch_id())
     download = download_html(url, config, proxy_manager, batch_id=batch_id)
     extracted = extract_listing_fields(download.html, source_url=url)
+    extracted["discovery_comuna"] = record.get("discovery_comuna", "")
+    extracted = _enrich_property_fields(extracted, url, config.uf_valor_clp, config.uf_fecha)
     extracted["html_validation_status"] = download.validation_status
     extracted["html_validation_reason"] = download.validation_reason
     if mongo_store is not None:

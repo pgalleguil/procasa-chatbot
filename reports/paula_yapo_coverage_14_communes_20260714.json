@@ -1,0 +1,271 @@
+{
+  "communes_executed": 14,
+  "all_14_executed": true,
+  "execution": {
+    "entrypoint": "scraper/run_owner_hunt.py",
+    "target_commune_arguments": [
+      "Talca",
+      "San Clemente",
+      "Linares",
+      "Maule",
+      "Pelarco",
+      "Río Claro",
+      "San Rafael",
+      "Colbún",
+      "Longaví",
+      "San Javier",
+      "Villa Alegre",
+      "Yerbas Buenas",
+      "Molina",
+      "Curicó"
+    ],
+    "queries": [
+      "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+      "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+      "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+    ],
+    "pages_visited_total": 15,
+    "return_code": 0,
+    "errors": []
+  },
+  "rows": [
+    {
+      "commune": "Talca",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 26,
+      "duplicates": 26,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "San Clemente",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 0,
+      "duplicates": 0,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "no_matching_tiles_in_first_5_pages_of_each_search",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "Linares",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 2,
+      "duplicates": 2,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "Maule",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 0,
+      "duplicates": 0,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "no_matching_tiles_in_first_5_pages_of_each_search",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "Pelarco",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 0,
+      "duplicates": 0,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "no_matching_tiles_in_first_5_pages_of_each_search",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "Río Claro",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 0,
+      "duplicates": 0,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "no_matching_tiles_in_first_5_pages_of_each_search",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "San Rafael",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 0,
+      "duplicates": 0,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "no_matching_tiles_in_first_5_pages_of_each_search",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "Colbún",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 0,
+      "duplicates": 0,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "no_matching_tiles_in_first_5_pages_of_each_search",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "Longaví",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 0,
+      "duplicates": 0,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "no_matching_tiles_in_first_5_pages_of_each_search",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "San Javier",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 0,
+      "duplicates": 0,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "no_matching_tiles_in_first_5_pages_of_each_search",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "Villa Alegre",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 1,
+      "duplicates": 1,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "Yerbas Buenas",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 0,
+      "duplicates": 0,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "no_matching_tiles_in_first_5_pages_of_each_search",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "Molina",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 1,
+      "duplicates": 1,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    },
+    {
+      "commune": "Curicó",
+      "queries": [
+        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-apartamentos",
+        "https://www.yapo.cl/searchresult/bienes-raices-alquiler-casas"
+      ],
+      "pages_visited": 15,
+      "urls_discovered": 2,
+      "duplicates": 2,
+      "new_publications": 0,
+      "errors": [],
+      "zero_reason": "",
+      "batch_id": "paula_coverage_all14_20260714",
+      "entrypoint": "scraper/run_owner_hunt.py",
+      "return_code": 0
+    }
+  ]
+}

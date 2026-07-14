@@ -162,7 +162,7 @@ COMUNA_TO_REGION = {
 }
 
 
-def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40842.07, uf_fecha: str = "2026-07-08") -> dict[str, Any]:
+def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_fecha: str = "2026-07-14") -> dict[str, Any]:
     origen = "toctoc"
     listing_id = str(raw.get("listing_id") or "").strip()
     url = str(raw.get("url") or raw.get("source_url") or "")
@@ -193,8 +193,14 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40842.07, uf_f
     # --- PRICE: separate UF and CLP, never concatenate ---
     price_raw = str(raw.get("price") or raw.get("precio_raw") or "")
     combined_price_text = f"{raw.get('price_uf','')} {raw.get('price_clp','')} {price_raw}"
-    price_uf_val, price_uf_raw = extract_price_uf(combined_price_text)
-    price_clp_val, price_clp_raw = extract_price_clp(combined_price_text)
+    direct_uf = _parse_float(raw.get("precio_uf") or raw.get("price_uf"))
+    direct_clp = _parse_int(raw.get("precio_clp") or raw.get("price_clp"))
+    parsed_uf, parsed_uf_raw = extract_price_uf(combined_price_text)
+    parsed_clp, parsed_clp_raw = extract_price_clp(combined_price_text)
+    price_uf_val = direct_uf or parsed_uf
+    price_clp_val = direct_clp or parsed_clp
+    price_uf_raw = f"UF {price_uf_val}" if direct_uf else parsed_uf_raw
+    price_clp_raw = f"${price_clp_val}" if direct_clp else parsed_clp_raw
 
     precio_moneda_original = "UF" if price_uf_val else "CLP"
     precio_original_num = price_uf_val if price_uf_val else price_clp_val
@@ -205,6 +211,8 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40842.07, uf_f
     if price_clp_val is not None and price_clp_val > 100_000_000_000:
         price_validation = "INVALID_CLP_RANGE"; price_clp_val = None
 
+    had_original_uf = bool(price_uf_val)
+    had_original_clp = bool(price_clp_val)
     if price_uf_val and not price_clp_val:
         price_clp_val = round(price_uf_val * uf_valor_clp)
         price_clp_raw = f"${price_clp_val:,.0f}"
@@ -280,7 +288,12 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40842.07, uf_f
         "precio_uf": price_uf_val, "precio_clp": price_clp_val,
         "precio_uf_raw": price_uf_raw, "precio_clp_raw": price_clp_raw,
         "uf_valor_usado": uf_valor_clp, "uf_fecha": uf_fecha,
-        "precio_conversion_source": "toctoc_explicit_both_currencies" if price_uf_val and price_clp_val else "calculated_from_uf",
+        "precio_conversion_source": (
+            "toctoc_explicit_both_currencies" if had_original_uf and had_original_clp
+            else "calculated_from_uf" if had_original_uf
+            else "calculated_from_clp" if had_original_clp
+            else "missing"
+        ),
         "precio_validacion": price_validation,
         "dormitorios": None if is_dorm_range else dorm_lo,
         "banos": None if is_ban_range else ban_lo,

@@ -1,0 +1,362 @@
+{
+  "mode": "dry-run",
+  "scope": {
+    "paula": 24,
+    "new": 9,
+    "unique_price_scope": 26
+  },
+  "uf": {
+    "value": 40844.79,
+    "date": "2026-07-14",
+    "source": "SII_UF_2026_OFFICIAL"
+  },
+  "technical_confidence_distribution": {
+    "0.8": 2,
+    "0.6": 10,
+    "0.3": 4,
+    "0.95": 1,
+    "0.5": 5,
+    "0.7": 2
+  },
+  "owner_score_distribution": {
+    "50": 10,
+    "55": 14
+  },
+  "price_uf_calculated": 0,
+  "price_updates": [],
+  "new_price_status": [
+    {
+      "listing_id": "29922547",
+      "origin": "yapo",
+      "precio_clp": 80000000,
+      "precio_uf": 1958.63,
+      "conversion_source": "SII_UF_2026_OFFICIAL"
+    },
+    {
+      "listing_id": "4244544",
+      "origin": "toctoc",
+      "precio_clp": 600000,
+      "precio_uf": 14.69,
+      "conversion_source": "toctoc_explicit_both_currencies"
+    },
+    {
+      "listing_id": "4244553",
+      "origin": "toctoc",
+      "precio_clp": 500000,
+      "precio_uf": 12.24,
+      "conversion_source": "toctoc_explicit_both_currencies"
+    },
+    {
+      "listing_id": "4244565",
+      "origin": "toctoc",
+      "precio_clp": 600000,
+      "precio_uf": 14.69,
+      "conversion_source": "toctoc_explicit_both_currencies"
+    },
+    {
+      "listing_id": "4254937",
+      "origin": "toctoc",
+      "precio_clp": 280000,
+      "precio_uf": 6.86,
+      "conversion_source": "toctoc_explicit_both_currencies"
+    },
+    {
+      "listing_id": "4240288",
+      "origin": "toctoc",
+      "precio_clp": 350000,
+      "precio_uf": 8.57,
+      "conversion_source": "toctoc_explicit_both_currencies"
+    },
+    {
+      "listing_id": "4181850",
+      "origin": "toctoc",
+      "precio_clp": 102520423,
+      "precio_uf": 2510.0,
+      "conversion_source": "toctoc_explicit_both_currencies"
+    },
+    {
+      "listing_id": "4220323",
+      "origin": "toctoc",
+      "precio_clp": 430000,
+      "precio_uf": 10.53,
+      "conversion_source": "toctoc_explicit_both_currencies"
+    },
+    {
+      "listing_id": "2976716",
+      "origin": "toctoc",
+      "precio_clp": 375000,
+      "precio_uf": 9.18,
+      "conversion_source": "toctoc_explicit_both_currencies"
+    }
+  ],
+  "cases": [
+    {
+      "listing_id": "4144773",
+      "origin": "toctoc",
+      "commune": "san-javier",
+      "state": "INCIERTO",
+      "technical_confidence": 0.8,
+      "owner_score": 50,
+      "positive_signals": [],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4218395",
+      "origin": "toctoc",
+      "commune": "san-javier",
+      "state": "INCIERTO",
+      "technical_confidence": 0.6,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4120788",
+      "origin": "toctoc",
+      "commune": "san-javier",
+      "state": "INCIERTO",
+      "technical_confidence": 0.3,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4248794",
+      "origin": "toctoc",
+      "commune": "san-javier",
+      "state": "INCIERTO",
+      "technical_confidence": 0.6,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4167333",
+      "origin": "toctoc",
+      "commune": "san-javier",
+      "state": "DUEÑO_SEGURO",
+      "technical_confidence": 0.95,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "3837675",
+      "origin": "toctoc",
+      "commune": "san-javier",
+      "state": "INCIERTO",
+      "technical_confidence": 0.5,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4157832",
+      "origin": "toctoc",
+      "commune": "san-javier",
+      "state": "INCIERTO",
+      "technical_confidence": 0.5,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4092056",
+      "origin": "toctoc",
+      "commune": "san-javier",
+      "state": "INCIERTO",
+      "technical_confidence": 0.5,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4211158",
+      "origin": "toctoc",
+      "commune": "molina",
+      "state": "INCIERTO",
+      "technical_confidence": 0.8,
+      "owner_score": 50,
+      "positive_signals": [],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "31897034",
+      "origin": "yapo",
+      "commune": "Molina",
+      "state": "INCIERTO",
+      "technical_confidence": 0.6,
+      "owner_score": 50,
+      "positive_signals": [],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "31902324",
+      "origin": "yapo",
+      "commune": "Talca",
+      "state": "INCIERTO",
+      "technical_confidence": 0.6,
+      "owner_score": 50,
+      "positive_signals": [],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "30727724",
+      "origin": "yapo",
+      "commune": "Linares",
+      "state": "INCIERTO",
+      "technical_confidence": 0.6,
+      "owner_score": 50,
+      "positive_signals": [],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "32149681",
+      "origin": "yapo",
+      "commune": "Talca",
+      "state": "INCIERTO",
+      "technical_confidence": 0.3,
+      "owner_score": 50,
+      "positive_signals": [],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "32644406",
+      "origin": "yapo",
+      "commune": "Talca",
+      "state": "INCIERTO",
+      "technical_confidence": 0.3,
+      "owner_score": 50,
+      "positive_signals": [],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "32645282",
+      "origin": "yapo",
+      "commune": "Talca",
+      "state": "INCIERTO",
+      "technical_confidence": 0.7,
+      "owner_score": 50,
+      "positive_signals": [],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "32645311",
+      "origin": "yapo",
+      "commune": "Talca",
+      "state": "INCIERTO",
+      "technical_confidence": 0.3,
+      "owner_score": 50,
+      "positive_signals": [],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "32636927",
+      "origin": "yapo",
+      "commune": "Villa Alegre",
+      "state": "INCIERTO",
+      "technical_confidence": 0.5,
+      "owner_score": 50,
+      "positive_signals": [],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4244544",
+      "origin": "toctoc",
+      "commune": "Linares",
+      "state": "INCIERTO",
+      "technical_confidence": 0.6,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4244553",
+      "origin": "toctoc",
+      "commune": "Linares",
+      "state": "INCIERTO",
+      "technical_confidence": 0.6,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4244565",
+      "origin": "toctoc",
+      "commune": "Linares",
+      "state": "INCIERTO",
+      "technical_confidence": 0.6,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4254937",
+      "origin": "toctoc",
+      "commune": "Linares",
+      "state": "INCIERTO",
+      "technical_confidence": 0.7,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4240288",
+      "origin": "toctoc",
+      "commune": "Villa Alegre",
+      "state": "INCIERTO",
+      "technical_confidence": 0.5,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4181850",
+      "origin": "toctoc",
+      "commune": "Linares",
+      "state": "INCIERTO",
+      "technical_confidence": 0.6,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    },
+    {
+      "listing_id": "4220323",
+      "origin": "toctoc",
+      "commune": "Linares",
+      "state": "INCIERTO",
+      "technical_confidence": 0.6,
+      "owner_score": 55,
+      "positive_signals": [
+        "seller_type_particular (+5): PARTICULAR"
+      ],
+      "negative_signals": []
+    }
+  ]
+}

@@ -1850,13 +1850,18 @@ def distribute_sourced_leads():
 
     eligible_query = {
         "origen": "toctoc",
+        "classification.assignment_ready": True,
+        "classification.exclude_from_assignment": {"$ne": True},
+        "gestion.semantic_review_hold": {"$ne": True},
         "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]},
         "$or": [
             {"gestion.ejecutivo_id": {"$exists": False}},
             {"gestion.ejecutivo_id": None},
         ]
     }
-    props = list(coll.find(eligible_query, {"comuna_slug": 1, "comuna": 1}))
+    props = list(coll.find(eligible_query))
+    from captacion_assignment_eligibility import assignment_eligibility
+    props = [p for p in props if assignment_eligibility(p)[0]]
     logger.info(f"[DISTRIBUCION] {len(props)} propiedades sin asignar.")
 
     assigned = 0
@@ -1877,7 +1882,11 @@ def distribute_sourced_leads():
         from bson import ObjectId
         oid = p["_id"] if isinstance(p["_id"], ObjectId) else ObjectId(p["_id"])
         coll.update_one(
-            {"_id": oid, "$or": [{"gestion.ejecutivo_id": {"$exists": False}}, {"gestion.ejecutivo_id": None}]},
+            {"_id": oid,
+             "classification.assignment_ready": True,
+             "classification.exclude_from_assignment": {"$ne": True},
+             "gestion.semantic_review_hold": {"$ne": True},
+             "$or": [{"gestion.ejecutivo_id": {"$exists": False}}, {"gestion.ejecutivo_id": None}]},
             {"$set": {
                 "gestion.ejecutivo_id": best,
                 "gestion.ejecutivo_asignado": db["usuarios"].find_one({"_id": ObjectId(best) if len(best) == 24 else best}).get("nombre", ""),

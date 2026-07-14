@@ -91,6 +91,7 @@ def run_distribution(dry_run=True):
     # IMPORTANT: single $or combining both state conditions and ejecutivo conditions
     target_query = {
         "origen": "toctoc",
+        "classification.assignment_ready": True,
         "gestion.semantic_review_hold": {"$ne": True},
         "$and": [
             {
@@ -115,6 +116,8 @@ def run_distribution(dry_run=True):
     }
     
     all_targets = list(coll.find(target_query))
+    from captacion_assignment_eligibility import assignment_eligibility
+    all_targets = [p for p in all_targets if assignment_eligibility(p)[0]]
     logger.info(f"Propiedades objetivo: {len(all_targets)}")
     
     # Separar por estado
@@ -328,6 +331,9 @@ def apply_assignments(db, coll, assignments, report):
             {
                 "_id": prop_oid,
                 "origen": "toctoc",
+                "classification.assignment_ready": True,
+                "classification.exclude_from_assignment": {"$ne": True},
+                "gestion.semantic_review_hold": {"$ne": True},
                 "$or": [
                     {"gestion.ejecutivo_id": {"$exists": False}},
                     {"gestion.ejecutivo_id": None},

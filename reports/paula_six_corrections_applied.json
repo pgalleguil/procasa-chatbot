@@ -1,0 +1,114 @@
+{
+  "mode": "APPLY",
+  "count": 6,
+  "plans": [
+    {
+      "listing_id": "32387250",
+      "origin": "yapo",
+      "before": {
+        "state": "INCIERTO",
+        "confidence": 0.3
+      },
+      "after": {
+        "state": "CORREDOR_SEGURO",
+        "confidence": 1.0
+      },
+      "evidence": [
+        "seller_profile_id=17631803",
+        "linked_publications=23",
+        "confirmed_broker_publications=19",
+        "commercial_names=Cima Propiedades | Corredores del Maule. | Díaz y Asociados Ltda. | FDB Propiedades | Grecop Corredores | Presencia Propiedades | Ramiro Inversiones SpA | Tatiana Tapia Propiedades"
+      ],
+      "remove_from_paula": true
+    },
+    {
+      "listing_id": "32387259",
+      "origin": "yapo",
+      "before": {
+        "state": "INCIERTO",
+        "confidence": 0.5
+      },
+      "after": {
+        "state": "CORREDOR_SEGURO",
+        "confidence": 1.0
+      },
+      "evidence": [
+        "seller_profile_id=17631803",
+        "linked_publications=23",
+        "confirmed_broker_publications=19",
+        "commercial_names=Cima Propiedades | Corredores del Maule. | Díaz y Asociados Ltda. | FDB Propiedades | Grecop Corredores | Presencia Propiedades | Ramiro Inversiones SpA | Tatiana Tapia Propiedades"
+      ],
+      "remove_from_paula": true
+    },
+    {
+      "listing_id": "32391134",
+      "origin": "yapo",
+      "before": {
+        "state": "INCIERTO",
+        "confidence": 0.3
+      },
+      "after": {
+        "state": "CORREDOR_SEGURO",
+        "confidence": 1.0
+      },
+      "evidence": [
+        "seller_profile_id=17631803",
+        "linked_publications=23",
+        "confirmed_broker_publications=19",
+        "commercial_names=Cima Propiedades | Corredores del Maule. | Díaz y Asociados Ltda. | FDB Propiedades | Grecop Corredores | Presencia Propiedades | Ramiro Inversiones SpA | Tatiana Tapia Propiedades"
+      ],
+      "remove_from_paula": true
+    },
+    {
+      "listing_id": "32400056",
+      "origin": "yapo",
+      "before": {
+        "state": "INCIERTO",
+        "confidence": 0.6
+      },
+      "after": {
+        "state": "CORREDOR_SEGURO",
+        "confidence": 1.0
+      },
+      "evidence": [
+        "seller_profile_id=17631803",
+        "linked_publications=23",
+        "confirmed_broker_publications=19",
+        "commercial_names=Cima Propiedades | Corredores del Maule. | Díaz y Asociados Ltda. | FDB Propiedades | Grecop Corredores | Presencia Propiedades | Ramiro Inversiones SpA | Tatiana Tapia Propiedades"
+      ],
+      "remove_from_paula": true
+    },
+    {
+      "listing_id": "4092056",
+      "origin": "toctoc",
+      "before": {
+        "state": "DUEÑO_SEGURO",
+        "confidence": 0.95
+      },
+      "after": {
+        "state": "INCIERTO",
+        "confidence": 0.5
+      },
+      "evidence": [
+        "third_person_reference=trato directo con sus dueños"
+      ],
+      "remove_from_paula": false
+    },
+    {
+      "listing_id": "4248794",
+      "origin": "toctoc",
+      "before": {
+        "state": "DUEÑO_SEGURO",
+        "confidence": 0.95
+      },
+      "after": {
+        "state": "INCIERTO",
+        "confidence": 0.6
+      },
+      "evidence": [
+        "weak_owner_context=vendida directamente por sus dueños"
+      ],
+      "remove_from_paula": false
+    }
+  ]
+}

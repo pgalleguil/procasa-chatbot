@@ -176,7 +176,9 @@ def test_multi_commune_and_global_sort_controls_are_wired():
     assert 'type="checkbox" name="comuna"' in template
     assert 'data-col="comuna"' in template
     assert 'data-col="antiguedad"' in template
-    assert 'event.shiftKey' in template
+    assert "columns.push(col)" in template
+    assert "columns.splice(existing, 1)" in template
+    assert 'function clearSorting()' in template
     assert 'sort-priority' in template
 
 

@@ -494,6 +494,24 @@
             padding: 0 4px;
             vertical-align: middle;
         }
+        .sort-help {
+            align-items: center;
+            color: var(--text-secondary);
+            display: flex;
+            font-size: .72rem;
+            gap: 8px;
+            justify-content: flex-end;
+            margin: -6px 0 10px;
+        }
+        .clear-sort-btn {
+            background: transparent;
+            border: 0;
+            color: var(--accent);
+            cursor: pointer;
+            font-size: .72rem;
+            font-weight: 600;
+            padding: 2px 4px;
+        }
 
         .price-cell { min-width: 150px; line-height: 1.2; }
         .operation-text {
@@ -1012,21 +1030,26 @@
                 <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
             </form>
 
+            <div class="sort-help">
+                <span><i class="fa-solid fa-arrow-down-a-z me-1"></i>Clic agrega criterio; segundo clic cambia dirección; tercero lo quita.</span>
+                {% if current_sorts %}<button type="button" class="clear-sort-btn" onclick="clearSorting()">Limpiar orden</button>{% endif %}
+            </div>
+
             <div class="table-responsive">
                 <table class="prop-table">
                     <thead>
                         <tr>
                             {% set comuna_sort = current_sorts.get('comuna') %}
-                            <th class="sortable" data-col="comuna" title="Clic: ordenar solo por comuna. Shift + clic: agregar como criterio." style="cursor:pointer;user-select:none;">Comuna <i class="fa-solid {{ 'fa-sort-up' if comuna_sort and comuna_sort.direction == 'asc' else 'fa-sort-down' if comuna_sort else 'fa-sort' }} ms-1"></i>{% if comuna_sort %}<span class="sort-priority">{{ comuna_sort.priority }}</span>{% endif %}</th>
+                            <th class="sortable" data-col="comuna" title="Clic: agregar, cambiar dirección o quitar este criterio." style="cursor:pointer;user-select:none;">Comuna <i class="fa-solid {{ 'fa-sort-up' if comuna_sort and comuna_sort.direction == 'asc' else 'fa-sort-down' if comuna_sort else 'fa-sort' }} ms-1"></i>{% if comuna_sort %}<span class="sort-priority">{{ comuna_sort.priority }}</span>{% endif %}</th>
                             <th>Origen</th>
                             <th>Operación</th>
                             {% set precio_sort = current_sorts.get('precio') %}
-                            <th class="text-center sortable" data-col="precio" title="Clic: ordenar solo por precio. Shift + clic: agregar como criterio." style="cursor:pointer;user-select:none;">Precio <i class="fa-solid {{ 'fa-sort-up' if precio_sort and precio_sort.direction == 'asc' else 'fa-sort-down' if precio_sort else 'fa-sort' }} ms-1"></i>{% if precio_sort %}<span class="sort-priority">{{ precio_sort.priority }}</span>{% endif %}</th>
+                            <th class="text-center sortable" data-col="precio" title="Clic: agregar, cambiar dirección o quitar este criterio." style="cursor:pointer;user-select:none;">Precio <i class="fa-solid {{ 'fa-sort-up' if precio_sort and precio_sort.direction == 'asc' else 'fa-sort-down' if precio_sort else 'fa-sort' }} ms-1"></i>{% if precio_sort %}<span class="sort-priority">{{ precio_sort.priority }}</span>{% endif %}</th>
                             {% set confianza_sort = current_sorts.get('confianza') %}
-                            <th class="text-center sortable" data-col="confianza" title="Clic: ordenar solo por confianza. Shift + clic: agregar como criterio." style="cursor:pointer;user-select:none;">Confianza clasificación <i class="fa-solid {{ 'fa-sort-up' if confianza_sort and confianza_sort.direction == 'asc' else 'fa-sort-down' if confianza_sort else 'fa-sort' }} ms-1"></i>{% if confianza_sort %}<span class="sort-priority">{{ confianza_sort.priority }}</span>{% endif %}</th>
+                            <th class="text-center sortable" data-col="confianza" title="Clic: agregar, cambiar dirección o quitar este criterio." style="cursor:pointer;user-select:none;">Confianza clasificación <i class="fa-solid {{ 'fa-sort-up' if confianza_sort and confianza_sort.direction == 'asc' else 'fa-sort-down' if confianza_sort else 'fa-sort' }} ms-1"></i>{% if confianza_sort %}<span class="sort-priority">{{ confianza_sort.priority }}</span>{% endif %}</th>
                             <th class="text-center">Estado</th>
                             {% set antiguedad_sort = current_sorts.get('antiguedad') %}
-                            <th class="text-center sortable" data-col="antiguedad" title="Clic: ordenar solo por antigüedad. Shift + clic: agregar como criterio." style="cursor:pointer;user-select:none;">Antigüedad <i class="fa-solid {{ 'fa-sort-up' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'fa-sort-down' if antiguedad_sort else 'fa-sort' }} ms-1"></i>{% if antiguedad_sort %}<span class="sort-priority">{{ antiguedad_sort.priority }}</span>{% endif %}</th>
+                            <th class="text-center sortable" data-col="antiguedad" title="Clic: agregar, cambiar dirección o quitar este criterio." style="cursor:pointer;user-select:none;">Antigüedad <i class="fa-solid {{ 'fa-sort-up' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'fa-sort-down' if antiguedad_sort else 'fa-sort' }} ms-1"></i>{% if antiguedad_sort %}<span class="sort-priority">{{ antiguedad_sort.priority }}</span>{% endif %}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1225,17 +1248,22 @@
                 <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
             </form>
 
+            <div class="sort-help">
+                <span>Clic agrega criterio; segundo clic cambia dirección; tercero lo quita.</span>
+                {% if current_sorts %}<button type="button" class="clear-sort-btn" onclick="clearSorting()">Limpiar orden</button>{% endif %}
+            </div>
+
             <div class="table-responsive">
                 <table class="prop-table">
                     <thead>
                         <tr>
                             {% set comuna_sort = current_sorts.get('comuna') %}
-                            <th class="sortable" data-col="comuna" title="Clic: ordenar solo por comuna. Shift + clic: agregar como criterio." style="cursor:pointer;user-select:none;">Comuna <i class="fa-solid {{ 'fa-sort-up' if comuna_sort and comuna_sort.direction == 'asc' else 'fa-sort-down' if comuna_sort else 'fa-sort' }} ms-1"></i>{% if comuna_sort %}<span class="sort-priority">{{ comuna_sort.priority }}</span>{% endif %}</th>
+                            <th class="sortable" data-col="comuna" title="Clic: agregar, cambiar dirección o quitar este criterio." style="cursor:pointer;user-select:none;">Comuna <i class="fa-solid {{ 'fa-sort-up' if comuna_sort and comuna_sort.direction == 'asc' else 'fa-sort-down' if comuna_sort else 'fa-sort' }} ms-1"></i>{% if comuna_sort %}<span class="sort-priority">{{ comuna_sort.priority }}</span>{% endif %}</th>
                             <th>Origen</th>
                             <th class="text-center">Precio</th>
                             <th class="text-center">Estado</th>
                             {% set antiguedad_sort = current_sorts.get('antiguedad') %}
-                            <th class="text-center sortable" data-col="antiguedad" title="Clic: ordenar solo por antigüedad. Shift + clic: agregar como criterio." style="cursor:pointer;user-select:none;">Antigüedad <i class="fa-solid {{ 'fa-sort-up' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'fa-sort-down' if antiguedad_sort else 'fa-sort' }} ms-1"></i>{% if antiguedad_sort %}<span class="sort-priority">{{ antiguedad_sort.priority }}</span>{% endif %}</th>
+                            <th class="text-center sortable" data-col="antiguedad" title="Clic: agregar, cambiar dirección o quitar este criterio." style="cursor:pointer;user-select:none;">Antigüedad <i class="fa-solid {{ 'fa-sort-up' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'fa-sort-down' if antiguedad_sort else 'fa-sort' }} ms-1"></i>{% if antiguedad_sort %}<span class="sort-priority">{{ antiguedad_sort.priority }}</span>{% endif %}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1374,26 +1402,35 @@
                 while (directions.length < columns.length) directions.push('desc');
                 const existing = columns.indexOf(col);
 
-                if (event.shiftKey) {
-                    if (existing === -1) {
-                        columns.push(col);
-                        directions.push('desc');
-                    } else {
-                        directions[existing] = directions[existing] === 'desc' ? 'asc' : 'desc';
-                    }
+                if (existing === -1) {
+                    columns.push(col);
+                    directions.push('desc');
+                } else if (directions[existing] === 'desc') {
+                    directions[existing] = 'asc';
                 } else {
-                    const nextDirection = existing === 0 && columns.length === 1 && directions[0] === 'desc'
-                        ? 'asc' : 'desc';
-                    columns = [col];
-                    directions = [nextDirection];
+                    columns.splice(existing, 1);
+                    directions.splice(existing, 1);
                 }
 
-                params.set('sort_by', columns.join(','));
-                params.set('sort_dir', directions.join(','));
+                if (columns.length) {
+                    params.set('sort_by', columns.join(','));
+                    params.set('sort_dir', directions.join(','));
+                } else {
+                    params.delete('sort_by');
+                    params.delete('sort_dir');
+                }
                 params.set('page', '1');
                 window.location.search = params.toString();
             });
         });
+
+        function clearSorting() {
+            const params = new URLSearchParams(window.location.search);
+            params.delete('sort_by');
+            params.delete('sort_dir');
+            params.set('page', '1');
+            window.location.search = params.toString();
+        }
 
         function filterByGrupoEstado(grupo) {
             const form = document.querySelector('.filter-bar');

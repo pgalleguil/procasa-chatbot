@@ -8,6 +8,7 @@ import re
 from bson import ObjectId
 from chatbot.storage import get_db, log_event
 from chatbot.constants import CHILE_TZ, EventType
+from owner_confidence import build_owner_confidence, build_owner_confidence_sort, build_owner_confidence_type
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,10 @@ def normalize_captacion_document(doc):
         "probabilidad": doc.get("probabilidad", "S/I"),
         "details": details,
         "classification": classification,
+        # Owner confidence display for the list view
+        "owner_confidence_display": build_owner_confidence(classification, classification_state),
+        "owner_confidence_sort": build_owner_confidence_sort(classification, classification_state),
+        "owner_confidence_type": build_owner_confidence_type(classification, classification_state),
     }
 
 def _invalidate_detail_cache(obj_id):

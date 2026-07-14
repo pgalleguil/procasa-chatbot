@@ -468,11 +468,6 @@
             border-bottom: none;
         }
 
-        .sortable {
-            cursor: pointer;
-            user-select: none;
-            transition: color 0.2s;
-        }
         .sortable:hover {
             color: var(--accent);
         }
@@ -920,12 +915,13 @@
                 <table class="prop-table">
                     <thead>
                         <tr>
-                            <th class="sortable" data-col="comuna">Comuna <i class="fa-solid fa-sort ms-1"></i></th>
-                            <th class="sortable" data-col="origen">Origen <i class="fa-solid fa-sort ms-1"></i></th>
-                            <th class="sortable" data-col="operacion">Operación <i class="fa-solid fa-sort ms-1"></i></th>
-                            <th class="text-center sortable" data-col="precio_uf">Precio <i class="fa-solid fa-sort ms-1"></i></th>
-                            <th class="text-center sortable" data-col="estado">Estado <i class="fa-solid fa-sort ms-1"></i></th>
-                            <th class="text-center sortable" data-col="antiguedad">Antigüedad <i class="fa-solid fa-sort ms-1"></i></th>
+                            <th>Comuna</th>
+                            <th>Origen</th>
+                            <th>Operación</th>
+                            <th class="text-center sortable" data-col="precio" style="cursor:pointer;user-select:none;">Precio <i class="fa-solid fa-sort ms-1"></i></th>
+                            <th class="text-center sortable" data-col="confianza" style="cursor:pointer;user-select:none;">Confianza dueño <i class="fa-solid fa-sort ms-1"></i></th>
+                            <th class="text-center">Estado</th>
+                            <th class="text-center">Antigüedad</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -943,7 +939,7 @@
                             <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}
-                                            {% set uf_tmp = "{:,.1f}".format(item.precio_uf)|replace(",","#").replace(".",",")|replace("#",".") %}
+                                            {% set uf_tmp = "{:,.1f}"|format(item.precio_uf)|replace(",","#")|replace(".",",")|replace("#",".") %}
                                             UF {{ uf_tmp[:-2] if uf_tmp.endswith(',0') else uf_tmp }}
                                     {% else %}
                                     S/I
@@ -957,6 +953,15 @@
                             </td>
                             <td class="text-center" data-label="Estado">
                                 <span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span>
+                            </td>
+                            <td class="text-center" data-label="Confianza dueño">
+                                {% if item.owner_confidence_type == 'explicit' %}
+                                <span class="badge-custom" style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);" title="Clasificado por evidencia explícita encontrada en la publicación">Dueño explícito</span>
+                                {% elif item.owner_confidence_type == 'percentage' %}
+                                <span class="fw-bold" style="color:var(--success-color);" title="Confianza de DeepSeek en la clasificación DUEÑO_SEGURO">{{ item.owner_confidence_display }}</span>
+                                {% else %}
+                                <span class="text-secondary" title="No existe una probabilidad de dueño calculada">{{ item.owner_confidence_display }}</span>
+                                {% endif %}
                             </td>
                             <td class="text-center" data-label="Antiguedad">
                                 <div class="small fw-bold">Hace {{ item.dias_en_portal }} días</div>
@@ -1135,7 +1140,7 @@
                             <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}
-                                            {% set uf_tmp = "{:,.1f}".format(item.precio_uf)|replace(",","#").replace(".",",")|replace("#",".") %}
+                                            {% set uf_tmp = "{:,.1f}"|format(item.precio_uf)|replace(",","#")|replace(".",",")|replace("#",".") %}
                                             UF {{ uf_tmp[:-2] if uf_tmp.endswith(',0') else uf_tmp }}
                                     {% else %}
                                     S/I
@@ -1255,49 +1260,39 @@
             }
         });
         
-        // Client-side table sorting
+        // Sort columns asc/desc on click
         document.querySelectorAll('.sortable').forEach(th => {
             th.addEventListener('click', function() {
                 const table = this.closest('table');
                 const tbody = table.querySelector('tbody');
                 const rows = Array.from(tbody.querySelectorAll('tr'));
-                const col = this.dataset.col;
                 const idx = Array.from(this.parentElement.children).indexOf(this);
                 const arrow = this.querySelector('i');
-                
-                // Determine sort direction
+                const col = this.dataset.col;
                 const isAsc = arrow.classList.contains('fa-sort-up') ? false :
                               arrow.classList.contains('fa-sort-down') ? true : true;
                 
-                // Reset all arrows
-                document.querySelectorAll('.sortable i').forEach(ic => {
-                    ic.className = 'fa-solid fa-sort ms-1';
-                });
-                
-                // Set direction
                 arrow.className = isAsc ? 'fa-solid fa-sort-up ms-1' : 'fa-solid fa-sort-down ms-1';
                 
                 rows.sort((a, b) => {
-                    let aVal = a.cells[idx]?.dataset[col] || a.cells[idx]?.innerText?.trim() || '';
-                    let bVal = b.cells[idx]?.dataset[col] || b.cells[idx]?.innerText?.trim() || '';
-                    
-                    // Numeric sort for price/antiguedad
-                    if (col === 'precio_uf') {
-                        aVal = parseFloat(a.cells[idx]?.querySelector('[data-precio-uf]')?.dataset?.precioUf) || 0;
-                        bVal = parseFloat(b.cells[idx]?.querySelector('[data-precio-uf]')?.dataset?.precioUf) || 0;
-                    } else if (col === 'antiguedad') {
-                        aVal = parseInt(aVal.replace(/[^0-9]/g, '')) || 0;
-                        bVal = parseInt(bVal.replace(/[^0-9]/g, '')) || 0;
+                    let aVal, bVal;
+                    if (col === 'precio') {
+                        aVal = parseFloat(a.cells[idx]?.innerText?.trim().replace(/[^0-9.,]/g,'').replace(/\./g,'').replace(',','.')) || 0;
+                        bVal = parseFloat(b.cells[idx]?.innerText?.trim().replace(/[^0-9.,]/g,'').replace(/\./g,'').replace(',','.')) || 0;
+                    } else if (col === 'confianza') {
+                        let aTxt = a.cells[idx]?.innerText?.trim() || '';
+                        let bTxt = b.cells[idx]?.innerText?.trim() || '';
+                        aVal = aTxt === 'Dueño explícito' ? 0 : aTxt.endsWith('%') ? 100 - parseInt(aTxt) : 999;
+                        bVal = bTxt === 'Dueño explícito' ? 0 : bTxt.endsWith('%') ? 100 - parseInt(bTxt) : 999;
                     } else {
-                        aVal = aVal.toLowerCase();
-                        bVal = bVal.toLowerCase();
+                        aVal = a.cells[idx]?.innerText?.trim().toLowerCase() || '';
+                        bVal = b.cells[idx]?.innerText?.trim().toLowerCase() || '';
                     }
-                    
-                    if (aVal < bVal) return isAsc ? -1 : 1;
-                    if (aVal > bVal) return isAsc ? 1 : -1;
-                    return 0;
+                    if (typeof aVal === 'number') {
+                        return isAsc ? aVal - bVal : bVal - aVal;
+                    }
+                    return isAsc ? (aVal < bVal ? -1 : aVal > bVal ? 1 : 0) : (bVal < aVal ? -1 : bVal > aVal ? 1 : 0);
                 });
-                
                 rows.forEach(row => tbody.appendChild(row));
             });
         });

@@ -468,6 +468,27 @@
             border-bottom: none;
         }
 
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.2s;
+        }
+        .sortable:hover {
+            color: var(--accent);
+        }
+        .sortable i {
+            font-size: 0.7rem;
+            opacity: 0.5;
+            transition: opacity 0.2s;
+        }
+        .sortable:hover i {
+            opacity: 1;
+        }
+        .sortable .fa-sort-up, .sortable .fa-sort-down {
+            opacity: 1;
+            color: var(--accent);
+        }
+
         .prop-table tbody tr {
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             border-radius: 12px;
@@ -899,12 +920,12 @@
                 <table class="prop-table">
                     <thead>
                         <tr>
-                            <th>Comuna</th>
-                            <th>Origen</th>
-                            <th>Operación</th>
-                            <th class="text-center">Precio</th>
-                            <th class="text-center">Estado</th>
-                            <th class="text-center">Antiguedad</th>
+                            <th class="sortable" data-col="comuna">Comuna <i class="fa-solid fa-sort ms-1"></i></th>
+                            <th class="sortable" data-col="origen">Origen <i class="fa-solid fa-sort ms-1"></i></th>
+                            <th class="sortable" data-col="operacion">Operación <i class="fa-solid fa-sort ms-1"></i></th>
+                            <th class="text-center sortable" data-col="precio_uf">Precio <i class="fa-solid fa-sort ms-1"></i></th>
+                            <th class="text-center sortable" data-col="estado">Estado <i class="fa-solid fa-sort ms-1"></i></th>
+                            <th class="text-center sortable" data-col="antiguedad">Antigüedad <i class="fa-solid fa-sort ms-1"></i></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -922,15 +943,16 @@
                             <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}
-                                    UF {{ item.precio_uf if item.precio_uf is integer else "%.1f"|format(item.precio_uf) }}
+                                    {% set uf_entero = item.precio_uf is not none and item.precio_uf == item.precio_uf|int %}
+                                    UF {{ "{:,.0f}".format(item.precio_uf)|replace(",",".") if uf_entero else "{:,.1f}".format(item.precio_uf)|replace(",",".") }}
                                     {% else %}
                                     S/I
                                     {% endif %}
                                 </div>
-                                {% if item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
+                                {% if item.precio_clp %}
+                                <div class="small text-secondary">${{ "{:,.0f}".format(item.precio_clp)|replace(",",".") }}</div>
+                                {% elif item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
                                 <div class="small text-secondary">{{ item.precio }}</div>
-                                {% elif item.precio_clp_raw and item.precio and 'UF' in item.precio|upper %}
-                                <div class="small text-secondary">${{ "{:,}".format(item.precio_clp_raw)|replace(",",".") }}</div>
                                 {% endif %}
                             </td>
                             <td class="text-center" data-label="Estado">
@@ -1113,15 +1135,16 @@
                             <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}
-                                    UF {{ item.precio_uf if item.precio_uf is integer else "%.1f"|format(item.precio_uf) }}
+                                    {% set uf_entero = item.precio_uf is not none and item.precio_uf == item.precio_uf|int %}
+                                    UF {{ "{:,.0f}".format(item.precio_uf)|replace(",",".") if uf_entero else "{:,.1f}".format(item.precio_uf)|replace(",",".") }}
                                     {% else %}
                                     S/I
                                     {% endif %}
                                 </div>
-                                {% if item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
+                                {% if item.precio_clp %}
+                                <div class="small text-secondary">${{ "{:,.0f}".format(item.precio_clp)|replace(",",".") }}</div>
+                                {% elif item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
                                 <div class="small text-secondary">{{ item.precio }}</div>
-                                {% elif item.precio_clp_raw and item.precio and 'UF' in item.precio|upper %}
-                                <div class="small text-secondary">${{ "{:,}".format(item.precio_clp_raw)|replace(",",".") }}</div>
                                 {% endif %}
                             </td>
                             <td class="text-center" data-label="Estado">
@@ -1232,6 +1255,53 @@
             }
         });
         
+        // Client-side table sorting
+        document.querySelectorAll('.sortable').forEach(th => {
+            th.addEventListener('click', function() {
+                const table = this.closest('table');
+                const tbody = table.querySelector('tbody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                const col = this.dataset.col;
+                const idx = Array.from(this.parentElement.children).indexOf(this);
+                const arrow = this.querySelector('i');
+                
+                // Determine sort direction
+                const isAsc = arrow.classList.contains('fa-sort-up') ? false :
+                              arrow.classList.contains('fa-sort-down') ? true : true;
+                
+                // Reset all arrows
+                document.querySelectorAll('.sortable i').forEach(ic => {
+                    ic.className = 'fa-solid fa-sort ms-1';
+                });
+                
+                // Set direction
+                arrow.className = isAsc ? 'fa-solid fa-sort-up ms-1' : 'fa-solid fa-sort-down ms-1';
+                
+                rows.sort((a, b) => {
+                    let aVal = a.cells[idx]?.dataset[col] || a.cells[idx]?.innerText?.trim() || '';
+                    let bVal = b.cells[idx]?.dataset[col] || b.cells[idx]?.innerText?.trim() || '';
+                    
+                    // Numeric sort for price/antiguedad
+                    if (col === 'precio_uf') {
+                        aVal = parseFloat(a.cells[idx]?.querySelector('[data-precio-uf]')?.dataset?.precioUf) || 0;
+                        bVal = parseFloat(b.cells[idx]?.querySelector('[data-precio-uf]')?.dataset?.precioUf) || 0;
+                    } else if (col === 'antiguedad') {
+                        aVal = parseInt(aVal.replace(/[^0-9]/g, '')) || 0;
+                        bVal = parseInt(bVal.replace(/[^0-9]/g, '')) || 0;
+                    } else {
+                        aVal = aVal.toLowerCase();
+                        bVal = bVal.toLowerCase();
+                    }
+                    
+                    if (aVal < bVal) return isAsc ? -1 : 1;
+                    if (aVal > bVal) return isAsc ? 1 : -1;
+                    return 0;
+                });
+                
+                rows.forEach(row => tbody.appendChild(row));
+            });
+        });
+
         function filterByGrupoEstado(grupo) {
             const form = document.querySelector('.filter-bar');
             if (form) {

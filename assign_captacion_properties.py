@@ -85,12 +85,32 @@ def run_distribution(dry_run=True):
             comuna_to_agents[c_norm].append(a)
     
     # 2. Propiedades objetivo
+    # DUENO: VALID or SKIPPED_EXPLICIT_OWNER (no DeepSeek needed)
+    # INCIERTO: only VALID (DeepSeek required)
+    # Never: CORREDOR, PENDING, ERROR, NO_DESCRIPTION, missing semantic_check, on hold
+    # IMPORTANT: single $or combining both state conditions and ejecutivo conditions
     target_query = {
         "origen": "toctoc",
-        "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]},
-        "$or": [
-            {"gestion.ejecutivo_id": {"$exists": False}},
-            {"gestion.ejecutivo_id": None},
+        "gestion.semantic_review_hold": {"$ne": True},
+        "$and": [
+            {
+                "$or": [
+                    {
+                        "classification.state": "DUEÑO_SEGURO",
+                        "classification.semantic_check.status": {"$in": ["VALID", "SKIPPED_EXPLICIT_OWNER"]}
+                    },
+                    {
+                        "classification.state": "INCIERTO",
+                        "classification.semantic_check.status": "VALID"
+                    }
+                ]
+            },
+            {
+                "$or": [
+                    {"gestion.ejecutivo_id": {"$exists": False}},
+                    {"gestion.ejecutivo_id": None},
+                ]
+            }
         ]
     }
     

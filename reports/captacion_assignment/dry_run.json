@@ -1,7 +1,7 @@
 {
   "dry_run": false,
-  "timestamp": "2026-07-13T18:15:20.296305+00:00",
-  "agents_total": 5,
+  "timestamp": "2026-07-14T02:31:04.319570+00:00",
+  "agents_total": 4,
   "agents": [
     {
       "id": "6989c6309dd2ba54e478196b",
@@ -26,9 +26,9 @@
         "santiago-centro"
       ],
       "weight": 1.0,
-      "open_workload_before": 0,
-      "assigned_this_run": 144,
-      "projected_workload": 144
+      "open_workload_before": 133,
+      "assigned_this_run": 0,
+      "projected_workload": 133
     },
     {
       "id": "6989c6309dd2ba54e478196c",
@@ -49,9 +49,9 @@
         "san-miguel"
       ],
       "weight": 1.0,
-      "open_workload_before": 0,
-      "assigned_this_run": 243,
-      "projected_workload": 243
+      "open_workload_before": 227,
+      "assigned_this_run": 0,
+      "projected_workload": 227
     },
     {
       "id": "6989c6309dd2ba54e478196d",
@@ -79,38 +79,9 @@
         "la-reina"
       ],
       "weight": 1.0,
-      "open_workload_before": 0,
-      "assigned_this_run": 266,
-      "projected_workload": 266
-    },
-    {
-      "id": "698b7a829dd2ba54e4782edb",
-      "nombre": "Raquel Cheneaux",
-      "email": "rcheneaux@procasa.cl",
-      "comunas_interes": [
-        "Las Condes",
-        "Ñuñoa",
-        "La Reina",
-        "Vitacura",
-        "Providencia",
-        "La Florida",
-        "Peñalolén",
-        "Macul"
-      ],
-      "comunas_interes_norm": [
-        "las-condes",
-        "nunoa",
-        "la-reina",
-        "vitacura",
-        "providencia",
-        "la-florida",
-        "penalolen",
-        "macul"
-      ],
-      "weight": 1.0,
-      "open_workload_before": 0,
-      "assigned_this_run": 167,
-      "projected_workload": 167
+      "open_workload_before": 228,
+      "assigned_this_run": 0,
+      "projected_workload": 228
     },
     {
       "id": "699653a96a099d6e9612d519",
@@ -128,13 +99,12 @@
       "projected_workload": 0
     }
   ],
-  "target_properties": 1598,
-  "dueno_seguro_count": 91,
-  "incierto_count": 1507,
+  "target_properties": 694,
+  "dueno_seguro_count": 112,
+  "incierto_count": 582,
   "already_assigned": 0,
   "sin_comuna_slug": 0,
   "unmatched_communes": [
-    "algarrobo",
     "alto-hospicio",
     "antofagasta",
     "buin",
@@ -155,7 +125,6 @@
     "el-monte",
     "el-tabo",
     "estacion-central",
-    "futrono",
     "huasco",
     "huechuraba",
     "independencia",
@@ -207,62 +176,18 @@
     "talagante",
     "temuco",
     "til-til",
-    "tome",
     "traiguen",
-    "valdivia",
     "villa-alemana",
     "vina-del-mar"
   ],
-  "unmatched_count": 778,
-  "proposed_assignments": 820,
-  "distribution_by_agent": {
-    "Erika Garrido": {
-      "total": 266,
-      "dueno": 12,
-      "incierto": 254
-    },
-    "Raquel Cheneaux": {
-      "total": 167,
-      "dueno": 8,
-      "incierto": 159
-    },
-    "Susana Ensignia": {
-      "total": 144,
-      "dueno": 6,
-      "incierto": 138
-    },
-    "Mariela Arriagada": {
-      "total": 243,
-      "dueno": 14,
-      "incierto": 229
-    }
-  },
+  "unmatched_count": 694,
+  "proposed_assignments": 0,
+  "distribution_by_agent": {},
   "distribution_by_state": {
-    "DUEÑO_SEGURO": {
-      "Erika Garrido": 12,
-      "Raquel Cheneaux": 8,
-      "Susana Ensignia": 6,
-      "Mariela Arriagada": 14
-    },
-    "INCIERTO": {
-      "Raquel Cheneaux": 159,
-      "Erika Garrido": 254,
-      "Susana Ensignia": 138,
-      "Mariela Arriagada": 229
-    }
+    "DUEÑO_SEGURO": {},
+    "INCIERTO": {}
   },
-  "distribution_by_commune": {
-    "la-florida": 183,
-    "la-reina": 34,
-    "las-condes": 143,
-    "nunoa": 177,
-    "penalolen": 58,
-    "puente-alto": 104,
-    "san-miguel": 108,
-    "macul": 4,
-    "providencia": 7,
-    "vitacura": 2
-  },
-  "max_load_diff": 266,
+  "distribution_by_commune": {},
+  "max_load_diff": 228,
   "yapo_affected": 0
 }

@@ -3,11 +3,12 @@
 import argparse
 import json
 import sys
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from classifier_rules import (
     build_deepseek_context,
@@ -28,6 +29,23 @@ from proxy_manager import ProxyManager
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _listing_id_from_record(record: dict[str, Any]) -> str:
+    if record.get("listing_id"):
+        return str(record["listing_id"])
+    match = re.search(r"/(\d{6,})(?:[/?#]|$)", str(record.get("url") or ""))
+    return match.group(1) if match else ""
+
+
+def _exclude_existing(records: list[dict[str, Any]], config: AppConfig, write_db: bool) -> tuple[list[dict[str, Any]], int]:
+    if not write_db or not records:
+        return records, 0
+    store = MongoStore(config)
+    prepared = [{**record, "listing_id": _listing_id_from_record(record)} for record in records]
+    existing = store.existing_listing_ids([record["listing_id"] for record in prepared])
+    fresh = [record for record in prepared if record["listing_id"] not in existing]
+    return fresh, len(prepared) - len(fresh)
 
 
 def _reports_dir(config: AppConfig) -> Path:
@@ -68,6 +86,7 @@ def _build_parser() -> argparse.ArgumentParser:
     discover.add_argument("--until-end", action="store_true", help="Keep walking pages until the end")
     discover.add_argument("--batch-id", default="", help="Optional batch identifier")
     discover.add_argument("--dry-run", action="store_true", help="Keep discovery local only")
+    discover.add_argument("--target-commune", action="append", default=[], help="Keep only listings whose search tile matches this commune")
 
     process = subparsers.add_parser("process", help="Process discovered HTML")
     process.add_argument("--batch-id", default="", help="Discovery batch to load")
@@ -88,6 +107,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run_full.add_argument("--write-db", action="store_true", help="Write results to MongoDB")
     run_full.add_argument("--dry-run", action="store_true", help="Do not write to MongoDB")
     run_full.add_argument("--no-llm", action="store_true", help="Disable DeepSeek calls")
+    run_full.add_argument("--target-commune", action="append", default=[], help="Keep only listings whose search tile matches this commune")
 
     export = subparsers.add_parser("export", help="Export CSV and summary for a batch")
     export.add_argument("--batch-id", required=True, help="Batch identifier")
@@ -275,6 +295,7 @@ def _cmd_discover(args: argparse.Namespace, config: AppConfig) -> int:
         max_urls=args.max_urls,
         until_end=args.until_end,
         batch_id=batch_id,
+        target_communes=args.target_commune,
     )
     records = [{**record, "batch_id": batch_id} for record in records]
     _save_discovery_batch(config, records, batch_id)
@@ -308,10 +329,13 @@ def _cmd_run_full(args: argparse.Namespace, config: AppConfig) -> int:
         max_urls=args.max_urls,
         until_end=args.until_end,
         batch_id=batch_id,
+        target_communes=args.target_commune,
     )
     records = [{**record, "batch_id": batch_id} for record in records]
     _save_discovery_batch(config, records, batch_id)
 
+    discovered_total = len(records)
+    records, duplicates = _exclude_existing(records, config, args.write_db and not args.dry_run)
     slice_records = records[args.offset : args.offset + args.limit] if args.limit else records[args.offset :]
     processed = _process_batch(slice_records, config, no_llm=args.no_llm, write_db=args.write_db and not args.dry_run)
     processed_path = _processed_path(config, batch_id)
@@ -321,7 +345,9 @@ def _cmd_run_full(args: argparse.Namespace, config: AppConfig) -> int:
         json.dumps(
             {
                 "batch_id": batch_id,
-                "discovered": len(records),
+                "discovered": discovered_total,
+                "new_after_dedup": len(records),
+                "duplicates_discarded": duplicates,
                 "processed": len(processed),
                 "discovery_path": str(_discovery_path(config, batch_id)),
                 "processed_path": str(processed_path),

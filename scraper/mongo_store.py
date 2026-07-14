@@ -107,6 +107,15 @@ class MongoStore:
             "upserted_id": result.upserted_id,
         }
 
+    def existing_listing_ids(self, listing_ids: list[str]) -> set[str]:
+        clean = [str(value) for value in listing_ids if str(value).strip()]
+        if not clean:
+            return set()
+        return {
+            str(doc.get("listing_id"))
+            for doc in self.collection().find({"listing_id": {"$in": clean}}, {"listing_id": 1, "_id": 0})
+        }
+
     def write_many(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         results = []
         for record in records:

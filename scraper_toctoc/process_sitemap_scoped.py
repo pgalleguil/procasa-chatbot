@@ -8,8 +8,8 @@ Usage:
 import argparse, json, sys, os, time, re, hashlib
 from pathlib import Path
 from collections import defaultdict
-sys.path.insert(0, r'C:\Users\pgall\Desktop\Python\ChatBot_v4_Grok\scraper_toctoc')
 sys.path.insert(0, r'C:\Users\pgall\Desktop\Python\ChatBot_v4_Grok')
+sys.path.insert(0, r'C:\Users\pgall\Desktop\Python\ChatBot_v4_Grok\scraper_toctoc')
 os.chdir(r'C:\Users\pgall\Desktop\Python\ChatBot_v4_Grok\scraper_toctoc')
 import requests as r_lib
 from config import AppConfig
@@ -17,7 +17,7 @@ from mongo_store import MongoStore
 from downloader import download_html
 from extractor import extract_listing_fields, fetch_gallery_images
 from enrich import _enrich_property_fields
-from classifier_rules import classify_structural_broker, classify_structural_owner, classify_obvious_broker, build_rule_context
+from classifier_rules import classify_structural_broker, classify_structural_owner, classify_obvious_broker, build_rule_context, detect_explicit_owner
 from deepseek_classifier import DeepSeekStatus as DS
 from html_store import save_html, html_path as hs_html_path, sha256_text
 
@@ -403,9 +403,19 @@ def main():
                                 ds = classify_with_deepseek(ext, rctx, config)
                                 ds_calls += 1
                                 if ds and ds.status == DS.VALID.value:
-                                    cls = {"state": ds.state, "confidence": ds.confidence, "reason": ds.reason, "evidence": ds.evidence, "source": "deepseek", "deepseek_raw": ds.raw, "deepseek_status": ds.status,
+                                    final_state = ds.state
+                                    final_confidence = ds.confidence
+                                    final_reason = ds.reason
+                                    post_validation = ""
+                                    if str(ds.state).startswith("DUE") and not detect_explicit_owner(ext):
+                                        final_state = "INCIERTO"
+                                        final_confidence = min(float(ds.confidence), 0.6)
+                                        final_reason = "Validación posterior: la frase sobre dueño está en tercera persona y no identifica al publicador. " + ds.reason
+                                        post_validation = "third_person_owner_phrase_downgraded"
+                                    cls = {"state": final_state, "confidence": final_confidence, "reason": final_reason, "evidence": ds.evidence, "source": "deepseek", "deepseek_raw": ds.raw, "deepseek_status": ds.status,
                                            "deepseek_payload": ds.payload, "deepseek_message_content": ds.message_content,
-                                           "deepseek_reasoning_content": ds.reasoning_content}
+                                           "deepseek_reasoning_content": ds.reasoning_content,
+                                           "post_validation": post_validation, "deepseek_proposed_state": ds.state}
                                 elif ds:
                                     ds_err += 1; fb += 1
                                     cls = {"state": "INCIERTO", "confidence": 0.3, "reason": f"DS {ds.status}: {ds.reason}. Fallback.", "source": "rules_fallback", "deepseek_status": ds.status}

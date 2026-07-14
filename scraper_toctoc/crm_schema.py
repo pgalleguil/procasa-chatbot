@@ -130,7 +130,7 @@ def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
         "trace": raw.get("trace") or {},
     }
     normalized["assignment_ready"] = (
-        state in ("DUEÃ‘O_SEGURO", "INCIERTO")
+        (state == "INCIERTO" or (state.startswith("DUE") and state.endswith("O_SEGURO")))
         and not raw.get("manual_review_required")
         and ((state_source in ("structural_rules", "rules_json") and rule_state != "INCONCLUSIVE")
              or (state_source == "deepseek" and deepseek_status == "VALID" and bool(ds_raw)))

@@ -12,6 +12,7 @@ from classifier_rules import (
     classify_obvious_broker,
     classify_structural_broker,
     classify_structural_owner,
+    detect_explicit_owner,
     company_shape_in_publisher_fields,
     is_removed_listing,
 )
@@ -561,11 +562,21 @@ def cmd_process(args, config):
                         try:
                             ds = classify_with_deepseek(extracted, rctx, config, db)
                             if ds and ds.status == DSStatus.VALID.value:
-                                classification = {"state": ds.state, "confidence": ds.confidence, "reason": ds.reason,
+                                final_state = ds.state
+                                final_confidence = ds.confidence
+                                final_reason = ds.reason
+                                post_validation = ""
+                                if str(ds.state).startswith("DUE") and not detect_explicit_owner(extracted):
+                                    final_state = "INCIERTO"
+                                    final_confidence = min(float(ds.confidence), 0.6)
+                                    final_reason = "Validación posterior: la frase sobre dueño está en tercera persona y no identifica al publicador. " + ds.reason
+                                    post_validation = "third_person_owner_phrase_downgraded"
+                                classification = {"state": final_state, "confidence": final_confidence, "reason": final_reason,
                                     "evidence": ds.evidence, "source": "deepseek", "deepseek_raw": ds.raw,
                                     "deepseek_status": ds.status, "deepseek_payload": ds.payload,
                                     "deepseek_message_content": ds.message_content,
-                                    "deepseek_reasoning_content": ds.reasoning_content}
+                                    "deepseek_reasoning_content": ds.reasoning_content,
+                                    "post_validation": post_validation, "deepseek_proposed_state": ds.state}
                             elif ds:
                                 rule_state = rctx.get("owner_signal_evidence", []) and "INCONCLUSIVE" or "INCONCLUSIVE"
                                 classification = {"state": "INCONCLUSIVE", "confidence": 0.3,

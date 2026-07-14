@@ -7,5 +7,6 @@ def test_first_person_owner_phrases_are_strong():
 
 def test_third_person_owner_phrases_are_not_strong():
     for phrase in ("trato directo con sus dueños", "vendida directamente por sus dueños",
-                   "propiedad de un solo dueño", "documentación de los propietarios"):
+                   "propiedad de un solo dueño", "documentación de los propietarios",
+                   "Vende dueño", "Dueña arrienda"):
         assert detect_explicit_owner({"description": phrase}) == []

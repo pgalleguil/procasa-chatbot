@@ -14,3 +14,9 @@ def test_rule_state_is_not_overwritten_by_deepseek_final_state():
     assert result["deepseek_payload"] == {"messages": []}
     assert result["deepseek_message_content"] == "{}"
     assert result["assignment_ready"] is True
+
+
+def test_valid_deepseek_owner_state_is_assignment_ready():
+    raw = {"state": "DUEÑO_SEGURO", "rule_state": "INCONCLUSIVE", "source": "deepseek",
+           "deepseek_status": "VALID", "deepseek_raw": {"choices": [{}]}}
+    assert normalize_classification(raw)["assignment_ready"] is True

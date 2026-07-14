@@ -939,14 +939,13 @@
                             <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}
-                                            {% set uf_tmp = "{:,.1f}"|format(item.precio_uf)|replace(",","#")|replace(".",",")|replace("#",".") %}
-                                            UF {{ uf_tmp[:-2] if uf_tmp.endswith(',0') else uf_tmp }}
+                                            UF {{ item.precio_uf_display or 'S/I' }}
                                     {% else %}
                                     S/I
                                     {% endif %}
                                 </div>
-                                {% if item.precio_clp %}
-                                <div class="small text-secondary">${{ "{:,.0f}".format(item.precio_clp)|replace(",",".") }}</div>
+                                        {% if item.precio_clp_display %}
+                                        <div class="small text-secondary">${{ item.precio_clp_display }}</div>
                                 {% elif item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
                                 <div class="small text-secondary">{{ item.precio }}</div>
                                 {% endif %}
@@ -1140,14 +1139,13 @@
                             <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}
-                                            {% set uf_tmp = "{:,.1f}"|format(item.precio_uf)|replace(",","#")|replace(".",",")|replace("#",".") %}
-                                            UF {{ uf_tmp[:-2] if uf_tmp.endswith(',0') else uf_tmp }}
+                                            UF {{ item.precio_uf_display or 'S/I' }}
                                     {% else %}
                                     S/I
                                     {% endif %}
                                 </div>
-                                {% if item.precio_clp %}
-                                <div class="small text-secondary">${{ "{:,.0f}".format(item.precio_clp)|replace(",",".") }}</div>
+                                        {% if item.precio_clp_display %}
+                                        <div class="small text-secondary">${{ item.precio_clp_display }}</div>
                                 {% elif item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
                                 <div class="small text-secondary">{{ item.precio }}</div>
                                 {% endif %}

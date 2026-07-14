@@ -1180,11 +1180,9 @@
                     </div>
                     <div class="d-flex flex-column align-items-end gap-2">
                         <div class="header-price-badge d-flex flex-column align-items-end gap-1">
-                            {% set uf_val = prop.precio_uf or 0 %}
-                            {% set uf_tmp = "{:,.1f}"|format(uf_val)|replace(",","#")|replace(".",",")|replace("#",".") %}
-                            <span>{{ uf_tmp[:-2] if uf_tmp.endswith(',0') else uf_tmp }} UF</span>
-                            {% if prop.precio_clp %}
-                            <span style="font-size: 0.75rem; opacity: 0.8;">${{ "{:,.0f}".format(prop.precio_clp)|replace(",",".") }}</span>
+                            <span>{{ prop.precio_uf_display or 'S/I' }} UF</span>
+                            {% if prop.precio_clp_display %}
+                            <span style="font-size: 0.75rem; opacity: 0.8;">${{ prop.precio_clp_display }}</span>
                             {% endif %}
                         </div>
                         <span

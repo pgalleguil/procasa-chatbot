@@ -40,6 +40,22 @@ def normalize_captacion_document(doc):
         return None
     details = doc.get("details", {}) or {}
     
+    def _format_uf(val):
+        try:
+            v = float(val)
+            s = f"{v:,.1f}".replace(",", "#").replace(".", ",").replace("#", ".")
+            return s[:-2] if s.endswith(",0") else s
+        except (ValueError, TypeError):
+            return ""
+    def _format_clp(val):
+        try:
+            v = float(val)
+            if v == 0:
+                return ""
+            return f"{v:,.0f}".replace(",", ".")
+        except (ValueError, TypeError):
+            return ""
+
     def first(*keys):
         for k in keys:
             v = doc.get(k) or details.get(k)
@@ -62,6 +78,8 @@ def normalize_captacion_document(doc):
     precio_raw = first("precio_raw", "precio", "details.precio") or ""
     precio_uf = first("precio_uf", "details.precio_uf") or 0
     precio_clp = first("precio_clp", "details.precio_clp") or 0
+    precio_uf_display = _format_uf(precio_uf)
+    precio_clp_display = _format_clp(precio_clp)
     
     seller_name = first("seller_name", "publicador", "details.publicador", "details.vendedor_nombre") or ""
     contacto = first("contact_phone", "whatsapp_phone", "telefono", "details.telefono", "details.whatsapp_phone") or ""
@@ -101,6 +119,8 @@ def normalize_captacion_document(doc):
         "precio": precio_raw,
         "precio_uf": precio_uf,
         "precio_clp": precio_clp,
+        "precio_uf_display": precio_uf_display,
+        "precio_clp_display": precio_clp_display,
         "vendedor_nombre": seller_name,
         "vendedor_telefono": contacto,
         "vendedor_email": first("email", "vendedor_email", "details.email"),

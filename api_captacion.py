@@ -585,7 +585,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     # Cache
     response_cache_key = (
-        f"captacion_resp_v8_{user_role}_{user_name}_{comuna_filters}_{status_filter}_"
+        f"captacion_resp_v9_{user_role}_{user_name}_{comuna_filters}_{status_filter}_"
         f"{executive_filter}_{operacion_filter}_{telefono_filter}_{classification_filter}_"
         f"{sort_by}_{sort_dir}_{page}_{limit}"
     )
@@ -615,7 +615,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     sort_fields = {
         "comuna": "comuna_slug",
         "precio": "precio_uf",
-        "confianza": "classification.confidence",
+        "confianza": "classification.owner_probability",
     }
     sort_keys = [s.strip() for s in str(sort_by or "").split(",") if s.strip()]
     sort_dirs = [s.strip().lower() for s in str(sort_dir or "").split(",") if s.strip()]

@@ -11,13 +11,18 @@ def build_owner_confidence_doc(doc):
     """
     classification = doc.get("classification") or {}
     state = classification.get("state") or classification.get("final_state") or ""
-    confidence = classification.get("confidence")
+    classifier_confidence = classification.get("confidence")
 
-    # This is confidence in the resulting classification. Show it for both
-    # states distributed to the team. For INCIERTO it does not mean owner odds.
+    # ``confidence`` measures confidence in the selected label, not the odds
+    # that the advertiser is the owner. Keep those concepts separate. Until a
+    # calibrated owner-probability model is available, INCIERTO is neutral
+    # (50%), unless the scraper explicitly persisted ``owner_probability``.
     if state in {"DUE\u00d1O_SEGURO", "INCIERTO"}:
         try:
-            value = float(confidence)
+            owner_probability = classification.get("owner_probability")
+            if owner_probability is None:
+                owner_probability = 0.5 if state == "INCIERTO" else classifier_confidence
+            value = float(owner_probability)
             if value <= 1:
                 value *= 100
             value = max(0, min(100, value))
@@ -25,7 +30,7 @@ def build_owner_confidence_doc(doc):
                 "owner_confidence_display": f"{round(value)}%",
                 "owner_confidence_sort": round(value),
                 "owner_confidence_title": (
-                    f"Confianza del clasificador en el estado {state}"
+                    "Probabilidad estimada de que el anunciante sea dueño"
                 ),
                 "owner_confidence_type": "percentage",
             }

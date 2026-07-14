@@ -65,6 +65,22 @@ def test_incierto_confidence():
     assert r["owner_confidence_type"] == "percentage"
 
 
+def test_incierto_classifier_confidence_is_not_owner_probability():
+    """30% de confianza en INCIERTO sigue siendo 50% de probabilidad de dueño."""
+    doc = build_doc("INCIERTO", "VALID", 0.3)
+    r = build_owner_confidence_doc(doc)
+    assert r["owner_confidence_display"] == "50%"
+    assert r["owner_confidence_sort"] == 50
+
+
+def test_explicit_owner_probability_takes_precedence():
+    doc = build_doc("INCIERTO", "VALID", 0.3)
+    doc["classification"]["owner_probability"] = 0.65
+    r = build_owner_confidence_doc(doc)
+    assert r["owner_confidence_display"] == "65%"
+    assert r["owner_confidence_sort"] == 65
+
+
 def test_confidence_absent():
     """Missing confidence → '—'"""
     doc = {"classification": {"state": "DUE\u00d1O_SEGURO", "semantic_check": {"status": "VALID"}}}

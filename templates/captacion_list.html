@@ -950,9 +950,6 @@
                                 <div class="small text-secondary">{{ item.precio }}</div>
                                 {% endif %}
                             </td>
-                            <td class="text-center" data-label="Estado">
-                                <span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span>
-                            </td>
                             <td class="text-center" data-label="Confianza dueño">
                                 {% if item.owner_confidence_type == 'explicit' %}
                                 <span class="badge-custom" style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);" title="Clasificado por evidencia explícita encontrada en la publicación">Dueño explícito</span>
@@ -961,6 +958,9 @@
                                 {% else %}
                                 <span class="text-secondary" title="No existe una probabilidad de dueño calculada">{{ item.owner_confidence_display }}</span>
                                 {% endif %}
+                            </td>
+                            <td class="text-center" data-label="Estado">
+                                <span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span>
                             </td>
                             <td class="text-center" data-label="Antiguedad">
                                 <div class="small fw-bold">Hace {{ item.dias_en_portal }} días</div>

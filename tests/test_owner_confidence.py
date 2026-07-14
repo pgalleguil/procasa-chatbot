@@ -137,4 +137,6 @@ def test_api_passes_display_fields_to_list_rows():
     assert 'result.update(resolve_price_display(doc))' in content
     assert 'result.update(build_owner_confidence_doc(doc))' in content
     assert '"precio_display": norm["precio_display"]' in content
+    assert '"precio_uf_display": norm["precio_uf_display"]' in content
+    assert '"precio_clp_display": norm["precio_clp_display"]' in content
     assert '"owner_confidence_display": norm["owner_confidence_display"]' in content

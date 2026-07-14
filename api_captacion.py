@@ -586,6 +586,8 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             "precio": str(norm["precio"]).split("Ref.")[0].strip() if norm["precio"] else "S/I",
             "precio_uf": norm["precio_uf"],
             "precio_display": norm["precio_display"],
+            "precio_uf_display": norm["precio_uf_display"],
+            "precio_clp_display": norm["precio_clp_display"],
             "owner_confidence_display": norm["owner_confidence_display"],
             "owner_confidence_sort": norm["owner_confidence_sort"],
             "owner_confidence_title": norm["owner_confidence_title"],

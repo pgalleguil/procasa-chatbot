@@ -42,11 +42,12 @@ def normalize_captacion_document(doc):
     """View model consistente para lista y detalle desde cualquier origen."""
     if not doc:
         return None
-    details = doc.get("details", {}) or {}
+    details = dict(doc.get("details", {}) or {})
     
     def first(*keys):
         for k in keys:
-            v = doc.get(k) or details.get(k)
+            detail_key = k.split(".", 1)[1] if k.startswith("details.") else k
+            v = doc.get(k) or details.get(detail_key)
             if v is not None and v != "" and v != "N/A" and v != "S/I":
                 return v
         return None
@@ -66,6 +67,23 @@ def normalize_captacion_document(doc):
     precio_raw = first("precio_raw", "precio", "details.precio") or ""
     precio_uf = first("precio_uf", "details.precio_uf") or 0
     precio_clp = first("precio_clp", "details.precio_clp") or 0
+
+    dormitorios = first("dormitorios", "details.dormitorios", "dormitorios_min")
+    banos = first("banos", "baños", "details.banos", "details.baños", "banos_min")
+    m2_total = first(
+        "m2_total", "m2_totales", "m2_construidos", "superficie_total",
+        "details.m2_total", "details.m2_totales", "details.m2_construidos",
+        "details.superficie_total",
+    )
+
+    # Downstream detail/scoring code consumes canonical keys from details.
+    # Merge root-level scraper fields without overwriting richer nested values.
+    details.setdefault("operacion", operacion)
+    details.setdefault("precio_uf", precio_uf)
+    details.setdefault("precio_clp", precio_clp)
+    details.setdefault("dormitorios", dormitorios)
+    details.setdefault("banos", banos)
+    details.setdefault("m2_total", m2_total)
     
     seller_name = first("seller_name", "publicador", "details.publicador", "details.vendedor_nombre") or ""
     contacto = first("contact_phone", "whatsapp_phone", "telefono", "details.telefono", "details.whatsapp_phone") or ""
@@ -105,6 +123,9 @@ def normalize_captacion_document(doc):
         "precio": precio_raw,
         "precio_uf": precio_uf,
         "precio_clp": precio_clp,
+        "dormitorios": dormitorios,
+        "banos": banos,
+        "m2_total": m2_total,
         "vendedor_nombre": seller_name,
         "vendedor_telefono": contacto,
         "vendedor_email": first("email", "vendedor_email", "details.email"),
@@ -123,6 +144,33 @@ def normalize_captacion_document(doc):
     result.update(resolve_price_display(doc))
     result.update(build_owner_confidence_doc(doc))
     return result
+
+
+def get_captacion_capture_datetime(doc):
+    """Return the first capture timestamp, never the last modification time."""
+    candidates = [
+        doc.get("first_seen"), doc.get("first_seen_at"), doc.get("created_at"),
+        doc.get("fecha_captura"), doc.get("processed_at"), doc.get("scraped_at"),
+    ]
+    object_id = doc.get("_id")
+    if isinstance(object_id, ObjectId):
+        candidates.append(object_id.generation_time)
+    candidates.append(doc.get("updated_at"))
+    for value in candidates:
+        if not value:
+            continue
+        try:
+            parsed = value
+            if isinstance(parsed, str):
+                parsed = datetime.fromisoformat(parsed.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = CHILE_TZ.localize(parsed)
+            else:
+                parsed = parsed.astimezone(CHILE_TZ)
+            return parsed
+        except (TypeError, ValueError):
+            continue
+    return None
 
 def _invalidate_detail_cache(obj_id):
     """Elimina el cache del detalle para forzar un render fresco tras un cambio."""
@@ -590,9 +638,11 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         cursor = coll.aggregate([
             {"$match": query},
             {"$addFields": {"_captacion_sort_date": {
-                "$ifNull": ["$updated_at", {
-                    "$ifNull": ["$fecha_publicacion", "$processed_at"]
-                }]
+                "$ifNull": ["$first_seen", {"$ifNull": ["$first_seen_at", {
+                    "$ifNull": ["$created_at", {"$ifNull": ["$fecha_captura", {
+                        "$ifNull": ["$processed_at", "$updated_at"]
+                    }]}]
+                }]}]
             }}},
             {"$sort": aggregate_sort},
             {"$skip": skip},
@@ -609,7 +659,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     for doc in cursor:
         norm = normalize_captacion_document(doc)
         gestion = norm["gestion"]
-        fecha_ref = doc.get("updated_at") or doc.get("fecha_publicacion") or doc.get("processed_at")
+        fecha_ref = get_captacion_capture_datetime(doc)
         
         dias_portal = 0
         fecha_str = "S/I"
@@ -622,8 +672,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
                     dt_base = CHILE_TZ.localize(dt_base)
                 elif dt_base.tzinfo != CHILE_TZ:
                     dt_base = dt_base.astimezone(CHILE_TZ)
-                diff = get_chile_now() - dt_base
-                dias_portal = max(0, diff.days)
+                dias_portal = max(0, (get_chile_now().date() - dt_base.date()).days)
                 fecha_str = dt_base.strftime("%d-%m-%Y")
             except Exception:
                 pass
@@ -716,7 +765,7 @@ def get_captacion_detail(obj_id):
     label_antiguedad = "Publicado"
     
     if dias_portal <= 0:
-        dt_base = doc.get("fecha_captura") or doc.get("updated_at") or details.get("fecha_scraping") or doc.get("fecha")
+        dt_base = get_captacion_capture_datetime(doc)
         if dt_base:
             try:
                 if isinstance(dt_base, str):
@@ -725,8 +774,7 @@ def get_captacion_detail(obj_id):
                     dt_base = CHILE_TZ.localize(dt_base)
                 elif dt_base.tzinfo != CHILE_TZ:
                     dt_base = dt_base.astimezone(CHILE_TZ)
-                diff = get_chile_now() - dt_base
-                dias_portal = max(0, diff.days)
+                dias_portal = max(0, (get_chile_now().date() - dt_base.date()).days)
                 label_antiguedad = "Captado"
             except Exception as e:
                 logger.error(f"Error calculating antiquity for {obj_id}: {e}")

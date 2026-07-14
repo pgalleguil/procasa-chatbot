@@ -238,3 +238,17 @@ def test_new_captaciones_are_not_counted_as_in_management():
     assert management_states in webhook
     assert '"available_count": available_count' in webhook
     assert '{{ available_count }}' in template
+
+
+def test_detail_uses_root_property_fields_and_capture_date():
+    api_path = os.path.join(os.path.dirname(__file__), '..', 'api_captacion.py')
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'templates', 'captacion_detail.html')
+    with open(api_path, 'r', encoding='utf-8') as f:
+        api = f.read()
+    with open(template_path, 'r', encoding='utf-8') as f:
+        template = f.read()
+    assert '"m2_totales", "m2_construidos"' in api
+    assert 'details.setdefault("operacion", operacion)' in api
+    assert 'def get_captacion_capture_datetime' in api
+    assert 'get_chile_now().date() - dt_base.date()' in api
+    assert "{{ prop.operacion|upper if prop.operacion else 'S/I' }}" in template

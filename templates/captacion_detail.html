@@ -1197,20 +1197,16 @@
                         <span class="info-label"><i class="fa-solid fa-house-user me-2"></i>Distribución</span>
                         <div class="fw-bold text-primary m-0" style="font-size: 1.1rem">
                             <i class="fa-solid fa-bed me-1 text-secondary"></i>{{
-                            prop.dormitorios or '0' }} |
+                            prop.dormitorios if prop.dormitorios is not none else 'S/I' }} |
                             <i class="fa-solid fa-shower me-1 text-secondary ms-1"></i>{{
-                            prop.banos or '0' }} |
-                            <i class="fa-solid fa-ruler-combined me-1 text-secondary ms-1"></i>{{ prop.m2_total or '0'
-                            }}m²
+                            prop.banos if prop.banos is not none else 'S/I' }} |
+                            <i class="fa-solid fa-ruler-combined me-1 text-secondary ms-1"></i>{% if prop.m2_total %}{{ prop.m2_total }}m²{% else %}S/I{% endif %}
                         </div>
                     </div>
                     <div class="col-md-4">
                         <span class="info-label"><i class="fa-solid fa-tag me-2"></i>OPERACIÓN</span>
                         <div class="fw-bold text-primary m-0 text-truncate" style="font-size: 1.1rem">
-                            {% if prop.details.operacion %}
-                            {{ prop.details.operacion|upper }}
-                            {% elif prop.details.precio_uf and prop.details.precio_uf < 1000 %} ARRIENDO {% else %}
-                                VENTA {% endif %} </div>
+                            {{ prop.operacion|upper if prop.operacion else 'S/I' }} </div>
                         </div>
                         <div class="col-md-4">
                             <span class="info-label"><i class="fa-solid fa-calendar-day me-2"></i>{{

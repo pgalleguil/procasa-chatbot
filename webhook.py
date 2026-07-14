@@ -1177,7 +1177,8 @@ async def webhook(
 async def health_check():
     now = datetime.now(CHILE_TZ).isoformat()
     return {
-        "status": "healthy", 
+        "status": "healthy",
+        "deploy_commit": os.getenv("RENDER_GIT_COMMIT", "unknown"),
         "server_time": now,
         "active_conversations": len(pending_tasks),
         "background_tasks": background_tasks_status,

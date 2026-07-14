@@ -478,9 +478,9 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     db = get_db()
     coll = get_captacion_collection(db)
     
-    # Base: solo captaciones Toctoc elegibles
+    # Base: captaciones elegibles de todos los portales soportados.
     query = {
-        "origen": "toctoc",
+        "origen": {"$in": ["toctoc", "yapo"]},
         "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]}
     }
 
@@ -585,7 +585,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     # Cache
     response_cache_key = (
-        f"captacion_resp_v7_{user_role}_{user_name}_{comuna_filters}_{status_filter}_"
+        f"captacion_resp_v8_{user_role}_{user_name}_{comuna_filters}_{status_filter}_"
         f"{executive_filter}_{operacion_filter}_{telefono_filter}_{classification_filter}_"
         f"{sort_by}_{sort_dir}_{page}_{limit}"
     )
@@ -597,7 +597,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     # Available ops
     pipeline_ops = [
-        {"$match": {"origen": "toctoc", "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]}}},
+        {"$match": {"origen": {"$in": ["toctoc", "yapo"]}, "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]}}},
         {"$group": {"_id": None, "ops": {"$addToSet": "$operacion"}}}
     ]
     ops_result = list(coll.aggregate(pipeline_ops))

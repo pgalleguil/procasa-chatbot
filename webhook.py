@@ -1339,7 +1339,7 @@ async def view_captaciones(
     from chatbot.storage import get_db as get_sync_db
     sync_db = get_sync_db()
     base_eligible = Config.get_captacion_collection(sync_db).count_documents({
-        "origen": "toctoc",
+        "origen": {"$in": ["toctoc", "yapo"]},
         "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]}
     })
     logger.info(
@@ -1349,9 +1349,9 @@ async def view_captaciones(
         f"items_returned={len(items)} page={page}"
     )
     
-    # KPIs con consulta Toctoc-compatible
+    # KPIs de todos los portales soportados.
     base_query = {
-        "origen": "toctoc",
+        "origen": {"$in": ["toctoc", "yapo"]},
         "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]}
     }
     if user_role not in ["admin", "supervisor"]:

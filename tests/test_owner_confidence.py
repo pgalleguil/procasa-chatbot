@@ -221,3 +221,20 @@ def test_login_preserves_requested_contact_url():
     assert 'def _safe_login_next' in webhook
     assert 'response.set_cookie("login_next"' in webhook
     assert 'name="next" value="{{ next_url or \'\' }}"' in login
+
+
+def test_new_captaciones_are_not_counted_as_in_management():
+    api_path = os.path.join(os.path.dirname(__file__), '..', 'api_captacion.py')
+    webhook_path = os.path.join(os.path.dirname(__file__), '..', 'webhook.py')
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'templates', 'captacion_list.html')
+    with open(api_path, 'r', encoding='utf-8') as f:
+        api = f.read()
+    with open(webhook_path, 'r', encoding='utf-8') as f:
+        webhook = f.read()
+    with open(template_path, 'r', encoding='utf-8') as f:
+        template = f.read()
+    management_states = '["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "GESTION"]'
+    assert management_states in api
+    assert management_states in webhook
+    assert '"available_count": available_count' in webhook
+    assert '{{ available_count }}' in template

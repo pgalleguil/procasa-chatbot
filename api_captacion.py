@@ -449,21 +449,41 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
                     {"gestion.ejecutivo_id": None},
                 ]})
             else:
+                executive_doc = db["usuarios"].find_one(
+                    {"nombre": executive_filter}, {"email": 1}
+                )
+                executive_ids = [executive_filter]
+                executive_emails = [executive_filter]
+                if executive_doc:
+                    executive_ids.append(str(executive_doc["_id"]))
+                    if executive_doc.get("email"):
+                        executive_emails.append(executive_doc["email"])
                 add_condition({"$or": [
-                    {"gestion.ejecutivo_id": executive_filter},
-                    {"gestion.ejecutivo_email": executive_filter},
                     {"gestion.ejecutivo_asignado": executive_filter},
+                    {"$and": [
+                        {"gestion.ejecutivo_asignado": {"$in": [None, ""]}},
+                        {"$or": [
+                            {"gestion.ejecutivo_id": {"$in": executive_ids}},
+                            {"gestion.ejecutivo_email": {"$in": executive_emails}},
+                        ]},
+                    ]},
                 ]})
     elif user_role == "agente":
-        or_clauses = []
+        fallback_identity_clauses = []
         if user_id:
-            or_clauses.append({"gestion.ejecutivo_id": user_id})
+            fallback_identity_clauses.append({"gestion.ejecutivo_id": user_id})
         if user_email:
-            or_clauses.append({"gestion.ejecutivo_email": user_email})
+            fallback_identity_clauses.append({"gestion.ejecutivo_email": user_email})
+        assignment_clauses = []
         if user_name:
-            or_clauses.append({"gestion.ejecutivo_asignado": user_name})
-        if or_clauses:
-            add_condition({"$or": or_clauses})
+            assignment_clauses.append({"gestion.ejecutivo_asignado": user_name})
+        if fallback_identity_clauses:
+            assignment_clauses.append({"$and": [
+                {"gestion.ejecutivo_asignado": {"$in": [None, ""]}},
+                {"$or": fallback_identity_clauses},
+            ]})
+        if assignment_clauses:
+            add_condition({"$or": assignment_clauses})
         else:
             # Sin identificador, no devolver nada
             query["_id"] = None
@@ -490,7 +510,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         terminal_states = ["Captado", "CAPTADO", "Descartado", "DESCARTADO", "Corredor",
                           "Teléfono inválido", "Propiedad no disponible", "Publicación expirada", "No interesado"]
         if status_filter in ("GRUPO_GESTION", "GESTION"):
-            query["gestion.estado"] = {"$in": ["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "GESTION", "NUEVO"]}
+            query["gestion.estado"] = {"$in": ["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "GESTION"]}
         elif status_filter in ("GRUPO_CAPTADO", "CAPTADO"):
             query["gestion.estado"] = {"$in": ["Captado", "CAPTADO"]}
         elif status_filter in ("GRUPO_DESCARTADO", "DESCARTADO"):

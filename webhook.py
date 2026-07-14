@@ -1356,32 +1356,53 @@ async def view_captaciones(
     }
     if user_role not in ["admin", "supervisor"]:
         base_query["$or"] = [
-            {"gestion.ejecutivo_id": user_id},
-            {"gestion.ejecutivo_email": user_email},
             {"gestion.ejecutivo_asignado": user_name},
+            {"$and": [
+                {"gestion.ejecutivo_asignado": {"$in": [None, ""]}},
+                {"$or": [
+                    {"gestion.ejecutivo_id": user_id},
+                    {"gestion.ejecutivo_email": user_email},
+                ]},
+            ]},
         ]
     elif ejecutivo and ejecutivo != "Todos":
+        selected_exec_doc = await adb["usuarios"].find_one(
+            {"nombre": ejecutivo}, {"email": 1}
+        )
+        selected_exec_ids = [ejecutivo]
+        selected_exec_emails = [ejecutivo]
+        if selected_exec_doc:
+            selected_exec_ids.append(str(selected_exec_doc["_id"]))
+            if selected_exec_doc.get("email"):
+                selected_exec_emails.append(selected_exec_doc["email"])
         base_query["$or"] = [
-            {"gestion.ejecutivo_id": ejecutivo},
-            {"gestion.ejecutivo_email": ejecutivo},
             {"gestion.ejecutivo_asignado": ejecutivo},
+            {"$and": [
+                {"gestion.ejecutivo_asignado": {"$in": [None, ""]}},
+                {"$or": [
+                    {"gestion.ejecutivo_id": {"$in": selected_exec_ids}},
+                    {"gestion.ejecutivo_email": {"$in": selected_exec_emails}},
+                ]},
+            ]},
         ]
 
-    estados_gestion = ["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "GESTION", "NUEVO"]
+    estados_gestion = ["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "GESTION"]
     estados_captado = ["Captado", "CAPTADO"]
     estados_descartado = ["Corredor", "Teléfono inválido", "Descartado", "Propiedad no disponible", "Publicación expirada", "No interesado", "DESCARTADO"]
 
     import time
-    cache_key = f"stats_v4_{user_role}_{user_id}_{ejecutivo}"
+    cache_key = f"stats_v5_{user_role}_{user_id}_{ejecutivo}"
     cache_store = getattr(app.state, 'captacion_stats_cache', {})
     now = time.time()
     if cache_key in cache_store and now - cache_store[cache_key]['time'] < 300:
         in_gestion_count = cache_store[cache_key]['in_gestion_count']
         captados_count = cache_store[cache_key]['captados_count']
         descartados_count = cache_store[cache_key]['descartados_count']
+        available_count = cache_store[cache_key]['available_count']
         comunas_clean = cache_store[cache_key]['comunas_clean']
     else:
-        in_gestion_count, captados_count, descartados_count, comunas_list = await asyncio.gather(
+        available_count, in_gestion_count, captados_count, descartados_count, comunas_list = await asyncio.gather(
+            adb[Config.CAPTACION_COLLECTION_NAME].count_documents(base_query),
             adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_gestion}}),
             adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_captado}}),
             adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_descartado}}),
@@ -1396,6 +1417,7 @@ async def view_captaciones(
             'in_gestion_count': in_gestion_count,
             'captados_count': captados_count,
             'descartados_count': descartados_count,
+            'available_count': available_count,
             'comunas_clean': comunas_clean
         }
         app.state.captacion_stats_cache = cache_store
@@ -1406,6 +1428,7 @@ async def view_captaciones(
         "request": request,
         "items": items,
         "total_count": total_count,
+        "available_count": available_count,
         "in_gestion_count": in_gestion_count,
         "captados_count": captados_count,
         "descartados_count": descartados_count,

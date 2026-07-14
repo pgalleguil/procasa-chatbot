@@ -8,7 +8,7 @@ import re
 from bson import ObjectId
 from chatbot.storage import get_db, log_event
 from chatbot.constants import CHILE_TZ, EventType
-from owner_confidence import build_owner_confidence, build_owner_confidence_sort, build_owner_confidence_type
+from owner_confidence import build_owner_confidence_doc, resolve_price_display
 
 logger = logging.getLogger(__name__)
 
@@ -33,23 +33,6 @@ def normalize_commune_canonical(value):
     s = re.sub(r'-+', '-', s)
     s = s.strip('-')
     return s if s else None
-
-def _format_price_uf(val):
-    try:
-        v = float(val)
-        s = f"{v:,.1f}".replace(",", "#").replace(".", ",").replace("#", ".")
-        return s[:-2] if s.endswith(",0") else s
-    except (ValueError, TypeError):
-        return ""
-
-def _format_price_clp(val):
-    try:
-        v = float(val)
-        if v == 0:
-            return ""
-        return f"{v:,.0f}".replace(",", ".")
-    except (ValueError, TypeError):
-        return ""
 
 def normalize_captacion_document(doc):
     """View model consistente para lista y detalle desde cualquier origen."""
@@ -79,8 +62,6 @@ def normalize_captacion_document(doc):
     precio_raw = first("precio_raw", "precio", "details.precio") or ""
     precio_uf = first("precio_uf", "details.precio_uf") or 0
     precio_clp = first("precio_clp", "details.precio_clp") or 0
-    precio_uf_display = _format_price_uf(precio_uf)
-    precio_clp_display = _format_price_clp(precio_clp)
     
     seller_name = first("seller_name", "publicador", "details.publicador", "details.vendedor_nombre") or ""
     contacto = first("contact_phone", "whatsapp_phone", "telefono", "details.telefono", "details.whatsapp_phone") or ""
@@ -120,8 +101,6 @@ def normalize_captacion_document(doc):
         "precio": precio_raw,
         "precio_uf": precio_uf,
         "precio_clp": precio_clp,
-        "precio_uf_display": precio_uf_display,
-        "precio_clp_display": precio_clp_display,
         "vendedor_nombre": seller_name,
         "vendedor_telefono": contacto,
         "vendedor_email": first("email", "vendedor_email", "details.email"),
@@ -136,11 +115,10 @@ def normalize_captacion_document(doc):
         "probabilidad": doc.get("probabilidad", "S/I"),
         "details": details,
         "classification": classification,
-        # Owner confidence display for the list view
-        "owner_confidence_display": build_owner_confidence(classification, classification_state),
-        "owner_confidence_sort": build_owner_confidence_sort(classification, classification_state),
-        "owner_confidence_type": build_owner_confidence_type(classification, classification_state),
     }
+    result.update(resolve_price_display(doc))
+    result.update(build_owner_confidence_doc(doc))
+    return result
 
 def _invalidate_detail_cache(obj_id):
     """Elimina el cache del detalle para forzar un render fresco tras un cambio."""

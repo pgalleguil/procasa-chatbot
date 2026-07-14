@@ -1180,10 +1180,7 @@
                     </div>
                     <div class="d-flex flex-column align-items-end gap-2">
                         <div class="header-price-badge d-flex flex-column align-items-end gap-1">
-                            <span>{{ prop.precio_uf_display or 'S/I' }} UF</span>
-                            {% if prop.precio_clp_display %}
-                            <span style="font-size: 0.75rem; opacity: 0.8;">${{ prop.precio_clp_display }}</span>
-                            {% endif %}
+                            <span>{{ prop.precio_display }}</span>
                         </div>
                         <span
                             class="badge {{ 'badge-nuevo' if prop.gestion.estado == 'NUEVO' else 'badge-gestion' }} badge-custom">

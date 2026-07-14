@@ -937,27 +937,12 @@
                                 {% endif %}
                             </td>
                             <td class="text-center" data-label="Precio">
-                                <div class="fw-bold">
-                                    {% if item.precio_uf %}
-                                            UF {{ item.precio_uf_display or 'S/I' }}
-                                    {% else %}
-                                    S/I
-                                    {% endif %}
-                                </div>
-                                        {% if item.precio_clp_display %}
-                                        <div class="small text-secondary">${{ item.precio_clp_display }}</div>
-                                {% elif item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
-                                <div class="small text-secondary">{{ item.precio }}</div>
-                                {% endif %}
+                                <div class="fw-bold">{{ item.precio_display }}</div>
                             </td>
-                            <td class="text-center" data-label="Confianza dueño">
-                                {% if item.owner_confidence_type == 'explicit' %}
-                                <span class="badge-custom" style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);" title="Clasificado por evidencia explícita encontrada en la publicación">Dueño explícito</span>
-                                {% elif item.owner_confidence_type == 'percentage' %}
-                                <span class="fw-bold" style="color:var(--success-color);" title="Confianza de DeepSeek en la clasificación DUEÑO_SEGURO">{{ item.owner_confidence_display }}</span>
-                                {% else %}
-                                <span class="text-secondary" title="No existe una probabilidad de dueño calculada">{{ item.owner_confidence_display }}</span>
-                                {% endif %}
+                            <td class="text-center" data-label="Confianza dueño"
+                                data-sort="{{ item.owner_confidence_sort }}"
+                                title="{{ item.owner_confidence_title }}">
+                                {{ item.owner_confidence_display }}
                             </td>
                             <td class="text-center" data-label="Estado">
                                 <span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span>

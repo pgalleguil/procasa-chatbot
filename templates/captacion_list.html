@@ -943,8 +943,8 @@
                             <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}
-                                    {% set uf_entero = item.precio_uf is not none and item.precio_uf == item.precio_uf|int %}
-                                    UF {{ "{:,.0f}".format(item.precio_uf)|replace(",",".") if uf_entero else "{:,.1f}".format(item.precio_uf)|replace(",",".") }}
+                                            {% set uf_tmp = "{:,.1f}".format(item.precio_uf)|replace(",","#").replace(".",",")|replace("#",".") %}
+                                            UF {{ uf_tmp[:-2] if uf_tmp.endswith(',0') else uf_tmp }}
                                     {% else %}
                                     S/I
                                     {% endif %}
@@ -1135,8 +1135,8 @@
                             <td class="text-center" data-label="Precio">
                                 <div class="fw-bold">
                                     {% if item.precio_uf %}
-                                    {% set uf_entero = item.precio_uf is not none and item.precio_uf == item.precio_uf|int %}
-                                    UF {{ "{:,.0f}".format(item.precio_uf)|replace(",",".") if uf_entero else "{:,.1f}".format(item.precio_uf)|replace(",",".") }}
+                                            {% set uf_tmp = "{:,.1f}".format(item.precio_uf)|replace(",","#").replace(".",",")|replace("#",".") %}
+                                            UF {{ uf_tmp[:-2] if uf_tmp.endswith(',0') else uf_tmp }}
                                     {% else %}
                                     S/I
                                     {% endif %}

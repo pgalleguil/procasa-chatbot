@@ -188,3 +188,12 @@ def test_operation_is_plain_neutral_text():
         template = f.read()
     assert '<span class="operation-text">{{ item.operacion|title }}</span>' in template
     assert "background: rgba(16, 185, 129, 0.1); color: #10b981" not in template
+
+
+def test_commune_picker_can_be_closed():
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'templates', 'captacion_list.html')
+    with open(template_path, 'r', encoding='utf-8') as f:
+        template = f.read()
+    assert 'class="commune-picker-done">Listo</button>' in template
+    assert "if (!picker.contains(event.target)) picker.removeAttribute('open')" in template
+    assert "event.key === 'Escape'" in template

@@ -590,6 +590,20 @@
         }
         .commune-option:hover { background: rgba(99,102,241,.12); }
         .commune-option input { accent-color: var(--accent); }
+        .commune-picker-done {
+            background: var(--accent);
+            border: 0;
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            font-size: .78rem;
+            font-weight: 600;
+            margin-top: 6px;
+            padding: 8px 12px;
+            position: sticky;
+            bottom: 0;
+            width: 100%;
+        }
 
         .prop-table tbody tr {
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -990,6 +1004,7 @@
                         <span>{{ c }}</span>
                     </label>
                     {% endfor %}
+                    <button type="button" class="commune-picker-done">Listo</button>
                     </div>
                 </details>
                 <select name="operacion" onchange="this.form.submit()">
@@ -1208,6 +1223,7 @@
                         <span>{{ c }}</span>
                     </label>
                     {% endfor %}
+                    <button type="button" class="commune-picker-done">Listo</button>
                     </div>
                 </details>
                 <select name="operacion" onchange="this.form.submit()">
@@ -1389,6 +1405,22 @@
                         icon.className = "fa-solid fa-sun";
                     }
                 }
+            }
+
+            document.querySelectorAll('.commune-picker-done').forEach(button => {
+                button.addEventListener('click', () => button.closest('.commune-picker').removeAttribute('open'));
+            });
+        });
+
+        document.addEventListener('click', event => {
+            document.querySelectorAll('.commune-picker[open]').forEach(picker => {
+                if (!picker.contains(event.target)) picker.removeAttribute('open');
+            });
+        });
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                document.querySelectorAll('.commune-picker[open]').forEach(picker => picker.removeAttribute('open'));
             }
         });
         

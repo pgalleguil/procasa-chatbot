@@ -208,9 +208,18 @@
 
 <body>
 
-    <!-- FONDO LIVIANO (sin descargas de imagen pesadas en login) -->
+    <!-- FONDO ANIMADO (solo se cargan las fotografías en escritorio) -->
     <div class="background-slider"
-        style="background: radial-gradient(circle at 20% 20%, #22345a 0%, #10192f 45%, #0b1326 100%);"></div>
+        style="background: radial-gradient(circle at 20% 20%, #22345a 0%, #10192f 45%, #0b1326 100%);">
+        {% if images %}
+        {% for image in images %}
+        <div class="slide {% if loop.first %}active{% endif %}">
+            <img data-src="/static/{{ image }}" alt=""
+                {% if loop.first %}fetchpriority="high"{% else %}loading="lazy"{% endif %}>
+        </div>
+        {% endfor %}
+        {% endif %}
+    </div>
 
     <!-- CONTENEDOR LOGIN -->
     <div class="login-wrapper">
@@ -265,15 +274,40 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Lógica del Slider
-        const slides = document.querySelectorAll('.slide');
-        if (slides.length > 1) {
-            let i = 0;
-            setInterval(() => {
-                slides[i].classList.remove('active');
-                i = (i + 1) % slides.length;
-                slides[i].classList.add('active');
-            }, 6000);
+        // Las fotografías se cargan únicamente en pantallas de escritorio.
+        const desktopLogin = window.matchMedia('(min-width: 577px)');
+        const slides = Array.from(document.querySelectorAll('.slide'));
+
+        if (desktopLogin.matches && slides.length) {
+            const loadSlideImage = (slide) => {
+                const image = slide.querySelector('img[data-src]');
+                if (!image || image.src) return Promise.resolve();
+
+                return new Promise((resolve) => {
+                    image.addEventListener('load', resolve, { once: true });
+                    image.addEventListener('error', resolve, { once: true });
+                    image.src = image.dataset.src;
+                });
+            };
+
+            const startCarousel = () => {
+                if (slides.length < 2) return;
+
+                let i = 0;
+                setInterval(() => {
+                    slides[i].classList.remove('active');
+                    i = (i + 1) % slides.length;
+                    slides[i].classList.add('active');
+                }, 6000);
+            };
+
+            // La primera foto aparece de inmediato; las demás esperan a que
+            // termine la carga inicial para no retrasar el formulario.
+            loadSlideImage(slides[0]);
+            window.addEventListener('load', () => {
+                Promise.allSettled(slides.slice(1).map(loadSlideImage))
+                    .then(startCarousel);
+            }, { once: true });
         }
     </script>
 </body>

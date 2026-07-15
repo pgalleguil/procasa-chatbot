@@ -2,6 +2,7 @@ import logging
 import re
 import random
 import difflib
+from urllib.parse import quote, urlencode
 from datetime import datetime, time, timedelta
 import pytz
 from typing import Dict, Any, Optional, Tuple
@@ -19,6 +20,31 @@ from .property_lookup import (
 logger = logging.getLogger(__name__)
 
 from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
+
+
+def build_crm_lead_url(lead_data: Dict[str, Any], property_code: Any = None) -> str:
+    """Build the authenticated deep link for a specific CRM lead.
+
+    The CRM's existing 401 handler stores this local path in ``login_next``;
+    after either password or Google login the executive returns directly to
+    this lead.  Phone is normalized to digits so it is safe as a path segment.
+    """
+    base_url = str(Config.CRM_BASE_URL or "").rstrip("/")
+    phone = (
+        lead_data.get("lead_phone")
+        or lead_data.get("phone")
+        or lead_data.get("whatsapp_phone")
+        or ""
+    )
+    phone_clean = re.sub(r"\D", "", str(phone))
+    if not phone_clean:
+        return f"{base_url}/crm?temperatura=HOT"
+
+    url = f"{base_url}/crm/lead/{quote(phone_clean, safe='')}"
+    code = property_code or lead_data.get("property_code") or lead_data.get("codigo")
+    if code not in (None, "", "N/D", "S/N"):
+        url += "?" + urlencode({"codigo": str(code)})
+    return url
 
 # Constants for specific executives
 ERIKA_GARRIDO = "Erika Garrido"
@@ -418,7 +444,7 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
             f"👤 Cliente: {cliente_texto}\n"
             f"📝 Mensaje recibido:\n{comentario_cliente}\n\n"
             f"⚠️ _Por favor, revisa si es necesario actualizar la cartera o si la propiedad fue dada de baja._\n\n"
-            f"🔗 *Ver caso en CRM*:\nhttps://procasa-chatbot-yr8d.onrender.com/"
+            f"🔗 *Ver caso en CRM*:\n{build_crm_lead_url(lead_data, property_code)}"
         )
     prop_inline = lead_data.get("property_data", {}) if isinstance(lead_data, dict) else {}
     comuna = (
@@ -449,7 +475,7 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
     if not is_new_assignment:
         contexto_extra = f"⚠️ _Este cliente ya está asignado a ti._\n"
 
-    crm_url = "https://procasa-chatbot-yr8d.onrender.com/"
+    crm_url = build_crm_lead_url(lead_data, property_code)
 
     ubicacion_lines = ""
     if comuna:
@@ -491,9 +517,13 @@ def format_summary_whatsapp_template(leads_list: list, executive_name: str) -> s
         p_code = ld.get("property_code") or "S/N"
         canal = ld.get("canal") or ld.get("source") or ld.get("origen") or "Directo"
         
-        leads_details += f"\n{i}. *{nombre}* - Prop: {p_code} ({canal})"
+        crm_url = build_crm_lead_url(ld, p_code)
+        leads_details += (
+            f"\n{i}. *{nombre}* - Prop: {p_code} ({canal})"
+            f"\n   🔗 {crm_url}"
+        )
 
-    crm_url = "https://procasa-chatbot-yr8d.onrender.com/"
+    crm_url = f"{str(Config.CRM_BASE_URL or '').rstrip('/')}/crm?temperatura=HOT"
 
     template = (
         f"{header}\n\n"

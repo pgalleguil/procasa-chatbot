@@ -46,7 +46,7 @@
             width: 100%;
             height: 100%;
             opacity: 0;
-            transition: opacity 2.5s ease-in-out;
+            transition: opacity 1.5s ease-in-out;
         }
 
         .slide.active {
@@ -57,16 +57,9 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
-            /* Tratamiento suave: conserva colores y detalle naturales. */
-            filter: brightness(0.52) saturate(0.90) contrast(0.96);
-            transform: scale(1);
-            backface-visibility: hidden;
-        }
-
-        /* Solo la fotografía visible usa CPU/GPU para el movimiento. */
-        .slide.active img {
-            animation: kenburns 30s ease-in-out infinite alternate;
-            will-change: transform;
+            /* Oscurecer imagen para resaltar el login */
+            filter: brightness(0.4) saturate(1.1);
+            animation: kenburns 20s infinite alternate;
         }
 
         @keyframes kenburns {
@@ -75,7 +68,7 @@
             }
 
             to {
-                transform: scale(1.06);
+                transform: scale(1.15);
             }
         }
 
@@ -218,16 +211,19 @@
 
 <body>
 
-    <!-- FONDO ANIMADO (solo se cargan las fotografías en escritorio) -->
-    <div class="background-slider"
-        style="background: radial-gradient(circle at 20% 20%, #22345a 0%, #10192f 45%, #0b1326 100%);">
+    <!-- FONDO ANIMADO -->
+    <div class="background-slider">
         {% if images %}
         {% for image in images %}
         <div class="slide {% if loop.first %}active{% endif %}">
-            <img data-src="/static/{{ image }}" alt="" decoding="async"
-                {% if loop.first %}fetchpriority="high"{% else %}loading="lazy"{% endif %}>
+            <img src="/static/{{ image }}" alt="Background" loading="lazy">
         </div>
         {% endfor %}
+        {% else %}
+        <div class="slide active">
+            <img src="https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=1973&auto=format&fit=crop"
+                alt="Default">
+        </div>
         {% endif %}
     </div>
 
@@ -284,42 +280,15 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Las fotografías se cargan únicamente en pantallas de escritorio.
-        const desktopLogin = window.matchMedia('(min-width: 992px)');
-        const slides = Array.from(document.querySelectorAll('.slide'));
-
-        if (desktopLogin.matches && slides.length) {
-            const loadSlideImage = (slide) => {
-                const image = slide.querySelector('img[data-src]');
-                if (!image || image.src) return Promise.resolve();
-
-                return new Promise((resolve) => {
-                    image.addEventListener('load', resolve, { once: true });
-                    image.addEventListener('error', resolve, { once: true });
-                    image.src = image.dataset.src;
-                });
-            };
-
-            const startCarousel = () => {
-                if (slides.length < 2) return;
-
-                let i = 0;
-                setInterval(() => {
-                    slides[i].classList.remove('active');
-                    i = (i + 1) % slides.length;
-                    slides[i].classList.add('active');
-                }, 8000);
-            };
-
-            // La primera foto aparece de inmediato; las demás esperan a que
-            // termine la carga inicial para no retrasar el formulario.
-            loadSlideImage(slides[0]);
-            window.addEventListener('load', () => {
-                slides.slice(1).reduce(
-                    (previous, slide) => previous.then(() => loadSlideImage(slide)),
-                    Promise.resolve()
-                ).then(startCarousel);
-            }, { once: true });
+        // Lógica original del Slider
+        const slides = document.querySelectorAll('.slide');
+        if (slides.length > 1) {
+            let i = 0;
+            setInterval(() => {
+                slides[i].classList.remove('active');
+                i = (i + 1) % slides.length;
+                slides[i].classList.add('active');
+            }, 6000);
         }
     </script>
 </body>

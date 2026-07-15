@@ -59,16 +59,23 @@
             object-fit: cover;
             /* Oscurecer imagen para resaltar el login */
             filter: brightness(0.4) saturate(1.1);
-            animation: kenburns 20s infinite alternate;
+            transform: scale(1.02);
+            backface-visibility: hidden;
+        }
+
+        /* Solo la fotografía visible usa CPU/GPU para el movimiento. */
+        .slide.active img {
+            animation: kenburns 24s ease-in-out infinite alternate;
+            will-change: transform;
         }
 
         @keyframes kenburns {
             from {
-                transform: scale(1);
+                transform: scale(1.02);
             }
 
             to {
-                transform: scale(1.15);
+                transform: scale(1.10);
             }
         }
 
@@ -217,7 +224,7 @@
         {% if images %}
         {% for image in images %}
         <div class="slide {% if loop.first %}active{% endif %}">
-            <img data-src="/static/{{ image }}" alt=""
+            <img data-src="/static/{{ image }}" alt="" decoding="async"
                 {% if loop.first %}fetchpriority="high"{% else %}loading="lazy"{% endif %}>
         </div>
         {% endfor %}
@@ -308,8 +315,10 @@
             // termine la carga inicial para no retrasar el formulario.
             loadSlideImage(slides[0]);
             window.addEventListener('load', () => {
-                Promise.allSettled(slides.slice(1).map(loadSlideImage))
-                    .then(startCarousel);
+                slides.slice(1).reduce(
+                    (previous, slide) => previous.then(() => loadSlideImage(slide)),
+                    Promise.resolve()
+                ).then(startCarousel);
             }, { once: true });
         }
     </script>

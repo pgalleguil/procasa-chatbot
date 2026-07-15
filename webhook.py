@@ -352,7 +352,14 @@ def get_images():
     prop_dir = STATIC_DIR / "propiedades"
     if not prop_dir.exists() or not prop_dir.is_dir():
         return ["propiedades/default.jpg"]
-    images = [f"propiedades/{f.name}" for f in prop_dir.iterdir() if f.is_file() and f.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".gif"}]
+    image_files = sorted(
+        (
+            f for f in prop_dir.iterdir()
+            if f.is_file() and f.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+        ),
+        key=lambda f: (f.stat().st_size, f.name.lower()),
+    )
+    images = [f"propiedades/{f.name}" for f in image_files]
     return images or ["propiedades/default.jpg"]
 
 # ========================= 2. SEGURIDAD, JWT Y MIDDLEWARE DE SESIÓN =========================

@@ -61,6 +61,30 @@ def build_owner_score_doc(doc):
     }
 
 
+def build_owner_probability_doc(doc):
+    """Render the only owner-likelihood metric exposed by the CRM."""
+    classification = (doc or {}).get("classification") or {}
+    value = _percentage(classification.get("owner_probability"))
+    if value is None:
+        return {
+            "owner_probability_display": "S/I",
+            "owner_probability_sort": -1,
+            "owner_probability_title": "Cálculo pendiente o evidencia insuficiente",
+        }
+    signals = classification.get("owner_probability_signals") or {}
+    applied = signals.get("applied") or [] if isinstance(signals, dict) else []
+    labels = [
+        f"{item.get('code')}: {item.get('evidence', '')}"
+        for item in applied[:5] if isinstance(item, dict)
+    ]
+    title = " | ".join(labels) if labels else "Resultado neutral: sin señales útiles"
+    return {
+        "owner_probability_display": f"{value}%",
+        "owner_probability_sort": value,
+        "owner_probability_title": title,
+    }
+
+
 def build_owner_confidence_doc(doc):
     """Compatibility wrapper; never fabricates a probability or a 50 fallback."""
     confidence = build_classification_confidence_doc(doc)

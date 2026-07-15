@@ -7,12 +7,12 @@ from typing import Any
 from config import AppConfig
 from crm_schema import build_crm_document
 try:
-    from owner_scoring import calculate_owner_score
+    from owner_probability import apply_owner_probability_to_document
 except ImportError:  # direct execution from scraper_toctoc/
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from owner_scoring import calculate_owner_score
+    from owner_probability import apply_owner_probability_to_document
 
 try:
     from pymongo import MongoClient, errors
@@ -65,9 +65,7 @@ class MongoStore:
             uf_valor_clp=self.config.uf_valor_clp,
             uf_fecha=self.config.uf_fecha,
         )
-        classification = dict(crm_doc.get("classification") or {})
-        classification.update(calculate_owner_score(crm_doc))
-        crm_doc["classification"] = classification
+        apply_owner_probability_to_document(crm_doc)
         listing_id = crm_doc.get("listing_id", "")
         origen = crm_doc.get("origen", crm_doc.get("source_portal", "toctoc"))
         if not listing_id:

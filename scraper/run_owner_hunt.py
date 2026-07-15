@@ -210,6 +210,9 @@ def _process_single_record(
                         "source": "deepseek",
                         "deepseek_status": llm_result.status,
                         "deepseek_raw": llm_result.raw,
+                        "deepseek_structured_evidence": llm_result.structured_evidence,
+                        "deepseek_structured_evidence_status": llm_result.status,
+                        "prompt_version": llm_result.prompt_version,
                         "trace": {
                             "deepseek_raw": llm_result.raw,
                             "deepseek_message_content": llm_result.message_content,

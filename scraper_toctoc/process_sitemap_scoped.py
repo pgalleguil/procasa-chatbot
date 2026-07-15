@@ -413,6 +413,9 @@ def main():
                                         final_reason = "Validación posterior: la frase sobre dueño está en tercera persona y no identifica al publicador. " + ds.reason
                                         post_validation = "third_person_owner_phrase_downgraded"
                                     cls = {"state": final_state, "confidence": final_confidence, "reason": final_reason, "evidence": ds.evidence, "source": "deepseek", "deepseek_raw": ds.raw, "deepseek_status": ds.status,
+                                           "deepseek_structured_evidence": ds.structured_evidence,
+                                           "deepseek_structured_evidence_status": ds.status,
+                                           "prompt_version": ds.prompt_version,
                                            "deepseek_payload": ds.payload, "deepseek_message_content": ds.message_content,
                                            "deepseek_reasoning_content": ds.reasoning_content,
                                            "post_validation": post_validation, "deepseek_proposed_state": ds.state}

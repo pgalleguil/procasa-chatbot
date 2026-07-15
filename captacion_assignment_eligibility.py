@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-FINAL_STATES = {"DUEÑO_SEGURO", "DUENO_SEGURO", "INCIERTO"}
+FINAL_STATES = {"DUEÑO_SEGURO", "DUENO_SEGURO", "DUEÑO_PROBABLE", "DUENO_PROBABLE", "INCIERTO"}
 COMMERCIAL_TERMS = ("inmobiliaria", "corredor", "corredora", "propiedades", "real estate", "broker")
 
 
@@ -20,6 +20,14 @@ def assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]]:
         reasons.append("manual_review_pending")
     if cls.get("exclude_from_assignment") is True or gestion.get("exclude_from_assignment") is True:
         reasons.append("explicitly_excluded")
+    try:
+        owner_probability = float(cls.get("owner_probability"))
+    except (TypeError, ValueError):
+        owner_probability = None
+    if owner_probability is None:
+        reasons.append("owner_probability_missing")
+    elif owner_probability < 0.50:
+        reasons.append("owner_probability_below_50")
 
     stage = str(doc.get("scrape_stage") or "").lower()
     html_status = str(doc.get("html_validation_status") or "").upper()

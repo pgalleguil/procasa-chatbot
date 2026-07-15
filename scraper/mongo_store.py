@@ -6,12 +6,12 @@ from typing import Any
 
 from config import AppConfig
 try:
-    from owner_scoring import calculate_owner_score
+    from owner_probability import apply_owner_probability_to_document
 except ImportError:  # direct execution from scraper/
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from owner_scoring import calculate_owner_score
+    from owner_probability import apply_owner_probability_to_document
 
 try:
     from pymongo import MongoClient  # type: ignore
@@ -99,9 +99,7 @@ class MongoStore:
         payload["source"] = "owner_hunt"
         payload["origen"] = "yapo"
         payload["source_portal"] = "yapo"
-        classification = dict(payload.get("classification") or {})
-        classification.update(calculate_owner_score(payload))
-        payload["classification"] = classification
+        apply_owner_probability_to_document(payload)
         return payload
 
     def upsert_listing(self, record: dict[str, Any]) -> dict[str, Any]:

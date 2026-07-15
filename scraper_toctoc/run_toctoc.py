@@ -574,6 +574,9 @@ def cmd_process(args, config):
                                 classification = {"state": final_state, "confidence": final_confidence, "reason": final_reason,
                                     "evidence": ds.evidence, "source": "deepseek", "deepseek_raw": ds.raw,
                                     "deepseek_status": ds.status, "deepseek_payload": ds.payload,
+                                    "deepseek_structured_evidence": ds.structured_evidence,
+                                    "deepseek_structured_evidence_status": ds.status,
+                                    "prompt_version": ds.prompt_version,
                                     "deepseek_message_content": ds.message_content,
                                     "deepseek_reasoning_content": ds.reasoning_content,
                                     "post_validation": post_validation, "deepseek_proposed_state": ds.state}

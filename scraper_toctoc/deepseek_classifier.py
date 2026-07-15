@@ -41,6 +41,8 @@ class DeepSeekResult:
     payload: dict[str, Any] = field(default_factory=dict)
     message_content: str = ""
     reasoning_content: str = ""
+    structured_evidence: list[dict[str, str]] = field(default_factory=list)
+    prompt_version: str = ""
 
 
 _EMAIL_RE = re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,}\b")
@@ -170,8 +172,36 @@ def classify_with_deepseek(extracted: dict[str, Any], rule_context: dict[str, An
         return None
     if "pro" in config.deepseek_model.lower():
         raise RuntimeError("Modelo DeepSeek Pro no permitido.")
+
+    try:
+        from owner_evidence_deepseek import adjudicate_owner_evidence
+    except ImportError:
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from owner_evidence_deepseek import adjudicate_owner_evidence
+    evidence_result = adjudicate_owner_evidence(
+        extracted,
+        api_key=config.deepseek_api_key,
+        base_url=config.deepseek_base_url,
+        model=config.deepseek_model,
+        timeout=config.deepseek_timeout_seconds,
+        max_tokens=max(config.deepseek_max_tokens, 900),
+        max_attempts=2,
+    )
+    return DeepSeekResult(
+        state="INCIERTO", confidence=0.0,
+        reason="DeepSeek extrajo evidencia estructurada; la decisión final es determinística.",
+        evidence=[item.get("quote", "") for item in evidence_result.evidence],
+        raw=evidence_result.raw, status=evidence_result.status,
+        payload=evidence_result.payload,
+        message_content=evidence_result.message_content,
+        reasoning_content=evidence_result.reasoning_content,
+        structured_evidence=evidence_result.evidence,
+        prompt_version=evidence_result.prompt_version,
+    )
     
-    if desc_bundle is None:
+    if desc_bundle is None:  # pragma: no cover - legacy implementation retained for rollback
         desc_bundle = build_description_for_llm(
             extracted.get("descripcion", extracted.get("description", "")),
             max_chars=config.deepseek_description_max_chars)

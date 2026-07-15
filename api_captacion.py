@@ -9,9 +9,7 @@ from bson import ObjectId
 from chatbot.storage import get_db, log_event
 from chatbot.constants import CHILE_TZ, EventType
 from owner_confidence import (
-    build_owner_confidence_doc,
-    build_classification_confidence_doc,
-    build_owner_score_doc,
+    build_owner_probability_doc,
     detect_source_price_warning,
     resolve_price_display,
 )
@@ -144,9 +142,7 @@ def normalize_captacion_document(doc):
         "classification": classification,
     }
     result.update(resolve_price_display(doc))
-    result.update(build_owner_confidence_doc(doc))
-    result.update(build_classification_confidence_doc(doc))
-    result.update(build_owner_score_doc(doc))
+    result.update(build_owner_probability_doc(doc))
     return result
 
 
@@ -485,7 +481,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     # Base: captaciones elegibles de todos los portales soportados.
     query = {
         "origen": {"$in": ["toctoc", "yapo"]},
-        "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]}
+        "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]}
     }
 
     def add_condition(condition):
@@ -589,7 +585,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     # Cache
     response_cache_key = (
-        f"captacion_resp_v10_{user_role}_{user_name}_{comuna_filters}_{status_filter}_"
+        f"captacion_resp_v11_{user_role}_{user_name}_{comuna_filters}_{status_filter}_"
         f"{executive_filter}_{operacion_filter}_{telefono_filter}_{classification_filter}_"
         f"{sort_by}_{sort_dir}_{page}_{limit}"
     )
@@ -601,7 +597,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     # Available ops
     pipeline_ops = [
-        {"$match": {"origen": {"$in": ["toctoc", "yapo"]}, "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]}}},
+        {"$match": {"origen": {"$in": ["toctoc", "yapo"]}, "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]}}},
         {"$group": {"_id": None, "ops": {"$addToSet": "$operacion"}}}
     ]
     ops_result = list(coll.aggregate(pipeline_ops))
@@ -619,8 +615,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     sort_fields = {
         "comuna": "comuna_slug",
         "precio": "precio_uf",
-        "confianza": "classification.confidence",
-        "owner_score": "classification.owner_score",
+        "owner_probability": "classification.owner_probability",
     }
     sort_keys = [s.strip() for s in str(sort_by or "").split(",") if s.strip()]
     sort_dirs = [s.strip().lower() for s in str(sort_dir or "").split(",") if s.strip()]
@@ -713,16 +708,9 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             "price_source_warning": detect_source_price_warning(
                 op_display, norm["precio_uf"], norm["precio_clp"]
             ),
-            "owner_confidence_display": norm["owner_confidence_display"],
-            "owner_confidence_sort": norm["owner_confidence_sort"],
-            "owner_confidence_title": norm["owner_confidence_title"],
-            "owner_confidence_type": norm["owner_confidence_type"],
-            "classification_confidence_display": norm["classification_confidence_display"],
-            "classification_confidence_sort": norm["classification_confidence_sort"],
-            "classification_confidence_title": norm["classification_confidence_title"],
-            "owner_score_display": norm["owner_score_display"],
-            "owner_score_sort": norm["owner_score_sort"],
-            "owner_score_title": norm["owner_score_title"],
+            "owner_probability_display": norm["owner_probability_display"],
+            "owner_probability_sort": norm["owner_probability_sort"],
+            "owner_probability_title": norm["owner_probability_title"],
             "uf_m2": uf_m2_val,
             "estado": gestion.get("estado", "NUEVO"),
             "ejecutivo": gestion.get("ejecutivo_asignado") or "Sin asignar",
@@ -1453,7 +1441,18 @@ def ensure_leads_indexes():
         except Exception:
             pass
         
-        # 5. Índice TTL para caché persistente
+        # 5. Índice para priorización global antes de paginar
+        try:
+            coll.create_index([
+                ("origen", 1),
+                ("classification.state", 1),
+                ("classification.owner_probability", -1),
+                ("_id", -1),
+            ], name="idx_captacion_owner_probability")
+        except Exception:
+            pass
+
+        # 6. Índice TTL para caché persistente
         try:
             db["system_cache"].create_index("expires_at", expireAfterSeconds=0)
         except Exception:
@@ -1864,7 +1863,7 @@ def distribute_sourced_leads():
         "classification.assignment_ready": True,
         "classification.exclude_from_assignment": {"$ne": True},
         "gestion.semantic_review_hold": {"$ne": True},
-        "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]},
+        "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]},
         "$or": [
             {"gestion.ejecutivo_id": {"$exists": False}},
             {"gestion.ejecutivo_id": None},

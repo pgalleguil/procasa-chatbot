@@ -46,7 +46,7 @@
             width: 100%;
             height: 100%;
             opacity: 0;
-            transition: opacity 1.5s ease-in-out;
+            transition: opacity 2.5s ease-in-out;
         }
 
         .slide.active {
@@ -57,25 +57,25 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
-            /* Oscurecer imagen para resaltar el login */
-            filter: brightness(0.4) saturate(1.1);
-            transform: scale(1.02);
+            /* Tratamiento suave: conserva colores y detalle naturales. */
+            filter: brightness(0.52) saturate(0.90) contrast(0.96);
+            transform: scale(1);
             backface-visibility: hidden;
         }
 
         /* Solo la fotografía visible usa CPU/GPU para el movimiento. */
         .slide.active img {
-            animation: kenburns 24s ease-in-out infinite alternate;
+            animation: kenburns 30s ease-in-out infinite alternate;
             will-change: transform;
         }
 
         @keyframes kenburns {
             from {
-                transform: scale(1.02);
+                transform: scale(1);
             }
 
             to {
-                transform: scale(1.10);
+                transform: scale(1.06);
             }
         }
 
@@ -308,7 +308,7 @@
                     slides[i].classList.remove('active');
                     i = (i + 1) % slides.length;
                     slides[i].classList.add('active');
-                }, 6000);
+                }, 8000);
             };
 
             // La primera foto aparece de inmediato; las demás esperan a que

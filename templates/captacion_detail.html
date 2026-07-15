@@ -1143,10 +1143,12 @@
                 {% endif %}
                 <div class="hero-image-overlay"></div>
 
-                <!-- Score Overlay -->
-                <div class="score-circle {% if prop.score_captacion >= 80 %}score-alta{% elif prop.score_captacion >= 50 %}score-media{% else %}score-baja{% endif %}"
-                    style="position: absolute; top: 24px; left: 24px">
-                    {{ prop.score_captacion }}
+                <!-- Owner probability overlay: same source and formatting as the list -->
+                <div class="score-circle {% if prop.owner_probability_sort >= 80 %}score-alta{% elif prop.owner_probability_sort >= 50 %}score-media{% else %}score-baja{% endif %}"
+                    style="position: absolute; top: 24px; left: 24px"
+                    title="{{ prop.owner_probability_title }}"
+                    aria-label="Probabilidad de dueño: {{ prop.owner_probability_display }}">
+                    {{ prop.owner_probability_display }}
                 </div>
             </div>
 

@@ -1,6 +1,7 @@
 from captacion_assignment_eligibility import assignment_eligibility
 from owner_confidence import build_owner_probability_doc
 from owner_probability import apply_owner_probability_to_document
+from pathlib import Path
 
 
 def complete_doc(**overrides):
@@ -61,3 +62,32 @@ def test_view_uses_probability_and_signal_tooltip():
     assert view["owner_probability_display"].endswith("%")
     assert view["owner_probability_sort"] >= 90
     assert "OWNER_FIRST_PERSON_EXPLICIT" in view["owner_probability_title"]
+
+
+def test_list_and_detail_share_the_same_owner_probability_display():
+    item = complete_doc()
+    item["classification"]["owner_probability"] = 0.95
+    view = build_owner_probability_doc(item)
+    list_display = view["owner_probability_display"]
+    detail_display = view["owner_probability_display"]
+    assert list_display == detail_display == "95%"
+
+
+def test_half_and_missing_probability_format_without_fallback():
+    assert build_owner_probability_doc(
+        {"classification": {"owner_probability": 0.50}}
+    )["owner_probability_display"] == "50%"
+    assert build_owner_probability_doc(
+        {"classification": {"owner_probability": None, "confidence": 0.95, "owner_score": 95}}
+    )["owner_probability_display"] == "S/I"
+
+
+def test_detail_indicator_uses_only_owner_probability_view_fields():
+    template = Path("templates/captacion_detail.html").read_text(encoding="utf-8")
+    marker = "<!-- Owner probability overlay: same source and formatting as the list -->"
+    block = template.split(marker, 1)[1].split("</div>", 1)[0]
+    assert "prop.owner_probability_display" in block
+    assert "prop.owner_probability_sort" in block
+    assert "prop.score_captacion" not in block
+    assert "classification.confidence" not in block
+    assert ">50<" not in block

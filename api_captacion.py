@@ -5,6 +5,12 @@ from chatbot.constants import CHILE_TZ
 import logging
 import uuid
 import re
+from captacion_kpis import (
+    VISIBLE_CLASSIFICATION_STATES,
+    MANAGEMENT_STATES,
+    CAPTURED_STATES,
+    DISCARDED_STATES,
+)
 from bson import ObjectId
 from chatbot.storage import get_db, log_event
 from chatbot.constants import CHILE_TZ, EventType
@@ -481,7 +487,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     # Base: captaciones elegibles de todos los portales soportados.
     query = {
         "origen": {"$in": ["toctoc", "yapo"]},
-        "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]}
+        "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}
     }
 
     def add_condition(condition):
@@ -555,12 +561,11 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         query["classification.state"] = classification_filter
     
     if status_filter:
-        terminal_states = ["Captado", "CAPTADO", "Descartado", "DESCARTADO", "Corredor",
-                          "Teléfono inválido", "Propiedad no disponible", "Publicación expirada", "No interesado"]
+        terminal_states = list(CAPTURED_STATES + DISCARDED_STATES)
         if status_filter in ("GRUPO_GESTION", "GESTION"):
-            query["gestion.estado"] = {"$in": ["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "GESTION"]}
+            query["gestion.estado"] = {"$in": list(MANAGEMENT_STATES)}
         elif status_filter in ("GRUPO_CAPTADO", "CAPTADO"):
-            query["gestion.estado"] = {"$in": ["Captado", "CAPTADO"]}
+            query["gestion.estado"] = {"$in": list(CAPTURED_STATES)}
         elif status_filter in ("GRUPO_DESCARTADO", "DESCARTADO"):
             query["gestion.estado"] = {"$in": terminal_states}
         elif status_filter == "NUEVO":
@@ -597,7 +602,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     # Available ops
     pipeline_ops = [
-        {"$match": {"origen": {"$in": ["toctoc", "yapo"]}, "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]}}},
+        {"$match": {"origen": {"$in": ["toctoc", "yapo"]}, "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}}},
         {"$group": {"_id": None, "ops": {"$addToSet": "$operacion"}}}
     ]
     ops_result = list(coll.aggregate(pipeline_ops))

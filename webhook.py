@@ -55,6 +55,7 @@ from api_captacion import (
     distribute_sourced_leads, release_stale_captaciones, format_relative_time as format_captacion_time,
     get_personal_templates, save_personal_template, delete_personal_template
 )
+from captacion_kpis import VISIBLE_CLASSIFICATION_STATES, build_kpi_queries
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate, resolve_property_code
 from chatbot.processing_service import LeadProcessingService
 
@@ -1340,7 +1341,7 @@ async def view_captaciones(
     sync_db = get_sync_db()
     base_eligible = Config.get_captacion_collection(sync_db).count_documents({
         "origen": {"$in": ["toctoc", "yapo"]},
-        "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]}
+        "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}
     })
     logger.info(
         f"[CAPTACION] collection={Config.CAPTACION_COLLECTION_NAME} "
@@ -1352,7 +1353,7 @@ async def view_captaciones(
     # KPIs de todos los portales soportados.
     base_query = {
         "origen": {"$in": ["toctoc", "yapo"]},
-        "classification.state": {"$in": ["DUEÑO_SEGURO", "INCIERTO"]}
+        "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}
     }
     if user_role not in ["admin", "supervisor"]:
         base_query["$or"] = [
@@ -1386,12 +1387,8 @@ async def view_captaciones(
             ]},
         ]
 
-    estados_gestion = ["Por contactar", "Contacto exitoso", "Sin respuesta", "Reunión agendada", "GESTION"]
-    estados_captado = ["Captado", "CAPTADO"]
-    estados_descartado = ["Corredor", "Teléfono inválido", "Descartado", "Propiedad no disponible", "Publicación expirada", "No interesado", "DESCARTADO"]
-
     import time
-    cache_key = f"stats_v5_{user_role}_{user_id}_{ejecutivo}"
+    cache_key = f"stats_v6_{user_role}_{user_id}_{ejecutivo}"
     cache_store = getattr(app.state, 'captacion_stats_cache', {})
     now = time.time()
     if cache_key in cache_store and now - cache_store[cache_key]['time'] < 300:
@@ -1401,11 +1398,12 @@ async def view_captaciones(
         available_count = cache_store[cache_key]['available_count']
         comunas_clean = cache_store[cache_key]['comunas_clean']
     else:
+        kpi_queries = build_kpi_queries(base_query)
         available_count, in_gestion_count, captados_count, descartados_count, comunas_list = await asyncio.gather(
-            adb[Config.CAPTACION_COLLECTION_NAME].count_documents(base_query),
-            adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_gestion}}),
-            adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_captado}}),
-            adb[Config.CAPTACION_COLLECTION_NAME].count_documents({**base_query, "gestion.estado": {"$in": estados_descartado}}),
+            adb[Config.CAPTACION_COLLECTION_NAME].count_documents(kpi_queries["available"]),
+            adb[Config.CAPTACION_COLLECTION_NAME].count_documents(kpi_queries["management"]),
+            adb[Config.CAPTACION_COLLECTION_NAME].count_documents(kpi_queries["captured"]),
+            adb[Config.CAPTACION_COLLECTION_NAME].count_documents(kpi_queries["discarded"]),
             adb[Config.CAPTACION_COLLECTION_NAME].distinct("comuna", base_query)
         )
         comunas_clean = sorted(
@@ -1568,7 +1566,12 @@ async def api_update_captacion(request: Request):
                 next_followup=next_followup
             )
         )
-        return {"status": "ok"} if result else {"status": "error", "message": "Operación retornó falso"}
+        if result:
+            # La respuesta ya cambió: las tarjetas no deben conservar hasta cinco
+            # minutos el conteo anterior.
+            app.state.captacion_stats_cache = {}
+            return {"status": "ok"}
+        return {"status": "error", "message": "Operación retornó falso"}
     except HTTPException:
         # Re-lanzar 401/403/400 para que el cliente y el handler global los manejen correctamente
         raise

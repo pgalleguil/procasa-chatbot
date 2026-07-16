@@ -52,7 +52,8 @@ from api_leads_intelligence import get_leads_executive_report, get_specific_lead
 from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent
 from api_captacion import (
     get_captacion_list, get_captacion_detail, update_captacion_status, update_contact_info,
-    distribute_sourced_leads, release_stale_captaciones, format_relative_time as format_captacion_time,
+    distribute_sourced_leads, release_stale_captaciones, redistribute_inactive_agent_captaciones,
+    format_relative_time as format_captacion_time,
     get_personal_templates, save_personal_template, delete_personal_template
 )
 from captacion_kpis import VISIBLE_CLASSIFICATION_STATES, build_kpi_queries
@@ -1388,7 +1389,7 @@ async def view_captaciones(
         ]
 
     import time
-    cache_key = f"stats_v6_{user_role}_{user_id}_{ejecutivo}"
+    cache_key = f"stats_v7_{user_role}_{user_id}_{ejecutivo}"
     cache_store = getattr(app.state, 'captacion_stats_cache', {})
     now = time.time()
     if cache_key in cache_store and now - cache_store[cache_key]['time'] < 300:
@@ -1687,8 +1688,12 @@ async def api_distribute_captacion(request: Request):
         raise HTTPException(status_code=403, detail="No autorizado")
         
     loop = asyncio.get_running_loop()
+    reassigned = await loop.run_in_executor(
+        _WORKER_THREAD_POOL, lambda: redistribute_inactive_agent_captaciones(dry_run=False)
+    )
     count = await loop.run_in_executor(_WORKER_THREAD_POOL, distribute_sourced_leads)
-    return {"status": "ok", "assigned": count}
+    app.state.captacion_stats_cache = {}
+    return {"status": "ok", "assigned": count, "reassigned_inactive": reassigned}
 
 async def captacion_distribution_loop():
     logger.info("[BACKGROUND] Iniciando loop de distribución de captaciones...")
@@ -1700,6 +1705,12 @@ async def captacion_distribution_loop():
             loop = asyncio.get_running_loop()
             
             # 1. Liberar captaciones sin gestión por SLA
+            inactive_result = await loop.run_in_executor(
+                _WORKER_THREAD_POOL, lambda: redistribute_inactive_agent_captaciones(dry_run=False)
+            )
+            if inactive_result.get("modified", 0) > 0:
+                logger.info(f"[BACKGROUND] Reasignadas por ejecutivo inactivo: {inactive_result}")
+
             released = await loop.run_in_executor(_WORKER_THREAD_POOL, release_stale_captaciones)
             if released > 0:
                 logger.info(f"[BACKGROUND] {released} captaciones liberadas por SLA antes de redistribuir.")

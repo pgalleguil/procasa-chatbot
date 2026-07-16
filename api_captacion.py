@@ -1915,6 +1915,93 @@ def distribute_sourced_leads():
     logger.info(f"[DISTRIBUCION] Asignadas: {assigned}")
     return assigned
 
+
+def redistribute_inactive_agent_captaciones(dry_run=True):
+    """Reasigna solo captaciones NUEVO de agentes inactivos según comuna."""
+    db = get_db()
+    coll = get_captacion_collection(db)
+    active_agents = list(db["usuarios"].find({
+        "is_active": True, "rol": "agente",
+        "comunas_interes_norm": {"$exists": True, "$ne": []},
+    }))
+    inactive_names = [a.get("nombre") for a in db["usuarios"].find(
+        {"is_active": False, "rol": "agente"}, {"nombre": 1}
+    ) if a.get("nombre")]
+    if not active_agents or not inactive_names:
+        return {"matched": 0, "planned": 0, "modified": 0, "uncovered": 0, "by_executive": {}}
+
+    agents_by_id = {str(a["_id"]): a for a in active_agents}
+    commune_agents = {}
+    for aid, agent in agents_by_id.items():
+        for commune in agent.get("comunas_interes_norm") or []:
+            commune_agents.setdefault(commune, []).append(aid)
+
+    eligible_states = list(VISIBLE_CLASSIFICATION_STATES)
+    properties = list(coll.find({
+        "origen": {"$in": ["toctoc", "yapo"]},
+        "classification.state": {"$in": eligible_states},
+        "classification.exclude_from_assignment": {"$ne": True},
+        "gestion.semantic_review_hold": {"$ne": True},
+        "gestion.estado": "NUEVO",
+        "gestion.ejecutivo_asignado": {"$in": inactive_names},
+    }).sort("_id", 1))
+
+    workloads = {aid: 0 for aid in agents_by_id}
+    active_names = [a.get("nombre") for a in active_agents]
+    for row in coll.aggregate([
+        {"$match": {
+            "classification.state": {"$in": eligible_states},
+            "gestion.estado": "NUEVO",
+            "gestion.ejecutivo_asignado": {"$in": active_names},
+        }},
+        {"$group": {"_id": "$gestion.ejecutivo_id", "count": {"$sum": 1}}},
+    ]):
+        if row.get("_id") is not None:
+            workloads[str(row["_id"])] = row["count"]
+
+    plan = []
+    uncovered = 0
+    for prop in properties:
+        commune = prop.get("comuna_slug") or normalize_commune_canonical(prop.get("comuna") or "")
+        candidates = commune_agents.get(commune, [])
+        if not candidates:
+            uncovered += 1
+            continue
+        chosen = min(candidates, key=lambda aid: (workloads.get(aid, 0), agents_by_id[aid].get("nombre", "")))
+        workloads[chosen] = workloads.get(chosen, 0) + 1
+        plan.append((prop, agents_by_id[chosen]))
+
+    by_executive = {}
+    modified = 0
+    now = datetime.now(timezone.utc)
+    for prop, agent in plan:
+        name = agent.get("nombre", "")
+        if dry_run:
+            by_executive[name] = by_executive.get(name, 0) + 1
+            continue
+        previous_name = prop.get("gestion", {}).get("ejecutivo_asignado")
+        result = coll.update_one(
+            {"_id": prop["_id"], "gestion.estado": "NUEVO", "gestion.ejecutivo_asignado": previous_name},
+            {"$set": {
+                "gestion.ejecutivo_id": str(agent["_id"]),
+                "gestion.ejecutivo_email": agent.get("email", ""),
+                "gestion.ejecutivo_asignado": name,
+                "gestion.fecha_asignacion": now,
+                "gestion.asignacion_version": "v2_active_commune_workload",
+                "gestion.previous_inactive_assignment": previous_name,
+                "gestion.reassignment_reason": "inactive_executive",
+                "gestion.reassigned_at": now,
+            }},
+        )
+        modified += result.modified_count
+        if result.modified_count:
+            by_executive[name] = by_executive.get(name, 0) + 1
+
+    return {
+        "matched": len(properties), "planned": len(plan), "modified": modified,
+        "uncovered": uncovered, "by_executive": by_executive,
+    }
+
 def get_personal_templates(user_name):
     """Retorna las plantillas personalizadas de un usuario."""
     db = get_db()

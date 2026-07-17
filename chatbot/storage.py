@@ -340,26 +340,43 @@ def obtener_propiedades_vistas(phone: str) -> List[str]:
 # ==========================================
 
 def save_pending_notification(lead_data: dict):
+    from .notification_identity import lead_notification_identity
+
     db = get_db()
     lead_phone = lead_data.get("lead_phone") or lead_data.get("phone")
-    lead_type = lead_data.get("lead_type")
+    notification_key = lead_notification_identity(lead_data)
 
-    # Evitar duplicados del mismo lead/tipo: si ya existe un pendiente, se actualiza.
-    if lead_phone and lead_type:
-        existing = db[COLLECTION_PENDING_NOTIFICATIONS].find_one({
+    # Un evento puede ser detectado por reglas con distinto lead_type. Para el
+    # ejecutivo sigue siendo el mismo contacto interesado en la misma propiedad.
+    if notification_key:
+        collection = db[COLLECTION_PENDING_NOTIFICATIONS]
+        existing = collection.find_one({
             "status": "pending",
-            "$or": [
-                {"lead_data.lead_phone": lead_phone},
-                {"lead_data.phone": lead_phone},
-            ],
-            "lead_data.lead_type": lead_type,
+            "notification_key": notification_key,
         })
+
+        # Compatibilidad con documentos pendientes creados antes de esta clave.
+        if not existing and lead_phone:
+            legacy_candidates = collection.find({
+                "status": "pending",
+                "$or": [
+                    {"lead_data.lead_phone": lead_phone},
+                    {"lead_data.phone": lead_phone},
+                ],
+            })
+            existing = next(
+                (candidate for candidate in legacy_candidates
+                 if lead_notification_identity(candidate) == notification_key),
+                None,
+            )
+
         if existing:
-            db[COLLECTION_PENDING_NOTIFICATIONS].update_one(
+            collection.update_one(
                 {"_id": existing["_id"]},
                 {
                     "$set": {
                         "lead_data": lead_data,
+                        "notification_key": notification_key,
                         "created_at": datetime.now(CHILE_TZ).isoformat(),
                         "status": "pending",
                     }
@@ -373,6 +390,8 @@ def save_pending_notification(lead_data: dict):
         "status": "pending",
         "attempts": 0
     }
+    if notification_key:
+        notification["notification_key"] = notification_key
     db[COLLECTION_PENDING_NOTIFICATIONS].insert_one(notification)
 
 def get_pending_notifications():

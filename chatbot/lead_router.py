@@ -506,6 +506,9 @@ def format_summary_whatsapp_template(leads_list: list, executive_name: str) -> s
     """
     Formats a single message summarizing multiple new leads for an executive.
     """
+    from .notification_identity import deduplicate_lead_notifications
+
+    leads_list = deduplicate_lead_notifications(leads_list)
     header = f"🚀 *{len(leads_list)} Nuevos Leads Asignados*"
     
     leads_details = ""

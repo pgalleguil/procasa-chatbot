@@ -43,6 +43,42 @@ def test_missing_phone_falls_back_to_hot_queue_not_generic_home():
     assert url.endswith("/crm?temperatura=HOT")
 
 
+def test_summary_deduplicates_same_contact_and_property_across_alert_types():
+    duplicate_lead = {
+        "phone": "+56 9 5617 0838",
+        "property_code": "5949",
+        "nombre": "Cliente",
+    }
+    message = format_summary_whatsapp_template(
+        [
+            {"_id": "first", "lead_data": {**duplicate_lead, "lead_type": "InteresVisita"}},
+            {"_id": "second", "lead_data": {**duplicate_lead, "lead_type": "LeadHotWhatsapp"}},
+            {"_id": "third", "lead_data": {"phone": "+56989168767", "property_code": "7726"}},
+            {"_id": "fourth", "lead_data": {"phone": "569 8916 8767", "property_code": "7.726"}},
+        ],
+        "Mariela Arriagada",
+    )
+
+    assert "2 Nuevos Leads Asignados" in message
+    assert "tienes 2 nuevos leads" in message
+    assert message.count("/crm/lead/56956170838?codigo=5949") == 1
+    assert message.count("/crm/lead/56989168767?codigo=7726") == 1
+
+
+def test_summary_keeps_two_properties_for_the_same_contact():
+    message = format_summary_whatsapp_template(
+        [
+            {"lead_data": {"phone": "+56911111111", "property_code": "100"}},
+            {"lead_data": {"phone": "+56911111111", "property_code": "200"}},
+        ],
+        "Erika Garrido",
+    )
+
+    assert "2 Nuevos Leads Asignados" in message
+    assert "codigo=100" in message
+    assert "codigo=200" in message
+
+
 def test_existing_auth_flow_preserves_requested_lead_path():
     source = Path("webhook.py").read_text(encoding="utf-8")
     assert 'requested_url = request.url.path' in source

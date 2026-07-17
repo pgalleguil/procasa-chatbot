@@ -1909,10 +1909,19 @@ async def process_pending_leads_loop():
                     from chatbot.lead_router import format_whatsapp_template, format_summary_whatsapp_template
                     from chatbot.notification_service import NotificationService
                     from chatbot.crm_service import CrmService
+                    from chatbot.notification_identity import deduplicate_lead_notifications
 
                     for target_phone, data in by_executive.items():
-                        items = data["items"]
+                        raw_items = data["items"]
+                        items = deduplicate_lead_notifications(raw_items)
                         target_name = data["name"]
+
+                        if len(items) != len(raw_items):
+                            logger.warning(
+                                "[BACKGROUND] Deduplicadas %s notificaciones repetidas para %s",
+                                len(raw_items) - len(items),
+                                target_name,
+                            )
                         
                         # Si tiene más de uno, enviamos resumen agrupado
                         if len(items) > 1:
@@ -1951,7 +1960,8 @@ async def process_pending_leads_loop():
                             
                             if success:
                                 for item in items:
-                                    await run_db("pending_notifications.mark_sent", mark_notification_sent, item["_id"])
+                                    for notification_id in item.get("_notification_ids") or [item["_id"]]:
+                                        await run_db("pending_notifications.mark_sent", mark_notification_sent, notification_id)
 
                         # Si es solo uno, enviamos el template normal
                         else:
@@ -1998,7 +2008,8 @@ async def process_pending_leads_loop():
                                 dedup_window_minutes=5
                             )
                             if success:
-                                await run_db("pending_notifications.mark_sent", mark_notification_sent, p["_id"])
+                                for notification_id in p.get("_notification_ids") or [p["_id"]]:
+                                    await run_db("pending_notifications.mark_sent", mark_notification_sent, notification_id)
 
                         # Throttling Anti-Spam: 30 segundos entre ejecutivos (Aumentado por precaución de Meta)
                         logger.info(f"[BACKGROUND] Pausa anti-spam (30s) para siguiente destinatario...")

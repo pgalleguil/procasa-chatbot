@@ -4,31 +4,16 @@ from config import Config
 from .constants import CHILE_TZ, PipelineStage
 from .utils import calculate_business_minutes
 import logging
-import ast
-import json
+from .lead_temperature import (
+    HOT,
+    derive_effective_temperature,
+    effective_temperature_set,
+    has_commercial_alert,
+)
 
 logger = logging.getLogger(__name__)
 
 HOT_LEAD_NOTIFICATION_TYPE = "LeadHotWhatsapp"
-COMMERCIAL_ALERT_TYPES = ["InteresVisita", "SolicitudContacto", "EscaladoUrgente"]
-
-def _normalize_alerts_sent(alerts_sent):
-    if isinstance(alerts_sent, dict):
-        return alerts_sent
-    if isinstance(alerts_sent, str):
-        try:
-            return json.loads(alerts_sent)
-        except Exception:
-            try:
-                parsed = ast.literal_eval(alerts_sent)
-                return parsed if isinstance(parsed, dict) else {}
-            except Exception:
-                return {}
-    return {}
-
-def _has_commercial_alert(alerts_sent) -> bool:
-    alerts = _normalize_alerts_sent(alerts_sent)
-    return any(alerts.get(t) for t in COMMERCIAL_ALERT_TYPES)
 
 def calculate_priority(lead_doc, now=None):
     """
@@ -151,28 +136,8 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None):
             action_label = type_labels.get(event_type, "Acción registrada")
         
         # --- LEAD TEMPERATURE & DYNAMIC SLA ---
-        # Fuente de verdad: last_intent (detectado por bot en core.py via CrmService.update_intent)
-        # Fuente secundaria: pipeline_stage (confirmado manualmente por ejecutivo)
-        # NOTA: bi_analytics_global es campo legacy que ya no se usa en el flujo activo.
-        last_intent = str(lead.get("last_intent", "")).upper()
-        pipeline_stage = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
-        old_temp = lead.get("lead_temperature")
-        alerts_sent = lead.get("prospecto", {}).get("alerts_sent") or {}
-        has_commercial_alert = _has_commercial_alert(alerts_sent)
-        
-        HOT_INTENT = {"ASK_VISIT", "ASK_CONTACT", "GIVE_OFFER"}
-        HOT_STAGES = {"VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION"}
-        
-        if last_intent in HOT_INTENT or pipeline_stage in HOT_STAGES or has_commercial_alert:
-            new_temp = "HOT"
-        elif old_temp == "HOT":
-            # Si el lead ya era HOT, mantenerlo HOT a menos que se cierre o desuscriba
-            if pipeline_stage in ["CLOSED_LOST", "CLOSED_WON"] or last_intent == "UNSUBSCRIBE":
-                new_temp = "COLD"
-            else:
-                new_temp = "HOT"
-        else:
-            new_temp = "COLD"
+        old_temp = lead.get("lead_temperature_effective") or lead.get("lead_temperature")
+        new_temp = derive_effective_temperature(lead)
             
         update_data = {
             "sla_status": sla_status,
@@ -180,10 +145,10 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None):
             "priority_bucket": bucket,
             "last_action_label": action_label,
             "updated_at_metrics": datetime.now(CHILE_TZ).isoformat(),
-            "lead_temperature": new_temp
+            **effective_temperature_set(new_temp),
         }
         
-        became_hot = new_temp == "HOT" and old_temp != "HOT"
+        became_hot = new_temp == HOT and old_temp != HOT
         if became_hot:
             update_data["lifecycle.hot_since"] = datetime.now(CHILE_TZ).isoformat()
         
@@ -229,7 +194,7 @@ def _enqueue_hot_lead_notification(lead):
 
         prospecto = lead.get("prospecto", {}) or {}
         alerts_sent = prospecto.get("alerts_sent") or {}
-        if _has_commercial_alert(alerts_sent):
+        if has_commercial_alert(alerts_sent):
             logger.info(f"[HOT_LEAD] Lead {lead.get('phone')} ya tenia alerta comercial enviada. No se duplica WhatsApp HOT.")
             return
 

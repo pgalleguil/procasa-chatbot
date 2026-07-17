@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -10,6 +11,9 @@ from chatbot.lead_router import (
 )
 from chatbot.crm_updates import bump_crm_leads_version, get_crm_leads_version
 from chatbot import storage
+from chatbot.lead_temperature import COLD, HOT, derive_effective_temperature
+from chatbot.crm_filters import build_crm_card_urls
+from api_crm import CRM_COLD_QUERY, CRM_HOT_QUERY, crm_stage_group
 
 
 def test_hot_lead_url_targets_specific_phone_and_property():
@@ -111,6 +115,92 @@ def test_crm_pagination_uses_real_pages_and_preserves_filters():
     assert '{"$skip": offset}' in api_crm
 
 
+def test_legacy_serialized_commercial_alert_is_normalized_once_for_backfill():
+    lead = {
+        "lead_temperature": "COLD",
+        "prospecto": {
+            "alerts_sent": '{"LeadHotWhatsapp": {"sent_at": "2026-07-01"}}'
+        },
+    }
+
+    assert derive_effective_temperature(lead) == HOT
+    assert CRM_HOT_QUERY == {"lead_temperature_effective": HOT}
+    assert CRM_COLD_QUERY == {"lead_temperature_effective": COLD}
+    template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
+    assert "lead.lead_temperature_effective == 'HOT'" in template
+    assert "is_crm_hot_signal" not in Path("api_crm.py").read_text(encoding="utf-8")
+
+
+def test_effective_hot_and_cold_are_exclusive_and_cover_classifiable_total():
+    leads = [
+        {"lead_temperature_effective": HOT},
+        {"lead_temperature_effective": COLD},
+        {"lead_temperature_effective": HOT},
+        {"lead_temperature_effective": COLD},
+    ]
+    hot_ids = {index for index, lead in enumerate(leads) if lead["lead_temperature_effective"] == HOT}
+    cold_ids = {index for index, lead in enumerate(leads) if lead["lead_temperature_effective"] == COLD}
+
+    assert hot_ids.isdisjoint(cold_ids)
+    assert len(hot_ids) + len(cold_ids) == len(leads)
+
+
+def test_crm_stage_groups_partition_the_selected_temperature_total():
+    stages = ["NEW"] * 37 + ["CONTACTED"] * 60 + ["INTERESTED"] * 12 + ["VISIT_DONE"] * 0 + ["CLOSED_WON"] * 6
+    counts = {group: 0 for group in ("NEW", "GESTION", "VISITA", "CERRADO")}
+    for stage in stages:
+        counts[crm_stage_group(stage)] += 1
+
+    assert counts == {"NEW": 37, "GESTION": 72, "VISITA": 0, "CERRADO": 6}
+    assert sum(counts.values()) == len(stages) == 115
+
+
+def test_crm_kpi_cards_filter_temperature_and_exact_stage_groups():
+    template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
+    api_crm = Path("api_crm.py").read_text(encoding="utf-8")
+
+    assert "card_urls.total" in template
+    assert "card_urls.hot" in template
+    assert "card_urls.cold" in template
+    assert "card_urls.unassigned" in template
+    for state in ("NEW", "GRUPO_GESTION", "GRUPO_VISITA", "GRUPO_CERRADO"):
+        assert f"'{state}'" in template
+    assert "kpis.managed_percent" in template
+    assert "kpis.scope_total" in template
+    assert "Nivel de gestión" in template
+    assert '"scope_total"' in api_crm
+    assert 'filtro_estado == "GRUPO_GESTION"' in api_crm
+
+
+def test_crm_card_urls_preserve_executive_search_order_and_toggle_filters():
+    urls = build_crm_card_urls({
+        "temperatura": "COLD",
+        "estado": "GRUPO_GESTION",
+        "ejecutivo": "Mariela Arriagada",
+        "busqueda": "569 123",
+        "orden": "fecha",
+        "page": "3",
+    })
+
+    def query(key):
+        return parse_qs(urlsplit(urls[key]).query)
+
+    for key in urls:
+        params = query(key)
+        assert params["ejecutivo"] == ["Mariela Arriagada"]
+        assert params["busqueda"] == ["569 123"]
+        assert params["orden"] == ["fecha"]
+        assert params["page"] == ["1"]
+
+    assert "temperatura" not in query("total") and "estado" not in query("total")
+    assert query("hot")["temperatura"] == ["HOT"] and "estado" not in query("hot")
+    assert "temperatura" not in query("cold") and "estado" not in query("cold")
+    assert query("new")["temperatura"] == ["COLD"]
+    assert query("new")["estado"] == ["NEW"]
+    assert query("grupo_gestion")["temperatura"] == ["COLD"]
+    assert "estado" not in query("grupo_gestion")
+
+
 class _FakeRuntimeCollection:
     def __init__(self):
         self.document = None
@@ -163,7 +253,27 @@ def test_crm_partial_template_contains_only_dynamic_regions():
     environment = Environment(loader=FileSystemLoader("templates"), autoescape=True)
     template = environment.get_template("crm_leads_list.html")
     request = SimpleNamespace(query_params={"temperatura": "COLD", "ejecutivo": "Mariela Arriagada"})
-    kpis = SimpleNamespace(hot=1, cold=2, sin_asignar=0, nuevo=1, gestion=1, visita=0, cerrado=0)
+    kpis = SimpleNamespace(
+        total=3,
+        scope_total=2,
+        hot=1,
+        cold=2,
+        sin_asignar=0,
+        sin_asignar_global=0,
+        nuevo=1,
+        gestion=1,
+        visita=0,
+        cerrado=0,
+        managed=1,
+        managed_percent=50.0,
+        hot_percent=33.3,
+        cold_percent=66.7,
+        sin_asignar_percent=0.0,
+        nuevo_percent=50.0,
+        gestion_percent=50.0,
+        visita_percent=0.0,
+        cerrado_percent=0.0,
+    )
 
     rendered = template.render(
         partial=True,
@@ -176,6 +286,7 @@ def test_crm_partial_template_contains_only_dynamic_regions():
         current_ejecutivo="Mariela Arriagada",
         current_temperatura="COLD",
         crm_version=7,
+        card_urls=build_crm_card_urls(request.query_params),
         pagination_base_url="/crm?temperatura=COLD&ejecutivo=Mariela+Arriagada&",
         pagination={
             "total_count": 0,

@@ -324,6 +324,7 @@ class LeadProcessingService:
                 "timestamp": 1,
                 "stage": 1,
                 "pipeline_stage": 1,
+                "lead_temperature_effective": 1,
                 "cluster_id": 1,
                 "zone": 1,
                 "ejecutivo_asignado": 1,
@@ -411,7 +412,7 @@ class LeadProcessingService:
                 update_result = db["leads"].update_one({"_id": query_id}, {"$set": update_data})
                 visible_update_fields = {
                     "ejecutivo_asignado", "prospecto.ejecutivo",
-                    "lead_temperature", "pipeline_stage", "stage",
+                    "lead_temperature_effective", "pipeline_stage", "stage",
                     "priority_score", "sla_status", "last_action_label",
                     "lifecycle.assigned_at",
                 }
@@ -435,14 +436,11 @@ class LeadProcessingService:
                     from .lead_router import get_executive_phone
                     exec_phone = get_executive_phone(exec_name) if exec_name else "+56900000000"
                     
-                    temp = update_data.get("lead_temperature") or lead.get("lead_temperature")
-                    # If temperature is not set yet, fallback using active data sources (legacy bi_analytics_global removed)
-                    if not temp:
-                        last_intent_val = str(lead.get("last_intent", "")).upper()
-                        stage_val = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
-                        HOT_INTENT = {"ASK_VISIT", "GIVE_OFFER"}
-                        HOT_STAGES = {"VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION"}
-                        temp = "HOT" if (last_intent_val in HOT_INTENT or stage_val in HOT_STAGES) else "COLD"
+                    temp = (
+                        update_data.get("lead_temperature_effective")
+                        or lead.get("lead_temperature_effective")
+                        or "COLD"
+                    )
                         
                     if temp == "HOT":
                         structured_alert = {

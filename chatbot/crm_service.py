@@ -9,6 +9,7 @@ from .constants import (
 )
 from .storage import get_db, COLLECTION_CONVERSATIONS, log_event
 from .constants import CHILE_TZ
+from .lead_temperature import derive_effective_temperature
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,11 @@ class CrmService:
         
         update_data = {
             "stage": new_stage,
-            "last_crm_update": now_cl # Native datetime for sorting if needed
+            "last_crm_update": now_cl, # Native datetime for sorting if needed
+            "lead_temperature_effective": derive_effective_temperature(
+                lead,
+                overrides={"stage": new_stage, "pipeline_stage": new_stage},
+            ),
         }
         
         # Lifecycle Timestamps
@@ -140,6 +145,13 @@ class CrmService:
         """Actualiza la intención detectada del cliente sin afectar el stage operativo."""
         db = get_db()
         now_iso = datetime.now(CHILE_TZ).isoformat()
+        lead = CrmService.get_lead(phone)
+        if not lead:
+            return False
+        effective_temperature = derive_effective_temperature(
+            lead,
+            overrides={"last_intent": intent},
+        )
         
         result = db[COLLECTION_CONVERSATIONS].update_one(
             {"phone": phone},
@@ -147,7 +159,8 @@ class CrmService:
                 "$set": {
                     "last_intent": intent,
                     "last_intent_at": now_iso,
-                    "last_intent_actor": actor
+                    "last_intent_actor": actor,
+                    "lead_temperature_effective": effective_temperature,
                 }
             }
         )

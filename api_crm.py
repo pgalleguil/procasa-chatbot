@@ -1,8 +1,6 @@
 # from pymongo import MongoClient (Replaced by singleton)
 from config import Config
 from datetime import datetime
-import ast
-import json
 import pytz
 import re
 import uuid
@@ -106,46 +104,68 @@ from chatbot.storage import log_event # Usamos el logger centralizado
 from chatbot.crm_service import CrmService
 from chatbot.utils import calculate_business_minutes
 from chatbot.constants import PipelineStage, InteractionType, UNASSIGNED_LABEL
+from chatbot.lead_temperature import COLD, HOT
 
-HOT_INTENTS_CRM = {"ASK_VISIT", "ASK_CONTACT", "GIVE_OFFER"}
-HOT_STAGES_CRM = {"VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION"}
-COMMERCIAL_ALERT_TYPES_CRM = {"InteresVisita", "SolicitudContacto", "EscaladoUrgente", "LeadHotWhatsapp"}
-CRM_HOT_QUERY = {
-    "$or": [
-        {"lead_temperature": "HOT"},
-        {"last_intent": {"$in": list(HOT_INTENTS_CRM)}},
-        {"pipeline_stage": {"$in": list(HOT_STAGES_CRM)}},
-        {"stage": {"$in": list(HOT_STAGES_CRM)}},
-        *[{f"prospecto.alerts_sent.{alert_type}": {"$exists": True}} for alert_type in COMMERCIAL_ALERT_TYPES_CRM],
-        *[{f"alerts_sent.{alert_type}": {"$exists": True}} for alert_type in COMMERCIAL_ALERT_TYPES_CRM],
-    ]
+CRM_HOT_QUERY = {"lead_temperature_effective": HOT}
+CRM_COLD_QUERY = {"lead_temperature_effective": COLD}
+
+CRM_STAGE_GROUPS = {
+    "NEW": [PipelineStage.NEW, "nuevo", "new"],
+    "GESTION": [
+        PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER,
+        PipelineStage.NEGOTIATION, "gestion", "contacted",
+    ],
+    "VISITA": [PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE, "visita"],
+    "CERRADO": [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST, "cerrado"],
 }
 
-def _normalize_alerts_sent_for_crm(alerts_sent):
-    if isinstance(alerts_sent, dict):
-        return alerts_sent
-    if isinstance(alerts_sent, str):
-        try:
-            parsed = json.loads(alerts_sent)
-            return parsed if isinstance(parsed, dict) else {}
-        except Exception:
-            try:
-                parsed = ast.literal_eval(alerts_sent)
-                return parsed if isinstance(parsed, dict) else {}
-            except Exception:
-                return {}
-    return {}
 
-def is_crm_hot_signal(lead):
-    """Mirror metrics.py HOT rules so the CRM never shows a commercial alert as cold."""
-    if lead.get("lead_temperature") == "HOT":
-        return True
-    last_intent = str(lead.get("last_intent") or "").upper()
-    stage = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
-    prospecto = lead.get("prospecto") or {}
-    alerts_sent = _normalize_alerts_sent_for_crm(prospecto.get("alerts_sent") or lead.get("alerts_sent"))
-    has_commercial_alert = any(alert_type in alerts_sent for alert_type in COMMERCIAL_ALERT_TYPES_CRM)
-    return last_intent in HOT_INTENTS_CRM or stage in HOT_STAGES_CRM or has_commercial_alert
+def crm_stage_group(stage):
+    """Python mirror used for invariant checks and non-Mongo consumers."""
+    def normalize(value):
+        return str(getattr(value, "value", value) or "").upper()
+
+    normalized = normalize(stage or PipelineStage.NEW)
+    if normalized in {normalize(value) for value in CRM_STAGE_GROUPS["NEW"]}:
+        return "NEW"
+    if normalized in {normalize(value) for value in CRM_STAGE_GROUPS["VISITA"]}:
+        return "VISITA"
+    if normalized in {normalize(value) for value in CRM_STAGE_GROUPS["CERRADO"]}:
+        return "CERRADO"
+    return "GESTION"
+
+
+def _crm_stage_query(stages):
+    """Filtra por la misma etapa efectiva que luego se muestra en el listado."""
+    return {
+        "$expr": {
+            "$in": [
+                {
+                    "$ifNull": [
+                        "$pipeline_stage",
+                        {"$ifNull": ["$stage", {"$ifNull": ["$crm_estado", PipelineStage.NEW]}]},
+                    ]
+                },
+                stages,
+            ]
+        }
+    }
+
+
+def _crm_management_stage_query():
+    """Everything classifiable that is neither unattended, visit nor closed."""
+    excluded = (
+        CRM_STAGE_GROUPS["NEW"]
+        + CRM_STAGE_GROUPS["VISITA"]
+        + CRM_STAGE_GROUPS["CERRADO"]
+    )
+    effective_stage = {
+        "$ifNull": [
+            "$pipeline_stage",
+            {"$ifNull": ["$stage", {"$ifNull": ["$crm_estado", PipelineStage.NEW]}]},
+        ]
+    }
+    return {"$expr": {"$not": [{"$in": [effective_stage, excluded]}]}}
 
 # log_crm_event se mantiene como alias por compatibilidad pero usa storage
 def log_crm_event(phone, event_type, agent="Sistema", meta_data=None):
@@ -184,7 +204,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                              page=1, limit=10):
     from chatbot.storage import get_async_db
     db = get_async_db()
-    query_parts = []
+    # Todo el CRM trabaja exclusivamente con la temperatura normalizada.
+    query_parts = [{"lead_temperature_effective": {"$in": [HOT, COLD]}}]
     
     # --- FILTRO DE SEGURIDAD (ROL) ---
     # Si NO es admin/supervisor, solo ver sus propios leads
@@ -223,7 +244,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             temperature_query = CRM_HOT_QUERY
             query_parts.append(temperature_query)
         elif temperatura_filter == "COLD":
-            temperature_query = {"$nor": [CRM_HOT_QUERY]}
+            temperature_query = CRM_COLD_QUERY
             query_parts.append(temperature_query)
             
     query = {"$and": query_parts} if query_parts else {}
@@ -235,86 +256,72 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     base_kpi_query = query.copy() # Con temperatura para los KPIs por etapa
     
     # --- FILTRO DE ESTADO ---
-    query_with_state = query.copy()
     UNASSIGNED_VALUES = [None, "", "Sin Asignar", "No asignado", "No Asignado", "Sin asignar"]
+    unassigned_filter = {"$or": [{"ejecutivo_asignado": {"$in": UNASSIGNED_VALUES}}, {"ejecutivo_asignado": {"$exists": False}}]}
+    state_condition = None
     
     if filtro_estado and filtro_estado != "Todos":
         if filtro_estado == "UNASSIGNED":
-            # Caso especial: Sin Asignar (Nuevos sin ejecutivo)
-            query_with_state["pipeline_stage"] = {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}
-            query_with_state["$or"] = [{"ejecutivo_asignado": {"$in": UNASSIGNED_VALUES}}, {"ejecutivo_asignado": {"$exists": False}}]
+            state_condition = {"$and": [_crm_stage_query(CRM_STAGE_GROUPS["NEW"]), unassigned_filter]}
+        elif filtro_estado in ["NEW", "nuevo"]:
+            state_condition = _crm_stage_query(CRM_STAGE_GROUPS["NEW"])
+        elif filtro_estado == "GRUPO_GESTION":
+            state_condition = _crm_management_stage_query()
+        elif filtro_estado == "GRUPO_VISITA":
+            state_condition = _crm_stage_query(CRM_STAGE_GROUPS["VISITA"])
+        elif filtro_estado == "GRUPO_CERRADO":
+            state_condition = _crm_stage_query(CRM_STAGE_GROUPS["CERRADO"])
         else:
             # Mapeo invertido para buscar por el valor del Enum o string legacy en la DB
             state_db_value = filtro_estado
-            if filtro_estado in ["nuevo", "NEW"]: 
-                state_db_value = {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}
-                # IMPORTANTE: Para el listado "Sin Atender", también excluimos los no asignados
-                query_with_state["ejecutivo_asignado"] = {"$nin": UNASSIGNED_VALUES, "$exists": True}
-            elif filtro_estado == "visita": state_db_value = PipelineStage.VISIT_SCHEDULED
+            if filtro_estado == "visita": state_db_value = PipelineStage.VISIT_SCHEDULED
             elif filtro_estado == "gestion": state_db_value = PipelineStage.CONTACTED
             elif filtro_estado == "cerrado": state_db_value = PipelineStage.CLOSED_WON
-            query_with_state["pipeline_stage"] = state_db_value
+            state_condition = _crm_stage_query([state_db_value])
+
+    query_with_state_parts = list(query_parts)
+    if state_condition:
+        query_with_state_parts.append(state_condition)
+    query_with_state = {"$and": query_with_state_parts} if query_with_state_parts else {}
 
     # 1. EJECUCION DE KPIs OPTIMIZADA CON $FACET (1 solo roundtrip a MongoDB)
     import time
     t_kpis = time.perf_counter()
     
-    assigned_filter = {"ejecutivo_asignado": {"$nin": UNASSIGNED_VALUES, "$exists": True}}
-    unassigned_filter = {"$or": [{"ejecutivo_asignado": {"$in": UNASSIGNED_VALUES}}, {"ejecutivo_asignado": {"$exists": False}}]}
-
     # Pipeline de $facet consolida los 7 queries en 1 sola operación en el motor de base de datos
     facet_pipeline = [
         {"$facet": {
             "global_total": [{"$match": global_kpi_query}, {"$count": "count"}],
             "total_hot": [{"$match": {"$and": [global_kpi_query, CRM_HOT_QUERY]}}, {"$count": "count"}],
-            "total_cold": [{"$match": {"$and": [global_kpi_query, {"$nor": [CRM_HOT_QUERY]}]}}, {"$count": "count"}],
+            "total_cold": [{"$match": {"$and": [global_kpi_query, CRM_COLD_QUERY]}}, {"$count": "count"}],
+            "scope_total": [{"$match": base_kpi_query}, {"$count": "count"}],
             "total_pagina": [{"$match": query_with_state}, {"$count": "count"}],
+            "sin_asignar_global": [
+                {"$match": {"$and": [global_kpi_query, _crm_stage_query(CRM_STAGE_GROUPS["NEW"]), unassigned_filter]}},
+                {"$count": "count"}
+            ],
             "sin_asignar": [
-                {"$match": {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, unassigned_filter]}},
+                {"$match": {"$and": [base_kpi_query, _crm_stage_query(CRM_STAGE_GROUPS["NEW"]), unassigned_filter]}},
                 {"$count": "count"}
             ],
             "nuevo": [
-                {"$match": {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.NEW, None, "nuevo", "new"]}}, assigned_filter]}},
+                {"$match": {"$and": [base_kpi_query, _crm_stage_query(CRM_STAGE_GROUPS["NEW"])]}},
                 {"$count": "count"}
             ],
             "gestion": [
-                {"$match": {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.CONTACTED, PipelineStage.INTERESTED, PipelineStage.OFFER, PipelineStage.NEGOTIATION, "gestion", "contacted"]}}]}},
+                {"$match": {"$and": [base_kpi_query, _crm_management_stage_query()]}},
                 {"$count": "count"}
             ],
             "visita": [
-                {"$match": {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.VISIT_SCHEDULED, PipelineStage.VISIT_DONE, "visita"]}}]}},
+                {"$match": {"$and": [base_kpi_query, _crm_stage_query(CRM_STAGE_GROUPS["VISITA"])]}},
                 {"$count": "count"}
             ],
             "cerrado": [
-                {"$match": {"$and": [base_kpi_query, {"pipeline_stage": {"$in": [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST, "cerrado"]}}]}},
+                {"$match": {"$and": [base_kpi_query, _crm_stage_query(CRM_STAGE_GROUPS["CERRADO"])]}},
                 {"$count": "count"}
             ]
         }}
     ]
-
-    import asyncio
-    # Ejecutamos el pipeline asíncronamente
-    facet_cursor = db["leads"].aggregate(facet_pipeline)
-    facet_results = await facet_cursor.to_list(length=1)
-    
-    facet_res = facet_results[0] if facet_results else {}
-    
-    def get_facet_count(key):
-        return facet_res.get(key, [{"count": 0}])[0]["count"] if facet_res.get(key) else 0
-
-    total_count = get_facet_count("total_pagina")
-    
-    kpi_counts = {
-        "total": get_facet_count("global_total"), 
-        "hot": get_facet_count("total_hot"),
-        "cold": get_facet_count("total_cold"),
-        "nuevo": get_facet_count("nuevo"), 
-        "gestion": get_facet_count("gestion"), 
-        "visita": get_facet_count("visita"), 
-        "cerrado": get_facet_count("cerrado"), 
-        "sin_asignar": get_facet_count("sin_asignar")
-    }
-    logger.info(f"[PERF] get_crm_leads_list -> $facet(7x KPIs): {(time.perf_counter()-t_kpis)*1000:.1f}ms")
 
     # ------------------------------------------------------------------
     # 3. TRAER LEADS DESDE MONGO CON PAGINACION REAL
@@ -349,7 +356,6 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         "prospecto.codigo_yapo": 1,
         "prospecto.codigo_mercadolibre": 1,
         "prospecto.ultimo_mensaje": 1,
-        "prospecto.alerts_sent": 1,
         "pipeline_stage": 1,
         "stage": 1,
         "crm_estado": 1,
@@ -365,9 +371,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         "created_at": 1,
         "fecha_asignacion": 1,
         "datos_propiedad.codigo": 1,
-        "lead_temperature": 1,
-        "last_intent": 1,
-        "alerts_sent": 1,
+        "lead_temperature_effective": 1,
     }
 
     paginated_query = query_with_state.copy()
@@ -416,7 +420,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                                 # HOT + Sin Atender (NEW stage) = máxima urgencia
                                 "case": {
                                     "$and": [
-                                        {"$eq": ["$lead_temperature", "HOT"]},
+                                        {"$eq": ["$lead_temperature_effective", HOT]},
                                         {"$or": [
                                             {"$eq": ["$pipeline_stage", "NEW"]},
                                             {"$eq": ["$pipeline_stage", None]},
@@ -429,7 +433,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                             },
                             {
                                 # HOT + gestionado (ya fue atendido)
-                                "case": {"$eq": ["$lead_temperature", "HOT"]},
+                                "case": {"$eq": ["$lead_temperature_effective", HOT]},
                                 "then": 2
                             }
                         ],
@@ -451,7 +455,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             {"$limit": limit},
             {"$project": PROJECTION}
         ]
-        leads_list = await db["leads"].aggregate(smart_pipeline).to_list(length=limit)
+        records_pipeline = smart_pipeline
     else:
         # Ordenamiento estándar para filtros específicos (estado, visita, cerrado, etc.)
         # Por actividad más reciente DESC
@@ -474,7 +478,43 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             {"$limit": limit},
             {"$project": PROJECTION}
         ]
-        leads_list = await db["leads"].aggregate(simple_pipeline).to_list(length=limit)
+        records_pipeline = simple_pipeline
+
+    # Conteos y registros provienen del mismo snapshot y de una única agregación.
+    facet_pipeline[0]["$facet"]["records"] = records_pipeline
+    facet_results = await db["leads"].aggregate(facet_pipeline).to_list(length=1)
+    facet_res = facet_results[0] if facet_results else {}
+    leads_list = facet_res.get("records", [])
+
+    def get_facet_count(key):
+        return facet_res.get(key, [{"count": 0}])[0]["count"] if facet_res.get(key) else 0
+
+    total_count = get_facet_count("total_pagina")
+    global_total = get_facet_count("global_total")
+    scope_total = get_facet_count("scope_total")
+    kpi_counts = {
+        "total": global_total,
+        "scope_total": scope_total,
+        "hot": get_facet_count("total_hot"),
+        "cold": get_facet_count("total_cold"),
+        "nuevo": get_facet_count("nuevo"),
+        "gestion": get_facet_count("gestion"),
+        "visita": get_facet_count("visita"),
+        "cerrado": get_facet_count("cerrado"),
+        "sin_asignar": get_facet_count("sin_asignar"),
+        "sin_asignar_global": get_facet_count("sin_asignar_global"),
+    }
+    # "Con gestión iniciada" = EN_GESTION + VISITAS + CERRADOS.
+    kpi_counts["managed"] = kpi_counts["gestion"] + kpi_counts["visita"] + kpi_counts["cerrado"]
+    kpi_counts["managed_percent"] = (kpi_counts["managed"] * 100 / scope_total) if scope_total else 0.0
+    kpi_counts["hot_percent"] = (kpi_counts["hot"] * 100 / global_total) if global_total else 0.0
+    kpi_counts["cold_percent"] = (kpi_counts["cold"] * 100 / global_total) if global_total else 0.0
+    for key in ("sin_asignar", "nuevo", "gestion", "visita", "cerrado"):
+        kpi_counts[f"{key}_percent"] = (kpi_counts[key] * 100 / scope_total) if scope_total else 0.0
+    logger.info(
+        f"[PERF] get_crm_leads_list -> single $facet (KPIs + records): "
+        f"{(time.perf_counter()-t_kpis)*1000:.1f}ms"
+    )
 
 
     leads_procesados = []
@@ -607,25 +647,6 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         
         estado_final = estado_db
         
-        # Promoción visual de estado: si tiene gestión pero DB dice NEW, mostrar como CONTACTADO
-        # Esto es visual solamente — no modifica la DB
-        MANAGEMENT_LABELS = {
-            "Click WhatsApp (Lead)", "Llamada Iniciada", "WhatsApp Enviado",
-            "Email Enviado", "Click WhatsApp (Prop)", "Llamada Prop. Iniciada",
-            "WhatsApp Enviado (Prop)", "Email Enviado (Prop)", "Cambio de Estado",
-            "Gestión Manual", "Gestión Registrada"
-        }
-        has_management = last_action_text in MANAGEMENT_LABELS
-        
-        # Si hay gestión real registrada, ya no debe mostrarse como "Sin Atender".
-        if estado_final == PipelineStage.NEW and has_management:
-            estado_final = PipelineStage.CONTACTED
-
-        # En filtro NEW/Sin Atender excluimos del listado los que ya tuvieron gestión.
-        if filtro_estado in ["NEW", "nuevo"] and has_management:
-            continue
-
-        
         # Identificar ejecutivo y timestamp real para visualización
         ejecutivo = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
         sort_ts = lead.get("effective_assigned_at") or lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion") or lead.get("created_at")
@@ -643,22 +664,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         # (SaaS Performance: Metrics are precomputed in lead doc)
         config_estado = state_map.get(estado_final, state_map[PipelineStage.CONTACTED])
 
-        # 1. TEMPERATURA Y PRIORIDAD
-        # Usa el campo persistido si existe; si no, calcula por las fuentes activas vigentes.
-        # last_intent es guardado por core.py -> CrmService.update_intent() en cada mensaje.
-        # bi_analytics_global es legacy y no se usa en el flujo activo.
-        temp = lead.get("lead_temperature")
-        if temp != "HOT" and is_crm_hot_signal(lead):
-            temp = "HOT"
-            lead["lead_temperature"] = temp
-        elif not temp:
-            last_intent_val = str(lead.get("last_intent", "")).upper()
-            stage_val = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
-            if last_intent_val in HOT_INTENTS_CRM or stage_val in HOT_STAGES_CRM:
-                temp = "HOT"
-            else:
-                temp = "COLD"
-            lead["lead_temperature"] = temp
+        # 1. TEMPERATURA Y PRIORIDAD: única fuente persistida, sin reinterpretar
+        # alerts_sent ni otras señales durante la consulta/render.
+        temp = lead["lead_temperature_effective"]
 
         # 5. SLA / TIEMPO DE RESPUESTA
         sla_status = lead.get("sla_status", "good")
@@ -723,7 +731,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             "whatsapp_display": f"+{raw_phone}",
             "nombre": lead.get("prospecto", {}).get("nombre") or "Desconocido",
             "prioridad_badge": prioridad_badge,
-            "lead_temperature": temp,
+            "lead_temperature_effective": temp,
             "estado": estado_final,
             "estado_badge": config_estado["label"],
             "led_class": config_estado["led"],

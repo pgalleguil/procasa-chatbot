@@ -286,6 +286,23 @@
             align-items: center;
             justify-content: space-between;
             height: 100%;
+            cursor: pointer;
+            color: inherit;
+            text-decoration: none;
+            transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .summary-card:hover,
+        .summary-card:focus-visible {
+            transform: translateY(-2px);
+            border-color: var(--accent-color);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+            outline: none;
+        }
+
+        .summary-card.is-active {
+            background: rgba(99, 102, 241, 0.12);
+            box-shadow: inset 0 0 0 1px var(--accent-color);
         }
 
         .summary-value {
@@ -299,6 +316,94 @@
             text-transform: uppercase;
             color: var(--text-secondary);
             letter-spacing: 0.5px;
+        }
+
+        .summary-meta {
+            margin-top: 3px;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            line-height: 1.25;
+        }
+
+        .crm-scope-summary {
+            margin: -4px 0 16px;
+            color: var(--text-secondary);
+            font-size: 0.84rem;
+        }
+
+        .management-level-card {
+            margin-bottom: 18px;
+            padding: 18px 20px;
+            background: linear-gradient(135deg, var(--bg-card), rgba(59, 130, 246, 0.08));
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+        }
+
+        .management-level-heading,
+        .management-level-details {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .management-level-title {
+            font-size: 1rem;
+            font-weight: 700;
+        }
+
+        .management-level-context,
+        .management-level-details {
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+        }
+
+        .management-level-percent {
+            color: var(--accent-color);
+            font-size: 2.1rem;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .management-level-details {
+            margin: 12px 0 8px;
+        }
+
+        .management-progress {
+            height: 10px;
+            overflow: hidden;
+            background: rgba(148, 163, 184, 0.18);
+            border-radius: 999px;
+        }
+
+        .management-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #22c55e);
+            border-radius: inherit;
+            transition: width 0.35s ease;
+        }
+
+        .state-card-ratio {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            margin-top: 4px;
+            font-weight: 700;
+        }
+
+        .state-card-ratio .summary-value {
+            font-size: 1.65rem;
+        }
+
+        @media (max-width: 576px) {
+            .management-level-heading,
+            .management-level-details {
+                align-items: flex-start;
+            }
+
+            .management-level-percent {
+                font-size: 1.7rem;
+            }
         }
 
         /* TOOLBAR */
@@ -971,75 +1076,108 @@
 {% endif %}
             <div id="crmDynamicContent" data-crm-version="{{ crm_version }}">
 
-            <!-- KPIs: -->
-            <div class="row g-3 mb-4 row-cols-1 row-cols-md-4 row-cols-xl-7">
+            {% macro pct(value) -%}{{ '%.1f'|format(value)|replace('.', ',') }}{%- endmacro %}
+            {% set selected_temperature = request.query_params.get('temperatura', 'Todos') %}
+            {% set selected_state = request.query_params.get('estado', '') %}
+            {% set executive_label = current_ejecutivo if current_ejecutivo != 'Todos' else 'todos los ejecutivos' %}
+            {% set temperature_label = 'Leads HOT' if selected_temperature == 'HOT' else 'Leads informativos' if selected_temperature == 'COLD' else 'Todos los leads' %}
+
+            <!-- Universo completo del ejecutivo/búsqueda -->
+            <div class="row g-3 mb-4 row-cols-1 row-cols-md-{{ 4 if current_ejecutivo == 'Todos' else 3 }}">
                 <div class="col">
-                    <div class="summary-card" style="border-bottom: 3px solid var(--accent-red);">
+                    <a href="{{ card_urls.total }}" class="summary-card {{ 'is-active' if selected_temperature == 'Todos' and not selected_state }}"
+                        style="border-bottom: 3px solid var(--accent-color);">
                         <div>
-                            <div class="summary-value text-danger" id="kpi-hot" data-target="{{ kpis.hot }}">0</div>
-                            <div class="summary-label">Leads HOT 🔥</div>
+                            <div class="summary-value" id="kpi-total" data-target="{{ kpis.total }}">0</div>
+                            <div class="summary-label">Total leads</div>
+                            <div class="summary-meta">Universo completo de {{ executive_label }}</div>
                         </div>
-                        <i class="fa-solid fa-fire fa-2x text-danger opacity-25"></i>
-                    </div>
+                        <i class="fa-solid fa-users fa-2x text-primary opacity-25"></i>
+                    </a>
                 </div>
                 <div class="col">
-                    <div class="summary-card" style="border-bottom: 3px solid var(--led-blue, #3b82f6);">
+                    <a href="{{ card_urls.hot }}" class="summary-card {{ 'is-active' if selected_temperature == 'HOT' }}"
+                        style="border-bottom: 3px solid var(--accent-red);">
+                        <div>
+                            <div class="summary-value text-danger" id="kpi-hot" data-target="{{ kpis.hot }}">0</div>
+                            <div class="summary-label">HOT 🔥</div>
+                            <div class="summary-meta">{{ kpis.hot }} / {{ kpis.total }} · {{ pct(kpis.hot_percent) }}%</div>
+                            {% if selected_temperature == 'HOT' %}
+                            <div class="summary-meta fw-bold">{{ kpis.managed }} de {{ kpis.scope_total }} con gestión iniciada · {{ pct(kpis.managed_percent) }}%</div>
+                            {% endif %}
+                        </div>
+                        <i class="fa-solid fa-fire fa-2x text-danger opacity-25"></i>
+                    </a>
+                </div>
+                <div class="col">
+                    <a href="{{ card_urls.cold }}" class="summary-card {{ 'is-active' if selected_temperature == 'COLD' }}"
+                        style="border-bottom: 3px solid var(--led-blue, #3b82f6);">
                         <div>
                             <div class="summary-value text-info" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
                             <div class="summary-label">Informativos 🔵</div>
+                            <div class="summary-meta">{{ kpis.cold }} / {{ kpis.total }} · {{ pct(kpis.cold_percent) }}%</div>
+                            {% if selected_temperature == 'COLD' %}
+                            <div class="summary-meta fw-bold">{{ kpis.managed }} de {{ kpis.scope_total }} con gestión iniciada · {{ pct(kpis.managed_percent) }}%</div>
+                            {% endif %}
                         </div>
                         <i class="fa-solid fa-circle-info fa-2x text-info opacity-25"></i>
-                    </div>
+                    </a>
                 </div>
+                {% if current_ejecutivo == 'Todos' %}
                 <div class="col">
-                    <div class="summary-card" style="border-bottom: 3px solid var(--led-gray);">
+                    <a href="{{ card_urls.unassigned }}" class="summary-card {{ 'is-active' if selected_state == 'UNASSIGNED' and selected_temperature == 'Todos' }}"
+                        style="border-bottom: 3px solid var(--led-gray);">
                         <div>
-                            <div class="summary-value text-secondary" id="kpi-sin-asignar" data-target="{{ kpis.sin_asignar }}">0</div>
-                            <div class="summary-label">Sin Asignar</div>
+                            <div class="summary-value text-secondary" id="kpi-sin-asignar" data-target="{{ kpis.sin_asignar_global }}">0</div>
+                            <div class="summary-label">Sin asignar</div>
+                            <div class="summary-meta">Dentro del universo completo</div>
                         </div>
                         <i class="fa-solid fa-user-slash fa-2x text-secondary opacity-25"></i>
-                    </div>
+                    </a>
                 </div>
-                <div class="col">
-                    <div class="summary-card" style="border-bottom: 3px solid var(--led-red);">
-                        <div>
-                            <div class="summary-value text-danger" id="kpi-nuevo" data-target="{{ kpis.nuevo }}">0</div>
-                            <div class="summary-label">Sin Atender</div>
-                        </div>
-                        <i class="fa-solid fa-bell fa-2x text-danger opacity-25"></i>
+                {% endif %}
+            </div>
+
+            <!-- KPI principal horizontal -->
+            <section class="management-level-card" aria-label="Nivel de gestión">
+                <div class="management-level-heading">
+                    <div>
+                        <div class="management-level-title">Nivel de gestión</div>
+                        <div class="management-level-context">{{ temperature_label }} de {{ executive_label }}</div>
                     </div>
+                    <div class="management-level-percent">{{ pct(kpis.managed_percent) }}%</div>
                 </div>
+                <div class="management-level-details">
+                    <strong>{{ kpis.managed }} de {{ kpis.scope_total }} gestionados</strong>
+                    <span>{{ kpis.nuevo }} sin atender</span>
+                </div>
+                <div class="management-progress" role="progressbar" aria-valuenow="{{ kpis.managed_percent }}" aria-valuemin="0" aria-valuemax="100">
+                    <div class="management-progress-bar" style="width: {{ [kpis.managed_percent, 100]|min }}%"></div>
+                </div>
+            </section>
+
+            <!-- Distribución de estados dentro de la temperatura seleccionada -->
+            <div class="row g-3 mb-4 row-cols-1 row-cols-md-2 row-cols-xl-4">
+                {% for key, state, label, color, icon, count, percentage in [
+                    ('nuevo', 'NEW', 'Sin atender', 'danger', 'fa-bell', kpis.nuevo, kpis.nuevo_percent),
+                    ('gestion', 'GRUPO_GESTION', 'En gestión', 'warning', 'fa-comments', kpis.gestion, kpis.gestion_percent),
+                    ('visita', 'GRUPO_VISITA', 'Visitas', 'success', 'fa-calendar-check', kpis.visita, kpis.visita_percent),
+                    ('cerrado', 'GRUPO_CERRADO', 'Cerrados', 'secondary', 'fa-archive', kpis.cerrado, kpis.cerrado_percent)
+                ] %}
                 <div class="col">
-                    <div class="summary-card" style="border-bottom: 3px solid var(--led-yellow);">
+                    <a href="{{ card_urls[state|lower] }}" class="summary-card state-card {{ 'is-active' if selected_state == state }}">
                         <div>
-                            <div class="summary-value text-warning" id="kpi-gestion" data-target="{{ kpis.gestion }}">0
+                            <div class="summary-label">{{ label }}</div>
+                            <div class="state-card-ratio text-{{ color }}">
+                                <span class="summary-value" data-target="{{ count }}">0</span>
+                                <span>/ {{ kpis.scope_total }}</span>
                             </div>
-                            <div class="summary-label">En Gestión</div>
+                            <div class="summary-meta">{{ pct(percentage) }}%</div>
                         </div>
-                        <i class="fa-solid fa-comments fa-2x text-warning opacity-25"></i>
-                    </div>
+                        <i class="fa-solid {{ icon }} fa-2x text-{{ color }} opacity-25"></i>
+                    </a>
                 </div>
-                <div class="col">
-                    <div class="summary-card" style="border-bottom: 3px solid var(--led-green);">
-                        <div>
-                            <div class="summary-value text-success" id="kpi-visita" data-target="{{ kpis.visita }}">0
-                            </div>
-                            <div class="summary-label">Visitas</div>
-                        </div>
-                        <i class="fa-solid fa-calendar-check fa-2x text-success opacity-25"></i>
-                    </div>
-                </div>
-                <div class="col">
-                    <div class="summary-card" style="border-bottom: 3px solid var(--led-gray);">
-                        <!-- Estilo Gris para Total -->
-                        <div>
-                            <div class="summary-value text-secondary" id="kpi-cerrado" data-target="{{ kpis.cerrado }}">
-                                0</div>
-                            <div class="summary-label">Cerrados</div>
-                        </div>
-                        <i class="fa-solid fa-archive fa-2x text-secondary opacity-25"></i>
-                    </div>
-                </div>
+                {% endfor %}
             </div>
 
             <!-- TOOLBAR DE FILTROS -->
@@ -1052,9 +1190,9 @@
                 </div>
 
                 <select name="temperatura" onchange="this.form.submit()">
-                    <option value="HOT" {% if request.query_params.get('temperatura', 'HOT') == 'HOT' %}selected{% endif %}>🔥 Leads HOT (Prioridad Alta)</option>
+                    <option value="Todos" {% if not request.query_params.get('temperatura') or request.query_params.get('temperatura') == 'Todos' %}selected{% endif %}>👀 Ver Todos los Leads</option>
+                    <option value="HOT" {% if request.query_params.get('temperatura') == 'HOT' %}selected{% endif %}>🔥 Leads HOT (Prioridad Alta)</option>
                     <option value="COLD" {% if request.query_params.get('temperatura') == 'COLD' %}selected{% endif %}>🔵 Leads Informativos / Exploratorios</option>
-                    <option value="Todos" {% if request.query_params.get('temperatura') == 'Todos' %}selected{% endif %}>👀 Ver Todos los Leads</option>
                 </select>
 
                 <select name="estado" onchange="this.form.submit()">
@@ -1063,6 +1201,9 @@
                     <option value="UNASSIGNED" {% if request.query_params.get('estado')=='UNASSIGNED' %}selected{% endif %}>⚪ Sin Asignar (Pool)</option>
                     <option value="NEW" {% if request.query_params.get('estado')=='NEW' %}selected{% endif %}>🔴 Sin
                         Atender</option>
+                    <option value="GRUPO_GESTION" {% if request.query_params.get('estado')=='GRUPO_GESTION' %}selected{% endif %}>🟡 Todas las etapas en gestión</option>
+                    <option value="GRUPO_VISITA" {% if request.query_params.get('estado')=='GRUPO_VISITA' %}selected{% endif %}>🟢 Todas las etapas de visita</option>
+                    <option value="GRUPO_CERRADO" {% if request.query_params.get('estado')=='GRUPO_CERRADO' %}selected{% endif %}>⚪ Todos los cerrados</option>
                     <option value="CONTACTED" {% if request.query_params.get('estado')=='CONTACTED' %}selected{% endif
                         %}>🟡 En Gestión (Contactado)</option>
                     <option value="INTERESTED" {% if request.query_params.get('estado')=='INTERESTED' %}selected{% endif
@@ -1122,10 +1263,8 @@
                         <tr class="clickable-row" onclick="window.location.href='/crm/lead/{{ lead.phone }}'">
                             <td data-label="Prioridad">
                                 <div class="fw-bold d-flex align-items-center" style="font-size: 0.95rem;">
-                                    {% if lead.lead_temperature == 'HOT' %}
+                                    {% if lead.lead_temperature_effective == 'HOT' %}
                                     <span class="text-danger"><i class="fa-solid fa-fire me-1"></i>Alta</span>
-                                    {% elif lead.lead_temperature == 'WARM' %}
-                                    <span class="text-warning"><i class="fa-solid fa-circle-dot me-1"></i>Media</span>
                                     {% else %}
                                     <span class="text-info"><i class="fa-solid fa-circle-info me-1"></i>Informativo</span>
                                     {% endif %}

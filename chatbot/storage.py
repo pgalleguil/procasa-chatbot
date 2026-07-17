@@ -58,7 +58,10 @@ def ensure_conversation_id(phone: str) -> str:
         conversation_id = str(uuid4())
         db[COLLECTION_CONVERSATIONS].update_one(
             {"phone": phone},
-            {"$set": {"conversation_id": conversation_id}},
+            {
+                "$set": {"conversation_id": conversation_id},
+                "$setOnInsert": {"lead_temperature_effective": "COLD"},
+            },
             upsert=True
         )
         return conversation_id
@@ -236,7 +239,10 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None):
                 "last_message_role": role,
                 "last_message_preview": str(content)[:160],
             },
-            "$setOnInsert": {"created_at": now.isoformat()}
+            "$setOnInsert": {
+                "created_at": now.isoformat(),
+                "lead_temperature_effective": "COLD",
+            }
         },
         upsert=True
     )
@@ -271,13 +277,28 @@ def actualizar_prospecto(phone: str, datos: dict, trace_id: str = None):
             datos["nombre"] = nombre.title()
 
     db = get_db()
-    update_fields = {"$set": {}}
+    update_fields = {
+        "$set": {},
+        "$setOnInsert": {"lead_temperature_effective": "COLD"},
+    }
     for key, value in datos.items():
         if value not in [None, "", "desconocido"]:
             if isinstance(value, (bool, int, float, list, dict)):
                 update_fields["$set"][f"prospecto.{key}"] = value
             else:
                 update_fields["$set"][f"prospecto.{key}"] = str(value).strip()
+
+    if "alerts_sent" in datos:
+        from .lead_temperature import derive_effective_temperature
+
+        lead_snapshot = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}) or {}
+        prospecto_snapshot = dict(lead_snapshot.get("prospecto") or {})
+        prospecto_snapshot["alerts_sent"] = datos["alerts_sent"]
+        update_fields["$set"]["lead_temperature_effective"] = derive_effective_temperature(
+            lead_snapshot,
+            overrides={"prospecto": prospecto_snapshot},
+        )
+        update_fields.pop("$setOnInsert", None)
 
     if update_fields["$set"]:
         if trace_id:

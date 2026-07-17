@@ -1737,13 +1737,14 @@ async def _render_crm_list(
     busqueda: str = None, 
     orden: str = "fecha", 
     ejecutivo: str = None,
-    temperatura: str = "HOT",
+    temperatura: str = "Todos",
     page: int = 1,
     partial: bool = False,
 ):
     username = await get_current_user(request)
     from chatbot.storage import get_async_db
     from chatbot.crm_updates import get_crm_leads_version_async
+    from chatbot.crm_filters import build_crm_card_urls
 
     adb = get_async_db()
     user = await adb["usuarios"].find_one({"username": username})
@@ -1776,7 +1777,7 @@ async def _render_crm_list(
     total_pages = max(1, (total_count + limit - 1) // limit)
     page = min(max(page, 1), total_pages)
     pagination_query = {
-        "temperatura": temperatura,
+        "temperatura": temperatura if temperatura != "Todos" else None,
         "estado": estado,
         "busqueda": busqueda,
         "orden": orden,
@@ -1795,10 +1796,11 @@ async def _render_crm_list(
         "user_role": user_role,
         "user_name": user_name,
         "executives": executives,
-        "current_ejecutivo": ejecutivo or "Todos",
+        "current_ejecutivo": (ejecutivo or "Todos") if user_role in ["admin", "supervisor"] else user_name,
         "current_temperatura": temperatura,
         "crm_version": crm_version,
         "partial": partial,
+        "card_urls": build_crm_card_urls(request.query_params),
         "pagination_base_url": pagination_base_url,
         "pagination": {
             "total_count": total_count,
@@ -1820,7 +1822,7 @@ async def view_crm_list(
     busqueda: str = None,
     orden: str = "fecha",
     ejecutivo: str = None,
-    temperatura: str = "HOT",
+    temperatura: str = "Todos",
     page: int = Query(1, ge=1),
 ):
     return await _render_crm_list(
@@ -1855,7 +1857,7 @@ async def view_crm_list_partial(
     busqueda: str = None,
     orden: str = "fecha",
     ejecutivo: str = None,
-    temperatura: str = "HOT",
+    temperatura: str = "Todos",
     page: int = Query(1, ge=1),
 ):
     return await _render_crm_list(

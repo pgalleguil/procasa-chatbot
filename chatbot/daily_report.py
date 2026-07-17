@@ -274,7 +274,7 @@ async def send_personalized_morning_summary():
             }
             
         stage = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
-        temp = lead.get("lead_temperature") or "COLD"
+        temp = lead.get("lead_temperature_effective") or "COLD"
         is_pending = (
             stage in ["NEW", "NUEVO", ""]
             and not lead.get("last_event_type") in ["ASSIGNMENT", "HUMAN_NOTE", "GESTION_LOG", "SEND_WA_LEAD", "SEND_EMAIL_LEAD"]

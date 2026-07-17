@@ -39,7 +39,7 @@ async def monitor_sla_thresholds():
             {"stage": {"$exists": False}}
         ],
         "ejecutivo_asignado": {"$exists": True, "$nin": unassigned_patterns},
-        "lead_temperature": "HOT"
+        "lead_temperature_effective": "HOT"
     }
     
     leads = await db["leads"].find(query, {"messages": 0, "stage_history": 0}).to_list(length=2000)

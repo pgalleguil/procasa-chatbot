@@ -84,3 +84,15 @@ def test_existing_auth_flow_preserves_requested_lead_path():
     assert 'requested_url = request.url.path' in source
     assert 'response.set_cookie("login_next", requested_url' in source
     assert 'target_url = _safe_login_next(request.cookies.get("login_next"))' in source
+
+
+def test_crm_pagination_preserves_temperature_filter():
+    template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
+    pagination_start = template.index("<!-- PAGINACI")
+    pagination_end = template.index("<!-- Overlay", pagination_start)
+    pagination_markup = template[pagination_start:pagination_end]
+
+    assert "request.query_params.get('temperatura')" in pagination_markup
+    assert '"temperatura=" ~ request.query_params.get(\'temperatura\') ~ "&"' in pagination_markup
+    assert 'href="{{ base_url }}cursor=' in pagination_markup
+    assert 'href="{{ base_url[:-1] }}"' in pagination_markup

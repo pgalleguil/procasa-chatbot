@@ -1197,6 +1197,7 @@
                 </div>
                 <div class="pagination-controls">
                     {% set base_url = "/crm?" %}
+                    {% if request.query_params.get('temperatura') %}{% set base_url = base_url ~ "temperatura=" ~ request.query_params.get('temperatura') ~ "&" %}{% endif %}
                     {% if request.query_params.get('estado') %}{% set base_url = base_url ~ "estado=" ~ request.query_params.get('estado') ~ "&" %}{% endif %}
                     {% if request.query_params.get('busqueda') %}{% set base_url = base_url ~ "busqueda=" ~ request.query_params.get('busqueda') ~ "&" %}{% endif %}
                     {% if request.query_params.get('orden') %}{% set base_url = base_url ~ "orden=" ~ request.query_params.get('orden') ~ "&" %}{% endif %}

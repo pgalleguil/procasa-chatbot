@@ -181,7 +181,7 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
 async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad",
                              user_role="agente", user_name="", ejecutivo_filter=None,
                              temperatura_filter="HOT",
-                             page=1, limit=10, cursor_last_event_at=None):
+                             page=1, limit=10):
     from chatbot.storage import get_async_db
     db = get_async_db()
     query_parts = []
@@ -317,13 +317,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     logger.info(f"[PERF] get_crm_leads_list -> $facet(7x KPIs): {(time.perf_counter()-t_kpis)*1000:.1f}ms")
 
     # ------------------------------------------------------------------
-    # 3. TRAER LEADS DESDE MONGO — CURSOR-BASED PURO (O(1))
-    # ------------------------------------------------------------------
-    # No hay skip. La página se simula en el frontend con total_count.
-    # El cursor es el valor de last_event_at del último item visible.
-    #
-    # Primer carga (cursor_last_event_at=None): trae los más recientes.
-    # Carga siguiente: trae los que tienen el valor del cursor menor al último item visible.
+    # 3. TRAER LEADS DESDE MONGO CON PAGINACION REAL
     # ------------------------------------------------------------------
     # "Más Recientes" debe ordenar por fecha de asignación del ejecutivo.
     # Usamos lifecycle.assigned_at como fuente principal y dejamos fallback a fecha_asignacion/created_at.
@@ -361,6 +355,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         "crm_estado": 1,
         "ejecutivo_asignado": 1,
         "last_event_at": 1,
+        "last_message_at": 1,
+        "last_message_role": 1,
+        "last_message_preview": 1,
         "last_action_label": 1,
         "priority_score": 1,
         "sla_status": 1,
@@ -374,6 +371,11 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     }
 
     paginated_query = query_with_state.copy()
+    # El cursor historico se recibia desde /crm, pero nunca se aplicaba al
+    # pipeline. Por eso todas las paginas devolvian los mismos registros.
+    # page/skip funciona tanto con filtros como con el orden inteligente.
+    page = max(int(page or 1), 1)
+    offset = (page - 1) * limit
 
     if use_smart_sort:
         # Pipeline inteligente: calcula urgency_rank para ordenar en Mongo directamente
@@ -400,9 +402,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                     "$let": {
                         "vars": {
                             "ev": {"$convert": {"input": "$last_event_at", "to": "date", "onError": None, "onNull": None}},
+                            "msg": {"$convert": {"input": "$last_message_at", "to": "date", "onError": None, "onNull": None}},
                             "cr": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
                         },
-                        "in": {"$ifNull": ["$$ev", "$$cr"]}
+                        "in": {"$max": ["$$ev", "$$msg", "$$cr"]}
                     }
                 },
                 # urgency_rank: define el grupo de ordenamiento
@@ -441,8 +444,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                 # Dentro de grupos 2 y 3: actividad DESC (más reciente primero)
                 # Truco: invertimos _assigned_dt para grupo 1 usando un campo condicional
                 "_assigned_dt": 1,     # ASC para grupo 1 (oldest first = most overdue)
-                "_activity_dt": -1     # DESC para grupos 2 y 3 (newest activity first)
+                "_activity_dt": -1,    # DESC para grupos 2 y 3 (newest activity first)
+                "_id": 1               # desempate estable entre paginas
             }},
+            {"$skip": offset},
             {"$limit": limit},
             {"$project": PROJECTION}
         ]
@@ -457,13 +462,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                     "$let": {
                         "vars": {
                             "ev": {"$convert": {"input": "$last_event_at", "to": "date", "onError": None, "onNull": None}},
+                            "msg": {"$convert": {"input": "$last_message_at", "to": "date", "onError": None, "onNull": None}},
                             "cr": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
                         },
-                        "in": {"$ifNull": ["$$ev", "$$cr"]}
+                        "in": {"$max": ["$$ev", "$$msg", "$$cr"]}
                     }
                 }
             }},
-            {"$sort": {"_activity_dt": -1}},
+            {"$sort": {"_activity_dt": -1, "_id": 1}},
+            {"$skip": offset},
             {"$limit": limit},
             {"$project": PROJECTION}
         ]
@@ -536,6 +543,17 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER", "ALERT_SENT", "alert_sent"
     ]
 
+    def _coerce_crm_datetime(value):
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace('Z', '+00:00')) if isinstance(value, str) else value
+            if parsed.tzinfo is None:
+                parsed = CHILE_TZ.localize(parsed)
+            return parsed.astimezone(CHILE_TZ)
+        except (TypeError, ValueError, AttributeError):
+            return None
+
     # 4. PROCESAR LEADS EN MEMORIA
     for lead in leads_list:
         raw_phone = lead.get("phone", "").replace("+", "").strip()
@@ -556,18 +574,36 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         last_ev = events_map.get(raw_phone)
         if last_ev:
             last_action_text = type_labels.get(last_ev.get("type"), "Acción registrada")
-            last_action_note = last_ev.get("metadata", {}).get("note", "")
+            event_meta = last_ev.get("meta") or last_ev.get("metadata") or {}
+            last_action_note = event_meta.get("notes") or event_meta.get("note") or ""
         else:
             last_action_text = lead.get("last_action_label") or "Sin gestión aún"
             last_action_note = ""
+
+        last_message_at = lead.get("last_message_at")
+        message_dt = _coerce_crm_datetime(last_message_at)
+        event_dt = _coerce_crm_datetime(last_ev.get("timestamp") if last_ev else None)
+        has_new_customer_reply = bool(
+            lead.get("last_message_role") == "user"
+            and message_dt
+            and (not event_dt or message_dt > event_dt)
+        )
+        if has_new_customer_reply:
+            last_action_text = "Nueva respuesta del cliente"
+            last_action_note = lead.get("last_message_preview") or ""
         
         ultimo_msg_ts = lead.get("prospecto", {}).get("ultimo_mensaje")
         lifecycle_ts = lead.get("lifecycle", {}).get("assigned_at")
         created_ts = lead.get("created_at")
         
-        # Determine original fallback (Prioritize Assignment over Message for SLA consistency)
-        # We now use the precomputed last_event_at if available
-        last_ts = lead.get("last_event_at") or (last_ev.get("timestamp") if last_ev else None) or lifecycle_ts or ultimo_msg_ts or created_ts
+        # Mantener la prioridad histórica de la última gestión, salvo que haya
+        # una respuesta del cliente posterior a esa gestión.
+        last_ts = (
+            last_message_at if has_new_customer_reply else
+            lead.get("last_event_at") or
+            (last_ev.get("timestamp") if last_ev else None) or
+            lifecycle_ts or ultimo_msg_ts or created_ts
+        )
         
         estado_final = estado_db
         
@@ -699,6 +735,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             "url_propiedad": f"https://www.procasa.cl/{detect_property_code(lead)}" if detect_property_code(lead) else "#",
             "ultima_accion_titulo": last_action_text,
             "ultima_accion_note": last_action_note,
+            "ultima_accion_nota": last_action_note,
             "ejecutivo_nombre": ejecutivo or UNASSIGNED_LABEL,
             "fecha_asignacion_relativa": format_relative_time(lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion")),
             "stage": lead.get("stage") or "new",
@@ -1011,10 +1048,16 @@ def manage_crm_notes(phone, note_data, action="add"):
             "created_at_str": datetime.now().strftime("%d/%m/%Y"),
             "timestamp_iso": datetime.now().isoformat()
         }
-        db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$push": {"sticky_notes": note}})
+        result = db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$push": {"sticky_notes": note}})
+        if result.modified_count:
+            from chatbot.crm_updates import bump_crm_leads_version
+            bump_crm_leads_version(db, reason="note_added", phone=phone_clean)
         return note
     elif action == "delete":
-        db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$pull": {"sticky_notes": {"id": note_data.get("id")}}})
+        result = db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$pull": {"sticky_notes": {"id": note_data.get("id")}}})
+        if result.modified_count:
+            from chatbot.crm_updates import bump_crm_leads_version
+            bump_crm_leads_version(db, reason="note_deleted", phone=phone_clean)
         return True
     return False
 
@@ -1066,13 +1109,16 @@ def log_recommendation_sent(phone: str, selected_properties: list, user_email: s
             "exec_user": user_email
         }
 
-        db.leads.update_one(
+        result = db.leads.update_one(
             {"phone": phone},
             {
                 "$push": {"crm_history": {"$each": [history_entry], "$position": 0}},
                 "$inc": {"semantic_search_count": 1}
             }
         )
+        if result.modified_count:
+            from chatbot.crm_updates import bump_crm_leads_version
+            bump_crm_leads_version(db, reason="recommendation_sent", phone=phone)
         logger.info(f"[SEMANTIC] Recomendación registrada para {phone}: {prop_summary}")
         return {"status": "ok"}
     except Exception as e:

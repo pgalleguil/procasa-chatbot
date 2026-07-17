@@ -227,14 +227,22 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None):
     if metadata:
         message.update(metadata)
 
-    db[COLLECTION_CONVERSATIONS].update_one(
+    result = db[COLLECTION_CONVERSATIONS].update_one(
         {"phone": phone},
         {
             "$push": {"messages": {"$each": [message], "$slice": -50}}, # Historial más largo
+            "$set": {
+                "last_message_at": now.isoformat(),
+                "last_message_role": role,
+                "last_message_preview": str(content)[:160],
+            },
             "$setOnInsert": {"created_at": now.isoformat()}
         },
         upsert=True
     )
+    if result.modified_count or result.upserted_id:
+        from .crm_updates import bump_crm_leads_version
+        bump_crm_leads_version(db, reason=f"message_{role}", phone=phone)
 
 def obtener_conversacion(phone: str) -> List[Dict]:
     db = get_db()
@@ -274,11 +282,18 @@ def actualizar_prospecto(phone: str, datos: dict, trace_id: str = None):
     if update_fields["$set"]:
         if trace_id:
             logger.info(f"[PROSPECT_UPDATE] trace={trace_id} phone={phone} fields={list(update_fields['$set'].keys())}")
-        db[COLLECTION_CONVERSATIONS].update_one(
+        result = db[COLLECTION_CONVERSATIONS].update_one(
             {"phone": phone},
             update_fields,
             upsert=True
         )
+        visible_prospect_fields = {
+            "nombre", "ejecutivo", "codigo", "codigo_yapo",
+            "codigo_mercadolibre", "ultimo_mensaje", "alerts_sent",
+        }
+        if (result.modified_count or result.upserted_id) and visible_prospect_fields.intersection(datos):
+            from .crm_updates import bump_crm_leads_version
+            bump_crm_leads_version(db, reason="prospect_updated", phone=phone)
 
 def establecer_nombre_usuario(phone: str, nombre: str):
     actualizar_prospecto(phone, {"nombre": nombre})
@@ -430,6 +445,9 @@ def log_event(phone: str, event_type: str, actor: str = "system", meta: dict = N
         update_lead_metrics(db, phone, event_at=event["timestamp"], event_type=event_type)
     except Exception as e:
         logger.error(f"Error triggering metrics update in log_event: {e}")
+    finally:
+        from .crm_updates import bump_crm_leads_version
+        bump_crm_leads_version(db, reason=f"event_{event_type}", phone=phone)
 
 def update_lead_state(phone: str, stage: str = None, metadata: dict = None):
     db = get_db()

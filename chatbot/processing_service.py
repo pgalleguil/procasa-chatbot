@@ -408,7 +408,20 @@ class LeadProcessingService:
                 if not lead.get("ultima_actualizacion_bi"):
                     update_data["ultima_actualizacion_bi"] = now_cl
 
-                db["leads"].update_one({"_id": query_id}, {"$set": update_data})
+                update_result = db["leads"].update_one({"_id": query_id}, {"$set": update_data})
+                visible_update_fields = {
+                    "ejecutivo_asignado", "prospecto.ejecutivo",
+                    "lead_temperature", "pipeline_stage", "stage",
+                    "priority_score", "sla_status", "last_action_label",
+                    "lifecycle.assigned_at",
+                }
+                if update_result.modified_count and visible_update_fields.intersection(update_data):
+                    from .crm_updates import bump_crm_leads_version
+                    bump_crm_leads_version(
+                        db,
+                        reason="lead_processed",
+                        phone=lead.get("phone"),
+                    )
                 
                 # 3. Notificar solo si el lead realmente quedó HOT.
                 # La asignación sigue ocurriendo, pero el aviso al ejecutivo se reserva

@@ -1,3 +1,4 @@
+{% if not partial %}
 <!DOCTYPE html>
 <html lang="es" data-theme="dark">
 
@@ -683,6 +684,26 @@
             font-size: 0.8rem;
         }
 
+        .crm-update-notice {
+            display: none;
+            position: sticky;
+            top: 12px;
+            z-index: 1050;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            color: var(--text-primary);
+            background: rgba(99, 102, 241, 0.16);
+            border: 1px solid rgba(99, 102, 241, 0.45);
+            border-radius: 10px;
+        }
+
+        .crm-update-notice.is-visible {
+            display: flex;
+        }
+
         @media (max-width: 768px) {
             .pagination-container {
                 flex-direction: column;
@@ -940,6 +961,16 @@
                 <h2 class="fw-bold m-0 fs-4">Gestión de Leads</h2>
             </div>
 
+            <div id="crmUpdateNotice" class="crm-update-notice" role="status" aria-live="polite">
+                <span><i class="fa-solid fa-rotate me-2"></i>Hay nuevos cambios</span>
+                <button type="button" class="btn-filter" onclick="refreshCrmList({ force: true })">
+                    Actualizar
+                </button>
+            </div>
+
+{% endif %}
+            <div id="crmDynamicContent" data-crm-version="{{ crm_version }}">
+
             <!-- KPIs: -->
             <div class="row g-3 mb-4 row-cols-1 row-cols-md-4 row-cols-xl-7">
                 <div class="col">
@@ -1188,23 +1219,16 @@
                 </table>
             </div>
 
-            <!-- PAGINACIÓN (cursor-based) -->
+            <!-- PAGINACIÓN -->
             {% if pagination.total_count > 0 %}
             <div class="pagination-container">
                 <div class="pagination-info">
                     {{ pagination.total_count }} leads en total
-                    {% if not pagination.has_prev %}&middot; Mostrando los m&aacute;s recientes{% endif %}
+                    &middot; P&aacute;gina {{ pagination.current_page }} de {{ pagination.total_pages }}
                 </div>
                 <div class="pagination-controls">
-                    {% set base_url = "/crm?" %}
-                    {% if request.query_params.get('temperatura') %}{% set base_url = base_url ~ "temperatura=" ~ request.query_params.get('temperatura') ~ "&" %}{% endif %}
-                    {% if request.query_params.get('estado') %}{% set base_url = base_url ~ "estado=" ~ request.query_params.get('estado') ~ "&" %}{% endif %}
-                    {% if request.query_params.get('busqueda') %}{% set base_url = base_url ~ "busqueda=" ~ request.query_params.get('busqueda') ~ "&" %}{% endif %}
-                    {% if request.query_params.get('orden') %}{% set base_url = base_url ~ "orden=" ~ request.query_params.get('orden') ~ "&" %}{% endif %}
-                    {% if request.query_params.get('ejecutivo') %}{% set base_url = base_url ~ "ejecutivo=" ~ request.query_params.get('ejecutivo') ~ "&" %}{% endif %}
-
                     {% if pagination.has_prev %}
-                    <a href="{{ base_url[:-1] }}" class="page-btn">
+                    <a href="{{ pagination_base_url }}page={{ pagination.current_page - 1 }}" class="page-btn">
                         <i class="fa-solid fa-chevron-left"></i> Recientes
                     </a>
                     {% else %}
@@ -1213,8 +1237,8 @@
                     </span>
                     {% endif %}
 
-                    {% if pagination.has_more and pagination.next_cursor %}
-                    <a href="{{ base_url }}cursor={{ pagination.next_cursor | urlencode }}" class="page-btn">
+                    {% if pagination.has_more %}
+                    <a href="{{ pagination_base_url }}page={{ pagination.current_page + 1 }}" class="page-btn">
                         Anteriores <i class="fa-solid fa-chevron-right"></i>
                     </a>
                     {% else %}
@@ -1226,6 +1250,8 @@
             </div>
             {% endif %}
             </div>
+            </div>
+{% if not partial %}
         </div>
 
         <!-- Overlay para cerrar menú móvil -->
@@ -1359,19 +1385,143 @@
 
             });
 
-            // --- AUTO REFRESH AL VOLVER A LA PESTAÑA ---
-            let hiddenTimestamp = null;
-            document.addEventListener("visibilitychange", () => {
-                if (document.hidden) {
-                    hiddenTimestamp = Date.now();
-                } else if (hiddenTimestamp) {
-                    const timeAway = Date.now() - hiddenTimestamp;
-                    if (timeAway > 2000) { // Si estuvo fuera más de 2 segundos (tiempo suficiente para enviar un WA o mail)
-                        console.log("Pestaña activa nuevamente. Recargando para actualizar estados...");
-                        window.location.reload();
+            // --- ACTUALIZACIÓN HÍBRIDA DEL LISTADO (sin recargar la página) ---
+            const CRM_POLL_INTERVAL_MS = 20000;
+            const CRM_MUTATION_ENDPOINTS = /\/api\/crm\/(update|notes|log_action|send_recommendation)/;
+            let crmVersion = Number(document.getElementById('crmDynamicContent')?.dataset.crmVersion || 0);
+            let crmCheckInFlight = false;
+            let crmRefreshInFlight = false;
+            let crmInteractionBlockedUntil = 0;
+
+            function showCrmUpdateNotice(show = true) {
+                document.getElementById('crmUpdateNotice')?.classList.toggle('is-visible', show);
+            }
+
+            function isCrmUserWorking() {
+                const dynamicContent = document.getElementById('crmDynamicContent');
+                const active = document.activeElement;
+                const editingField = Boolean(
+                    dynamicContent && active && dynamicContent.contains(active) &&
+                    active.matches('input, textarea, select, [contenteditable="true"]')
+                );
+                const modalOpen = Boolean(document.querySelector('.modal.show'));
+                const explicitBusy = Boolean(document.querySelector(
+                    '[aria-busy="true"], .crm-operation-in-progress, .is-editing, [data-crm-dirty="true"]'
+                ));
+                return editingField || modalOpen || explicitBusy || Date.now() < crmInteractionBlockedUntil;
+            }
+
+            function initializeRefreshedCrmContent() {
+                document.querySelectorAll('#crmDynamicContent [data-bs-toggle="tooltip"]').forEach(element => {
+                    try {
+                        bootstrap.Tooltip.getOrCreateInstance(element);
+                    } catch (error) {
+                        console.debug('Tooltip no disponible durante actualización parcial', error);
                     }
-                    hiddenTimestamp = null;
+                });
+                document.querySelectorAll('#crmDynamicContent .summary-value').forEach(counter => {
+                    counter.innerText = counter.getAttribute('data-target') || '0';
+                });
+            }
+
+            async function refreshCrmList({ force = false } = {}) {
+                if (document.hidden || crmRefreshInFlight) return false;
+                if (!force && isCrmUserWorking()) {
+                    showCrmUpdateNotice(true);
+                    return false;
                 }
+
+                crmRefreshInFlight = true;
+                const scrollX = window.scrollX;
+                const scrollY = window.scrollY;
+                try {
+                    const response = await fetch(`/crm/partial${window.location.search}`, {
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                    const html = await response.text();
+                    const parsed = new DOMParser().parseFromString(html, 'text/html');
+                    const nextContent = parsed.getElementById('crmDynamicContent');
+                    const currentContent = document.getElementById('crmDynamicContent');
+                    if (!nextContent || !currentContent) throw new Error('Fragmento CRM inválido');
+
+                    currentContent.innerHTML = nextContent.innerHTML;
+                    currentContent.dataset.crmVersion = nextContent.dataset.crmVersion;
+                    crmVersion = Number(nextContent.dataset.crmVersion || crmVersion);
+                    initializeRefreshedCrmContent();
+                    showCrmUpdateNotice(false);
+                    requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+                    return true;
+                } catch (error) {
+                    console.error('[CRM_UPDATES] Error actualizando el listado:', error);
+                    showCrmUpdateNotice(true);
+                    return false;
+                } finally {
+                    crmRefreshInFlight = false;
+                }
+            }
+
+            async function checkCrmUpdates({ forceRefresh = false } = {}) {
+                if (document.hidden || crmCheckInFlight || crmRefreshInFlight) return;
+                crmCheckInFlight = true;
+                try {
+                    const response = await fetch(`/crm/check-updates?since=${encodeURIComponent(crmVersion)}`, {
+                        credentials: 'same-origin',
+                        cache: 'no-store'
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const result = await response.json();
+                    if (result.changed && Number(result.version) !== crmVersion) {
+                        if (forceRefresh || !isCrmUserWorking()) {
+                            await refreshCrmList({ force: forceRefresh });
+                        } else {
+                            showCrmUpdateNotice(true);
+                        }
+                    }
+                } catch (error) {
+                    console.debug('[CRM_UPDATES] Chequeo omitido:', error);
+                } finally {
+                    crmCheckInFlight = false;
+                }
+            }
+
+            ['input', 'change', 'submit'].forEach(eventName => {
+                document.addEventListener(eventName, event => {
+                    if (event.target.closest?.('#crmDynamicContent')) {
+                        crmInteractionBlockedUntil = Date.now() + 3000;
+                    }
+                }, true);
+            });
+
+            // Las acciones CRM actuales o futuras pueden disparar este evento.
+            document.addEventListener('crm:mutation-complete', () => {
+                refreshCrmList({ force: true });
+            });
+
+            // Si una gestión se realiza mediante fetch desde el listado, refrescar al terminar.
+            const nativeFetch = window.fetch.bind(window);
+            window.fetch = async function (resource, options = {}) {
+                const response = await nativeFetch(resource, options);
+                const url = typeof resource === 'string' ? resource : (resource?.url || '');
+                const method = String(options.method || resource?.method || 'GET').toUpperCase();
+                if (response.ok && method !== 'GET' && CRM_MUTATION_ENDPOINTS.test(url)) {
+                    queueMicrotask(() => refreshCrmList({ force: true }));
+                }
+                return response;
+            };
+
+            window.refreshCrmList = refreshCrmList;
+            window.setInterval(() => checkCrmUpdates(), CRM_POLL_INTERVAL_MS);
+
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) checkCrmUpdates();
+            });
+
+            window.addEventListener('pageshow', event => {
+                if (event.persisted && !document.hidden) checkCrmUpdates();
             });
 
             // --- GESTOR DE SESIÓN ---
@@ -1421,3 +1571,4 @@
     </body>
 
 </html>
+{% endif %}

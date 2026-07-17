@@ -1,10 +1,15 @@
 from pathlib import Path
+from types import SimpleNamespace
+
+from jinja2 import Environment, FileSystemLoader
 
 from chatbot.lead_router import (
     build_crm_lead_url,
     format_summary_whatsapp_template,
     format_whatsapp_template,
 )
+from chatbot.crm_updates import bump_crm_leads_version, get_crm_leads_version
+from chatbot import storage
 
 
 def test_hot_lead_url_targets_specific_phone_and_property():
@@ -86,13 +91,121 @@ def test_existing_auth_flow_preserves_requested_lead_path():
     assert 'target_url = _safe_login_next(request.cookies.get("login_next"))' in source
 
 
-def test_crm_pagination_preserves_temperature_filter():
+def test_crm_pagination_uses_real_pages_and_preserves_filters():
     template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
+    webhook = Path("webhook.py").read_text(encoding="utf-8")
+    api_crm = Path("api_crm.py").read_text(encoding="utf-8")
     pagination_start = template.index("<!-- PAGINACI")
     pagination_end = template.index("<!-- Overlay", pagination_start)
     pagination_markup = template[pagination_start:pagination_end]
 
-    assert "request.query_params.get('temperatura')" in pagination_markup
-    assert '"temperatura=" ~ request.query_params.get(\'temperatura\') ~ "&"' in pagination_markup
-    assert 'href="{{ base_url }}cursor=' in pagination_markup
-    assert 'href="{{ base_url[:-1] }}"' in pagination_markup
+    assert 'href="{{ pagination_base_url }}page={{ pagination.current_page - 1 }}"' in pagination_markup
+    assert 'href="{{ pagination_base_url }}page={{ pagination.current_page + 1 }}"' in pagination_markup
+    assert "cursor=" not in pagination_markup
+    assert '"temperatura": temperatura' in webhook
+    assert '"ejecutivo": ejecutivo' in webhook
+    assert '"busqueda": busqueda' in webhook
+    assert '"orden": orden' in webhook
+    assert 'page=page' in webhook
+    assert 'offset = (page - 1) * limit' in api_crm
+    assert '{"$skip": offset}' in api_crm
+
+
+class _FakeRuntimeCollection:
+    def __init__(self):
+        self.document = None
+
+    def find_one_and_update(self, query, update, **kwargs):
+        current = dict(self.document or {"_id": query["_id"], "version": 0})
+        current["version"] += update["$inc"]["version"]
+        current.update(update["$set"])
+        self.document = current
+        return dict(current)
+
+    def find_one(self, query, projection=None):
+        return dict(self.document) if self.document else None
+
+
+class _FakeLeadsCollection:
+    def __init__(self):
+        self.last_update = None
+
+    def update_one(self, query, update, **kwargs):
+        self.last_update = update
+        return SimpleNamespace(modified_count=1, upserted_id=None)
+
+
+def test_crm_update_version_is_atomic_and_monotonic():
+    collection = _FakeRuntimeCollection()
+    fake_db = {"crm_runtime_state": collection}
+
+    assert bump_crm_leads_version(fake_db, "message_user", "56911111111") == 1
+    assert bump_crm_leads_version(fake_db, "status_change", "56911111111") == 2
+    assert get_crm_leads_version(fake_db) == 2
+    assert collection.document["reason"] == "status_change"
+
+
+def test_saving_message_records_visible_activity_and_bumps_version(monkeypatch):
+    runtime = _FakeRuntimeCollection()
+    leads = _FakeLeadsCollection()
+    fake_db = {"crm_runtime_state": runtime, "leads": leads}
+    monkeypatch.setattr(storage, "get_db", lambda: fake_db)
+
+    storage.guardar_mensaje("56911111111", "user", "Quiero agendar una visita")
+
+    assert leads.last_update["$set"]["last_message_role"] == "user"
+    assert leads.last_update["$set"]["last_message_preview"] == "Quiero agendar una visita"
+    assert runtime.document["version"] == 1
+    assert runtime.document["reason"] == "message_user"
+
+
+def test_crm_partial_template_contains_only_dynamic_regions():
+    environment = Environment(loader=FileSystemLoader("templates"), autoescape=True)
+    template = environment.get_template("crm_leads_list.html")
+    request = SimpleNamespace(query_params={"temperatura": "COLD", "ejecutivo": "Mariela Arriagada"})
+    kpis = SimpleNamespace(hot=1, cold=2, sin_asignar=0, nuevo=1, gestion=1, visita=0, cerrado=0)
+
+    rendered = template.render(
+        partial=True,
+        request=request,
+        leads=[],
+        kpis=kpis,
+        user_role="supervisor",
+        user_name="Supervisor",
+        executives=["Mariela Arriagada"],
+        current_ejecutivo="Mariela Arriagada",
+        current_temperatura="COLD",
+        crm_version=7,
+        pagination_base_url="/crm?temperatura=COLD&ejecutivo=Mariela+Arriagada&",
+        pagination={
+            "total_count": 0,
+            "current_page": 1,
+            "total_pages": 1,
+            "has_prev": False,
+            "has_more": False,
+        },
+    )
+
+    assert 'id="crmDynamicContent"' in rendered
+    assert 'data-crm-version="7"' in rendered
+    assert "<html" not in rendered
+    assert "sidebar" not in rendered
+
+
+def test_crm_hybrid_polling_uses_partial_fetch_without_full_reload():
+    template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
+    webhook = Path("webhook.py").read_text(encoding="utf-8")
+    check_endpoint = webhook[webhook.index('async def check_crm_updates'):webhook.index('@app.get("/crm/partial"')]
+
+    assert "const CRM_POLL_INTERVAL_MS = 20000" in template
+    assert "document.hidden" in template
+    assert "visibilitychange" in template
+    assert "/crm/check-updates?since=" in template
+    assert "/crm/partial${window.location.search}" in template
+    assert "Hay nuevos cambios" in template
+    assert "crm:mutation-complete" in template
+    assert "refreshCrmList({ force: true })" in template
+    assert "window.location.reload()" not in template
+    assert '"/crm/check-updates"' in webhook
+    assert '"/crm/partial"' in webhook
+    assert "get_crm_leads_list" not in check_endpoint

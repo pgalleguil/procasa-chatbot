@@ -1731,18 +1731,20 @@ async def captacion_distribution_loop():
 
 # ========================= 6. RUTAS CRM (MODIFICADAS PARA HORA LOCAL) =========================
 
-@app.get("/crm", response_class=HTMLResponse)
-async def view_crm_list(
+async def _render_crm_list(
     request: Request, 
     estado: str = None, 
     busqueda: str = None, 
     orden: str = "fecha", 
     ejecutivo: str = None,
     temperatura: str = "HOT",
-    cursor: str = Query(None, description="ISO timestamp del último lead visto (cursor-based pagination)")
+    page: int = 1,
+    partial: bool = False,
 ):
     username = await get_current_user(request)
     from chatbot.storage import get_async_db
+    from chatbot.crm_updates import get_crm_leads_version_async
+
     adb = get_async_db()
     user = await adb["usuarios"].find_one({"username": username})
     
@@ -1751,8 +1753,11 @@ async def view_crm_list(
 
     user_role = user.get("rol", "agente")
     user_name = user.get("nombre", "")
+    # Se lee antes del listado. Si ocurre un cambio durante el render, el
+    # siguiente polling verá una versión mayor y repetirá la actualización.
+    crm_version = await get_crm_leads_version_async(adb)
 
-    limit = 15  # Aumentado a 15 (sin skip, el costo es O(1))
+    limit = 15
     leads_task = get_crm_leads_list(
         filtro_estado=estado,
         busqueda=busqueda,
@@ -1761,24 +1766,29 @@ async def view_crm_list(
         user_name=user_name,
         ejecutivo_filter=ejecutivo,
         temperatura_filter=temperatura,
+        page=page,
         limit=limit,
-        cursor_last_event_at=cursor
     )
     exec_task = get_unique_executives() if user_role in ["admin", "supervisor"] else asyncio.sleep(0, result=[])
     leads_payload, executives = await asyncio.gather(leads_task, exec_task)
     leads, kpis, total_count = leads_payload
 
-    # next_cursor: el timestamp de orden del \u00faltimo lead de esta p\u00e1gina
-    next_cursor = None
-    if leads and len(leads) == limit:
-        last_ts = leads[-1].get("sort_timestamp") or leads[-1].get("created_timestamp")
-        if last_ts:
-            try:
-                next_cursor = last_ts.isoformat() if hasattr(last_ts, "isoformat") else str(last_ts)
-            except Exception:
-                next_cursor = None
+    total_pages = max(1, (total_count + limit - 1) // limit)
+    page = min(max(page, 1), total_pages)
+    pagination_query = {
+        "temperatura": temperatura,
+        "estado": estado,
+        "busqueda": busqueda,
+        "orden": orden,
+        "ejecutivo": ejecutivo,
+    }
+    pagination_query = {
+        key: value for key, value in pagination_query.items()
+        if value not in (None, "")
+    }
+    pagination_base_url = "/crm?" + urlencode(pagination_query) + ("&" if pagination_query else "")
 
-    return templates.TemplateResponse("crm_leads_list.html", {
+    response = templates.TemplateResponse("crm_leads_list.html", {
         "request": request, 
         "leads": leads, 
         "kpis": kpis,
@@ -1787,14 +1797,77 @@ async def view_crm_list(
         "executives": executives,
         "current_ejecutivo": ejecutivo or "Todos",
         "current_temperatura": temperatura,
+        "crm_version": crm_version,
+        "partial": partial,
+        "pagination_base_url": pagination_base_url,
         "pagination": {
             "total_count": total_count,
-            "has_more": len(leads) == limit,
-            "has_prev": cursor is not None,
-            "next_cursor": next_cursor,
+            "current_page": page,
+            "total_pages": total_pages,
+            "has_more": page < total_pages,
+            "has_prev": page > 1,
             "limit": limit
         }
     })
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/crm", response_class=HTMLResponse)
+async def view_crm_list(
+    request: Request,
+    estado: str = None,
+    busqueda: str = None,
+    orden: str = "fecha",
+    ejecutivo: str = None,
+    temperatura: str = "HOT",
+    page: int = Query(1, ge=1),
+):
+    return await _render_crm_list(
+        request,
+        estado=estado,
+        busqueda=busqueda,
+        orden=orden,
+        ejecutivo=ejecutivo,
+        temperatura=temperatura,
+        page=page,
+    )
+
+
+@app.get("/crm/check-updates")
+async def check_crm_updates(request: Request, since: int = Query(0, ge=0)):
+    """Consulta un solo documento de versión; no examina la colección leads."""
+    await get_current_user(request)
+    from chatbot.storage import get_async_db
+    from chatbot.crm_updates import get_crm_leads_version_async
+
+    version = await get_crm_leads_version_async(get_async_db())
+    return JSONResponse(
+        {"changed": version != since, "version": version},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/crm/partial", response_class=HTMLResponse)
+async def view_crm_list_partial(
+    request: Request,
+    estado: str = None,
+    busqueda: str = None,
+    orden: str = "fecha",
+    ejecutivo: str = None,
+    temperatura: str = "HOT",
+    page: int = Query(1, ge=1),
+):
+    return await _render_crm_list(
+        request,
+        estado=estado,
+        busqueda=busqueda,
+        orden=orden,
+        ejecutivo=ejecutivo,
+        temperatura=temperatura,
+        page=page,
+        partial=True,
+    )
 
 @app.post("/api/marcar_gestionado")
 async def marcar_gestionado(request: Request):

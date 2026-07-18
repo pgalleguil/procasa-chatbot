@@ -181,6 +181,20 @@ def test_each_temperature_scope_partitions_into_the_four_card_states():
         assert len(scope) == expected_total
         assert sum(counts.values()) == expected_total
         assert counts["GESTION"] + counts["VISITA"] + counts["CERRADO"] == expected_total - counts["NEW"]
+        percentages = [count * 100 / expected_total for count in counts.values()]
+        assert abs(sum(percentages) - 100.0) < 0.001
+
+
+def test_compact_state_counts_and_percentages_share_the_same_source_values():
+    total = 169
+    counts = {"NEW": 81, "GESTION": 88, "VISITA": 0, "CERRADO": 0}
+    percentages = {key: count * 100 / total for key, count in counts.items()}
+
+    assert sum(counts.values()) == total
+    assert round(sum(percentages.values()), 10) == 100.0
+    assert counts["GESTION"] + counts["VISITA"] + counts["CERRADO"] == 88
+    assert round(percentages["NEW"], 1) == 47.9
+    assert round(percentages["GESTION"], 1) == 52.1
 
 
 def test_each_state_card_url_filters_exactly_its_count_in_active_temperature():
@@ -264,6 +278,12 @@ def test_crm_temperature_cards_avoid_ambiguous_ratios_and_mobile_layout_is_order
     assert 'aria-current="{{' in template
     assert "outline: 2px solid var(--accent-color);" in template
     assert "border-bottom: 3px solid var(--led-blue" not in template
+    assert "document.querySelectorAll('#crmDynamicContent [data-target]')" in template
+    assert "#crmDynamicContent .summary-value" not in template
+    assert ".segment-new { background: #f87171; }" in template
+    assert ".segment-gestion { background: #fbbf24; }" in template
+    assert ".segment-visita { background: #34d399; }" in template
+    assert ".segment-cerrado { background: #64748b; }" in template
 
 
 def test_crm_card_urls_preserve_executive_search_order_and_toggle_filters():
@@ -400,7 +420,7 @@ def test_crm_partial_template_contains_only_dynamic_regions():
     assert "/ 2" in rendered
     assert "Sin atender" in rendered
     assert "Gestión de Leads informativos" in rendered
-    assert "1 de 2 leads" in rendered
+    assert "1 gestionados de 2" in rendered
     assert rendered.count('aria-current="true"') == 1
     assert "state-cards-grid" not in rendered
     assert "<html" not in rendered

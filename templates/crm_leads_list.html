@@ -425,9 +425,9 @@
             opacity: 0.3;
         }
 
-        .segment-new { background: #ef4444; }
-        .segment-gestion { background: #f59e0b; }
-        .segment-visita { background: #10b981; }
+        .segment-new { background: #f87171; }
+        .segment-gestion { background: #fbbf24; }
+        .segment-visita { background: #34d399; }
         .segment-cerrado { background: #64748b; }
 
         @keyframes reveal-segment {
@@ -461,6 +461,7 @@
         .state-metric.is-active {
             background: rgba(99, 102, 241, 0.13);
             border-color: var(--accent-color);
+            box-shadow: inset 0 0 0 1px var(--accent-color);
             outline: none;
         }
 
@@ -1384,7 +1385,7 @@
                     <div>
                         <div class="management-panel-title">{{ management_title }}</div>
                         <div class="management-panel-context">{{ executive_label }}</div>
-                        <div class="management-panel-count">{{ kpis.managed }} de {{ kpis.scope_total }} leads</div>
+                        <div class="management-panel-count">{{ kpis.managed }} gestionados de {{ kpis.scope_total }}</div>
                     </div>
                     <div class="management-panel-result">
                         <span class="management-panel-percent">{{ pct(kpis.managed_percent) }}%</span>
@@ -1731,7 +1732,7 @@
                 }
 
                 // 2. Number Animation Script (Critical Path)
-                const counters = document.querySelectorAll('.summary-value');
+                const counters = document.querySelectorAll('#crmDynamicContent [data-target]');
                 counters.forEach(counter => {
                     try {
                         const target = +counter.getAttribute('data-target');
@@ -1800,7 +1801,7 @@
                         console.debug('Tooltip no disponible durante actualización parcial', error);
                     }
                 });
-                document.querySelectorAll('#crmDynamicContent .summary-value').forEach(counter => {
+                document.querySelectorAll('#crmDynamicContent [data-target]').forEach(counter => {
                     counter.innerText = counter.getAttribute('data-target') || '0';
                 });
             }

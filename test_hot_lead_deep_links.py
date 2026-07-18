@@ -462,6 +462,33 @@ def test_crm_partial_template_contains_only_dynamic_regions():
     assert "sidebar" not in rendered
 
 
+def test_total_state_temperature_breakdown_links_are_not_empty():
+    environment = Environment(loader=FileSystemLoader("templates"), autoescape=True)
+    template = environment.get_template("crm_leads_list.html")
+    request = SimpleNamespace(query_params={})
+    kpis = SimpleNamespace(
+        total=3, scope_total=3, hot=1, cold=2, sin_asignar=0,
+        sin_asignar_global=0, nuevo=2, gestion=1, visita=0, cerrado=0,
+        managed=1, managed_percent=33.3, hot_percent=33.3, cold_percent=66.7,
+        sin_asignar_percent=0.0, nuevo_percent=66.7, gestion_percent=33.3,
+        visita_percent=0.0, cerrado_percent=0.0,
+        nuevo_hot=1, nuevo_cold=1, gestion_hot=0, gestion_cold=1,
+        visita_hot=0, visita_cold=0, cerrado_hot=0, cerrado_cold=0,
+    )
+    rendered = template.render(
+        partial=True, request=request, leads=[], kpis=kpis,
+        user_role="supervisor", user_name="Supervisor", executives=[],
+        current_ejecutivo="Todos", current_temperatura="Todos", crm_version=1,
+        card_urls=build_crm_card_urls(request.query_params),
+        filter_urls=build_crm_filter_urls(request.query_params),
+        pagination_base_url="/crm?", pagination={"total_count": 3, "current_page": 1,
+        "total_pages": 1, "has_prev": False, "has_more": False},
+    )
+
+    assert 'href="/crm?temperatura=HOT&amp;estado=NEW&amp;page=1">1 Hot' in rendered
+    assert 'href="/crm?temperatura=COLD&amp;estado=NEW&amp;page=1">1 Informativos' in rendered
+
+
 def test_crm_filter_urls_remove_one_filter_and_reset_page():
     urls = build_crm_filter_urls({
         "temperatura": "COLD",

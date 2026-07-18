@@ -1575,8 +1575,8 @@
                         </a>
                         {% if selected_temperature == 'Todos' %}
                         <div class="state-breakdown" aria-label="Desglose por temperatura de {{ label }}">
-                            <a href="{{ card_urls[key ~ '_hot'] }}">{{ hot_count }} Hot</a>
-                            <a href="{{ card_urls[key ~ '_cold'] }}">{{ cold_count }} Informativos</a>
+                            <a href="{{ card_urls[(state|lower) ~ '_hot'] }}">{{ hot_count }} Hot</a>
+                            <a href="{{ card_urls[(state|lower) ~ '_cold'] }}">{{ cold_count }} Informativos</a>
                         </div>
                         {% endif %}
                     </div>

@@ -184,6 +184,18 @@ def test_each_temperature_scope_partitions_into_the_four_card_states():
         percentages = [count * 100 / expected_total for count in counts.values()]
         assert abs(sum(percentages) - 100.0) < 0.001
 
+    for group in ("NEW", "GESTION", "VISITA", "CERRADO"):
+        total_group = sum(crm_stage_group(lead["stage"]) == group for lead in leads)
+        hot_group = sum(
+            lead["temperature"] == HOT and crm_stage_group(lead["stage"]) == group
+            for lead in leads
+        )
+        cold_group = sum(
+            lead["temperature"] == COLD and crm_stage_group(lead["stage"]) == group
+            for lead in leads
+        )
+        assert hot_group + cold_group == total_group
+
 
 def test_compact_state_counts_and_percentages_share_the_same_source_values():
     total = 169
@@ -248,12 +260,12 @@ def test_crm_kpi_cards_filter_temperature_and_exact_stage_groups():
     assert "kpis.managed_percent" in template
     assert "kpis.scope_total" in template
     assert "{{ management_title }}" in template
-    assert "{{ kpis.nuevo }} sin atender" not in template
     assert "con gestión iniciada" not in template
     assert 'class="segmented-progress"' in template
     assert 'class="state-metrics-grid"' in template
     assert 'class="operational-alerts"' in template
     assert "kpis.sin_asignar_global" in template
+    assert 'f"{state_key}_{temperature_key}"' in api_crm
     assert '"scope_total"' in api_crm
     assert 'filtro_estado == "GRUPO_GESTION"' in api_crm
 
@@ -319,6 +331,10 @@ def test_crm_card_urls_preserve_executive_search_order_and_toggle_filters():
     assert "estado" not in query("grupo_gestion")
     assert "temperatura" not in query("unassigned")
     assert query("unassigned")["estado"] == ["UNASSIGNED"]
+    assert query("new_hot")["temperatura"] == ["HOT"]
+    assert query("new_hot")["estado"] == ["NEW"]
+    assert query("new_cold")["temperatura"] == ["COLD"]
+    assert query("new_cold")["estado"] == ["NEW"]
 
 
 class _FakeRuntimeCollection:
@@ -393,6 +409,14 @@ def test_crm_partial_template_contains_only_dynamic_regions():
         gestion_percent=50.0,
         visita_percent=0.0,
         cerrado_percent=0.0,
+        nuevo_hot=0,
+        nuevo_cold=1,
+        gestion_hot=0,
+        gestion_cold=1,
+        visita_hot=0,
+        visita_cold=0,
+        cerrado_hot=0,
+        cerrado_cold=0,
     )
 
     rendered = template.render(
@@ -424,7 +448,13 @@ def test_crm_partial_template_contains_only_dynamic_regions():
     assert "/ 2" in rendered
     assert "Sin atender" in rendered
     assert "Gestión de Leads informativos" in rendered
-    assert "1 gestionados de 2" in rendered
+    assert "1 gestionados · 1 sin atender" in rendered
+    assert "Gestionados = En gestión + Visitas + Cerrados" in rendered
+    assert rendered.count('class="progress-segment ') == 2
+    assert rendered.count('style="width: 50.0%;"') == 2
+    assert 'class="progress-segment segment-visita"' not in rendered
+    assert 'class="progress-segment segment-cerrado"' not in rendered
+    assert "state-breakdown" not in rendered
     assert rendered.count('aria-current="true"') == 1
     assert "state-cards-grid" not in rendered
     assert "<html" not in rendered

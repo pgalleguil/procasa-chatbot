@@ -403,7 +403,7 @@
         }
 
         .progress-segment {
-            flex: 0 1 auto;
+            flex: 0 0 auto;
             height: 100%;
             min-width: 0;
             transform-origin: left center;
@@ -417,12 +417,6 @@
             outline: 2px solid #fff;
             outline-offset: -2px;
             z-index: 1;
-        }
-
-        .progress-segment.is-zero {
-            flex: 0 0 2px;
-            width: 2px !important;
-            opacity: 0.3;
         }
 
         .segment-nuevo { background: #f87171; }
@@ -443,17 +437,28 @@
         }
 
         .state-metric {
-            display: flex;
-            align-items: center;
-            gap: 9px;
+            display: block;
             min-width: 0;
-            padding: 9px 10px;
             color: inherit;
-            text-decoration: none;
             background: rgba(148, 163, 184, 0.07);
             border: 1px solid transparent;
             border-radius: 9px;
             transition: background 0.15s ease, border-color 0.15s ease;
+        }
+
+        .state-metric-main {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 9px 10px;
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .state-metric-main:hover,
+        .state-metric-main:focus-visible {
+            color: inherit;
+            outline: none;
         }
 
         .state-metric:hover,
@@ -490,8 +495,36 @@
             white-space: nowrap;
         }
 
-        .state-metric > span:last-child {
+        .state-metric-main > span:last-child {
             min-width: 0;
+        }
+
+        .state-breakdown {
+            display: flex;
+            gap: 5px;
+            padding: 0 10px 9px 28px;
+            font-size: 0.67rem;
+        }
+
+        .state-breakdown a {
+            padding: 2px 6px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            background: rgba(148, 163, 184, 0.09);
+            border-radius: 999px;
+        }
+
+        .state-breakdown a:hover,
+        .state-breakdown a:focus-visible {
+            color: var(--text-primary);
+            background: rgba(99, 102, 241, 0.18);
+            outline: none;
+        }
+
+        .management-panel-formula {
+            margin-top: 3px;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
         }
 
         .operational-alerts {
@@ -1317,10 +1350,10 @@
             {% set temperature_label = 'Leads Hot' if selected_temperature == 'HOT' else 'Leads informativos' if selected_temperature == 'COLD' else 'Todos los leads' %}
             {% set management_title = 'Gestión de Leads Hot' if selected_temperature == 'HOT' else 'Gestión de Leads informativos' if selected_temperature == 'COLD' else 'Gestión de todos los leads' %}
             {% set state_metrics = [
-                ('nuevo', 'NEW', 'Sin atender', kpis.nuevo, kpis.nuevo_percent),
-                ('gestion', 'GRUPO_GESTION', 'En gestión', kpis.gestion, kpis.gestion_percent),
-                ('visita', 'GRUPO_VISITA', 'Visitas', kpis.visita, kpis.visita_percent),
-                ('cerrado', 'GRUPO_CERRADO', 'Cerrados', kpis.cerrado, kpis.cerrado_percent)
+                ('nuevo', 'NEW', 'Sin atender', kpis.nuevo, kpis.nuevo_percent, kpis.nuevo_hot, kpis.nuevo_cold),
+                ('gestion', 'GRUPO_GESTION', 'En gestión', kpis.gestion, kpis.gestion_percent, kpis.gestion_hot, kpis.gestion_cold),
+                ('visita', 'GRUPO_VISITA', 'Visitas', kpis.visita, kpis.visita_percent, kpis.visita_hot, kpis.visita_cold),
+                ('cerrado', 'GRUPO_CERRADO', 'Cerrados', kpis.cerrado, kpis.cerrado_percent, kpis.cerrado_hot, kpis.cerrado_cold)
             ] %}
 
             <!-- Universo completo del ejecutivo/búsqueda -->
@@ -1385,7 +1418,8 @@
                     <div>
                         <div class="management-panel-title">{{ management_title }}</div>
                         <div class="management-panel-context">{{ executive_label }}</div>
-                        <div class="management-panel-count">{{ kpis.managed }} gestionados de {{ kpis.scope_total }}</div>
+                        <div class="management-panel-count">{{ kpis.managed }} gestionados · {{ kpis.nuevo }} sin atender</div>
+                        <div class="management-panel-formula">Gestionados = En gestión + Visitas + Cerrados</div>
                     </div>
                     <div class="management-panel-result">
                         <span class="management-panel-percent">{{ pct(kpis.managed_percent) }}%</span>
@@ -1394,23 +1428,33 @@
                 </div>
 
                 <div class="segmented-progress" role="group" aria-label="Distribución de estados">
-                    {% for key, state, label, count, percentage in state_metrics %}
+                    {% for key, state, label, count, percentage, hot_count, cold_count in state_metrics %}
+                    {% if count > 0 %}
                     <a href="{{ card_urls[state|lower] }}"
-                        class="progress-segment segment-{{ key }} {{ 'is-zero' if percentage == 0 }}"
+                        class="progress-segment segment-{{ key }}"
                         style="width: {{ percentage }}%;" title="{{ label }}: {{ count }} de {{ kpis.scope_total }} ({{ pct(percentage) }}%)"
                         aria-label="Filtrar {{ label }}: {{ count }} de {{ kpis.scope_total }}"></a>
+                    {% endif %}
                     {% endfor %}
                 </div>
 
                 <div class="state-metrics-grid">
-                    {% for key, state, label, count, percentage in state_metrics %}
-                    <a href="{{ card_urls[state|lower] }}" class="state-metric {{ 'is-active' if selected_state == state }}">
-                        <span class="state-metric-dot segment-{{ key }}"></span>
-                        <span>
-                            <span class="state-metric-label">{{ label }}</span>
-                            <span class="state-metric-value"><span data-target="{{ count }}">0</span> / {{ kpis.scope_total }} · {{ pct(percentage) }}%</span>
-                        </span>
-                    </a>
+                    {% for key, state, label, count, percentage, hot_count, cold_count in state_metrics %}
+                    <div class="state-metric {{ 'is-active' if selected_state == state }}">
+                        <a href="{{ card_urls[state|lower] }}" class="state-metric-main">
+                            <span class="state-metric-dot segment-{{ key }}"></span>
+                            <span>
+                                <span class="state-metric-label">{{ label }}</span>
+                                <span class="state-metric-value"><span data-target="{{ count }}">0</span> / {{ kpis.scope_total }} · {{ pct(percentage) }}%</span>
+                            </span>
+                        </a>
+                        {% if selected_temperature == 'Todos' %}
+                        <div class="state-breakdown" aria-label="Desglose por temperatura de {{ label }}">
+                            <a href="{{ card_urls[key ~ '_hot'] }}">{{ hot_count }} Hot</a>
+                            <a href="{{ card_urls[key ~ '_cold'] }}">{{ cold_count }} Informativos</a>
+                        </div>
+                        {% endif %}
+                    </div>
                     {% endfor %}
                 </div>
             </section>

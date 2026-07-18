@@ -45,4 +45,8 @@ def build_crm_card_urls(query_params) -> dict[str, str]:
             urls[key] = url(remove=("estado",))
         else:
             urls[key] = url({"estado": state})
+        for temperature in ("HOT", "COLD"):
+            urls[f"{key}_{temperature.lower()}"] = url(
+                {"temperatura": temperature, "estado": state}
+            )
     return urls

@@ -333,6 +333,21 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         }}
     ]
 
+    # Desglose HOT/COLD por estado para el panel del universo Total. Se calcula
+    # dentro del mismo $facet y sobre la misma base de ejecutivo/búsqueda.
+    state_kpi_conditions = {
+        "nuevo": _crm_stage_query(CRM_STAGE_GROUPS["NEW"]),
+        "gestion": _crm_management_stage_query(),
+        "visita": _crm_stage_query(CRM_STAGE_GROUPS["VISITA"]),
+        "cerrado": _crm_stage_query(CRM_STAGE_GROUPS["CERRADO"]),
+    }
+    for state_key, state_query in state_kpi_conditions.items():
+        for temperature_key, temperature_query in (("hot", CRM_HOT_QUERY), ("cold", CRM_COLD_QUERY)):
+            facet_pipeline[0]["$facet"][f"{state_key}_{temperature_key}"] = [
+                {"$match": {"$and": [global_kpi_query, temperature_query, state_query]}},
+                {"$count": "count"},
+            ]
+
     # ------------------------------------------------------------------
     # 3. TRAER LEADS DESDE MONGO CON PAGINACION REAL
     # ------------------------------------------------------------------
@@ -514,6 +529,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         "sin_asignar": get_facet_count("sin_asignar"),
         "sin_asignar_global": get_facet_count("sin_asignar_global"),
     }
+    for state_key in state_kpi_conditions:
+        kpi_counts[f"{state_key}_hot"] = get_facet_count(f"{state_key}_hot")
+        kpi_counts[f"{state_key}_cold"] = get_facet_count(f"{state_key}_cold")
     # "Con gestión iniciada" = EN_GESTION + VISITAS + CERRADOS.
     kpi_counts["managed"] = kpi_counts["gestion"] + kpi_counts["visita"] + kpi_counts["cerrado"]
     kpi_counts["managed_percent"] = (kpi_counts["managed"] * 100 / scope_total) if scope_total else 0.0

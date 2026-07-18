@@ -1,3 +1,4 @@
+{% from "_lead_temperature_visual.html" import lead_temperature_icon, lead_temperature_label, lead_temperature_option %}
 {% if not partial %}
 <!DOCTYPE html>
 <html lang="es" data-theme="dark">
@@ -46,7 +47,7 @@
             --state-management: #fbbf24;
             --state-visits: #34d399;
             --state-closed: #64748b;
-            --lead-informative: #22d3ee;
+            --lead-cold: #22d3ee;
             
             /* Semaforo Colors */
             --led-red: #ef4444;
@@ -60,20 +61,20 @@
             --bg-body: #eaf0f6;
             --bg-card: #f8fafc;
             --bg-elevated: #f1f5f9;
-            --bg-sidebar: #f4f7fc;
-            --sidebar-glass-bg: rgba(244, 247, 252, 0.84);
-            --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.52), rgba(79, 70, 229, 0.035) 50%, rgba(226, 232, 240, 0.08));
-            --sidebar-border: rgba(100, 116, 139, 0.24);
-            --sidebar-shadow: inset -1px 0 rgba(255, 255, 255, 0.72), 8px 0 24px rgba(51, 65, 85, 0.10);
-            --sidebar-shadow-expanded: inset -1px 0 rgba(255, 255, 255, 0.82), 10px 0 28px rgba(51, 65, 85, 0.13);
-            --sidebar-hover-bg: rgba(79, 70, 229, 0.08);
-            --sidebar-active-bg: rgba(79, 70, 229, 0.13);
-            --sidebar-active-color: #4338ca;
-            --sidebar-danger: #b91c1c;
+            --bg-sidebar: #0f1b2d;
+            --sidebar-glass-bg: rgba(15, 27, 45, 0.86);
+            --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.075), rgba(129, 140, 248, 0.045) 50%, rgba(8, 20, 38, 0.03));
+            --sidebar-border: rgba(148, 163, 184, 0.24);
+            --sidebar-shadow: inset -1px 0 rgba(255, 255, 255, 0.055), 8px 0 24px rgba(15, 23, 42, 0.16);
+            --sidebar-shadow-expanded: inset -1px 0 rgba(255, 255, 255, 0.075), 10px 0 28px rgba(15, 23, 42, 0.20);
+            --sidebar-hover-bg: rgba(148, 163, 184, 0.12);
+            --sidebar-active-bg: rgba(129, 140, 248, 0.20);
+            --sidebar-active-color: #c4b5fd;
+            --sidebar-danger: #f87171;
             --text-primary: #172033;
             --text-secondary: #526178;
-            --sidebar-text: #1e293b;
-            --sidebar-muted: #526178;
+            --sidebar-text: #f1f5f9;
+            --sidebar-muted: #bac7d9;
             --border-color: #cbd5e1;
             --input-bg: #f8fafc;
             --input-border: #aebdd0;
@@ -83,7 +84,7 @@
             --state-management: #d99a08;
             --state-visits: #168a68;
             --state-closed: #64748b;
-            --lead-informative: #087f9c;
+            --lead-cold: #22b8d6;
             --accent: #4f46e5;
             --accent-hover: #4338ca;
             --shadow-soft: 0 12px 32px rgba(51, 65, 85, 0.12);
@@ -273,10 +274,10 @@
         .nav-link.theme-toggle span { margin-left: 8px; }
         .nav-link.theme-toggle:hover #themeIcon { color: #fde68a; }
         [data-theme="light"] .nav-link.theme-toggle #themeIcon {
-            color: #6d28d9;
-            background: rgba(109, 40, 217, 0.12);
-            border-color: rgba(109, 40, 217, 0.38);
-            box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.06);
+            color: #c4b5fd;
+            background: rgba(129, 140, 248, 0.18);
+            border-color: rgba(196, 181, 253, 0.48);
+            box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.08);
         }
         .nav-link.logout { margin-top: 5px; }
         .nav-link.logout:hover { background: rgba(239, 68, 68, 0.1); color: var(--sidebar-danger); }
@@ -918,22 +919,22 @@
             box-shadow: none;
         }
 
-        .crm-table .col-type { width: 120px; }
-        .crm-table .col-time { width: 175px; }
-        .crm-table .col-client { width: auto; }
-        .crm-table .col-property { width: 125px; }
-        .crm-table .col-state { width: 135px; }
-        .crm-table .col-last-action { width: 300px; }
-        .crm-table .col-executive { width: 180px; }
+        .crm-table .col-type { width: 7%; }
+        .crm-table .col-time { width: 12%; }
+        .crm-table .col-client { width: 25%; }
+        .crm-table .col-property { width: 10%; }
+        .crm-table .col-state { width: 10%; }
+        .crm-table .col-last-action { width: 22%; }
+        .crm-table .col-executive { width: 14%; }
 
         @media (min-width: 769px) and (max-width: 1200px) {
-            .crm-table .col-type { width: 100px; }
-            .crm-table .col-time { width: 150px; }
-            .crm-table .col-client { width: auto; }
-            .crm-table .col-property { width: 105px; }
-            .crm-table .col-state { width: 115px; }
-            .crm-table .col-last-action { width: 230px; }
-            .crm-table .col-executive { width: 145px; }
+            .crm-table .col-type { width: 9%; }
+            .crm-table .col-time { width: 15%; }
+            .crm-table .col-client { width: 22%; }
+            .crm-table .col-property { width: 11%; }
+            .crm-table .col-state { width: 12%; }
+            .crm-table .col-last-action { width: 20%; }
+            .crm-table .col-executive { width: 11%; }
         }
 
         @media (min-width: 769px) {
@@ -1080,8 +1081,12 @@
             opacity: 1;
         }
 
-        .lead-type-informative {
-            color: var(--lead-informative) !important;
+        .lead-type-hot {
+            color: var(--state-unattended) !important;
+        }
+
+        .lead-type-cold {
+            color: var(--lead-cold) !important;
         }
 
         .summary-card > .lead-type-icon {
@@ -1650,8 +1655,8 @@
             {% set selected_temperature = current_temperatura %}
             {% set selected_state = request.query_params.get('estado', '') %}
             {% set executive_label = current_ejecutivo if current_ejecutivo != 'Todos' else 'todos los ejecutivos' %}
-            {% set temperature_label = 'Leads Hot' if selected_temperature == 'HOT' else 'Leads informativos' if selected_temperature == 'COLD' else 'Todos los leads' %}
-            {% set management_title = 'Gestión de Leads Hot' if selected_temperature == 'HOT' else 'Gestión de Leads informativos' if selected_temperature == 'COLD' else 'Gestión de todos los leads' %}
+            {% set temperature_label = 'Leads Hot' if selected_temperature == 'HOT' else 'Leads Cold' if selected_temperature == 'COLD' else 'Todos los leads' %}
+            {% set management_title = 'Gestión de Leads Hot' if selected_temperature == 'HOT' else 'Gestión de Leads Cold' if selected_temperature == 'COLD' else 'Gestión de todos los leads' %}
             {% set state_metrics = [
                 ('nuevo', 'NEW', 'Sin atender', kpis.nuevo, kpis.nuevo_percent, kpis.nuevo_hot, kpis.nuevo_cold),
                 ('gestion', 'GRUPO_GESTION', 'En gestión', kpis.gestion, kpis.gestion_percent, kpis.gestion_hot, kpis.gestion_cold),
@@ -1677,21 +1682,21 @@
                         aria-current="{{ 'true' if selected_temperature == 'HOT' else 'false' }}">
                         <div>
                             <div class="summary-value text-danger" id="kpi-hot" data-target="{{ kpis.hot }}">0</div>
-                            <div class="summary-label">HOT <i class="fa-solid fa-fire lead-type-icon text-danger" aria-hidden="true"></i></div>
+                            <div class="summary-label">{{ lead_temperature_label('HOT') }} {{ lead_temperature_icon('HOT') }}</div>
                             <div class="summary-meta temperature-share">{{ pct(kpis.hot_percent) }}% del total</div>
                         </div>
-                        <i class="fa-solid fa-fire lead-type-icon text-danger" aria-hidden="true"></i>
+                        {{ lead_temperature_icon('HOT') }}
                     </a>
                 </div>
                 <div class="col">
                     <a href="{{ card_urls.cold }}" class="summary-card {{ 'is-active' if selected_temperature == 'COLD' }}"
                         aria-current="{{ 'true' if selected_temperature == 'COLD' else 'false' }}">
                         <div>
-                            <div class="summary-value lead-type-informative" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
-                            <div class="summary-label">Informativos <i class="fa-solid fa-compass lead-type-icon lead-type-informative" aria-hidden="true"></i></div>
+                            <div class="summary-value lead-type-cold" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
+                            <div class="summary-label">{{ lead_temperature_label('COLD') }} {{ lead_temperature_icon('COLD') }}</div>
                             <div class="summary-meta temperature-share">{{ pct(kpis.cold_percent) }}% del total</div>
                         </div>
-                        <i class="fa-solid fa-compass lead-type-icon lead-type-informative" aria-hidden="true"></i>
+                        {{ lead_temperature_icon('COLD') }}
                     </a>
                 </div>
             </div>
@@ -1744,8 +1749,8 @@
                         </a>
                         {% if selected_temperature == 'Todos' %}
                         <div class="state-breakdown" aria-label="Desglose por temperatura de {{ label }}">
-                            <a href="{{ card_urls[(state|lower) ~ '_hot'] }}"><i class="fa-solid fa-fire lead-type-icon text-danger" aria-hidden="true"></i>{{ hot_count }} Hot</a>
-                            <a href="{{ card_urls[(state|lower) ~ '_cold'] }}"><i class="fa-solid fa-compass lead-type-icon lead-type-informative" aria-hidden="true"></i>{{ cold_count }} Informativos</a>
+                            <a href="{{ card_urls[(state|lower) ~ '_hot'] }}">{{ lead_temperature_icon('HOT') }}{{ hot_count }} {{ lead_temperature_label('HOT') }}</a>
+                            <a href="{{ card_urls[(state|lower) ~ '_cold'] }}">{{ lead_temperature_icon('COLD') }}{{ cold_count }} {{ lead_temperature_label('COLD') }}</a>
                         </div>
                         {% endif %}
                     </div>
@@ -1769,8 +1774,8 @@
                     <span class="filter-field-label">Tipo de lead</span>
                     <select name="temperatura" data-auto-filter>
                         <option value="Todos" {% if selected_temperature == 'Todos' %}selected{% endif %}>Todos</option>
-                        <option value="HOT" {% if selected_temperature == 'HOT' %}selected{% endif %}>🔥 Hot</option>
-                        <option value="COLD" {% if selected_temperature == 'COLD' %}selected{% endif %}>🧭 Informativos</option>
+                        <option value="HOT" {% if selected_temperature == 'HOT' %}selected{% endif %}>{{ lead_temperature_option('HOT') }}</option>
+                        <option value="COLD" {% if selected_temperature == 'COLD' %}selected{% endif %}>{{ lead_temperature_option('COLD') }}</option>
                     </select>
                 </label>
 
@@ -1813,7 +1818,7 @@
             {% set state_labels = {'NEW': 'Sin atender', 'GRUPO_GESTION': 'En gestión', 'GRUPO_VISITA': 'Visitas', 'GRUPO_CERRADO': 'Cerrados', 'UNASSIGNED': 'Sin asignar'} %}
             {% set order_labels = {'antiguos_sin_atender': 'Más antiguos sin atender', 'sla_por_vencer': 'SLA por vencer', 'mayor_sin_gestion': 'Mayor tiempo sin gestión', 'ultima_accion_antigua': 'Última acción más antigua'} %}
             <div class="active-filters" aria-label="Filtros activos">
-                {% if selected_temperature != 'Todos' %}<a class="filter-chip" href="{{ filter_urls.temperature }}"><i class="fa-solid {{ 'fa-fire text-danger' if selected_temperature == 'HOT' else 'fa-compass lead-type-informative' }} lead-type-icon" aria-hidden="true"></i>{{ 'Hot' if selected_temperature == 'HOT' else 'Informativos' }} <span aria-hidden="true">×</span></a>{% endif %}
+                {% if selected_temperature != 'Todos' %}<a class="filter-chip" href="{{ filter_urls.temperature }}">{{ lead_temperature_icon(selected_temperature) }}{{ lead_temperature_label(selected_temperature) }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if selected_state %}<a class="filter-chip" href="{{ filter_urls.state }}">{{ state_labels.get(selected_state, selected_state) }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if current_ejecutivo != 'Todos' and can_administer_leads %}<a class="filter-chip" href="{{ filter_urls.executive }}">{{ current_ejecutivo }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if request.query_params.get('busqueda') %}<a class="filter-chip" href="{{ filter_urls.search }}">Teléfono: {{ request.query_params.get('busqueda') }} <span aria-hidden="true">×</span></a>{% endif %}
@@ -1860,9 +1865,9 @@
                             <td class="col-type" data-label="Tipo">
                                 <div class="mobile-cell-value fw-bold d-flex align-items-center" style="font-size: 0.95rem;">
                                     {% if lead.lead_temperature_effective == 'HOT' %}
-                                    <span class="text-danger" aria-label="Lead Hot"><i class="fa-solid fa-fire lead-type-icon me-1" aria-hidden="true"></i>Hot</span>
+                                    <span class="lead-type-hot" aria-label="Lead Hot">{{ lead_temperature_icon('HOT', 'me-1') }}{{ lead_temperature_label('HOT') }}</span>
                                     {% else %}
-                                    <span class="lead-type-informative" aria-label="Lead informativo"><i class="fa-solid fa-compass lead-type-icon me-1" aria-hidden="true"></i>Informativo</span>
+                                    <span class="lead-type-cold" aria-label="Lead Cold">{{ lead_temperature_icon('COLD', 'me-1') }}{{ lead_temperature_label('COLD') }}</span>
                                     {% endif %}
                                 </div>
                             </td>

@@ -1,0 +1,12 @@
+{# Mapeo visual único. Los valores internos HOT/COLD no se modifican. #}
+{% macro lead_temperature_label(value) -%}
+{{- 'Hot' if value == 'HOT' else 'Cold' -}}
+{%- endmacro %}
+
+{% macro lead_temperature_icon(value, extra_class='') -%}
+<i class="fa-solid {{ 'fa-fire' if value == 'HOT' else 'fa-cube' }} lead-type-icon {{ 'lead-type-hot' if value == 'HOT' else 'lead-type-cold' }} {{ extra_class }}" aria-hidden="true"></i>
+{%- endmacro %}
+
+{% macro lead_temperature_option(value) -%}
+{{- '🔥 Hot' if value == 'HOT' else '🧊 Cold' -}}
+{%- endmacro %}

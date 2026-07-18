@@ -449,7 +449,7 @@ def test_crm_partial_template_contains_only_dynamic_regions():
     assert "66,7% del total" in rendered
     assert "/ 2" in rendered
     assert "Sin atender" in rendered
-    assert "Gestión de Leads informativos" in rendered
+    assert "Gestión de Leads Cold" in rendered
     assert "1 gestionados · 1 sin atender" in rendered
     assert "Gestionados = En gestión + Visitas + Cerrados" in rendered
     assert rendered.count('class="progress-segment ') == 2
@@ -489,7 +489,7 @@ def test_total_state_temperature_breakdown_links_are_not_empty():
     assert 'href="/crm?temperatura=HOT&amp;estado=NEW&amp;page=1"' in rendered
     assert "1 Hot" in rendered
     assert 'href="/crm?temperatura=COLD&amp;estado=NEW&amp;page=1"' in rendered
-    assert "1 Informativos" in rendered
+    assert "1 Cold" in rendered
 
 
 def test_crm_filter_urls_remove_one_filter_and_reset_page():
@@ -564,7 +564,7 @@ def test_crm_sidebar_uses_accessible_glass_background_without_fading_icons():
     template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
 
     assert "--sidebar-glass-bg: rgba(8, 20, 38, 0.82);" in template
-    assert "--sidebar-glass-bg: rgba(244, 247, 252, 0.84);" in template
+    assert "--sidebar-glass-bg: rgba(15, 27, 45, 0.86);" in template
     assert "@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))" in template
     assert "-webkit-backdrop-filter: blur(14px) saturate(120%);" in template
     assert "backdrop-filter: blur(14px) saturate(120%);" in template
@@ -576,8 +576,8 @@ def test_crm_sidebar_uses_accessible_glass_background_without_fading_icons():
     assert "border-left-color: var(--sidebar-active-color);" in template
     assert "background: var(--sidebar-hover-bg);" in template
     assert "opacity: 1;" in template
-    assert "color: #6d28d9;" in template
-    assert "--sidebar-danger: #b91c1c;" in template
+    assert "color: #c4b5fd;" in template
+    assert "--sidebar-danger: #f87171;" in template
     assert "transform: rotate(18deg) scale(1.05)" not in template
     assert 'href="/leads-dashboard"]:hover i' not in template
     assert 'href="/crm"]:hover i' not in template
@@ -586,12 +586,11 @@ def test_crm_sidebar_uses_accessible_glass_background_without_fading_icons():
 def test_crm_list_uses_full_width_without_placeholder_action_menu():
     template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
 
-    assert ".crm-table .col-type { width: 120px; }" in template
-    assert ".crm-table .col-time { width: 175px; }" in template
-    assert ".crm-table .col-client { width: auto; }" in template
-    assert ".crm-table .col-last-action { width: 300px; }" in template
-    assert ".crm-table .col-last-action { width: 230px; }" in template
-    assert ".crm-table .col-executive { width: 180px; }" in template
+    assert ".crm-table .col-type { width: 7%; }" in template
+    assert ".crm-table .col-time { width: 12%; }" in template
+    assert ".crm-table .col-client { width: 25%; }" in template
+    assert ".crm-table .col-last-action { width: 22%; }" in template
+    assert ".crm-table .col-executive { width: 14%; }" in template
     assert "col-row-actions" not in template
     assert "fa-ellipsis-vertical" not in template
     assert "data-crm-admin-action" not in template
@@ -599,17 +598,19 @@ def test_crm_list_uses_full_width_without_placeholder_action_menu():
     assert 'tabindex="0" role="link"' in template
 
 
-def test_informative_leads_use_one_compass_icon_across_crm_surfaces():
+def test_cold_leads_use_one_ice_cube_mapping_across_crm_surfaces():
     list_template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
     detail_template = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
+    visual_mapping = Path("templates/_lead_temperature_visual.html").read_text(encoding="utf-8")
     api_crm = Path("api_crm.py").read_text(encoding="utf-8")
 
-    assert list_template.count("fa-compass") >= 5
-    assert "🧭 Informativos" in list_template
+    assert "fa-cube" in visual_mapping
+    assert "🧊 Cold" in visual_mapping
+    assert "fa-compass" not in list_template + detail_template + visual_mapping
     assert "Informativos 🔵" not in list_template
-    assert 'aria-label="Lead informativo"' in list_template
-    assert "fa-compass" in detail_template
-    assert 'aria-label="Lead informativo"' in detail_template
+    assert 'aria-label="Lead Cold"' in list_template
+    assert 'aria-label="Lead Cold"' in detail_template
+    assert 'import lead_temperature_icon, lead_temperature_label' in detail_template
     assert '"lead_temperature_effective": lead.get("lead_temperature_effective")' in api_crm
 
 

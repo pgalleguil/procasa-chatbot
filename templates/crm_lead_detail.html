@@ -1,4 +1,5 @@
 ﻿<!DOCTYPE html>
+{% from "_lead_temperature_visual.html" import lead_temperature_icon, lead_temperature_label %}
 <html lang="es" data-theme="dark">
 
 <head>
@@ -27,7 +28,7 @@
             --notes-color: #2dd4bf;
             --danger-color: #ef4444;
             --success-color: #22c55e;
-            --lead-informative: #22d3ee;
+            --lead-cold: #22d3ee;
             --border-color: rgba(255, 255, 255, 0.05);
             --sidebar-width: 240px;
             --sidebar-width-collapsed: 80px;
@@ -56,13 +57,22 @@
             --notes-color: #0d9488;
             --danger-color: #dc2626;
             --success-color: #059669;
-            --lead-informative: #0e7490;
+            --lead-cold: #0e7490;
         }
 
-        .lead-temperature-informative {
-            color: var(--lead-informative);
-            background: color-mix(in srgb, var(--lead-informative) 10%, transparent);
-            border: 1px solid color-mix(in srgb, var(--lead-informative) 30%, transparent);
+        .lead-type-icon {
+            display: inline-block;
+            width: 1.15em;
+            text-align: center;
+        }
+
+        .lead-type-hot { color: var(--danger-color); }
+        .lead-type-cold { color: var(--lead-cold); }
+
+        .lead-temperature-cold {
+            color: var(--lead-cold);
+            background: color-mix(in srgb, var(--lead-cold) 10%, transparent);
+            border: 1px solid color-mix(in srgb, var(--lead-cold) 30%, transparent);
         }
 
         body {
@@ -2498,10 +2508,10 @@
                                     <h5 class="fw-bold m-0" style="color: var(--text-primary);">{{ lead.nombre }}</h5>
                                     {% if lead.lead_temperature_effective == 'HOT' %}
                                     <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25"
-                                        aria-label="Lead Hot"><i class="fa-solid fa-fire me-1" aria-hidden="true"></i>Hot</span>
+                                        aria-label="Lead Hot">{{ lead_temperature_icon('HOT', 'me-1') }}{{ lead_temperature_label('HOT') }}</span>
                                     {% elif lead.lead_temperature_effective == 'COLD' %}
-                                    <span class="badge lead-temperature-informative"
-                                        aria-label="Lead informativo"><i class="fa-solid fa-compass me-1" aria-hidden="true"></i>Informativo</span>
+                                    <span class="badge lead-temperature-cold"
+                                        aria-label="Lead Cold">{{ lead_temperature_icon('COLD', 'me-1') }}{{ lead_temperature_label('COLD') }}</span>
                                     {% endif %}
                                 </div>
                                 <div class="small text-secondary mt-1">

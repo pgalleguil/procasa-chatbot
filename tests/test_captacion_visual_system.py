@@ -61,3 +61,26 @@ def test_mobile_menu_control_is_accessible():
     assert 'aria-controls="sidebar"' in template
     assert 'aria-expanded="false"' in template
     assert 'aria-label="Abrir menú"' in template
+
+
+def test_mobile_rows_follow_the_leads_label_value_pattern():
+    template = _template_source()
+
+    assert "grid-template-columns: minmax(104px, 34%) minmax(0, 1fr)" in template
+    assert template.count('class="mobile-cell-value"') >= 7
+    assert 'data-label="Antigüedad"' in template
+    assert "text-align: left !important" in template
+    assert ".prop-table td + td" in template
+
+
+def test_progress_panel_uses_real_kpi_counts_without_fake_segments():
+    template = _template_source()
+
+    assert 'class="captacion-progress-panel"' in template
+    assert "captacion_managed = (in_gestion_count or 0) + (captados_count or 0) + (descartados_count or 0)" in template
+    assert "captacion_universe = (available_count or 0) + captacion_managed" in template
+    assert "{{ captacion_managed }} gestionadas · {{ available_count or 0 }} disponibles" in template
+    assert "{% if available_count and captacion_universe %}" in template
+    assert "{% if in_gestion_count and captacion_universe %}" in template
+    assert "{% if captados_count and captacion_universe %}" in template
+    assert "{% if descartados_count and captacion_universe %}" in template

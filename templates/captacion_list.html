@@ -376,6 +376,79 @@
             color: var(--accent);
         }
 
+        /* Resumen operativo, equivalente al panel de gestión de Leads */
+        .captacion-progress-panel {
+            display: grid;
+            grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.7fr) auto;
+            align-items: center;
+            gap: 22px;
+            margin-bottom: 25px;
+            padding: 18px 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+        }
+
+        [data-theme="light"] .captacion-progress-panel {
+            background: linear-gradient(145deg, #fbfdff, #f3f6fb);
+            box-shadow: 0 4px 14px rgba(51, 65, 85, 0.09);
+        }
+
+        .captacion-progress-title {
+            color: var(--text-primary);
+            font-size: 1rem;
+            font-weight: 750;
+        }
+
+        .captacion-progress-context,
+        .captacion-progress-legend {
+            color: var(--text-secondary);
+            font-size: 0.76rem;
+            margin-top: 3px;
+        }
+
+        .captacion-progress-summary {
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            font-weight: 650;
+            margin-bottom: 9px;
+        }
+
+        .captacion-progress-track {
+            display: flex;
+            width: 100%;
+            height: 10px;
+            overflow: hidden;
+            background: color-mix(in srgb, var(--text-secondary) 14%, transparent);
+            border-radius: 999px;
+        }
+
+        .captacion-progress-segment { height: 100%; }
+        .captacion-progress-segment.gestion { background: #f59e0b; }
+        .captacion-progress-segment.captado { background: #10b981; }
+        .captacion-progress-segment.descartado { background: #64748b; }
+        .captacion-progress-segment.disponible { background: #3b82f6; }
+
+        .captacion-progress-percent {
+            min-width: 84px;
+            color: var(--text-primary);
+            font-size: clamp(1.75rem, 2.6vw, 2.25rem);
+            font-weight: 800;
+            line-height: 1;
+            text-align: right;
+        }
+
+        .captacion-progress-percent span {
+            display: block;
+            margin-top: 6px;
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
         .kpi-card.gestion .kpi-icon {
             background: transparent;
             color: var(--owner-color);
@@ -901,6 +974,18 @@
             .hamburger-mobile { display: flex !important; }
             .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
             .kpi-grid { grid-template-columns: repeat(2,1fr); gap: 10px; }
+            .kpi-card { min-height: 104px; padding: 15px; }
+            .kpi-icon { font-size: 1.65rem; }
+            .captacion-progress-panel {
+                grid-template-columns: 1fr auto;
+                gap: 14px;
+                margin-bottom: 16px;
+                padding: 16px;
+            }
+            .captacion-progress-heading { grid-column: 1; grid-row: 1; min-width: 0; }
+            .captacion-progress-main { grid-column: 1 / -1; grid-row: 2; }
+            .captacion-progress-percent { grid-column: 2; grid-row: 1; }
+            .captacion-progress-legend { line-height: 1.45; }
             .pagination-container { flex-direction: column; text-align: center; }
 
             /* TABLA → CARDS en móvil */
@@ -911,14 +996,15 @@
                 width: 100%;
             }
             .prop-table tbody tr {
-                background: var(--bg-tertiary);
+                background: var(--bg-card);
                 border: 1px solid var(--border-color);
-                border-radius: 14px;
-                margin-bottom: 12px;
-                padding: 14px 16px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                border-radius: 16px;
+                margin-bottom: 14px;
+                padding: 0;
+                box-shadow: 0 5px 16px rgba(0,0,0,0.12);
                 cursor: pointer;
                 transition: transform 0.2s, box-shadow 0.2s;
+                overflow: hidden;
             }
             .prop-table tbody tr:hover {
                 transform: translateY(-2px);
@@ -927,20 +1013,61 @@
             .prop-table td {
                 border: none !important;
                 box-shadow: none !important;
-                padding: 4px 0;
+                padding: 10px 14px;
                 background: transparent !important;
                 font-size: 0.88rem;
                 border-radius: 0 !important;
+                display: grid;
+                grid-template-columns: minmax(104px, 34%) minmax(0, 1fr);
+                align-items: center;
+                gap: 10px;
+                min-height: 44px;
+                text-align: left !important;
             }
             /* Etiqueta antes de cada celda */
             .prop-table td[data-label]::before {
-                content: attr(data-label) " ";
-                font-weight: 700;
+                content: attr(data-label);
+                display: block;
+                min-width: 0;
+                font-weight: 800;
                 color: var(--text-secondary);
-                font-size: 0.75rem;
+                font-size: 0.68rem;
                 text-transform: uppercase;
-                letter-spacing: 0.04em;
-                display: inline;
+                letter-spacing: 0.07em;
+                line-height: 1.25;
+            }
+            .prop-table .mobile-cell-value {
+                min-width: 0;
+                width: 100%;
+                color: var(--text-primary);
+                overflow-wrap: anywhere;
+            }
+            .prop-table td[data-label="Comuna"] {
+                min-height: 52px;
+                background: color-mix(in srgb, var(--accent) 7%, var(--bg-card)) !important;
+                border-bottom: 1px solid var(--border-color) !important;
+            }
+            .prop-table td[data-label="Comuna"] .mobile-cell-value {
+                font-size: 0.98rem;
+                font-weight: 700;
+            }
+            .prop-table td[data-label="Precio"] .mobile-cell-value,
+            .prop-table td[data-label="Estado"] .mobile-cell-value,
+            .prop-table td[data-label="Antigüedad"] .mobile-cell-value {
+                text-align: left;
+            }
+            .prop-table td + td {
+                border-top: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent) !important;
+            }
+            .price-cell { min-width: 0; }
+            .price-primary,
+            .price-secondary,
+            .price-source-warning { white-space: normal; }
+            .sort-help {
+                justify-content: flex-start;
+                align-items: flex-start;
+                line-height: 1.45;
+                margin: 2px 0 12px;
             }
             /* Filtros: stack vertical */
             .filter-bar {
@@ -954,6 +1081,11 @@
                 width: 100% !important;
                 min-width: unset;
             }
+            .filter-bar .search-box input,
+            .filter-bar .commune-picker summary,
+            .filter-bar select,
+            .filter-bar .btn-filter { min-height: 48px; }
+            .table-container { padding: 14px; border-radius: 14px; }
         }
     </style>
 </head>
@@ -1044,6 +1176,30 @@
             </button>
         </div>
 
+        {% set captacion_managed = (in_gestion_count or 0) + (captados_count or 0) + (descartados_count or 0) %}
+        {% set captacion_universe = (available_count or 0) + captacion_managed %}
+        {% set captacion_managed_pct = ((captacion_managed * 100 / captacion_universe)|round(1)) if captacion_universe else 0 %}
+        <section class="captacion-progress-panel" aria-label="Avance de captación">
+            <div class="captacion-progress-heading">
+                <div class="captacion-progress-title">Avance de captación</div>
+                <div class="captacion-progress-context">
+                    {% if current_ejecutivo %}{{ current_ejecutivo }}{% elif user_role not in ['supervisor', 'admin'] %}{{ user_name }}{% else %}Universo completo{% endif %}
+                </div>
+            </div>
+            <div class="captacion-progress-main">
+                <div class="captacion-progress-summary">{{ captacion_managed }} gestionadas · {{ available_count or 0 }} disponibles</div>
+                <div class="captacion-progress-track" role="img"
+                    aria-label="{{ available_count or 0 }} disponibles, {{ in_gestion_count or 0 }} en gestión, {{ captados_count or 0 }} captadas y {{ descartados_count or 0 }} descartadas">
+                    {% if available_count and captacion_universe %}<span class="captacion-progress-segment disponible" style="width: {{ available_count * 100 / captacion_universe }}%"></span>{% endif %}
+                    {% if in_gestion_count and captacion_universe %}<span class="captacion-progress-segment gestion" style="width: {{ in_gestion_count * 100 / captacion_universe }}%"></span>{% endif %}
+                    {% if captados_count and captacion_universe %}<span class="captacion-progress-segment captado" style="width: {{ captados_count * 100 / captacion_universe }}%"></span>{% endif %}
+                    {% if descartados_count and captacion_universe %}<span class="captacion-progress-segment descartado" style="width: {{ descartados_count * 100 / captacion_universe }}%"></span>{% endif %}
+                </div>
+                <div class="captacion-progress-legend">Disponibles · En gestión · Captadas · Descartadas</div>
+            </div>
+            <div class="captacion-progress-percent">{{ captacion_managed_pct }}%<span>gestionado</span></div>
+        </section>
+
         <div class="table-container">
             <form action="/captacion" method="GET" class="filter-bar">
                 <div class="search-box">
@@ -1130,12 +1286,13 @@
                     <tbody>
                         {% for item in items %}
                         <tr onclick="location.href='/captacion/{{ item.id }}'">
-                            <td data-label="Comuna"><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</td>
-                            <td data-label="Origen">{{ item.portal_label }}</td>
+                            <td data-label="Comuna"><div class="mobile-cell-value"><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</div></td>
+                            <td data-label="Origen"><div class="mobile-cell-value">{{ item.portal_label }}</div></td>
                             <td data-label="Operación">
-                                <span class="operation-text">{{ item.operacion|title }}</span>
+                                <div class="mobile-cell-value"><span class="operation-text">{{ item.operacion|title }}</span></div>
                             </td>
                             <td class="text-center price-cell" data-label="Precio">
+                                <div class="mobile-cell-value">
                                 {% if item.precio_uf_display %}
                                 <div class="price-primary">UF {{ item.precio_uf_display }}</div>
                                 {% else %}
@@ -1149,18 +1306,21 @@
                                     <i class="fa-solid fa-triangle-exclamation me-1"></i>{{ item.price_source_warning }}
                                 </div>
                                 {% endif %}
+                                </div>
                             </td>
                             <td class="text-center" data-label="Probabilidad de dueño"
                                 data-sort="{{ item.owner_probability_sort }}"
                                 title="{{ item.owner_probability_title }}">
-                                {{ item.owner_probability_display }}
+                                <div class="mobile-cell-value">{{ item.owner_probability_display }}</div>
                             </td>
                             <td class="text-center" data-label="Estado">
-                                <span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span>
+                                <div class="mobile-cell-value"><span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span></div>
                             </td>
-                            <td class="text-center" data-label="Antiguedad">
+                            <td class="text-center" data-label="Antigüedad">
+                                <div class="mobile-cell-value">
                                 <div class="small fw-bold">Hace {{ item.dias_en_portal }} días</div>
                                 <div class="small text-secondary" style="font-size: 0.75rem;">{{ item.fecha_str }}</div>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}

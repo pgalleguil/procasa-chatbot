@@ -552,6 +552,9 @@ def test_crm_visual_system_keeps_sidebar_actions_and_responsive_layout_accessibl
     assert "--placeholder-color:" in template
     assert 'class="filter-field filter-search-field"' in template
     assert "grid-template-columns: minmax(220px, 1.5fr)" in template
+    assert '.nav-link.theme-toggle #themeIcon' in template
+    assert 'aria-label="Cambiar a tema claro"' in template
+    assert "control?.setAttribute('aria-label'" in template
 
 
 def test_crm_hybrid_polling_uses_partial_fetch_without_full_reload():

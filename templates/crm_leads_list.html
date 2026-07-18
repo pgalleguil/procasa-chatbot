@@ -225,7 +225,25 @@
         }
 
         .nav-link.theme-toggle { margin-top: 0; }
-        .nav-link.theme-toggle:hover i { transform: rotate(180deg) scale(1.1); color: #f59e0b; }
+        .nav-link.theme-toggle #themeIcon {
+            width: 38px;
+            min-width: 38px;
+            height: 38px;
+            margin-left: 9px;
+            border: 1px solid rgba(251, 191, 36, 0.48);
+            border-radius: 12px;
+            color: #fbbf24;
+            background: rgba(245, 158, 11, 0.18);
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.07);
+        }
+        .nav-link.theme-toggle span { margin-left: 8px; }
+        .nav-link.theme-toggle:hover #themeIcon { transform: rotate(18deg) scale(1.05); color: #fde68a; }
+        [data-theme="light"] .nav-link.theme-toggle #themeIcon {
+            color: #c4b5fd;
+            background: rgba(129, 140, 248, 0.20);
+            border-color: rgba(196, 181, 253, 0.58);
+            box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.08);
+        }
         .nav-link.logout { margin-top: 5px; }
         .nav-link.logout:hover { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
 
@@ -1569,7 +1587,8 @@
             </div>
 
             <div class="sidebar-footer">
-                <a href="#" class="nav-link theme-toggle" onclick="toggleTheme(); return false;">
+                <a href="#" class="nav-link theme-toggle" aria-label="Cambiar a tema claro" title="Cambiar a tema claro"
+                    onclick="toggleTheme(); return false;">
                     <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
                 </a>
                 <a href="/logout" class="nav-link logout">
@@ -2032,15 +2051,20 @@
             function toggleTheme() {
                 const html = document.documentElement;
                 const icon = document.getElementById('themeIcon');
+                const control = document.querySelector('.theme-toggle');
                 if (html.getAttribute('data-theme') === 'light') {
                     html.setAttribute('data-theme', 'dark');
                     icon.classList.remove('fa-moon');
                     icon.classList.add('fa-sun');
+                    control?.setAttribute('aria-label', 'Cambiar a tema claro');
+                    control?.setAttribute('title', 'Cambiar a tema claro');
                     localStorage.setItem('theme', 'dark');
                 } else {
                     html.setAttribute('data-theme', 'light');
                     icon.classList.remove('fa-sun');
                     icon.classList.add('fa-moon');
+                    control?.setAttribute('aria-label', 'Cambiar a tema oscuro');
+                    control?.setAttribute('title', 'Cambiar a tema oscuro');
                     localStorage.setItem('theme', 'light');
                 }
             }
@@ -2050,10 +2074,14 @@
                 const savedTheme = localStorage.getItem('theme') || 'dark';
                 document.documentElement.setAttribute('data-theme', savedTheme);
                 const icon = document.getElementById('themeIcon');
+                const control = document.querySelector('.theme-toggle');
                 if (icon) {
                     icon.classList.remove('fa-sun', 'fa-moon');
                     icon.classList.add(savedTheme === 'light' ? 'fa-moon' : 'fa-sun');
                 }
+                const nextTheme = savedTheme === 'light' ? 'oscuro' : 'claro';
+                control?.setAttribute('aria-label', `Cambiar a tema ${nextTheme}`);
+                control?.setAttribute('title', `Cambiar a tema ${nextTheme}`);
             })();
 
 

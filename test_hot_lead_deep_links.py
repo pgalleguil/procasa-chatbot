@@ -564,7 +564,7 @@ def test_crm_sidebar_uses_accessible_glass_background_without_fading_icons():
     template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
 
     assert "--sidebar-glass-bg: rgba(8, 20, 38, 0.82);" in template
-    assert "--sidebar-glass-bg: rgba(15, 27, 45, 0.86);" in template
+    assert "--sidebar-glass-bg: rgba(244, 247, 252, 0.84);" in template
     assert "@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))" in template
     assert "-webkit-backdrop-filter: blur(14px) saturate(120%);" in template
     assert "backdrop-filter: blur(14px) saturate(120%);" in template
@@ -576,8 +576,8 @@ def test_crm_sidebar_uses_accessible_glass_background_without_fading_icons():
     assert "border-left-color: var(--sidebar-active-color);" in template
     assert "background: var(--sidebar-hover-bg);" in template
     assert "opacity: 1;" in template
-    assert "color: #c4b5fd;" in template
-    assert "--sidebar-danger: #f87171;" in template
+    assert "color: #6d28d9;" in template
+    assert "--sidebar-danger: #b91c1c;" in template
     assert "transform: rotate(18deg) scale(1.05)" not in template
     assert 'href="/leads-dashboard"]:hover i' not in template
     assert 'href="/crm"]:hover i' not in template

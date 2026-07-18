@@ -172,6 +172,20 @@ def test_crm_kpi_cards_filter_temperature_and_exact_stage_groups():
     assert 'filtro_estado == "GRUPO_GESTION"' in api_crm
 
 
+def test_crm_temperature_cards_avoid_ambiguous_ratios_and_mobile_layout_is_ordered():
+    template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
+
+    assert "{{ kpis.hot }} / {{ kpis.total }}" not in template
+    assert "{{ kpis.cold }} / {{ kpis.total }}" not in template
+    assert "{{ pct(kpis.hot_percent) }}% del total" in template
+    assert "{{ pct(kpis.cold_percent) }}% del total" in template
+    assert 'class="row g-3 mb-4 row-cols-1 row-cols-md-2 row-cols-xl-4 state-cards-grid"' in template
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in template
+    assert '.filter-bar select,' in template
+    assert 'style="margin-left: auto;" name="orden"' not in template
+    assert "grid-template-columns: minmax(92px, 34%) minmax(0, 1fr);" in template
+
+
 def test_crm_card_urls_preserve_executive_search_order_and_toggle_filters():
     urls = build_crm_card_urls({
         "temperatura": "COLD",
@@ -299,6 +313,10 @@ def test_crm_partial_template_contains_only_dynamic_regions():
 
     assert 'id="crmDynamicContent"' in rendered
     assert 'data-crm-version="7"' in rendered
+    assert "33,3% del total" in rendered
+    assert "66,7% del total" in rendered
+    assert "/ 2" in rendered
+    assert "Sin atender" in rendered
     assert "<html" not in rendered
     assert "sidebar" not in rendered
 

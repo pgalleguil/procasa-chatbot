@@ -395,7 +395,55 @@
             font-size: 1.65rem;
         }
 
+        .temperature-share {
+            margin-top: 5px;
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+
         @media (max-width: 576px) {
+            .temperature-cards,
+            .state-cards-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+                margin-right: 0;
+                margin-left: 0;
+            }
+
+            .temperature-cards > .col,
+            .state-cards-grid > .col {
+                width: auto;
+                padding: 0;
+            }
+
+            .temperature-cards > .col:first-child {
+                grid-column: 1 / -1;
+            }
+
+            .temperature-cards .summary-card,
+            .state-cards-grid .summary-card {
+                min-height: 118px;
+                padding: 14px;
+            }
+
+            .temperature-cards .summary-card > i,
+            .state-cards-grid .summary-card > i {
+                font-size: 1.35rem;
+            }
+
+            .temperature-cards .summary-value {
+                font-size: 1.55rem;
+            }
+
+            .state-card-ratio {
+                gap: 4px;
+            }
+
+            .state-card-ratio .summary-value {
+                font-size: 1.35rem;
+            }
+
             .management-level-heading,
             .management-level-details {
                 align-items: flex-start;
@@ -814,7 +862,6 @@
                 flex-direction: column;
                 text-align: center;
             }
-            }
 
             /* Professional Movement for KPI Cards */
             .summary-card {
@@ -892,8 +939,44 @@
         /* --- MOBILE CARD VIEW TRANSFORM (REFINADO PARA EQUIPOS EN TERRENO) --- */
         @media (max-width: 768px) {
             .main-content {
-                padding: 15px;
+                padding: 12px;
                 /* Menos padding lateral en móvil */
+            }
+
+            .table-container {
+                padding: 14px;
+                border-radius: 14px;
+            }
+
+            .filter-bar {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                align-items: stretch;
+                gap: 10px;
+            }
+
+            .filter-bar .search-box {
+                grid-column: 1 / -1;
+            }
+
+            .filter-bar .search-box,
+            .filter-bar select,
+            .filter-bar .btn-filter {
+                width: 100%;
+                min-width: 0;
+                margin: 0;
+            }
+
+            .filter-bar .search-box input,
+            .filter-bar select,
+            .filter-bar .btn-filter {
+                min-height: 48px;
+            }
+
+            .filter-bar .btn-filter {
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
 
             /* Hide Table Header */
@@ -930,10 +1013,11 @@
             /* Celdas del Lead */
             .crm-table td {
                 border: none;
-                padding: 12px 20px;
-                display: flex;
-                flex-direction: column;
-                align-items: flex-start;
+                padding: 12px 16px;
+                display: grid;
+                grid-template-columns: minmax(105px, 36%) minmax(0, 1fr);
+                gap: 12px;
+                align-items: center;
                 text-align: left;
                 min-height: auto;
             }
@@ -947,7 +1031,7 @@
                 text-transform: uppercase;
                 color: var(--text-secondary);
                 letter-spacing: 1px;
-                margin-bottom: 4px;
+                margin-bottom: 0;
                 opacity: 0.7;
             }
 
@@ -955,9 +1039,6 @@
             .crm-table td[data-label="SLA / Tiempo"] {
                 background: rgba(255, 255, 255, 0.03);
                 border-bottom: 1px solid var(--border-color);
-                flex-direction: row;
-                justify-content: space-between;
-                align-items: center;
                 padding: 15px 20px;
             }
 
@@ -973,9 +1054,6 @@
 
             /* ESTADO: Badge visual */
             .crm-table td[data-label="Estado"] {
-                flex-direction: row;
-                justify-content: space-between;
-                align-items: center;
                 background: linear-gradient(90deg, rgba(99, 102, 241, 0.05), transparent);
             }
 
@@ -1017,6 +1095,26 @@
             .search-box input {
                 height: 50px;
                 font-size: 1rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .filter-bar {
+                grid-template-columns: 1fr;
+            }
+
+            .filter-bar .search-box {
+                grid-column: auto;
+            }
+
+            .crm-table td {
+                grid-template-columns: minmax(92px, 34%) minmax(0, 1fr);
+                padding: 12px;
+                gap: 10px;
+            }
+
+            .crm-table td[data-label="SLA / Tiempo"] {
+                padding: 14px 12px;
             }
         }
     </style>
@@ -1083,7 +1181,7 @@
             {% set temperature_label = 'Leads HOT' if selected_temperature == 'HOT' else 'Leads informativos' if selected_temperature == 'COLD' else 'Todos los leads' %}
 
             <!-- Universo completo del ejecutivo/búsqueda -->
-            <div class="row g-3 mb-4 row-cols-1 row-cols-md-{{ 4 if current_ejecutivo == 'Todos' else 3 }}">
+            <div class="row g-3 mb-4 row-cols-1 row-cols-md-{{ 4 if current_ejecutivo == 'Todos' else 3 }} temperature-cards">
                 <div class="col">
                     <a href="{{ card_urls.total }}" class="summary-card {{ 'is-active' if selected_temperature == 'Todos' and not selected_state }}"
                         style="border-bottom: 3px solid var(--accent-color);">
@@ -1101,7 +1199,7 @@
                         <div>
                             <div class="summary-value text-danger" id="kpi-hot" data-target="{{ kpis.hot }}">0</div>
                             <div class="summary-label">HOT 🔥</div>
-                            <div class="summary-meta">{{ kpis.hot }} / {{ kpis.total }} · {{ pct(kpis.hot_percent) }}%</div>
+                            <div class="summary-meta temperature-share">{{ pct(kpis.hot_percent) }}% del total</div>
                             {% if selected_temperature == 'HOT' %}
                             <div class="summary-meta fw-bold">{{ kpis.managed }} de {{ kpis.scope_total }} con gestión iniciada · {{ pct(kpis.managed_percent) }}%</div>
                             {% endif %}
@@ -1115,7 +1213,7 @@
                         <div>
                             <div class="summary-value text-info" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
                             <div class="summary-label">Informativos 🔵</div>
-                            <div class="summary-meta">{{ kpis.cold }} / {{ kpis.total }} · {{ pct(kpis.cold_percent) }}%</div>
+                            <div class="summary-meta temperature-share">{{ pct(kpis.cold_percent) }}% del total</div>
                             {% if selected_temperature == 'COLD' %}
                             <div class="summary-meta fw-bold">{{ kpis.managed }} de {{ kpis.scope_total }} con gestión iniciada · {{ pct(kpis.managed_percent) }}%</div>
                             {% endif %}
@@ -1157,7 +1255,7 @@
             </section>
 
             <!-- Distribución de estados dentro de la temperatura seleccionada -->
-            <div class="row g-3 mb-4 row-cols-1 row-cols-md-2 row-cols-xl-4">
+            <div class="row g-3 mb-4 row-cols-1 row-cols-md-2 row-cols-xl-4 state-cards-grid">
                 {% for key, state, label, color, icon, count, percentage in [
                     ('nuevo', 'NEW', 'Sin atender', 'danger', 'fa-bell', kpis.nuevo, kpis.nuevo_percent),
                     ('gestion', 'GRUPO_GESTION', 'En gestión', 'warning', 'fa-comments', kpis.gestion, kpis.gestion_percent),
@@ -1232,7 +1330,7 @@
                 </select>
                 {% endif %}
 
-                <select style="margin-left: auto;" name="orden" onchange="this.form.submit()">
+                <select name="orden" onchange="this.form.submit()">
                     <option value="fecha" {% if not request.query_params.get('orden') or request.query_params.get('orden')=='fecha' %}selected{% endif %}>Más Recientes</option>
                     <option value="prioridad" {% if request.query_params.get('orden')=='prioridad' %}selected{% endif %}>Prioridad (Semáforo)</option>
                 </select>

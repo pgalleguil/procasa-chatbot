@@ -11,9 +11,22 @@
 
     <style>
         :root {
-            --bg-body: #0f172a;
-            --bg-card: #1e293b;
-            --bg-sidebar: #020617;
+            --bg-body: #0b1220;
+            --bg-card: #182235;
+            --bg-elevated: #202d43;
+            --bg-tertiary: var(--bg-elevated);
+            --bg-sidebar: #081426;
+            --sidebar-glass-bg: rgba(8, 20, 38, 0.82);
+            --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(99, 102, 241, 0.025) 48%, rgba(8, 20, 38, 0.02));
+            --sidebar-border: rgba(148, 163, 184, 0.20);
+            --sidebar-shadow: inset -1px 0 rgba(255, 255, 255, 0.04), 8px 0 24px rgba(2, 6, 23, 0.16);
+            --sidebar-shadow-expanded: inset -1px 0 rgba(255, 255, 255, 0.055), 10px 0 28px rgba(2, 6, 23, 0.18);
+            --sidebar-hover-bg: rgba(148, 163, 184, 0.11);
+            --sidebar-active-bg: rgba(99, 102, 241, 0.20);
+            --sidebar-active-color: #a5b4fc;
+            --sidebar-text: #edf4ff;
+            --sidebar-muted: #b9c6d8;
+            --sidebar-danger: #ef4444;
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
             --accent: #6366f1;
@@ -23,27 +36,40 @@
             --notes-color: #2dd4bf;
             --danger-color: #ef4444;
             --success-color: #22c55e;
-            --border-color: rgba(255, 255, 255, 0.05);
+            --border-color: rgba(148, 163, 184, 0.18);
             --sidebar-width: 240px;
             --sidebar-width-collapsed: 80px;
             --transition-speed: 0.3s;
             --wa-color: #25d366;
             --email-color: #3b82f6;
-            --input-bg: #334155;
-            --input-border: #475569;
-            --input-text: #fff;
+            --input-bg: #243249;
+            --input-border: #52627a;
+            --input-text: #f8fafc;
         }
 
         [data-theme="light"] {
-            --bg-body: #f1f5f9;
-            --bg-card: #ffffff;
-            --bg-sidebar: #0f172a;
-            --text-primary: #1e293b;
-            --text-secondary: #475569;
-            --border-color: #e2e8f0;
-            --input-bg: #ffffff;
-            --input-border: #cbd5e1;
-            --input-text: #1e293b;
+            --bg-body: #eaf0f6;
+            --bg-card: #f8fafc;
+            --bg-elevated: #f1f5f9;
+            --bg-tertiary: var(--bg-elevated);
+            --bg-sidebar: #f4f7fc;
+            --sidebar-glass-bg: rgba(244, 247, 252, 0.84);
+            --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.52), rgba(79, 70, 229, 0.035) 50%, rgba(226, 232, 240, 0.08));
+            --sidebar-border: rgba(100, 116, 139, 0.24);
+            --sidebar-shadow: inset -1px 0 rgba(255, 255, 255, 0.72), 8px 0 24px rgba(51, 65, 85, 0.10);
+            --sidebar-shadow-expanded: inset -1px 0 rgba(255, 255, 255, 0.82), 10px 0 28px rgba(51, 65, 85, 0.13);
+            --sidebar-hover-bg: rgba(79, 70, 229, 0.08);
+            --sidebar-active-bg: rgba(79, 70, 229, 0.13);
+            --sidebar-active-color: #4338ca;
+            --sidebar-text: #1e293b;
+            --sidebar-muted: #526178;
+            --sidebar-danger: #b91c1c;
+            --text-primary: #172033;
+            --text-secondary: #526178;
+            --border-color: #cbd5e1;
+            --input-bg: #f8fafc;
+            --input-border: #aebdd0;
+            --input-text: #172033;
             --accent: #4f46e5;
             --accent-hover: #4338ca;
         }
@@ -54,39 +80,54 @@
             font-family: 'Outfit', sans-serif;
             overflow-x: hidden;
             transition: background-color 0.3s, color 0.3s;
+            min-height: 100dvh;
         }
 
         /* SIDEBAR */
         .sidebar {
             width: var(--sidebar-width-collapsed);
-            height: 100vh;
+            height: 100dvh;
+            max-height: 100dvh;
+            box-sizing: border-box;
             position: fixed;
             left: 0;
             top: 0;
-            padding: 30px 0;
-            border-right: 1px solid var(--border-color);
+            padding: max(14px, env(safe-area-inset-top)) 0 max(12px, env(safe-area-inset-bottom));
+            color: var(--sidebar-text);
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--sidebar-border);
             z-index: 1050;
             transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
             display: flex;
             flex-direction: column;
             white-space: nowrap;
-            backdrop-filter: blur(20px);
+            box-shadow: var(--sidebar-shadow);
+        }
+
+        @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+            .sidebar {
+                background: var(--sidebar-glass-highlight), var(--sidebar-glass-bg);
+                -webkit-backdrop-filter: blur(14px) saturate(120%);
+                backdrop-filter: blur(14px) saturate(120%);
+            }
         }
 
         .sidebar:hover {
             width: var(--sidebar-width);
-            box-shadow: 20px 0 40px rgba(0, 0, 0, 0.2);
+            box-shadow: var(--sidebar-shadow-expanded);
         }
 
         .brand {
             font-size: 1.5rem;
             font-weight: 800;
-            color: var(--text-primary);
-            margin-bottom: 2.5rem;
+            color: var(--sidebar-text);
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
-            height: 80px;
+            height: 64px;
+            min-height: 64px;
+            flex: 0 0 auto;
             padding: 0;
             overflow: hidden;
             letter-spacing: -0.02em;
@@ -113,15 +154,16 @@
         }
 
         .nav-link {
-            color: var(--text-secondary);
-            padding: 14px 0;
+            color: var(--sidebar-muted);
+            padding: 11px 0;
             display: flex;
             align-items: center;
             text-decoration: none;
             margin: 4px 12px;
             border-radius: 16px;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            height: 50px;
+            border-left: 3px solid transparent;
+            transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+            height: 46px;
             overflow: hidden;
             width: calc(100% - 24px);
         }
@@ -133,7 +175,8 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            transition: all 0.3s ease-out;
+            opacity: 1;
+            transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
         }
 
         .nav-link span {
@@ -151,47 +194,61 @@
         }
 
         .nav-link:hover {
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-primary);
+            background: var(--sidebar-hover-bg);
+            color: var(--sidebar-text);
         }
 
         .nav-link.active {
-            background: rgba(99, 102, 241, 0.1);
-            color: var(--accent) !important;
+            background: var(--sidebar-active-bg);
+            border-left-color: var(--sidebar-active-color);
+            color: var(--sidebar-active-color) !important;
+            box-shadow: 0 0 16px color-mix(in srgb, var(--sidebar-active-color) 12%, transparent);
         }
 
         .nav-link.active i {
-            color: var(--accent);
+            color: var(--sidebar-active-color);
         }
 
-        /* Toggle Tema & Logout */
-        .nav-link.theme-toggle {
+        .sidebar-main-nav {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(159, 176, 198, 0.45) transparent;
+        }
+
+        .sidebar-footer {
+            flex: 0 0 auto;
             margin-top: auto;
+            padding-top: 8px;
+            border-top: 1px solid rgba(148, 163, 184, 0.14);
         }
 
-        .nav-link.theme-toggle:hover i {
-            transform: rotate(180deg) scale(1.1);
-            color: #f59e0b;
+        .nav-link.theme-toggle #themeIcon {
+            width: 38px;
+            min-width: 38px;
+            height: 38px;
+            margin-left: 9px;
+            border: 1px solid rgba(251, 191, 36, 0.48);
+            border-radius: 12px;
+            color: #fbbf24;
+            background: rgba(245, 158, 11, 0.18);
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.07);
         }
 
-        .nav-link.theme-toggle:hover {
-            background: rgba(245, 158, 11, 0.1);
-            color: #f59e0b;
+        .nav-link.theme-toggle span { margin-left: 8px; }
+        .nav-link.theme-toggle:hover #themeIcon { color: #fde68a; }
+
+        [data-theme="light"] .nav-link.theme-toggle #themeIcon {
+            color: #6d28d9;
+            background: rgba(109, 40, 217, 0.12);
+            border-color: rgba(109, 40, 217, 0.38);
+            box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.06);
         }
 
-        .nav-link.logout {
-            margin-top: 5px;
-        }
-
-        .nav-link.logout:hover i {
-            transform: scale(1.15);
-            color: #ef4444;
-        }
-
-        .nav-link.logout:hover {
-            background: rgba(239, 68, 68, 0.1);
-            color: #ef4444;
-        }
+        .nav-link.logout { margin-top: 5px; }
+        .nav-link.logout:hover { background: rgba(239, 68, 68, 0.1); color: var(--sidebar-danger); }
 
         .hamburger-mobile {
             display: none;
@@ -261,86 +318,82 @@
         .kpi-card {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
-            border-radius: 14px;
-            padding: 20px;
+            border-radius: 12px;
+            padding: 18px 20px;
             display: flex;
             align-items: center;
-            gap: 16px;
-            transition: all 0.25s ease;
+            justify-content: space-between;
+            gap: 14px;
+            min-height: 116px;
+            width: 100%;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+            transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
             position: relative;
             overflow: hidden;
             cursor: pointer;
         }
 
-        .kpi-card:hover {
-            transform: translateY(-6px) scale(1.02);
-            box-shadow: 0 16px 32px rgba(0, 0, 0, 0.25);
+        .kpi-card:hover,
+        .kpi-card:focus-visible {
+            transform: translateY(-2px);
+            border-color: var(--accent);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
         }
 
         .kpi-card:active {
-            transform: translateY(-2px) scale(0.99);
+            transform: translateY(0);
         }
 
-        .kpi-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 4px;
-            height: 100%;
-            border-radius: 14px 0 0 14px;
+        .kpi-card.is-active {
+            border-color: transparent;
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+            background: color-mix(in srgb, var(--accent) 10%, var(--bg-card));
         }
 
-        .kpi-card.total::before {
-            background: var(--accent);
-        }
-
-        .kpi-card.gestion::before {
-            background: var(--owner-color);
-        }
-
-        .kpi-card.captado::before {
-            background: var(--success-color);
-        }
-
-        .kpi-card.descartado::before {
-            background: var(--danger-color);
+        [data-theme="light"] .kpi-card {
+            background: linear-gradient(145deg, #fbfdff, #f3f6fb);
+            box-shadow: 0 4px 14px rgba(51, 65, 85, 0.10);
         }
 
         .kpi-icon {
-            width: 48px;
-            height: 48px;
-            border-radius: 12px;
+            width: auto;
+            height: auto;
+            border-radius: 0;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.2rem;
+            font-size: 2rem;
             flex-shrink: 0;
+            opacity: 0.25;
         }
 
         .kpi-card.total .kpi-icon {
-            background: rgba(99, 102, 241, 0.1);
+            background: transparent;
             color: var(--accent);
         }
 
         .kpi-card.gestion .kpi-icon {
-            background: rgba(245, 158, 11, 0.1);
+            background: transparent;
             color: var(--owner-color);
         }
 
         .kpi-card.captado .kpi-icon {
-            background: rgba(34, 197, 94, 0.1);
+            background: transparent;
             color: var(--success-color);
         }
 
         .kpi-card.descartado .kpi-icon {
-            background: rgba(239, 68, 68, 0.1);
+            background: transparent;
             color: var(--danger-color);
         }
 
         .kpi-value {
-            font-size: 1.6rem;
-            font-weight: 700;
+            font-size: clamp(1.9rem, 2.4vw, 2.35rem);
+            font-weight: 800;
             line-height: 1;
         }
 
@@ -361,11 +414,12 @@
         }
 
         .kpi-label {
-            font-size: 0.8rem;
+            font-size: 0.82rem;
             color: var(--text-secondary);
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.03em;
+            margin-top: 8px;
         }
 
         /* TABLE CONTAINER */
@@ -914,37 +968,39 @@
                 onerror="this.style.display='none'"> <span>MENÚ</span>
         </div>
 
-        {% if user_role in ['supervisor', 'admin'] %}
-        <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
-        <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
-                Manual</span></a>
-        {% endif %}
+        <div class="sidebar-main-nav">
+            {% if user_role in ['supervisor', 'admin'] %}
+            <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
+            <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
+                    Manual</span></a>
+            {% endif %}
 
-        <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+            <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+            <a href="/captacion" class="nav-link active"><i class="fa-solid fa-house-circle-check"></i>
+                <span>Captaciones</span></a>
+            <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
+            <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
+        </div>
 
-        <a href="/captacion" class="nav-link active"><i class="fa-solid fa-house-circle-check"></i>
-            <span>Captaciones</span></a>
-        <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
-        <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
-
-        <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="
-          toggleTheme();
-          return false;
-        ">
-            <i class="fa-solid fa-moon" id="themeIcon"></i> <span>Tema</span>
-        </a>
-        <a href="/logout" class="nav-link logout">
-            <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
-        </a>
+        <div class="sidebar-footer">
+            <a href="#" class="nav-link theme-toggle" aria-label="Cambiar a tema claro" title="Cambiar a tema claro"
+                onclick="toggleTheme(); return false;">
+                <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
+            </a>
+            <a href="/logout" class="nav-link logout">
+                <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
+            </a>
+        </div>
     </nav>
 
     <div class="main-content">
         <div class="page-header">
             <div>
                 <div class="d-flex align-items-center">
-                    <div class="hamburger-mobile" onclick="toggleMobileMenu()" style="margin-right:12px;">
+                    <button type="button" class="hamburger-mobile" aria-controls="sidebar" aria-expanded="false"
+                        aria-label="Abrir menú" onclick="toggleMobileMenu()" style="margin-right:12px;">
                         <i class="fa-solid fa-bars"></i>
-                    </div>
+                    </button>
                     <div>
                         <h2>Captaciones</h2>
                         <p>Propiedades detectadas para prospección</p>
@@ -954,34 +1010,38 @@
         </div>
 
         <div class="kpi-grid">
-            <div class="kpi-card total" onclick="window.location.href='/captacion'">
-                <div class="kpi-icon"><i class="fa-solid fa-layer-group"></i></div>
+            <button type="button" class="kpi-card total {{ 'is-active' if not current_estado }}"
+                aria-pressed="{{ 'true' if not current_estado else 'false' }}" onclick="window.location.href='/captacion'">
                 <div>
                     <div class="kpi-value">{{ available_count }}</div>
                     <div class="kpi-label">Disponibles</div>
                 </div>
-            </div>
-            <div class="kpi-card gestion" onclick="filterByGrupoEstado('GRUPO_GESTION')">
-                <div class="kpi-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
+                <div class="kpi-icon"><i class="fa-solid fa-layer-group"></i></div>
+            </button>
+            <button type="button" class="kpi-card gestion {{ 'is-active' if current_estado == 'GRUPO_GESTION' }}"
+                aria-pressed="{{ 'true' if current_estado == 'GRUPO_GESTION' else 'false' }}" onclick="filterByGrupoEstado('GRUPO_GESTION')">
                 <div>
                     <div class="kpi-value">{{ in_gestion_count or '0' }}</div>
                     <div class="kpi-label">En Gestión</div>
                 </div>
-            </div>
-            <div class="kpi-card captado" onclick="filterByGrupoEstado('GRUPO_CAPTADO')">
-                <div class="kpi-icon"><i class="fa-solid fa-trophy"></i></div>
+                <div class="kpi-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
+            </button>
+            <button type="button" class="kpi-card captado {{ 'is-active' if current_estado == 'GRUPO_CAPTADO' }}"
+                aria-pressed="{{ 'true' if current_estado == 'GRUPO_CAPTADO' else 'false' }}" onclick="filterByGrupoEstado('GRUPO_CAPTADO')">
                 <div>
                     <div class="kpi-value">{{ captados_count or '0' }}</div>
                     <div class="kpi-label">Captados</div>
                 </div>
-            </div>
-            <div class="kpi-card descartado" onclick="filterByGrupoEstado('GRUPO_DESCARTADO')">
-                <div class="kpi-icon"><i class="fa-solid fa-ban"></i></div>
+                <div class="kpi-icon"><i class="fa-solid fa-trophy"></i></div>
+            </button>
+            <button type="button" class="kpi-card descartado {{ 'is-active' if current_estado == 'GRUPO_DESCARTADO' }}"
+                aria-pressed="{{ 'true' if current_estado == 'GRUPO_DESCARTADO' else 'false' }}" onclick="filterByGrupoEstado('GRUPO_DESCARTADO')">
                 <div>
                     <div class="kpi-value">{{ descartados_count or '0' }}</div>
                     <div class="kpi-label">Descartados</div>
                 </div>
-            </div>
+                <div class="kpi-icon"><i class="fa-solid fa-ban"></i></div>
+            </button>
         </div>
 
         <div class="table-container">
@@ -1146,7 +1206,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
+    <script type="text/plain" id="legacy-captacion-script-disabled">
         function toggleTheme() {
             const html = document.documentElement;
             const icon = document.getElementById("themeIcon");
@@ -1364,7 +1424,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
+    <script type="text/plain" id="legacy-captacion-script-duplicate-disabled">
         function toggleTheme() {
             const html = document.documentElement;
             const icon = document.getElementById("themeIcon");
@@ -1480,6 +1540,128 @@
                     form.submit();
                 }
             }
+        }
+    </script>
+    <script>
+        function updateThemeControl(theme) {
+            const icon = document.getElementById('themeIcon');
+            const control = document.querySelector('.theme-toggle');
+            if (icon) {
+                icon.classList.remove('fa-sun', 'fa-moon');
+                icon.classList.add(theme === 'light' ? 'fa-moon' : 'fa-sun');
+            }
+            const nextTheme = theme === 'light' ? 'oscuro' : 'claro';
+            control?.setAttribute('aria-label', `Cambiar a tema ${nextTheme}`);
+            control?.setAttribute('title', `Cambiar a tema ${nextTheme}`);
+        }
+
+        function toggleTheme() {
+            const html = document.documentElement;
+            const target = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+            html.setAttribute('data-theme', target);
+            localStorage.setItem('theme', target);
+            updateThemeControl(target);
+        }
+
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar?.classList.toggle('mobile-open');
+            const isOpen = Boolean(sidebar?.classList.contains('mobile-open'));
+            if (overlay) overlay.style.display = isOpen ? 'block' : 'none';
+            document.querySelector('.hamburger-mobile')?.setAttribute('aria-expanded', String(isOpen));
+        }
+
+        function closeMobileMenu() {
+            document.getElementById('sidebar')?.classList.remove('mobile-open');
+            const overlay = document.getElementById('sidebarOverlay');
+            if (overlay) overlay.style.display = 'none';
+            document.querySelector('.hamburger-mobile')?.setAttribute('aria-expanded', 'false');
+        }
+
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth <= 768) closeMobileMenu();
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeControl(savedTheme);
+            document.querySelectorAll('.commune-picker-done').forEach(button => {
+                button.addEventListener('click', () => button.closest('.commune-picker')?.removeAttribute('open'));
+            });
+        });
+
+        document.addEventListener('click', event => {
+            document.querySelectorAll('.commune-picker[open]').forEach(picker => {
+                if (!picker.contains(event.target)) picker.removeAttribute('open');
+            });
+        });
+
+        document.addEventListener('keydown', event => {
+            if (event.key !== 'Escape') return;
+            document.querySelectorAll('.commune-picker[open]').forEach(picker => picker.removeAttribute('open'));
+            closeMobileMenu();
+        });
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 768) closeMobileMenu();
+        });
+
+        document.querySelectorAll('.sortable').forEach(th => {
+            th.addEventListener('click', function () {
+                const col = this.dataset.col;
+                const params = new URLSearchParams(window.location.search);
+                const columns = (params.get('sort_by') || '').split(',').filter(Boolean);
+                const directions = (params.get('sort_dir') || '').split(',').filter(Boolean);
+                while (directions.length < columns.length) directions.push('desc');
+                const existing = columns.indexOf(col);
+
+                if (existing === -1) {
+                    columns.push(col);
+                    directions.push('desc');
+                } else if (directions[existing] === 'desc') {
+                    directions[existing] = 'asc';
+                } else {
+                    columns.splice(existing, 1);
+                    directions.splice(existing, 1);
+                }
+
+                if (columns.length) {
+                    params.set('sort_by', columns.join(','));
+                    params.set('sort_dir', directions.join(','));
+                } else {
+                    params.delete('sort_by');
+                    params.delete('sort_dir');
+                }
+                params.set('page', '1');
+                window.location.search = params.toString();
+            });
+        });
+
+        function clearSorting() {
+            const params = new URLSearchParams(window.location.search);
+            params.delete('sort_by');
+            params.delete('sort_dir');
+            params.set('page', '1');
+            window.location.search = params.toString();
+        }
+
+        function filterByGrupoEstado(grupo) {
+            const form = document.querySelector('.filter-bar');
+            const select = form?.querySelector('select[name="estado"]');
+            if (!form || !select) return;
+            let option = select.querySelector(`option[value="${grupo}"]`);
+            if (!option) {
+                option = document.createElement('option');
+                option.value = grupo;
+                option.textContent = `Filtro: ${grupo.replace('GRUPO_', '')}`;
+                select.appendChild(option);
+            }
+            select.value = grupo;
+            form.submit();
         }
     </script>
 </body>

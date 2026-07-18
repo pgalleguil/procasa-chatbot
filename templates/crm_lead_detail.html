@@ -27,6 +27,7 @@
             --notes-color: #2dd4bf;
             --danger-color: #ef4444;
             --success-color: #22c55e;
+            --lead-informative: #22d3ee;
             --border-color: rgba(255, 255, 255, 0.05);
             --sidebar-width: 240px;
             --sidebar-width-collapsed: 80px;
@@ -55,6 +56,13 @@
             --notes-color: #0d9488;
             --danger-color: #dc2626;
             --success-color: #059669;
+            --lead-informative: #0e7490;
+        }
+
+        .lead-temperature-informative {
+            color: var(--lead-informative);
+            background: color-mix(in srgb, var(--lead-informative) 10%, transparent);
+            border: 1px solid color-mix(in srgb, var(--lead-informative) 30%, transparent);
         }
 
         body {
@@ -2486,7 +2494,16 @@
                     <div id="identity-lead" class="identity-box lead-theme">
                         <div class="identity-header">
                             <div>
-                                <h5 class="fw-bold m-0" style="color: var(--text-primary);">{{ lead.nombre }}</h5>
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <h5 class="fw-bold m-0" style="color: var(--text-primary);">{{ lead.nombre }}</h5>
+                                    {% if lead.lead_temperature_effective == 'HOT' %}
+                                    <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25"
+                                        aria-label="Lead Hot"><i class="fa-solid fa-fire me-1" aria-hidden="true"></i>Hot</span>
+                                    {% elif lead.lead_temperature_effective == 'COLD' %}
+                                    <span class="badge lead-temperature-informative"
+                                        aria-label="Lead informativo"><i class="fa-solid fa-compass me-1" aria-hidden="true"></i>Informativo</span>
+                                    {% endif %}
+                                </div>
                                 <div class="small text-secondary mt-1">
                                     <i class="fa-solid fa-location-dot me-1"></i> {{ lead.datos_propiedad.comuna }}
                                 </div>

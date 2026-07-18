@@ -1048,6 +1048,7 @@ def get_lead_detail_data(phone, property_code=None):
         "nombre": prospecto.get("nombre", "Desconocido"),
         "email": prospecto.get("email", "No registrado"),
         "rut": prospecto.get("rut", "No registrado"),
+        "lead_temperature_effective": lead.get("lead_temperature_effective"),
         "crm_estado": crm_state,
         "next_action_date": next_task["execute_at"].isoformat() if next_task and isinstance(next_task["execute_at"], datetime) else (next_task["execute_at"] if next_task else None),
         "last_action_label": formatted_new_history[0]["user_action"] if formatted_new_history else "Sin gestión aún",

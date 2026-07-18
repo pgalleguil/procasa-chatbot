@@ -124,17 +124,16 @@ def test_regular_executive_has_no_three_dot_menu_or_list_mutations():
     assert 'href="tel:56911111111"' in rendered
 
 
-def test_administrator_menu_contains_only_real_administrative_actions():
+def test_administrator_menu_is_absent_until_a_complete_action_set_is_available():
     rendered = _render_list(administrative=True)
-    assert rendered.count('class="row-actions"') == 1
-    assert "Reasignar lead" in rendered
-    assert "Marcar como duplicado" in rendered
-    assert "Archivar" in rendered
-    assert "Ver auditoría" in rendered
-    assert "Abrir lead" not in rendered
-    assert "Cambiar estado" not in rendered
-    assert "fa-brands fa-whatsapp" not in rendered
-    assert "/api/crm/admin/reassign" not in rendered  # JavaScript is outside partial renders.
+    assert 'class="row-actions"' not in rendered
+    assert "fa-ellipsis-vertical" not in rendered
+    assert "col-row-actions" not in rendered
+    assert "Reasignar lead" not in rendered
+    assert "Marcar como duplicado" not in rendered
+    assert ">Archivar<" not in rendered
+    assert "Ver auditoría" not in rendered
+    assert 'tabindex="0" role="link"' in rendered
 
 
 def test_backend_routes_enforce_admin_and_ownership_permissions():

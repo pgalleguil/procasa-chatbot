@@ -284,7 +284,7 @@ def test_crm_temperature_cards_avoid_ambiguous_ratios_and_mobile_layout_is_order
     assert '.filter-bar select,' in template
     assert 'style="margin-left: auto;" name="orden"' not in template
     assert "grid-template-columns: minmax(86px, 31%) minmax(0, 1fr);" in template
-    assert template.count('class="mobile-cell-value') == 8
+    assert template.count('class="mobile-cell-value') == 7
     assert ".crm-table .mobile-cell-value" in template
     assert "Seleccionado</span>" not in template
     assert 'aria-current="{{' in template
@@ -486,8 +486,10 @@ def test_total_state_temperature_breakdown_links_are_not_empty():
         "total_pages": 1, "has_prev": False, "has_more": False},
     )
 
-    assert 'href="/crm?temperatura=HOT&amp;estado=NEW&amp;page=1">1 Hot' in rendered
-    assert 'href="/crm?temperatura=COLD&amp;estado=NEW&amp;page=1">1 Informativos' in rendered
+    assert 'href="/crm?temperatura=HOT&amp;estado=NEW&amp;page=1"' in rendered
+    assert "1 Hot" in rendered
+    assert 'href="/crm?temperatura=COLD&amp;estado=NEW&amp;page=1"' in rendered
+    assert "1 Informativos" in rendered
 
 
 def test_crm_filter_urls_remove_one_filter_and_reset_page():
@@ -577,6 +579,35 @@ def test_crm_sidebar_uses_accessible_glass_background_without_fading_icons():
     assert "transform: rotate(18deg) scale(1.05)" not in template
     assert 'href="/leads-dashboard"]:hover i' not in template
     assert 'href="/crm"]:hover i' not in template
+
+
+def test_crm_list_uses_full_width_without_placeholder_action_menu():
+    template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
+
+    assert ".crm-table .col-type { width: 120px; }" in template
+    assert ".crm-table .col-time { width: 175px; }" in template
+    assert ".crm-table .col-client { width: 19%; }" in template
+    assert ".crm-table .col-last-action { width: auto; }" in template
+    assert ".crm-table .col-executive { width: 180px; }" in template
+    assert "col-row-actions" not in template
+    assert "fa-ellipsis-vertical" not in template
+    assert "data-crm-admin-action" not in template
+    assert "crmReassignModal" not in template
+    assert 'tabindex="0" role="link"' in template
+
+
+def test_informative_leads_use_one_compass_icon_across_crm_surfaces():
+    list_template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
+    detail_template = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
+    api_crm = Path("api_crm.py").read_text(encoding="utf-8")
+
+    assert list_template.count("fa-compass") >= 5
+    assert "🧭 Informativos" in list_template
+    assert "Informativos 🔵" not in list_template
+    assert 'aria-label="Lead informativo"' in list_template
+    assert "fa-compass" in detail_template
+    assert 'aria-label="Lead informativo"' in detail_template
+    assert '"lead_temperature_effective": lead.get("lead_temperature_effective")' in api_crm
 
 
 def test_crm_hybrid_polling_uses_partial_fetch_without_full_reload():

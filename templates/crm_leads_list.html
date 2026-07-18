@@ -44,6 +44,7 @@
             --state-management: #fbbf24;
             --state-visits: #34d399;
             --state-closed: #64748b;
+            --lead-informative: #22d3ee;
             
             /* Semaforo Colors */
             --led-red: #ef4444;
@@ -78,6 +79,7 @@
             --state-management: #d99a08;
             --state-visits: #168a68;
             --state-closed: #64748b;
+            --lead-informative: #087f9c;
             --accent: #4f46e5;
             --accent-hover: #4338ca;
             --shadow-soft: 0 12px 32px rgba(51, 65, 85, 0.12);
@@ -912,14 +914,22 @@
             box-shadow: none;
         }
 
-        .crm-table .col-type { width: 8%; }
-        .crm-table .col-time { width: 12%; }
-        .crm-table .col-client { width: 16%; }
-        .crm-table .col-property { width: 10%; }
-        .crm-table .col-state { width: 10%; }
-        .crm-table .col-last-action { width: 18%; }
-        .crm-table .col-executive { width: 12%; }
-        .crm-table .col-row-actions { width: 50px; }
+        .crm-table .col-type { width: 120px; }
+        .crm-table .col-time { width: 175px; }
+        .crm-table .col-client { width: 19%; }
+        .crm-table .col-property { width: 125px; }
+        .crm-table .col-state { width: 135px; }
+        .crm-table .col-last-action { width: auto; }
+        .crm-table .col-executive { width: 180px; }
+
+        @media (min-width: 769px) and (max-width: 1200px) {
+            .crm-table .col-type { width: 100px; }
+            .crm-table .col-time { width: 150px; }
+            .crm-table .col-client { width: 18%; }
+            .crm-table .col-property { width: 105px; }
+            .crm-table .col-state { width: 115px; }
+            .crm-table .col-executive { width: 145px; }
+        }
 
         @media (min-width: 769px) {
             .crm-table thead {
@@ -1046,52 +1056,6 @@
             background-color: rgba(99, 102, 241, 0.12);
         }
 
-        .row-actions { position: relative; }
-        .row-actions summary {
-            width: 34px;
-            height: 34px;
-            display: grid;
-            place-items: center;
-            border: 1px solid var(--border-color);
-            border-radius: 9px;
-            cursor: pointer;
-            list-style: none;
-        }
-        .row-actions summary::-webkit-details-marker { display: none; }
-        .row-actions-menu {
-            position: absolute;
-            z-index: 30;
-            right: 0;
-            top: 40px;
-            min-width: 175px;
-            padding: 6px;
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            background: var(--bg-card);
-            box-shadow: 0 12px 30px rgba(0,0,0,.35);
-        }
-        .row-actions-menu a,
-        .row-actions-menu button {
-            display: flex;
-            align-items: center;
-            gap: 9px;
-            width: 100%;
-            padding: 8px 10px;
-            border: 0;
-            border-radius: 7px;
-            color: var(--text-primary);
-            background: transparent;
-            font-size: .8rem;
-            text-decoration: none;
-            text-align: left;
-        }
-        .row-actions-menu a:hover,
-        .row-actions-menu button:hover,
-        .row-actions-menu a:focus-visible,
-        .row-actions-menu button:focus-visible { background: rgba(99,102,241,.14); }
-
-        .row-actions-menu .action-archive { color: var(--state-unattended); }
-
         .phone-link {
             color: var(--text-secondary);
             text-decoration: none;
@@ -1104,14 +1068,21 @@
             text-underline-offset: 2px;
         }
 
-        #crmReassignExecutive {
-            width: 100%;
-            min-height: 44px;
-            padding: 10px 12px;
-            border: 1px solid var(--input-border);
-            border-radius: 10px;
-            color: var(--input-text);
-            background: var(--input-bg);
+        .lead-type-icon {
+            display: inline-block;
+            width: 1.15em;
+            text-align: center;
+            opacity: 1;
+        }
+
+        .lead-type-informative {
+            color: var(--lead-informative) !important;
+        }
+
+        .summary-card > .lead-type-icon {
+            width: auto;
+            font-size: 2rem;
+            opacity: 0.25;
         }
 
         #sidebarToggle {
@@ -1494,8 +1465,7 @@
             .crm-table .col-property,
             .crm-table .col-state,
             .crm-table .col-last-action,
-            .crm-table .col-executive,
-            .crm-table .col-row-actions {
+            .crm-table .col-executive {
                 width: 100%;
             }
 
@@ -1565,14 +1535,6 @@
                 border-top: 1px dashed rgba(255, 255, 255, 0.1);
                 padding-bottom: 20px;
             }
-
-            .row-actions-menu {
-                position: static;
-                width: 100%;
-                margin-top: 8px;
-            }
-
-            .crm-table td[data-label="Acciones"] { min-height: 48px; }
 
             /* Toolbar y Filtros en móvil */
             .toolbar {
@@ -1710,21 +1672,21 @@
                         aria-current="{{ 'true' if selected_temperature == 'HOT' else 'false' }}">
                         <div>
                             <div class="summary-value text-danger" id="kpi-hot" data-target="{{ kpis.hot }}">0</div>
-                            <div class="summary-label">HOT 🔥</div>
+                            <div class="summary-label">HOT <i class="fa-solid fa-fire lead-type-icon text-danger" aria-hidden="true"></i></div>
                             <div class="summary-meta temperature-share">{{ pct(kpis.hot_percent) }}% del total</div>
                         </div>
-                        <i class="fa-solid fa-fire fa-2x text-danger opacity-25"></i>
+                        <i class="fa-solid fa-fire lead-type-icon text-danger" aria-hidden="true"></i>
                     </a>
                 </div>
                 <div class="col">
                     <a href="{{ card_urls.cold }}" class="summary-card {{ 'is-active' if selected_temperature == 'COLD' }}"
                         aria-current="{{ 'true' if selected_temperature == 'COLD' else 'false' }}">
                         <div>
-                            <div class="summary-value text-info" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
-                            <div class="summary-label">Informativos 🔵</div>
+                            <div class="summary-value lead-type-informative" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
+                            <div class="summary-label">Informativos <i class="fa-solid fa-compass lead-type-icon lead-type-informative" aria-hidden="true"></i></div>
                             <div class="summary-meta temperature-share">{{ pct(kpis.cold_percent) }}% del total</div>
                         </div>
-                        <i class="fa-solid fa-circle-info fa-2x text-info opacity-25"></i>
+                        <i class="fa-solid fa-compass lead-type-icon lead-type-informative" aria-hidden="true"></i>
                     </a>
                 </div>
             </div>
@@ -1777,8 +1739,8 @@
                         </a>
                         {% if selected_temperature == 'Todos' %}
                         <div class="state-breakdown" aria-label="Desglose por temperatura de {{ label }}">
-                            <a href="{{ card_urls[(state|lower) ~ '_hot'] }}">{{ hot_count }} Hot</a>
-                            <a href="{{ card_urls[(state|lower) ~ '_cold'] }}">{{ cold_count }} Informativos</a>
+                            <a href="{{ card_urls[(state|lower) ~ '_hot'] }}"><i class="fa-solid fa-fire lead-type-icon text-danger" aria-hidden="true"></i>{{ hot_count }} Hot</a>
+                            <a href="{{ card_urls[(state|lower) ~ '_cold'] }}"><i class="fa-solid fa-compass lead-type-icon lead-type-informative" aria-hidden="true"></i>{{ cold_count }} Informativos</a>
                         </div>
                         {% endif %}
                     </div>
@@ -1802,8 +1764,8 @@
                     <span class="filter-field-label">Tipo de lead</span>
                     <select name="temperatura" data-auto-filter>
                         <option value="Todos" {% if selected_temperature == 'Todos' %}selected{% endif %}>Todos</option>
-                        <option value="HOT" {% if selected_temperature == 'HOT' %}selected{% endif %}>Hot</option>
-                        <option value="COLD" {% if selected_temperature == 'COLD' %}selected{% endif %}>Informativos</option>
+                        <option value="HOT" {% if selected_temperature == 'HOT' %}selected{% endif %}>🔥 Hot</option>
+                        <option value="COLD" {% if selected_temperature == 'COLD' %}selected{% endif %}>🧭 Informativos</option>
                     </select>
                 </label>
 
@@ -1846,7 +1808,7 @@
             {% set state_labels = {'NEW': 'Sin atender', 'GRUPO_GESTION': 'En gestión', 'GRUPO_VISITA': 'Visitas', 'GRUPO_CERRADO': 'Cerrados', 'UNASSIGNED': 'Sin asignar'} %}
             {% set order_labels = {'antiguos_sin_atender': 'Más antiguos sin atender', 'sla_por_vencer': 'SLA por vencer', 'mayor_sin_gestion': 'Mayor tiempo sin gestión', 'ultima_accion_antigua': 'Última acción más antigua'} %}
             <div class="active-filters" aria-label="Filtros activos">
-                {% if selected_temperature != 'Todos' %}<a class="filter-chip" href="{{ filter_urls.temperature }}">{{ 'Hot' if selected_temperature == 'HOT' else 'Informativos' }} <span aria-hidden="true">×</span></a>{% endif %}
+                {% if selected_temperature != 'Todos' %}<a class="filter-chip" href="{{ filter_urls.temperature }}"><i class="fa-solid {{ 'fa-fire text-danger' if selected_temperature == 'HOT' else 'fa-compass lead-type-informative' }} lead-type-icon" aria-hidden="true"></i>{{ 'Hot' if selected_temperature == 'HOT' else 'Informativos' }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if selected_state %}<a class="filter-chip" href="{{ filter_urls.state }}">{{ state_labels.get(selected_state, selected_state) }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if current_ejecutivo != 'Todos' and can_administer_leads %}<a class="filter-chip" href="{{ filter_urls.executive }}">{{ current_ejecutivo }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if request.query_params.get('busqueda') %}<a class="filter-chip" href="{{ filter_urls.search }}">Teléfono: {{ request.query_params.get('busqueda') }} <span aria-hidden="true">×</span></a>{% endif %}
@@ -1882,7 +1844,6 @@
                             <th class="col-state">Estado</th>
                             <th class="col-last-action">Última Acción</th>
                             {% if show_executive %}<th class="col-executive">Ejecutivo</th>{% endif %}
-                            {% if can_administer_leads %}<th class="col-row-actions" aria-label="Acciones administrativas"></th>{% endif %}
                         </tr>
                     </thead>
                     <tbody>
@@ -1891,12 +1852,12 @@
                             aria-label="Abrir detalle de {{ lead.nombre }}"
                             data-lead-url="/crm/lead/{{ lead.phone }}">
                             {% if show_priority %}
-                            <td class="col-type" data-label="Prioridad">
+                            <td class="col-type" data-label="Tipo">
                                 <div class="mobile-cell-value fw-bold d-flex align-items-center" style="font-size: 0.95rem;">
                                     {% if lead.lead_temperature_effective == 'HOT' %}
-                                    <span class="text-danger"><i class="fa-solid fa-fire me-1"></i>Alta</span>
+                                    <span class="text-danger" aria-label="Lead Hot"><i class="fa-solid fa-fire lead-type-icon me-1" aria-hidden="true"></i>Hot</span>
                                     {% else %}
-                                    <span class="text-info"><i class="fa-solid fa-circle-info me-1"></i>Informativo</span>
+                                    <span class="lead-type-informative" aria-label="Lead informativo"><i class="fa-solid fa-compass lead-type-icon me-1" aria-hidden="true"></i>Informativo</span>
                                     {% endif %}
                                 </div>
                             </td>
@@ -1983,36 +1944,10 @@
                                 </div>
                             </td>
                             {% endif %}
-                            {% if can_administer_leads %}
-                            <td class="col-row-actions" data-label="Acciones administrativas">
-                                <div class="mobile-cell-value">
-                                    <details class="row-actions">
-                                        <summary aria-label="Acciones administrativas para {{ lead.nombre }}"><i class="fa-solid fa-ellipsis-vertical"></i></summary>
-                                        <div class="row-actions-menu">
-                                            <button type="button" data-crm-admin-action="reassign"
-                                                data-phone="{{ lead.phone }}" data-lead-name="{{ lead.nombre }}">
-                                                <i class="fa-solid fa-user-gear"></i>Reasignar lead
-                                            </button>
-                                            <button type="button" data-crm-admin-action="duplicate"
-                                                data-phone="{{ lead.phone }}" data-lead-name="{{ lead.nombre }}">
-                                                <i class="fa-solid fa-clone"></i>Marcar como duplicado
-                                            </button>
-                                            <button type="button" class="action-archive" data-crm-admin-action="archive"
-                                                data-phone="{{ lead.phone }}" data-lead-name="{{ lead.nombre }}">
-                                                <i class="fa-solid fa-box-archive"></i>Archivar
-                                            </button>
-                                            <a href="/crm/lead/{{ lead.phone }}#auditoria">
-                                                <i class="fa-solid fa-clock-rotate-left"></i>Ver auditoría
-                                            </a>
-                                        </div>
-                                    </details>
-                                </div>
-                            </td>
-                            {% endif %}
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="9" class="text-center text-secondary py-5">
+                            <td colspan="7" class="text-center text-secondary py-5">
                                 <div class="opacity-50 mb-3">
                                     <i class="fa-solid fa-folder-open fa-3x"></i>
                                 </div>
@@ -2056,39 +1991,6 @@
             {% endif %}
             </div>
 
-            {% if can_administer_leads %}
-            <div class="modal fade" id="crmReassignModal" tabindex="-1" aria-labelledby="crmReassignModalTitle" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content" style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color);">
-                        <form id="crmReassignForm">
-                            <div class="modal-header" style="border-color: var(--border-color);">
-                                <div>
-                                    <h5 class="modal-title" id="crmReassignModalTitle">Reasignar lead</h5>
-                                    <div class="small text-secondary" id="crmReassignLeadName"></div>
-                                </div>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                            </div>
-                            <div class="modal-body">
-                                <input type="hidden" id="crmReassignPhone">
-                                <label class="filter-field" for="crmReassignExecutive">
-                                    <span class="filter-field-label">Nuevo ejecutivo</span>
-                                    <select id="crmReassignExecutive" required>
-                                        <option value="">Seleccionar ejecutivo</option>
-                                        {% for executive in executives %}
-                                        <option value="{{ executive }}">{{ executive }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </label>
-                            </div>
-                            <div class="modal-footer" style="border-color: var(--border-color);">
-                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                                <button type="submit" class="btn btn-primary">Confirmar reasignación</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
             </div>
 {% if not partial %}
         </div>
@@ -2309,84 +2211,6 @@
                 if (!row || event.target !== row || !['Enter', ' '].includes(event.key)) return;
                 event.preventDefault();
                 window.location.assign(row.dataset.leadUrl);
-            });
-
-            async function runCrmAdminAction(endpoint, payload) {
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    },
-                    body: JSON.stringify(payload)
-                });
-                const result = await response.json().catch(() => ({}));
-                if (!response.ok) throw new Error(result.detail || 'No fue posible completar la acción');
-                return result;
-            }
-
-            document.addEventListener('click', async event => {
-                const actionButton = event.target.closest?.('[data-crm-admin-action]');
-                if (!actionButton) return;
-                event.preventDefault();
-                event.stopPropagation();
-                actionButton.closest('details')?.removeAttribute('open');
-
-                const action = actionButton.dataset.crmAdminAction;
-                const phone = actionButton.dataset.phone;
-                const leadName = actionButton.dataset.leadName || 'Lead';
-                if (action === 'reassign') {
-                    const modalElement = document.getElementById('crmReassignModal');
-                    document.getElementById('crmReassignPhone').value = phone;
-                    document.getElementById('crmReassignLeadName').textContent = leadName;
-                    document.getElementById('crmReassignExecutive').value = '';
-                    bootstrap.Modal.getOrCreateInstance(modalElement).show();
-                    return;
-                }
-
-                if (action === 'archive') {
-                    if (!window.confirm(`¿Archivar a ${leadName}? El historial se conservará.`)) return;
-                    actionButton.disabled = true;
-                    try {
-                        await runCrmAdminAction('/api/crm/admin/archive', {
-                            phone,
-                            reason: 'Archivado desde el listado CRM'
-                        });
-                    } catch (error) {
-                        window.alert(error.message);
-                        actionButton.disabled = false;
-                    }
-                }
-
-                if (action === 'duplicate') {
-                    if (!window.confirm(`¿Marcar a ${leadName} como duplicado? El registro y su historial se conservarán.`)) return;
-                    actionButton.disabled = true;
-                    try {
-                        await runCrmAdminAction('/api/crm/admin/mark-duplicate', { phone });
-                    } catch (error) {
-                        window.alert(error.message);
-                        actionButton.disabled = false;
-                    }
-                }
-            });
-
-            document.addEventListener('submit', async event => {
-                if (event.target.id !== 'crmReassignForm') return;
-                event.preventDefault();
-                const submitButton = event.target.querySelector('[type="submit"]');
-                submitButton.disabled = true;
-                try {
-                    await runCrmAdminAction('/api/crm/admin/reassign', {
-                        phone: document.getElementById('crmReassignPhone').value,
-                        executive: document.getElementById('crmReassignExecutive').value
-                    });
-                    bootstrap.Modal.getInstance(document.getElementById('crmReassignModal'))?.hide();
-                } catch (error) {
-                    window.alert(error.message);
-                } finally {
-                    submitButton.disabled = false;
-                }
             });
 
             // --- ACTUALIZACIÓN HÍBRIDA DEL LISTADO (sin recargar la página) ---

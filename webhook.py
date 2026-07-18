@@ -57,6 +57,11 @@ from api_captacion import (
     get_personal_templates, save_personal_template, delete_personal_template
 )
 from captacion_kpis import VISIBLE_CLASSIFICATION_STATES, build_kpi_queries
+from captacion_goals import (
+    CAPTACION_PRIVILEGED_ROLES,
+    can_manage_captacion,
+    get_captacion_goal_dashboard,
+)
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate, resolve_property_code
 from chatbot.processing_service import LeadProcessingService
 from chatbot.crm_permissions import (
@@ -1404,7 +1409,7 @@ async def view_captaciones(
         names.insert(0, "Sin asignar")
         return names
 
-    if user_role in ["admin", "supervisor"]:
+    if user_role in CAPTACION_PRIVILEGED_ROLES:
         loop2 = asyncio.get_running_loop()
         exec_task = loop2.run_in_executor(None, _fetch_executives)
         items_total, executives = await asyncio.gather(list_task, exec_task)
@@ -1468,7 +1473,7 @@ async def view_captaciones(
         "origen": {"$in": ["toctoc", "yapo"]},
         "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}
     }
-    if user_role not in ["admin", "supervisor"]:
+    if user_role not in CAPTACION_PRIVILEGED_ROLES:
         base_query["$or"] = [
             {"gestion.ejecutivo_asignado": user_name},
             {"$and": [
@@ -1535,6 +1540,15 @@ async def view_captaciones(
         
     total_pages = (total_count + limit - 1) // limit
 
+    goal_executive = current_ejecutivo if user_role in CAPTACION_PRIVILEGED_ROLES else user_name
+    captacion_goal = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_captacion_goal_dashboard(
+            sync_db,
+            selected_executive=goal_executive or None,
+        ),
+    )
+
     return templates.TemplateResponse("captacion_list.html", {
         "request": request,
         "items": items,
@@ -1543,6 +1557,7 @@ async def view_captaciones(
         "in_gestion_count": in_gestion_count,
         "captados_count": captados_count,
         "descartados_count": descartados_count,
+        "captacion_goal": captacion_goal,
         "comunas": comunas_clean,
         "available_ops": available_ops,
         "user_role": user_role,
@@ -1586,12 +1601,9 @@ async def view_captacion_detail_route(request: Request, obj_id: str):
     if not data:
         return HTMLResponse("Propiedad no encontrada")
 
-    # RBAC Check
-    user_name = user.get("nombre", "")
-    if user.get("rol") == "agente":
-        assigned = data.get("gestion", {}).get("ejecutivo_asignado")
-        if assigned and user_name.lower() not in assigned.lower():
-            return RedirectResponse(url="/captacion?error=no_asignada")
+    # El acceso al detalle y a sus APIs usa una sola regla de permisos.
+    if not can_manage_captacion(user, data):
+        return RedirectResponse(url="/captacion?error=no_asignada")
 
     # Ya no calculamos el matching aquí (se hace vía AJAX)
     
@@ -1607,7 +1619,9 @@ PENDING_MATCHING_REQUESTS = {} # obj_id -> timestamp
 
 @app.get("/api/captacion/{obj_id}/matching")
 async def api_get_matching_leads(request: Request, obj_id: str):
-    await get_current_user(request)
+    user_doc = await get_current_user_doc(request)
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="Sesión inválida")
 
     from api_captacion import get_captacion_detail, get_matching_leads_analysis, get_cached_value, set_cached_value
 
@@ -1630,6 +1644,8 @@ async def api_get_matching_leads(request: Request, obj_id: str):
         data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_captacion_detail(obj_id))
         if not data:
             raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+        if not can_manage_captacion(user_doc, data):
+            raise HTTPException(status_code=403, detail="No autorizado para gestionar esta captación")
 
         ma = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_matching_leads_analysis(data))
 
@@ -1665,6 +1681,14 @@ async def api_update_captacion(request: Request):
         
         if not obj_id or not status:
             raise HTTPException(status_code=400, detail="Faltan datos")
+
+        captacion_doc = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, lambda: get_captacion_detail(obj_id)
+        )
+        if not captacion_doc:
+            raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+        if not user_doc or not can_manage_captacion(user_doc, captacion_doc):
+            raise HTTPException(status_code=403, detail="No autorizado para gestionar esta captación")
             
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
@@ -1697,15 +1721,23 @@ async def api_update_captacion(request: Request):
 async def api_update_captacion_contact(request: Request):
     try:
         await get_current_user(request)
+        user_doc = await get_current_user_doc(request)
         data = await request.json()
         obj_id = data.get("id")
         if not obj_id:
             raise HTTPException(status_code=400, detail="Falta ID")
+
+        captacion_doc = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, lambda: get_captacion_detail(obj_id)
+        )
+        if not captacion_doc:
+            raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+        if not user_doc or not can_manage_captacion(user_doc, captacion_doc):
+            raise HTTPException(status_code=403, detail="No autorizado para gestionar esta captación")
         
         # Check user name in session or payload
         user_name = data.get("user_name")
         if not user_name:
-            user_doc = await get_current_user_doc(request)
             user_name = user_doc.get("nombre", user_doc.get("username", "Sistema")) if user_doc else "Sistema"
         
         loop = asyncio.get_running_loop()
@@ -1751,12 +1783,30 @@ async def api_captacion_log_action(request: Request):
         loop = asyncio.get_running_loop()
         success = await loop.run_in_executor(
             _WEB_THREAD_POOL,
-            lambda: log_captacion_activity(obj_id, actual_name, action, channel, message, phone, result, template_used)
+            lambda: log_captacion_activity(
+                obj_id,
+                actual_name,
+                action,
+                channel,
+                message,
+                phone,
+                result,
+                template_used,
+                user_doc=user_doc,
+            )
         )
-        return {"status": "ok"} if success else {"status": "error"}
+        return {"status": "ok", "credited": bool(success.get("credited"))} if success else {"status": "error"}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error logging captacion action: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail="No fue posible registrar la gestión")
 
 @app.get("/api/captacion/templates/personal")
 async def api_get_personal_templates(request: Request):

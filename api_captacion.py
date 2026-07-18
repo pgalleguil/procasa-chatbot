@@ -19,6 +19,11 @@ from owner_confidence import (
     detect_source_price_warning,
     resolve_price_display,
 )
+from captacion_goals import (
+    can_manage_captacion,
+    is_valid_captacion_action,
+    record_valid_captacion_management,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1127,9 +1132,34 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
 
     return True
 
-def log_captacion_activity(obj_id, user_name, action, channel, message, phone, result, template_used=None):
+def log_captacion_activity(
+    obj_id,
+    user_name,
+    action,
+    channel,
+    message,
+    phone,
+    result,
+    template_used=None,
+    user_doc=None,
+):
     db = get_db()
     now = get_chile_now()
+
+    if not is_valid_captacion_action(action, channel, result=result, message=message):
+        raise ValueError("La acción no corresponde a una gestión comercial válida")
+
+    try:
+        query_id = ObjectId(obj_id)
+    except Exception:
+        query_id = str(obj_id)
+    property_doc = get_captacion_collection(db).find_one({"_id": query_id})
+    if not property_doc and query_id != str(obj_id):
+        property_doc = get_captacion_collection(db).find_one({"_id": str(obj_id)})
+    if not property_doc:
+        raise LookupError("Propiedad de captación no encontrada")
+    if user_doc and not can_manage_captacion(user_doc, property_doc):
+        raise PermissionError("No tienes permiso para gestionar esta captación")
     
     activity_entry = {
         "timestamp": now,
@@ -1144,7 +1174,7 @@ def log_captacion_activity(obj_id, user_name, action, channel, message, phone, r
     if template_used:
         activity_entry["template_used"] = template_used
         
-    note_content = message
+    note_content = message or "Gestión comercial registrada"
     if template_used and "Plantilla" not in note_content:
         note_content = f"[Plantilla: {template_used}] {message[:100]}..."
         
@@ -1157,17 +1187,30 @@ def log_captacion_activity(obj_id, user_name, action, channel, message, phone, r
     }
     
     get_captacion_collection(db).update_one(
-        {"_id": ObjectId(obj_id)},
+        {"_id": property_doc["_id"]},
         {"$push": {
             "gestion.actividades": activity_entry,
             "gestion.notas": note_entry
         }, "$set": {"gestion.fecha_ultima_gestion": now}}
     )
     _invalidate_detail_cache(obj_id)
+
+    credited = record_valid_captacion_management(
+        db,
+        property_id=property_doc["_id"],
+        actor=user_name,
+        actor_id=(user_doc or {}).get("_id"),
+        actor_email=(user_doc or {}).get("email"),
+        action=action,
+        channel=channel,
+        occurred_at=now,
+        result=result,
+        message=message,
+    )
     
     # LOG EVENT CENTRAL: Gestión de Captación
     try:
-        log_event(ObjectId(obj_id), EventType.GESTION_CAPTACION, user_name, {
+        log_event(str(property_doc["_id"]), EventType.GESTION_CAPTACION.value, user_name, {
             "action": action,
             "channel": channel,
             "result": result,
@@ -1178,7 +1221,7 @@ def log_captacion_activity(obj_id, user_name, action, channel, message, phone, r
     except Exception as e:
         logger.error(f"Error logging captacion activity event: {e}")
 
-    return True
+    return {"ok": True, "credited": credited}
 
 def normalize_commune(name):
     """

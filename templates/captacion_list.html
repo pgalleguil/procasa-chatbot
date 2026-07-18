@@ -379,11 +379,11 @@
         /* Resumen operativo, equivalente al panel de gestión de Leads */
         .captacion-progress-panel {
             display: grid;
-            grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.7fr) auto;
-            align-items: center;
-            gap: 22px;
+            grid-template-columns: minmax(220px, .8fr) minmax(300px, 1.25fr);
+            align-items: start;
+            gap: 24px;
             margin-bottom: 25px;
-            padding: 18px 20px;
+            padding: 20px;
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 14px;
@@ -410,8 +410,8 @@
 
         .captacion-progress-summary {
             color: var(--text-primary);
-            font-size: 0.9rem;
-            font-weight: 650;
+            font-size: .94rem;
+            font-weight: 700;
             margin-bottom: 9px;
         }
 
@@ -424,30 +424,30 @@
             border-radius: 999px;
         }
 
-        .captacion-progress-segment { height: 100%; }
-        .captacion-progress-segment.gestion { background: #f59e0b; }
-        .captacion-progress-segment.captado { background: #10b981; }
-        .captacion-progress-segment.descartado { background: #64748b; }
-        .captacion-progress-segment.disponible { background: #3b82f6; }
-
-        .captacion-progress-percent {
-            min-width: 84px;
-            color: var(--text-primary);
-            font-size: clamp(1.75rem, 2.6vw, 2.25rem);
-            font-weight: 800;
-            line-height: 1;
-            text-align: right;
-        }
-
-        .captacion-progress-percent span {
-            display: block;
-            margin-top: 6px;
-            color: var(--text-secondary);
-            font-size: 0.7rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
+        .captacion-goal-progress { height: 100%; background: linear-gradient(90deg, #3b82f6, #10b981); border-radius: inherit; transition: width .25s ease; }
+        .captacion-goal-number { color: var(--text-primary); font-size: clamp(1.55rem, 2.5vw, 2rem); font-weight: 800; line-height: 1.1; }
+        .captacion-goal-number small { color: var(--text-secondary); font-size: .78rem; font-weight: 650; }
+        .captacion-goal-status { margin-top: 7px; color: var(--text-secondary); font-size: .78rem; }
+        .captacion-goal-status strong { color: var(--text-primary); }
+        .captacion-goal-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+        .captacion-goal-block + .captacion-goal-block { border-left: 1px solid var(--border-color); padding-left: 18px; }
+        .captacion-goal-label { margin-bottom: 7px; color: var(--text-secondary); font-size: .68rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+        .captacion-goal-days { display: grid; grid-template-columns: repeat(5, minmax(42px, 1fr)); gap: 7px; margin-top: 13px; }
+        .captacion-goal-day { padding: 7px 5px; border: 1px solid var(--border-color); border-radius: 9px; color: var(--text-secondary); font-size: .7rem; text-align: center; background: color-mix(in srgb, var(--bg-secondary) 75%, transparent); }
+        .captacion-goal-day strong { display: block; margin-top: 2px; color: var(--text-primary); font-size: .77rem; }
+        .captacion-goal-day.met { border-color: rgba(16,185,129,.45); background: rgba(16,185,129,.09); }
+        .captacion-goal-day.met strong { color: #10b981; }
+        .captacion-goal-day.today { box-shadow: 0 0 0 2px rgba(59,130,246,.18); border-color: #3b82f6; }
+        .captacion-goal-day.future strong { color: var(--text-secondary); }
+        .captacion-team-details { grid-column: 1 / -1; border-top: 1px solid var(--border-color); padding-top: 13px; }
+        .captacion-team-details summary { color: var(--accent); font-size: .8rem; font-weight: 700; cursor: pointer; }
+        .captacion-team-table { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: .76rem; }
+        .captacion-team-table th { padding: 7px 8px; color: var(--text-secondary); text-align: left; font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border-color); }
+        .captacion-team-table td { padding: 8px; color: var(--text-primary); border-bottom: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent); }
+        .captacion-team-table tr:last-child td { border-bottom: 0; }
+        .captacion-team-table .goal-met { color: #10b981; font-weight: 700; }
+        .captacion-team-table .goal-pending { color: #f59e0b; font-weight: 700; }
+        .captacion-team-table .goal-zero { color: #ef4444; font-weight: 700; }
 
         .kpi-card.gestion .kpi-icon {
             background: transparent;
@@ -977,14 +977,15 @@
             .kpi-card { min-height: 104px; padding: 15px; }
             .kpi-icon { font-size: 1.65rem; }
             .captacion-progress-panel {
-                grid-template-columns: 1fr auto;
+                grid-template-columns: 1fr;
                 gap: 14px;
                 margin-bottom: 16px;
                 padding: 16px;
             }
-            .captacion-progress-heading { grid-column: 1; grid-row: 1; min-width: 0; }
-            .captacion-progress-main { grid-column: 1 / -1; grid-row: 2; }
-            .captacion-progress-percent { grid-column: 2; grid-row: 1; }
+            .captacion-progress-heading { min-width: 0; }
+            .captacion-goal-columns { grid-template-columns: 1fr; gap: 14px; }
+            .captacion-goal-block + .captacion-goal-block { border-left: 0; border-top: 1px solid var(--border-color); padding-left: 0; padding-top: 14px; }
+            .captacion-team-details { grid-column: 1; }
             .captacion-progress-legend { line-height: 1.45; }
             .pagination-container { flex-direction: column; text-align: center; }
 
@@ -1101,7 +1102,7 @@
         </div>
 
         <div class="sidebar-main-nav">
-            {% if user_role in ['supervisor', 'admin'] %}
+            {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
             <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
             <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
                     Manual</span></a>
@@ -1176,28 +1177,89 @@
             </button>
         </div>
 
-        {% set captacion_managed = (in_gestion_count or 0) + (captados_count or 0) + (descartados_count or 0) %}
-        {% set captacion_universe = (available_count or 0) + captacion_managed %}
-        {% set captacion_managed_pct = ((captacion_managed * 100 / captacion_universe)|round(1)) if captacion_universe else 0 %}
-        <section class="captacion-progress-panel" aria-label="Avance de captación">
+        <section class="captacion-progress-panel" aria-label="Meta de gestión de captación">
             <div class="captacion-progress-heading">
-                <div class="captacion-progress-title">Avance de captación</div>
+                <div class="captacion-progress-title">Meta de gestión de captación</div>
                 <div class="captacion-progress-context">
-                    {% if current_ejecutivo %}{{ current_ejecutivo }}{% elif user_role not in ['supervisor', 'admin'] %}{{ user_name }}{% else %}Universo completo{% endif %}
+                    {% if captacion_goal.mode == 'individual' %}{{ captacion_goal.name }}{% else %}Equipo activo de captación{% endif %}
+                    · America/Santiago
                 </div>
             </div>
-            <div class="captacion-progress-main">
-                <div class="captacion-progress-summary">{{ captacion_managed }} gestionadas · {{ available_count or 0 }} disponibles</div>
-                <div class="captacion-progress-track" role="img"
-                    aria-label="{{ available_count or 0 }} disponibles, {{ in_gestion_count or 0 }} en gestión, {{ captados_count or 0 }} captadas y {{ descartados_count or 0 }} descartadas">
-                    {% if available_count and captacion_universe %}<span class="captacion-progress-segment disponible" style="width: {{ available_count * 100 / captacion_universe }}%"></span>{% endif %}
-                    {% if in_gestion_count and captacion_universe %}<span class="captacion-progress-segment gestion" style="width: {{ in_gestion_count * 100 / captacion_universe }}%"></span>{% endif %}
-                    {% if captados_count and captacion_universe %}<span class="captacion-progress-segment captado" style="width: {{ captados_count * 100 / captacion_universe }}%"></span>{% endif %}
-                    {% if descartados_count and captacion_universe %}<span class="captacion-progress-segment descartado" style="width: {{ descartados_count * 100 / captacion_universe }}%"></span>{% endif %}
+
+            {% if captacion_goal.mode == 'individual' %}
+            <div>
+                <div class="captacion-goal-columns">
+                    <div class="captacion-goal-block">
+                        <div class="captacion-goal-label">Hoy</div>
+                        {% if captacion_goal.is_workday %}
+                        <div class="captacion-goal-number">{{ captacion_goal.today_count }} <small>de {{ captacion_goal.today_goal }} gestiones</small></div>
+                        <div class="captacion-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [captacion_goal.today_percent, 100]|min }}">
+                            <span class="captacion-goal-progress" style="width: {{ [captacion_goal.today_percent, 100]|min }}%"></span>
+                        </div>
+                        <div class="captacion-goal-status"><strong>{{ captacion_goal.today_percent }} %</strong> cumplido · Faltan {{ captacion_goal.today_remaining }}</div>
+                        {% else %}
+                        <div class="captacion-goal-number">Sin meta <small>fin de semana</small></div>
+                        <div class="captacion-goal-status">La actividad se registra como adicional.</div>
+                        {% endif %}
+                    </div>
+                    <div class="captacion-goal-block">
+                        <div class="captacion-goal-label">Semana</div>
+                        <div class="captacion-goal-number">{{ captacion_goal.week_count }} <small>de {{ captacion_goal.week_goal }} gestiones</small></div>
+                        <div class="captacion-goal-status"><strong>{{ captacion_goal.days_met }} de {{ captacion_goal.days_goal }}</strong> días cumplidos · Meta esperada: {{ captacion_goal.expected_to_date }}</div>
+                    </div>
                 </div>
-                <div class="captacion-progress-legend">Disponibles · En gestión · Captadas · Descartadas</div>
+                <div class="captacion-goal-days" aria-label="Cumplimiento diario de la semana">
+                    {% for day in captacion_goal.daily %}
+                    <div class="captacion-goal-day{% if day.met %} met{% endif %}{% if day.today %} today{% endif %}{% if day.future %} future{% endif %}">
+                        {{ day.label }}
+                        <strong>{% if day.future %}—{% else %}{{ day.count }}{% if day.met %} ✓{% endif %}{% endif %}</strong>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if captacion_goal.weekend_activity %}<div class="captacion-progress-legend">Actividad adicional de fin de semana: {{ captacion_goal.weekend_activity }}</div>{% endif %}
             </div>
-            <div class="captacion-progress-percent">{{ captacion_managed_pct }}%<span>gestionado</span></div>
+            {% else %}
+            <div class="captacion-goal-columns">
+                <div class="captacion-goal-block">
+                    <div class="captacion-goal-label">Equipo hoy</div>
+                    {% if captacion_goal.today_goal %}
+                    <div class="captacion-goal-number">{{ captacion_goal.today_count }} <small>de {{ captacion_goal.today_goal }} gestiones</small></div>
+                    {% set team_today_pct = ((captacion_goal.today_count * 100 / captacion_goal.today_goal)|round(1)) if captacion_goal.today_goal else 0 %}
+                    <div class="captacion-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [team_today_pct, 100]|min }}">
+                        <span class="captacion-goal-progress" style="width: {{ [team_today_pct, 100]|min }}%"></span>
+                    </div>
+                    <div class="captacion-goal-status"><strong>{{ captacion_goal.executives_met_today }} de {{ captacion_goal.member_count }}</strong> ejecutivos cumplieron · {{ captacion_goal.executives_pending_today }} pendientes</div>
+                    {% else %}
+                    <div class="captacion-goal-number">Sin meta <small>fin de semana</small></div>
+                    {% endif %}
+                </div>
+                <div class="captacion-goal-block">
+                    <div class="captacion-goal-label">Equipo esta semana</div>
+                    <div class="captacion-goal-number">{{ captacion_goal.week_count }} <small>de {{ captacion_goal.week_goal }} gestiones</small></div>
+                    <div class="captacion-goal-status"><strong>{{ captacion_goal.days_person_met }} de {{ captacion_goal.days_person_goal }}</strong> días-persona cumplidos · Meta esperada: {{ captacion_goal.expected_to_date }}</div>
+                </div>
+            </div>
+            <details class="captacion-team-details">
+                <summary>Ver cumplimiento por ejecutivo ({{ captacion_goal.member_count }})</summary>
+                <div style="overflow-x:auto">
+                    <table class="captacion-team-table">
+                        <thead><tr><th>Ejecutivo</th><th>Hoy</th><th>Cumplió</th><th>Semana</th><th>Días</th><th>Última gestión</th></tr></thead>
+                        <tbody>
+                        {% for executive in captacion_goal.executives %}
+                        <tr>
+                            <td>{{ executive.name }}</td>
+                            <td>{{ executive.today_count }} / {{ executive.today_goal }}</td>
+                            <td class="{% if executive.met_today %}goal-met{% elif executive.today_count %}goal-pending{% else %}goal-zero{% endif %}">{% if executive.met_today %}Sí{% elif executive.is_workday %}No{% else %}—{% endif %}</td>
+                            <td>{{ executive.week_count }} / {{ executive.week_goal }}</td>
+                            <td>{{ executive.days_met }} / {{ executive.days_goal }}</td>
+                            <td>{{ executive.last_activity.strftime('%d/%m %H:%M') if executive.last_activity else 'Sin actividad' }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+            {% endif %}
         </section>
 
         <div class="table-container">
@@ -1248,7 +1310,7 @@
                     <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos (Legado)</option>
                     <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gestión (Legado)</option>
                 </select>
-                {% if user_role in ['supervisor', 'admin'] %}
+                {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
                 <select name="ejecutivo" onchange="this.form.submit()">
                     <option value="">Cualquier Ejecutivo</option>
                     {% for exec in executives %}
@@ -1471,7 +1533,7 @@
                     <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos (Legado)</option>
                     <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gestión (Legado)</option>
                 </select>
-                {% if user_role in ['supervisor', 'admin'] %}
+                {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
                 <select name="ejecutivo" onchange="this.form.submit()">
                     <option value="">Cualquier Ejecutivo</option>
                     {% for exec in executives %}

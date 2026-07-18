@@ -1015,6 +1015,7 @@
             transform: translateY(-1px);
         }
     </style>
+    <link rel="stylesheet" href="/static/css/crm_module_shell.css?v=20260718-1">
 </head>
 
 <body>
@@ -1028,7 +1029,7 @@
             <span>MENÚ</span>
         </div>
 
-        {% if user_role in ['supervisor', 'admin'] %}
+        {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
         <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
                 Manual</span></a>
@@ -1039,6 +1040,7 @@
         <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
         <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
 
+        <div class="sidebar-footer">
         <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="
           toggleTheme();
           return false;
@@ -1048,6 +1050,7 @@
         <a href="/logout" class="nav-link logout">
             <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
         </a>
+        </div>
     </nav>
 
     <!-- MAIN CONTENT -->
@@ -1056,9 +1059,9 @@
         <!-- HEADER ROW: EJECUTIVO ASIGNADO -->
         <div class="d-flex justify-content-between align-items-center mb-4 detail-header">
             <div class="d-flex align-items-center">
-                <div class="hamburger-mobile" onclick="toggleMobileMenu()">
+                <button type="button" class="hamburger-mobile" onclick="toggleMobileMenu()" aria-label="Abrir menú" aria-controls="sidebar">
                     <i class="fa-solid fa-bars"></i>
-                </div>
+                </button>
                 <h4 class="text-white m-0 fw-bold">Detalle de Captación</h4>
             </div>
             <div class="d-flex align-items-center gap-3 detail-header-right">

@@ -2400,6 +2400,7 @@
             opacity: 1;
         }
     </style>
+    <link rel="stylesheet" href="/static/css/crm_module_shell.css?v=20260718-1">
 </head>
 
 <body>
@@ -2411,7 +2412,7 @@
         </div>
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i>
             <span>Dashboard</span></a>
-        {% if user_role in ['supervisor', 'admin'] %}
+        {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
         <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
                 Manual</span></a>
         {% endif %}
@@ -2421,6 +2422,7 @@
         <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
         <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
 
+        <div class="sidebar-footer">
         <!-- Tema Toggle -->
         <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="toggleTheme(); return false;">
             <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
@@ -2429,15 +2431,16 @@
         <a href="/logout" class="nav-link logout">
             <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
         </a>
+        </div>
     </nav>
 
     <div class="main-content" id="mainContent">
 
         <!-- Cabecera compartida para alinear columnas -->
         <div class="d-flex align-items-center mb-3" style="grid-column: 1 / -1;">
-            <div class="hamburger-mobile" onclick="toggleMobileMenu()">
+            <button type="button" class="hamburger-mobile" onclick="toggleMobileMenu()" aria-label="Abrir menú" aria-controls="sidebar">
                 <i class="fa-solid fa-bars"></i>
-            </div>
+            </button>
             <h4 class="m-0 fw-bold">Gestión del Lead</h4>
         </div>
 

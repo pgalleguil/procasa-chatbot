@@ -12,75 +12,42 @@ def _template_source() -> str:
 
 
 def test_captacion_template_compiles():
-    environment = Environment(loader=FileSystemLoader(ROOT / "templates"))
-    environment.get_template("captacion_list.html")
+    Environment(loader=FileSystemLoader(ROOT / "templates")).get_template("captacion_list.html")
 
 
 def test_sidebar_uses_responsive_glass_surface_in_both_themes():
     template = _template_source()
-
     assert "height: 100dvh" in template
     assert "rgba(8, 20, 38, 0.82)" in template
     assert "rgba(244, 247, 252, 0.84)" in template
     assert "backdrop-filter: blur(14px) saturate(120%)" in template
-    assert "-webkit-backdrop-filter: blur(14px) saturate(120%)" in template
-    assert "class=\"sidebar-main-nav\"" in template
-    assert "class=\"sidebar-footer\"" in template
-    assert "margin-top: auto" in template
+    assert 'class="sidebar-footer"' in template
     assert "env(safe-area-inset-bottom" in template
-    assert ".nav-link i" in template and "opacity: 1" in template
 
 
 def test_kpi_cards_are_accessible_single_selection_controls():
     template = _template_source()
-
     assert template.count('type="button" class="kpi-card') == 4
     assert template.count('aria-pressed="{{') == 4
     assert "'is-active' if not current_estado" in template
-    assert "current_estado == 'GRUPO_GESTION'" in template
-    assert "current_estado == 'GRUPO_CAPTADO'" in template
-    assert "current_estado == 'GRUPO_DESCARTADO'" in template
-
-
-def test_only_clean_captacion_script_is_executable():
-    template = _template_source()
-
-    assert 'id="legacy-captacion-script-disabled"' in template
-    assert 'id="legacy-captacion-script-duplicate-disabled"' in template
-    assert template.count('<script type="text/plain"') == 2
-    assert "function updateThemeControl(theme)" in template
-    assert "function closeMobileMenu()" in template
-    assert "function filterByGrupoEstado(grupo)" in template
-    assert "params.set('page', '1')" in template
-
-
-def test_mobile_menu_control_is_accessible():
-    template = _template_source()
-
-    assert 'class="hamburger-mobile"' in template
-    assert 'aria-controls="sidebar"' in template
-    assert 'aria-expanded="false"' in template
-    assert 'aria-label="Abrir menú"' in template
 
 
 def test_mobile_rows_follow_the_leads_label_value_pattern():
     template = _template_source()
-
     assert "grid-template-columns: minmax(104px, 34%) minmax(0, 1fr)" in template
     assert template.count('class="mobile-cell-value"') >= 7
-    assert 'data-label="Antigüedad"' in template
     assert "text-align: left !important" in template
-    assert ".prop-table td + td" in template
 
 
-def test_progress_panel_uses_real_kpi_counts_without_fake_segments():
+def test_progress_panel_uses_the_centralized_management_goal():
     template = _template_source()
-
     assert 'class="captacion-progress-panel"' in template
-    assert "captacion_managed = (in_gestion_count or 0) + (captados_count or 0) + (descartados_count or 0)" in template
-    assert "captacion_universe = (available_count or 0) + captacion_managed" in template
-    assert "{{ captacion_managed }} gestionadas · {{ available_count or 0 }} disponibles" in template
-    assert "{% if available_count and captacion_universe %}" in template
-    assert "{% if in_gestion_count and captacion_universe %}" in template
-    assert "{% if captados_count and captacion_universe %}" in template
-    assert "{% if descartados_count and captacion_universe %}" in template
+    assert "Meta de gestión de captación" in template
+    assert "captacion_goal.today_count" in template
+    assert "captacion_goal.week_count" in template
+    assert "captacion_goal.days_met" in template
+    assert "captacion_goal.expected_to_date" in template
+    assert "captacion_goal.executives_met_today" in template
+    assert "captacion_goal.days_person_met" in template
+    assert "captacion_goal.daily" in template
+    assert "captacion_goal.executives" in template

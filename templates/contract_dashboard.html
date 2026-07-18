@@ -635,6 +635,7 @@
             border-top-right-radius: 8px !important;
         }
     </style>
+    <link rel="stylesheet" href="/static/css/crm_module_shell.css?v=20260718-1">
     <!-- Custom Status & Actions Styles -->
     <style>
         .btn-hover-whatsapp:hover,
@@ -663,7 +664,7 @@
                 style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
                 onerror="this.style.display='none'"> <span>MENÚ</span>
         </div>
-        {% if user_role in ['supervisor', 'admin'] %}
+        {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
         <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso Manual</span></a>
         {% endif %}
@@ -672,20 +673,22 @@
         <a href="/contracts/dashboard" class="nav-link active"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
         <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
 
-        <a href="javascript:void(0)" class="nav-link" style="margin-top:auto" onclick="toggleTheme()">
+        <div class="sidebar-footer">
+        <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="toggleTheme()" aria-label="Cambiar tema">
             <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
         </a>
-        <a href="/logout" class="nav-link">
+        <a href="/logout" class="nav-link logout">
             <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
         </a>
+        </div>
     </nav>
 
     <div class="main-content">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div class="d-flex align-items-center">
-                <div class="hamburger-mobile" onclick="toggleMobileMenu()">
+                <button type="button" class="hamburger-mobile" onclick="toggleMobileMenu()" aria-label="Abrir menú" aria-controls="sidebar">
                     <i class="fa-solid fa-bars"></i>
-                </div>
+                </button>
                 <h4 class="m-0 fw-bold">Módulo de Convenios</h4>
             </div>
             <button class="btn btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#modalNewContract">
@@ -700,10 +703,11 @@
 
         <div class="table-container">
             <div class="section-title">Convenios Emitidos</div>
-            {% if user_role in ['supervisor', 'admin'] %}
-            <form method="get" action="/contracts/dashboard" class="row g-2 mb-3">
-                <div class="col-md-4 col-sm-6">
-                    <select class="form-select form-select-sm" name="executive" onchange="this.form.submit()">
+            {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
+            <form method="get" action="/contracts/dashboard" class="module-filter-bar">
+                <div class="module-filter-field">
+                    <label for="contractExecutiveFilter">Ejecutivo</label>
+                    <select id="contractExecutiveFilter" class="form-select" name="executive" onchange="this.form.submit()">
                         <option value="">Todos los ejecutivos</option>
                         {% for ex in executives %}
                         <option value="{{ ex.username }}" {% if executive_filter == ex.username %}selected{% endif %}>{{ ex.name }}</option>
@@ -717,7 +721,7 @@
                     <thead>
                         <tr>
                             <th>Fecha</th>
-                            {% if user_role in ['supervisor', 'admin'] %}<th>Ejecutivo</th>{% endif %}
+                            {% if user_role in ['supervisor', 'admin', 'jefatura'] %}<th>Ejecutivo</th>{% endif %}
                             <th>Código</th>
                             <th>Cliente</th>
                             <th>Propiedad / Rol</th>
@@ -729,7 +733,7 @@
                         {% for c in contracts %}
                         <tr data-contract-code="{{ c.contract_code }}" data-contract-status="{{ c.status }}">
                             <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '---' }}<br><small class="text-secondary">{{ c.created_at.strftime('%H:%M') if c.created_at else '' }} hrs</small></td>
-                            {% if user_role in ['supervisor', 'admin'] %}
+                            {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
                             <td data-label="Ejecutivo">{{ c.executive_display or '---' }}</td>
                             {% endif %}
                             <td data-label="Código"><strong>{{ c.property_code or c.contract_code[:8] }}</strong></td>
@@ -773,7 +777,7 @@
                                         class="btn btn-sm btn-outline-secondary" title="Ver Convenio">
                                         <i class="fa-solid fa-eye"></i>
                                     </a>
-                                    {% if user_role in ['supervisor', 'admin'] %}
+                                    {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
                                     <button class="btn btn-sm btn-outline-warning"
                                         title="Reenviar enlace (ya fue enviado)"
                                         onclick="sendContract('{{ c.contract_code }}', this, true)">
@@ -807,7 +811,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="{% if user_role in ['supervisor', 'admin'] %}7{% else %}6{% endif %}" class="text-center text-secondary py-5">
+                            <td colspan="{% if user_role in ['supervisor', 'admin', 'jefatura'] %}7{% else %}6{% endif %}" class="text-center text-secondary py-5">
                                 <i class="fa-solid fa-folder-open fa-2x mb-2 d-block"></i>
                                 No hay convenios generados aún.
                             </td>

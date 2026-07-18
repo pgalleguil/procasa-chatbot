@@ -639,6 +639,7 @@
             border-top-right-radius: 8px !important;
         }
     </style>
+    <link rel="stylesheet" href="/static/css/crm_module_shell.css?v=20260718-1">
     <!-- Custom Status & Actions Styles -->
     <style>
         .btn-hover-whatsapp:hover,
@@ -667,7 +668,7 @@
                 style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
                 onerror="this.style.display='none'"> <span>MENÚ</span>
         </div>
-        {% if user_role in ['supervisor', 'admin'] %}
+        {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
         <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
                 Manual</span></a>
@@ -680,20 +681,22 @@
         <a href="/visitas/dashboard" class="nav-link active"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes
                 de Visita</span></a>
 
-        <a href="javascript:void(0)" class="nav-link" style="margin-top:auto" onclick="toggleTheme()">
+        <div class="sidebar-footer">
+        <a href="javascript:void(0)" class="nav-link theme-toggle" onclick="toggleTheme()" aria-label="Cambiar tema">
             <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
         </a>
-        <a href="/logout" class="nav-link">
+        <a href="/logout" class="nav-link logout">
             <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
         </a>
+        </div>
     </nav>
 
     <div class="main-content">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div class="d-flex align-items-center">
-                <div class="hamburger-mobile" onclick="toggleMobileMenu()">
+                <button type="button" class="hamburger-mobile" onclick="toggleMobileMenu()" aria-label="Abrir menú" aria-controls="sidebar">
                     <i class="fa-solid fa-bars"></i>
-                </div>
+                </button>
                 <h4 class="m-0 fw-bold">Módulo de Órdenes de Visita</h4>
             </div>
             <button class="btn fw-bold text-white" style="background-color: #8b5cf6;" data-bs-toggle="modal"
@@ -709,15 +712,17 @@
 
         <div class="table-container">
             <div class="section-title">Órdenes de Visita Emitidas</div>
-            <div class="row g-2 mb-3">
-                <div class="col-md-4">
-                    <input type="text" id="phoneSearchInput" class="form-control form-control-sm"
+            <div class="module-filter-bar">
+                <div class="module-filter-field">
+                    <label for="phoneSearchInput">Teléfono del cliente</label>
+                    <input type="text" id="phoneSearchInput" class="form-control"
                         placeholder="Buscar por teléfono" onkeyup="filterVisitasByPhone()">
                 </div>
-                {% if user_role in ['supervisor', 'admin'] %}
-                <div class="col-md-4">
+                {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
+                <div class="module-filter-field">
                     <form method="get" action="/visitas/dashboard" class="m-0">
-                        <select class="form-select form-select-sm" name="executive" onchange="this.form.submit()">
+                        <label for="visitExecutiveFilter">Ejecutivo</label>
+                        <select id="visitExecutiveFilter" class="form-select" name="executive" onchange="this.form.submit()">
                             <option value="">Todos los ejecutivos</option>
                             {% for ex in executives %}
                             <option value="{{ ex.username }}" {% if executive_filter==ex.username %}selected{% endif %}>
@@ -733,7 +738,7 @@
                     <thead>
                         <tr>
                             <th>Fecha</th>
-                            {% if user_role in ['supervisor', 'admin'] %}<th>Ejecutivo</th>{% endif %}
+                            {% if user_role in ['supervisor', 'admin', 'jefatura'] %}<th>Ejecutivo</th>{% endif %}
                             <th>Código</th>
                             <th>Cliente</th>
                             <th>Teléfono Cliente</th>
@@ -747,7 +752,7 @@
                             <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '---'
                                 }}<br><small class="text-secondary">{{ c.created_at.strftime('%H:%M') if c.created_at
                                     else '' }} hrs</small></td>
-                            {% if user_role in ['supervisor', 'admin'] %}
+                            {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
                             <td data-label="Ejecutivo">{{ c.executive_display or '---' }}</td>
                             {% endif %}
                             <td data-label="Código"><strong>{{ c.property_code or c.visita_code[:8] }}</strong></td>
@@ -792,7 +797,7 @@
                                         class="btn btn-sm btn-outline-secondary" title="Ver Orden de Visita">
                                         <i class="fa-solid fa-eye"></i>
                                     </a>
-                                    {% if user_role in ['supervisor', 'admin'] %}
+                                    {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
                                     <button class="btn btn-sm btn-outline-warning"
                                         title="Reenviar enlace (ya fue enviado)"
                                         onclick="sendVisita('{{ c.visita_code }}', this, true)">
@@ -825,7 +830,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="{% if user_role in ['supervisor', 'admin'] %}8{% else %}7{% endif %}"
+                            <td colspan="{% if user_role in ['supervisor', 'admin', 'jefatura'] %}8{% else %}7{% endif %}"
                                 class="text-center text-secondary py-5">
                                 <i class="fa-solid fa-folder-open fa-2x mb-2 d-block"></i>
                                 No hay órdenes de visita generadas aún.

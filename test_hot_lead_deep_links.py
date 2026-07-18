@@ -180,6 +180,7 @@ def test_each_temperature_scope_partitions_into_the_four_card_states():
 
         assert len(scope) == expected_total
         assert sum(counts.values()) == expected_total
+        assert counts["GESTION"] + counts["VISITA"] + counts["CERRADO"] == expected_total - counts["NEW"]
 
 
 def test_each_state_card_url_filters_exactly_its_count_in_active_temperature():
@@ -232,8 +233,13 @@ def test_crm_kpi_cards_filter_temperature_and_exact_stage_groups():
         assert f"'{state}'" in template
     assert "kpis.managed_percent" in template
     assert "kpis.scope_total" in template
-    assert "Nivel de gestión · {{ temperature_label }}" in template
+    assert "{{ management_title }}" in template
     assert "{{ kpis.nuevo }} sin atender" not in template
+    assert "con gestión iniciada" not in template
+    assert 'class="segmented-progress"' in template
+    assert 'class="state-metrics-grid"' in template
+    assert 'class="operational-alerts"' in template
+    assert "kpis.sin_asignar_global" in template
     assert '"scope_total"' in api_crm
     assert 'filtro_estado == "GRUPO_GESTION"' in api_crm
 
@@ -245,7 +251,9 @@ def test_crm_temperature_cards_avoid_ambiguous_ratios_and_mobile_layout_is_order
     assert "{{ kpis.cold }} / {{ kpis.total }}" not in template
     assert "{{ pct(kpis.hot_percent) }}% del total" in template
     assert "{{ pct(kpis.cold_percent) }}% del total" in template
-    assert 'class="row g-3 mb-4 row-cols-1 row-cols-md-2 row-cols-xl-4 state-cards-grid"' in template
+    assert "state-cards-grid" not in template
+    assert "state-card-ratio" not in template
+    assert 'row-cols-md-3 temperature-cards' in template
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in template
     assert '.filter-bar select,' in template
     assert 'style="margin-left: auto;" name="orden"' not in template
@@ -255,6 +263,7 @@ def test_crm_temperature_cards_avoid_ambiguous_ratios_and_mobile_layout_is_order
     assert template.count("Seleccionado</span>") == 3
     assert 'aria-current="{{' in template
     assert "outline: 2px solid var(--accent-color);" in template
+    assert "border-bottom: 3px solid var(--led-blue" not in template
 
 
 def test_crm_card_urls_preserve_executive_search_order_and_toggle_filters():
@@ -284,6 +293,8 @@ def test_crm_card_urls_preserve_executive_search_order_and_toggle_filters():
     assert query("new")["estado"] == ["NEW"]
     assert query("grupo_gestion")["temperatura"] == ["COLD"]
     assert "estado" not in query("grupo_gestion")
+    assert "temperatura" not in query("unassigned")
+    assert query("unassigned")["estado"] == ["UNASSIGNED"]
 
 
 class _FakeRuntimeCollection:
@@ -388,6 +399,10 @@ def test_crm_partial_template_contains_only_dynamic_regions():
     assert "66,7% del total" in rendered
     assert "/ 2" in rendered
     assert "Sin atender" in rendered
+    assert "Gestión de Leads informativos" in rendered
+    assert "1 de 2 leads" in rendered
+    assert rendered.count('aria-current="true"') == 1
+    assert "state-cards-grid" not in rendered
     assert "<html" not in rendered
     assert "sidebar" not in rendered
 

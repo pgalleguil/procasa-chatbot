@@ -348,68 +348,181 @@
             font-size: 0.84rem;
         }
 
-        .management-level-card {
+        .management-panel {
             margin-bottom: 18px;
-            padding: 18px 20px;
+            padding: 20px;
             background: linear-gradient(135deg, var(--bg-card), rgba(59, 130, 246, 0.08));
             border: 1px solid var(--border-color);
             border-radius: 12px;
         }
 
-        .management-level-heading,
-        .management-level-details {
+        .management-panel-heading {
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 16px;
         }
 
-        .management-level-title {
-            font-size: 1rem;
+        .management-panel-title {
+            font-size: 1.05rem;
             font-weight: 700;
         }
 
-        .management-level-context,
-        .management-level-details {
+        .management-panel-context,
+        .management-panel-count {
             color: var(--text-secondary);
             font-size: 0.82rem;
         }
 
-        .management-level-percent {
+        .management-panel-result {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .management-panel-percent {
             color: var(--accent-color);
             font-size: 2.1rem;
             font-weight: 800;
             line-height: 1;
         }
 
-        .management-level-details {
-            margin: 12px 0 8px;
+        .management-panel-count {
+            margin-top: 5px;
+            font-weight: 600;
         }
 
-        .management-progress {
-            height: 10px;
+        .segmented-progress {
+            display: flex;
+            height: 14px;
+            margin-top: 16px;
             overflow: hidden;
             background: rgba(148, 163, 184, 0.18);
             border-radius: 999px;
         }
 
-        .management-progress-bar {
+        .progress-segment {
+            flex: 0 1 auto;
             height: 100%;
-            background: linear-gradient(90deg, #3b82f6, #22c55e);
-            border-radius: inherit;
-            transition: width 0.35s ease;
+            min-width: 0;
+            transform-origin: left center;
+            animation: reveal-segment 0.45s ease-out both;
+            transition: filter 0.15s ease, opacity 0.15s ease;
         }
 
-        .state-card-ratio {
+        .progress-segment:hover,
+        .progress-segment:focus-visible {
+            filter: brightness(1.25);
+            outline: 2px solid #fff;
+            outline-offset: -2px;
+            z-index: 1;
+        }
+
+        .progress-segment.is-zero {
+            flex: 0 0 2px;
+            width: 2px !important;
+            opacity: 0.3;
+        }
+
+        .segment-new { background: #ef4444; }
+        .segment-gestion { background: #f59e0b; }
+        .segment-visita { background: #10b981; }
+        .segment-cerrado { background: #64748b; }
+
+        @keyframes reveal-segment {
+            from { transform: scaleX(0); opacity: 0.35; }
+            to { transform: scaleX(1); opacity: 1; }
+        }
+
+        .state-metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .state-metric {
             display: flex;
-            align-items: baseline;
-            gap: 6px;
-            margin-top: 4px;
-            font-weight: 700;
+            align-items: center;
+            gap: 9px;
+            min-width: 0;
+            padding: 9px 10px;
+            color: inherit;
+            text-decoration: none;
+            background: rgba(148, 163, 184, 0.07);
+            border: 1px solid transparent;
+            border-radius: 9px;
+            transition: background 0.15s ease, border-color 0.15s ease;
         }
 
-        .state-card-ratio .summary-value {
-            font-size: 1.65rem;
+        .state-metric:hover,
+        .state-metric:focus-visible,
+        .state-metric.is-active {
+            background: rgba(99, 102, 241, 0.13);
+            border-color: var(--accent-color);
+            outline: none;
+        }
+
+        .state-metric-dot {
+            width: 9px;
+            height: 9px;
+            flex: 0 0 9px;
+            border-radius: 50%;
+        }
+
+        .state-metric-label {
+            display: block;
+            overflow: hidden;
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+            line-height: 1.15;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .state-metric-value {
+            display: block;
+            margin-top: 2px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .state-metric > span:last-child {
+            min-width: 0;
+        }
+
+        .operational-alerts {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: -8px 0 16px;
+        }
+
+        .operational-alert {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            color: var(--text-primary);
+            text-decoration: none;
+            background: rgba(245, 158, 11, 0.09);
+            border: 1px solid rgba(245, 158, 11, 0.28);
+            border-radius: 9px;
+        }
+
+        .operational-alert:hover,
+        .operational-alert:focus-visible,
+        .operational-alert.is-active {
+            color: var(--text-primary);
+            background: rgba(245, 158, 11, 0.16);
+            border-color: #f59e0b;
+            outline: none;
+        }
+
+        .operational-alert strong {
+            font-size: 0.86rem;
         }
 
         .temperature-share {
@@ -419,8 +532,7 @@
         }
 
         @media (max-width: 576px) {
-            .temperature-cards,
-            .state-cards-grid {
+            .temperature-cards {
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 10px;
@@ -428,8 +540,7 @@
                 margin-left: 0;
             }
 
-            .temperature-cards > .col,
-            .state-cards-grid > .col {
+            .temperature-cards > .col {
                 width: auto;
                 padding: 0;
             }
@@ -438,14 +549,12 @@
                 grid-column: 1 / -1;
             }
 
-            .temperature-cards .summary-card,
-            .state-cards-grid .summary-card {
+            .temperature-cards .summary-card {
                 min-height: 118px;
                 padding: 14px;
             }
 
-            .temperature-cards .summary-card > i,
-            .state-cards-grid .summary-card > i {
+            .temperature-cards .summary-card > i {
                 font-size: 1.35rem;
             }
 
@@ -453,21 +562,21 @@
                 font-size: 1.55rem;
             }
 
-            .state-card-ratio {
-                gap: 4px;
-            }
-
-            .state-card-ratio .summary-value {
-                font-size: 1.35rem;
-            }
-
-            .management-level-heading,
-            .management-level-details {
+            .management-panel-heading {
                 align-items: flex-start;
             }
 
-            .management-level-percent {
+            .management-panel-percent {
                 font-size: 1.7rem;
+            }
+
+            .state-metrics-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .operational-alert,
+            .operational-alerts {
+                width: 100%;
             }
         }
 
@@ -1205,18 +1314,24 @@
             {% set selected_state = request.query_params.get('estado', '') %}
             {% set executive_label = current_ejecutivo if current_ejecutivo != 'Todos' else 'todos los ejecutivos' %}
             {% set temperature_label = 'Leads Hot' if selected_temperature == 'HOT' else 'Leads informativos' if selected_temperature == 'COLD' else 'Todos los leads' %}
+            {% set management_title = 'Gestión de Leads Hot' if selected_temperature == 'HOT' else 'Gestión de Leads informativos' if selected_temperature == 'COLD' else 'Gestión de todos los leads' %}
+            {% set state_metrics = [
+                ('nuevo', 'NEW', 'Sin atender', kpis.nuevo, kpis.nuevo_percent),
+                ('gestion', 'GRUPO_GESTION', 'En gestión', kpis.gestion, kpis.gestion_percent),
+                ('visita', 'GRUPO_VISITA', 'Visitas', kpis.visita, kpis.visita_percent),
+                ('cerrado', 'GRUPO_CERRADO', 'Cerrados', kpis.cerrado, kpis.cerrado_percent)
+            ] %}
 
             <!-- Universo completo del ejecutivo/búsqueda -->
-            <div class="row g-3 mb-4 row-cols-1 row-cols-md-{{ 4 if current_ejecutivo == 'Todos' else 3 }} temperature-cards">
+            <div class="row g-3 mb-4 row-cols-1 row-cols-md-3 temperature-cards">
                 <div class="col">
-                    <a href="{{ card_urls.total }}" class="summary-card {{ 'is-active' if selected_temperature == 'Todos' and not selected_state }}"
-                        aria-current="{{ 'true' if selected_temperature == 'Todos' and not selected_state else 'false' }}"
-                        style="border-bottom: 3px solid var(--accent-color);">
+                    <a href="{{ card_urls.total }}" class="summary-card {{ 'is-active' if selected_temperature == 'Todos' }}"
+                        aria-current="{{ 'true' if selected_temperature == 'Todos' else 'false' }}">
                         <div>
                             <div class="summary-value" id="kpi-total" data-target="{{ kpis.total }}">0</div>
                             <div class="summary-label">Total leads</div>
                             <div class="summary-meta">Universo completo de {{ executive_label }}</div>
-                            {% if selected_temperature == 'Todos' and not selected_state %}
+                            {% if selected_temperature == 'Todos' %}
                             <span class="selection-badge"><i class="fa-solid fa-circle-check"></i>Seleccionado</span>
                             {% endif %}
                         </div>
@@ -1225,14 +1340,12 @@
                 </div>
                 <div class="col">
                     <a href="{{ card_urls.hot }}" class="summary-card {{ 'is-active' if selected_temperature == 'HOT' }}"
-                        aria-current="{{ 'true' if selected_temperature == 'HOT' else 'false' }}"
-                        style="border-bottom: 3px solid var(--accent-red);">
+                        aria-current="{{ 'true' if selected_temperature == 'HOT' else 'false' }}">
                         <div>
                             <div class="summary-value text-danger" id="kpi-hot" data-target="{{ kpis.hot }}">0</div>
                             <div class="summary-label">HOT 🔥</div>
                             <div class="summary-meta temperature-share">{{ pct(kpis.hot_percent) }}% del total</div>
                             {% if selected_temperature == 'HOT' %}
-                            <div class="summary-meta fw-bold">{{ kpis.managed }} de {{ kpis.scope_total }} con gestión iniciada · {{ pct(kpis.managed_percent) }}%</div>
                             <span class="selection-badge"><i class="fa-solid fa-circle-check"></i>Seleccionado</span>
                             {% endif %}
                         </div>
@@ -1241,75 +1354,65 @@
                 </div>
                 <div class="col">
                     <a href="{{ card_urls.cold }}" class="summary-card {{ 'is-active' if selected_temperature == 'COLD' }}"
-                        aria-current="{{ 'true' if selected_temperature == 'COLD' else 'false' }}"
-                        style="border-bottom: 3px solid var(--led-blue, #3b82f6);">
+                        aria-current="{{ 'true' if selected_temperature == 'COLD' else 'false' }}">
                         <div>
                             <div class="summary-value text-info" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
                             <div class="summary-label">Informativos 🔵</div>
                             <div class="summary-meta temperature-share">{{ pct(kpis.cold_percent) }}% del total</div>
                             {% if selected_temperature == 'COLD' %}
-                            <div class="summary-meta fw-bold">{{ kpis.managed }} de {{ kpis.scope_total }} con gestión iniciada · {{ pct(kpis.managed_percent) }}%</div>
                             <span class="selection-badge"><i class="fa-solid fa-circle-check"></i>Seleccionado</span>
                             {% endif %}
                         </div>
                         <i class="fa-solid fa-circle-info fa-2x text-info opacity-25"></i>
                     </a>
                 </div>
-                {% if current_ejecutivo == 'Todos' %}
-                <div class="col">
-                    <a href="{{ card_urls.unassigned }}" class="summary-card {{ 'is-active' if selected_state == 'UNASSIGNED' and selected_temperature == 'Todos' }}"
-                        style="border-bottom: 3px solid var(--led-gray);">
-                        <div>
-                            <div class="summary-value text-secondary" id="kpi-sin-asignar" data-target="{{ kpis.sin_asignar_global }}">0</div>
-                            <div class="summary-label">Sin asignar</div>
-                            <div class="summary-meta">Dentro del universo completo</div>
-                        </div>
-                        <i class="fa-solid fa-user-slash fa-2x text-secondary opacity-25"></i>
-                    </a>
-                </div>
-                {% endif %}
             </div>
 
-            <!-- KPI principal horizontal -->
-            <section class="management-level-card" aria-label="Nivel de gestión">
-                <div class="management-level-heading">
+            {% if current_ejecutivo == 'Todos' %}
+            <div class="operational-alerts" aria-label="Indicadores operativos">
+                <a href="{{ card_urls.unassigned }}" class="operational-alert {{ 'is-active' if selected_state == 'UNASSIGNED' }}">
+                    <i class="fa-solid fa-user-slash text-warning"></i>
+                    <strong><span id="kpi-sin-asignar" data-target="{{ kpis.sin_asignar_global }}">0</span> leads sin asignar</strong>
+                    <i class="fa-solid fa-chevron-right small opacity-50"></i>
+                </a>
+            </div>
+            {% endif %}
+
+            <!-- Panel único de gestión y distribución de estados -->
+            <section class="management-panel" aria-label="{{ management_title }}">
+                <div class="management-panel-heading">
                     <div>
-                        <div class="management-level-title">Nivel de gestión · {{ temperature_label }}</div>
-                        <div class="management-level-context">{{ executive_label }}</div>
+                        <div class="management-panel-title">{{ management_title }}</div>
+                        <div class="management-panel-context">{{ executive_label }}</div>
+                        <div class="management-panel-count">{{ kpis.managed }} de {{ kpis.scope_total }} leads</div>
                     </div>
-                    <div class="management-level-percent">{{ pct(kpis.managed_percent) }}%</div>
+                    <div class="management-panel-result">
+                        <span class="management-panel-percent">{{ pct(kpis.managed_percent) }}%</span>
+                        <span class="small text-secondary">gestionado</span>
+                    </div>
                 </div>
-                <div class="management-level-details">
-                    <strong>{{ kpis.managed }} de {{ kpis.scope_total }} gestionados</strong>
+
+                <div class="segmented-progress" role="group" aria-label="Distribución de estados">
+                    {% for key, state, label, count, percentage in state_metrics %}
+                    <a href="{{ card_urls[state|lower] }}"
+                        class="progress-segment segment-{{ key }} {{ 'is-zero' if percentage == 0 }}"
+                        style="width: {{ percentage }}%;" title="{{ label }}: {{ count }} de {{ kpis.scope_total }} ({{ pct(percentage) }}%)"
+                        aria-label="Filtrar {{ label }}: {{ count }} de {{ kpis.scope_total }}"></a>
+                    {% endfor %}
                 </div>
-                <div class="management-progress" role="progressbar" aria-valuenow="{{ kpis.managed_percent }}" aria-valuemin="0" aria-valuemax="100">
-                    <div class="management-progress-bar" style="width: {{ [kpis.managed_percent, 100]|min }}%"></div>
+
+                <div class="state-metrics-grid">
+                    {% for key, state, label, count, percentage in state_metrics %}
+                    <a href="{{ card_urls[state|lower] }}" class="state-metric {{ 'is-active' if selected_state == state }}">
+                        <span class="state-metric-dot segment-{{ key }}"></span>
+                        <span>
+                            <span class="state-metric-label">{{ label }}</span>
+                            <span class="state-metric-value"><span data-target="{{ count }}">0</span> / {{ kpis.scope_total }} · {{ pct(percentage) }}%</span>
+                        </span>
+                    </a>
+                    {% endfor %}
                 </div>
             </section>
-
-            <!-- Distribución de estados dentro de la temperatura seleccionada -->
-            <div class="row g-3 mb-4 row-cols-1 row-cols-md-2 row-cols-xl-4 state-cards-grid">
-                {% for key, state, label, color, icon, count, percentage in [
-                    ('nuevo', 'NEW', 'Sin atender', 'danger', 'fa-bell', kpis.nuevo, kpis.nuevo_percent),
-                    ('gestion', 'GRUPO_GESTION', 'En gestión', 'warning', 'fa-comments', kpis.gestion, kpis.gestion_percent),
-                    ('visita', 'GRUPO_VISITA', 'Visitas', 'success', 'fa-calendar-check', kpis.visita, kpis.visita_percent),
-                    ('cerrado', 'GRUPO_CERRADO', 'Cerrados', 'secondary', 'fa-archive', kpis.cerrado, kpis.cerrado_percent)
-                ] %}
-                <div class="col">
-                    <a href="{{ card_urls[state|lower] }}" class="summary-card state-card {{ 'is-active' if selected_state == state }}">
-                        <div>
-                            <div class="summary-label">{{ label }}</div>
-                            <div class="state-card-ratio text-{{ color }}">
-                                <span class="summary-value" data-target="{{ count }}">0</span>
-                                <span>/ {{ kpis.scope_total }}</span>
-                            </div>
-                            <div class="summary-meta">{{ pct(percentage) }}%</div>
-                        </div>
-                        <i class="fa-solid {{ icon }} fa-2x text-{{ color }} opacity-25"></i>
-                    </a>
-                </div>
-                {% endfor %}
-            </div>
 
             <!-- TOOLBAR DE FILTROS -->
             <div class="table-container">

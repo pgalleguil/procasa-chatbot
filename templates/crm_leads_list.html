@@ -1184,10 +1184,10 @@
             <div id="crmDynamicContent" data-crm-version="{{ crm_version }}">
 
             {% macro pct(value) -%}{{ '%.1f'|format(value)|replace('.', ',') }}{%- endmacro %}
-            {% set selected_temperature = request.query_params.get('temperatura', 'Todos') %}
+            {% set selected_temperature = current_temperatura %}
             {% set selected_state = request.query_params.get('estado', '') %}
             {% set executive_label = current_ejecutivo if current_ejecutivo != 'Todos' else 'todos los ejecutivos' %}
-            {% set temperature_label = 'Leads HOT' if selected_temperature == 'HOT' else 'Leads informativos' if selected_temperature == 'COLD' else 'Todos los leads' %}
+            {% set temperature_label = 'Leads Hot' if selected_temperature == 'HOT' else 'Leads informativos' if selected_temperature == 'COLD' else 'Todos los leads' %}
 
             <!-- Universo completo del ejecutivo/búsqueda -->
             <div class="row g-3 mb-4 row-cols-1 row-cols-md-{{ 4 if current_ejecutivo == 'Todos' else 3 }} temperature-cards">
@@ -1249,14 +1249,13 @@
             <section class="management-level-card" aria-label="Nivel de gestión">
                 <div class="management-level-heading">
                     <div>
-                        <div class="management-level-title">Nivel de gestión</div>
-                        <div class="management-level-context">{{ temperature_label }} de {{ executive_label }}</div>
+                        <div class="management-level-title">Nivel de gestión · {{ temperature_label }}</div>
+                        <div class="management-level-context">{{ executive_label }}</div>
                     </div>
                     <div class="management-level-percent">{{ pct(kpis.managed_percent) }}%</div>
                 </div>
                 <div class="management-level-details">
                     <strong>{{ kpis.managed }} de {{ kpis.scope_total }} gestionados</strong>
-                    <span>{{ kpis.nuevo }} sin atender</span>
                 </div>
                 <div class="management-progress" role="progressbar" aria-valuenow="{{ kpis.managed_percent }}" aria-valuemin="0" aria-valuemax="100">
                     <div class="management-progress-bar" style="width: {{ [kpis.managed_percent, 100]|min }}%"></div>

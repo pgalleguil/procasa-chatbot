@@ -13,7 +13,12 @@ from chatbot.crm_updates import bump_crm_leads_version, get_crm_leads_version
 from chatbot import storage
 from chatbot.lead_temperature import COLD, HOT, derive_effective_temperature
 from chatbot.crm_filters import build_crm_card_urls
-from api_crm import CRM_COLD_QUERY, CRM_HOT_QUERY, crm_stage_group
+from api_crm import (
+    CRM_COLD_QUERY,
+    CRM_HOT_QUERY,
+    crm_stage_group,
+    normalize_crm_temperature,
+)
 
 
 def test_hot_lead_url_targets_specific_phone_and_property():
@@ -155,6 +160,66 @@ def test_crm_stage_groups_partition_the_selected_temperature_total():
     assert sum(counts.values()) == len(stages) == 115
 
 
+def test_each_temperature_scope_partitions_into_the_four_card_states():
+    leads = (
+        [{"temperature": HOT, "stage": "NEW"}] * 2
+        + [{"temperature": HOT, "stage": "CONTACTED"}] * 80
+        + [{"temperature": HOT, "stage": "CLOSED_WON"}] * 5
+        + [{"temperature": COLD, "stage": "NEW"}] * 36
+        + [{"temperature": COLD, "stage": "CONTACTED"}] * 66
+        + [{"temperature": COLD, "stage": "CLOSED_LOST"}] * 4
+    )
+
+    for temperature, expected_total in (("Todos", 193), (HOT, 87), (COLD, 106)):
+        scope = leads if temperature == "Todos" else [
+            lead for lead in leads if lead["temperature"] == temperature
+        ]
+        counts = {group: 0 for group in ("NEW", "GESTION", "VISITA", "CERRADO")}
+        for lead in scope:
+            counts[crm_stage_group(lead["stage"])] += 1
+
+        assert len(scope) == expected_total
+        assert sum(counts.values()) == expected_total
+
+
+def test_each_state_card_url_filters_exactly_its_count_in_active_temperature():
+    leads = (
+        [{"temperature": HOT, "stage": "NEW"}] * 2
+        + [{"temperature": HOT, "stage": "CONTACTED"}] * 80
+        + [{"temperature": HOT, "stage": "CLOSED_WON"}] * 5
+        + [{"temperature": COLD, "stage": "NEW"}] * 36
+        + [{"temperature": COLD, "stage": "CONTACTED"}] * 66
+        + [{"temperature": COLD, "stage": "CLOSED_LOST"}] * 4
+    )
+    state_to_group = {
+        "new": "NEW",
+        "grupo_gestion": "GESTION",
+        "grupo_visita": "VISITA",
+        "grupo_cerrado": "CERRADO",
+    }
+
+    for temperature in ("Todos", HOT, COLD):
+        params = {} if temperature == "Todos" else {"temperatura": temperature}
+        urls = build_crm_card_urls(params)
+        scope = leads if temperature == "Todos" else [
+            lead for lead in leads if lead["temperature"] == temperature
+        ]
+        for card_key, group in state_to_group.items():
+            query = parse_qs(urlsplit(urls[card_key]).query)
+            assert query.get("temperatura", ["Todos"])[0] == temperature
+            assert query["estado"][0].lower() == card_key
+            filtered = [lead for lead in scope if crm_stage_group(lead["stage"]) == group]
+            counted = sum(crm_stage_group(lead["stage"]) == group for lead in scope)
+            assert len(filtered) == counted
+
+
+def test_crm_temperature_is_normalized_before_query_and_render():
+    assert normalize_crm_temperature("hot") == HOT
+    assert normalize_crm_temperature(" COLD ") == COLD
+    assert normalize_crm_temperature(None) == "Todos"
+    assert normalize_crm_temperature("invalid") == "Todos"
+
+
 def test_crm_kpi_cards_filter_temperature_and_exact_stage_groups():
     template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
     api_crm = Path("api_crm.py").read_text(encoding="utf-8")
@@ -167,7 +232,8 @@ def test_crm_kpi_cards_filter_temperature_and_exact_stage_groups():
         assert f"'{state}'" in template
     assert "kpis.managed_percent" in template
     assert "kpis.scope_total" in template
-    assert "Nivel de gestión" in template
+    assert "Nivel de gestión · {{ temperature_label }}" in template
+    assert "{{ kpis.nuevo }} sin atender" not in template
     assert '"scope_total"' in api_crm
     assert 'filtro_estado == "GRUPO_GESTION"' in api_crm
 

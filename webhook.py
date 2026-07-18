@@ -49,7 +49,7 @@ from contextlib import asynccontextmanager
 from campanas.handler import handle_campana_respuesta
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
-from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent
+from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent, normalize_crm_temperature
 from api_captacion import (
     get_captacion_list, get_captacion_detail, update_captacion_status, update_contact_info,
     distribute_sourced_leads, release_stale_captaciones, redistribute_inactive_agent_captaciones,
@@ -1746,6 +1746,9 @@ async def _render_crm_list(
     from chatbot.crm_updates import get_crm_leads_version_async
     from chatbot.crm_filters import build_crm_card_urls
 
+    # Una sola selección normalizada gobierna consulta, KPI, tarjetas y enlaces.
+    temperatura = normalize_crm_temperature(temperatura)
+
     adb = get_async_db()
     user = await adb["usuarios"].find_one({"username": username})
     
@@ -1789,6 +1792,12 @@ async def _render_crm_list(
     }
     pagination_base_url = "/crm?" + urlencode(pagination_query) + ("&" if pagination_query else "")
 
+    card_query_params = dict(request.query_params)
+    if temperatura == "Todos":
+        card_query_params.pop("temperatura", None)
+    else:
+        card_query_params["temperatura"] = temperatura
+
     response = templates.TemplateResponse("crm_leads_list.html", {
         "request": request, 
         "leads": leads, 
@@ -1800,7 +1809,7 @@ async def _render_crm_list(
         "current_temperatura": temperatura,
         "crm_version": crm_version,
         "partial": partial,
-        "card_urls": build_crm_card_urls(request.query_params),
+        "card_urls": build_crm_card_urls(card_query_params),
         "pagination_base_url": pagination_base_url,
         "pagination": {
             "total_count": total_count,

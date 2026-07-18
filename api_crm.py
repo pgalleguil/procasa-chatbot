@@ -109,6 +109,16 @@ from chatbot.lead_temperature import COLD, HOT
 CRM_HOT_QUERY = {"lead_temperature_effective": HOT}
 CRM_COLD_QUERY = {"lead_temperature_effective": COLD}
 
+
+def normalize_crm_temperature(value):
+    """Return the only three temperature scopes accepted by the CRM."""
+    normalized = str(value or "Todos").strip().upper()
+    if normalized == HOT:
+        return HOT
+    if normalized == COLD:
+        return COLD
+    return "Todos"
+
 CRM_STAGE_GROUPS = {
     "NEW": [PipelineStage.NEW, "nuevo", "new"],
     "GESTION": [
@@ -204,6 +214,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                              page=1, limit=10):
     from chatbot.storage import get_async_db
     db = get_async_db()
+    temperatura_filter = normalize_crm_temperature(temperatura_filter)
     # Todo el CRM trabaja exclusivamente con la temperatura normalizada.
     query_parts = [{"lead_temperature_effective": {"$in": [HOT, COLD]}}]
     
@@ -238,21 +249,20 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             regex_term = re.compile(re.escape(term), re.IGNORECASE)
             query_parts.append({"prospecto.nombre": regex_term})
     
-    temperature_query = None
+    # El universo global termina aquí; el alcance activo agrega exactamente una
+    # temperatura y será compartido por KPI y las cuatro tarjetas de estado.
+    global_kpi_query_parts = list(query_parts)
     if temperatura_filter and temperatura_filter != "Todos":
         if temperatura_filter == "HOT":
-            temperature_query = CRM_HOT_QUERY
-            query_parts.append(temperature_query)
+            query_parts.append(CRM_HOT_QUERY)
         elif temperatura_filter == "COLD":
-            temperature_query = CRM_COLD_QUERY
-            query_parts.append(temperature_query)
+            query_parts.append(CRM_COLD_QUERY)
             
     query = {"$and": query_parts} if query_parts else {}
 
-    # 2. SEPARATE KPI COUNTS (Globales para la búsqueda actual pero sin filtro de estado)
-    # Creamos query_global_kpi SIN el filtro de temperatura para poder contar todo
-    query_global_kpi_parts = [q for q in query_parts if q is not temperature_query]
-    global_kpi_query = {"$and": query_global_kpi_parts} if query_global_kpi_parts else {}
+    # 2. El global conserva todos los leads y base_kpi_query el alcance activo;
+    # ninguno incluye el filtro de estado, para poder dibujar la distribución.
+    global_kpi_query = {"$and": global_kpi_query_parts} if global_kpi_query_parts else {}
     base_kpi_query = query.copy() # Con temperatura para los KPIs por etapa
     
     # --- FILTRO DE ESTADO ---

@@ -283,10 +283,10 @@ def test_crm_temperature_cards_avoid_ambiguous_ratios_and_mobile_layout_is_order
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in template
     assert '.filter-bar select,' in template
     assert 'style="margin-left: auto;" name="orden"' not in template
-    assert "grid-template-columns: minmax(92px, 34%) minmax(0, 1fr);" in template
+    assert "grid-template-columns: minmax(86px, 31%) minmax(0, 1fr);" in template
     assert template.count('class="mobile-cell-value') == 8
     assert ".crm-table .mobile-cell-value" in template
-    assert template.count("Seleccionado</span>") == 3
+    assert "Seleccionado</span>" not in template
     assert 'aria-current="{{' in template
     assert "outline: 2px solid var(--accent-color);" in template
     assert "border-bottom: 3px solid var(--led-blue" not in template
@@ -294,10 +294,10 @@ def test_crm_temperature_cards_avoid_ambiguous_ratios_and_mobile_layout_is_order
     assert "#crmDynamicContent .summary-value" not in template
     assert "if (!counter.classList.contains('summary-value'))" in template
     assert "counter.innerText = target;" in template
-    assert ".segment-nuevo { background: #f87171; }" in template
-    assert ".segment-gestion { background: #fbbf24; }" in template
-    assert ".segment-visita { background: #34d399; }" in template
-    assert ".segment-cerrado { background: #64748b; }" in template
+    assert ".segment-nuevo { background: var(--state-unattended); }" in template
+    assert ".segment-gestion { background: var(--state-management); }" in template
+    assert ".segment-visita { background: var(--state-visits); }" in template
+    assert ".segment-cerrado { background: var(--state-closed); }" in template
     for segment_key in ("nuevo", "gestion", "visita", "cerrado"):
         assert f".segment-{segment_key} {{" in template
 
@@ -518,6 +518,7 @@ def test_crm_filters_and_contextual_columns_are_wired_to_one_url_state():
     assert "setTimeout(() => applyCrmFilters(event.target.form), 500)" in template
     assert "params.delete('page')" in template
     assert "Limpiar filtros" in template
+    assert "{{ filter_urls['clear'] }}" in template
     assert 'class="filter-chip"' in template
     assert "leads encontrados" in template
     assert "show_priority = selected_temperature == 'Todos'" in template
@@ -532,6 +533,25 @@ def test_crm_filters_and_contextual_columns_are_wired_to_one_url_state():
     ):
         assert order in template
         assert order in api_crm
+
+
+def test_crm_visual_system_keeps_sidebar_actions_and_responsive_layout_accessible():
+    template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
+
+    assert "height: 100dvh;" in template
+    assert 'class="sidebar-main-nav"' in template
+    assert 'class="sidebar-footer"' in template
+    assert ".sidebar-footer" in template and "margin-top: auto;" in template
+    assert "env(safe-area-inset-bottom)" in template
+    assert "overflow-y: auto;" in template
+    assert "closeMobileMenu()" in template
+    assert "window.innerWidth > 768" in template
+    assert template.count("<body>") == 1
+    assert "min-height: 128px;" in template
+    assert "position: sticky;" in template
+    assert "--placeholder-color:" in template
+    assert 'class="filter-field filter-search-field"' in template
+    assert "grid-template-columns: minmax(220px, 1.5fr)" in template
 
 
 def test_crm_hybrid_polling_uses_partial_fetch_without_full_reload():

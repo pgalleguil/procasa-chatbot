@@ -569,6 +569,8 @@ def test_crm_sidebar_uses_accessible_glass_background_without_fading_icons():
     assert "-webkit-backdrop-filter: blur(14px) saturate(120%);" in template
     assert "backdrop-filter: blur(14px) saturate(120%);" in template
     assert "background: var(--bg-sidebar);" in template
+    assert "background: var(--sidebar-glass-highlight), var(--sidebar-glass-bg);" in template
+    assert "--sidebar-shadow-expanded:" in template
     assert "border-right: 1px solid var(--sidebar-border);" in template
     assert "border-left: 3px solid transparent;" in template
     assert "border-left-color: var(--sidebar-active-color);" in template
@@ -586,8 +588,9 @@ def test_crm_list_uses_full_width_without_placeholder_action_menu():
 
     assert ".crm-table .col-type { width: 120px; }" in template
     assert ".crm-table .col-time { width: 175px; }" in template
-    assert ".crm-table .col-client { width: 19%; }" in template
-    assert ".crm-table .col-last-action { width: auto; }" in template
+    assert ".crm-table .col-client { width: auto; }" in template
+    assert ".crm-table .col-last-action { width: 300px; }" in template
+    assert ".crm-table .col-last-action { width: 230px; }" in template
     assert ".crm-table .col-executive { width: 180px; }" in template
     assert "col-row-actions" not in template
     assert "fa-ellipsis-vertical" not in template

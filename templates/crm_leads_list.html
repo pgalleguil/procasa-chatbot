@@ -17,8 +17,10 @@
             --bg-elevated: #202d43;
             --bg-sidebar: #081426;
             --sidebar-glass-bg: rgba(8, 20, 38, 0.82);
+            --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(99, 102, 241, 0.025) 48%, rgba(8, 20, 38, 0.02));
             --sidebar-border: rgba(148, 163, 184, 0.20);
-            --sidebar-shadow: 8px 0 24px rgba(2, 6, 23, 0.16);
+            --sidebar-shadow: inset -1px 0 rgba(255, 255, 255, 0.04), 8px 0 24px rgba(2, 6, 23, 0.16);
+            --sidebar-shadow-expanded: inset -1px 0 rgba(255, 255, 255, 0.055), 10px 0 28px rgba(2, 6, 23, 0.18);
             --sidebar-hover-bg: rgba(148, 163, 184, 0.11);
             --sidebar-active-bg: rgba(99, 102, 241, 0.20);
             --sidebar-active-color: #a5b4fc;
@@ -60,8 +62,10 @@
             --bg-elevated: #f1f5f9;
             --bg-sidebar: #f4f7fc;
             --sidebar-glass-bg: rgba(244, 247, 252, 0.84);
+            --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.52), rgba(79, 70, 229, 0.035) 50%, rgba(226, 232, 240, 0.08));
             --sidebar-border: rgba(100, 116, 139, 0.24);
-            --sidebar-shadow: 8px 0 24px rgba(51, 65, 85, 0.10);
+            --sidebar-shadow: inset -1px 0 rgba(255, 255, 255, 0.72), 8px 0 24px rgba(51, 65, 85, 0.10);
+            --sidebar-shadow-expanded: inset -1px 0 rgba(255, 255, 255, 0.82), 10px 0 28px rgba(51, 65, 85, 0.13);
             --sidebar-hover-bg: rgba(79, 70, 229, 0.08);
             --sidebar-active-bg: rgba(79, 70, 229, 0.13);
             --sidebar-active-color: #4338ca;
@@ -144,7 +148,7 @@
 
         @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
             .sidebar {
-                background: var(--sidebar-glass-bg);
+                background: var(--sidebar-glass-highlight), var(--sidebar-glass-bg);
                 -webkit-backdrop-filter: blur(14px) saturate(120%);
                 backdrop-filter: blur(14px) saturate(120%);
             }
@@ -152,7 +156,7 @@
 
         .sidebar:hover {
             width: var(--sidebar-width);
-            box-shadow: 10px 0 28px rgba(2, 6, 23, 0.18);
+            box-shadow: var(--sidebar-shadow-expanded);
         }
 
         .main-content {
@@ -916,18 +920,19 @@
 
         .crm-table .col-type { width: 120px; }
         .crm-table .col-time { width: 175px; }
-        .crm-table .col-client { width: 19%; }
+        .crm-table .col-client { width: auto; }
         .crm-table .col-property { width: 125px; }
         .crm-table .col-state { width: 135px; }
-        .crm-table .col-last-action { width: auto; }
+        .crm-table .col-last-action { width: 300px; }
         .crm-table .col-executive { width: 180px; }
 
         @media (min-width: 769px) and (max-width: 1200px) {
             .crm-table .col-type { width: 100px; }
             .crm-table .col-time { width: 150px; }
-            .crm-table .col-client { width: 18%; }
+            .crm-table .col-client { width: auto; }
             .crm-table .col-property { width: 105px; }
             .crm-table .col-state { width: 115px; }
+            .crm-table .col-last-action { width: 230px; }
             .crm-table .col-executive { width: 145px; }
         }
 

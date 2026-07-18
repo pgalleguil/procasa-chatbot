@@ -303,6 +303,23 @@
         .summary-card.is-active {
             background: rgba(99, 102, 241, 0.12);
             box-shadow: inset 0 0 0 1px var(--accent-color);
+            outline: 2px solid var(--accent-color);
+            outline-offset: 2px;
+        }
+
+        .selection-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 8px;
+            padding: 4px 8px;
+            color: #fff;
+            background: var(--accent-color);
+            border-radius: 999px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            text-transform: none;
         }
 
         .summary-value {
@@ -1193,17 +1210,22 @@
             <div class="row g-3 mb-4 row-cols-1 row-cols-md-{{ 4 if current_ejecutivo == 'Todos' else 3 }} temperature-cards">
                 <div class="col">
                     <a href="{{ card_urls.total }}" class="summary-card {{ 'is-active' if selected_temperature == 'Todos' and not selected_state }}"
+                        aria-current="{{ 'true' if selected_temperature == 'Todos' and not selected_state else 'false' }}"
                         style="border-bottom: 3px solid var(--accent-color);">
                         <div>
                             <div class="summary-value" id="kpi-total" data-target="{{ kpis.total }}">0</div>
                             <div class="summary-label">Total leads</div>
                             <div class="summary-meta">Universo completo de {{ executive_label }}</div>
+                            {% if selected_temperature == 'Todos' and not selected_state %}
+                            <span class="selection-badge"><i class="fa-solid fa-circle-check"></i>Seleccionado</span>
+                            {% endif %}
                         </div>
                         <i class="fa-solid fa-users fa-2x text-primary opacity-25"></i>
                     </a>
                 </div>
                 <div class="col">
                     <a href="{{ card_urls.hot }}" class="summary-card {{ 'is-active' if selected_temperature == 'HOT' }}"
+                        aria-current="{{ 'true' if selected_temperature == 'HOT' else 'false' }}"
                         style="border-bottom: 3px solid var(--accent-red);">
                         <div>
                             <div class="summary-value text-danger" id="kpi-hot" data-target="{{ kpis.hot }}">0</div>
@@ -1211,6 +1233,7 @@
                             <div class="summary-meta temperature-share">{{ pct(kpis.hot_percent) }}% del total</div>
                             {% if selected_temperature == 'HOT' %}
                             <div class="summary-meta fw-bold">{{ kpis.managed }} de {{ kpis.scope_total }} con gestión iniciada · {{ pct(kpis.managed_percent) }}%</div>
+                            <span class="selection-badge"><i class="fa-solid fa-circle-check"></i>Seleccionado</span>
                             {% endif %}
                         </div>
                         <i class="fa-solid fa-fire fa-2x text-danger opacity-25"></i>
@@ -1218,6 +1241,7 @@
                 </div>
                 <div class="col">
                     <a href="{{ card_urls.cold }}" class="summary-card {{ 'is-active' if selected_temperature == 'COLD' }}"
+                        aria-current="{{ 'true' if selected_temperature == 'COLD' else 'false' }}"
                         style="border-bottom: 3px solid var(--led-blue, #3b82f6);">
                         <div>
                             <div class="summary-value text-info" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
@@ -1225,6 +1249,7 @@
                             <div class="summary-meta temperature-share">{{ pct(kpis.cold_percent) }}% del total</div>
                             {% if selected_temperature == 'COLD' %}
                             <div class="summary-meta fw-bold">{{ kpis.managed }} de {{ kpis.scope_total }} con gestión iniciada · {{ pct(kpis.managed_percent) }}%</div>
+                            <span class="selection-badge"><i class="fa-solid fa-circle-check"></i>Seleccionado</span>
                             {% endif %}
                         </div>
                         <i class="fa-solid fa-circle-info fa-2x text-info opacity-25"></i>

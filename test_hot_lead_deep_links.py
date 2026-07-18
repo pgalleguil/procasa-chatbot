@@ -252,6 +252,9 @@ def test_crm_temperature_cards_avoid_ambiguous_ratios_and_mobile_layout_is_order
     assert "grid-template-columns: minmax(92px, 34%) minmax(0, 1fr);" in template
     assert template.count('class="mobile-cell-value') == 7
     assert ".crm-table .mobile-cell-value" in template
+    assert template.count("Seleccionado</span>") == 3
+    assert 'aria-current="{{' in template
+    assert "outline: 2px solid var(--accent-color);" in template
 
 
 def test_crm_card_urls_preserve_executive_search_order_and_toggle_filters():

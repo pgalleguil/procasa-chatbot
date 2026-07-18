@@ -863,7 +863,7 @@ async def get_unique_executives():
     adb = get_async_db()
     # Fast-path: usar colección usuarios (mucho menor que leads).
     users = await adb["usuarios"].find(
-        {"rol": {"$in": ["agente", "supervisor", "admin", "jefatura", "jefe"]}},
+        {"rol": {"$in": ["agente", "supervisor", "admin", "jefatura"]}},
         {"nombre": 1}
     ).to_list(length=500)
     all_execs = set(str(u.get("nombre", "")).strip() for u in users if u.get("nombre"))

@@ -935,7 +935,7 @@ async def api_crm_admin_reassign(request: Request):
     targets = await get_async_db()["usuarios"].find(
         {
             "nombre": re.compile(rf"^{re.escape(executive)}(?:\s|$)", re.IGNORECASE),
-            "rol": {"$in": ["agente", "supervisor", "admin", "jefatura", "jefe"]},
+            "rol": {"$in": ["agente", "supervisor", "admin", "jefatura"]},
             "is_active": {"$ne": False},
         },
         {"nombre": 1},
@@ -958,6 +958,25 @@ async def api_crm_admin_reassign(request: Request):
     if not changed:
         raise HTTPException(status_code=409, detail="No fue posible reasignar el lead")
     return {"status": "ok", "executive": target["nombre"]}
+
+
+@app.post("/api/crm/admin/mark-duplicate")
+async def api_crm_admin_mark_duplicate(request: Request):
+    data = await request.json()
+    phone = str(data.get("phone") or "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Falta teléfono")
+
+    user, _lead = await _get_authorized_crm_lead(request, phone, administrative=True)
+    actor = user.get("nombre") or user.get("username") or "Administración"
+    loop = asyncio.get_running_loop()
+    changed = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: CrmService.mark_duplicate(phone, actor=actor),
+    )
+    if not changed:
+        raise HTTPException(status_code=409, detail="No fue posible marcar el lead como duplicado")
+    return {"status": "ok"}
 
 
 @app.post("/api/crm/admin/archive")

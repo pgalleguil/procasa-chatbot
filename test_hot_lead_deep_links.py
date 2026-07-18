@@ -289,6 +289,7 @@ def test_crm_temperature_cards_avoid_ambiguous_ratios_and_mobile_layout_is_order
     assert "Seleccionado</span>" not in template
     assert 'aria-current="{{' in template
     assert "outline: 2px solid var(--accent-color);" in template
+    assert "box-shadow: inset 0 0 0 1px var(--accent-color);" not in template
     assert "border-bottom: 3px solid var(--led-blue" not in template
     assert "document.querySelectorAll('#crmDynamicContent [data-target]')" in template
     assert "#crmDynamicContent .summary-value" not in template

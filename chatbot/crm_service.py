@@ -281,3 +281,54 @@ class CrmService:
             )
             return True
         return False
+
+    @staticmethod
+    def mark_duplicate(phone: str, actor: str) -> bool:
+        """Soft-archive a duplicate while preserving the complete lead record."""
+        db = get_db()
+        lead = CrmService.get_lead(phone)
+        if not lead:
+            return False
+
+        now_cl = datetime.now(CHILE_TZ)
+        old_stage = lead.get("stage") or lead.get("pipeline_stage") or PipelineStage.NEW
+        reason = "Marcado como duplicado desde el listado CRM"
+        result = db[COLLECTION_CONVERSATIONS].update_one(
+            {"_id": lead["_id"]},
+            {
+                "$set": {
+                    "is_duplicate": True,
+                    "duplicate_marked_at": now_cl,
+                    "duplicate_marked_by": actor,
+                    "stage": "ARCHIVED",
+                    "pipeline_stage": "ARCHIVED",
+                    "archived_at": now_cl,
+                    "archived_by": actor,
+                    "archive_reason": reason,
+                    "last_crm_update": now_cl,
+                },
+                "$push": {
+                    "stage_history": {
+                        "from": old_stage,
+                        "to": "ARCHIVED",
+                        "actor": actor,
+                        "timestamp": now_cl.isoformat(),
+                        "notes": reason,
+                    }
+                },
+            },
+        )
+        if result.modified_count:
+            log_event(
+                phone,
+                InteractionType.STATUS_CHANGE,
+                actor,
+                {
+                    "action": "mark_duplicate",
+                    "from": old_stage,
+                    "to": "ARCHIVED",
+                    "notes": reason,
+                },
+            )
+            return True
+        return False

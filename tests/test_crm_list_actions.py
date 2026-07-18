@@ -90,12 +90,12 @@ def _render_list(*, administrative: bool) -> str:
     )
 
 
-@pytest.mark.parametrize("role", ["admin", "supervisor", "jefatura", "jefe"])
+@pytest.mark.parametrize("role", ["admin", "supervisor", "jefatura"])
 def test_crm_administrative_roles_can_use_real_list_actions(role):
     assert can_administer_leads(role)
 
 
-@pytest.mark.parametrize("role", ["agente", "ejecutivo", "", None])
+@pytest.mark.parametrize("role", ["agente", "ejecutivo", "jefe", "", None])
 def test_crm_regular_executives_cannot_administer_leads(role):
     assert not can_administer_leads(role)
 
@@ -117,6 +117,7 @@ def test_regular_executive_has_no_three_dot_menu_or_list_mutations():
     assert 'class="row-actions"' not in rendered
     assert "fa-ellipsis-vertical" not in rendered
     assert "Reasignar lead" not in rendered
+    assert "Marcar como duplicado" not in rendered
     assert ">Archivar<" not in rendered
     assert "Cambiar estado" not in rendered
     assert 'tabindex="0" role="link"' in rendered
@@ -127,6 +128,7 @@ def test_administrator_menu_contains_only_real_administrative_actions():
     rendered = _render_list(administrative=True)
     assert rendered.count('class="row-actions"') == 1
     assert "Reasignar lead" in rendered
+    assert "Marcar como duplicado" in rendered
     assert "Archivar" in rendered
     assert "Ver auditoría" in rendered
     assert "Abrir lead" not in rendered
@@ -138,7 +140,8 @@ def test_administrator_menu_contains_only_real_administrative_actions():
 def test_backend_routes_enforce_admin_and_ownership_permissions():
     source = Path("webhook.py").read_text(encoding="utf-8")
     update_block = source[source.index('async def api_crm_update_lead'):source.index('@app.post("/api/crm/admin/reassign")')]
-    reassign_block = source[source.index('async def api_crm_admin_reassign'):source.index('@app.post("/api/crm/admin/archive")')]
+    reassign_block = source[source.index('async def api_crm_admin_reassign'):source.index('@app.post("/api/crm/admin/mark-duplicate")')]
+    duplicate_block = source[source.index('async def api_crm_admin_mark_duplicate'):source.index('@app.post("/api/crm/admin/archive")')]
     archive_block = source[source.index('async def api_crm_admin_archive'):source.index('@app.post("/api/crm/notes")')]
 
     assert "await _get_authorized_crm_lead(request, phone)" in update_block
@@ -146,6 +149,8 @@ def test_backend_routes_enforce_admin_and_ownership_permissions():
     assert "status_code=403" in update_block
     assert "administrative=True" in reassign_block
     assert "CrmService.assign_executive" in reassign_block
+    assert "administrative=True" in duplicate_block
+    assert "CrmService.mark_duplicate" in duplicate_block
     assert "administrative=True" in archive_block
     assert "CrmService.archive_lead" in archive_block
 
@@ -231,3 +236,26 @@ def test_admin_archive_service_is_non_destructive_and_keeps_audit_history(monkey
     assert collection.update["$set"]["stage"] == "ARCHIVED"
     assert collection.update["$push"]["stage_history"]["from"] == "CONTACTED"
     assert events[0][0][2] == "Jefatura"
+
+
+def test_admin_duplicate_service_preserves_record_and_records_duplicate_audit(monkeypatch):
+    collection = _FakeCollection()
+    events = []
+    monkeypatch.setattr(crm_service_module, "get_db", lambda: {COLLECTION_CONVERSATIONS: collection})
+    monkeypatch.setattr(
+        CrmService,
+        "get_lead",
+        staticmethod(lambda _phone: {"_id": "lead-3", "stage": "NEW"}),
+    )
+    monkeypatch.setattr(
+        crm_service_module,
+        "log_event",
+        lambda *args, **kwargs: events.append((args, kwargs)),
+    )
+
+    assert CrmService.mark_duplicate("56933333333", actor="Supervisora")
+    assert collection.query == {"_id": "lead-3"}
+    assert "$unset" not in collection.update
+    assert collection.update["$set"]["is_duplicate"] is True
+    assert collection.update["$set"]["stage"] == "ARCHIVED"
+    assert events[0][0][3]["action"] == "mark_duplicate"

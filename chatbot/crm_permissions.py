@@ -7,7 +7,7 @@ import unicodedata
 from collections.abc import Mapping
 
 
-CRM_ADMIN_ROLES = frozenset({"admin", "supervisor", "jefatura", "jefe"})
+CRM_ADMIN_ROLES = frozenset({"admin", "supervisor", "jefatura"})
 
 _REASSIGNMENT_KEYS = frozenset(
     {

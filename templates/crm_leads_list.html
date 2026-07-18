@@ -15,11 +15,18 @@
             --bg-body: #0b1220;
             --bg-card: #182235;
             --bg-elevated: #202d43;
-            --bg-sidebar: #050b17;
+            --bg-sidebar: #081426;
+            --sidebar-glass-bg: rgba(8, 20, 38, 0.82);
+            --sidebar-border: rgba(148, 163, 184, 0.20);
+            --sidebar-shadow: 8px 0 24px rgba(2, 6, 23, 0.16);
+            --sidebar-hover-bg: rgba(148, 163, 184, 0.11);
+            --sidebar-active-bg: rgba(99, 102, 241, 0.20);
+            --sidebar-active-color: #a5b4fc;
+            --sidebar-danger: #ef4444;
             --text-primary: #f8fafc;
             --text-secondary: #aab8ca;
-            --sidebar-text: #e6edf7;
-            --sidebar-muted: #9fb0c6;
+            --sidebar-text: #edf4ff;
+            --sidebar-muted: #b9c6d8;
             --accent: #6366f1;
             --accent-color: var(--accent);
             --accent-hover: #4f46e5;
@@ -50,11 +57,18 @@
             --bg-body: #eaf0f6;
             --bg-card: #f8fafc;
             --bg-elevated: #f1f5f9;
-            --bg-sidebar: #132033;
+            --bg-sidebar: #f4f7fc;
+            --sidebar-glass-bg: rgba(244, 247, 252, 0.84);
+            --sidebar-border: rgba(100, 116, 139, 0.24);
+            --sidebar-shadow: 8px 0 24px rgba(51, 65, 85, 0.10);
+            --sidebar-hover-bg: rgba(79, 70, 229, 0.08);
+            --sidebar-active-bg: rgba(79, 70, 229, 0.13);
+            --sidebar-active-color: #4338ca;
+            --sidebar-danger: #b91c1c;
             --text-primary: #172033;
             --text-secondary: #526178;
-            --sidebar-text: #f1f5f9;
-            --sidebar-muted: #b8c5d6;
+            --sidebar-text: #1e293b;
+            --sidebar-muted: #526178;
             --border-color: #cbd5e1;
             --input-bg: #f8fafc;
             --input-border: #aebdd0;
@@ -116,19 +130,27 @@
             padding: max(14px, env(safe-area-inset-top)) 0 max(12px, env(safe-area-inset-bottom));
             color: var(--sidebar-text);
             background: var(--bg-sidebar);
-            border-right: 1px solid rgba(148, 163, 184, 0.18);
+            border-right: 1px solid var(--sidebar-border);
             z-index: 1050;
             transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
             display: flex;
             flex-direction: column;
             white-space: nowrap;
-            box-shadow: 8px 0 28px rgba(0, 0, 0, 0.14);
+            box-shadow: var(--sidebar-shadow);
+        }
+
+        @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+            .sidebar {
+                background: var(--sidebar-glass-bg);
+                -webkit-backdrop-filter: blur(14px) saturate(120%);
+                backdrop-filter: blur(14px) saturate(120%);
+            }
         }
 
         .sidebar:hover {
             width: var(--sidebar-width);
-            box-shadow: 20px 0 40px rgba(0, 0, 0, 0.2);
+            box-shadow: 10px 0 28px rgba(2, 6, 23, 0.18);
         }
 
         .main-content {
@@ -179,8 +201,10 @@
             align-items: center;
             text-decoration: none;
             margin: 4px 12px;
+            border-left: 3px solid transparent;
             border-radius: 16px;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: background-color 180ms ease, color 180ms ease,
+                border-color 180ms ease, box-shadow 180ms ease;
             height: 46px;
             overflow: hidden;
             width: calc(100% - 24px);
@@ -193,7 +217,9 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            transition: all 0.3s ease-out;
+            opacity: 1;
+            transition: color 180ms ease, background-color 180ms ease,
+                border-color 180ms ease, box-shadow 180ms ease;
         }
 
         .nav-link span {
@@ -211,17 +237,19 @@
         }
 
         .nav-link:hover {
-            background: rgba(255, 255, 255, 0.05);
+            background: var(--sidebar-hover-bg);
             color: var(--sidebar-text);
         }
 
         .nav-link.active {
-            background: rgba(99, 102, 241, 0.1);
-            color: var(--accent) !important;
+            background: var(--sidebar-active-bg);
+            border-left-color: var(--sidebar-active-color);
+            color: var(--sidebar-active-color) !important;
+            box-shadow: 0 0 16px color-mix(in srgb, var(--sidebar-active-color) 12%, transparent);
         }
 
         .nav-link.active i {
-            color: var(--accent);
+            color: var(--sidebar-active-color);
         }
 
         .nav-link.theme-toggle { margin-top: 0; }
@@ -237,15 +265,15 @@
             box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.07);
         }
         .nav-link.theme-toggle span { margin-left: 8px; }
-        .nav-link.theme-toggle:hover #themeIcon { transform: rotate(18deg) scale(1.05); color: #fde68a; }
+        .nav-link.theme-toggle:hover #themeIcon { color: #fde68a; }
         [data-theme="light"] .nav-link.theme-toggle #themeIcon {
-            color: #c4b5fd;
-            background: rgba(129, 140, 248, 0.20);
-            border-color: rgba(196, 181, 253, 0.58);
-            box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.08);
+            color: #6d28d9;
+            background: rgba(109, 40, 217, 0.12);
+            border-color: rgba(109, 40, 217, 0.38);
+            box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.06);
         }
         .nav-link.logout { margin-top: 5px; }
-        .nav-link.logout:hover { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+        .nav-link.logout:hover { background: rgba(239, 68, 68, 0.1); color: var(--sidebar-danger); }
 
         /* Media Query para Móviles */
         @media (max-width: 768px) {
@@ -314,18 +342,6 @@
             cursor: pointer;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             margin-right: 15px;
-        }
-
-
-
-        /* Dashboard: escala sutil (mismo color que hover base) */
-        .nav-link[href="/leads-dashboard"]:hover i {
-            transform: scale(1.15);
-        }
-
-        /* Listado Leads: icono baja ligeramente */
-        .nav-link[href="/crm"]:hover i {
-            transform: translateY(2px) scale(1.1);
         }
 
 

@@ -282,10 +282,12 @@ def test_crm_temperature_cards_avoid_ambiguous_ratios_and_mobile_layout_is_order
     assert "#crmDynamicContent .summary-value" not in template
     assert "if (!counter.classList.contains('summary-value'))" in template
     assert "counter.innerText = target;" in template
-    assert ".segment-new { background: #f87171; }" in template
+    assert ".segment-nuevo { background: #f87171; }" in template
     assert ".segment-gestion { background: #fbbf24; }" in template
     assert ".segment-visita { background: #34d399; }" in template
     assert ".segment-cerrado { background: #64748b; }" in template
+    for segment_key in ("nuevo", "gestion", "visita", "cerrado"):
+        assert f".segment-{segment_key} {{" in template
 
 
 def test_crm_card_urls_preserve_executive_search_order_and_toggle_filters():

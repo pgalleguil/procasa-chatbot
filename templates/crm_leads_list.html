@@ -1741,6 +1741,13 @@
                             return;
                         }
 
+                        // Las métricas operativas deben ser exactas de inmediato.
+                        // Solo las tres cifras principales conservan animación.
+                        if (!counter.classList.contains('summary-value')) {
+                            counter.innerText = target;
+                            return;
+                        }
+
                         const duration = 1200; // Faster feel
                         const frameRate = 1000 / 60;
                         const totalFrames = Math.round(duration / frameRate);

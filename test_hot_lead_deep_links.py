@@ -280,6 +280,8 @@ def test_crm_temperature_cards_avoid_ambiguous_ratios_and_mobile_layout_is_order
     assert "border-bottom: 3px solid var(--led-blue" not in template
     assert "document.querySelectorAll('#crmDynamicContent [data-target]')" in template
     assert "#crmDynamicContent .summary-value" not in template
+    assert "if (!counter.classList.contains('summary-value'))" in template
+    assert "counter.innerText = target;" in template
     assert ".segment-new { background: #f87171; }" in template
     assert ".segment-gestion { background: #fbbf24; }" in template
     assert ".segment-visita { background: #34d399; }" in template

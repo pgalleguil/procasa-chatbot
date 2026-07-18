@@ -619,9 +619,24 @@
         .filter-bar {
             display: flex;
             gap: 12px;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
             flex-wrap: wrap;
             align-items: center;
+        }
+
+        .filter-field {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            min-width: 160px;
+        }
+
+        .filter-field-label {
+            color: var(--text-secondary);
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
         }
 
         .filter-bar .search-box {
@@ -689,6 +704,55 @@
             background: var(--accent-hover);
             transform: translateY(-1px);
         }
+
+        .btn-clear-filters {
+            align-self: flex-end;
+            min-height: 40px;
+            padding: 9px 16px;
+            border: 1px solid var(--input-border);
+            border-radius: 10px;
+            color: var(--text-primary);
+            background: transparent;
+            font-size: 0.86rem;
+            font-weight: 600;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .btn-clear-filters:hover { border-color: var(--accent); color: var(--accent); }
+
+        .active-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 2px 0 16px;
+        }
+
+        .filter-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 6px 10px;
+            border: 1px solid rgba(99, 102, 241, 0.35);
+            border-radius: 999px;
+            background: rgba(99, 102, 241, 0.12);
+            color: var(--text-primary);
+            font-size: 0.78rem;
+            text-decoration: none;
+        }
+
+        .filter-chip:hover { border-color: var(--accent); color: white; }
+
+        .results-context {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: flex-end;
+            padding: 4px 2px 12px;
+        }
+
+        .results-count { font-weight: 700; color: var(--text-primary); }
+        .results-description { color: var(--text-secondary); font-size: 0.82rem; margin-top: 2px; }
 
         .led-orange {
             background: var(--led-orange);
@@ -835,6 +899,42 @@
         .clickable-row {
             cursor: pointer;
         }
+
+        .row-actions { position: relative; }
+        .row-actions summary {
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--border-color);
+            border-radius: 9px;
+            cursor: pointer;
+            list-style: none;
+        }
+        .row-actions summary::-webkit-details-marker { display: none; }
+        .row-actions-menu {
+            position: absolute;
+            z-index: 30;
+            right: 0;
+            top: 40px;
+            min-width: 175px;
+            padding: 6px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--bg-card);
+            box-shadow: 0 12px 30px rgba(0,0,0,.35);
+        }
+        .row-actions-menu a {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 8px 10px;
+            border-radius: 7px;
+            color: var(--text-primary);
+            font-size: .8rem;
+            text-decoration: none;
+        }
+        .row-actions-menu a:hover { background: rgba(99,102,241,.14); }
 
         #sidebarToggle {
             background: none;
@@ -1120,8 +1220,10 @@
             }
 
             .filter-bar .search-box,
+            .filter-bar .filter-field,
             .filter-bar select,
-            .filter-bar .btn-filter {
+            .filter-bar .btn-filter,
+            .filter-bar .btn-clear-filters {
                 width: 100%;
                 min-width: 0;
                 margin: 0;
@@ -1129,11 +1231,18 @@
 
             .filter-bar .search-box input,
             .filter-bar select,
-            .filter-bar .btn-filter {
+            .filter-bar .btn-filter,
+            .filter-bar .btn-clear-filters {
                 min-height: 48px;
             }
 
             .filter-bar .btn-filter {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .btn-clear-filters {
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -1215,6 +1324,12 @@
                 margin-bottom: 0;
             }
 
+            .crm-table td[data-label="Antigüedad"] {
+                background: rgba(255, 255, 255, 0.03);
+                border-bottom: 1px solid var(--border-color);
+                padding: 15px 20px;
+            }
+
             /* CLIENTE: Nombre grande */
             .crm-table td[data-label="Cliente"] .fw-bold {
                 font-size: 1.1rem;
@@ -1240,6 +1355,12 @@
             .crm-table td[data-label="Ejecutivo"] {
                 border-top: 1px dashed rgba(255, 255, 255, 0.1);
                 padding-bottom: 20px;
+            }
+
+            .row-actions-menu {
+                position: static;
+                width: 100%;
+                margin-top: 8px;
             }
 
             /* Toolbar y Filtros en móvil */
@@ -1276,6 +1397,8 @@
                 grid-column: auto;
             }
 
+            .filter-bar .filter-field { width: 100%; }
+
             .crm-table td {
                 grid-template-columns: minmax(92px, 34%) minmax(0, 1fr);
                 padding: 12px;
@@ -1285,6 +1408,8 @@
             .crm-table td[data-label="SLA / Tiempo"] {
                 padding: 14px 12px;
             }
+
+            .crm-table td[data-label="Antigüedad"] { padding: 14px 12px; }
         }
     </style>
 </head>
@@ -1461,85 +1586,104 @@
 
             <!-- TOOLBAR DE FILTROS -->
             <div class="table-container">
-            <form action="/crm" method="GET" class="filter-bar">
+            <form action="/crm" method="GET" class="filter-bar" id="crmFilterForm">
                 <div class="search-box">
                     <i class="fa-solid fa-magnifying-glass"></i>
-                    <input type="text" name="busqueda" placeholder="Filtrar por Teléfono..."
+                    <input type="search" name="busqueda" placeholder="Buscar por teléfono..." autocomplete="off"
                         value="{{ request.query_params.get('busqueda', '') }}">
                 </div>
 
-                <select name="temperatura" onchange="this.form.submit()">
-                    <option value="Todos" {% if not request.query_params.get('temperatura') or request.query_params.get('temperatura') == 'Todos' %}selected{% endif %}>👀 Ver Todos los Leads</option>
-                    <option value="HOT" {% if request.query_params.get('temperatura') == 'HOT' %}selected{% endif %}>🔥 Leads HOT (Prioridad Alta)</option>
-                    <option value="COLD" {% if request.query_params.get('temperatura') == 'COLD' %}selected{% endif %}>🔵 Leads Informativos / Exploratorios</option>
-                </select>
+                <label class="filter-field">
+                    <span class="filter-field-label">Tipo de lead</span>
+                    <select name="temperatura" data-auto-filter>
+                        <option value="Todos" {% if selected_temperature == 'Todos' %}selected{% endif %}>Todos</option>
+                        <option value="HOT" {% if selected_temperature == 'HOT' %}selected{% endif %}>Hot</option>
+                        <option value="COLD" {% if selected_temperature == 'COLD' %}selected{% endif %}>Informativos</option>
+                    </select>
+                </label>
 
-                <select name="estado" onchange="this.form.submit()">
-                    <option value="" {% if not request.query_params.get('estado') %}selected{% endif %}>Todos los
-                        Estados</option>
-                    <option value="UNASSIGNED" {% if request.query_params.get('estado')=='UNASSIGNED' %}selected{% endif %}>⚪ Sin Asignar (Pool)</option>
-                    <option value="NEW" {% if request.query_params.get('estado')=='NEW' %}selected{% endif %}>🔴 Sin
-                        Atender</option>
-                    <option value="GRUPO_GESTION" {% if request.query_params.get('estado')=='GRUPO_GESTION' %}selected{% endif %}>🟡 Todas las etapas en gestión</option>
-                    <option value="GRUPO_VISITA" {% if request.query_params.get('estado')=='GRUPO_VISITA' %}selected{% endif %}>🟢 Todas las etapas de visita</option>
-                    <option value="GRUPO_CERRADO" {% if request.query_params.get('estado')=='GRUPO_CERRADO' %}selected{% endif %}>⚪ Todos los cerrados</option>
-                    <option value="CONTACTED" {% if request.query_params.get('estado')=='CONTACTED' %}selected{% endif
-                        %}>🟡 En Gestión (Contactado)</option>
-                    <option value="INTERESTED" {% if request.query_params.get('estado')=='INTERESTED' %}selected{% endif
-                        %}>🟡 Interesado</option>
-                    <option value="VISIT_SCHEDULED" {% if request.query_params.get('estado')=='VISIT_SCHEDULED'
-                        %}selected{% endif %}>🟢 Visita Agendada</option>
-                    <option value="VISIT_DONE" {% if request.query_params.get('estado')=='VISIT_DONE' %}selected{% endif
-                        %}>🟢 Visita Realizada</option>
-                    <option value="OFFER" {% if request.query_params.get('estado')=='OFFER' %}selected{% endif %}>🟢
-                        Oferta</option>
-                    <option value="NEGOTIATION" {% if request.query_params.get('estado')=='NEGOTIATION' %}selected{%
-                        endif %}>🟢 Negociación</option>
-                    <option value="CLOSED_WON" {% if request.query_params.get('estado')=='CLOSED_WON' %}selected{% endif
-                        %}>⚪ Cerrado Ganado</option>
-                    <option value="CLOSED_LOST" {% if request.query_params.get('estado')=='CLOSED_LOST' %}selected{%
-                        endif %}>⚪ Cerrado Perdido</option>
-                </select>
+                <label class="filter-field">
+                    <span class="filter-field-label">Estado de gestión</span>
+                    <select name="estado" data-auto-filter>
+                        <option value="" {% if not selected_state %}selected{% endif %}>Todos</option>
+                        <option value="NEW" {% if selected_state == 'NEW' %}selected{% endif %}>Sin atender</option>
+                        <option value="GRUPO_GESTION" {% if selected_state == 'GRUPO_GESTION' %}selected{% endif %}>En gestión</option>
+                        <option value="GRUPO_VISITA" {% if selected_state == 'GRUPO_VISITA' %}selected{% endif %}>Visitas</option>
+                        <option value="GRUPO_CERRADO" {% if selected_state == 'GRUPO_CERRADO' %}selected{% endif %}>Cerrados</option>
+                    </select>
+                </label>
 
                 {% if user_role in ['admin', 'supervisor'] %}
-                <select name="ejecutivo" onchange="this.form.submit()">
-                    <option value="Todos" {% if current_ejecutivo=='Todos' %}selected{% endif %}>Todos los Ejecutivos
-                    </option>
-                    {% for exe in executives %}
-                    <option value="{{ exe }}" {% if current_ejecutivo==exe %}selected{% endif %}>{{ exe }}</option>
-                    {% endfor %}
-                </select>
+                <label class="filter-field">
+                    <span class="filter-field-label">Ejecutivo</span>
+                    <select name="ejecutivo" data-auto-filter>
+                        <option value="Todos" {% if current_ejecutivo=='Todos' %}selected{% endif %}>Todos</option>
+                        {% for exe in executives %}
+                        <option value="{{ exe }}" {% if current_ejecutivo==exe %}selected{% endif %}>{{ exe }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
                 {% endif %}
 
-                <select name="orden" onchange="this.form.submit()">
-                    <option value="fecha" {% if not request.query_params.get('orden') or request.query_params.get('orden')=='fecha' %}selected{% endif %}>Más Recientes</option>
-                    <option value="prioridad" {% if request.query_params.get('orden')=='prioridad' %}selected{% endif %}>Prioridad (Semáforo)</option>
-                </select>
-                <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
+                <label class="filter-field">
+                    <span class="filter-field-label">Orden</span>
+                    <select name="orden" data-auto-filter>
+                        <option value="fecha" {% if request.query_params.get('orden', 'fecha')=='fecha' %}selected{% endif %}>Más recientes</option>
+                        <option value="antiguos_sin_atender" {% if request.query_params.get('orden')=='antiguos_sin_atender' %}selected{% endif %}>Más antiguos sin atender</option>
+                        <option value="sla_por_vencer" {% if request.query_params.get('orden')=='sla_por_vencer' %}selected{% endif %}>SLA por vencer</option>
+                        <option value="mayor_sin_gestion" {% if request.query_params.get('orden')=='mayor_sin_gestion' %}selected{% endif %}>Mayor tiempo sin gestión</option>
+                        <option value="ultima_accion_antigua" {% if request.query_params.get('orden')=='ultima_accion_antigua' %}selected{% endif %}>Última acción más antigua</option>
+                    </select>
+                </label>
+                <a href="{{ filter_urls.clear }}" class="btn-clear-filters"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Limpiar filtros</a>
             </form>
 
+            {% set state_labels = {'NEW': 'Sin atender', 'GRUPO_GESTION': 'En gestión', 'GRUPO_VISITA': 'Visitas', 'GRUPO_CERRADO': 'Cerrados', 'UNASSIGNED': 'Sin asignar'} %}
+            {% set order_labels = {'antiguos_sin_atender': 'Más antiguos sin atender', 'sla_por_vencer': 'SLA por vencer', 'mayor_sin_gestion': 'Mayor tiempo sin gestión', 'ultima_accion_antigua': 'Última acción más antigua'} %}
+            <div class="active-filters" aria-label="Filtros activos">
+                {% if selected_temperature != 'Todos' %}<a class="filter-chip" href="{{ filter_urls.temperature }}">{{ 'Hot' if selected_temperature == 'HOT' else 'Informativos' }} <span aria-hidden="true">×</span></a>{% endif %}
+                {% if selected_state %}<a class="filter-chip" href="{{ filter_urls.state }}">{{ state_labels.get(selected_state, selected_state) }} <span aria-hidden="true">×</span></a>{% endif %}
+                {% if current_ejecutivo != 'Todos' and user_role in ['admin', 'supervisor'] %}<a class="filter-chip" href="{{ filter_urls.executive }}">{{ current_ejecutivo }} <span aria-hidden="true">×</span></a>{% endif %}
+                {% if request.query_params.get('busqueda') %}<a class="filter-chip" href="{{ filter_urls.search }}">Teléfono: {{ request.query_params.get('busqueda') }} <span aria-hidden="true">×</span></a>{% endif %}
+                {% if request.query_params.get('orden') in order_labels %}<a class="filter-chip" href="{{ filter_urls.order }}">{{ order_labels[request.query_params.get('orden')] }} <span aria-hidden="true">×</span></a>{% endif %}
+            </div>
+
+            <div class="results-context">
+                <div>
+                    <div class="results-count">{{ pagination.total_count }} leads encontrados</div>
+                    <div class="results-description">{{ temperature_label }}{% if selected_state %} · {{ state_labels.get(selected_state, selected_state) }}{% endif %} · {{ current_ejecutivo }}</div>
+                </div>
+            </div>
+
             <!-- TABLA -->
+            {% set show_priority = selected_temperature == 'Todos' %}
+            {% set show_executive = current_ejecutivo == 'Todos' %}
             <div class="table-responsive">
                 <table class="crm-table">
                     <thead>
-                            <th width="12%">Prioridad</th>
+                        <tr>
+                            {% if show_priority %}<th>Tipo</th>{% endif %}
                             <th width="14%">
-                                SLA / Tiempo
+                                {{ 'Antigüedad' if selected_temperature == 'COLD' else 'SLA / Tiempo' }}
+                                {% if selected_temperature != 'COLD' %}
                                 <i class="fa-solid fa-circle-question ms-1 text-accent opacity-75"
                                     style="cursor: help; font-size: 0.85rem;" data-bs-toggle="tooltip"
                                     data-bs-custom-class="cloud-tooltip" data-bs-placement="top" data-bs-html="true"
                                     data-bs-title="<b>Métrica SLA: Prioridad Ejecutiva</b><br><br>Tiempo desde asignación hasta la primera gestión humana.<br><br>🟢 <b>Gestionado</b>: Ya tiene acción.<br>🟢 <b>En tiempo</b>: < 1 hora.<br>🟡 <b>Advertencia</b>: 1h - 2.5 horas.<br>🟠 <b>Próximo a Crítico</b>: 2.5h - 3 horas.<br>🔴 <b>Crítico</b>: > 3 horas."></i>
+                                {% endif %}
                             </th>
                             <th width="14%">Cliente</th>
                             <th width="14%">Propiedad</th>
                             <th width="14%">Estado</th>
                             <th width="17%">Última Acción</th>
-                            <th width="15%">Ejecutivo</th>
+                            {% if show_executive %}<th width="15%">Ejecutivo</th>{% endif %}
+                            <th aria-label="Acciones"></th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for lead in leads %}
                         <tr class="clickable-row" onclick="window.location.href='/crm/lead/{{ lead.phone }}'">
+                            {% if show_priority %}
                             <td data-label="Prioridad">
                                 <div class="mobile-cell-value fw-bold d-flex align-items-center" style="font-size: 0.95rem;">
                                     {% if lead.lead_temperature_effective == 'HOT' %}
@@ -1549,9 +1693,13 @@
                                     {% endif %}
                                 </div>
                             </td>
-                            <td data-label="SLA / Tiempo">
+                            {% endif %}
+                            <td data-label="{{ 'Antigüedad' if selected_temperature == 'COLD' else 'SLA / Tiempo' }}">
                                 <div class="mobile-cell-value d-flex align-items-center">
-                                    {% if lead.sla_status == 'critical' %}
+                                    {% if lead.lead_temperature_effective == 'COLD' %}
+                                    <i class="fa-solid fa-clock-rotate-left text-info opacity-75"></i>
+                                    <span class="ms-2">{{ lead.cold_age_label }}</span>
+                                    {% elif lead.sla_status == 'critical' %}
                                     <div class="led-indicator led-red pulse-red"></div>
                                     <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
                                     {% elif lead.sla_status == 'near_critical' %}
@@ -1566,9 +1714,6 @@
                                     {% elif lead.sla_status == 'fulfilled' %}
                                     <i class="fa-solid fa-check-circle text-success"></i>
                                     <span class="fw-bold text-success ms-2">{{ lead.sla_label }}</span>
-                                    {% elif lead.sla_status == 'informativo' %}
-                                    <i class="fa-solid fa-minus text-secondary opacity-50"></i>
-                                    <span class="text-secondary ms-2 fst-italic">{{ lead.sla_label }}</span>
                                     {% else %}
                                     <div class="led-indicator led-green" style="opacity: 0.8;"></div>
                                     <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
@@ -1614,6 +1759,7 @@
                                     </div>
                                 </div>
                             </td>
+                            {% if show_executive %}
                             <td data-label="Ejecutivo">
                                 <div class="mobile-cell-value">
                                     <div class="fw-bold" style="font-size: 0.9rem;">
@@ -1630,10 +1776,24 @@
                                     </div>
                                 </div>
                             </td>
+                            {% endif %}
+                            <td data-label="Acciones" onclick="event.stopPropagation();">
+                                <div class="mobile-cell-value">
+                                    <details class="row-actions">
+                                        <summary aria-label="Acciones para {{ lead.nombre }}"><i class="fa-solid fa-ellipsis-vertical"></i></summary>
+                                        <div class="row-actions-menu">
+                                            <a href="/crm/lead/{{ lead.phone }}"><i class="fa-solid fa-arrow-up-right-from-square"></i>Abrir lead</a>
+                                            <a href="https://wa.me/{{ lead.phone }}" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i>WhatsApp</a>
+                                            <a href="/crm/lead/{{ lead.phone }}#gestion"><i class="fa-solid fa-pen-to-square"></i>Cambiar estado</a>
+                                            <a href="/crm/lead/{{ lead.phone }}#asignacion"><i class="fa-solid fa-user-gear"></i>Reasignar</a>
+                                        </div>
+                                    </details>
+                                </div>
+                            </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="6" class="text-center text-secondary py-5">
+                            <td colspan="9" class="text-center text-secondary py-5">
                                 <div class="opacity-50 mb-3">
                                     <i class="fa-solid fa-folder-open fa-3x"></i>
                                 </div>
@@ -1816,6 +1976,41 @@
                     }
                 });
 
+            });
+
+            // Los selects se aplican de inmediato; la búsqueda espera 500 ms.
+            let crmSearchDebounce;
+
+            function applyCrmFilters(form) {
+                if (!form) return;
+                const params = new URLSearchParams(new FormData(form));
+                params.delete('page');
+                if (!params.get('busqueda')?.trim()) params.delete('busqueda');
+                if (!params.get('estado')) params.delete('estado');
+                if (params.get('temperatura') === 'Todos') params.delete('temperatura');
+                if (params.get('ejecutivo') === 'Todos') params.delete('ejecutivo');
+                if (params.get('orden') === 'fecha') params.delete('orden');
+                const query = params.toString();
+                window.location.assign('/crm' + (query ? `?${query}` : ''));
+            }
+
+            document.addEventListener('change', event => {
+                if (!event.target.matches('#crmFilterForm [data-auto-filter]')) return;
+                clearTimeout(crmSearchDebounce);
+                applyCrmFilters(event.target.form);
+            });
+
+            document.addEventListener('input', event => {
+                if (!event.target.matches('#crmFilterForm input[name="busqueda"]')) return;
+                clearTimeout(crmSearchDebounce);
+                crmSearchDebounce = setTimeout(() => applyCrmFilters(event.target.form), 500);
+            });
+
+            document.addEventListener('submit', event => {
+                if (event.target.id !== 'crmFilterForm') return;
+                event.preventDefault();
+                clearTimeout(crmSearchDebounce);
+                applyCrmFilters(event.target);
             });
 
             // --- ACTUALIZACIÓN HÍBRIDA DEL LISTADO (sin recargar la página) ---

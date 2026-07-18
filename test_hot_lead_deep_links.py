@@ -12,7 +12,7 @@ from chatbot.lead_router import (
 from chatbot.crm_updates import bump_crm_leads_version, get_crm_leads_version
 from chatbot import storage
 from chatbot.lead_temperature import COLD, HOT, derive_effective_temperature
-from chatbot.crm_filters import build_crm_card_urls
+from chatbot.crm_filters import build_crm_card_urls, build_crm_filter_urls
 from api_crm import (
     CRM_COLD_QUERY,
     CRM_HOT_QUERY,
@@ -284,7 +284,7 @@ def test_crm_temperature_cards_avoid_ambiguous_ratios_and_mobile_layout_is_order
     assert '.filter-bar select,' in template
     assert 'style="margin-left: auto;" name="orden"' not in template
     assert "grid-template-columns: minmax(92px, 34%) minmax(0, 1fr);" in template
-    assert template.count('class="mobile-cell-value') == 7
+    assert template.count('class="mobile-cell-value') == 8
     assert ".crm-table .mobile-cell-value" in template
     assert template.count("Seleccionado</span>") == 3
     assert 'aria-current="{{' in template
@@ -431,6 +431,7 @@ def test_crm_partial_template_contains_only_dynamic_regions():
         current_temperatura="COLD",
         crm_version=7,
         card_urls=build_crm_card_urls(request.query_params),
+        filter_urls=build_crm_filter_urls(request.query_params),
         pagination_base_url="/crm?temperatura=COLD&ejecutivo=Mariela+Arriagada&",
         pagination={
             "total_count": 0,
@@ -459,6 +460,51 @@ def test_crm_partial_template_contains_only_dynamic_regions():
     assert "state-cards-grid" not in rendered
     assert "<html" not in rendered
     assert "sidebar" not in rendered
+
+
+def test_crm_filter_urls_remove_one_filter_and_reset_page():
+    urls = build_crm_filter_urls({
+        "temperatura": "COLD",
+        "estado": "NEW",
+        "ejecutivo": "Erika Garrido",
+        "busqueda": "5691",
+        "orden": "sla_por_vencer",
+        "page": "4",
+    })
+
+    temperature_query = parse_qs(urlsplit(urls["temperature"]).query)
+    state_query = parse_qs(urlsplit(urls["state"]).query)
+    assert "temperatura" not in temperature_query
+    assert temperature_query["estado"] == ["NEW"]
+    assert "estado" not in state_query
+    assert state_query["temperatura"] == ["COLD"]
+    for key in ("temperature", "state", "executive", "search", "order"):
+        assert parse_qs(urlsplit(urls[key]).query)["page"] == ["1"]
+
+
+def test_crm_filters_and_contextual_columns_are_wired_to_one_url_state():
+    template = Path("templates/crm_leads_list.html").read_text(encoding="utf-8")
+    api_crm = Path("api_crm.py").read_text(encoding="utf-8")
+
+    assert 'id="crmFilterForm"' in template
+    assert template.count("data-auto-filter") >= 4
+    assert "setTimeout(() => applyCrmFilters(event.target.form), 500)" in template
+    assert "params.delete('page')" in template
+    assert "Limpiar filtros" in template
+    assert 'class="filter-chip"' in template
+    assert "leads encontrados" in template
+    assert "show_priority = selected_temperature == 'Todos'" in template
+    assert "show_executive = current_ejecutivo == 'Todos'" in template
+    assert "Sin gestión registrada" in api_crm
+    assert 'type_labels.get(last_ev.get("type"), "Acción registrada")' not in api_crm
+    for order in (
+        "antiguos_sin_atender",
+        "sla_por_vencer",
+        "mayor_sin_gestion",
+        "ultima_accion_antigua",
+    ):
+        assert order in template
+        assert order in api_crm
 
 
 def test_crm_hybrid_polling_uses_partial_fetch_without_full_reload():

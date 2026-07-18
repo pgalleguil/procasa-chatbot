@@ -1744,7 +1744,7 @@ async def _render_crm_list(
     username = await get_current_user(request)
     from chatbot.storage import get_async_db
     from chatbot.crm_updates import get_crm_leads_version_async
-    from chatbot.crm_filters import build_crm_card_urls
+    from chatbot.crm_filters import build_crm_card_urls, build_crm_filter_urls
 
     # Una sola selección normalizada gobierna consulta, KPI, tarjetas y enlaces.
     temperatura = normalize_crm_temperature(temperatura)
@@ -1810,6 +1810,7 @@ async def _render_crm_list(
         "crm_version": crm_version,
         "partial": partial,
         "card_urls": build_crm_card_urls(card_query_params),
+        "filter_urls": build_crm_filter_urls(card_query_params),
         "pagination_base_url": pagination_base_url,
         "pagination": {
             "total_count": total_count,

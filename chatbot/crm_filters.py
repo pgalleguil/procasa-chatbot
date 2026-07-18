@@ -50,3 +50,27 @@ def build_crm_card_urls(query_params) -> dict[str, str]:
                 {"temperatura": temperature, "estado": state}
             )
     return urls
+
+
+def build_crm_filter_urls(query_params) -> dict[str, str]:
+    """URLs para quitar un filtro sin perder el resto del contexto del listado."""
+    current = dict(query_params)
+    current.pop("page", None)
+    if current.get("temperatura") == "Todos":
+        current.pop("temperatura", None)
+
+    def without(*keys):
+        params = dict(current)
+        for key in keys:
+            params.pop(key, None)
+        params["page"] = "1"
+        return "/crm?" + urlencode(params)
+
+    return {
+        "temperature": without("temperatura"),
+        "state": without("estado"),
+        "executive": without("ejecutivo"),
+        "search": without("busqueda"),
+        "order": without("orden"),
+        "clear": "/crm",
+    }

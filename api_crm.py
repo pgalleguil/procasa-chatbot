@@ -369,7 +369,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     # Otros filtros (gestion, visita, cerrado, sin_asignar):
     #   Actividad reciente DESC (por defecto)
     # -----------------------------------------------------------------------
-    use_smart_sort = temperatura_filter in ["HOT", "Todos"] and not filtro_estado
+    # Compatibilidad con enlaces históricos: el orden inteligente solo se usa
+    # cuando se solicita expresamente orden=prioridad.
+    use_smart_sort = ordenar_por == "prioridad" and temperatura_filter in ["HOT", "Todos"] and not filtro_estado
     NEW_STAGES = [PipelineStage.NEW, None, "nuevo", "new", "NEW"]
 
     # Proyección mínima — solo campos necesarios para el listado
@@ -482,11 +484,21 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         ]
         records_pipeline = smart_pipeline
     else:
-        # Ordenamiento estándar para filtros específicos (estado, visita, cerrado, etc.)
-        # Por actividad más reciente DESC
+        # Ordenamiento contextual. Las fechas se calculan en Mongo para que la
+        # paginación mantenga el orden sobre todo el universo filtrado.
         simple_pipeline = [
             {"$match": paginated_query},
             {"$addFields": {
+                "_assigned_dt": {
+                    "$let": {
+                        "vars": {
+                            "a": {"$convert": {"input": "$lifecycle.assigned_at", "to": "date", "onError": None, "onNull": None}},
+                            "b": {"$convert": {"input": "$fecha_asignacion", "to": "date", "onError": None, "onNull": None}},
+                            "c": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
+                        },
+                        "in": {"$ifNull": ["$$a", {"$ifNull": ["$$b", "$$c"]}]}
+                    }
+                },
                 "_activity_dt": {
                     "$let": {
                         "vars": {
@@ -496,9 +508,37 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                         },
                         "in": {"$max": ["$$ev", "$$msg", "$$cr"]}
                     }
+                },
+                "_last_action_dt": {
+                    "$convert": {"input": "$last_event_at", "to": "date", "onError": None, "onNull": None}
+                },
+                "_unattended_rank": {
+                    "$cond": [{"$or": [
+                        {"$eq": ["$pipeline_stage", "NEW"]},
+                        {"$eq": ["$pipeline_stage", None]},
+                        {"$eq": ["$stage", "nuevo"]}
+                    ]}, 0, 1]
+                },
+                "_sla_rank": {
+                    "$switch": {
+                        "branches": [
+                            {"case": {"$eq": ["$sla_status", "critical"]}, "then": 0},
+                            {"case": {"$eq": ["$sla_status", "near_critical"]}, "then": 1},
+                            {"case": {"$eq": ["$sla_status", "warning"]}, "then": 2},
+                            {"case": {"$eq": ["$sla_status", "good"]}, "then": 3}
+                        ],
+                        "default": 4
+                    }
                 }
             }},
-            {"$sort": {"_activity_dt": -1, "_id": 1}},
+            {"$sort": {
+                **({"_unattended_rank": 1, "_assigned_dt": 1} if ordenar_por == "antiguos_sin_atender" else
+                   {"_sla_rank": 1, "_assigned_dt": 1} if ordenar_por == "sla_por_vencer" else
+                   {"_activity_dt": 1} if ordenar_por == "mayor_sin_gestion" else
+                   {"_last_action_dt": 1, "_assigned_dt": 1} if ordenar_por == "ultima_accion_antigua" else
+                   {"_activity_dt": -1}),
+                "_id": 1
+            }},
             {"$skip": offset},
             {"$limit": limit},
             {"$project": PROJECTION}
@@ -553,8 +593,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     page_phones = [l.get("phone", "").replace("+", "").strip() for l in leads_list]
     management_types = [
         "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
-        "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER",
-        "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER", "ALERT_SENT", "alert_sent"
+        "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "CLICK_EMAIL_LEAD",
+        "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER",
+        "CLICK_WHATSAPP_OWNER", "CLICK_EMAIL_OWNER", "STATUS_CHANGE", "ASSIGNMENT", "MANUAL_ENTRY",
+        "ALERT_SENT", "alert_sent"
     ]
     events_cursor = db["crm_events"].find(
         {"phone": {"$in": page_phones}, "type": {"$in": management_types}},
@@ -563,25 +605,25 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     events_list = await events_cursor.to_list(length=200)
     events_map = {}
     for ev in events_list:
-        phone_ev = ev.get("phone", "")
+        phone_ev = ev.get("phone", "").replace("+", "").strip()
         if phone_ev not in events_map:
             events_map[phone_ev] = ev
 
     type_labels = {
-        "CLICK_WHATSAPP_LEAD": "Click WhatsApp (Lead)",
-        "CLICK_PHONE_LEAD": "Llamada Iniciada",
+        "CLICK_WHATSAPP_LEAD": "WhatsApp abierto",
+        "CLICK_PHONE_LEAD": "Llamada realizada",
         "CLICK_EMAIL_LEAD": "Click Email (Lead)",
-        "SEND_WA_LEAD": "WhatsApp Enviado",
-        "SEND_EMAIL_LEAD": "Email Enviado",
+        "SEND_WA_LEAD": "WhatsApp enviado",
+        "SEND_EMAIL_LEAD": "Email enviado",
         "CLICK_WHATSAPP_OWNER": "Click WhatsApp (Prop)",
         "CLICK_PHONE_OWNER": "Llamada Prop. Iniciada",
         "CLICK_EMAIL_OWNER": "Click Email (Prop)",
         "SEND_WA_OWNER": "WhatsApp Enviado (Prop)",
         "SEND_EMAIL_OWNER": "Email Enviado (Prop)",
-        "STATUS_CHANGE": "Cambio de Estado",
-        "HUMAN_NOTE": "Gestión Manual",
-        "ASSIGNMENT": "Lead Asignado",
-        "GESTION_LOG": "Gestión Registrada",
+        "STATUS_CHANGE": "Estado actualizado",
+        "HUMAN_NOTE": "Gestión manual",
+        "ASSIGNMENT": "Lead asignado",
+        "GESTION_LOG": "Gestión manual",
         "ALERT_SENT": "Alerta Enviada",
         "MANUAL_ENTRY": "Ingreso Manual",
     }
@@ -641,11 +683,21 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         
         last_ev = events_map.get(raw_phone)
         if last_ev:
-            last_action_text = type_labels.get(last_ev.get("type"), "Acción registrada")
             event_meta = last_ev.get("meta") or last_ev.get("metadata") or {}
+            last_action_text = (
+                type_labels.get(last_ev.get("type"))
+                or event_meta.get("action_label")
+                or event_meta.get("action")
+                or "Gestión manual"
+            )
             last_action_note = event_meta.get("notes") or event_meta.get("note") or ""
         else:
-            last_action_text = lead.get("last_action_label") or "Sin gestión aún"
+            persisted_action = (lead.get("last_action_label") or "").strip()
+            last_action_text = (
+                "Sin gestión registrada"
+                if persisted_action.lower() in {"", "acción registrada", "accion registrada", "sin gestión aún"}
+                else persisted_action
+            )
             last_action_note = ""
 
         last_message_at = lead.get("last_message_at")
@@ -732,13 +784,13 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             sla_status = "fulfilled"
             
         sla_labels_map = {
-            "critical": "Crítico",
-            "near_critical": "Próximo a Crítico",
+            "critical": "Vencido",
+            "near_critical": "Próximo a vencer",
             "warning": "Advertencia",
-            "good": "En tiempo",
+            "good": "En plazo",
             "pending": "Pendiente Asignación",
             "fulfilled": "Gestionado",
-            "informativo": "No Aplica SLA"
+            "informativo": "Antigüedad"
         }
         sla_label = sla_labels_map.get(sla_status, "En tiempo")
         
@@ -752,10 +804,21 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         else:
             prioridad_badge = "🟡 Media"
 
+        assigned_age = format_relative_time(lifecycle_ts or created_ts).replace("Hace", "hace", 1)
+        management_age = format_relative_time(last_ts_obj).replace("Hace", "hace", 1)
+        cold_age_label = (
+            f"Sin atender {assigned_age}"
+            if estado_final == PipelineStage.NEW else
+            f"Última gestión {management_age}"
+            if last_action_text != "Sin gestión registrada" else
+            f"Asignado {assigned_age}"
+        )
+
         leads_procesados.append({
             "phone": raw_phone,
             "sla_status": sla_status,
             "sla_label": sla_label,
+            "cold_age_label": cold_age_label,
             "whatsapp_display": f"+{raw_phone}",
             "nombre": lead.get("prospecto", {}).get("nombre") or "Desconocido",
             "prioridad_badge": prioridad_badge,

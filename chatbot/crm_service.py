@@ -25,7 +25,7 @@ class CrmService:
         
         # Búsqueda flexible (con o sin +)
         doc = db[COLLECTION_CONVERSATIONS].find_one({
-            "phone": {"$regex": f"^{re.escape(phone_clean)}|^\+{re.escape(phone_clean)}"}
+            "phone": {"$regex": f"^{re.escape(phone_clean)}|^\\+{re.escape(phone_clean)}"}
         })
         
         if not doc:
@@ -203,9 +203,16 @@ class CrmService:
         return score
 
     @staticmethod
-    def assign_executive(phone: str, executive_name: str, method: str = "manual") -> bool:
+    def assign_executive(
+        phone: str,
+        executive_name: str,
+        method: str = "manual",
+        actor: str = "system",
+    ) -> bool:
         db = get_db()
         lead = CrmService.get_lead(phone)
+        if not lead:
+            return False
         if lead and (lead.get("prospecto") or {}).get("link_detectado") is True:
             logger.info(f"[CRM_SERVICE] Lead {phone} con link_detectado=True. No se asigna ejecutivo.")
             return False
@@ -215,7 +222,7 @@ class CrmService:
         assigned_at = get_next_business_slot(now_cl)
         
         res = db[COLLECTION_CONVERSATIONS].update_one(
-            {"phone": phone},
+            {"_id": lead["_id"]},
             {
                 "$set": {
                     "ejecutivo_asignado": executive_name,
@@ -226,9 +233,51 @@ class CrmService:
         )
         
         if res.modified_count > 0:
-            log_event(phone, InteractionType.ASSIGNMENT, "system", {
+            log_event(phone, InteractionType.ASSIGNMENT, actor, {
                 "executive": executive_name,
                 "method": method
             })
+            return True
+        return False
+
+    @staticmethod
+    def archive_lead(phone: str, actor: str, reason: str = "Archivo administrativo") -> bool:
+        """Archive a lead without deleting its commercial data or audit history."""
+        db = get_db()
+        lead = CrmService.get_lead(phone)
+        if not lead:
+            return False
+
+        now_cl = datetime.now(CHILE_TZ)
+        old_stage = lead.get("stage") or lead.get("pipeline_stage") or PipelineStage.NEW
+        result = db[COLLECTION_CONVERSATIONS].update_one(
+            {"_id": lead["_id"]},
+            {
+                "$set": {
+                    "stage": "ARCHIVED",
+                    "pipeline_stage": "ARCHIVED",
+                    "archived_at": now_cl,
+                    "archived_by": actor,
+                    "archive_reason": reason,
+                    "last_crm_update": now_cl,
+                },
+                "$push": {
+                    "stage_history": {
+                        "from": old_stage,
+                        "to": "ARCHIVED",
+                        "actor": actor,
+                        "timestamp": now_cl.isoformat(),
+                        "notes": reason,
+                    }
+                },
+            },
+        )
+        if result.modified_count:
+            log_event(
+                phone,
+                InteractionType.STATUS_CHANGE,
+                actor,
+                {"from": old_stage, "to": "ARCHIVED", "notes": reason},
+            )
             return True
         return False

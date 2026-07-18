@@ -1015,6 +1015,12 @@
             cursor: pointer;
         }
 
+        .clickable-row:focus-visible td {
+            border-top-color: var(--accent);
+            border-bottom-color: var(--accent);
+            background-color: rgba(99, 102, 241, 0.12);
+        }
+
         .row-actions { position: relative; }
         .row-actions summary {
             width: 34px;
@@ -1039,17 +1045,49 @@
             background: var(--bg-card);
             box-shadow: 0 12px 30px rgba(0,0,0,.35);
         }
-        .row-actions-menu a {
+        .row-actions-menu a,
+        .row-actions-menu button {
             display: flex;
             align-items: center;
             gap: 9px;
+            width: 100%;
             padding: 8px 10px;
+            border: 0;
             border-radius: 7px;
             color: var(--text-primary);
+            background: transparent;
             font-size: .8rem;
             text-decoration: none;
+            text-align: left;
         }
-        .row-actions-menu a:hover { background: rgba(99,102,241,.14); }
+        .row-actions-menu a:hover,
+        .row-actions-menu button:hover,
+        .row-actions-menu a:focus-visible,
+        .row-actions-menu button:focus-visible { background: rgba(99,102,241,.14); }
+
+        .row-actions-menu .action-archive { color: var(--state-unattended); }
+
+        .phone-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+        }
+
+        .phone-link:hover,
+        .phone-link:focus-visible {
+            color: var(--accent);
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        #crmReassignExecutive {
+            width: 100%;
+            min-height: 44px;
+            padding: 10px 12px;
+            border: 1px solid var(--input-border);
+            border-radius: 10px;
+            color: var(--input-text);
+            background: var(--input-bg);
+        }
 
         #sidebarToggle {
             background: none;
@@ -1755,7 +1793,7 @@
                     </select>
                 </label>
 
-                {% if user_role in ['admin', 'supervisor'] %}
+                {% if can_administer_leads %}
                 <label class="filter-field">
                     <span class="filter-field-label">Ejecutivo</span>
                     <select name="ejecutivo" data-auto-filter>
@@ -1785,7 +1823,7 @@
             <div class="active-filters" aria-label="Filtros activos">
                 {% if selected_temperature != 'Todos' %}<a class="filter-chip" href="{{ filter_urls.temperature }}">{{ 'Hot' if selected_temperature == 'HOT' else 'Informativos' }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if selected_state %}<a class="filter-chip" href="{{ filter_urls.state }}">{{ state_labels.get(selected_state, selected_state) }} <span aria-hidden="true">×</span></a>{% endif %}
-                {% if current_ejecutivo != 'Todos' and user_role in ['admin', 'supervisor'] %}<a class="filter-chip" href="{{ filter_urls.executive }}">{{ current_ejecutivo }} <span aria-hidden="true">×</span></a>{% endif %}
+                {% if current_ejecutivo != 'Todos' and can_administer_leads %}<a class="filter-chip" href="{{ filter_urls.executive }}">{{ current_ejecutivo }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if request.query_params.get('busqueda') %}<a class="filter-chip" href="{{ filter_urls.search }}">Teléfono: {{ request.query_params.get('busqueda') }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if request.query_params.get('orden') in order_labels %}<a class="filter-chip" href="{{ filter_urls.order }}">{{ order_labels[request.query_params.get('orden')] }} <span aria-hidden="true">×</span></a>{% endif %}
             </div>
@@ -1819,12 +1857,14 @@
                             <th class="col-state">Estado</th>
                             <th class="col-last-action">Última Acción</th>
                             {% if show_executive %}<th class="col-executive">Ejecutivo</th>{% endif %}
-                            <th class="col-row-actions" aria-label="Acciones"></th>
+                            {% if can_administer_leads %}<th class="col-row-actions" aria-label="Acciones administrativas"></th>{% endif %}
                         </tr>
                     </thead>
                     <tbody>
                         {% for lead in leads %}
-                        <tr class="clickable-row" onclick="window.location.href='/crm/lead/{{ lead.phone }}'">
+                        <tr class="clickable-row" tabindex="0" role="link"
+                            aria-label="Abrir detalle de {{ lead.nombre }}"
+                            data-lead-url="/crm/lead/{{ lead.phone }}">
                             {% if show_priority %}
                             <td class="col-type" data-label="Prioridad">
                                 <div class="mobile-cell-value fw-bold d-flex align-items-center" style="font-size: 0.95rem;">
@@ -1865,14 +1905,13 @@
                             <td class="col-client" data-label="Cliente">
                                 <div class="mobile-cell-value">
                                     <div class="fw-bold">{{ lead.nombre }}</div>
-                                    <div class="small text-secondary">{{ lead.whatsapp_display }}</div>
+                                    <a class="small phone-link" href="tel:{{ lead.phone }}">{{ lead.whatsapp_display }}</a>
                                 </div>
                             </td>
                             <td class="col-property" data-label="Propiedad">
                                 <div class="mobile-cell-value">
                                 {% if lead.codigo_propiedad != "S/N" %}
-                                <a href="{{ lead.url_propiedad }}" target="_blank" class="prop-code-link"
-                                    onclick="event.stopPropagation();">
+                                <a href="{{ lead.url_propiedad }}" target="_blank" rel="noopener" class="prop-code-link">
                                     <i class="fa-solid fa-home me-1"></i>{{ lead.codigo_propiedad }}
                                 </a>
                                 {% else %}
@@ -1919,19 +1958,28 @@
                                 </div>
                             </td>
                             {% endif %}
-                            <td class="col-row-actions" data-label="Acciones" onclick="event.stopPropagation();">
+                            {% if can_administer_leads %}
+                            <td class="col-row-actions" data-label="Acciones administrativas">
                                 <div class="mobile-cell-value">
                                     <details class="row-actions">
-                                        <summary aria-label="Acciones para {{ lead.nombre }}"><i class="fa-solid fa-ellipsis-vertical"></i></summary>
+                                        <summary aria-label="Acciones administrativas para {{ lead.nombre }}"><i class="fa-solid fa-ellipsis-vertical"></i></summary>
                                         <div class="row-actions-menu">
-                                            <a href="/crm/lead/{{ lead.phone }}"><i class="fa-solid fa-arrow-up-right-from-square"></i>Abrir lead</a>
-                                            <a href="https://wa.me/{{ lead.phone }}" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i>WhatsApp</a>
-                                            <a href="/crm/lead/{{ lead.phone }}#gestion"><i class="fa-solid fa-pen-to-square"></i>Cambiar estado</a>
-                                            <a href="/crm/lead/{{ lead.phone }}#asignacion"><i class="fa-solid fa-user-gear"></i>Reasignar</a>
+                                            <button type="button" data-crm-admin-action="reassign"
+                                                data-phone="{{ lead.phone }}" data-lead-name="{{ lead.nombre }}">
+                                                <i class="fa-solid fa-user-gear"></i>Reasignar lead
+                                            </button>
+                                            <button type="button" class="action-archive" data-crm-admin-action="archive"
+                                                data-phone="{{ lead.phone }}" data-lead-name="{{ lead.nombre }}">
+                                                <i class="fa-solid fa-box-archive"></i>Archivar
+                                            </button>
+                                            <a href="/crm/lead/{{ lead.phone }}#auditoria">
+                                                <i class="fa-solid fa-clock-rotate-left"></i>Ver auditoría
+                                            </a>
                                         </div>
                                     </details>
                                 </div>
                             </td>
+                            {% endif %}
                         </tr>
                         {% else %}
                         <tr>
@@ -1978,6 +2026,40 @@
             </div>
             {% endif %}
             </div>
+
+            {% if can_administer_leads %}
+            <div class="modal fade" id="crmReassignModal" tabindex="-1" aria-labelledby="crmReassignModalTitle" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content" style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color);">
+                        <form id="crmReassignForm">
+                            <div class="modal-header" style="border-color: var(--border-color);">
+                                <div>
+                                    <h5 class="modal-title" id="crmReassignModalTitle">Reasignar lead</h5>
+                                    <div class="small text-secondary" id="crmReassignLeadName"></div>
+                                </div>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                            </div>
+                            <div class="modal-body">
+                                <input type="hidden" id="crmReassignPhone">
+                                <label class="filter-field" for="crmReassignExecutive">
+                                    <span class="filter-field-label">Nuevo ejecutivo</span>
+                                    <select id="crmReassignExecutive" required>
+                                        <option value="">Seleccionar ejecutivo</option>
+                                        {% for executive in executives %}
+                                        <option value="{{ executive }}">{{ executive }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="modal-footer" style="border-color: var(--border-color);">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                <button type="submit" class="btn btn-primary">Confirmar reasignación</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
             </div>
 {% if not partial %}
         </div>
@@ -2181,9 +2263,95 @@
                 applyCrmFilters(event.target);
             });
 
+            function rowEventComesFromInteractiveElement(target) {
+                return Boolean(target?.closest?.(
+                    'a, button, input, select, textarea, summary, details, [contenteditable="true"], [role="button"]'
+                ));
+            }
+
+            document.addEventListener('click', event => {
+                const row = event.target.closest?.('.clickable-row[data-lead-url]');
+                if (!row || rowEventComesFromInteractiveElement(event.target)) return;
+                window.location.assign(row.dataset.leadUrl);
+            });
+
+            document.addEventListener('keydown', event => {
+                const row = event.target.closest?.('.clickable-row[data-lead-url]');
+                if (!row || event.target !== row || !['Enter', ' '].includes(event.key)) return;
+                event.preventDefault();
+                window.location.assign(row.dataset.leadUrl);
+            });
+
+            async function runCrmAdminAction(endpoint, payload) {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(result.detail || 'No fue posible completar la acción');
+                return result;
+            }
+
+            document.addEventListener('click', async event => {
+                const actionButton = event.target.closest?.('[data-crm-admin-action]');
+                if (!actionButton) return;
+                event.preventDefault();
+                event.stopPropagation();
+                actionButton.closest('details')?.removeAttribute('open');
+
+                const action = actionButton.dataset.crmAdminAction;
+                const phone = actionButton.dataset.phone;
+                const leadName = actionButton.dataset.leadName || 'Lead';
+                if (action === 'reassign') {
+                    const modalElement = document.getElementById('crmReassignModal');
+                    document.getElementById('crmReassignPhone').value = phone;
+                    document.getElementById('crmReassignLeadName').textContent = leadName;
+                    document.getElementById('crmReassignExecutive').value = '';
+                    bootstrap.Modal.getOrCreateInstance(modalElement).show();
+                    return;
+                }
+
+                if (action === 'archive') {
+                    if (!window.confirm(`¿Archivar a ${leadName}? El historial se conservará.`)) return;
+                    actionButton.disabled = true;
+                    try {
+                        await runCrmAdminAction('/api/crm/admin/archive', {
+                            phone,
+                            reason: 'Archivado desde el listado CRM'
+                        });
+                    } catch (error) {
+                        window.alert(error.message);
+                        actionButton.disabled = false;
+                    }
+                }
+            });
+
+            document.addEventListener('submit', async event => {
+                if (event.target.id !== 'crmReassignForm') return;
+                event.preventDefault();
+                const submitButton = event.target.querySelector('[type="submit"]');
+                submitButton.disabled = true;
+                try {
+                    await runCrmAdminAction('/api/crm/admin/reassign', {
+                        phone: document.getElementById('crmReassignPhone').value,
+                        executive: document.getElementById('crmReassignExecutive').value
+                    });
+                    bootstrap.Modal.getInstance(document.getElementById('crmReassignModal'))?.hide();
+                } catch (error) {
+                    window.alert(error.message);
+                } finally {
+                    submitButton.disabled = false;
+                }
+            });
+
             // --- ACTUALIZACIÓN HÍBRIDA DEL LISTADO (sin recargar la página) ---
             const CRM_POLL_INTERVAL_MS = 20000;
-            const CRM_MUTATION_ENDPOINTS = /\/api\/crm\/(update|notes|log_action|send_recommendation)/;
+            const CRM_MUTATION_ENDPOINTS = /\/api\/crm\/(update|notes|log_action|send_recommendation|admin\/(reassign|archive))/;
             let crmVersion = Number(document.getElementById('crmDynamicContent')?.dataset.crmVersion || 0);
             let crmCheckInFlight = false;
             let crmRefreshInFlight = false;

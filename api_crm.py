@@ -105,6 +105,7 @@ from chatbot.crm_service import CrmService
 from chatbot.utils import calculate_business_minutes
 from chatbot.constants import PipelineStage, InteractionType, UNASSIGNED_LABEL
 from chatbot.lead_temperature import COLD, HOT
+from chatbot.crm_permissions import can_administer_leads
 
 CRM_HOT_QUERY = {"lead_temperature_effective": HOT}
 CRM_COLD_QUERY = {"lead_temperature_effective": COLD}
@@ -216,11 +217,16 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     db = get_async_db()
     temperatura_filter = normalize_crm_temperature(temperatura_filter)
     # Todo el CRM trabaja exclusivamente con la temperatura normalizada.
-    query_parts = [{"lead_temperature_effective": {"$in": [HOT, COLD]}}]
+    query_parts = [
+        {"lead_temperature_effective": {"$in": [HOT, COLD]}},
+        {"stage": {"$ne": "ARCHIVED"}},
+        {"pipeline_stage": {"$ne": "ARCHIVED"}},
+        {"archived_at": {"$exists": False}},
+    ]
     
     # --- FILTRO DE SEGURIDAD (ROL) ---
     # Si NO es admin/supervisor, solo ver sus propios leads
-    if user_role not in ["admin", "supervisor"] and user_name:
+    if not can_administer_leads(user_role) and user_name:
         regex_name = re.compile(re.escape(user_name), re.IGNORECASE)
         query_parts.append({
             "$or": [
@@ -857,7 +863,7 @@ async def get_unique_executives():
     adb = get_async_db()
     # Fast-path: usar colección usuarios (mucho menor que leads).
     users = await adb["usuarios"].find(
-        {"rol": {"$in": ["agente", "supervisor", "admin"]}},
+        {"rol": {"$in": ["agente", "supervisor", "admin", "jefatura", "jefe"]}},
         {"nombre": 1}
     ).to_list(length=500)
     all_execs = set(str(u.get("nombre", "")).strip() for u in users if u.get("nombre"))

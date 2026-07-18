@@ -59,6 +59,12 @@ from api_captacion import (
 from captacion_kpis import VISIBLE_CLASSIFICATION_STATES, build_kpi_queries
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate, resolve_property_code
 from chatbot.processing_service import LeadProcessingService
+from chatbot.crm_permissions import (
+    can_administer_leads,
+    lead_is_assigned_to_user,
+    payload_attempts_reassignment,
+)
+from chatbot.crm_service import CrmService
 
 # ========================= CONFIGURACIÓN =========================
 from config import Config
@@ -777,6 +783,28 @@ async def api_create_manual_lead(request: Request):
 # ========================= 11. DETALLE Y GESTIÓN CRM =========================
 
 
+async def _get_authorized_crm_lead(
+    request: Request,
+    phone: str,
+    *,
+    administrative: bool = False,
+):
+    """Resolve the authenticated user and enforce CRM role/ownership access."""
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    if administrative and not can_administer_leads(user.get("rol")):
+        raise HTTPException(status_code=403, detail="Acción reservada a administración")
+
+    loop = asyncio.get_running_loop()
+    lead = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: CrmService.get_lead(phone))
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead no encontrado")
+    if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(lead, user):
+        raise HTTPException(status_code=403, detail="El lead no está asignado a este ejecutivo")
+    return user, lead
+
+
 
 @app.get("/crm/lead/{phone}", response_class=HTMLResponse)
 async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None)):
@@ -789,11 +817,8 @@ async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None
     
     user_name = user.get("nombre", "")
     
-    if user.get("rol") == "agente":
-        # Comparamos verificando si el nombre de usuario está contenido en el nombre asignado (para manejar casos de 2 apellidos como Raquel Cheneaux Valz vs Raquel Cheneaux)
-        ejecutivo_asignado = str(data.get("ejecutivo_asignado") or "").strip()
-        if user_name.lower() not in ejecutivo_asignado.lower():
-            return RedirectResponse(url="/crm?error=no_es_tu_lead")
+    if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(data, user):
+        return RedirectResponse(url="/crm?error=no_es_tu_lead")
     
     # LÓGICA FINAL SIMPLE (Solicitada por usuario): 
     # Usar estrictamente el correo/usuario con el que se identificó.
@@ -866,6 +891,13 @@ async def api_crm_update_lead(request: Request):
         if not phone:
             raise HTTPException(status_code=400, detail="Falta teléfono")
 
+        user, _lead = await _get_authorized_crm_lead(request, phone)
+        if (
+            not can_administer_leads(user.get("rol"))
+            and payload_attempts_reassignment(data)
+        ):
+            raise HTTPException(status_code=403, detail="El ejecutivo no puede reasignar leads")
+
         # Aseguramos que se guarde la hora de actualización en CL
         data["updated_at_cl"] = datetime.now(CHILE_TZ).isoformat()
 
@@ -882,9 +914,70 @@ async def api_crm_update_lead(request: Request):
             return {"status": "ok"}
         else:
             raise HTTPException(status_code=500, detail="No se pudo actualizar")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"CRM Update Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/crm/admin/reassign")
+async def api_crm_admin_reassign(request: Request):
+    data = await request.json()
+    phone = str(data.get("phone") or "").strip()
+    executive = str(data.get("executive") or "").strip()
+    if not phone or not executive:
+        raise HTTPException(status_code=400, detail="Faltan teléfono o ejecutivo")
+
+    user, _lead = await _get_authorized_crm_lead(request, phone, administrative=True)
+    from chatbot.storage import get_async_db
+
+    targets = await get_async_db()["usuarios"].find(
+        {
+            "nombre": re.compile(rf"^{re.escape(executive)}(?:\s|$)", re.IGNORECASE),
+            "rol": {"$in": ["agente", "supervisor", "admin", "jefatura", "jefe"]},
+            "is_active": {"$ne": False},
+        },
+        {"nombre": 1},
+    ).to_list(length=2)
+    if len(targets) != 1:
+        raise HTTPException(status_code=400, detail="Ejecutivo no válido o inactivo")
+    target = targets[0]
+
+    actor = user.get("nombre") or user.get("username") or "Administración"
+    loop = asyncio.get_running_loop()
+    changed = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: CrmService.assign_executive(
+            phone,
+            target["nombre"],
+            method="crm_list_admin",
+            actor=actor,
+        ),
+    )
+    if not changed:
+        raise HTTPException(status_code=409, detail="No fue posible reasignar el lead")
+    return {"status": "ok", "executive": target["nombre"]}
+
+
+@app.post("/api/crm/admin/archive")
+async def api_crm_admin_archive(request: Request):
+    data = await request.json()
+    phone = str(data.get("phone") or "").strip()
+    reason = str(data.get("reason") or "Archivo administrativo").strip()[:300]
+    if not phone:
+        raise HTTPException(status_code=400, detail="Falta teléfono")
+
+    user, _lead = await _get_authorized_crm_lead(request, phone, administrative=True)
+    actor = user.get("nombre") or user.get("username") or "Administración"
+    loop = asyncio.get_running_loop()
+    changed = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: CrmService.archive_lead(phone, actor=actor, reason=reason),
+    )
+    if not changed:
+        raise HTTPException(status_code=409, detail="No fue posible archivar el lead")
+    return {"status": "ok"}
 
 @app.post("/api/crm/notes")
 async def api_crm_notes(request: Request):
@@ -997,12 +1090,12 @@ async def process_with_debounce(phone: str, full_text: str, is_from_me: bool = F
             final_message = accumulated_messages.pop(phone, "").strip()
             if not final_message:
                 return
-            
+
             logger.info(f"[PROCESS] Procesando mensaje {'HUMANO' if from_me else 'CLIENTE'} de {phone}")
             
             capture_time = last_message_time.get(phone, 0)
             bot_response = await process_user_message(phone, final_message, is_from_me=from_me)
-            
+
             # Verificación 2: ¿llegó un mensaje nuevo MIENTRAS el LLM procesaba?
             if last_message_time.get(phone, 0) > capture_time:
                 logger.warning(f"⚫ [ANTI-DUP-1] {phone}: nuevo mensaje llegó durante LLM. Descartando respuesta vieja.")
@@ -1757,6 +1850,7 @@ async def _render_crm_list(
 
     user_role = user.get("rol", "agente")
     user_name = user.get("nombre", "")
+    can_administer = can_administer_leads(user_role)
     # Se lee antes del listado. Si ocurre un cambio durante el render, el
     # siguiente polling verá una versión mayor y repetirá la actualización.
     crm_version = await get_crm_leads_version_async(adb)
@@ -1773,7 +1867,7 @@ async def _render_crm_list(
         page=page,
         limit=limit,
     )
-    exec_task = get_unique_executives() if user_role in ["admin", "supervisor"] else asyncio.sleep(0, result=[])
+    exec_task = get_unique_executives() if can_administer else asyncio.sleep(0, result=[])
     leads_payload, executives = await asyncio.gather(leads_task, exec_task)
     leads, kpis, total_count = leads_payload
 
@@ -1804,8 +1898,9 @@ async def _render_crm_list(
         "kpis": kpis,
         "user_role": user_role,
         "user_name": user_name,
+        "can_administer_leads": can_administer,
         "executives": executives,
-        "current_ejecutivo": (ejecutivo or "Todos") if user_role in ["admin", "supervisor"] else user_name,
+        "current_ejecutivo": (ejecutivo or "Todos") if can_administer else user_name,
         "current_temperatura": temperatura,
         "crm_version": crm_version,
         "partial": partial,

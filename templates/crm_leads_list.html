@@ -1035,6 +1035,15 @@
                 opacity: 0.7;
             }
 
+            .crm-table .mobile-cell-value {
+                min-width: 0;
+                width: 100%;
+            }
+
+            .crm-table .mobile-cell-value .text-truncate {
+                max-width: 100% !important;
+            }
+
             /* SLA / TIEMPO: Destacado en el header de la tarjeta */
             .crm-table td[data-label="SLA / Tiempo"] {
                 background: rgba(255, 255, 255, 0.03);
@@ -1360,7 +1369,7 @@
                         {% for lead in leads %}
                         <tr class="clickable-row" onclick="window.location.href='/crm/lead/{{ lead.phone }}'">
                             <td data-label="Prioridad">
-                                <div class="fw-bold d-flex align-items-center" style="font-size: 0.95rem;">
+                                <div class="mobile-cell-value fw-bold d-flex align-items-center" style="font-size: 0.95rem;">
                                     {% if lead.lead_temperature_effective == 'HOT' %}
                                     <span class="text-danger"><i class="fa-solid fa-fire me-1"></i>Alta</span>
                                     {% else %}
@@ -1369,7 +1378,7 @@
                                 </div>
                             </td>
                             <td data-label="SLA / Tiempo">
-                                <div class="d-flex align-items-center">
+                                <div class="mobile-cell-value d-flex align-items-center">
                                     {% if lead.sla_status == 'critical' %}
                                     <div class="led-indicator led-red pulse-red"></div>
                                     <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
@@ -1395,10 +1404,13 @@
                                 </div>
                             </td>
                             <td data-label="Cliente">
-                                <div class="fw-bold">{{ lead.nombre }}</div>
-                                <div class="small text-secondary">{{ lead.whatsapp_display }}</div>
+                                <div class="mobile-cell-value">
+                                    <div class="fw-bold">{{ lead.nombre }}</div>
+                                    <div class="small text-secondary">{{ lead.whatsapp_display }}</div>
+                                </div>
                             </td>
                             <td data-label="Propiedad">
+                                <div class="mobile-cell-value">
                                 {% if lead.codigo_propiedad != "S/N" %}
                                 <a href="{{ lead.url_propiedad }}" target="_blank" class="prop-code-link"
                                     onclick="event.stopPropagation();">
@@ -1407,38 +1419,43 @@
                                 {% else %}
                                 <span class="text-secondary small fst-italic">Sin Propiedad</span>
                                 {% endif %}
+                                </div>
                             </td>
                             <td data-label="Estado">
-                                <div class="d-flex align-items-center">
+                                <div class="mobile-cell-value d-flex align-items-center">
                                     <span class="text-white fw-bold" style="font-size: 0.9rem;">{{ lead.estado_badge
                                         }}</span>
                                 </div>
                             </td>
                             <td data-label="Última Acción">
-                                <!-- AQUÍ SE MUESTRA LA ACCIÓN REAL DEL USUARIO -->
-                                <div class="fw-bold text-accent" style="font-size: 0.9rem;">
-                                    {{ lead.ultima_accion_titulo }}
-                                </div>
-                                <div class="small text-secondary" style="font-size: 0.75rem;">
-                                    <i class="fa-solid fa-clock me-1 opacity-50"></i>{{ lead.tiempo_relativo }}
-                                </div>
-                                <div class="small text-secondary fst-italic mt-1 text-truncate"
-                                    style="max-width: 250px;">
-                                    {{ lead.ultima_accion_nota }}
+                                <div class="mobile-cell-value">
+                                    <!-- AQUÍ SE MUESTRA LA ACCIÓN REAL DEL USUARIO -->
+                                    <div class="fw-bold text-accent" style="font-size: 0.9rem;">
+                                        {{ lead.ultima_accion_titulo }}
+                                    </div>
+                                    <div class="small text-secondary" style="font-size: 0.75rem;">
+                                        <i class="fa-solid fa-clock me-1 opacity-50"></i>{{ lead.tiempo_relativo }}
+                                    </div>
+                                    <div class="small text-secondary fst-italic mt-1 text-truncate"
+                                        style="max-width: 250px;">
+                                        {{ lead.ultima_accion_nota }}
+                                    </div>
                                 </div>
                             </td>
                             <td data-label="Ejecutivo">
-                                <div class="fw-bold" style="font-size: 0.9rem;">
-                                    <i class="fa-solid fa-user-tie me-1 opacity-75 text-accent"></i>{{
-                                    lead.ejecutivo_nombre }}
-                                </div>
-                                <div class="small text-secondary" style="font-size: 0.75rem;">
-                                    {% if lead.ejecutivo_nombre != "No asignado" %}
-                                    <i class="fa-solid fa-clock me-1 opacity-50"></i>Asignado {{
-                                    lead.fecha_asignacion_relativa }}
-                                    {% else %}
-                                    Pendiente de las 09:00
-                                    {% endif %}
+                                <div class="mobile-cell-value">
+                                    <div class="fw-bold" style="font-size: 0.9rem;">
+                                        <i class="fa-solid fa-user-tie me-1 opacity-75 text-accent"></i>{{
+                                        lead.ejecutivo_nombre }}
+                                    </div>
+                                    <div class="small text-secondary" style="font-size: 0.75rem;">
+                                        {% if lead.ejecutivo_nombre != "No asignado" %}
+                                        <i class="fa-solid fa-clock me-1 opacity-50"></i>Asignado {{
+                                        lead.fecha_asignacion_relativa }}
+                                        {% else %}
+                                        Pendiente de las 09:00
+                                        {% endif %}
+                                    </div>
                                 </div>
                             </td>
                         </tr>

@@ -1796,7 +1796,12 @@ async def api_captacion_log_action(request: Request):
                 user_doc=user_doc,
             )
         )
-        return {"status": "ok", "credited": bool(success.get("credited"))} if success else {"status": "error"}
+        return {
+            "status": "ok",
+            "credited": False,
+            "attempt_id": success.get("attempt_id"),
+            "attempt_status": success.get("status"),
+        } if success else {"status": "error"}
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
@@ -1808,6 +1813,32 @@ async def api_captacion_log_action(request: Request):
     except Exception as e:
         logger.error(f"Error logging captacion action: {e}")
         raise HTTPException(status_code=500, detail="No fue posible registrar la gestión")
+
+
+@app.post("/api/captacion/confirm_action")
+async def api_captacion_confirm_action(request: Request):
+    user_doc = await get_current_user_doc(request)
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="Sesión inválida")
+    payload = await request.json()
+    if not payload.get("attempt_id") or not payload.get("result"):
+        raise HTTPException(status_code=400, detail="Faltan intento o resultado")
+    try:
+        from api_captacion import confirm_captacion_activity
+        result = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: confirm_captacion_activity(
+                payload["attempt_id"], user_doc, payload["result"], payload.get("notes")
+            ),
+        )
+        app.state.captacion_stats_cache = {}
+        return {"status": "ok", **result}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 async def _require_captacion_workforce_admin(request: Request):

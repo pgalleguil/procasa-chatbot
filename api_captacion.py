@@ -19,11 +19,8 @@ from owner_confidence import (
     detect_source_price_warning,
     resolve_price_display,
 )
-from captacion_goals import (
-    can_manage_captacion,
-    is_valid_captacion_action,
-    record_valid_captacion_management,
-)
+from captacion_goals import can_manage_captacion
+from captacion_management import confirm_management_attempt, start_management_attempt
 
 logger = logging.getLogger(__name__)
 
@@ -1146,9 +1143,6 @@ def log_captacion_activity(
     db = get_db()
     now = get_chile_now()
 
-    if not is_valid_captacion_action(action, channel, result=result, message=message):
-        raise ValueError("La acción no corresponde a una gestión comercial válida")
-
     try:
         query_id = ObjectId(obj_id)
     except Exception:
@@ -1160,60 +1154,46 @@ def log_captacion_activity(
         raise LookupError("Propiedad de captación no encontrada")
     if user_doc and not can_manage_captacion(user_doc, property_doc):
         raise PermissionError("No tienes permiso para gestionar esta captación")
-    
+
+    attempt = start_management_attempt(
+        db,
+        property_doc=property_doc,
+        actor_user=user_doc or {},
+        action=action,
+        channel=channel,
+        message=message,
+        phone=phone,
+        template_used=template_used,
+        now=now,
+    )
+
     activity_entry = {
         "timestamp": now,
         "user": user_name,
-        "action": action,
+        "user_id": str((user_doc or {}).get("_id") or ""),
+        "action": "action_initiated",
+        "original_action": action,
         "channel": channel,
         "message": message,
         "phone": phone,
-        "result": result
+        "result": "pending_confirmation",
+        "attempt_id": attempt["attempt_id"],
     }
-    
     if template_used:
         activity_entry["template_used"] = template_used
-        
-    note_content = message or "Gestión comercial registrada"
-    if template_used and "Plantilla" not in note_content:
-        note_content = f"[Plantilla: {template_used}] {message[:100]}..."
-        
-    note_entry = {
-        "content": note_content,
-        "timestamp": now,
-        "usuario": user_name,
-        "canal": channel,
-        "resultado": result
-    }
-    
+
     get_captacion_collection(db).update_one(
         {"_id": property_doc["_id"]},
-        {"$push": {
-            "gestion.actividades": activity_entry,
-            "gestion.notas": note_entry
-        }, "$set": {"gestion.fecha_ultima_gestion": now}}
+        {"$push": {"gestion.actividades": activity_entry}}
     )
     _invalidate_detail_cache(obj_id)
 
-    credited = record_valid_captacion_management(
-        db,
-        property_id=property_doc["_id"],
-        actor=user_name,
-        actor_id=(user_doc or {}).get("_id"),
-        actor_email=(user_doc or {}).get("email"),
-        action=action,
-        channel=channel,
-        occurred_at=now,
-        result=result,
-        message=message,
-    )
-    
-    # LOG EVENT CENTRAL: Gestión de Captación
+    # Auditoría de intención: abrir una app externa nunca acredita la meta.
     try:
-        log_event(str(property_doc["_id"]), EventType.GESTION_CAPTACION.value, user_name, {
+        log_event(str(property_doc["_id"]), "captacion_action_initiated", user_name, {
             "action": action,
             "channel": channel,
-            "result": result,
+            "attempt_id": attempt["attempt_id"],
             "message_summary": message[:100] if message else "",
             "phone_target": phone,
             "source": "captacion"
@@ -1221,7 +1201,19 @@ def log_captacion_activity(
     except Exception as e:
         logger.error(f"Error logging captacion activity event: {e}")
 
-    return {"ok": True, "credited": credited}
+    return {"ok": True, "credited": False, **attempt}
+
+
+def confirm_captacion_activity(attempt_id, user_doc, result, notes=None):
+    if not user_doc or not user_doc.get("_id"):
+        raise PermissionError("Usuario sin identidad válida")
+    return confirm_management_attempt(
+        get_db(),
+        attempt_id=attempt_id,
+        actor_user=user_doc,
+        result=result,
+        notes=notes,
+    )
 
 def normalize_commune(name):
     """

@@ -78,16 +78,19 @@ def can_manage_captacion(user_doc: dict, property_doc: dict) -> bool:
         return True
 
     gestion = property_doc.get("gestion") or {}
-    user_name = _name_key(user_doc.get("nombre") or user_doc.get("username"))
-    assigned_name = _name_key(gestion.get("ejecutivo_asignado"))
-    if user_name and assigned_name and user_name == assigned_name:
-        return True
-
     user_id = _clean(user_doc.get("_id"))
     assigned_id = _clean(gestion.get("ejecutivo_id"))
+    if assigned_id:
+        return bool(user_id and user_id == assigned_id)
+
+    # Compatibilidad transitoria para asignaciones legacy sin ID inmutable.
     user_email = _clean(user_doc.get("email")).casefold()
     assigned_email = _clean(gestion.get("ejecutivo_email")).casefold()
-    return bool((user_id and user_id == assigned_id) or (user_email and user_email == assigned_email))
+    if user_email and assigned_email:
+        return user_email == assigned_email
+    user_name = _name_key(user_doc.get("nombre") or user_doc.get("username"))
+    assigned_name = _name_key(gestion.get("ejecutivo_asignado"))
+    return bool(user_name and assigned_name and user_name == assigned_name)
 
 
 def management_dedup_key(property_id, actor, occurred_at) -> str:

@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Iterable
 
 import pytz
 
 from config import Config
+from captacion_workforce import (
+    DEFAULT_TIMEZONE,
+    applicable_target,
+    compliance_status,
+    get_active_captacion_team as get_explicit_captacion_team,
+)
 
 
 CAPTACION_TIMEZONE = pytz.timezone("America/Santiago")
@@ -145,22 +151,6 @@ def ensure_captacion_goal_indexes(db) -> None:
     _INDEXES_READY = True
 
 
-def get_active_captacion_team(db) -> list[dict]:
-    query = {
-        "is_active": True,
-        "rol": "agente",
-        "comunas_interes_norm": {"$exists": True, "$ne": []},
-        "captacion_goal_enabled": {"$ne": False},
-    }
-    projection = {"nombre": 1, "email": 1, "captacion_goal_enabled": 1}
-    users = list(db["usuarios"].find(query, projection).sort("nombre", 1))
-    return [
-        {"id": _clean(user.get("_id")), "name": _clean(user.get("nombre")), "email": _clean(user.get("email"))}
-        for user in users
-        if _clean(user.get("nombre"))
-    ]
-
-
 def _iter_historical_activity_rows(db, start_local: datetime, end_local: datetime):
     start_utc = start_local.astimezone(timezone.utc)
     end_utc = end_local.astimezone(timezone.utc)
@@ -222,6 +212,7 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
 
     members = [member for member in team if _clean(member.get("name"))]
     names = {_name_key(member["name"]): member["name"] for member in members}
+    members_by_name = {_name_key(member["name"]): member for member in members}
     selected_key = _name_key(selected_executive)
     if selected_key and selected_key not in names:
         names[selected_key] = _clean(selected_executive)
@@ -230,7 +221,7 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
     last_activity = {}
     weekend_activity = defaultdict(set)
     for row in rows:
-        actor_key = _name_key(row.get("actor"))
+        actor_key = _clean(row.get("actor_user_id")) or _name_key(row.get("actor"))
         property_id = _clean(row.get("property_id"))
         if not actor_key or not property_id:
             continue
@@ -246,43 +237,78 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
     elapsed_workdays = sum(1 for day in weekdays if day <= today)
 
     def member_metrics(name_key, display_name):
+        member = members_by_name.get(name_key, {})
+        identity_key = _clean(member.get("id")) or name_key
+        day_targets = member.get("day_targets") or {}
         daily = []
         week_total = 0
         days_met = 0
+        days_goal = 0
+        week_goal = 0
         for index, day in enumerate(weekdays):
-            count = len(counts[name_key][day])
+            count = len(counts[identity_key][day]) or len(counts[name_key][day])
+            target_info = day_targets.get(day.isoformat()) or ({
+                "target": CAPTACION_DAILY_GOAL,
+                "exempt": False,
+                "reason": None,
+                "close_hour": 19,
+            } if member else {
+                "target": 0,
+                "exempt": True,
+                "reason": "Sin membresía activa",
+                "close_hour": 19,
+            })
+            target = int(target_info.get("target") or 0)
             week_total += count
-            met = count >= CAPTACION_DAILY_GOAL
+            week_goal += target
+            days_goal += int(target > 0)
+            met = bool(target > 0 and count >= target)
             days_met += int(met)
             daily.append(
                 {
                     "label": DAY_LABELS[index],
                     "date": day.isoformat(),
                     "count": count,
+                    "target": target,
                     "met": met,
                     "future": day > today,
                     "today": day == today,
+                    "exempt": bool(target_info.get("exempt")),
+                    "reason": target_info.get("reason"),
+                    "status": compliance_status(
+                        count=count,
+                        target=target,
+                        local_day=day,
+                        now=local_now,
+                        close_hour=int(target_info.get("close_hour") or 19),
+                        exempt=bool(target_info.get("exempt")),
+                    ),
                 }
             )
-        today_count = len(counts[name_key][today]) if today in weekdays else 0
-        is_workday = today in weekdays
+        today_info = next((item for item in daily if item["date"] == today.isoformat()), None)
+        today_count = today_info["count"] if today_info else 0
+        today_target = today_info["target"] if today_info else 0
+        is_workday = bool(today_info and today_target > 0)
         return {
+            "user_id": _clean(member.get("id")),
             "name": display_name,
             "today_count": today_count,
-            "today_goal": CAPTACION_DAILY_GOAL if is_workday else 0,
-            "today_percent": round(today_count * 100 / CAPTACION_DAILY_GOAL, 1) if is_workday else None,
-            "today_remaining": max(0, CAPTACION_DAILY_GOAL - today_count) if is_workday else 0,
-            "met_today": bool(is_workday and today_count >= CAPTACION_DAILY_GOAL),
+            "today_goal": today_target,
+            "today_percent": round(today_count * 100 / today_target, 1) if today_target else None,
+            "today_remaining": max(0, today_target - today_count) if today_target else 0,
+            "met_today": bool(is_workday and today_count >= today_target),
             "is_workday": is_workday,
+            "today_status": today_info["status"] if today_info else "EXENTO",
+            "today_reason": today_info.get("reason") if today_info else "Día no laborable",
             "week_count": week_total,
-            "week_goal": CAPTACION_WEEKLY_GOAL,
-            "week_percent": round(week_total * 100 / CAPTACION_WEEKLY_GOAL, 1),
+            "week_goal": week_goal,
+            "week_percent": round(week_total * 100 / week_goal, 1) if week_goal else 0,
             "days_met": days_met,
-            "days_goal": len(CAPTACION_WORKDAYS),
-            "expected_to_date": elapsed_workdays * CAPTACION_DAILY_GOAL,
+            "days_goal": days_goal,
+            "expected_to_date": sum(item["target"] for item in daily if date.fromisoformat(item["date"]) <= today),
             "daily": daily,
-            "weekend_activity": len(weekend_activity[name_key]),
-            "last_activity": last_activity.get(name_key),
+            "weekend_activity": len(weekend_activity[identity_key]) or len(weekend_activity[name_key]),
+            "last_activity": last_activity.get(identity_key) or last_activity.get(name_key),
         }
 
     if selected_key:
@@ -297,14 +323,14 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
         "timezone": "America/Santiago",
         "member_count": member_count,
         "today_count": sum(row["today_count"] for row in team_rows),
-        "today_goal": member_count * CAPTACION_DAILY_GOAL if today in weekdays else 0,
+        "today_goal": sum(row["today_goal"] for row in team_rows),
         "executives_met_today": sum(1 for row in team_rows if row["met_today"]),
         "executives_pending_today": sum(1 for row in team_rows if not row["met_today"]) if today in weekdays else 0,
         "week_count": sum(row["week_count"] for row in team_rows),
-        "week_goal": member_count * CAPTACION_WEEKLY_GOAL,
+        "week_goal": sum(row["week_goal"] for row in team_rows),
         "days_person_met": sum(row["days_met"] for row in team_rows),
-        "days_person_goal": member_count * len(CAPTACION_WORKDAYS),
-        "expected_to_date": member_count * elapsed_workdays * CAPTACION_DAILY_GOAL,
+        "days_person_goal": sum(row["days_goal"] for row in team_rows),
+        "expected_to_date": sum(row["expected_to_date"] for row in team_rows),
         "weekend_activity": sum(row["weekend_activity"] for row in team_rows),
         "executives": team_rows,
     }
@@ -312,6 +338,16 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
 
 def get_captacion_goal_dashboard(db, selected_executive=None, now=None) -> dict:
     ensure_captacion_goal_indexes(db)
-    team = get_active_captacion_team(db)
+    local_now = _as_chile_datetime(now)
+    monday = local_now.date() - timedelta(days=local_now.weekday())
+    team = get_explicit_captacion_team(db, local_now.date())
+    for member in team:
+        membership = member.get("membership") or {}
+        member["day_targets"] = {
+            (monday + timedelta(days=index)).isoformat(): applicable_target(
+                db, membership, monday + timedelta(days=index)
+            )
+            for index in CAPTACION_WORKDAYS
+        }
     rows = get_captacion_management_rows(db, now=now)
     return build_captacion_goal_dashboard(team, rows, selected_executive=selected_executive, now=now)

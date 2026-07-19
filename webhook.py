@@ -62,6 +62,7 @@ from captacion_goals import (
     can_manage_captacion,
     get_captacion_goal_dashboard,
 )
+from captacion_workforce import create_work_exception, upsert_calendar_day, upsert_membership
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate, resolve_property_code
 from chatbot.processing_service import LeadProcessingService
 from chatbot.crm_permissions import (
@@ -1807,6 +1808,60 @@ async def api_captacion_log_action(request: Request):
     except Exception as e:
         logger.error(f"Error logging captacion action: {e}")
         raise HTTPException(status_code=500, detail="No fue posible registrar la gestión")
+
+
+async def _require_captacion_workforce_admin(request: Request):
+    user_doc = await get_current_user_doc(request)
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="Sesión inválida")
+    if str(user_doc.get("rol") or "").lower() not in CAPTACION_PRIVILEGED_ROLES:
+        raise HTTPException(status_code=403, detail="Permiso administrativo requerido")
+    return user_doc
+
+
+@app.post("/api/captacion/workforce/membership")
+async def api_captacion_workforce_membership(request: Request):
+    user_doc = await _require_captacion_workforce_admin(request)
+    payload = await request.json()
+    from chatbot.storage import get_db
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: upsert_membership(get_db(), payload, user_doc.get("_id")),
+        )
+        return {"status": "ok", "membership": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/captacion/workforce/exception")
+async def api_captacion_workforce_exception(request: Request):
+    user_doc = await _require_captacion_workforce_admin(request)
+    payload = await request.json()
+    from chatbot.storage import get_db
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: create_work_exception(get_db(), payload, user_doc.get("_id")),
+        )
+        return {"status": "ok", "exception": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/captacion/workforce/calendar")
+async def api_captacion_workforce_calendar(request: Request):
+    user_doc = await _require_captacion_workforce_admin(request)
+    payload = await request.json()
+    from chatbot.storage import get_db
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: upsert_calendar_day(get_db(), payload, user_doc.get("_id")),
+        )
+        return {"status": "ok", "calendar_day": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 @app.get("/api/captacion/templates/personal")
 async def api_get_personal_templates(request: Request):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 
@@ -43,6 +44,28 @@ VALID_RESULTS = {
 CONTACT_EFFECTIVE_RESULTS = {"contacted", "callback_requested"}
 CANCEL_RESULT = "cancel"
 ATTEMPT_TTL_HOURS = 24
+MIN_MANUAL_EVIDENCE_LENGTH = 5
+VALID_CREDIT_EVENT_TYPES = {
+    "management_confirmed",
+    "manual_decision_confirmed",
+    "capture_confirmed",
+}
+
+# Fuente Ãºnica de verdad para decisiones manuales que representan trabajo
+# comercial real. El frontend no decide si una acciÃ³n acredita la meta.
+MANUAL_DECISION_RULES = {
+    "en gestion": {"result": "in_progress", "requires_context": True},
+    "contacto exitoso": {"result": "contacted", "contact_effective": True},
+    "sin respuesta": {"result": "no_answer"},
+    "telefono invalido": {"result": "invalid_number"},
+    "reunion agendada": {"result": "callback_requested", "contact_effective": True},
+    "corredor": {"result": "broker_identified", "requires_evidence": True},
+    "descartado": {"result": "discarded", "requires_evidence": True},
+    "captado": {"result": "captured", "capture": True},
+    "propiedad no disponible": {"result": "unavailable", "requires_evidence": True},
+    "publicacion expirada": {"result": "listing_expired", "requires_evidence": True},
+    "no interesado": {"result": "not_interested", "requires_evidence": True},
+}
 
 _INDEXES_READY = False
 
@@ -105,6 +128,38 @@ def normalize_result(result) -> str:
     if value not in VALID_RESULTS | {CANCEL_RESULT}:
         raise ValueError("Resultado de gestión no permitido")
     return value
+
+
+def normalize_manual_status(status) -> str:
+    value = unicodedata.normalize("NFKD", str(status or "").strip().casefold())
+    return " ".join("".join(char for char in value if not unicodedata.combining(char)).split())
+
+
+def evaluate_manual_decision(*, status, previous_status=None, notes=None, outcome=None, is_automatic=False) -> dict:
+    """EvalÃºa una decisiÃ³n manual sin escribir ni acreditar eventos."""
+    normalized_status = normalize_manual_status(status)
+    rule = MANUAL_DECISION_RULES.get(normalized_status)
+    evidence = str(notes or outcome or "").strip()
+    changed = normalize_manual_status(previous_status) != normalized_status
+    if is_automatic:
+        return {"eligible": False, "reason": "automatic_change", "status": normalized_status}
+    if not rule:
+        return {"eligible": False, "reason": "status_not_creditable", "status": normalized_status}
+    if rule.get("requires_evidence") and len(evidence) < MIN_MANUAL_EVIDENCE_LENGTH:
+        raise ValueError(f"Debes registrar un motivo de al menos {MIN_MANUAL_EVIDENCE_LENGTH} caracteres")
+    if rule.get("requires_context") and not evidence:
+        return {"eligible": False, "reason": "context_required", "status": normalized_status}
+    if not changed and not evidence:
+        return {"eligible": False, "reason": "no_meaningful_change", "status": normalized_status}
+    return {
+        "eligible": True,
+        "reason": None,
+        "status": normalized_status,
+        "result": rule["result"],
+        "contact_effective": bool(rule.get("contact_effective")),
+        "capture": bool(rule.get("capture")),
+        "evidence": evidence,
+    }
 
 
 def assignment_cycle_id(property_doc: dict) -> str:
@@ -295,6 +350,88 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
     }
 
 
+def record_manual_management_decision(
+    db,
+    *,
+    property_doc: dict,
+    actor_user: dict,
+    status,
+    previous_status=None,
+    notes=None,
+    outcome=None,
+    is_automatic=False,
+    now=None,
+) -> dict:
+    """Acredita una conclusiÃ³n comercial manual usando la misma deduplicaciÃ³n diaria."""
+    decision = evaluate_manual_decision(
+        status=status,
+        previous_status=previous_status,
+        notes=notes,
+        outcome=outcome,
+        is_automatic=is_automatic,
+    )
+    if not decision["eligible"]:
+        return {"status": "not_credited", "credited": False, "reason": decision["reason"]}
+
+    ensure_management_indexes(db)
+    actor_user_id = clean_id(actor_user.get("_id"))
+    property_id = clean_id(property_doc.get("_id"))
+    if not actor_user_id or not property_id:
+        raise ValueError("La gestiÃ³n requiere una propiedad y un user_id identificables")
+    occurred_at = now or datetime.now(timezone.utc)
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+    local = localize(occurred_at, DEFAULT_TIMEZONE)
+    dedup_key = management_dedup_key(property_id, actor_user_id, occurred_at)
+    event_id = str(uuid.uuid4())
+    event_type = "capture_confirmed" if decision["capture"] else "manual_decision_confirmed"
+    cycle_id = ensure_assignment_cycle(db, property_doc)
+    event = {
+        "event_id": event_id,
+        "event_type": event_type,
+        "credited": True,
+        "dedup_key": dedup_key,
+        "property_id": property_id,
+        "assignment_cycle_id": cycle_id,
+        "actor_user_id": actor_user_id,
+        "actor_name_snapshot": actor_user.get("nombre") or actor_user.get("username") or "",
+        "actor_email_snapshot": actor_user.get("email") or "",
+        "action": "manual_decision",
+        "channel": "manual",
+        "result": decision["result"],
+        "status_snapshot": str(status or ""),
+        "previous_status_snapshot": str(previous_status or ""),
+        "notes": decision["evidence"],
+        "contact_effective": decision["contact_effective"],
+        "occurred_at": occurred_at.astimezone(timezone.utc),
+        "local_date": local.date().isoformat(),
+        "timezone": DEFAULT_TIMEZONE,
+        "source_event_id": f"manual:{event_id}",
+        "source_system": "captacion_crm",
+        "migration_version": LEDGER_VERSION,
+        "legacy_inferred": False,
+        "created_at": occurred_at.astimezone(timezone.utc),
+    }
+    write = db[LEDGER_COLLECTION].update_one(
+        {"dedup_key": dedup_key}, {"$setOnInsert": event}, upsert=True
+    )
+    credited = bool(getattr(write, "upserted_id", None))
+    existing = None if credited else db[LEDGER_COLLECTION].find_one({"dedup_key": dedup_key}, {"event_id": 1})
+    resolved_event_id = event_id if credited else clean_id((existing or {}).get("event_id"))
+    if credited:
+        _record_first_action_for_cycle(db, event)
+        recalculate_daily_metric(db, actor_user_id, local.date(), now=occurred_at)
+        audit_management_patterns(db, event)
+    return {
+        "status": "confirmed",
+        "credited": credited,
+        "event_id": resolved_event_id,
+        "contact_effective": decision["contact_effective"],
+        "capture": decision["capture"],
+        "local_date": local.date().isoformat(),
+    }
+
+
 def _record_first_action_for_cycle(db, event: dict) -> None:
     cycle_id = event.get("assignment_cycle_id")
     occurred_at = event.get("occurred_at")
@@ -336,7 +473,7 @@ def _active_credited_events(db, user_id, local_day: date) -> list[dict]:
             "actor_user_id": clean_id(user_id),
             "local_date": local_day.isoformat(),
             "credited": True,
-            "event_type": {"$in": ["management_confirmed", "capture_confirmed"]},
+            "event_type": {"$in": list(VALID_CREDIT_EVENT_TYPES)},
         }
     ))
     event_ids = [row.get("event_id") for row in rows if row.get("event_id")]
@@ -358,7 +495,7 @@ def recalculate_daily_metric(db, user_id, local_day: date | str, now=None) -> di
         "target": 0, "exempt": True, "reason": "Sin membresía activa", "close_hour": 19
     }
     events = _active_credited_events(db, user_id, local_day)
-    managed = {row["property_id"] for row in events if row.get("event_type") == "management_confirmed"}
+    managed = {row["property_id"] for row in events}
     contacts = {row["property_id"] for row in events if row.get("contact_effective")}
     captures = {row["property_id"] for row in events if row.get("event_type") == "capture_confirmed"}
     timestamp = now or datetime.now(timezone.utc)
@@ -389,34 +526,15 @@ def recalculate_daily_metric(db, user_id, local_day: date | str, now=None) -> di
 
 
 def record_capture_event(db, *, property_doc: dict, actor_user: dict, now=None) -> dict:
-    ensure_management_indexes(db)
-    occurred_at = now or datetime.now(timezone.utc)
-    actor_user_id = clean_id(actor_user.get("_id"))
-    local = localize(occurred_at, DEFAULT_TIMEZONE)
-    cycle_id = ensure_assignment_cycle(db, property_doc)
-    source_event_id = f"capture:{clean_id(property_doc.get('_id'))}:{cycle_id}"
-    event = {
-        "event_id": str(uuid.uuid4()),
-        "event_type": "capture_confirmed",
-        "credited": True,
-        "property_id": clean_id(property_doc.get("_id")),
-        "assignment_cycle_id": cycle_id,
-        "actor_user_id": actor_user_id,
-        "actor_name_snapshot": actor_user.get("nombre") or "",
-        "occurred_at": occurred_at.astimezone(timezone.utc),
-        "local_date": local.date().isoformat(),
-        "timezone": DEFAULT_TIMEZONE,
-        "source_event_id": source_event_id,
-        "source_system": "captacion_crm",
-        "migration_version": LEDGER_VERSION,
-        "legacy_inferred": False,
-    }
-    write = db[LEDGER_COLLECTION].update_one(
-        {"source_event_id": source_event_id}, {"$setOnInsert": event}, upsert=True
+    return record_manual_management_decision(
+        db,
+        property_doc=property_doc,
+        actor_user=actor_user,
+        status="Captado",
+        previous_status=None,
+        notes=None,
+        now=now,
     )
-    if getattr(write, "upserted_id", None):
-        recalculate_daily_metric(db, actor_user_id, local.date(), now=occurred_at)
-    return event
 
 
 def reverse_management_event(db, *, event_id, actor_user: dict, reason, now=None) -> dict:

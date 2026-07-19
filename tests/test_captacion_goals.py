@@ -2,7 +2,8 @@ from datetime import datetime
 
 import pytz
 
-from captacion_goals import CAPTACION_DAILY_GOAL, CAPTACION_WEEKLY_GOAL, build_captacion_goal_dashboard, can_manage_captacion, is_valid_captacion_action
+from captacion_goals import CAPTACION_DAILY_GOAL, CAPTACION_WEEKLY_GOAL, build_captacion_goal_dashboard, can_manage_captacion
+from captacion_management import evaluate_manual_decision
 
 
 CHILE = pytz.timezone("America/Santiago")
@@ -16,14 +17,12 @@ def _rows(actor, day, count, prefix="p"):
     return [{"actor": actor, "property_id": f"{prefix}-{index}", "occurred_at": _at(day, 9 + index % 8)} for index in range(count)]
 
 
-def test_only_real_commercial_actions_are_valid():
-    assert is_valid_captacion_action("call_initiated", "tel")
-    assert is_valid_captacion_action("message_sent", "wa")
-    assert is_valid_captacion_action("message_sent", "email")
-    assert is_valid_captacion_action("manual_contact", "manual", message="Contacto registrado")
-    assert not is_valid_captacion_action("status_changed", "crm")
-    assert not is_valid_captacion_action("assignment_changed", "crm")
-    assert not is_valid_captacion_action("manual_contact", "manual")
+def test_only_meaningful_manual_decisions_are_valid():
+    assert evaluate_manual_decision(status="Contacto exitoso", previous_status="Por contactar")["eligible"]
+    assert evaluate_manual_decision(status="En gestion", previous_status="Por contactar", notes="Llamar manana")["eligible"]
+    assert not evaluate_manual_decision(status="Por contactar", previous_status="Disponible")["eligible"]
+    assert not evaluate_manual_decision(status="Disponible", previous_status="Por contactar")["eligible"]
+    assert not evaluate_manual_decision(status="Captado", previous_status="Por contactar", is_automatic=True)["eligible"]
 
 
 def test_daily_dedup_is_property_actor_and_local_day():
@@ -53,6 +52,18 @@ def test_weekend_activity_is_additional_and_does_not_compensate():
     assert result["week_count"] == 0
     assert result["weekend_activity"] == 12
     assert result["today_goal"] == 0
+
+
+def test_sunday_has_no_daily_goal_but_preserves_the_workweek():
+    rows = _rows("Ana", 13, 10, "mon") + _rows("Ana", 14, 4, "tue")
+    result = build_captacion_goal_dashboard([{"name": "Ana"}], rows, "Ana", now=_at(19))
+    assert result["today_status"] == "SIN_META"
+    assert result["today_reason"] == "Domingo"
+    assert result["week_goal"] == 50
+    assert result["week_count"] == 14
+    assert result["daily"][0]["status"] == "CUMPLIDO"
+    assert result["daily"][1]["status"] == "INCUMPLIDO"
+    assert all(day["status"] != "EXENTO" for day in result["daily"])
 
 
 def test_team_goal_uses_only_active_capture_members_supplied():

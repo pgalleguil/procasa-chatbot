@@ -7,6 +7,7 @@ VISIBLE_CLASSIFICATION_STATES = ("DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO")
 AVAILABLE_STATES = ("NUEVO", "DETECTADO", None, "")
 MANAGEMENT_STATES = (
     "Por contactar",
+    "En gestión",
     "Contacto exitoso",
     "Sin respuesta",
     "Reunión agendada",

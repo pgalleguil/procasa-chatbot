@@ -22,8 +22,9 @@ from owner_confidence import (
 from captacion_goals import can_manage_captacion
 from captacion_management import (
     confirm_management_attempt,
+    evaluate_manual_decision,
     new_assignment_cycle,
-    record_capture_event,
+    record_manual_management_decision,
     start_management_attempt,
 )
 
@@ -816,7 +817,7 @@ def get_captacion_detail(obj_id):
     notas_contacto = doc.get("notas_contacto") or ""
     
     pipeline_stages = [
-        "Por contactar", "Contacto exitoso", "Sin respuesta", "Teléfono inválido",
+        "Por contactar", "En gestión", "Contacto exitoso", "Sin respuesta", "Teléfono inválido",
         "Corredor", "Propiedad no disponible", "Publicación expirada", "No interesado",
         "Reunión agendada", "Captado", "Descartado"
     ]
@@ -946,6 +947,13 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
 
         
     old_status = current_doc.get("gestion", {}).get("estado_captacion") or current_doc.get("gestion", {}).get("estado") or "NUEVO"
+    manual_decision = evaluate_manual_decision(
+        status=status,
+        previous_status=old_status,
+        notes=notes,
+        outcome=outcome,
+        is_automatic=not bool(user_doc),
+    )
     
     # 1. Preparar campos de actualización de alto nivel
     update_fields = {
@@ -1032,8 +1040,17 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         {"_id": current_doc["_id"]},
         update_params
     )
-    if status in CAPTURED_STATES and old_status not in CAPTURED_STATES and user_doc:
-        record_capture_event(db, property_doc=current_doc, actor_user=user_doc, now=now)
+    if user_doc and manual_decision.get("eligible"):
+        record_manual_management_decision(
+            db,
+            property_doc=current_doc,
+            actor_user=user_doc,
+            status=status,
+            previous_status=old_status,
+            notes=notes,
+            outcome=outcome,
+            now=now,
+        )
     _invalidate_detail_cache(obj_id)
     
     # Precomputación SaaS: Actualizar métricas de captación

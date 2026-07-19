@@ -116,6 +116,74 @@ def test_contact_effective_is_separate_from_managed_property():
     assert db[management.LEDGER_COLLECTION].rows[0]["contact_effective"] is True
 
 
+@pytest.mark.parametrize("status,result", [("Corredor", "broker_identified"), ("Descartado", "discarded")])
+def test_manual_commercial_conclusion_with_reason_credits(status, result):
+    db = _Db()
+    saved = management.record_manual_management_decision(
+        db,
+        property_doc=_property(),
+        actor_user=_user(),
+        status=status,
+        previous_status="Por contactar",
+        notes="Motivo comercial confirmado",
+        now=datetime(2026, 7, 20, 12, tzinfo=timezone.utc),
+    )
+    assert saved["credited"] is True
+    assert db[management.LEDGER_COLLECTION].rows[0]["result"] == result
+
+
+def test_in_progress_requires_context_and_capture_is_a_managed_property():
+    assert not management.evaluate_manual_decision(
+        status="En gestion", previous_status="Por contactar", notes=""
+    )["eligible"]
+    assert management.evaluate_manual_decision(
+        status="En gestion", previous_status="Por contactar", notes="Seguimiento acordado"
+    )["eligible"]
+    db = _Db()
+    captured = management.record_manual_management_decision(
+        db,
+        property_doc=_property(),
+        actor_user=_user(),
+        status="Captado",
+        previous_status="En gestion",
+        now=datetime(2026, 7, 20, 12, tzinfo=timezone.utc),
+    )
+    assert captured["credited"] is True
+    assert captured["capture"] is True
+    assert db[management.LEDGER_COLLECTION].rows[0]["event_type"] == "capture_confirmed"
+
+
+@pytest.mark.parametrize("status", ["Corredor", "Descartado"])
+def test_conclusions_requiring_evidence_reject_an_empty_reason(status):
+    with pytest.raises(ValueError, match="motivo"):
+        management.evaluate_manual_decision(status=status, previous_status="Por contactar", notes="")
+
+
+def test_non_commercial_and_automatic_changes_never_credit():
+    assert not management.evaluate_manual_decision(status="Por contactar", previous_status="Disponible")["eligible"]
+    assert not management.evaluate_manual_decision(status="assignment_changed", previous_status="Por contactar")["eligible"]
+    assert not management.evaluate_manual_decision(status="reassignment_changed", previous_status="Por contactar")["eligible"]
+    assert not management.evaluate_manual_decision(
+        status="Captado", previous_status="Por contactar", is_automatic=True
+    )["eligible"]
+
+
+def test_manual_decisions_keep_one_credit_per_property_user_and_day():
+    db = _Db()
+    now = datetime(2026, 7, 20, 12, tzinfo=timezone.utc)
+    first = management.record_manual_management_decision(
+        db, property_doc=_property(), actor_user=_user(), status="Contacto exitoso",
+        previous_status="Por contactar", now=now,
+    )
+    second = management.record_manual_management_decision(
+        db, property_doc=_property(), actor_user=_user(), status="Descartado",
+        previous_status="Contacto exitoso", notes="Propietario no continuarÃ¡", now=now,
+    )
+    assert first["credited"] is True
+    assert second["credited"] is False
+    assert len(db[management.LEDGER_COLLECTION].rows) == 1
+
+
 def test_reversal_appends_event_without_editing_original():
     db = _Db()
     original = {

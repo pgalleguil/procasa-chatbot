@@ -16,7 +16,14 @@ from captacion_workforce import (
     compliance_status,
     get_active_captacion_team as get_explicit_captacion_team,
 )
-from captacion_management import ANOMALY_COLLECTION, DAILY_METRICS_COLLECTION, ensure_management_indexes
+from captacion_management import (
+    ANOMALY_COLLECTION,
+    DAILY_METRICS_COLLECTION,
+    VALID_CREDIT_EVENT_TYPES,
+    ensure_management_indexes,
+    normalize_result,
+    normalize_started_action,
+)
 
 
 CAPTACION_TIMEZONE = pytz.timezone("America/Santiago")
@@ -37,15 +44,10 @@ LEGACY_CONFIRMED_RESULTS = {
     "sin respuesta", "ocupado", "número inválido", "contactado", "solicita llamada posterior", "mensaje enviado",
 }
 
-VALID_CAPTACION_ACTIONS = {
-    ("call_initiated", "tel"),
-    ("message_sent", "wa"),
-    ("message_sent", "whatsapp"),
-    ("message_sent", "email"),
-    ("manual_contact", "manual"),
-}
-
 DAY_LABELS = ("Lun", "Mar", "Mié", "Jue", "Vie")
+
+
+DAY_NAMES = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
 
 
 def _clean(value) -> str:
@@ -72,11 +74,12 @@ def is_captacion_workday(value: datetime) -> bool:
 
 
 def is_valid_captacion_action(action, channel, result=None, message=None) -> bool:
-    pair = (_clean(action).lower(), _clean(channel).lower())
-    if pair not in VALID_CAPTACION_ACTIONS:
+    """Compatibilidad: valida contra la lista central y exige resultado confirmado."""
+    try:
+        normalize_started_action(action, channel)
+        normalize_result(result)
+    except ValueError:
         return False
-    if pair == ("manual_contact", "manual"):
-        return bool(_clean(result) or _clean(message))
     return True
 
 
@@ -120,33 +123,9 @@ def record_valid_captacion_management(
     actor_email=None,
 ) -> bool:
     """Inserta el crédito diario una sola vez por propiedad y ejecutivo."""
-    if not _clean(property_id) or not _clean(actor):
-        return False
-    if not is_valid_captacion_action(action, channel, result=result, message=message):
-        return False
-
-    local = _as_chile_datetime(occurred_at)
-    dedup_key = management_dedup_key(property_id, actor, local)
-    event = {
-        "dedup_key": dedup_key,
-        "property_id": _clean(property_id),
-        "actor": _clean(actor),
-        "actor_key": _name_key(actor),
-        "actor_id": _clean(actor_id),
-        "actor_email": _clean(actor_email).casefold(),
-        "action": _clean(action).lower(),
-        "channel": _clean(channel).lower(),
-        "result": _clean(result),
-        "occurred_at": local.astimezone(timezone.utc),
-        "local_date": local.date().isoformat(),
-        "timezone": "America/Santiago",
-    }
-    result_doc = db[CAPTACION_GOAL_COLLECTION].update_one(
-        {"dedup_key": dedup_key},
-        {"$setOnInsert": event},
-        upsert=True,
-    )
-    return bool(getattr(result_doc, "upserted_id", None))
+    # Ruta legacy clausurada: los crÃ©ditos nuevos se escriben exclusivamente
+    # desde captacion_management con user_id, evento versionado y confirmaciÃ³n.
+    return False
 
 
 def ensure_captacion_goal_indexes(db) -> None:
@@ -194,7 +173,7 @@ def get_captacion_management_rows(db, now=None) -> list[dict]:
     rows = []
     ledger_query = {
         "occurred_at": {"$gte": start_utc, "$lt": end_utc},
-        "event_type": "management_confirmed",
+        "event_type": {"$in": list(VALID_CREDIT_EVENT_TYPES)},
         "credited": True,
     }
     ledger = list(db[CAPTACION_GOAL_COLLECTION].find(
@@ -313,6 +292,8 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
         today_count = today_info["count"] if today_info else 0
         today_target = today_info["target"] if today_info else 0
         is_workday = bool(today_info and today_target > 0)
+        today_status = today_info["status"] if today_info else "SIN_META"
+        today_reason = today_info.get("reason") if today_info else DAY_NAMES[today.weekday()]
         return {
             "user_id": _clean(member.get("id")),
             "name": display_name,
@@ -322,8 +303,8 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
             "today_remaining": max(0, today_target - today_count) if today_target else 0,
             "met_today": bool(is_workday and today_count >= today_target),
             "is_workday": is_workday,
-            "today_status": today_info["status"] if today_info else "EXENTO",
-            "today_reason": today_info.get("reason") if today_info else "Día no laborable",
+            "today_status": today_status,
+            "today_reason": today_reason,
             "week_count": week_total,
             "week_goal": week_goal,
             "week_percent": round(week_total * 100 / week_goal, 1) if week_goal else 0,

@@ -205,6 +205,34 @@ def backup_ledger(db) -> Path:
     return path
 
 
+def reconcile_first_action(db, event: dict, prop: dict) -> None:
+    """Completa la primera gestión histórica sin retroceder la última gestión."""
+    occurred_at = event["occurred_at"]
+    db["captacion_assignment_cycles"].update_one(
+        {
+            "assignment_cycle_id": event["assignment_cycle_id"],
+            "$or": [
+                {"first_valid_action_at": {"$exists": False}},
+                {"first_valid_action_at": None},
+                {"first_valid_action_at": {"$gt": occurred_at}},
+            ],
+        },
+        {"$set": {"first_valid_action_at": occurred_at}},
+    )
+    Config.get_captacion_collection(db).update_one(
+        {
+            "_id": prop["_id"],
+            "gestion.assignment_cycle_id": event["assignment_cycle_id"],
+            "$or": [
+                {"gestion.first_valid_action_at": {"$exists": False}},
+                {"gestion.first_valid_action_at": None},
+                {"gestion.first_valid_action_at": {"$gt": occurred_at}},
+            ],
+        },
+        {"$set": {"gestion.first_valid_action_at": occurred_at}},
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--actor", default="Susana Ensignia")
@@ -223,10 +251,13 @@ def main() -> None:
         already_migrated = 0
         daily_deduplicated = 0
         affected_days = set()
+        reconciled_cycles = set()
         for row in verified:
             existing_source = db[LEDGER_COLLECTION].find_one({"source_event_id": row["source_event_id"]})
             if existing_source:
                 already_migrated += 1
+                reconcile_first_action(db, existing_source, row["property"])
+                reconciled_cycles.add(existing_source.get("assignment_cycle_id"))
                 continue
             event = build_ledger_event(row, user)
             if db[LEDGER_COLLECTION].find_one({"dedup_key": event["dedup_key"], "credited": True}):
@@ -239,6 +270,8 @@ def main() -> None:
             if getattr(write, "upserted_id", None):
                 inserted += 1
                 affected_days.add(event["local_date"])
+                reconcile_first_action(db, event, row["property"])
+                reconciled_cycles.add(event["assignment_cycle_id"])
         for local_day in sorted(affected_days):
             recalculate_daily_metric(db, report["actor_user_id"], local_day)
         report.update({
@@ -246,6 +279,7 @@ def main() -> None:
             "already_migrated": already_migrated,
             "daily_deduplicated": daily_deduplicated,
             "recalculated_days": sorted(affected_days),
+            "assignment_cycles_reconciled": len(reconciled_cycles),
         })
 
     report_path = Path(args.report) if args.report else Path("reports") / f"captacion_manual_decisions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"

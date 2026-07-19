@@ -20,7 +20,8 @@ def _rows(actor, day, count, prefix="p"):
 def test_only_meaningful_manual_decisions_are_valid():
     assert evaluate_manual_decision(status="Contacto exitoso", previous_status="Por contactar")["eligible"]
     assert evaluate_manual_decision(status="En gestion", previous_status="Por contactar", notes="Llamar manana")["eligible"]
-    assert not evaluate_manual_decision(status="Por contactar", previous_status="Disponible")["eligible"]
+    assert evaluate_manual_decision(status="Por contactar", previous_status="Disponible")["eligible"]
+    assert not evaluate_manual_decision(status="Por contactar", previous_status="Por contactar")["eligible"]
     assert not evaluate_manual_decision(status="Disponible", previous_status="Por contactar")["eligible"]
     assert not evaluate_manual_decision(status="Captado", previous_status="Por contactar", is_automatic=True)["eligible"]
 
@@ -102,13 +103,14 @@ def test_user_id_is_primary_for_attribution_and_daily_states_are_explicit():
         "id": "u1",
         "name": "Ana",
         "day_targets": targets,
-        "daily_metrics": {"2026-07-15": {"effective_contacts": 3, "captures": 1}},
+        "daily_metrics": {"2026-07-15": {"contact_attempts": 5, "effective_contacts": 3, "captures": 1}},
         "anomaly_count": 2,
     }]
     rows = [{"actor": "Nombre antiguo", "actor_user_id": "u1", "property_id": f"p-{index}", "occurred_at": _at(15)} for index in range(7)]
     result = build_captacion_goal_dashboard(team, rows, "Ana", now=_at(15, 18))
     assert result["today_count"] == 7
     assert result["today_status"] == "EN_PROGRESO"
+    assert result["contact_attempts"] == 5
     assert result["effective_contacts"] == 3
     assert result["captures"] == 1
     assert result["anomaly_count"] == 2

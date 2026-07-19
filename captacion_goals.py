@@ -314,6 +314,9 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
             "daily": daily,
             "weekend_activity": len(weekend_activity[identity_key]) or len(weekend_activity[name_key]),
             "last_activity": last_activity.get(identity_key) or last_activity.get(name_key),
+            "contact_attempts": sum(
+                int(metric.get("contact_attempts") or 0) for metric in (member.get("daily_metrics") or {}).values()
+            ),
             "effective_contacts": sum(
                 int(metric.get("effective_contacts") or 0) for metric in (member.get("daily_metrics") or {}).values()
             ),
@@ -346,6 +349,7 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
         "days_person_goal": sum(row["days_goal"] for row in team_rows),
         "expected_to_date": sum(row["expected_to_date"] for row in team_rows),
         "weekend_activity": sum(row["weekend_activity"] for row in team_rows),
+        "contact_attempts": sum(row["contact_attempts"] for row in team_rows),
         "effective_contacts": sum(row["effective_contacts"] for row in team_rows),
         "captures": sum(row["captures"] for row in team_rows),
         "anomaly_count": sum(row["anomaly_count"] for row in team_rows),

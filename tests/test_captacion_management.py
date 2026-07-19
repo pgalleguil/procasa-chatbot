@@ -160,12 +160,108 @@ def test_conclusions_requiring_evidence_reject_an_empty_reason(status):
 
 
 def test_non_commercial_and_automatic_changes_never_credit():
-    assert not management.evaluate_manual_decision(status="Por contactar", previous_status="Disponible")["eligible"]
     assert not management.evaluate_manual_decision(status="assignment_changed", previous_status="Por contactar")["eligible"]
     assert not management.evaluate_manual_decision(status="reassignment_changed", previous_status="Por contactar")["eligible"]
     assert not management.evaluate_manual_decision(
         status="Captado", previous_status="Por contactar", is_automatic=True
     )["eligible"]
+
+
+def test_manual_ready_to_contact_transition_credits_without_contact_metrics():
+    db = _Db()
+    prop = _property()
+    prop["gestion"]["assignment_cycle_id"] = "cycle-1"
+    saved = management.record_manual_management_decision(
+        db,
+        property_doc=prop,
+        actor_user=_user(),
+        status="Por contactar",
+        previous_status="NUEVO",
+        now=datetime(2026, 7, 20, 12, tzinfo=timezone.utc),
+    )
+    assert saved["credited"] is True
+    event = db[management.LEDGER_COLLECTION].rows[0]
+    assert event["result"] == "ready_to_contact"
+    assert event["contact_attempt"] is False
+    assert event["contact_effective"] is False
+    assert event["event_type"] == "manual_decision_confirmed"
+    assert management.summarize_management_metrics([event]) == {
+        "managed_properties": 1,
+        "contact_attempts": 0,
+        "effective_contacts": 0,
+        "captures": 0,
+    }
+
+
+def test_automatic_or_unchanged_ready_to_contact_never_credits():
+    assert not management.evaluate_manual_decision(
+        status="Por contactar", previous_status="NUEVO", is_automatic=True
+    )["eligible"]
+    unchanged = management.evaluate_manual_decision(
+        status="Por contactar", previous_status="Por contactar"
+    )
+    assert unchanged == {
+        "eligible": False,
+        "reason": "real_transition_required",
+        "status": "por contactar",
+    }
+
+
+def test_ready_to_contact_credits_only_once_per_assignment_cycle():
+    db = _Db()
+    prop = _property()
+    prop["gestion"]["assignment_cycle_id"] = "cycle-1"
+    first = management.record_manual_management_decision(
+        db, property_doc=prop, actor_user=_user(), status="Por contactar", previous_status="NUEVO",
+        now=datetime(2026, 7, 20, 12, tzinfo=timezone.utc),
+    )
+    repeated = management.record_manual_management_decision(
+        db, property_doc=prop, actor_user=_user(), status="Por contactar", previous_status="Descartado",
+        now=datetime(2026, 7, 21, 12, tzinfo=timezone.utc),
+    )
+    assert first["credited"] is True
+    assert repeated == {
+        "status": "not_credited",
+        "credited": False,
+        "reason": "assignment_cycle_decision_already_recorded",
+    }
+    assert len(db[management.LEDGER_COLLECTION].rows) == 1
+
+
+def test_new_assignment_cycle_allows_a_new_ready_to_contact_decision():
+    db = _Db()
+    first_prop = _property()
+    first_prop["gestion"]["assignment_cycle_id"] = "cycle-1"
+    second_prop = _property()
+    second_prop["gestion"]["assignment_cycle_id"] = "cycle-2"
+    first = management.record_manual_management_decision(
+        db, property_doc=first_prop, actor_user=_user(), status="Por contactar", previous_status="NUEVO",
+        now=datetime(2026, 7, 20, 12, tzinfo=timezone.utc),
+    )
+    second = management.record_manual_management_decision(
+        db, property_doc=second_prop, actor_user=_user(), status="Por contactar", previous_status="NUEVO",
+        now=datetime(2026, 7, 21, 12, tzinfo=timezone.utc),
+    )
+    assert first["credited"] is True
+    assert second["credited"] is True
+    assert {row["assignment_cycle_id"] for row in db[management.LEDGER_COLLECTION].rows} == {"cycle-1", "cycle-2"}
+
+
+def test_second_action_same_day_does_not_duplicate_ready_to_contact_credit():
+    db = _Db()
+    prop = _property()
+    prop["gestion"]["assignment_cycle_id"] = "cycle-1"
+    now = datetime(2026, 7, 20, 12, tzinfo=timezone.utc)
+    first = management.record_manual_management_decision(
+        db, property_doc=prop, actor_user=_user(), status="Por contactar", previous_status="NUEVO", now=now,
+    )
+    second = management.record_manual_management_decision(
+        db, property_doc=prop, actor_user=_user(), status="Contacto exitoso",
+        previous_status="Por contactar", now=now,
+    )
+    assert first["credited"] is True
+    assert second["credited"] is False
+    assert len(db[management.LEDGER_COLLECTION].rows) == 1
 
 
 def test_manual_decisions_keep_one_credit_per_property_user_and_day():

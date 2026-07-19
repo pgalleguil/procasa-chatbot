@@ -1202,9 +1202,9 @@
             <div>
                 <div class="captacion-goal-columns">
                     <div class="captacion-goal-block">
-                        <div class="captacion-goal-label">Hoy</div>
+                        <div class="captacion-goal-label">Propiedades gestionadas hoy</div>
                         {% if captacion_goal.is_workday %}
-                        <div class="captacion-goal-number">{{ captacion_goal.today_count }} <small>de {{ captacion_goal.today_goal }} propiedades gestionadas hoy</small></div>
+                        <div class="captacion-goal-number">{{ captacion_goal.today_count }} <small>de {{ captacion_goal.today_goal }}</small></div>
                         <div class="captacion-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [captacion_goal.today_percent, 100]|min }}">
                             <span class="captacion-goal-progress" style="width: {{ [captacion_goal.today_percent, 100]|min }}%"></span>
                         </div>
@@ -1217,6 +1217,7 @@
                         <div class="captacion-goal-status">La actividad se registra sin generar incumplimiento.</div>
                         {% endif %}
                         <div class="captacion-goal-help"><i class="fa-solid fa-circle-info me-1"></i>Cada propiedad cuenta una vez por ejecutivo durante el día, aunque tenga varias acciones.</div>
+                        <div class="captacion-progress-legend">Semana: {{ captacion_goal.contact_attempts }} intentos de contacto · {{ captacion_goal.effective_contacts }} contactos efectivos · {{ captacion_goal.captures }} captaciones</div>
                     </div>
                     <div class="captacion-goal-block">
                         <div class="captacion-goal-label">Semana</div>
@@ -1238,9 +1239,9 @@
             {% else %}
             <div class="captacion-goal-columns">
                 <div class="captacion-goal-block">
-                    <div class="captacion-goal-label">Equipo hoy</div>
+                    <div class="captacion-goal-label">Propiedades gestionadas hoy · Equipo</div>
                     {% if captacion_goal.today_goal %}
-                    <div class="captacion-goal-number">{{ captacion_goal.today_count }} <small>de {{ captacion_goal.today_goal }} propiedades gestionadas hoy</small></div>
+                    <div class="captacion-goal-number">{{ captacion_goal.today_count }} <small>de {{ captacion_goal.today_goal }}</small></div>
                     {% set team_today_pct = ((captacion_goal.today_count * 100 / captacion_goal.today_goal)|round(1)) if captacion_goal.today_goal else 0 %}
                     <div class="captacion-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [team_today_pct, 100]|min }}">
                         <span class="captacion-goal-progress" style="width: {{ [team_today_pct, 100]|min }}%"></span>
@@ -1260,7 +1261,7 @@
                 <summary>Ver cumplimiento por ejecutivo ({{ captacion_goal.member_count }})</summary>
                 <div style="overflow-x:auto">
                     <table class="captacion-team-table">
-                        <thead><tr><th>Ejecutivo</th><th>Hoy</th><th>Estado</th><th>Semana</th><th>Días</th><th>Contactos</th><th>Captaciones</th><th>Alertas</th><th>Última gestión</th></tr></thead>
+                        <thead><tr><th>Ejecutivo</th><th>Hoy</th><th>Estado</th><th>Semana</th><th>Días</th><th>Intentos</th><th>Contactos efectivos</th><th>Captaciones</th><th>Alertas</th><th>Última gestión</th></tr></thead>
                         <tbody>
                         {% for executive in captacion_goal.executives %}
                         <tr>
@@ -1269,6 +1270,7 @@
                             <td class="{% if executive.today_status == 'CUMPLIDO' %}goal-met{% elif executive.today_status == 'INCUMPLIDO' %}goal-zero{% else %}goal-pending{% endif %}">{{ executive.today_status|replace('_', ' ')|title }}</td>
                             <td>{{ executive.week_count }} / {{ executive.week_goal }}</td>
                             <td>{{ executive.days_met }} / {{ executive.days_goal }}</td>
+                            <td>{{ executive.contact_attempts }}</td>
                             <td>{{ executive.effective_contacts }}</td>
                             <td>{{ executive.captures }}</td>
                             <td>{% if executive.anomaly_count %}<span class="goal-zero">{{ executive.anomaly_count }} pendiente(s)</span>{% else %}0{% endif %}</td>

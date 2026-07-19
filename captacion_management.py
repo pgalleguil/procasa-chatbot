@@ -54,11 +54,20 @@ VALID_CREDIT_EVENT_TYPES = {
 # Fuente Ãºnica de verdad para decisiones manuales que representan trabajo
 # comercial real. El frontend no decide si una acciÃ³n acredita la meta.
 MANUAL_DECISION_RULES = {
+    "por contactar": {
+        "result": "ready_to_contact",
+        "once_per_assignment_cycle": True,
+        "requires_transition": True,
+    },
     "en gestion": {"result": "in_progress", "requires_context": True},
-    "contacto exitoso": {"result": "contacted", "contact_effective": True},
-    "sin respuesta": {"result": "no_answer"},
-    "telefono invalido": {"result": "invalid_number"},
-    "reunion agendada": {"result": "callback_requested", "contact_effective": True},
+    "contacto exitoso": {"result": "contacted", "contact_attempt": True, "contact_effective": True},
+    "sin respuesta": {"result": "no_answer", "contact_attempt": True},
+    "telefono invalido": {"result": "invalid_number", "contact_attempt": True},
+    "reunion agendada": {
+        "result": "callback_requested",
+        "contact_attempt": True,
+        "contact_effective": True,
+    },
     "corredor": {"result": "broker_identified", "requires_evidence": True},
     "descartado": {"result": "discarded", "requires_evidence": True},
     "captado": {"result": "captured", "capture": True},
@@ -147,6 +156,8 @@ def evaluate_manual_decision(*, status, previous_status=None, notes=None, outcom
         return {"eligible": False, "reason": "status_not_creditable", "status": normalized_status}
     if rule.get("requires_evidence") and len(evidence) < MIN_MANUAL_EVIDENCE_LENGTH:
         raise ValueError(f"Debes registrar un motivo de al menos {MIN_MANUAL_EVIDENCE_LENGTH} caracteres")
+    if rule.get("requires_transition") and not changed:
+        return {"eligible": False, "reason": "real_transition_required", "status": normalized_status}
     if rule.get("requires_context") and not evidence:
         return {"eligible": False, "reason": "context_required", "status": normalized_status}
     if not changed and not evidence:
@@ -156,6 +167,7 @@ def evaluate_manual_decision(*, status, previous_status=None, notes=None, outcom
         "reason": None,
         "status": normalized_status,
         "result": rule["result"],
+        "contact_attempt": bool(rule.get("contact_attempt")),
         "contact_effective": bool(rule.get("contact_effective")),
         "capture": bool(rule.get("capture")),
         "evidence": evidence,
@@ -309,6 +321,7 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
         "action": attempt["action"],
         "channel": attempt["channel"],
         "result": result_value,
+        "contact_attempt": True,
         "notes": str(notes or ""),
         "contact_effective": result_value in CONTACT_EFFECTIVE_RESULTS,
         "occurred_at": occurred_at.astimezone(timezone.utc),
@@ -386,6 +399,19 @@ def record_manual_management_decision(
     event_id = str(uuid.uuid4())
     event_type = "capture_confirmed" if decision["capture"] else "manual_decision_confirmed"
     cycle_id = ensure_assignment_cycle(db, property_doc)
+    rule = MANUAL_DECISION_RULES[decision["status"]]
+    if rule.get("once_per_assignment_cycle") and db[LEDGER_COLLECTION].find_one({
+        "property_id": property_id,
+        "actor_user_id": actor_user_id,
+        "assignment_cycle_id": cycle_id,
+        "result": decision["result"],
+        "event_type": "manual_decision_confirmed",
+    }):
+        return {
+            "status": "not_credited",
+            "credited": False,
+            "reason": "assignment_cycle_decision_already_recorded",
+        }
     event = {
         "event_id": event_id,
         "event_type": event_type,
@@ -402,6 +428,7 @@ def record_manual_management_decision(
         "status_snapshot": str(status or ""),
         "previous_status_snapshot": str(previous_status or ""),
         "notes": decision["evidence"],
+        "contact_attempt": decision["contact_attempt"],
         "contact_effective": decision["contact_effective"],
         "occurred_at": occurred_at.astimezone(timezone.utc),
         "local_date": local.date().isoformat(),
@@ -487,6 +514,24 @@ def _active_credited_events(db, user_id, local_day: date) -> list[dict]:
     return [row for row in rows if row.get("event_id") not in reversed_ids]
 
 
+def summarize_management_metrics(events: list[dict]) -> dict:
+    """Separa las cuatro métricas comerciales usando propiedades únicas."""
+    managed = {row["property_id"] for row in events}
+    attempts = {
+        row["property_id"]
+        for row in events
+        if row.get("event_type") == "management_confirmed" or row.get("contact_attempt")
+    }
+    contacts = {row["property_id"] for row in events if row.get("contact_effective")}
+    captures = {row["property_id"] for row in events if row.get("event_type") == "capture_confirmed"}
+    return {
+        "managed_properties": len(managed),
+        "contact_attempts": len(attempts),
+        "effective_contacts": len(contacts),
+        "captures": len(captures),
+    }
+
+
 def recalculate_daily_metric(db, user_id, local_day: date | str, now=None) -> dict:
     ensure_management_indexes(db)
     local_day = date.fromisoformat(local_day) if isinstance(local_day, str) else local_day
@@ -495,12 +540,10 @@ def recalculate_daily_metric(db, user_id, local_day: date | str, now=None) -> di
         "target": 0, "exempt": True, "reason": "Sin membresía activa", "close_hour": 19
     }
     events = _active_credited_events(db, user_id, local_day)
-    managed = {row["property_id"] for row in events}
-    contacts = {row["property_id"] for row in events if row.get("contact_effective")}
-    captures = {row["property_id"] for row in events if row.get("event_type") == "capture_confirmed"}
+    counts = summarize_management_metrics(events)
     timestamp = now or datetime.now(timezone.utc)
     status = compliance_status(
-        count=len(managed),
+        count=counts["managed_properties"],
         target=target_info["target"],
         local_day=local_day,
         now=localize(timestamp, (membership or {}).get("timezone") or DEFAULT_TIMEZONE),
@@ -510,9 +553,7 @@ def recalculate_daily_metric(db, user_id, local_day: date | str, now=None) -> di
     metric = {
         "user_id": clean_id(user_id),
         "local_date": local_day.isoformat(),
-        "managed_properties": len(managed),
-        "effective_contacts": len(contacts),
-        "captures": len(captures),
+        **counts,
         "target": target_info["target"],
         "compliance_status": status,
         "target_reason": target_info.get("reason"),

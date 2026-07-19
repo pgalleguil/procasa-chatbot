@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -47,7 +47,8 @@ def build_plan(db) -> list[dict]:
         assigned_at = ((first or {}).get("gestion") or {}).get("fecha_asignacion")
         if not assigned_at:
             continue
-        inferred = local_date(assigned_at)
+        assigned_day = datetime.fromisoformat(local_date(assigned_at)).date()
+        inferred = (assigned_day - timedelta(days=assigned_day.weekday())).isoformat()
         current = str(membership.get("start_date") or "")
         if current and inferred >= current:
             continue
@@ -56,7 +57,7 @@ def build_plan(db) -> list[dict]:
             "name": name,
             "previous_start_date": current,
             "inferred_start_date": inferred,
-            "evidence": "gestion.fecha_asignacion",
+            "evidence": "semana_laboral_de_gestion.fecha_asignacion",
         })
     return plan
 

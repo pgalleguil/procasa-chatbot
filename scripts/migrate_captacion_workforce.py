@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -34,7 +34,10 @@ def infer_start_date(db, user: dict, fallback: str) -> str:
         return fallback
     if assigned_at.tzinfo is None:
         assigned_at = assigned_at.replace(tzinfo=timezone.utc)
-    return assigned_at.astimezone(CHILE).date().isoformat()
+    assigned_day = assigned_at.astimezone(CHILE).date()
+    # La meta se evalúa por semana laboral completa. La primera asignación
+    # identifica la semana de incorporación, no un día exento dentro de ella.
+    return (assigned_day - timedelta(days=assigned_day.weekday())).isoformat()
 
 
 def build_plan(db, start_date: str | None) -> list[dict]:

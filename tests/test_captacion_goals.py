@@ -114,3 +114,29 @@ def test_user_id_is_primary_for_attribution_and_daily_states_are_explicit():
     assert result["effective_contacts"] == 3
     assert result["captures"] == 1
     assert result["anomaly_count"] == 2
+
+
+def test_team_total_includes_verified_rows_from_every_member():
+    targets = {
+        f"2026-07-{day}": {"target": 10, "exempt": False, "reason": None, "close_hour": 19}
+        for day in range(13, 18)
+    }
+    team = [
+        {"id": "u-susana", "name": "Susana", "day_targets": targets},
+        {"id": "u-mariela", "name": "Mariela", "day_targets": targets},
+        {"id": "u-paula", "name": "Paula", "day_targets": targets},
+        {"id": "u-erika", "name": "Erika", "day_targets": targets},
+    ]
+    rows = (
+        [{"actor_user_id": "u-susana", "property_id": f"s-{index}", "occurred_at": _at(16)} for index in range(5)]
+        + [{"actor_user_id": "u-mariela", "property_id": f"m-{index}", "occurred_at": _at(16)} for index in range(2)]
+        + [{"actor_user_id": "u-paula", "property_id": "p-1", "occurred_at": _at(15)}]
+    )
+    result = build_captacion_goal_dashboard(team, rows, now=_at(19))
+    by_name = {row["name"]: row for row in result["executives"]}
+    assert result["week_count"] == 8
+    assert result["week_goal"] == 200
+    assert by_name["Susana"]["week_count"] == 5
+    assert by_name["Mariela"]["week_count"] == 2
+    assert by_name["Paula"]["week_count"] == 1
+    assert by_name["Erika"]["week_count"] == 0

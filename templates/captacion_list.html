@@ -1217,7 +1217,7 @@
                         <div class="captacion-goal-status">La actividad se registra sin generar incumplimiento.</div>
                         {% endif %}
                         <div class="captacion-goal-help"><i class="fa-solid fa-circle-info me-1"></i>Cada propiedad cuenta una vez por ejecutivo durante el día, aunque tenga varias acciones.</div>
-                        <div class="captacion-progress-legend">Semana: {{ captacion_goal.contact_attempts }} intentos de contacto · {{ captacion_goal.effective_contacts }} contactos efectivos · {{ captacion_goal.captures }} captaciones</div>
+                        <div class="captacion-progress-legend">Semana: {{ captacion_goal.contact_attempts }} intento{% if captacion_goal.contact_attempts != 1 %}s{% endif %} de contacto · {{ captacion_goal.effective_contacts }} contacto{% if captacion_goal.effective_contacts != 1 %}s{% endif %} efectivo{% if captacion_goal.effective_contacts != 1 %}s{% endif %} · {{ captacion_goal.captures }} captaci{% if captacion_goal.captures == 1 %}ón{% else %}ones{% endif %}</div>
                     </div>
                     <div class="captacion-goal-block">
                         <div class="captacion-goal-label">Semana</div>

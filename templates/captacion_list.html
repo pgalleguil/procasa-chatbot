@@ -1187,9 +1187,8 @@
         <section class="captacion-progress-panel" aria-label="Meta de gestión de captación">
             <div class="captacion-progress-heading">
                 <div class="captacion-progress-title">Meta de gestión de captación</div>
-                <div class="captacion-progress-context">
+                <div class="captacion-progress-context" title="Los cálculos se realizan según la hora de Chile.">
                     {% if captacion_goal.mode == 'individual' %}{{ captacion_goal.name }}{% else %}Equipo activo de captación{% endif %}
-                    · America/Santiago
                 </div>
             </div>
 
@@ -1204,6 +1203,9 @@
                             <span class="captacion-goal-progress" style="width: {{ [captacion_goal.today_percent, 100]|min }}%"></span>
                         </div>
                         <div class="captacion-goal-status"><strong>{{ captacion_goal.today_percent }} %</strong> · Faltan {{ captacion_goal.today_remaining }}</div>
+                        {% elif captacion_goal.today_status == 'SIN_META' %}
+                        <div class="captacion-goal-number">Sin meta <small>· {{ captacion_goal.today_reason }}</small></div>
+                        <div class="captacion-goal-status">La actividad del fin de semana se registra como adicional.</div>
                         {% else %}
                         <div class="captacion-goal-number">Exento <small>{{ captacion_goal.today_reason or 'Día no laborable' }}</small></div>
                         <div class="captacion-goal-status">La actividad se registra sin generar incumplimiento.</div>
@@ -1221,7 +1223,7 @@
                     <div class="captacion-goal-day status-{{ day.status|lower }}{% if day.met %} met{% endif %}{% if day.today %} today{% endif %}{% if day.future %} future{% endif %}" title="{{ day.reason or day.status|replace('_', ' ')|title }}">
                         {{ day.label }}
                         <strong>{% if day.status == 'FUTURO' %}—{% elif day.status == 'EXENTO' %}Exento{% else %}{{ day.count }} / {{ day.target }}{% if day.met %} ✓{% endif %}{% endif %}</strong>
-                        <span class="day-status">{{ day.status|replace('_', ' ')|title }}</span>
+                        <span class="day-status">{% if day.status == 'INCUMPLIDO' %}No cumplido{% else %}{{ day.status|replace('_', ' ')|title }}{% endif %}</span>
                     </div>
                     {% endfor %}
                 </div>
@@ -1239,7 +1241,7 @@
                     </div>
                     <div class="captacion-goal-status"><strong>{{ captacion_goal.executives_met_today }} de {{ captacion_goal.member_count }}</strong> ejecutivos cumplieron · {{ captacion_goal.executives_pending_today }} pendientes</div>
                     {% else %}
-                    <div class="captacion-goal-number">Exento <small>sin meta obligatoria hoy</small></div>
+                    <div class="captacion-goal-number">Sin meta <small>· {{ captacion_goal.executives[0].today_reason if captacion_goal.executives else 'Día no laborable' }}</small></div>
                     {% endif %}
                 </div>
                 <div class="captacion-goal-block">
@@ -1320,6 +1322,7 @@
                     <option value="Captado" {% if current_estado=='Captado' %}selected{% endif %}>Captado</option>
                     <option value="Descartado" {% if current_estado=='Descartado' %}selected{% endif %}>Descartado</option>
                     <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos (Legado)</option>
+                    <option value="En gestión" {% if current_estado=='En gestión' %}selected{% endif %}>En gestión</option>
                     <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gestión (Legado)</option>
                 </select>
                 {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
@@ -1543,6 +1546,7 @@
                     <option value="Captado" {% if current_estado=='Captado' %}selected{% endif %}>Captado</option>
                     <option value="Descartado" {% if current_estado=='Descartado' %}selected{% endif %}>Descartado</option>
                     <option value="NUEVO" {% if current_estado=='NUEVO' %}selected{% endif %}>Nuevos (Legado)</option>
+                    <option value="En gestión" {% if current_estado=='En gestión' %}selected{% endif %}>En gestión</option>
                     <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gestión (Legado)</option>
                 </select>
                 {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
@@ -1600,7 +1604,7 @@
                             </td>
                             <td class="text-center" data-label="Estado">
                                 {% set e = item.estado %}
-                                {% if e in ['Por contactar', 'Contacto exitoso', 'Sin respuesta', 'Reunión agendada', 'GESTION'] %}
+                                {% if e in ['Por contactar', 'En gestión', 'Contacto exitoso', 'Sin respuesta', 'Reunión agendada', 'GESTION'] %}
                                     <span class="badge-custom badge-gestion">{{ e }}</span>
                                 {% elif e in ['Captado', 'CAPTADO'] %}
                                     <span class="badge-custom badge-captado">{{ e }}</span>

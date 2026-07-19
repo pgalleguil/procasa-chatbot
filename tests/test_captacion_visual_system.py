@@ -59,6 +59,9 @@ def test_progress_panel_uses_the_centralized_management_goal():
     assert "Cada propiedad cuenta una vez por ejecutivo durante el día" in template
     assert "day.status == 'EXENTO'" in template
     assert "day.status == 'FUTURO'" in template
+    assert "captacion_goal.today_status == 'SIN_META'" in template
+    assert "Los cálculos se realizan según la hora de Chile." in template
+    assert "· America/Santiago" not in template
     assert "executive.effective_contacts" in template
     assert "executive.anomaly_count" in template
 

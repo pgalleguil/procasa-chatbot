@@ -10,12 +10,34 @@ import argparse
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from captacion_workforce import MEMBERSHIP_COLLECTION, upsert_membership
 from chatbot.storage import get_db
+from config import Config
 
 
-def build_plan(db, start_date: str) -> list[dict]:
+CHILE = ZoneInfo("America/Santiago")
+
+
+def infer_start_date(db, user: dict, fallback: str) -> str:
+    clauses = [{"gestion.ejecutivo_id": str(user["_id"])}]
+    if user.get("nombre"):
+        clauses.append({"gestion.ejecutivo_asignado": user["nombre"]})
+    first = Config.get_captacion_collection(db).find_one(
+        {"$or": clauses, "gestion.fecha_asignacion": {"$type": "date"}},
+        {"gestion.fecha_asignacion": 1},
+        sort=[("gestion.fecha_asignacion", 1)],
+    )
+    assigned_at = ((first or {}).get("gestion") or {}).get("fecha_asignacion")
+    if not assigned_at:
+        return fallback
+    if assigned_at.tzinfo is None:
+        assigned_at = assigned_at.replace(tzinfo=timezone.utc)
+    return assigned_at.astimezone(CHILE).date().isoformat()
+
+
+def build_plan(db, start_date: str | None) -> list[dict]:
     users = db["usuarios"].find(
         {"is_active": True, "rol": "agente", "comunas_interes_norm": {"$exists": True, "$ne": []}},
         {"nombre": 1, "email": 1},
@@ -25,7 +47,7 @@ def build_plan(db, start_date: str) -> list[dict]:
             "user_id": str(user["_id"]),
             "name_snapshot": user.get("nombre") or user.get("email"),
             "enabled": True,
-            "start_date": start_date,
+            "start_date": start_date or infer_start_date(db, user, date.today().isoformat()),
             "end_date": None,
             "daily_target": 10,
             "workdays": [0, 1, 2, 3, 4],
@@ -49,7 +71,7 @@ def backup_memberships(db) -> Path:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
-    parser.add_argument("--start-date", default=date.today().isoformat())
+    parser.add_argument("--start-date", default=None, help="Override explÃ­cito; por defecto usa la primera asignaciÃ³n verificable")
     parser.add_argument("--actor-user-id", default="migration:workforce_v1")
     args = parser.parse_args()
     db = get_db()

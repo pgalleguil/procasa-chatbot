@@ -72,6 +72,21 @@ def test_full_day_exception_is_exempt_and_auditable():
     assert result["reason"] == "Vacaciones aprobadas"
 
 
+def test_active_scheduled_day_is_not_exempt_without_calendar_or_exception():
+    day = date(2026, 7, 20)
+    result = applicable_target(_Db(), _membership(), day)
+    assert result["target"] == 10
+    assert result["exempt"] is False
+    assert result["source"] == "membership"
+    assert compliance_status(
+        count=0,
+        target=result["target"],
+        local_day=day,
+        now=CHILE.localize(datetime(2026, 7, 20, 10, 0)),
+        exempt=result["exempt"],
+    ) == "EN_PROGRESO"
+
+
 def test_half_day_has_half_target():
     exception = {"_id": "e2", "type": "media_jornada", "target_override": None, "reason": "AM"}
     result = applicable_target(_Db(exception=exception), _membership(), date(2026, 7, 20))

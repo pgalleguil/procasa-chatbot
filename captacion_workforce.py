@@ -144,6 +144,17 @@ def get_user_exception(db, user_id, local_day: date) -> dict | None:
 def applicable_target(db, membership: dict, local_day: date) -> dict:
     timezone_name = membership.get("timezone") or DEFAULT_TIMEZONE
     base_target = int(membership.get("daily_target") or DEFAULT_DAILY_TARGET)
+    if not membership_is_active(membership, local_day):
+        return {
+            "target": 0,
+            "base_target": base_target,
+            "exempt": True,
+            "reason": "Fuera del período de membresía",
+            "source": "membership_period",
+            "timezone": timezone_name,
+            "close_hour": int(membership.get("close_hour") or DEFAULT_CLOSE_HOUR),
+            "exception_id": None,
+        }
     workdays = tuple(int(day) for day in membership.get("workdays") or DEFAULT_WORKDAYS)
     calendar_day = get_calendar_day(db, local_day, timezone_name)
     exception = get_user_exception(db, membership.get("user_id"), local_day)

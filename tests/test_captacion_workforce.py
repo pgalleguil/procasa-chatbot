@@ -49,6 +49,15 @@ def test_membership_period_is_explicit_and_inclusive():
     assert not membership_is_active(membership, date(2026, 8, 1))
 
 
+def test_target_is_zero_outside_membership_period():
+    membership = _membership()
+    membership["start_date"] = "2026-07-20"
+    result = applicable_target(_Db(), membership, date(2026, 7, 17))
+    assert result["target"] == 0
+    assert result["exempt"] is True
+    assert result["source"] == "membership_period"
+
+
 def test_full_day_exception_is_exempt_and_auditable():
     exception = {
         "_id": "e1",

@@ -16,6 +16,7 @@ from captacion_workforce import (
     compliance_status,
     get_active_captacion_team as get_explicit_captacion_team,
 )
+from captacion_management import ANOMALY_COLLECTION, DAILY_METRICS_COLLECTION
 
 
 CAPTACION_TIMEZONE = pytz.timezone("America/Santiago")
@@ -272,7 +273,7 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
         daily = []
         week_total = 0
         days_met = 0
-        days_goal = 0
+        days_goal = len(weekdays)
         week_goal = 0
         for index, day in enumerate(weekdays):
             count = len(counts[identity_key][day]) or len(counts[name_key][day])
@@ -290,7 +291,6 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
             target = int(target_info.get("target") or 0)
             week_total += count
             week_goal += target
-            days_goal += int(target > 0)
             met = bool(target > 0 and count >= target)
             days_met += int(met)
             daily.append(
@@ -338,6 +338,13 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
             "daily": daily,
             "weekend_activity": len(weekend_activity[identity_key]) or len(weekend_activity[name_key]),
             "last_activity": last_activity.get(identity_key) or last_activity.get(name_key),
+            "effective_contacts": sum(
+                int(metric.get("effective_contacts") or 0) for metric in (member.get("daily_metrics") or {}).values()
+            ),
+            "captures": sum(
+                int(metric.get("captures") or 0) for metric in (member.get("daily_metrics") or {}).values()
+            ),
+            "anomaly_count": int(member.get("anomaly_count") or 0),
         }
 
     if selected_key:
@@ -361,6 +368,9 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
         "days_person_goal": sum(row["days_goal"] for row in team_rows),
         "expected_to_date": sum(row["expected_to_date"] for row in team_rows),
         "weekend_activity": sum(row["weekend_activity"] for row in team_rows),
+        "effective_contacts": sum(row["effective_contacts"] for row in team_rows),
+        "captures": sum(row["captures"] for row in team_rows),
+        "anomaly_count": sum(row["anomaly_count"] for row in team_rows),
         "executives": team_rows,
     }
 
@@ -378,5 +388,19 @@ def get_captacion_goal_dashboard(db, selected_executive=None, now=None) -> dict:
             )
             for index in CAPTACION_WORKDAYS
         }
+    member_ids = [member["id"] for member in team]
+    week_dates = [(monday + timedelta(days=index)).isoformat() for index in CAPTACION_WORKDAYS]
+    metrics = list(db[DAILY_METRICS_COLLECTION].find(
+        {"user_id": {"$in": member_ids}, "local_date": {"$in": week_dates}}
+    ))
+    anomalies = list(db[ANOMALY_COLLECTION].find(
+        {"actor_user_id": {"$in": member_ids}, "local_date": {"$in": week_dates}, "status": "pending_review"},
+        {"actor_user_id": 1},
+    ))
+    for member in team:
+        member["daily_metrics"] = {
+            metric["local_date"]: metric for metric in metrics if metric.get("user_id") == member["id"]
+        }
+        member["anomaly_count"] = sum(1 for row in anomalies if row.get("actor_user_id") == member["id"])
     rows = get_captacion_management_rows(db, now=now)
     return build_captacion_goal_dashboard(team, rows, selected_executive=selected_executive, now=now)

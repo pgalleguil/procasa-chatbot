@@ -439,6 +439,13 @@
         .captacion-goal-day.met strong { color: #10b981; }
         .captacion-goal-day.today { box-shadow: 0 0 0 2px rgba(59,130,246,.18); border-color: #3b82f6; }
         .captacion-goal-day.future strong { color: var(--text-secondary); }
+        .captacion-goal-day .day-status { display: block; margin-top: 3px; font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+        .captacion-goal-day.status-exento { border-style: dashed; }
+        .captacion-goal-day.status-incumplido { border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.08); }
+        .captacion-goal-day.status-incumplido .day-status { color: #ef4444; }
+        .captacion-goal-day.status-en_progreso .day-status { color: #f59e0b; }
+        .captacion-goal-day.status-cumplido .day-status { color: #10b981; }
+        .captacion-goal-help { margin-top: 7px; color: var(--text-secondary); font-size: .7rem; line-height: 1.4; }
         .captacion-team-details { grid-column: 1 / -1; border-top: 1px solid var(--border-color); padding-top: 13px; }
         .captacion-team-details summary { color: var(--accent); font-size: .8rem; font-weight: 700; cursor: pointer; }
         .captacion-team-table { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: .76rem; }
@@ -1192,27 +1199,29 @@
                     <div class="captacion-goal-block">
                         <div class="captacion-goal-label">Hoy</div>
                         {% if captacion_goal.is_workday %}
-                        <div class="captacion-goal-number">{{ captacion_goal.today_count }} <small>de {{ captacion_goal.today_goal }} gestiones</small></div>
+                        <div class="captacion-goal-number">{{ captacion_goal.today_count }} <small>de {{ captacion_goal.today_goal }} propiedades gestionadas hoy</small></div>
                         <div class="captacion-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [captacion_goal.today_percent, 100]|min }}">
                             <span class="captacion-goal-progress" style="width: {{ [captacion_goal.today_percent, 100]|min }}%"></span>
                         </div>
-                        <div class="captacion-goal-status"><strong>{{ captacion_goal.today_percent }} %</strong> cumplido · Faltan {{ captacion_goal.today_remaining }}</div>
+                        <div class="captacion-goal-status"><strong>{{ captacion_goal.today_percent }} %</strong> · Faltan {{ captacion_goal.today_remaining }}</div>
                         {% else %}
-                        <div class="captacion-goal-number">Sin meta <small>fin de semana</small></div>
-                        <div class="captacion-goal-status">La actividad se registra como adicional.</div>
+                        <div class="captacion-goal-number">Exento <small>{{ captacion_goal.today_reason or 'Día no laborable' }}</small></div>
+                        <div class="captacion-goal-status">La actividad se registra sin generar incumplimiento.</div>
                         {% endif %}
+                        <div class="captacion-goal-help"><i class="fa-solid fa-circle-info me-1"></i>Cada propiedad cuenta una vez por ejecutivo durante el día, aunque tenga varias acciones.</div>
                     </div>
                     <div class="captacion-goal-block">
                         <div class="captacion-goal-label">Semana</div>
-                        <div class="captacion-goal-number">{{ captacion_goal.week_count }} <small>de {{ captacion_goal.week_goal }} gestiones</small></div>
-                        <div class="captacion-goal-status"><strong>{{ captacion_goal.days_met }} de {{ captacion_goal.days_goal }}</strong> días cumplidos · Meta esperada: {{ captacion_goal.expected_to_date }}</div>
+                        <div class="captacion-goal-number">{{ captacion_goal.week_count }} <small>de {{ captacion_goal.week_goal }}</small></div>
+                        <div class="captacion-goal-status"><strong>{{ captacion_goal.days_met }} de {{ captacion_goal.days_goal }} días cumplidos</strong> · Meta esperada: {{ captacion_goal.expected_to_date }}</div>
                     </div>
                 </div>
                 <div class="captacion-goal-days" aria-label="Cumplimiento diario de la semana">
                     {% for day in captacion_goal.daily %}
-                    <div class="captacion-goal-day{% if day.met %} met{% endif %}{% if day.today %} today{% endif %}{% if day.future %} future{% endif %}">
+                    <div class="captacion-goal-day status-{{ day.status|lower }}{% if day.met %} met{% endif %}{% if day.today %} today{% endif %}{% if day.future %} future{% endif %}" title="{{ day.reason or day.status|replace('_', ' ')|title }}">
                         {{ day.label }}
-                        <strong>{% if day.future %}—{% else %}{{ day.count }}{% if day.met %} ✓{% endif %}{% endif %}</strong>
+                        <strong>{% if day.status == 'FUTURO' %}—{% elif day.status == 'EXENTO' %}Exento{% else %}{{ day.count }} / {{ day.target }}{% if day.met %} ✓{% endif %}{% endif %}</strong>
+                        <span class="day-status">{{ day.status|replace('_', ' ')|title }}</span>
                     </div>
                     {% endfor %}
                 </div>
@@ -1223,19 +1232,19 @@
                 <div class="captacion-goal-block">
                     <div class="captacion-goal-label">Equipo hoy</div>
                     {% if captacion_goal.today_goal %}
-                    <div class="captacion-goal-number">{{ captacion_goal.today_count }} <small>de {{ captacion_goal.today_goal }} gestiones</small></div>
+                    <div class="captacion-goal-number">{{ captacion_goal.today_count }} <small>de {{ captacion_goal.today_goal }} propiedades gestionadas hoy</small></div>
                     {% set team_today_pct = ((captacion_goal.today_count * 100 / captacion_goal.today_goal)|round(1)) if captacion_goal.today_goal else 0 %}
                     <div class="captacion-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [team_today_pct, 100]|min }}">
                         <span class="captacion-goal-progress" style="width: {{ [team_today_pct, 100]|min }}%"></span>
                     </div>
                     <div class="captacion-goal-status"><strong>{{ captacion_goal.executives_met_today }} de {{ captacion_goal.member_count }}</strong> ejecutivos cumplieron · {{ captacion_goal.executives_pending_today }} pendientes</div>
                     {% else %}
-                    <div class="captacion-goal-number">Sin meta <small>fin de semana</small></div>
+                    <div class="captacion-goal-number">Exento <small>sin meta obligatoria hoy</small></div>
                     {% endif %}
                 </div>
                 <div class="captacion-goal-block">
                     <div class="captacion-goal-label">Equipo esta semana</div>
-                    <div class="captacion-goal-number">{{ captacion_goal.week_count }} <small>de {{ captacion_goal.week_goal }} gestiones</small></div>
+                    <div class="captacion-goal-number">{{ captacion_goal.week_count }} <small>de {{ captacion_goal.week_goal }} propiedades</small></div>
                     <div class="captacion-goal-status"><strong>{{ captacion_goal.days_person_met }} de {{ captacion_goal.days_person_goal }}</strong> días-persona cumplidos · Meta esperada: {{ captacion_goal.expected_to_date }}</div>
                 </div>
             </div>
@@ -1243,15 +1252,18 @@
                 <summary>Ver cumplimiento por ejecutivo ({{ captacion_goal.member_count }})</summary>
                 <div style="overflow-x:auto">
                     <table class="captacion-team-table">
-                        <thead><tr><th>Ejecutivo</th><th>Hoy</th><th>Cumplió</th><th>Semana</th><th>Días</th><th>Última gestión</th></tr></thead>
+                        <thead><tr><th>Ejecutivo</th><th>Hoy</th><th>Estado</th><th>Semana</th><th>Días</th><th>Contactos</th><th>Captaciones</th><th>Alertas</th><th>Última gestión</th></tr></thead>
                         <tbody>
                         {% for executive in captacion_goal.executives %}
                         <tr>
                             <td>{{ executive.name }}</td>
                             <td>{{ executive.today_count }} / {{ executive.today_goal }}</td>
-                            <td class="{% if executive.met_today %}goal-met{% elif executive.today_count %}goal-pending{% else %}goal-zero{% endif %}">{% if executive.met_today %}Sí{% elif executive.is_workday %}No{% else %}—{% endif %}</td>
+                            <td class="{% if executive.today_status == 'CUMPLIDO' %}goal-met{% elif executive.today_status == 'INCUMPLIDO' %}goal-zero{% else %}goal-pending{% endif %}">{{ executive.today_status|replace('_', ' ')|title }}</td>
                             <td>{{ executive.week_count }} / {{ executive.week_goal }}</td>
                             <td>{{ executive.days_met }} / {{ executive.days_goal }}</td>
+                            <td>{{ executive.effective_contacts }}</td>
+                            <td>{{ executive.captures }}</td>
+                            <td>{% if executive.anomaly_count %}<span class="goal-zero">{{ executive.anomaly_count }} pendiente(s)</span>{% else %}0{% endif %}</td>
                             <td>{{ executive.last_activity.strftime('%d/%m %H:%M') if executive.last_activity else 'Sin actividad' }}</td>
                         </tr>
                         {% endfor %}

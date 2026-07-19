@@ -51,3 +51,9 @@ def test_progress_panel_uses_the_centralized_management_goal():
     assert "captacion_goal.days_person_met" in template
     assert "captacion_goal.daily" in template
     assert "captacion_goal.executives" in template
+    assert "propiedades gestionadas hoy" in template
+    assert "Cada propiedad cuenta una vez por ejecutivo durante el día" in template
+    assert "day.status == 'EXENTO'" in template
+    assert "day.status == 'FUTURO'" in template
+    assert "executive.effective_contacts" in template
+    assert "executive.anomaly_count" in template

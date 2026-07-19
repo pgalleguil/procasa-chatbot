@@ -6,7 +6,8 @@ def base_doc():
         "listing_id": "1", "url": "https://example/1", "comuna": "Talca",
         "description": "Descripción suficiente de la propiedad.",
         "classification": {"state": "INCIERTO", "source": "deepseek", "deepseek_status": "VALID",
-                           "deepseek_raw": {"choices": [{}]}, "assignment_ready": True},
+                           "deepseek_raw": {"choices": [{}]}, "assignment_ready": True,
+                           "owner_probability": 0.75},
     }
 
 

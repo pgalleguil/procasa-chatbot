@@ -80,3 +80,24 @@ def test_capture_mutation_routes_apply_the_same_backend_permission_gate():
     assert "can_manage_captacion(user_doc, data)" in source
     assert "can_manage_captacion(user, data)" in source
     assert 'status_code=403, detail="No autorizado para gestionar esta captación"' in source
+
+
+def test_user_id_is_primary_for_attribution_and_daily_states_are_explicit():
+    targets = {
+        f"2026-07-{day}": {"target": 10, "exempt": False, "reason": None, "close_hour": 19}
+        for day in range(13, 18)
+    }
+    team = [{
+        "id": "u1",
+        "name": "Ana",
+        "day_targets": targets,
+        "daily_metrics": {"2026-07-15": {"effective_contacts": 3, "captures": 1}},
+        "anomaly_count": 2,
+    }]
+    rows = [{"actor": "Nombre antiguo", "actor_user_id": "u1", "property_id": f"p-{index}", "occurred_at": _at(15)} for index in range(7)]
+    result = build_captacion_goal_dashboard(team, rows, "Ana", now=_at(15, 18))
+    assert result["today_count"] == 7
+    assert result["today_status"] == "EN_PROGRESO"
+    assert result["effective_contacts"] == 3
+    assert result["captures"] == 1
+    assert result["anomaly_count"] == 2

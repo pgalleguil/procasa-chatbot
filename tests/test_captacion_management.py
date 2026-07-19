@@ -53,8 +53,11 @@ class _Db:
 
 
 @pytest.fixture(autouse=True)
-def reset_indexes():
+def reset_indexes(monkeypatch):
     management._INDEXES_READY = False
+    monkeypatch.setattr(management, "_record_first_action_for_cycle", lambda *args, **kwargs: None)
+    monkeypatch.setattr(management, "recalculate_daily_metric", lambda *args, **kwargs: {})
+    monkeypatch.setattr(management, "audit_management_patterns", lambda *args, **kwargs: [])
 
 
 def _property():
@@ -111,3 +114,36 @@ def test_contact_effective_is_separate_from_managed_property():
     assert result["credited"] is True
     assert result["contact_effective"] is True
     assert db[management.LEDGER_COLLECTION].rows[0]["contact_effective"] is True
+
+
+def test_reversal_appends_event_without_editing_original():
+    db = _Db()
+    original = {
+        "event_id": "ev1",
+        "event_type": "management_confirmed",
+        "credited": True,
+        "property_id": "p1",
+        "actor_user_id": "u1",
+        "local_date": "2026-07-20",
+        "result": "contacted",
+    }
+    db[management.LEDGER_COLLECTION].rows.append(dict(original))
+    reversal = management.reverse_management_event(
+        db, event_id="ev1", actor_user={"_id": "admin1", "nombre": "Admin"}, reason="Confirmación errónea"
+    )
+    assert reversal["original_event_id"] == "ev1"
+    assert reversal["previous_value"]["credited"] is True
+    assert reversal["resulting_effect"]["credited"] is False
+    assert db[management.LEDGER_COLLECTION].rows[0] == original
+    assert len(db[management.LEDGER_COLLECTION].rows) == 2
+
+
+def test_assignment_cycle_uses_existing_id_or_deterministic_legacy_fallback():
+    current = _property()
+    current["gestion"]["assignment_cycle_id"] = "cycle-current"
+    assert management.assignment_cycle_id(current) == "cycle-current"
+    legacy_one = management.assignment_cycle_id(_property())
+    legacy_two = management.assignment_cycle_id(_property())
+    assert legacy_one == legacy_two
+    assert legacy_one.startswith("legacy-")
+    assert management.new_assignment_cycle(property_id="p1", user_id="u1")["assignment_cycle_id"] != management.new_assignment_cycle(property_id="p1", user_id="u1")["assignment_cycle_id"]

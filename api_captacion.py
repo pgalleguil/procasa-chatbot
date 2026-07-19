@@ -20,7 +20,12 @@ from owner_confidence import (
     resolve_price_display,
 )
 from captacion_goals import can_manage_captacion
-from captacion_management import confirm_management_attempt, start_management_attempt
+from captacion_management import (
+    confirm_management_attempt,
+    new_assignment_cycle,
+    record_capture_event,
+    start_management_attempt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -923,7 +928,7 @@ def get_captacion_detail(obj_id):
     _l1_set(_detail_cache_key, _result, expire_seconds=45)
     return _result
 
-def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=None, user_name="Sistema", next_followup=None):
+def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=None, user_name="Sistema", next_followup=None, user_doc=None):
     db = get_db()
     
     now = get_chile_now() # Store as Date object, not string
@@ -1027,6 +1032,8 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         {"_id": current_doc["_id"]},
         update_params
     )
+    if status in CAPTURED_STATES and old_status not in CAPTURED_STATES and user_doc:
+        record_capture_event(db, property_doc=current_doc, actor_user=user_doc, now=now)
     _invalidate_detail_cache(obj_id)
     
     # Precomputación SaaS: Actualizar métricas de captación
@@ -1863,6 +1870,8 @@ def release_stale_captaciones(sla_dias=SLA_CAPTACION_DIAS):
         {"$set": {
             "gestion.ejecutivo_id": None,
             "gestion.ejecutivo_asignado": None,
+            "gestion.assignment_cycle_id": None,
+            "gestion.first_valid_action_at": None,
             "gestion.estado": "NUEVO",
             "gestion.liberada_por_sla": True,
             "gestion.fecha_liberacion": now_utc.isoformat()
@@ -1931,6 +1940,7 @@ def distribute_sourced_leads():
 
         from bson import ObjectId
         oid = p["_id"] if isinstance(p["_id"], ObjectId) else ObjectId(p["_id"])
+        cycle = new_assignment_cycle(property_id=p["_id"], user_id=best, assigned_at=now, reason="weighted_commune_background")
         coll.update_one(
             {"_id": oid,
              "classification.assignment_ready": True,
@@ -1941,6 +1951,8 @@ def distribute_sourced_leads():
                 "gestion.ejecutivo_id": best,
                 "gestion.ejecutivo_asignado": db["usuarios"].find_one({"_id": ObjectId(best) if len(best) == 24 else best}).get("nombre", ""),
                 "gestion.fecha_asignacion": now,
+                "gestion.assignment_cycle_id": cycle["assignment_cycle_id"],
+                "gestion.first_valid_action_at": None,
                 "gestion.asignacion_version": "v1_weighted_commune_background",
                 "gestion.estado": "NUEVO",
             }}
@@ -2015,6 +2027,7 @@ def redistribute_inactive_agent_captaciones(dry_run=True):
             by_executive[name] = by_executive.get(name, 0) + 1
             continue
         previous_name = prop.get("gestion", {}).get("ejecutivo_asignado")
+        cycle = new_assignment_cycle(property_id=prop["_id"], user_id=agent["_id"], assigned_at=now, reason="inactive_executive")
         result = coll.update_one(
             {"_id": prop["_id"], "gestion.estado": "NUEVO", "gestion.ejecutivo_asignado": previous_name},
             {"$set": {
@@ -2022,6 +2035,8 @@ def redistribute_inactive_agent_captaciones(dry_run=True):
                 "gestion.ejecutivo_email": agent.get("email", ""),
                 "gestion.ejecutivo_asignado": name,
                 "gestion.fecha_asignacion": now,
+                "gestion.assignment_cycle_id": cycle["assignment_cycle_id"],
+                "gestion.first_valid_action_at": None,
                 "gestion.asignacion_version": "v2_active_commune_workload",
                 "gestion.previous_inactive_assignment": previous_name,
                 "gestion.reassignment_reason": "inactive_executive",

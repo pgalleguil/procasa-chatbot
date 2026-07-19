@@ -1701,7 +1701,8 @@ async def api_update_captacion(request: Request):
                 channel=channel,
                 outcome=outcome,
                 user_name=user_name,
-                next_followup=next_followup
+                next_followup=next_followup,
+                user_doc=user_doc,
             )
         )
         if result:
@@ -1893,6 +1894,42 @@ async def api_captacion_workforce_calendar(request: Request):
         return {"status": "ok", "calendar_day": result}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/captacion/management/{event_id}/reverse")
+async def api_reverse_captacion_management(request: Request, event_id: str):
+    user_doc = await _require_captacion_workforce_admin(request)
+    payload = await request.json()
+    from captacion_management import reverse_management_event
+    from chatbot.storage import get_db
+    try:
+        reversal = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: reverse_management_event(
+                get_db(), event_id=event_id, actor_user=user_doc, reason=payload.get("reason")
+            ),
+        )
+        return {"status": "ok", "reversal_event_id": reversal["event_id"]}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/captacion/management/anomalies")
+async def api_captacion_management_anomalies(request: Request, status_filter: str = "pending_review"):
+    await _require_captacion_workforce_admin(request)
+    from captacion_management import ANOMALY_COLLECTION
+    from chatbot.storage import get_db
+    rows = await asyncio.get_running_loop().run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: list(get_db()[ANOMALY_COLLECTION].find(
+            {"status": status_filter}, {"_id": 0}
+        ).sort("created_at", -1).limit(100)),
+    )
+    return {"status": "ok", "items": rows}
 
 @app.get("/api/captacion/templates/personal")
 async def api_get_personal_templates(request: Request):

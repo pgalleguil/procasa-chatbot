@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
+import os
 from typing import Iterable
 
 import pytz
@@ -28,6 +29,12 @@ CAPTACION_PRIVILEGED_ROLES = {"admin", "supervisor", "jefatura"}
 # feriados confiable más adelante sin dispersar reglas por el proyecto.
 CAPTACION_HOLIDAYS: frozenset[str] = frozenset()
 _INDEXES_READY = False
+LEDGER_CUTOVER_DATE = os.getenv("CAPTACION_LEDGER_CUTOVER_DATE", "2026-07-20")
+LEGACY_DUAL_READ_UNTIL = os.getenv("CAPTACION_LEGACY_DUAL_READ_UNTIL", "2026-08-02")
+LEGACY_CONFIRMED_RESULTS = {
+    "no_answer", "busy", "invalid_number", "contacted", "callback_requested", "message_sent",
+    "sin respuesta", "ocupado", "número inválido", "contactado", "solicita llamada posterior", "mensaje enviado",
+}
 
 VALID_CAPTACION_ACTIONS = {
     ("call_initiated", "tel"),
@@ -168,17 +175,15 @@ def _iter_historical_activity_rows(db, start_local: datetime, end_local: datetim
             local = _as_chile_datetime(timestamp)
             if not (start_local <= local < end_local):
                 continue
-            if not is_valid_captacion_action(
-                activity.get("action"),
-                activity.get("channel"),
-                result=activity.get("result"),
-                message=activity.get("message"),
-            ):
+            result_value = _clean(activity.get("result")).casefold()
+            if result_value not in LEGACY_CONFIRMED_RESULTS:
                 continue
             yield {
                 "property_id": property_id,
                 "actor": activity.get("user"),
+                "actor_user_id": _clean(activity.get("user_id")),
                 "occurred_at": local,
+                "legacy_inferred": True,
             }
 
 
@@ -191,19 +196,40 @@ def get_captacion_management_rows(db, now=None) -> list[dict]:
     end_utc = end_local.astimezone(timezone.utc)
 
     rows = []
-    ledger = db[CAPTACION_GOAL_COLLECTION].find(
-        {"occurred_at": {"$gte": start_utc, "$lt": end_utc}},
-        {"property_id": 1, "actor": 1, "occurred_at": 1},
-    )
+    ledger_query = {
+        "occurred_at": {"$gte": start_utc, "$lt": end_utc},
+        "event_type": "management_confirmed",
+        "credited": True,
+    }
+    ledger = list(db[CAPTACION_GOAL_COLLECTION].find(
+        ledger_query,
+        {"event_id": 1, "property_id": 1, "actor": 1, "actor_user_id": 1, "occurred_at": 1},
+    ))
+    event_ids = [event.get("event_id") for event in ledger if event.get("event_id")]
+    reversed_ids = {
+        row.get("original_event_id")
+        for row in db[CAPTACION_GOAL_COLLECTION].find(
+            {"event_type": "management_reversed", "original_event_id": {"$in": event_ids}},
+            {"original_event_id": 1},
+        )
+    }
     for event in ledger:
+        if event.get("event_id") in reversed_ids:
+            continue
         rows.append(
             {
                 "property_id": _clean(event.get("property_id")),
                 "actor": event.get("actor"),
+                "actor_user_id": _clean(event.get("actor_user_id")),
                 "occurred_at": _as_chile_datetime(event.get("occurred_at")),
             }
         )
-    rows.extend(_iter_historical_activity_rows(db, start_local, end_local))
+    cutover = date.fromisoformat(LEDGER_CUTOVER_DATE)
+    dual_read_until = date.fromisoformat(LEGACY_DUAL_READ_UNTIL)
+    if local_now.date() <= dual_read_until:
+        legacy_end = min(end_local, CAPTACION_TIMEZONE.localize(datetime.combine(cutover, time.min)))
+        if start_local < legacy_end:
+            rows.extend(_iter_historical_activity_rows(db, start_local, legacy_end))
     return rows
 
 

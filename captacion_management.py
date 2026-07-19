@@ -55,6 +55,12 @@ def ensure_management_indexes(db) -> None:
     db[ATTEMPT_COLLECTION].create_index(
         [("actor_user_id", 1), ("status", 1), ("initiated_at", -1)], name="captacion_attempt_actor_status"
     )
+    ledger = db[LEDGER_COLLECTION]
+    index_information = getattr(ledger, "index_information", None)
+    existing_dedup = index_information().get("captacion_management_dedup") if index_information else None
+    if existing_dedup and not existing_dedup.get("sparse"):
+        # El índice v1 no permitía varias observaciones no acreditables sin dedup_key.
+        ledger.drop_index("captacion_management_dedup")
     db[LEDGER_COLLECTION].create_index("event_id", unique=True, sparse=True, name="captacion_event_id")
     db[LEDGER_COLLECTION].create_index("source_event_id", unique=True, sparse=True, name="captacion_source_event")
     db[LEDGER_COLLECTION].create_index("dedup_key", unique=True, sparse=True, name="captacion_management_dedup")

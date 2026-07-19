@@ -9,7 +9,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-from captacion_management import LEDGER_COLLECTION, LEDGER_VERSION, management_dedup_key, normalize_result
+from captacion_management import LEDGER_COLLECTION, LEDGER_VERSION, ensure_management_indexes, management_dedup_key, normalize_result
 from captacion_workforce import clean_id, localize
 from chatbot.storage import get_db
 from config import Config
@@ -109,6 +109,7 @@ def main():
     parser.add_argument("--report", default="")
     args = parser.parse_args()
     db = get_db()
+    ensure_management_indexes(db)
     rows, groups, unresolved = inventory(db)
     events = [build_event(row) for row in rows]
     result = {

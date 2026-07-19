@@ -11,6 +11,10 @@ def _template_source() -> str:
     return TEMPLATE_PATH.read_text(encoding="utf-8")
 
 
+def _detail_template_source() -> str:
+    return (ROOT / "templates" / "captacion_detail.html").read_text(encoding="utf-8")
+
+
 def test_captacion_template_compiles():
     Environment(loader=FileSystemLoader(ROOT / "templates")).get_template("captacion_list.html")
 
@@ -57,3 +61,21 @@ def test_progress_panel_uses_the_centralized_management_goal():
     assert "day.status == 'FUTURO'" in template
     assert "executive.effective_contacts" in template
     assert "executive.anomaly_count" in template
+
+
+def test_contact_shortcuts_require_a_confirmed_result_before_credit():
+    template = _detail_template_source()
+    assert "/api/captacion/log_action" in template
+    assert "/api/captacion/confirm_action" in template
+    assert "visibilitychange" in template
+    for result_code in (
+        "no_answer",
+        "busy",
+        "invalid_number",
+        "contacted",
+        "callback_requested",
+        "message_sent",
+    ):
+        assert f"confirmManagementResult('{result_code}')" in template
+    assert "opened_app" not in template
+    assert "opened_dialer" not in template

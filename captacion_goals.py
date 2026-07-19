@@ -16,7 +16,7 @@ from captacion_workforce import (
     compliance_status,
     get_active_captacion_team as get_explicit_captacion_team,
 )
-from captacion_management import ANOMALY_COLLECTION, DAILY_METRICS_COLLECTION
+from captacion_management import ANOMALY_COLLECTION, DAILY_METRICS_COLLECTION, ensure_management_indexes
 
 
 CAPTACION_TIMEZONE = pytz.timezone("America/Santiago")
@@ -153,12 +153,7 @@ def ensure_captacion_goal_indexes(db) -> None:
     global _INDEXES_READY
     if _INDEXES_READY:
         return
-    collection = db[CAPTACION_GOAL_COLLECTION]
-    collection.create_index("dedup_key", unique=True, name="captacion_management_dedup")
-    collection.create_index(
-        [("occurred_at", 1), ("actor_key", 1)],
-        name="captacion_management_period_actor",
-    )
+    ensure_management_indexes(db)
     _INDEXES_READY = True
 
 
@@ -361,7 +356,9 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
         "today_count": sum(row["today_count"] for row in team_rows),
         "today_goal": sum(row["today_goal"] for row in team_rows),
         "executives_met_today": sum(1 for row in team_rows if row["met_today"]),
-        "executives_pending_today": sum(1 for row in team_rows if not row["met_today"]) if today in weekdays else 0,
+        "executives_pending_today": sum(
+            1 for row in team_rows if row["today_status"] in {"EN_PROGRESO", "INCUMPLIDO"}
+        ),
         "week_count": sum(row["week_count"] for row in team_rows),
         "week_goal": sum(row["week_goal"] for row in team_rows),
         "days_person_met": sum(row["days_met"] for row in team_rows),

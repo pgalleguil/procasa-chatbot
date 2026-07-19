@@ -41,6 +41,8 @@ def test_mobile_rows_follow_the_leads_label_value_pattern():
     assert "grid-template-columns: minmax(104px, 34%) minmax(0, 1fr)" in template
     assert template.count('class="mobile-cell-value"') >= 7
     assert "text-align: left !important" in template
+    assert ".pagination-controls" in template
+    assert "flex-wrap: wrap" in template
 
 
 def test_progress_panel_uses_the_centralized_management_goal():

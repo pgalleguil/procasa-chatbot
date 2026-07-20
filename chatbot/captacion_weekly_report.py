@@ -534,7 +534,7 @@ async def create_weekly_report(period_start, period_end, *, is_test: bool, creat
             "recipient_masked": mask_whatsapp_recipient(ADMIN_RECIPIENT),
         })
     else:
-        document["group_recipient"] = Config.DAILY_REPORT_GROUP_ID
+        document["group_recipient"] = Config.CAPTACION_WEEKLY_GROUP_ID
     await asyncio.to_thread(db[REPORT_COLLECTION].insert_one, document)
     document.pop("_id", None)
     return document
@@ -670,7 +670,7 @@ async def approve_and_send_report(report_id: str, actor: dict, edited_narrative:
     narrative = validate_narrative(edited_narrative or report["narrative"])
     final_message = assemble_whatsapp_message(report["snapshot"], narrative)
     idempotency_key = f"official:{report['period_start']}:{report['period_end']}"
-    group_id = str(report.get("group_recipient") or Config.DAILY_REPORT_GROUP_ID or "").strip()
+    group_id = str(report.get("group_recipient") or Config.CAPTACION_WEEKLY_GROUP_ID or "").strip()
     if not group_id.endswith("@g.us"):
         raise ValueError("Destinatario grupal no configurado")
     approval_at = datetime.now(timezone.utc)
@@ -783,7 +783,7 @@ async def send_official_report(report_id: str, *, now=None) -> dict:
     if not report or report.get("status") not in {"ready_to_send", "send_retry_pending"}:
         raise ValueError("El reporte oficial no está disponible para envío")
     validate_official_report(report["snapshot"], report["message_original"])
-    group_id = str(report.get("group_recipient") or Config.DAILY_REPORT_GROUP_ID or "").strip()
+    group_id = str(report.get("group_recipient") or Config.CAPTACION_WEEKLY_GROUP_ID or "").strip()
     if not group_id.endswith("@g.us") or normalize_whatsapp_recipient(group_id) == ADMIN_RECIPIENT:
         raise ValueError("Destinatario grupal oficial no configurado")
 

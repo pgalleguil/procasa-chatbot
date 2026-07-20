@@ -12,6 +12,8 @@ from typing import Any, Iterable, Mapping, Optional
 import re
 import uuid
 
+from pymongo.errors import DuplicateKeyError
+
 from .constants import CHILE_TZ
 from .utils import calculate_business_minutes
 
@@ -132,20 +134,59 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
                             reason, assigned_at=None) -> dict[str, Any]:
     assigned_at = coerce_utc_datetime(assigned_at) or utc_now()
     active = db["crm_assignment_cycles"].find_one({"lead_id": lead["_id"], "unassigned_at": None})
-    if active and str(active.get("assigned_to_user_id")) == str(assigned_to_user_id):
+    if (active and active.get("schema_version") == "crm_assignment_cycle_v1"
+            and active.get("cycle_status") == "active"
+            and str(active.get("assigned_to_user_id")) == str(assigned_to_user_id)):
         return active
     if active:
         db["crm_assignment_cycles"].update_one(
-            {"_id": active["_id"], "unassigned_at": None}, {"$set": {"unassigned_at": assigned_at}}
+            {"_id": active["_id"], "unassigned_at": None},
+            {"$set": {"unassigned_at": assigned_at, "cycle_status": "closed"}},
         )
     cycle = {
         "assignment_cycle_id": str(uuid.uuid4()), "lead_id": lead["_id"],
         "assigned_to_user_id": assigned_to_user_id, "assigned_at": assigned_at,
         "unassigned_at": None, "assigned_by": assigned_by, "reason": reason,
-        "metric_version": METRIC_VERSION,
+        "metric_version": METRIC_VERSION, "schema_version": "crm_assignment_cycle_v1",
+        "cycle_status": "active",
     }
-    db["crm_assignment_cycles"].insert_one(cycle)
+    try:
+        db["crm_assignment_cycles"].insert_one(cycle)
+    except DuplicateKeyError:
+        # The partial unique active-cycle index resolves concurrent retries.
+        winner = active_assignment_cycle(db, lead["_id"])
+        if winner and str(winner.get("assigned_to_user_id")) == str(assigned_to_user_id):
+            return winner
+        raise
     return cycle
+
+
+def audit_and_ensure_assignment_cycle_indexes(db, *, create=False) -> dict[str, Any]:
+    """Dry-run by default; legacy cycles are outside the partial indexes."""
+    collection = db["crm_assignment_cycles"]
+    canonical_filter = {
+        "schema_version": "crm_assignment_cycle_v1", "cycle_status": "active",
+        "lead_id": {"$exists": True}, "assigned_to_user_id": {"$exists": True},
+        "assignment_cycle_id": {"$exists": True},
+    }
+    eligible = collection.count_documents(canonical_filter)
+    duplicates = list(collection.aggregate([
+        {"$match": canonical_filter},
+        {"$group": {"_id": "$lead_id", "count": {"$sum": 1}}},
+        {"$match": {"count": {"$gt": 1}}},
+    ]))
+    created = []
+    if create and not duplicates:
+        created.append(collection.create_index(
+            [("lead_id", 1), ("cycle_status", 1)], unique=True,
+            partialFilterExpression=canonical_filter, name="uq_crm_active_cycle_v1",
+        ))
+        created.append(collection.create_index(
+            [("lead_id", 1), ("assigned_to_user_id", 1), ("cycle_status", 1), ("assignment_cycle_id", 1)],
+            unique=True, partialFilterExpression=canonical_filter, name="uq_crm_cycle_identity_v1",
+        ))
+    return {"eligible_documents": eligible, "duplicates": duplicates,
+            "safe_to_create": not duplicates, "created": created}
 
 
 def active_assignment_cycle(db, lead_id):

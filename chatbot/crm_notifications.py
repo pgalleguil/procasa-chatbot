@@ -56,28 +56,59 @@ def audit_duplicate_identities(db) -> dict:
     return {"safe_to_index": not any(conflicts.values()), "conflicts": conflicts}
 
 
+def dry_run_canonical_indexes(db) -> dict:
+    collection = db[COLLECTION]
+    definitions = {
+        "individual": ("lead_id", "assignment_cycle_id", "notification_type", "recipient_user_id"),
+        "digest": ("recipient_user_id", "digest_type", "business_period", "content_version"),
+    }
+    result = {}
+    for name, fields in definitions.items():
+        match = {"schema_version": "crm_notification_v1", "canonical_identity_version": 1}
+        match.update({field: {"$exists": True} for field in fields})
+        group_id = {field: f"${field}" for field in fields}
+        duplicates = list(collection.aggregate([
+            {"$match": match}, {"$group": {"_id": group_id, "count": {"$sum": 1}}},
+            {"$match": {"count": {"$gt": 1}}},
+        ]))
+        result[name] = {"eligible_documents": collection.count_documents(match),
+                        "duplicates": duplicates, "safe_to_create": not duplicates}
+    return result
+
+
 def ensure_unique_indexes(db) -> dict:
     """Audit first; never delete or merge a legacy conflict automatically."""
-    audit = audit_duplicate_identities(db)
-    if not audit["safe_to_index"]:
-        return {**audit, "created": [], "blocked": True}
+    audit = dry_run_canonical_indexes(db)
+    if not all(value["safe_to_create"] for value in audit.values()):
+        return {"dry_run": audit, "created": [], "blocked": True}
     collection = db[COLLECTION]
+    individual_filter = {
+        "schema_version": "crm_notification_v1", "canonical_identity_version": 1,
+        "lead_id": {"$exists": True}, "assignment_cycle_id": {"$exists": True},
+        "notification_type": {"$exists": True}, "recipient_user_id": {"$exists": True},
+    }
+    digest_filter = {
+        "schema_version": "crm_notification_v1", "canonical_identity_version": 1,
+        "recipient_user_id": {"$exists": True}, "digest_type": {"$exists": True},
+        "business_period": {"$exists": True}, "content_version": {"$exists": True},
+    }
     created = [
         collection.create_index(
-            [("individual_identity", ASCENDING)], unique=True,
-            partialFilterExpression={"individual_identity": {"$type": "string"}},
+            [("lead_id", 1), ("assignment_cycle_id", 1), ("notification_type", 1), ("recipient_user_id", 1)], unique=True,
+            partialFilterExpression=individual_filter,
             name="uq_crm_notification_individual_v1",
         ),
         collection.create_index(
-            [("digest_identity", ASCENDING)], unique=True,
-            partialFilterExpression={"digest_identity": {"$type": "string"}},
+            [("recipient_user_id", 1), ("digest_type", 1), ("business_period", 1), ("content_version", 1)], unique=True,
+            partialFilterExpression=digest_filter,
             name="uq_crm_notification_digest_v1",
         ),
     ]
-    return {**audit, "created": created, "blocked": False}
+    return {"dry_run": audit, "created": created, "blocked": False}
 
 
-def create_pending(db, *, identity_field, identity, payload, payload_version="crm_notification_v1", metadata=None):
+def create_pending(db, *, identity_field, identity, payload, payload_version="crm_notification_v1", metadata=None,
+                   canonical_fields=None, send_after=None):
     if identity_field not in {"individual_identity", "digest_identity"}:
         raise ValueError("invalid identity field")
     now = utc_now()
@@ -85,8 +116,12 @@ def create_pending(db, *, identity_field, identity, payload, payload_version="cr
         identity_field: identity, "state": "pending", "delivery_id": str(uuid.uuid4()),
         "payload_version": payload_version, "content_hash": content_hash(payload),
         "payload": payload, "metadata": dict(metadata or {}), "attempts": [],
+        "schema_version": "crm_notification_v1", "canonical_identity_version": 1,
         "created_at": now, "updated_at": now,
     }
+    document.update(dict(canonical_fields or {}))
+    if send_after is not None:
+        document["send_after"] = send_after
     try:
         db[COLLECTION].insert_one(document)
         return db[COLLECTION].find_one({identity_field: identity}) or document
@@ -94,10 +129,12 @@ def create_pending(db, *, identity_field, identity, payload, payload_version="cr
         return db[COLLECTION].find_one({identity_field: identity})
 
 
-def claim_next(db, *, worker_id, lease_seconds=120, now=None):
+def claim_next(db, *, worker_id, lease_seconds=120, now=None, extra_filter=None):
     now = now or utc_now()
+    query = {"state": {"$in": ["pending", "failed_retryable"]}}
+    query.update(dict(extra_filter or {}))
     return db[COLLECTION].find_one_and_update(
-        {"state": {"$in": ["pending", "failed_retryable"]}},
+        query,
         {"$set": {"state": "sending", "lease_owner": worker_id,
                   "lease_expires_at": now + timedelta(seconds=lease_seconds), "updated_at": now},
          "$push": {"attempts": {"claimed_at": now, "worker_id": worker_id}}},

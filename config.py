@@ -45,7 +45,8 @@ class Config:
     CRM_WEEKLY_AUTOMATIC_SEND = False
     CRM_WEEKLY_SCHEDULE_HOUR = 8
     CRM_WEEKLY_SCHEDULE_MINUTE = 15
-    LEAD_HOT_NOTIFICATIONS_ENABLED = os.getenv("LEAD_HOT_NOTIFICATIONS_ENABLED", "true").lower() == "true"
+    # Fail closed until the canonical assignment -> delivery flow is deployed and verified.
+    LEAD_HOT_NOTIFICATIONS_ENABLED = os.getenv("LEAD_HOT_NOTIFICATIONS_ENABLED", "false").lower() == "true"
     LEAD_HOT_RECONCILIATION_ENABLED = os.getenv("LEAD_HOT_RECONCILIATION_ENABLED", "false").lower() == "true"
     LEAD_COLD_DIGEST_ENABLED = os.getenv("LEAD_COLD_DIGEST_ENABLED", "false").lower() == "true"
     CRM_SLA_SHADOW_ENABLED = os.getenv("CRM_SLA_SHADOW_ENABLED", "false").lower() == "true"

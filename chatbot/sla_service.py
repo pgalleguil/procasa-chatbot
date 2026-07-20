@@ -2,6 +2,7 @@
 import asyncio
 import logging
 
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from config import Config
@@ -70,7 +71,18 @@ async def monitor_sla_thresholds():
                 continue
 
             cycle_id = str(cycle["assignment_cycle_id"])
-            key = f"crm_sla:{lead['_id']}:{cycle_id}:{level}"
+            recipient_user_id = str(cycle.get("assigned_to_user_id") or "")
+            claimed = await db["crm_assignment_cycles"].find_one_and_update(
+                {"assignment_cycle_id": cycle_id, "cycle_status": "active",
+                 "assigned_to_user_id": recipient_user_id,
+                 "first_valid_management_at": {"$exists": False},
+                 f"sla_alert_claims.{level}": {"$exists": False}},
+                {"$set": {f"sla_alert_claims.{level}": {"status": "claimed", "claimed_at": utc_now()}}},
+                return_document=ReturnDocument.AFTER,
+            )
+            if not claimed:
+                continue
+            key = f"crm_sla:{lead['_id']}:{cycle_id}:{level}:{recipient_user_id}"
 
             # Old phone-based critical records are permanent evidence that this
             # historical alert was already delivered. Never replay them.
@@ -89,6 +101,21 @@ async def monitor_sla_thresholds():
             try:
                 await db["crm_sla_warnings"].insert_one(claim)
             except DuplicateKeyError:
+                continue
+
+            still_eligible = await db["crm_assignment_cycles"].find_one_and_update(
+                {"assignment_cycle_id": cycle_id, "cycle_status": "active",
+                 "assigned_to_user_id": recipient_user_id,
+                 "first_valid_management_at": {"$exists": False},
+                 f"sla_alert_claims.{level}.status": "claimed"},
+                {"$set": {f"sla_alert_claims.{level}.status": "sending",
+                          f"sla_alert_claims.{level}.confirmed_at": utc_now()}},
+                return_document=ReturnDocument.AFTER,
+            )
+            if not still_eligible:
+                await db["crm_sla_warnings"].update_one(
+                    {"_id": key}, {"$set": {"status": "suppressed", "suppressed_at": utc_now()}}
+                )
                 continue
 
             sent = await NotificationService.send_notification(

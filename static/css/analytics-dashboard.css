@@ -260,6 +260,9 @@ body {
 
 .empty-state { text-align: center; padding: 30px; color: var(--text-secondary); font-size: 0.85rem; }
 
+.err-banner { background: rgba(239,68,68,0.12); border: 1px solid var(--red); color: var(--red); border-radius: 8px; padding: 8px 14px; margin-bottom: 10px; font-size: 0.82rem; }
+.det-h6 { font-size: 0.78rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+
 @media (max-width:768px) {
     .col-2 { flex: 0 0 calc(33.33% - 8px); min-width: 100px; }
     .col-8, .col-4, .col-6 { flex: 0 0 100%; min-width: 100%; }

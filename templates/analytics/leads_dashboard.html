@@ -43,29 +43,30 @@
     <div class="main-content">
         <div class="header-bar">
             <div>
-                <h2 class="fw-bold m-0">Gestion de Leads</h2>
-                <p class="header-sub m-0">Resumen comercial y composicion de la cartera</p>
+                <h2 class="fw-bold m-0">Gesti&oacute;n de Leads</h2>
+                <p class="header-sub m-0">Resumen comercial y composici&oacute;n de la cartera</p>
             </div>
             <div class="header-controls">
-                <div class="quality-floater" id="qualityFloater" onclick="toggleQualityDropdown()" title="Calidad de datos">
+                <div class="quality-floater" id="qualityFloater" onclick="toggleQual()" title="Calidad de datos">
                     <i class="fa-solid fa-database"></i><span id="qualityPct">--</span>
                 </div>
                 <div class="quality-dropdown" id="qualityDropdown"></div>
                 <input type="text" id="dateRange" class="date-input" placeholder="Periodo...">
-                <select id="filterExecutive" class="select-sm" onchange="applyFilters()"><option value="">Ejecutivo</option></select>
-                <select id="filterUniverse" class="select-sm" onchange="applyFilters()">
+                <select id="filterExecutive" class="select-sm" onchange="refresh()"><option value="">Ejecutivo</option></select>
+                <select id="filterUniverse" class="select-sm" onchange="refresh()">
                     <option value="current_active">Activos</option>
                     <option value="received_in_period">Recibidos</option>
                 </select>
-                <button class="filter-btn" onclick="toggleExtraFilters()"><i class="fa-solid fa-sliders me-1"></i>Filtros</button>
-                <button class="btn-outline-sm danger" id="btnClear" onclick="clearAllFilters()" style="display:none"><i class="fa-solid fa-xmark"></i></button>
+                <button class="filter-btn" onclick="toggleExtra()"><i class="fa-solid fa-sliders me-1"></i>M&aacute;s filtros</button>
+                <button class="btn-outline-sm danger" id="btnClear" onclick="clearAll()" style="display:none"><i class="fa-solid fa-xmark"></i></button>
             </div>
         </div>
         <div class="extra-filters" id="extraFilters">
-            <select id="filterStage" class="select-sm" onchange="applyFilters()"><option value="">Etapa</option></select>
-            <select id="filterTemperature" class="select-sm" onchange="applyFilters()"><option value="">Temperatura</option><option value="HOT">Hot</option><option value="COLD">Cold</option></select>
-            <select id="filterSource" class="select-sm" onchange="applyFilters()"><option value="">Origen</option></select>
+            <select id="filterStage" class="select-sm" onchange="refresh()"><option value="">Etapa</option></select>
+            <select id="filterTemperature" class="select-sm" onchange="refresh()"><option value="">Temperatura</option><option value="HOT">Hot</option><option value="COLD">Cold</option></select>
+            <select id="filterSource" class="select-sm" onchange="refresh()"><option value="">Origen</option></select>
         </div>
+        <div class="err-banner" id="errBanner" style="display:none"></div>
 
         <div class="unavailable-inline">Algunas metricas de gestion no pueden calcularse con el historial actual.&nbsp;<span style="color:var(--accent);cursor:pointer" onclick="alert('Gestion humana, SLA, embudo y productividad requieren instrumentacion futura.')">Ver detalle</span></div>
 
@@ -98,7 +99,7 @@
             <div class="col-6">
                 <div class="chart-card">
                     <div class="tabs">
-                        <button class="tab-btn active" onclick="switchTab('operacion')">Operacion</button>
+                        <button class="tab-btn active" onclick="switchTab('operacion')">Operaci&oacute;n</button>
                         <button class="tab-btn" onclick="switchTab('tipo')">Tipo</button>
                         <button class="tab-btn" onclick="switchTab('comuna')">Comuna</button>
                     </div>
@@ -111,10 +112,10 @@
             <div class="table-header">
                 <h6>Detalle de Leads</h6>
                 <div class="table-filters">
-                    <input type="text" class="search-sm" id="searchInput" placeholder="Buscar..." onkeyup="debounceSearch()">
-                    <select id="tblStage" class="select-sm" onchange="applyFilters()"><option value="">Etapa</option></select>
-                    <select id="tblTemp" class="select-sm" onchange="applyFilters()"><option value="">Temp</option><option value="HOT">Hot</option><option value="COLD">Cold</option></select>
-                    <select id="tblSource" class="select-sm" onchange="applyFilters()"><option value="">Origen</option></select>
+                    <input type="text" class="search-sm" id="searchInput" placeholder="Buscar..." onkeyup="doSearch()">
+                    <select id="tblStage" class="select-sm" onchange="refresh()"><option value="">Etapa</option></select>
+                    <select id="tblTemp" class="select-sm" onchange="refresh()"><option value="">Temp</option><option value="HOT">Hot</option><option value="COLD">Cold</option></select>
+                    <select id="tblSource" class="select-sm" onchange="refresh()"><option value="">Origen</option></select>
                 </div>
             </div>
             <div style="overflow-x:auto">
@@ -127,11 +128,11 @@
     <div class="detail-panel" id="detailPanel">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
             <h6 style="margin:0">Detalle del Lead</h6>
-            <button class="detail-close" onclick="closeDetail()">&times;</button>
+            <button class="detail-close" onclick="closeDet()">&times;</button>
         </div>
         <div id="detailBody"></div>
     </div>
-    <div class="detail-overlay" id="detailOverlay" onclick="closeDetail()" style="display:none"></div>
+    <div class="detail-overlay" id="detailOverlay" onclick="closeDet()" style="display:none"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>

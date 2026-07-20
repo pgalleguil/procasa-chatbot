@@ -374,6 +374,21 @@ def generate_narrative(snapshot: dict) -> tuple[dict, str]:
     raise ValueError("DeepSeek no devolvió una narración segura") from last_error
 
 
+def generate_narrative_with_fallback(snapshot: dict) -> tuple[dict, str, str]:
+    try:
+        narrative, model = generate_narrative(snapshot)
+        return narrative, model, "DeepSeek"
+    except Exception:
+        logger.exception("[CAPTACION_WEEKLY] using_deterministic_narrative_fallback")
+        narrative = {
+            "intro": "Compartimos el resumen de las gestiones acreditadas durante el periodo.",
+            "insight": "El detalle fue calculado y validado directamente por el CRM.",
+            "weekly_focus": "El foco operativo fue determinado por el backend.",
+            "closing": "Gracias por mantener cada gestión correctamente registrada en el CRM.",
+        }
+        return validate_narrative(narrative), "deterministic_fallback", "fallback"
+
+
 def _deterministic_focus_message(snapshot: dict) -> str:
     details = snapshot.get("detailed_outcomes") or {}
     if snapshot["operational_priority"]["key"] == "pending_follow_up":
@@ -464,7 +479,7 @@ async def create_weekly_report(period_start, period_end, *, is_test: bool, creat
     )
     if not snapshot["crm_parity"]["validated"]:
         raise ValueError("Paridad CRM no validada")
-    narrative, model = await asyncio.to_thread(generate_narrative, snapshot)
+    narrative, model, narrative_source = await asyncio.to_thread(generate_narrative_with_fallback, snapshot)
     message = assemble_whatsapp_message(snapshot, narrative)
     now = datetime.now(timezone.utc)
     document = {
@@ -489,7 +504,7 @@ async def create_weekly_report(period_start, period_end, *, is_test: bool, creat
         "message_final": None,
         "prompt_version": PROMPT_VERSION,
         "model": model,
-        "narrative_source": "DeepSeek",
+        "narrative_source": narrative_source,
         "created_by": str(created_by or "system"),
         "created_at": now,
         "updated_at": now,
@@ -514,7 +529,7 @@ async def regenerate_report_narrative(report_id: str, actor: dict) -> dict:
     )
     if not report or report.get("status") not in {"pending_approval", "ready_for_test"}:
         raise ValueError("Reporte no disponible para regenerar")
-    narrative, model = await asyncio.to_thread(generate_narrative, report["snapshot"])
+    narrative, model, narrative_source = await asyncio.to_thread(generate_narrative_with_fallback, report["snapshot"])
     message = assemble_whatsapp_message(report["snapshot"], narrative)
     history_entry = {
         "narrative": report.get("narrative"),
@@ -525,7 +540,7 @@ async def regenerate_report_narrative(report_id: str, actor: dict) -> dict:
     await asyncio.to_thread(
         db[REPORT_COLLECTION].update_one,
         {"report_id": report["report_id"]},
-        {"$set": {"narrative": narrative, "message_original": message, "model": model, "updated_at": datetime.now(timezone.utc)}, "$push": {"narrative_history": history_entry}},
+        {"$set": {"narrative": narrative, "message_original": message, "model": model, "narrative_source": narrative_source, "updated_at": datetime.now(timezone.utc)}, "$push": {"narrative_history": history_entry}},
     )
     return await asyncio.to_thread(
         db[REPORT_COLLECTION].find_one, {"report_id": report["report_id"]}, {"_id": 0}

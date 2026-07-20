@@ -50,6 +50,13 @@ from campanas.handler import handle_campana_respuesta
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
 from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent, normalize_crm_temperature
+
+# ---- ANALYTICS (READ-ONLY) ----
+from analytics.leads_service import (
+    get_summary, get_trends, get_distributions, get_table as analytics_get_table,
+    get_detail as analytics_get_detail, get_filters, get_field_coverage,
+)
+
 from api_captacion import (
     get_captacion_list, get_captacion_detail, update_captacion_status, update_contact_info,
     distribute_sourced_leads, release_stale_captaciones, redistribute_inactive_agent_captaciones,
@@ -717,6 +724,233 @@ async def ver_leads(request: Request):
         "user_role": user.get("rol", "agente"),
         "user_name": user.get("nombre", "")
     })
+
+# ========================= ANALYTICS DASHBOARD (READ-ONLY) =========================
+
+@app.get("/analytics/leads", response_class=HTMLResponse)
+async def analytics_leads_page(request: Request):
+    user = await get_current_user_doc(request)
+    if not user:
+        return RedirectResponse(url="/?error=sesion_invalida")
+    return templates.TemplateResponse("analytics/leads_dashboard.html", {
+        "request": request,
+        "user_role": user.get("rol", "agente"),
+        "user_name": user.get("nombre", ""),
+    })
+
+
+@app.get("/api/analytics/leads/summary")
+async def api_analytics_leads_summary(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    executive: str = Query(None),
+    stage: str = Query(None),
+    temperature: str = Query(None),
+    source: str = Query(None),
+):
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    loop = asyncio.get_running_loop()
+    filters = {}
+    if stage:
+        filters["stage"] = stage
+    if temperature:
+        filters["temperature"] = temperature
+    if source:
+        filters["source"] = source
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_summary(
+            period_start=period_start,
+            period_end=period_end,
+            executive=executive,
+            role=user.get("rol"),
+            user_name=user.get("nombre"),
+            filters=filters or None,
+        ),
+    )
+
+
+@app.get("/api/analytics/leads/trends")
+async def api_analytics_leads_trends(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+):
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_trends(period_start=period_start, period_end=period_end),
+    )
+
+
+@app.get("/api/analytics/leads/distributions")
+async def api_analytics_leads_distributions(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    executive: str = Query(None),
+    universe: str = Query("current_active"),
+    stage: str = Query(None),
+    temperature: str = Query(None),
+    source: str = Query(None),
+):
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    loop = asyncio.get_running_loop()
+    filters = {}
+    if stage:
+        filters["stage"] = stage
+    if temperature:
+        filters["temperature"] = temperature
+    if source:
+        filters["source"] = source
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_distributions(
+            period_start=period_start,
+            period_end=period_end,
+            executive=executive,
+            role=user.get("rol"),
+            user_name=user.get("nombre"),
+            universe=universe,
+            filters=filters or None,
+        ),
+    )
+
+
+@app.get("/api/analytics/leads/table")
+async def api_analytics_leads_table(
+    request: Request,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    sort_by: str = Query("created_at"),
+    sort_dir: str = Query("desc"),
+    executive: str = Query(None),
+    stage: str = Query(None),
+    temperature: str = Query(None),
+    source: str = Query(None),
+    search: str = Query(None),
+    universe: str = Query("current_active"),
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+):
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    loop = asyncio.get_running_loop()
+    filters = {}
+    if stage:
+        filters["stage"] = stage
+    if temperature:
+        filters["temperature"] = temperature
+    if source:
+        filters["source"] = source
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: analytics_get_table(
+            page=page,
+            limit=limit,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            executive=executive,
+            role=user.get("rol"),
+            user_name=user.get("nombre"),
+            filters=filters or None,
+            search=search,
+            universe=universe,
+            period_start=period_start,
+            period_end=period_end,
+        ),
+    )
+
+
+@app.get("/api/analytics/leads/filters")
+async def api_analytics_leads_filters(
+    request: Request,
+    executive: str = Query(None),
+):
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_filters(
+            executive=executive,
+            role=user.get("rol"),
+            user_name=user.get("nombre"),
+        ),
+    )
+
+
+@app.get("/api/analytics/leads/coverage")
+async def api_analytics_leads_coverage(
+    request: Request,
+    executive: str = Query(None),
+    universe: str = Query("current_active"),
+):
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_field_coverage(
+            executive=executive,
+            role=user.get("rol"),
+            user_name=user.get("nombre"),
+            universe=universe,
+        ),
+    )
+
+
+@app.get("/api/analytics/leads/{lead_id}/detail")
+async def api_analytics_leads_detail(request: Request, lead_id: str):
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+
+    if not lead_id or len(lead_id) < 12:
+        raise HTTPException(status_code=400, detail="ID inv\u00e1lido")
+
+    loop = asyncio.get_running_loop()
+    data = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: analytics_get_detail(lead_id),
+    )
+    if not data:
+        raise HTTPException(status_code=404, detail="Lead no encontrado")
+
+    # Verificar propiedad: agente solo ve sus leads
+    if user.get("rol") not in ("admin", "supervisor"):
+        exec_name = user.get("nombre", "")
+        lead_exec = (data.get("public") or {}).get("ejecutivo", "")
+        if exec_name and lead_exec and exec_name.strip() != lead_exec.strip():
+            raise HTTPException(status_code=403, detail="El lead no est\u00e1 asignado a este ejecutivo")
+
+    # Enmascarar datos sensibles
+    if user.get("rol") not in ("admin", "supervisor"):
+        phone = (data.get("public") or {}).get("phone", "")
+        if phone:
+            data["public"]["phone_masked"] = _mask_phone(phone)
+            data["public"].pop("phone", None)
+    return data
+
+
+def _mask_phone(phone: str) -> str:
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    if len(digits) >= 8:
+        return f"+{digits[:2]}****{digits[-4:]}"
+    return "****"
+
+# ========================= FIN ANALYTICS =========================
 
 @app.get("/chat-detail/{phone}", response_class=HTMLResponse)
 async def ver_detalle_chat(request: Request, phone: str):

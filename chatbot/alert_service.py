@@ -193,6 +193,35 @@ def _send_alert_once_sync(
                  return
              logger.info(f"[ALERT] Ruteo: Ejecutivo determinado: {exec_name} | Teléfono: {exec_phone} | Es nuevo: {is_new_assignment}")
 
+        # Canonical path: assignment cycle is persisted before the notification.
+        # The legacy phone/property queue is never used while the Hot flag is on.
+        from .crm_metrics import resolve_canonical_lead
+        from .lead_router import get_next_business_slot
+        from .crm_hot_delivery import assign_and_enqueue_hot
+        from .storage import get_db
+        db = get_db()
+        resolution = resolve_canonical_lead(db, lead_id=criteria.get("_id"), phone=phone)
+        if not resolution.lead or resolution.status == "ambiguous_phone":
+            logger.error("[ALERT] canonical Hot blocked identity_status=%s", resolution.status)
+            return
+        due_local = get_next_business_slot(datetime.now(CHILE_TZ))
+        lead_data["target_name"] = exec_name
+        lead_data["target_phone"] = exec_phone
+        lead_data["is_new_assignment"] = is_new_assignment
+        canonical = assign_and_enqueue_hot(
+            db, lead=resolution.lead, recipient_user_id=exec_name,
+            recipient_phone=exec_phone, payload=lead_data,
+            assigned_by="system", reason="LeadRouter", assigned_at=due_local,
+            send_after=due_local,
+        )
+        logger.info(
+            "[ALERT] canonical Hot queued lead_id=%s cycle_id=%s delivery_id=%s",
+            resolution.lead.get("_id"), canonical["cycle"]["assignment_cycle_id"],
+            canonical["notification"]["delivery_id"],
+        )
+        mark_alert_sent(phone, lead_type)
+        return
+
         # --- NUEVO: ASIGNACIÓN ROBUSTA (Enterprise Point 2.1) ---
         # Solo actualizamos DB si es una NUEVA asignación
         if is_new_assignment:

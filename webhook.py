@@ -2362,6 +2362,22 @@ async def process_pending_leads_loop():
             background_tasks_status["notifications_loop"]["status"] = "running"
             
             if should_send_now():
+                # Canonical Hot worker. Fail-closed flag; it never reads the legacy queue.
+                if Config.LEAD_HOT_NOTIFICATIONS_ENABLED:
+                    from chatbot.crm_hot_delivery import process_one_hot
+                    from chatbot.lead_router import format_whatsapp_template
+                    from chatbot.whatsapp_client import send_whatsapp_message_detailed
+
+                    async def _canonical_hot_sender(recipient, payload):
+                        message = format_whatsapp_template(
+                            payload, payload.get("target_name"), payload.get("property_code"), True
+                        )
+                        return await send_whatsapp_message_detailed(recipient, message)
+
+                    await process_one_hot(
+                        get_db(), sender=_canonical_hot_sender,
+                        worker_id=f"render:{os.getpid()}", enabled=True,
+                    )
                 pending = await run_db("pending_notifications.find", get_pending_notifications)
                 if pending:
                     logger.info(f"[BACKGROUND] Analizando {len(pending)} envíos pendientes...")

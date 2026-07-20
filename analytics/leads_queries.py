@@ -1,7 +1,7 @@
 """Read-only MongoDB queries for the Leads Analytics Dashboard."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
 from chatbot.constants import CHILE_TZ
@@ -810,3 +810,251 @@ def _safe_timestamp(value: Any) -> str:
     if isinstance(value, str):
         return value
     return str(value or "")
+
+
+def query_executive_load(
+    executive: Optional[str] = None,
+) -> dict:
+    """Carga actual por ejecutivo: activos, hot, NEW/sin etapa, mediana antiguedad."""
+    db = get_db()
+    active = build_active_filter()
+    user_filter = _build_user_filter(executive)
+    match = {"$and": [active, user_filter]} if user_filter else active
+
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": match},
+        {
+            "$addFields": {
+                "_ex": {"$ifNull": ["$ejecutivo_asignado", "Sin Asignar"]},
+                "_age_days": {
+                    "$dateDiff": {
+                        "startDate": "$_created_normalized",
+                        "endDate": datetime.now(timezone.utc),
+                        "unit": "day",
+                    }
+                },
+            }
+        },
+        {
+            "$group": {
+                "_id": "$_ex",
+                "active": {"$sum": 1},
+                "hot": {"$sum": {"$cond": [{"$eq": ["$lead_temperature_effective", "HOT"]}, 1, 0]}},
+                "new_or_none": {
+                    "$sum": {
+                        "$cond": [
+                            {"$in": ["$pipeline_stage", ["NEW", None, ""]]},
+                            1,
+                            0,
+                        ]
+                    }
+                },
+                "ages": {"$push": "$_age_days"},
+            }
+        },
+        {"$sort": {"active": -1}},
+    ]
+
+    rows = list(db["leads"].aggregate(pipeline))
+    result = []
+    for r in rows:
+        ages = sorted([a for a in r.get("ages", []) if a is not None])
+        median = ages[len(ages) // 2] if ages else 0
+        result.append({
+            "executive": r["_id"],
+            "active": r["active"],
+            "hot": r["hot"],
+            "new_or_none": r["new_or_none"],
+            "median_age_days": median,
+        })
+    return {"executives": result}
+
+
+def query_source_quality(
+    executive: Optional[str] = None,
+) -> dict:
+    """Calidad por origen: activos, %hot, %asignados, %contacted, mediana antiguedad."""
+    db = get_db()
+    active = build_active_filter()
+    user_filter = _build_user_filter(executive)
+    match = {"$and": [active, user_filter]} if user_filter else active
+
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": match},
+        {
+            "$addFields": {
+                "_src": {"$ifNull": ["$prospecto.origen", "Sin informacion"]},
+                "_is_hot": {"$cond": [{"$eq": ["$lead_temperature_effective", "HOT"]}, 1, 0]},
+                "_is_assigned": {"$cond": [{"$not": [{"$in": ["$ejecutivo_asignado", UNASSIGNED_VALUES]}]}, 1, 0]},
+                "_is_contacted": {"$cond": [{"$eq": ["$pipeline_stage", "CONTACTED"]}, 1, 0]},
+                "_age_days": {"$dateDiff": {"startDate": "$_created_normalized", "endDate": datetime.now(timezone.utc), "unit": "day"}},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$_src",
+                "active": {"$sum": 1},
+                "hot": {"$sum": "$_is_hot"},
+                "assigned": {"$sum": "$_is_assigned"},
+                "contacted": {"$sum": "$_is_contacted"},
+                "ages": {"$push": "$_age_days"},
+            }
+        },
+        {"$sort": {"active": -1}},
+    ]
+
+    rows = list(db["leads"].aggregate(pipeline))
+    result = []
+    for r in rows:
+        ages = sorted([a for a in r.get("ages", []) if a is not None])
+        median = ages[len(ages) // 2] if ages else 0
+        total = r["active"]
+        result.append({
+            "source": r["_id"],
+            "active": total,
+            "hot_pct": round(r["hot"] / total * 100, 1) if total else 0,
+            "assigned_pct": round(r["assigned"] / total * 100, 1) if total else 0,
+            "contacted_pct": round(r["contacted"] / total * 100, 1) if total else 0,
+            "median_age_days": median,
+        })
+    return {"sources": result}
+
+
+def query_priorities(
+    executive: Optional[str] = None,
+) -> dict:
+    """Alertas demostrables con datos actuales."""
+    db = get_db()
+    active = build_active_filter()
+    user_filter = _build_user_filter(executive)
+    match = {"$and": [active, user_filter]} if user_filter else active
+
+    def _count(extra=None):
+        q = {"$and": [match, extra]} if extra else match
+        pipeline = [_normalized_created_at_stage(), {"$match": q}, {"$count": "c"}]
+        r = list(db["leads"].aggregate(pipeline))
+        return r[0]["c"] if r else 0
+
+    now = datetime.now(timezone.utc)
+    cutoff_48h = now - timedelta(hours=48)
+    cutoff_7d = now - timedelta(days=7)
+
+    alerts = [
+        {
+            "type": "hot_unassigned",
+            "severity": "high",
+            "label": "Hot sin asignar",
+            "description": "Leads Hot sin ejecutivo asignado",
+            "count": _count({
+                "lead_temperature_effective": "HOT",
+                "ejecutivo_asignado": {"$in": ["Sin Asignar", "No Asignado", None, ""]},
+            }),
+        },
+        {
+            "type": "hot_new_assigned",
+            "severity": "medium",
+            "label": "Hot en NEW asignado",
+            "description": "Leads Hot con etapa NEW y ejecutivo",
+            "count": _count({
+                "lead_temperature_effective": "HOT",
+                "pipeline_stage": "NEW",
+                "ejecutivo_asignado": {"$nin": ["Sin Asignar", "No Asignado", None, ""]},
+            }),
+        },
+        {
+            "type": "unassigned_over_48h",
+            "severity": "medium",
+            "label": "Sin asignar >48h",
+            "description": "Leads sin ejecutivo desde hace mas de 48 horas",
+            "count": _count({
+                "ejecutivo_asignado": {"$in": ["Sin Asignar", "No Asignado", None, ""]},
+                "$expr": {"$gte": [{"$ifNull": ["$_created_normalized", {"$toDate": "1970-01-01T00:00:00Z"}]}, cutoff_48h]},
+            }),
+        },
+        {
+            "type": "new_over_7d",
+            "severity": "medium",
+            "label": "NEW o sin etapa >7d",
+            "description": "Leads en NEW o sin etapa con mas de 7 dias",
+            "count": _count({
+                "pipeline_stage": {"$in": ["NEW", None, ""]},
+                "$expr": {"$lte": ["$_created_normalized", cutoff_7d]},
+            }),
+        },
+        {
+            "type": "no_source",
+            "severity": "low",
+            "label": "Activos sin origen",
+            "description": "Leads activos sin fuente registrada",
+            "count": _count({
+                "$or": [
+                    {"prospecto.origen": {"$in": [None, ""]}},
+                    {"prospecto.origen": {"$exists": False}},
+                ],
+            }),
+        },
+        {
+            "type": "no_executive",
+            "severity": "low",
+            "label": "Activos sin ejecutivo",
+            "description": "Todos los leads activos sin ejecutivo",
+            "count": _count({
+                "$or": [
+                    {"ejecutivo_asignado": {"$in": ["Sin Asignar", "No Asignado", None, ""]}},
+                    {"ejecutivo_asignado": {"$exists": False}},
+                ],
+            }),
+        },
+    ]
+    return {"alerts": alerts}
+
+
+def query_comparative_trends(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+) -> dict:
+    """Tendencia comparativa: periodo actual vs periodo anterior de igual duracion."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+
+    duration = end_utc - start_utc
+    prev_end = start_utc
+    prev_start = prev_end - duration
+
+    def _daily(ps_utc, pe_utc):
+        pipeline = [
+            _normalized_created_at_stage(),
+            {"$match": {"$expr": {"$and": [{"$gte": ["$_created_normalized", ps_utc]}, {"$lt": ["$_created_normalized", pe_utc]}]}}},
+            {"$group": {"_id": _format_date_field("$_created_normalized"), "received": {"$sum": 1}}},
+            {"$sort": {"_id": 1}},
+            {"$project": {"date": "$_id", "received": 1, "_id": 0}},
+        ]
+        return list(db["leads"].aggregate(pipeline))
+
+    current_daily = _daily(start_utc, end_utc)
+    previous_daily = _daily(prev_start, prev_end)
+
+    current_total = sum(d["received"] for d in current_daily)
+    previous_total = sum(d["received"] for d in previous_daily)
+    pct_var = round(
+        ((current_total - previous_total) / previous_total * 100), 1
+    ) if previous_total else 0
+
+    current_avg = round(current_total / max(len(current_daily), 1), 1)
+    previous_avg = round(previous_total / max(len(previous_daily), 1), 1)
+
+    return {
+        "current": {
+            "daily": current_daily,
+            "total": current_total,
+            "avg_daily": current_avg,
+        },
+        "previous": {
+            "daily": previous_daily,
+            "total": previous_total,
+            "avg_daily": previous_avg,
+        },
+        "variation_pct": pct_var,
+    }

@@ -55,6 +55,7 @@ from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_da
 from analytics.leads_service import (
     get_summary, get_trends, get_distributions, get_table as analytics_get_table,
     get_detail as analytics_get_detail, get_filters, get_field_coverage,
+    get_dashboard,
 )
 
 from api_captacion import (
@@ -907,6 +908,29 @@ async def api_analytics_leads_coverage(
             role=user.get("rol"),
             user_name=user.get("nombre"),
             universe=universe,
+        ),
+    )
+
+
+@app.get("/api/analytics/leads/dashboard")
+async def api_analytics_leads_dashboard(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    executive: str = Query(None),
+):
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_dashboard(
+            period_start=period_start,
+            period_end=period_end,
+            executive=executive,
+            role=user.get("rol"),
+            user_name=user.get("nombre"),
         ),
     )
 

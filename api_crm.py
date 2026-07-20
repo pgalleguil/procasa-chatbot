@@ -719,6 +719,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             recognized_management_ev,
             assigned_at=assigned_for_cycle,
             assignment_cycle_id=(lead.get("lifecycle") or {}).get("assignment_cycle_id"),
+            allow_historical_for_presentation=True,
         )
         if not outreach["recognized"]:
             recognized_management_ev = None

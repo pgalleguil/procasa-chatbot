@@ -137,7 +137,8 @@ def event_evidence(event: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def registered_outreach_evidence(event: Optional[Mapping[str, Any]], *, assigned_at=None,
-                                 assignment_cycle_id=None) -> dict[str, Any]:
+                                 assignment_cycle_id=None,
+                                 allow_historical_for_presentation=False) -> dict[str, Any]:
     """Interpret a recorded send/call as management only inside the active assignment cycle."""
     if not event or str(event.get("type") or "").upper() not in REGISTERED_OUTREACH_EVENT_TYPES:
         return {"recognized": False, "occurred_at": None, "reason": "not_registered_outreach"}
@@ -145,10 +146,11 @@ def registered_outreach_evidence(event: Optional[Mapping[str, Any]], *, assigned
     assigned = coerce_utc_datetime(assigned_at)
     if not occurred:
         return {"recognized": False, "occurred_at": None, "reason": "invalid_timestamp"}
-    if assigned and occurred < assigned:
+    if assigned and occurred < assigned and not allow_historical_for_presentation:
         return {"recognized": False, "occurred_at": occurred, "reason": "previous_assignment_cycle"}
     event_cycle = event.get("assignment_cycle_id")
-    if assignment_cycle_id and event_cycle and str(event_cycle) != str(assignment_cycle_id):
+    if (assignment_cycle_id and event_cycle and str(event_cycle) != str(assignment_cycle_id)
+            and not allow_historical_for_presentation):
         return {"recognized": False, "occurred_at": occurred, "reason": "different_assignment_cycle"}
     return {"recognized": True, "occurred_at": occurred, "reason": "registered_outreach"}
 

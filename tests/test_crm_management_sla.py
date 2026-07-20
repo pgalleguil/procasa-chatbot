@@ -192,6 +192,16 @@ def test_historical_whatsapp_from_previous_cycle_does_not_complete_current_sla()
                         "reason": "previous_assignment_cycle"}
 
 
+def test_historical_whatsapp_is_managed_in_legacy_list_presentation_only():
+    event = {"type": "SEND_WA_LEAD", "timestamp": local(20, 8),
+             "assignment_cycle_id": "old-cycle"}
+    evidence = registered_outreach_evidence(
+        event, assigned_at=local(20, 9), assignment_cycle_id="cycle-1",
+        allow_historical_for_presentation=True,
+    )
+    assert evidence["recognized"] is True
+
+
 def test_effective_contact_credits_attempt_and_effective_contact():
     db, _, _ = fixture(); record(db, "EFFECTIVE_CONTACT")
     lead, _ = refreshed(db)

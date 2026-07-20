@@ -28,7 +28,10 @@ OPEN_ONLY_EVENT_TYPES = frozenset({
 })
 VALID_MANAGEMENT_EVENT_TYPES = frozenset({
     "GESTION_LOG", "HUMAN_NOTE", "CONTACT_RESULT", "STATUS_CHANGE",
-    "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "MANUAL_ENTRY",
+    "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD", "MANUAL_ENTRY",
+})
+REGISTERED_OUTREACH_EVENT_TYPES = frozenset({
+    "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD",
 })
 CONTACT_ATTEMPT_RESULTS = frozenset({
     "NO_RESPONDIO", "OCUPADO", "NUMERO_INVALIDO", "MENSAJE_ENVIADO",
@@ -131,6 +134,23 @@ def event_evidence(event: Mapping[str, Any]) -> dict[str, Any]:
         "human": human, "management": management, "contact_attempt": attempt,
         "effective_contact": effective, "result": result,
     }
+
+
+def registered_outreach_evidence(event: Optional[Mapping[str, Any]], *, assigned_at=None,
+                                 assignment_cycle_id=None) -> dict[str, Any]:
+    """Interpret a recorded send/call as management only inside the active assignment cycle."""
+    if not event or str(event.get("type") or "").upper() not in REGISTERED_OUTREACH_EVENT_TYPES:
+        return {"recognized": False, "occurred_at": None, "reason": "not_registered_outreach"}
+    occurred = coerce_utc_datetime(event.get("timestamp") or event.get("occurred_at"))
+    assigned = coerce_utc_datetime(assigned_at)
+    if not occurred:
+        return {"recognized": False, "occurred_at": None, "reason": "invalid_timestamp"}
+    if assigned and occurred < assigned:
+        return {"recognized": False, "occurred_at": occurred, "reason": "previous_assignment_cycle"}
+    event_cycle = event.get("assignment_cycle_id")
+    if assignment_cycle_id and event_cycle and str(event_cycle) != str(assignment_cycle_id):
+        return {"recognized": False, "occurred_at": occurred, "reason": "different_assignment_cycle"}
+    return {"recognized": True, "occurred_at": occurred, "reason": "registered_outreach"}
 
 
 def unique_managed_lead_ids(events: Iterable[Mapping[str, Any]]) -> set[Any]:

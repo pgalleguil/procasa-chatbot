@@ -72,6 +72,11 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         lead_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": actor_user_id,
                              "follow_up_cycle_id": follow_cycle_id, "follow_up_completed_at": None})
     db["leads"].update_one({"_id": lead_id}, {"$set": lead_updates})
+    db["leads"].update_one(
+        {"_id": lead_id, "$or": [{"pipeline_stage": {"$in": ["NEW", "new", "nuevo"]}},
+                                   {"pipeline_stage": {"$exists": False}}]},
+        {"$set": {"pipeline_stage": "CONTACTED", "stage": "gestion"}},
+    )
     # First timestamps use compare-and-set: duplicates and later results cannot replace them.
     db["leads"].update_one({"_id": lead_id, "lifecycle.first_valid_management_at": {"$exists": False}},
                             {"$set": {"lifecycle.first_valid_management_at": occurred}})
@@ -102,9 +107,11 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
          "state": {"$in": ["pending", "failed_retryable"]}},
         {"$set": {"state": "suppressed", "suppressed_reason": "management_completed", "updated_at": occurred}},
     )
+    event_type = {"MESSAGE_SENT_WAITING_RESPONSE": "SEND_WA_LEAD", "EMAIL_SENT": "SEND_EMAIL_LEAD",
+                  "CALL_NO_ANSWER": "CALL_COMPLETED_LEAD"}.get(result_type, "CONTACT_RESULT")
     event = {"_id": f"crm_event:{idempotency_key}", "lead_id": lead_id,
              "assignment_cycle_id": assignment_cycle_id, "actor": actor_user_id,
-             "actor_type": "human", "type": "CONTACT_RESULT", "result": result_type,
+             "actor_type": "human", "type": event_type, "result": result_type,
              "confirmed": True, "timestamp": occurred, "source": source,
              "idempotency_key": idempotency_key}
     try:

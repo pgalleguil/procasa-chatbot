@@ -68,8 +68,7 @@ def calculate_priority(lead_doc, now=None):
     # Si ya está gestionado o cerrado, el SLA es 'fulfilled' (verde fijo)
     is_managed = lead_doc.get("last_event_type") in [
         "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
-        "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "CLICK_EMAIL_LEAD",
-        "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
+        "CALL_COMPLETED_LEAD", "CONTACT_RESULT",
     ]
     
     if is_managed or stage != PipelineStage.NEW:
@@ -139,6 +138,7 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None, lead_id=None)
                 "CLICK_EMAIL_LEAD": "Click Email (Lead)",
                 "SEND_WA_LEAD": "WhatsApp Enviado",
                 "SEND_EMAIL_LEAD": "Email Enviado",
+                "CALL_COMPLETED_LEAD": "Llamada realizada",
                 "CLICK_WHATSAPP_OWNER": "Click WhatsApp (Prop)",
                 "CLICK_PHONE_OWNER": "Llamada Prop. Iniciada",
                 "CLICK_EMAIL_OWNER": "Click Email (Prop)",
@@ -174,8 +174,7 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None, lead_id=None)
         # Si el evento es de gestión y el lead es nuevo, lo promovemos automáticamente a 'En Gestión'
         is_managed = event_type in [
             "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
-            "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "CLICK_EMAIL_LEAD",
-            "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
+            "CALL_COMPLETED_LEAD", "CONTACT_RESULT",
         ]
         
         current_stage = lead.get("pipeline_stage") or lead.get("stage") or PipelineStage.NEW

@@ -604,6 +604,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     page_phones = [l.get("phone", "").replace("+", "").strip() for l in leads_list]
     management_types = [
         "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
+        "CALL_COMPLETED_LEAD",
         "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "CLICK_EMAIL_LEAD",
         "SEND_WA_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER",
         "CLICK_WHATSAPP_OWNER", "CLICK_EMAIL_OWNER", "STATUS_CHANGE", "ASSIGNMENT", "MANUAL_ENTRY",
@@ -615,10 +616,14 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     )
     events_list = await events_cursor.to_list(length=200)
     events_map = {}
+    recognized_management_map = {}
+    recognized_management_types = {"SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD"}
     for ev in events_list:
         phone_ev = ev.get("phone", "").replace("+", "").strip()
         if phone_ev not in events_map:
             events_map[phone_ev] = ev
+        if phone_ev not in recognized_management_map and ev.get("type") in recognized_management_types:
+            recognized_management_map[phone_ev] = ev
 
     type_labels = {
         "CLICK_WHATSAPP_LEAD": "WhatsApp abierto",
@@ -626,6 +631,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         "CLICK_EMAIL_LEAD": "Click Email (Lead)",
         "SEND_WA_LEAD": "WhatsApp enviado",
         "SEND_EMAIL_LEAD": "Email enviado",
+        "CALL_COMPLETED_LEAD": "Llamada realizada",
         "CLICK_WHATSAPP_OWNER": "Click WhatsApp (Prop)",
         "CLICK_PHONE_OWNER": "Llamada Prop. Iniciada",
         "CLICK_EMAIL_OWNER": "Click Email (Prop)",
@@ -693,10 +699,23 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             estado_db = estado_map_legacy.get(estado_db.lower(), PipelineStage.NEW)
         
         last_ev = events_map.get(raw_phone)
-        if last_ev:
-            event_meta = last_ev.get("meta") or last_ev.get("metadata") or {}
+        recognized_management_ev = recognized_management_map.get(raw_phone)
+        assigned_for_cycle = _coerce_crm_datetime(
+            (lead.get("lifecycle") or {}).get("assigned_at") or lead.get("fecha_asignacion")
+        )
+        from chatbot.crm_metrics import registered_outreach_evidence
+        outreach = registered_outreach_evidence(
+            recognized_management_ev,
+            assigned_at=assigned_for_cycle,
+            assignment_cycle_id=(lead.get("lifecycle") or {}).get("assignment_cycle_id"),
+        )
+        if not outreach["recognized"]:
+            recognized_management_ev = None
+        commercial_ev = recognized_management_ev or last_ev
+        if commercial_ev:
+            event_meta = commercial_ev.get("meta") or commercial_ev.get("metadata") or {}
             last_action_text = (
-                type_labels.get(last_ev.get("type"))
+                type_labels.get(commercial_ev.get("type"))
                 or event_meta.get("action_label")
                 or event_meta.get("action")
                 or "Gestión manual"
@@ -713,7 +732,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
 
         last_message_at = lead.get("last_message_at")
         message_dt = _coerce_crm_datetime(last_message_at)
-        event_dt = _coerce_crm_datetime(last_ev.get("timestamp") if last_ev else None)
+        event_dt = _coerce_crm_datetime(commercial_ev.get("timestamp") if commercial_ev else None)
         has_new_customer_reply = bool(
             lead.get("last_message_role") == "user"
             and message_dt
@@ -732,11 +751,13 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         last_ts = (
             last_message_at if has_new_customer_reply else
             lead.get("last_event_at") or
-            (last_ev.get("timestamp") if last_ev else None) or
+            (commercial_ev.get("timestamp") if commercial_ev else None) or
             lifecycle_ts or ultimo_msg_ts or created_ts
         )
         
         estado_final = estado_db
+        if recognized_management_ev and estado_final == PipelineStage.NEW:
+            estado_final = PipelineStage.CONTACTED
         
         # Identificar ejecutivo y timestamp real para visualización
         ejecutivo = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
@@ -798,7 +819,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         from chatbot.crm_metrics import calculate_sla
         canonical_sla = calculate_sla(
             assigned_at=(lead.get("lifecycle", {}) or {}).get("assigned_at") or lead.get("fecha_asignacion"),
-            first_valid_management_at=(lead.get("lifecycle", {}) or {}).get("first_valid_management_at"),
+            first_valid_management_at=(lead.get("lifecycle", {}) or {}).get("first_valid_management_at") or
+                                      (outreach["occurred_at"] if recognized_management_ev else None),
         )
         if canonical_sla["status"] != "unknown":
             sla_status = canonical_sla["status"]

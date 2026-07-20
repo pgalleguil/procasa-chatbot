@@ -8,7 +8,7 @@ from chatbot.crm_management import (
     claim_sla_alert_if_still_eligible, eligible_for_first_sla_reassignment,
     follow_up_shadow_status, record_management_result,
 )
-from chatbot.crm_metrics import event_evidence
+from chatbot.crm_metrics import calculate_sla, event_evidence, registered_outreach_evidence
 from chatbot.crm_sla_shadow import evaluate_sla_shadow
 from tests.test_crm_notification_containment import local
 
@@ -30,6 +30,9 @@ def set_path(doc, path, value):
 
 def matches(doc, query):
     for key, expected in query.items():
+        if key == "$or":
+            if not any(matches(doc, branch) for branch in expected): return False
+            continue
         actual, exists = get_path(doc, key)
         if isinstance(expected, dict):
             if "$exists" in expected and exists != expected["$exists"]: return False
@@ -112,7 +115,11 @@ def test_message_sent_completes_management_and_attempt_but_not_effective_contact
     assert "first_effective_contact_at" not in lead["lifecycle"]
     assert lead["management_status"] == "managed_waiting_response"
     assert lead["contact_attempted"] is True and lead["effective_contact"] is False
+    assert lead["pipeline_stage"] == "CONTACTED" and lead["stage"] == "gestion"
     assert cycle["sla_first_management_status"] == "completed"
+    assert calculate_sla(assigned_at=cycle["assigned_at"],
+                         first_valid_management_at=cycle["first_valid_management_at"],
+                         now=local(20, 14))["status"] == "fulfilled"
 
 
 def test_message_sent_creates_follow_up_and_no_sla_after_three_hours():
@@ -136,6 +143,53 @@ def test_call_no_answer_credits_first_management_and_attempt():
     assert lead["lifecycle"]["first_valid_management_at"]
     assert lead["lifecycle"]["first_contact_attempt_at"]
     assert lead["follow_up_required"] is True
+
+
+def test_email_sent_credits_management_without_effective_contact():
+    db, _, _ = fixture(); record(db, "EMAIL_SENT")
+    lead, cycle = refreshed(db)
+    assert lead["lifecycle"]["first_valid_management_at"]
+    assert lead["contact_attempted"] is True and lead["effective_contact"] is False
+    assert cycle["sla_first_management_status"] == "completed"
+
+
+def test_recorded_call_credits_management_without_effective_contact():
+    db, _, _ = fixture(); record(db, "CALL_NO_ANSWER")
+    lead, cycle = refreshed(db)
+    assert lead["lifecycle"]["first_valid_management_at"]
+    assert lead["contact_attempted"] is True and lead["effective_contact"] is False
+    assert cycle["sla_first_management_status"] == "completed"
+
+
+def test_message_sent_suppresses_pending_yellow_and_red_notifications():
+    db, _, _ = fixture()
+    db["crm_notifications_v1"].docs.extend([
+        {"assignment_cycle_id": "cycle-1", "notification_type": level, "state": "pending"}
+        for level in ("sla_yellow", "sla_red")
+    ])
+    record(db, "MESSAGE_SENT_WAITING_RESPONSE")
+    assert [row["state"] for row in db["crm_notifications_v1"].docs] == ["suppressed", "suppressed"]
+
+
+def test_registered_whatsapp_row_cannot_remain_expired_or_unattended():
+    event = {"type": "SEND_WA_LEAD", "timestamp": local(20, 10),
+             "assignment_cycle_id": "cycle-1"}
+    evidence = registered_outreach_evidence(
+        event, assigned_at=local(20, 9), assignment_cycle_id="cycle-1"
+    )
+    sla = calculate_sla(assigned_at=local(20, 9),
+                        first_valid_management_at=evidence["occurred_at"], now=local(20, 14))
+    assert evidence["recognized"] is True and sla["status"] == "fulfilled"
+
+
+def test_historical_whatsapp_from_previous_cycle_does_not_complete_current_sla():
+    event = {"type": "SEND_WA_LEAD", "timestamp": local(20, 8),
+             "assignment_cycle_id": "old-cycle"}
+    evidence = registered_outreach_evidence(
+        event, assigned_at=local(20, 9), assignment_cycle_id="cycle-1"
+    )
+    assert evidence == {"recognized": False, "occurred_at": local(20, 8),
+                        "reason": "previous_assignment_cycle"}
 
 
 def test_effective_contact_credits_attempt_and_effective_contact():

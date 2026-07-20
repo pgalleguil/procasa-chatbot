@@ -3703,6 +3703,10 @@
             try {
                 const localTime = new Date().toLocaleString('es-CL', { timeZone: 'America/Santiago' });
                 meta.client_local_time = localTime;
+                if (type === 'SEND_WA_LEAD' || type === 'SEND_EMAIL_LEAD' || type === 'CALL_COMPLETED_LEAD') {
+                    meta.idempotency_key = meta.idempotency_key ||
+                        (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+                }
 
                 const payload = {
                     phone: currentPhone,

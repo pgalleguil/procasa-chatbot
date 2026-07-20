@@ -876,6 +876,9 @@ async def api_crm_log_action(request: Request):
         phone = data.get("phone")
         payload = data.get("data", {})
         event_type = payload.get("type")
+        user, authorized_lead = await _get_authorized_crm_lead(request, phone)
+        actor_user_id = str(user.get("_id") or "")
+        actor_name = user.get("nombre") or user.get("username") or actor_user_id
 
         now_cl = datetime.now(CHILE_TZ)
         if "meta" not in payload:
@@ -885,13 +888,36 @@ async def api_crm_log_action(request: Request):
         def _sync_log_action():
             from chatbot.storage import get_db
             db = get_db()
-            phone_clean = str(phone).replace("+", "").strip()
-            lead = db["leads"].find_one({"phone": {"$regex": f"^{phone_clean}"}})
+            lead = db["leads"].find_one({"_id": authorized_lead["_id"]})
 
-            # Opening an external app or link is audit evidence only. It must
-            # never promote the lead or complete first-management SLA.
-
-            log_crm_event(phone=phone, event_type=event_type, meta_data=payload.get("meta"))
+            # A recorded send/completed call is management. Navigation-only
+            # clicks remain audit evidence and never complete first-management SLA.
+            result_by_event = {
+                "SEND_WA_LEAD": "MESSAGE_SENT_WAITING_RESPONSE",
+                "SEND_EMAIL_LEAD": "EMAIL_SENT",
+                "CALL_COMPLETED_LEAD": "CALL_NO_ANSWER",
+            }
+            if event_type in result_by_event and lead:
+                from chatbot.crm_management import record_management_result
+                from chatbot.crm_metrics import active_assignment_cycle
+                cycle = active_assignment_cycle(db, lead["_id"])
+                if not cycle:
+                    raise ValueError("El lead no tiene un ciclo de asignación activo")
+                meta = payload.get("meta") or {}
+                idempotency_key = str(meta.get("idempotency_key") or "").strip()
+                if not idempotency_key:
+                    idempotency_key = f"crm-send:{lead['_id']}:{cycle['assignment_cycle_id']}:{event_type}:{now_cl.isoformat()}"
+                record_management_result(
+                    db, lead_id=lead["_id"], assignment_cycle_id=cycle["assignment_cycle_id"],
+                    actor_user_id=actor_user_id, result_type=result_by_event[event_type],
+                    occurred_at=None, source="crm_send_action", idempotency_key=idempotency_key,
+                )
+                from chatbot.metrics import update_lead_metrics
+                update_lead_metrics(db, phone, event_at=datetime.now(timezone.utc),
+                                    event_type=event_type, lead_id=lead["_id"])
+            else:
+                log_crm_event(phone=phone, event_type=event_type, agent=actor_name,
+                              meta_data=payload.get("meta"))
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(_WEB_THREAD_POOL, _sync_log_action)

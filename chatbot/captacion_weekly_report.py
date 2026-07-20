@@ -70,6 +70,9 @@ Reglas:
 - No expongas negativamente a ejecutivos.
 - No incluyas datos personales.
 - No incluyas cifras ni dígitos en la narración; el backend agrega todas las cifras.
+- No decidas agrupaciones, resultados ni foco operativo.
+- La introducción debe ser neutral y tener máximo ciento veinte caracteres.
+- El cierre debe tener máximo noventa caracteres.
 - Usa español de Chile, tono profesional, cercano y motivador.
 - Devuelve exclusivamente JSON válido con intro, insight, weekly_focus y closing.
 """
@@ -167,27 +170,17 @@ def derive_operational_priority(snapshot: dict) -> dict:
     contacts = snapshot["team"]["effective_contacts_unique"]
     captures = snapshot["team"]["captured_properties_unique"]
     if pending:
-        por_contactar = details.get("por_contactar", 0)
-        sin_respuesta = details.get("no_respondio", 0)
-        return {
-            "key": "pending_follow_up",
-            "label": "Priorizar pendientes y contactos sin respuesta",
-            "supporting_total": pending,
-            "message": (
-                f"Priorizar las *{por_contactar} propiedades por contactar* y retomar las "
-                f"*{sin_respuesta} sin respuesta*, registrando el resultado de cada nueva gestión en el CRM."
-            ),
-        }
+        return {"key": "pending_follow_up", "label": "Priorizar pendientes y contactos sin respuesta", "supporting_total": pending}
     if details.get("corredor"):
-        return {"key": "initial_filtering", "label": "Reforzar el filtrado y la clasificación inicial", "supporting_total": details["corredor"], "message": "Reforzar el filtrado y la clasificación inicial, registrando cada decisión en el CRM."}
+        return {"key": "initial_filtering", "label": "Reforzar el filtrado y la clasificación inicial", "supporting_total": details["corredor"]}
     stale = details.get("propiedad_no_disponible", 0) + details.get("publicacion_expirada", 0)
     if stale:
-        return {"key": "listing_freshness", "label": "Revisar antigüedad y vigencia de las propiedades", "supporting_total": stale, "message": "Revisar la antigüedad y vigencia de las propiedades antes de iniciar una nueva gestión."}
+        return {"key": "listing_freshness", "label": "Revisar antigüedad y vigencia de las propiedades", "supporting_total": stale}
     if contacts > captures:
-        return {"key": "commercial_proposal", "label": "Reforzar la propuesta comercial después del contacto", "supporting_total": contacts - captures, "message": "Reforzar la propuesta comercial después del contacto y registrar el resultado en el CRM."}
+        return {"key": "commercial_proposal", "label": "Reforzar la propuesta comercial después del contacto", "supporting_total": contacts - captures}
     if captures:
-        return {"key": "sustain_captures", "label": "Sostener las prácticas que permitieron captar", "supporting_total": captures, "message": "Sostener las prácticas de seguimiento y registrar cada resultado comercial en el CRM."}
-    return {"key": "consistent_recording", "label": "Mantener seguimiento y registro comercial consistente", "supporting_total": 0, "message": "Mantener un seguimiento consistente y registrar cada resultado comercial en el CRM."}
+        return {"key": "sustain_captures", "label": "Sostener las prácticas que permitieron captar", "supporting_total": captures}
+    return {"key": "consistent_recording", "label": "Mantener seguimiento y registro comercial consistente", "supporting_total": 0}
 
 
 def validate_crm_parity(snapshot: dict, panel: dict) -> dict:
@@ -331,6 +324,8 @@ def validate_narrative(value: dict, *, allow_digits: bool = False) -> dict:
         raise ValueError("La narración contiene una sección vacía")
     if not allow_digits and any(re.search(r"\d", text) for text in clean.values()):
         raise ValueError("La narración no puede introducir cifras")
+    if len(clean["intro"]) > 120 or len(clean["closing"]) > 90:
+        raise ValueError("La introducción o el cierre exceden el largo permitido")
     return clean
 
 
@@ -371,11 +366,22 @@ def generate_narrative(snapshot: dict) -> tuple[dict, str]:
                     "role": "user",
                     "content": (
                         "La salida anterior fue rechazada. Reescribe las cuatro secciones sin usar ningún "
-                        "dígito, porcentaje, cifra ni cantidad explícita. Devuelve solo el JSON solicitado."
+                        "dígito, porcentaje, cifra ni cantidad explícita. La introducción debe ser neutral y "
+                        "tener máximo ciento veinte caracteres; el cierre, máximo noventa. Devuelve solo el JSON solicitado."
                     ),
                 },
             ])
     raise ValueError("DeepSeek no devolvió una narración segura") from last_error
+
+
+def _deterministic_focus_message(snapshot: dict) -> str:
+    details = snapshot.get("detailed_outcomes") or {}
+    if snapshot["operational_priority"]["key"] == "pending_follow_up":
+        return (
+            f"Priorizar las *{details.get('por_contactar', 0)} propiedades por contactar* y retomar las "
+            f"*{details.get('no_respondio', 0)} sin respuesta*, registrando el resultado de cada nueva gestión en el CRM."
+        )
+    return snapshot["operational_priority"]["label"] + ", registrando cada resultado en el CRM."
 
 
 def assemble_whatsapp_message(snapshot: dict, narrative: dict) -> str:
@@ -414,7 +420,7 @@ def assemble_whatsapp_message(snapshot: dict, narrative: dict) -> str:
     lines.extend([
         "",
         "🎯 *Foco de esta semana*",
-        snapshot["operational_priority"]["message"],
+        _deterministic_focus_message(snapshot),
         "",
         narrative["closing"],
     ])

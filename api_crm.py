@@ -1132,7 +1132,8 @@ def update_lead_crm_data(phone, data):
         )
 
     # Log de gestión comercial (Acción User) -> Usamos el log centralizado
-    log_event(phone_clean, InteractionType.HUMAN_NOTE, "agent", {
+    actor_name = str(data.get("_actor_name") or "").strip()
+    log_event(phone_clean, InteractionType.HUMAN_NOTE, actor_name or "unresolved_actor", {
         "interaction_type": interaction_type,
         "result": result,
         "notes": data.get("notas"),

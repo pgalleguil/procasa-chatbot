@@ -236,3 +236,170 @@ def persist_immutable_snapshot(db, snapshot: Mapping[str, Any]):
     document["snapshot_key"] = key
     db["crm_metric_snapshots"].insert_one(document)
     return document
+
+
+def chile_period_bounds(period_start, period_end):
+    """Inclusive local dates represented as an exclusive UTC interval."""
+    start_date = period_start if hasattr(period_start, "year") and not isinstance(period_start, str) else datetime.fromisoformat(str(period_start)).date()
+    end_date = period_end if hasattr(period_end, "year") and not isinstance(period_end, str) else datetime.fromisoformat(str(period_end)).date()
+    start_local = CHILE_TZ.localize(datetime.combine(start_date, datetime.min.time()))
+    end_local = CHILE_TZ.localize(datetime.combine(end_date, datetime.min.time()))
+    return start_local.astimezone(timezone.utc), (end_local + __import__("datetime").timedelta(days=1)).astimezone(timezone.utc)
+
+
+def in_utc_interval(value, start_utc, end_utc) -> bool:
+    parsed = coerce_utc_datetime(value)
+    return bool(parsed and start_utc <= parsed < end_utc)
+
+
+def historical_temperature_at(lead: Mapping[str, Any], cutoff_utc) -> Optional[str]:
+    """Return HOT/COLD only from timestamped evidence, never from current inventory."""
+    evidence = []
+    for entry in lead.get("temperature_history") or []:
+        at = coerce_utc_datetime(entry.get("at") or entry.get("timestamp"))
+        value = str(entry.get("value") or entry.get("temperature") or "").upper()
+        if at and at < cutoff_utc and value in {"HOT", "COLD"}:
+            evidence.append((at, value))
+    return max(evidence, default=(None, None), key=lambda item: item[0])[1]
+
+
+def format_business_age(minutes: Optional[int]) -> Optional[str]:
+    if minutes is None:
+        return None
+    minutes = max(0, int(minutes))
+    days, remaining = divmod(minutes, 8 * 60)
+    hours = remaining // 60
+    if days and hours:
+        return f"{days} dÃ­a{'s' if days != 1 else ''} hÃ¡bil{'es' if days != 1 else ''} y {hours} hora{'s' if hours != 1 else ''}"
+    if days:
+        return f"{days} dÃ­a{'s' if days != 1 else ''} hÃ¡bil{'es' if days != 1 else ''}"
+    return f"{hours} hora{'s' if hours != 1 else ''} hÃ¡bil{'es' if hours != 1 else ''}"
+
+
+def build_weekly_crm_snapshot(db, *, period_start, period_end, priority_as_of,
+                              executive_order: Iterable[str]) -> dict[str, Any]:
+    """Build cohort, pipeline and Monday inventory from canonical CRM evidence."""
+    start_utc, end_utc = chile_period_bounds(period_start, period_end)
+    priority_utc = coerce_utc_datetime(priority_as_of)
+    if not priority_utc:
+        raise ValueError("priority_as_of invÃ¡lido")
+    cutover_utc = coerce_utc_datetime(INSTRUMENTATION_CUTOVER)
+    if start_utc < cutover_utc:
+        raise ValueError("El periodo es anterior al corte operativo de CRM")
+
+    leads = list(db["leads"].find({}, {"messages": 0}))
+    lead_by_id = {lead["_id"]: lead for lead in leads}
+    cohort_ids = {
+        lead["_id"] for lead in leads
+        if in_utc_interval(lead.get("created_at") or (lead.get("lifecycle") or {}).get("created_at"), start_utc, end_utc)
+    }
+    events = list(db["crm_events"].find({}))
+    period_events = [event for event in events if in_utc_interval(event.get("timestamp"), start_utc, end_utc)]
+    valid_management = [event for event in period_events if event_evidence(event)["management"]]
+    managed_ids = {event["lead_id"] for event in valid_management if event.get("lead_id") in cohort_ids}
+    unmanaged_ids = cohort_ids - managed_ids
+
+    attempts = {e["lead_id"] for e in period_events if event_evidence(e)["contact_attempt"] and e.get("lead_id") in lead_by_id}
+    effective = {e["lead_id"] for e in period_events if event_evidence(e)["effective_contact"] and e.get("lead_id") in lead_by_id}
+    ambiguous = sum(1 for e in period_events if e.get("identity_status") == "ambiguous_phone")
+    unresolved_actor = sum(1 for e in period_events if e.get("lead_id") and e.get("actor_type") == "human" and not e.get("actor"))
+
+    visits = list(db["visitas"].find({}))
+    period_visits = [v for v in visits if in_utc_interval(v.get("confirmed_at") or v.get("created_at"), start_utc, end_utc)]
+    visit_lead_ids = {v.get("lead_id") for v in period_visits if v.get("lead_id") in lead_by_id}
+    won, lost = set(), set()
+    for event in period_events:
+        to_stage = normalize_result((event.get("meta") or {}).get("to") or event.get("result"))
+        if event.get("lead_id") not in lead_by_id:
+            continue
+        if to_stage == "CLOSED_WON": won.add(event["lead_id"])
+        if to_stage == "CLOSED_LOST": lost.add(event["lead_id"])
+
+    temperatures = {lead_id: historical_temperature_at(lead_by_id[lead_id], end_utc) for lead_id in cohort_ids}
+    temperature_publishable = bool(cohort_ids) and all(value in {"HOT", "COLD"} for value in temperatures.values())
+    hot_cutoff = sum(value == "HOT" for value in temperatures.values()) if temperature_publishable else None
+    cold_cutoff = sum(value == "COLD" for value in temperatures.values()) if temperature_publishable else None
+    hot_pending_cutoff = sum(lead_id in unmanaged_ids and value == "HOT" for lead_id, value in temperatures.items()) if temperature_publishable else None
+
+    cycles = list(db["crm_assignment_cycles"].find({}))
+    period_cycles = [c for c in cycles if in_utc_interval(c.get("assigned_at"), start_utc, end_utc)]
+    active_cycles = [c for c in cycles if not c.get("unassigned_at") and c.get("lead_id") in lead_by_id]
+    active_by_lead = {c["lead_id"]: c for c in sorted(active_cycles, key=lambda c: coerce_utc_datetime(c.get("assigned_at")) or datetime.min.replace(tzinfo=timezone.utc))}
+    pending_stages = {"NEW", "NEW_LEAD", "NUEVO", ""}
+    pending_ids = {
+        lead_id for lead_id, lead in lead_by_id.items()
+        if str(lead.get("pipeline_stage") or lead.get("stage") or "NEW").upper() in pending_stages
+    }
+    current_pending_cycles = {lead_id: cycle for lead_id, cycle in active_by_lead.items() if lead_id in pending_ids}
+    excluded_unassigned = len(pending_ids - set(current_pending_cycles))
+    hot_unattended = sum(
+        str(lead_by_id[lead_id].get("lead_temperature_effective") or "").upper() == "HOT"
+        for lead_id in current_pending_cycles
+    )
+    overdue_ids, pending_ages = set(), {}
+    for lead_id, cycle in current_pending_cycles.items():
+        assigned = coerce_utc_datetime(cycle.get("assigned_at"))
+        if not assigned or assigned < cutover_utc:
+            continue
+        first = coerce_utc_datetime(cycle.get("first_valid_management_at"))
+        sla = calculate_sla(assigned_at=assigned, first_valid_management_at=first, now=priority_utc)
+        if not first and sla["status"] == "critical": overdue_ids.add(lead_id)
+        if not first and sla["minutes"] is not None: pending_ages[lead_id] = sla["minutes"]
+
+    names = list(dict.fromkeys(str(name).strip() for name in executive_order if str(name).strip()))
+    buckets = {name: {"name": name, "new_assigned_unique": 0, "managed_unique": 0, "current_pending_unique": 0,
+                      "effective_contacts_unique": 0, "leads_with_visit_unique": 0,
+                      "closed_won_unique": 0, "closed_lost_unique": 0} for name in names}
+    def bucket(name):
+        return buckets.get(str(name or "").strip())
+    new_sets, managed_sets, pending_sets, effective_sets = {}, {}, {}, {}
+    for cycle in period_cycles:
+        name = cycle.get("assigned_to_user_id")
+        if bucket(name): new_sets.setdefault(name, set()).add(cycle.get("lead_id"))
+    for event in valid_management:
+        name = event.get("actor")
+        if bucket(name): managed_sets.setdefault(name, set()).add(event.get("lead_id"))
+    for lead_id, cycle in current_pending_cycles.items():
+        name = cycle.get("assigned_to_user_id")
+        if bucket(name): pending_sets.setdefault(name, set()).add(lead_id)
+    for event in period_events:
+        if event_evidence(event)["effective_contact"] and bucket(event.get("actor")):
+            effective_sets.setdefault(event["actor"], set()).add(event.get("lead_id"))
+    for name, row in buckets.items():
+        row["new_assigned_unique"] = len(new_sets.get(name, set()) - {None})
+        row["managed_unique"] = len(managed_sets.get(name, set()) - {None})
+        row["current_pending_unique"] = len(pending_sets.get(name, set()) - {None})
+        row["effective_contacts_unique"] = len(effective_sets.get(name, set()) - {None})
+
+    oldest = max(pending_ages.values(), default=None)
+    limitations = []
+    if not temperature_publishable: limitations.append("Temperatura histÃ³rica al corte no demostrable para toda la cohorte")
+    if ambiguous: limitations.append("Existen eventos ambiguos excluidos")
+    snapshot = {
+        "schema_version": "crm_weekly_snapshot_v1", "metric_version": METRIC_VERSION,
+        "report": {"period_start": str(period_start), "period_end": str(period_end), "timezone": "America/Santiago",
+                   "generated_at": utc_now(), "historical_comparison_allowed": False},
+        "cohort": {"received_unique": len(cohort_ids), "hot_at_cutoff_unique": hot_cutoff,
+                   "cold_at_cutoff_unique": cold_cutoff, "managed_unique": len(managed_ids),
+                   "unmanaged_at_cutoff_unique": len(unmanaged_ids), "hot_pending_at_cutoff_unique": hot_pending_cutoff},
+        "pipeline_activity": {"leads_with_confirmed_attempt_unique": len(attempts),
+                              "leads_with_effective_contact_unique": len(effective),
+                              "leads_with_visit_unique": len(visit_lead_ids), "visit_events_total": len(period_visits),
+                              "closed_won_unique": len(won), "closed_lost_unique": len(lost)},
+        "monday_priorities": {"priority_as_of": priority_utc.astimezone(CHILE_TZ).isoformat(),
+                              "hot_unattended_unique": hot_unattended,
+                              "sla_overdue_publishable_unique": len(overdue_ids),
+                              "oldest_pending_business_minutes": oldest,
+                              "oldest_pending_display": format_business_age(oldest)},
+        "executives": list(buckets.values()),
+        "operational_focus": {"key": "", "supporting_metrics": {}},
+        "data_quality": {"cutover": INSTRUMENTATION_CUTOVER, "complete_for_period": True,
+                         "temperature_publishable": temperature_publishable, "sla_publishable": True,
+                         "sla_definition": "team_first_assignment_to_first_valid_management",
+                         "excluded_ambiguous_events": ambiguous,
+                         "excluded_unresolved_actor_events": unresolved_actor,
+                         "excluded_unassigned_leads": excluded_unassigned, "limitations": limitations},
+        "crm_parity": {"validated": False, "differences": []},
+        "_audit": {"cohort_ids": list(cohort_ids), "managed_ids": list(managed_ids), "unmanaged_ids": list(unmanaged_ids)},
+    }
+    return snapshot

@@ -602,6 +602,14 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     # 4b. BULK QUERY DE EVENTOS para los leads de ESTA PÁGINA solamente (máx 10-20 teléfonos)
     # Esto es O(page_size), no O(total_leads). Correcto y eficiente.
     page_phones = [l.get("phone", "").replace("+", "").strip() for l in leads_list]
+    phone_candidates = list({value for phone in page_phones for value in (phone, f"+{phone}") if phone})
+    phone_leads = await db["leads"].find(
+        {"phone": {"$in": phone_candidates}}, {"phone": 1}
+    ).to_list(length=max(200, len(phone_candidates) * 2))
+    phone_identity_counts = {}
+    for candidate in phone_leads:
+        normalized = str(candidate.get("phone") or "").replace("+", "").strip()
+        phone_identity_counts[normalized] = phone_identity_counts.get(normalized, 0) + 1
     management_types = [
         "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
         "CALL_COMPLETED_LEAD",
@@ -699,7 +707,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             estado_db = estado_map_legacy.get(estado_db.lower(), PipelineStage.NEW)
         
         last_ev = events_map.get(raw_phone)
-        recognized_management_ev = recognized_management_map.get(raw_phone)
+        recognized_management_ev = (
+            recognized_management_map.get(raw_phone)
+            if phone_identity_counts.get(raw_phone) == 1 else None
+        )
         assigned_for_cycle = _coerce_crm_datetime(
             (lead.get("lifecycle") or {}).get("assigned_at") or lead.get("fecha_asignacion")
         )

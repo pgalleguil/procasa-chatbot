@@ -270,10 +270,10 @@ def format_business_age(minutes: Optional[int]) -> Optional[str]:
     days, remaining = divmod(minutes, 8 * 60)
     hours = remaining // 60
     if days and hours:
-        return f"{days} dÃ­a{'s' if days != 1 else ''} hÃ¡bil{'es' if days != 1 else ''} y {hours} hora{'s' if hours != 1 else ''}"
+        return f"{days} d\u00eda{'s' if days != 1 else ''} h\u00e1bil{'es' if days != 1 else ''} y {hours} hora{'s' if hours != 1 else ''}"
     if days:
-        return f"{days} dÃ­a{'s' if days != 1 else ''} hÃ¡bil{'es' if days != 1 else ''}"
-    return f"{hours} hora{'s' if hours != 1 else ''} hÃ¡bil{'es' if hours != 1 else ''}"
+        return f"{days} d\u00eda{'s' if days != 1 else ''} h\u00e1bil{'es' if days != 1 else ''}"
+    return f"{hours} hora{'s' if hours != 1 else ''} h\u00e1bil{'es' if hours != 1 else ''}"
 
 
 def build_weekly_crm_snapshot(db, *, period_start, period_end, priority_as_of,
@@ -373,7 +373,7 @@ def build_weekly_crm_snapshot(db, *, period_start, period_end, priority_as_of,
 
     oldest = max(pending_ages.values(), default=None)
     limitations = []
-    if not temperature_publishable: limitations.append("Temperatura histÃ³rica al corte no demostrable para toda la cohorte")
+    if not temperature_publishable: limitations.append("Temperatura hist\u00f3rica al corte no demostrable para toda la cohorte")
     if ambiguous: limitations.append("Existen eventos ambiguos excluidos")
     snapshot = {
         "schema_version": "crm_weekly_snapshot_v1", "metric_version": METRIC_VERSION,

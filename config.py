@@ -36,6 +36,14 @@ class Config:
     CAPTACION_WEEKLY_RETRY_DEADLINE_HOUR = 10
     CAPTACION_WEEKLY_MAX_SEND_ATTEMPTS = 3
     CAPTACION_WEEKLY_PROMPT_VERSION = "captacion_weekly_writer_v4"
+    CRM_WEEKLY_REPORT_GROUP_ID = os.getenv("CRM_WEEKLY_REPORT_GROUP_ID", "").strip()
+    CRM_WEEKLY_REPORT_COLLECTION = os.getenv("CRM_WEEKLY_REPORT_COLLECTION", "crm_weekly_reports")
+    CRM_WEEKLY_DELIVERY_COLLECTION = os.getenv("CRM_WEEKLY_DELIVERY_COLLECTION", "crm_weekly_deliveries")
+    CRM_WEEKLY_EXECUTIVE_ORDER = os.getenv("CRM_WEEKLY_EXECUTIVE_ORDER", "Susana,Mariela,Erika,Paula,Pablo")
+    CRM_WEEKLY_PREVIEW_REQUIRED = True
+    CRM_WEEKLY_AUTOMATIC_SEND = False
+    CRM_WEEKLY_SCHEDULE_HOUR = 8
+    CRM_WEEKLY_SCHEDULE_MINUTE = 15
     CRM_BASE_URL = os.getenv("CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")
 
 

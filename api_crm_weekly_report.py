@@ -1,10 +1,12 @@
+import json
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from jose import jwt
 
 from config import Config
-from chatbot.crm_weekly_report import cancel_report, get_report, list_reports, regenerate_narrative
+from chatbot.crm_weekly_report import approve_and_send, cancel_report, get_report, list_reports, regenerate_narrative
 from chatbot.storage import get_async_db
 
 router = APIRouter(tags=["CRM Weekly Report"])
@@ -29,6 +31,7 @@ async def weekly_reports_view(request: Request, report_id: str = Query(None)):
     report = await get_report(report_id) if report_id else (reports[0] if reports else None)
     return templates.TemplateResponse("crm_weekly_reports.html", {"request": request, "report": report,
                                       "reports": reports, "user": user,
+                                      "snapshot_json": json.dumps((report or {}).get("snapshot") or {}, ensure_ascii=False, indent=2, default=str),
                                       "group_configured": bool(getattr(Config, "CRM_WEEKLY_REPORT_GROUP_ID", None))})
 
 
@@ -42,3 +45,10 @@ async def regenerate(request: Request, report_id: str):
 async def cancel(request: Request, report_id: str):
     user = await admin_user(request)
     return await cancel_report(report_id, user.get("nombre") or user.get("username"))
+
+
+@router.post("/api/crm/weekly-report/{report_id}/approve-send")
+async def approve_send(request: Request, report_id: str):
+    user = await admin_user(request)
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    return await approve_and_send(report_id, user.get("nombre") or user.get("username"), body.get("final_text"))

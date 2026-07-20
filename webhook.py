@@ -217,6 +217,8 @@ async def lifespan(app: FastAPI):
     w_task = asyncio.create_task(cache_prewarmer_loop())  # PRE-WARMING de cache
     el_task = asyncio.create_task(event_loop_monitor_loop()) # MONITOR EVENT LOOP
     tp_task = asyncio.create_task(threadpool_forensics_loop()) # MONITOR THREAD POOLS
+    from chatbot.crm_weekly_report import crm_weekly_scheduler_loop
+    crm_weekly_task = asyncio.create_task(crm_weekly_scheduler_loop())
     
     # Iniciar Consumers
     c1_task = asyncio.create_task(lead_consumer_worker(1))
@@ -255,11 +257,12 @@ async def lifespan(app: FastAPI):
     w_task.cancel()
     el_task.cancel()
     tp_task.cancel()
+    crm_weekly_task.cancel()
     c1_task.cancel()
     c2_task.cancel()
     try:
         await asyncio.gather(
-            n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, c1_task, c2_task,
+            n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, c1_task, c2_task,
             return_exceptions=True
         )
     except Exception as e:
@@ -361,6 +364,9 @@ app.include_router(contracts_router)
 
 from api_visitas import router as visitas_router
 app.include_router(visitas_router)
+
+from api_crm_weekly_report import router as crm_weekly_router
+app.include_router(crm_weekly_router)
 
 from chatbot.lead_router import should_send_now, format_whatsapp_template
 from chatbot.storage import (
@@ -916,6 +922,7 @@ async def api_crm_update_lead(request: Request):
 
         # Aseguramos que se guarde la hora de actualización en CL
         data["updated_at_cl"] = datetime.now(CHILE_TZ).isoformat()
+        data["_actor_name"] = user.get("nombre") or user.get("username") or ""
 
         # CRITICO: update_lead_crm_data usa PyMongo sync + log_event/update_metrics sync.
         # Debe ejecutarse fuera del event loop para evitar bloqueos y MONGO_SYNC_ON_EVENT_LOOP.

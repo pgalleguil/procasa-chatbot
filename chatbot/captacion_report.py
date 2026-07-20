@@ -8,12 +8,11 @@ from .captacion_weekly_report import check_and_prepare_weekly_report
 
 
 async def check_and_run_meta_diaria_report(force: bool = False):
-    """Nombre heredado; ahora solo prepara la vista semanal para aprobación."""
+    """Nombre heredado; ejecuta el semanal oficial dentro de su ventana."""
     return await check_and_prepare_weekly_report(force=force)
 
 
 async def send_meta_diaria_report(*args, **kwargs):
     raise RuntimeError(
-        "El envío automático de Captaciones está deshabilitado permanentemente; "
-        "usa el flujo administrativo de aprobación manual."
+        "El envío oficial solo puede iniciarse mediante el scheduler semanal idempotente."
     )

@@ -384,7 +384,7 @@ def generate_narrative_with_fallback(snapshot: dict) -> tuple[dict, str, str]:
             "intro": "Compartimos el resumen de las gestiones acreditadas durante el periodo.",
             "insight": "El detalle fue calculado y validado directamente por el CRM.",
             "weekly_focus": "El foco operativo fue determinado por el backend.",
-            "closing": "Gracias por mantener cada gestión correctamente registrada en el CRM.",
+            "closing": "¡Buen inicio de semana! 💪",
         }
         return validate_narrative(narrative), "deterministic_fallback", "fallback"
 
@@ -404,7 +404,7 @@ def assemble_whatsapp_message(snapshot: dict, narrative: dict) -> str:
     period = snapshot["report"]["period_label"]
     team = snapshot["team"]
     lines = [
-        "🧪 *PRUEBA INTERNA — CAPTACIONES*" if snapshot["report"]["is_test"] else "🏠 *CAPTACIONES | INICIO DE SEMANA*",
+        "🧪 *PRUEBA INTERNA — CAPTACIONES*" if snapshot["report"]["is_test"] else "📊 *CAPTACIONES | INICIO DE SEMANA*",
         f"🗓️ *Resumen del {period}*",
         "",
         f"La semana pasada quedaron registradas *{team['properties_managed_unique']} propiedades gestionadas* por el equipo.",
@@ -428,7 +428,7 @@ def assemble_whatsapp_message(snapshot: dict, narrative: dict) -> str:
     for row in snapshot["executives"]:
         managed = row["properties_managed_unique"]
         if not managed and not snapshot["data_quality"]["historical_measurement_complete"]:
-            lines.append(f"• {row['name']}: _sin registros acreditables_")
+            lines.append(f"• {row['name']}: _sin gestiones registradas en el período_")
         else:
             noun = "gestionada" if managed == 1 else "gestionadas"
             lines.append(f"• {row['name']}: *{managed} {noun}*")
@@ -436,14 +436,13 @@ def assemble_whatsapp_message(snapshot: dict, narrative: dict) -> str:
         "",
         "🎯 *Foco de esta semana*",
         _deterministic_focus_message(snapshot),
-        "",
-        "¡Buen inicio de semana! 💪",
     ])
     if not snapshot["data_quality"]["historical_measurement_complete"]:
         lines.extend([
             "",
-            "_Este periodo corresponde al inicio de la nueva medición y puede no incluir gestiones que no quedaron registradas con las reglas actuales._",
+            "_Este período corresponde al inicio de la nueva medición y podría no incluir gestiones que no quedaron registradas con las reglas actuales._",
         ])
+    lines.extend(["", narrative["closing"]])
     if snapshot["report"]["is_test"]:
         lines.extend(["", "_Prueba enviada únicamente al administrador._"])
     return "\n".join(lines)
@@ -471,6 +470,24 @@ def validate_test_preview(snapshot: dict, message: str, *, expected_snapshot_id:
     return checks
 
 
+def validate_official_report(snapshot: dict, message: str) -> dict:
+    groups = snapshot["outcome_groups"]
+    checks = {
+        "crm_parity": bool(snapshot.get("crm_parity", {}).get("validated")),
+        "group_sum": sum(group["total"] for group in groups.values()) == snapshot["team"]["properties_managed_unique"],
+        "details_sum": all(sum(group["details"].values()) == group["total"] for group in groups.values()),
+        "no_other_review": groups["other_review"]["total"] == 0,
+        "executives_unique": len(snapshot["executives"]) == len({row["name"] for row in snapshot["executives"]}),
+        "message_length": len(message) <= 1100,
+        "no_owner_pii": not any(term in message.casefold() for term in ("propietario:", "teléfono:", "dirección:", "correo:")),
+        "official_header": "CAPTACIONES | INICIO DE SEMANA" in message and "PRUEBA" not in message,
+    }
+    if not all(checks.values()):
+        failed = ", ".join(key for key, passed in checks.items() if not passed)
+        raise ValueError(f"Validación oficial fallida: {failed}")
+    return checks
+
+
 async def create_weekly_report(period_start, period_end, *, is_test: bool, created_by="system") -> dict:
     db = get_db()
     await asyncio.to_thread(ensure_weekly_report_indexes, db)
@@ -492,15 +509,16 @@ async def create_weekly_report(period_start, period_end, *, is_test: bool, creat
         "is_test": bool(is_test),
         "test_recipient": bool(is_test),
         "official_delivery": False,
-        "preview_required": True,
-        "automatic_send": False,
-        "status": "ready_for_test" if is_test else "pending_approval",
+        "preview_required": False if not is_test else True,
+        "automatic_send": True if not is_test else False,
+        "status": "ready_for_test" if is_test else "ready_to_send",
         "snapshot": snapshot,
         "crm_parity_validated": True,
         "deepseek_payload": build_deepseek_payload(snapshot),
         "narrative": narrative,
         "narrative_history": [],
         "message_original": message,
+        "snapshot_hash": snapshot["snapshot_id"].removeprefix("cws_"),
         "message_final": None,
         "prompt_version": PROMPT_VERSION,
         "model": model,
@@ -634,6 +652,10 @@ def record_delivery_status_webhook(payload: dict) -> bool:
 
 
 async def approve_and_send_report(report_id: str, actor: dict, edited_narrative: dict | None = None) -> dict:
+    raise ValueError("El envío manual oficial está deshabilitado; el scheduler idempotente es la única ruta autorizada")
+
+    # Compatibilidad histórica: código inalcanzable conservado durante la
+    # transición de reportes pendientes creados por versiones anteriores.
     db = get_db()
     await asyncio.to_thread(ensure_weekly_report_indexes, db)
     report = await asyncio.to_thread(
@@ -724,26 +746,20 @@ def cancel_report(report_id: str, actor: dict) -> dict:
     return db[REPORT_COLLECTION].find_one({"report_id": str(report_id)}, {"_id": 0})
 
 
-async def _notify_pending_approval(report: dict) -> dict:
+async def _notify_admin_once(report: dict, notification_type: str, text: str) -> dict:
     db = get_db()
-    key = f"approval_notice:{report['report_id']}"
+    key = f"captacion_weekly_notice:{notification_type}:{report['report_id']}"
     delivery, claimed = await _claim_delivery(db, key, {
         "report_id": report["report_id"],
-        "snapshot_id": report["snapshot_id"],
+        "snapshot_id": report.get("snapshot_id"),
         "is_test": False,
         "official_delivery": False,
         "recipient_type": "administrator_notification",
         "recipient_masked": mask_whatsapp_recipient(ADMIN_RECIPIENT),
+        "notification_type": notification_type,
     })
     if not claimed:
         return delivery
-    text = (
-        "📋 *Reporte semanal de Captaciones disponible*\n"
-        f"Periodo: *{report['snapshot']['report']['period_label']}*\n"
-        "Estado: *pendiente de aprobación*\n\n"
-        "Revisa la vista administrativa para aprobar, editar, regenerar o cancelar. "
-        "No se enviará automáticamente al grupo."
-    )
     result = await send_whatsapp_message_detailed(ADMIN_RECIPIENT, text)
     delivery.update({
         "provider_message_id": result.get("provider_message_id"),
@@ -753,13 +769,128 @@ async def _notify_pending_approval(report: dict) -> dict:
     return await _complete_delivery(db, delivery)
 
 
+def _official_idempotency_key(report: dict, group_id: str) -> str:
+    return f"captacion_weekly_official:{report['period_start']}:{report['period_end']}:{group_id}"
+
+
+async def send_official_report(report_id: str, *, now=None) -> dict:
+    """Envía al grupo con una sola entrega durable y reintentos acotados."""
+    db = get_db()
+    await asyncio.to_thread(ensure_weekly_report_indexes, db)
+    report = await asyncio.to_thread(
+        db[REPORT_COLLECTION].find_one, {"report_id": str(report_id), "is_test": False}
+    )
+    if not report or report.get("status") not in {"ready_to_send", "send_retry_pending"}:
+        raise ValueError("El reporte oficial no está disponible para envío")
+    validate_official_report(report["snapshot"], report["message_original"])
+    group_id = str(report.get("group_recipient") or Config.DAILY_REPORT_GROUP_ID or "").strip()
+    if not group_id.endswith("@g.us") or normalize_whatsapp_recipient(group_id) == ADMIN_RECIPIENT:
+        raise ValueError("Destinatario grupal oficial no configurado")
+
+    local_now = now.astimezone(CHILE) if now and now.tzinfo else (CHILE.localize(now) if now else datetime.now(CHILE))
+    deadline = local_now.replace(hour=Config.CAPTACION_WEEKLY_RETRY_DEADLINE_HOUR, minute=0, second=0, microsecond=0)
+    key = _official_idempotency_key(report, group_id)
+    delivery, claimed = await _claim_delivery(db, key, {
+        "report_type": "captacion_weekly_official",
+        "report_id": report["report_id"],
+        "period_start": report["period_start"],
+        "period_end": report["period_end"],
+        "snapshot_id": report["snapshot_id"],
+        "snapshot_hash": report.get("snapshot_hash"),
+        "crm_parity": report.get("snapshot", {}).get("crm_parity"),
+        "prompt_version": report.get("prompt_version"),
+        "model": report.get("model"),
+        "narrative_source": report.get("narrative_source"),
+        "text_generated": report.get("narrative"),
+        "text_final": report.get("message_original"),
+        "is_test": False,
+        "official_delivery": True,
+        "recipient_type": "group",
+        "recipient_masked": mask_whatsapp_recipient(group_id),
+        "attempt_count": 0,
+        "attempts": [],
+        "errors": [],
+    })
+    if not claimed and delivery.get("delivery_status") in {"accepted", "sent", "delivered"}:
+        return delivery
+    attempt_count = int(delivery.get("attempt_count") or 0)
+    if local_now > deadline or attempt_count >= Config.CAPTACION_WEEKLY_MAX_SEND_ATTEMPTS:
+        status = "retry_window_expired" if local_now > deadline else "send_failed"
+        await asyncio.to_thread(
+            db[REPORT_COLLECTION].update_one,
+            {"report_id": report["report_id"]},
+            {"$set": {"status": status, "updated_at": datetime.now(timezone.utc)}},
+        )
+        await _notify_admin_once(
+            report, status,
+            f"⚠️ El reporte semanal de Captaciones no fue enviado al grupo. Estado: {status}.",
+        )
+        delivery["delivery_status"] = status
+        return await _complete_delivery(db, delivery)
+
+    attempt_number = attempt_count + 1
+    attempted_at = datetime.now(timezone.utc)
+    await asyncio.to_thread(
+        db[DELIVERY_COLLECTION].update_one,
+        {"idempotency_key": key},
+        {"$set": {"attempt_count": attempt_number, "delivery_status": "sending", "last_attempt_at": attempted_at},
+         "$push": {"attempts": {"attempt": attempt_number, "started_at": attempted_at}}},
+    )
+    delivery["attempt_count"] = attempt_number
+    delivery.setdefault("attempts", []).append({"attempt": attempt_number, "started_at": attempted_at})
+    try:
+        result = await send_whatsapp_message_detailed(group_id, report["message_original"])
+        if result.get("success") and result.get("provider_message_id"):
+            receipt = await wait_for_whatsapp_delivery(result["provider_message_id"], timeout_seconds=30)
+            if receipt.get("delivery_status") != "unknown":
+                result["delivery_status"] = receipt["delivery_status"]
+        success = bool(result.get("success")) and result.get("delivery_status") != "failed"
+        error = None if success else (result.get("error") or "provider_send_failed")
+    except Exception as exc:
+        result, success, error = {}, False, str(exc)
+
+    completed_at = datetime.now(timezone.utc)
+    final_failure = not success and attempt_number >= Config.CAPTACION_WEEKLY_MAX_SEND_ATTEMPTS
+    delivery.update({
+        "provider_message_id": result.get("provider_message_id"),
+        "delivery_status": result.get("delivery_status") if success else ("failed" if final_failure else "retry_pending"),
+        "last_error": error,
+        "completed_at": completed_at,
+    })
+    if error:
+        delivery.setdefault("errors", []).append({"attempt": attempt_number, "error": error, "at": completed_at})
+    delivery = await _complete_delivery(db, delivery)
+    report_status = "sent" if success else ("send_failed" if final_failure else "send_retry_pending")
+    await asyncio.to_thread(
+        db[REPORT_COLLECTION].update_one,
+        {"report_id": report["report_id"]},
+        {"$set": {
+            "status": report_status,
+            "official_delivery": success,
+            "message_final": report["message_original"],
+            "provider_message_id": result.get("provider_message_id"),
+            "delivery_status": delivery["delivery_status"],
+            "sent_at": completed_at if success else None,
+            "official_sent_at": completed_at if success else None,
+            "updated_at": completed_at,
+        }},
+    )
+    if final_failure:
+        await _notify_admin_once(
+            report, "send_failed",
+            "⚠️ El reporte semanal de Captaciones agotó sus reintentos y no fue enviado al grupo.",
+        )
+    return delivery
+
+
 async def check_and_prepare_weekly_report(*, force: bool = False, now=None) -> dict | None:
     local_now = now.astimezone(CHILE) if now and now.tzinfo else (CHILE.localize(now) if now else datetime.now(CHILE))
     scheduled_time_reached = (local_now.hour, local_now.minute) >= (
         Config.CAPTACION_WEEKLY_SCHEDULE_HOUR,
         Config.CAPTACION_WEEKLY_SCHEDULE_MINUTE,
     )
-    due = local_now.weekday() == 0 and scheduled_time_reached
+    retry_deadline = (local_now.hour, local_now.minute) <= (Config.CAPTACION_WEEKLY_RETRY_DEADLINE_HOUR, 0)
+    due = local_now.weekday() == 0 and scheduled_time_reached and retry_deadline
     if not force and not due:
         return None
     period_end = local_now.date() - timedelta(days=3)
@@ -777,14 +908,55 @@ async def check_and_prepare_weekly_report(*, force: bool = False, now=None) -> d
         {"_id": 0},
     )
     if existing:
+        if existing.get("status") in {"ready_to_send", "send_retry_pending"}:
+            await send_official_report(existing["report_id"], now=local_now)
+            return await asyncio.to_thread(
+                db[REPORT_COLLECTION].find_one, {"report_id": existing["report_id"]}, {"_id": 0}
+            )
         return existing
-    report = await create_weekly_report(period_start, period_end, is_test=False, created_by="scheduler")
+    try:
+        report = await create_weekly_report(period_start, period_end, is_test=False, created_by="scheduler")
+    except Exception as exc:
+        now_utc = datetime.now(timezone.utc)
+        report = {
+            "report_id": str(uuid.uuid4()),
+            "report_type": "captacion_weekly_official",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "is_test": False,
+            "official_delivery": False,
+            "scheduler_generated": True,
+            "status": "blocked_validation",
+            "errors": [str(exc)],
+            "created_at": now_utc,
+            "updated_at": now_utc,
+        }
+        await asyncio.to_thread(db[REPORT_COLLECTION].insert_one, report)
+        await _notify_admin_once(
+            report, "blocked_validation",
+            f"⚠️ Reporte semanal de Captaciones bloqueado antes del envío: {exc}",
+        )
+        report.pop("_id", None)
+        return report
     await asyncio.to_thread(
         db[REPORT_COLLECTION].update_one,
         {"report_id": report["report_id"]},
-        {"$set": {"scheduler_generated": True, "status": "pending_approval"}},
+        {"$set": {"scheduler_generated": True}},
     )
     report["scheduler_generated"] = True
-    report["status"] = "pending_approval"
-    await _notify_pending_approval(report)
-    return report
+    if report["snapshot"].get("requires_outcome_review"):
+        await asyncio.to_thread(
+            db[REPORT_COLLECTION].update_one,
+            {"report_id": report["report_id"]},
+            {"$set": {"status": "blocked_outcome_review", "updated_at": datetime.now(timezone.utc)}},
+        )
+        report["status"] = "blocked_outcome_review"
+        await _notify_admin_once(
+            report, "blocked_outcome_review",
+            "⚠️ Reporte semanal de Captaciones bloqueado: existen resultados en Otros / Por revisar.",
+        )
+        return report
+    await send_official_report(report["report_id"], now=local_now)
+    return await asyncio.to_thread(
+        db[REPORT_COLLECTION].find_one, {"report_id": report["report_id"]}, {"_id": 0}
+    )

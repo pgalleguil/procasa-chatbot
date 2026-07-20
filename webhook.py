@@ -3220,8 +3220,7 @@ async def daily_report_loop():
             # Reporte 2: Resumen Matutino Personalizado (09:00 AM)
             await check_and_run_personalized_summary()
             
-            # Reporte 3: prepara el semanal de Captaciones (lunes 08:45).
-            # Nunca envía al grupo: queda permanentemente pending_approval.
+            # Reporte 3: calcula y envía el semanal de Captaciones (lunes 08:30).
             await check_and_run_meta_diaria_report()
             # Monitoreo de anomalias (cada lunes a las 08:00)
             now = datetime.now(CHILE_TZ)

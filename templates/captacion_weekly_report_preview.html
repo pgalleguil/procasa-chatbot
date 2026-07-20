@@ -42,7 +42,7 @@
         <div>
             <a href="/captacion">← Volver a Captaciones</a>
             <h1>Reporte semanal de Captaciones</h1>
-            <div class="muted">Cálculo automatizado con aprobación humana permanente</div>
+            <div class="muted">Cálculo y envío semanal automático con auditoría</div>
         </div>
         {% if report %}
         <span class="badge {% if report.status == 'pending_approval' %}pending{% elif report.status == 'sent' %}ok{% else %}bad{% endif %}">{{ report.status }}</span>
@@ -50,7 +50,7 @@
     </header>
 
     {% if not report %}
-    <section class="panel"><h2>Sin reporte disponible</h2><p class="muted">El scheduler preparará una versión el lunes a las 08:45, hora de Chile.</p></section>
+    <section class="panel"><h2>Sin reporte disponible</h2><p class="muted">El scheduler ejecutará el reporte el lunes a las 08:30, hora de Chile.</p></section>
     {% else %}
     <div class="grid">
         <section class="panel">
@@ -117,14 +117,6 @@
         <section class="panel">
             <h2>Mensaje final</h2>
             <pre>{{ report.message_original }}</pre>
-            {% if report.status == 'pending_approval' %}
-            <div class="actions">
-                <button class="primary" onclick="approve(false)">Aprobar y enviar</button>
-                <button class="secondary" onclick="approve(true)">Editar y enviar</button>
-                <button class="secondary" onclick="runAction('regenerate')">Regenerar narración</button>
-                <button class="danger" onclick="runAction('cancel')">Cancelar</button>
-            </div>
-            {% endif %}
             <div id="notice" class="muted"></div>
         </section>
     </div>

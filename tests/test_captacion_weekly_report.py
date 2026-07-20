@@ -234,7 +234,7 @@ def test_wrong_test_recipient_aborts_before_provider_call(monkeypatch):
     assert called == []
 
 
-def test_official_send_requires_acknowledgement_when_other_results_exist(monkeypatch):
+def test_manual_official_send_is_disabled(monkeypatch):
     db = _Db()
     db[weekly.REPORT_COLLECTION].rows.append({
         "report_id": "r-official", "is_test": False, "status": "pending_approval",
@@ -247,18 +247,16 @@ def test_official_send_requires_acknowledgement_when_other_results_exist(monkeyp
 
     monkeypatch.setattr(weekly, "get_db", lambda: db)
     monkeypatch.setattr(weekly, "send_whatsapp_message_detailed", fake_send)
-    with pytest.raises(ValueError, match="Otros / Por revisar"):
+    with pytest.raises(ValueError, match="envío manual oficial está deshabilitado"):
         asyncio.run(weekly.approve_and_send_report("r-official", {"username": "admin"}))
     assert called == []
 
 
-def test_scheduler_source_has_no_automatic_group_send():
-    assert weekly.Config.CAPTACION_WEEKLY_PREVIEW_REQUIRED is True
-    assert weekly.Config.CAPTACION_WEEKLY_AUTOMATIC_SEND is False
-    source = open("chatbot/captacion_weekly_report.py", encoding="utf-8").read()
-    scheduler = source.split("async def check_and_prepare_weekly_report", 1)[1]
-    assert "approve_and_send_report(" not in scheduler
-    assert '"pending_approval"' in scheduler
+def test_scheduler_is_permanently_automatic_at_0830():
+    assert weekly.Config.CAPTACION_WEEKLY_PREVIEW_REQUIRED is False
+    assert weekly.Config.CAPTACION_WEEKLY_AUTOMATIC_SEND is True
+    assert weekly.Config.CAPTACION_WEEKLY_SCHEDULE_HOUR == 8
+    assert weekly.Config.CAPTACION_WEEKLY_SCHEDULE_MINUTE == 30
 
 
 @pytest.mark.parametrize(("result", "expected_group", "expected_detail"), [
@@ -304,8 +302,8 @@ def test_whatsapp_omits_zero_groups_and_uses_compact_executive_lines(monkeypatch
     assert "Gestión en curso: *0*" not in message
     assert "contactos efectivos ·" not in message
     assert "Compartimos el resumen" not in message
-    assert "sin registros acreditables" in message
-    assert "¡Buen inicio de semana! 💪" in message
+    assert "sin gestiones registradas en el período" in message
+    assert _narrative()["closing"] in message
 
 
 def test_official_format_has_no_test_reference(monkeypatch):
@@ -316,3 +314,100 @@ def test_official_format_has_no_test_reference(monkeypatch):
     assert "CAPTACIONES | INICIO DE SEMANA" in message
     assert "PRUEBA" not in message
     assert "Prueba enviada" not in message
+
+
+def test_transition_note_is_omitted_when_history_is_complete(monkeypatch):
+    monkeypatch.setattr(weekly, "get_captacion_goal_dashboard", lambda db, now=None: _panel())
+    snapshot = weekly.build_weekly_snapshot(object(), "2026-07-13", "2026-07-17", is_test=False)
+    snapshot["data_quality"]["historical_measurement_complete"] = True
+    message = weekly.assemble_whatsapp_message(snapshot, _narrative())
+    assert "inicio de la nueva medición" not in message
+
+
+def test_scheduler_uses_previous_monday_to_friday_and_sends_at_0830(monkeypatch):
+    db = _Db()
+    calls = []
+    report = {
+        "report_id": "r-auto", "period_start": "2026-07-13", "period_end": "2026-07-17",
+        "is_test": False, "status": "ready_to_send", "snapshot": {"requires_outcome_review": False},
+    }
+
+    async def fake_create(start, end, **kwargs):
+        calls.append((start.isoformat(), end.isoformat(), kwargs))
+        db[weekly.REPORT_COLLECTION].rows.append(deepcopy(report))
+        return deepcopy(report)
+
+    async def fake_send(report_id, now=None):
+        calls.append(("send", report_id, now.strftime("%H:%M")))
+        return {"delivery_status": "delivered"}
+
+    monkeypatch.setattr(weekly, "get_db", lambda: db)
+    monkeypatch.setattr(weekly, "create_weekly_report", fake_create)
+    monkeypatch.setattr(weekly, "send_official_report", fake_send)
+    monday = weekly.CHILE.localize(datetime(2026, 7, 20, 8, 30))
+    asyncio.run(weekly.check_and_prepare_weekly_report(now=monday))
+    assert calls[0][:2] == ("2026-07-13", "2026-07-17")
+    assert calls[1] == ("send", "r-auto", "08:30")
+
+
+def test_scheduler_does_not_run_before_window(monkeypatch):
+    monkeypatch.setattr(weekly, "get_db", lambda: _Db())
+    monday = weekly.CHILE.localize(datetime(2026, 7, 20, 8, 29))
+    assert asyncio.run(weekly.check_and_prepare_weekly_report(now=monday)) is None
+
+
+def test_deepseek_failure_uses_safe_fallback(monkeypatch):
+    monkeypatch.setattr(weekly, "generate_narrative", lambda snapshot: (_ for _ in ()).throw(ValueError("down")))
+    narrative, model, source = weekly.generate_narrative_with_fallback({})
+    assert source == "fallback"
+    assert model == "deterministic_fallback"
+    assert narrative["closing"] == "¡Buen inicio de semana! 💪"
+
+
+def test_official_validation_blocks_other_review(monkeypatch):
+    panel = _panel()
+    panel["week_count"] = 8
+    panel["outcome_groups"]["pending_next_action"]["total"] = 7
+    panel["outcome_groups"]["pending_next_action"]["details"]["por_contactar"] = 4
+    panel["outcome_groups"]["other_review"] = {"label": "Otros / Por revisar", "total": 1, "details": {"new_value": 1}}
+    panel["requires_outcome_review"] = True
+    monkeypatch.setattr(weekly, "get_captacion_goal_dashboard", lambda db, now=None: panel)
+    snapshot = weekly.build_weekly_snapshot(object(), "2026-07-13", "2026-07-17", is_test=False)
+    with pytest.raises(ValueError, match="no_other_review"):
+        weekly.validate_official_report(snapshot, weekly.assemble_whatsapp_message(snapshot, _narrative()))
+
+
+def test_official_send_targets_group_never_admin(monkeypatch):
+    db = _Db()
+    monkeypatch.setattr(weekly, "get_captacion_goal_dashboard", lambda db, now=None: _panel())
+    snapshot = weekly.build_weekly_snapshot(object(), "2026-07-13", "2026-07-17", is_test=False)
+    report = {
+        "report_id": "r-group", "report_type": "captacion_weekly_official",
+        "period_start": "2026-07-13", "period_end": "2026-07-17", "is_test": False,
+        "status": "ready_to_send", "snapshot": snapshot, "snapshot_id": snapshot["snapshot_id"],
+        "snapshot_hash": "hash", "crm_parity_validated": True,
+        "message_original": weekly.assemble_whatsapp_message(snapshot, _narrative()),
+        "group_recipient": "56990152481-1598919271@g.us", "narrative": _narrative(),
+    }
+    db[weekly.REPORT_COLLECTION].rows.append(report)
+    recipients = []
+
+    async def fake_send(recipient, text):
+        recipients.append(recipient)
+        return {"success": True, "delivery_status": "accepted", "provider_message_id": "provider-official"}
+
+    async def fake_receipt(message_id, timeout_seconds=30):
+        return {"delivery_status": "delivered", "provider_message_id": message_id}
+
+    monkeypatch.setattr(weekly, "get_db", lambda: db)
+    monkeypatch.setattr(weekly, "send_whatsapp_message_detailed", fake_send)
+    monkeypatch.setattr(weekly, "wait_for_whatsapp_delivery", fake_receipt)
+    now = weekly.CHILE.localize(datetime(2026, 7, 20, 8, 30))
+    delivery = asyncio.run(weekly.send_official_report("r-group", now=now))
+    db[weekly.REPORT_COLLECTION].rows[0]["status"] = "ready_to_send"  # simula reinicio antes de persistir estado
+    second = asyncio.run(weekly.send_official_report("r-group", now=now))
+    assert recipients == ["56990152481-1598919271@g.us"]
+    assert weekly.ADMIN_RECIPIENT not in recipients
+    assert delivery["idempotency_key"].startswith("captacion_weekly_official:2026-07-13:2026-07-17:")
+    assert delivery["delivery_status"] == "delivered"
+    assert second["delivery_id"] == delivery["delivery_id"]

@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" config="{displayModeBar:false}"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <link rel="stylesheet" href="/static/css/analytics-dashboard.css">
 </head><body>
 <nav class="sidebar" id="sidebar">
@@ -29,9 +29,8 @@
 
 <div class="main-content">
 <div class="dash-header">
-<div><h1>Gestion de Leads</h1><p class="dash-sub">Vision ejecutiva de volumen, distribucion, prioridad y avance comercial</p></div>
+<div><h1>Gestion de Leads</h1><p class="dash-sub">Vision ejecutiva de prioridades, cartera y fuentes comerciales</p></div>
 <div class="dash-controls">
-<div class="quality-btn" id="qualityBtn" onclick="toggleQual()"><i class="fa-solid fa-database"></i><span id="qualityPct">--</span><div class="quality-pop" id="qualityPop"></div></div>
 <input type="text" id="dateRange" class="date-input" placeholder="Periodo">
 <select id="filterExecutive" class="select-sm" onchange="load()"><option value="">Ejecutivo</option></select>
 <button class="btn-more" onclick="toggleMore()"><i class="fa-solid fa-sliders"></i> Mas filtros</button>
@@ -46,28 +45,47 @@
 <select id="filterStage" class="select-sm" onchange="load()"><option value="">Etapa</option></select>
 </div>
 
-<div class="summary-text" id="summaryText">Cargando...</div>
+<div class="status-strip" id="statusStrip">Cargando...</div>
 
-<div class="kpi-grid" id="kpiGrid">
-<div class="kpi" id="kpi0"><div class="kpi-scope">Periodo</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Ingresados</div><div class="kpi-sub"></div></div>
-<div class="kpi" id="kpi1"><div class="kpi-scope">Actual</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Activos</div></div>
-<div class="kpi" id="kpi2"><div class="kpi-scope">Actual</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Temperatura</div></div>
-<div class="kpi" id="kpi3"><div class="kpi-scope">Actual</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Distribucion</div></div>
-<div class="kpi" id="kpi4"><div class="kpi-scope">Actual</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Pendientes >7d</div><div class="kpi-sub"></div></div>
-<div class="kpi" id="kpi5"><div class="kpi-scope">Respuesta</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Gestion</div><div class="kpi-sub"></div></div>
+<div class="tab-bar">
+<button class="tab-main active" onclick="switchMain('operacion')"><i class="fa-solid fa-chart-simple"></i> Operacion</button>
+<button class="tab-main" onclick="switchMain('demanda')"><i class="fa-solid fa-building"></i> Demanda y propiedades</button>
+<button class="tab-main" onclick="switchMain('calidad')"><i class="fa-solid fa-database"></i> Calidad de datos</button>
 </div>
 
-<div class="row-2col"><div class="card card-8"><h6>Entrada de leads</h6><p class="card-sub" id="trendSub"></p><div id="chartTrends" style="height:240px"></div></div>
-<div class="card card-4"><h6>Prioridades de hoy</h6><div id="prioritiesList"></div></div></div>
+<!-- PANEL OPERACION -->
+<div id="panelOperacion" class="tab-panel active">
+<div class="block-title">Prioridades de hoy</div>
+<div id="prioritiesBlock"></div>
 
-<div class="row-2col"><div class="card card-7"><h6>Avance actual de los leads recibidos</h6><p class="card-sub">Estado actual de la cohorte del periodo seleccionado</p><div id="funnelContainer"></div></div>
-<div class="card card-5"><h6>Gestion y tiempos</h6><div id="managementContainer"></div></div></div>
+<div class="block-title">Estado actual de la cohorte del periodo</div>
+<p class="block-sub">Situacion actual de los leads que ingresaron durante las fechas seleccionadas</p>
+<div id="cohortBlock"></div>
 
-<div class="row-2col"><div class="card card-6"><h6>Carga actual por ejecutivo</h6><div class="sort-opt"><span>Ordenar:</span><a href="#" onclick="sortExec('active');return false" id="sort-active" class="sort-active">Activos</a><a href="#" onclick="sortExec('hot');return false" id="sort-hot">Hot</a><a href="#" onclick="sortExec('pending_gt_7d');return false" id="sort-pending">Pendientes</a><a href="#" onclick="sortExec('median_age_days');return false" id="sort-age">Antiguedad</a></div><div id="execContainer"></div></div>
-<div class="card card-6"><h6>Rendimiento de fuentes</h6><div id="sourceContainer"></div></div></div>
+<div class="row-2col"><div class="card card-7">
+<div class="block-title">Carga de cartera por ejecutivo</div>
+<div class="sort-opt"><span>Ordenar:</span><a href="#" onclick="sortExec('active');return false" id="sort-active" class="sort-active">Activos</a><a href="#" onclick="sortExec('hot');return false" id="sort-hot">Hot</a><a href="#" onclick="sortExec('pending_gt_7d');return false" id="sort-pend">Estancados</a><a href="#" onclick="sortExec('critical');return false" id="sort-crit">Criticos</a><a href="#" onclick="sortExec('median_age_days');return false" id="sort-age">Antiguedad</a></div>
+<div id="execBlock"></div></div>
+<div class="card card-5">
+<div class="block-title">Rendimiento de fuentes</div>
+<div id="sourceBlock"></div></div></div>
+</div>
 
-<div class="row-2col"><div class="card card-6"><h6>Propiedades con mayor interes</h6><div id="propContainer"></div></div>
-<div class="card card-6"><h6>Perfil de demanda</h6><div class="tabs"><button class="tab-btn active" onclick="switchTab('operacion')">Operacion</button><button class="tab-btn" onclick="switchTab('tipo')">Tipo</button><button class="tab-btn" onclick="switchTab('comuna')">Comuna</button></div><div id="chartDemand" style="height:220px"></div></div></div>
+<!-- PANEL DEMANDA -->
+<div id="panelDemanda" class="tab-panel">
+<div class="block-title">Propiedades con mayor interes</div>
+<div id="propBlock"></div>
+
+<div class="block-title">Perfil de demanda</div>
+<div class="tabs"><button class="tab-btn active" onclick="switchTab('operacion')">Operacion</button><button class="tab-btn" onclick="switchTab('tipo')">Tipo</button><button class="tab-btn" onclick="switchTab('comuna')">Comuna</button></div>
+<div id="chartDemand" style="height:260px"></div>
+</div>
+
+<!-- PANEL CALIDAD -->
+<div id="panelCalidad" class="tab-panel">
+<div class="row-2col"><div class="card card-6"><div class="block-title">Cobertura de campos</div><div id="coverageBlock"></div></div>
+<div class="card card-6"><div class="block-title">Metricas no disponibles</div><div id="unavailBlock"></div></div></div></div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>

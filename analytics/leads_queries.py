@@ -1253,7 +1253,7 @@ def query_priorities(
         {
             "type": "hot_unassigned",
             "severity": "high",
-            "label": "Hot sin asignar",
+            "label": "Hot sin ejecutivo",
             "description": "Leads Hot sin ejecutivo asignado",
             "count": _count({
                 "lead_temperature_effective": "HOT",
@@ -1262,8 +1262,8 @@ def query_priorities(
         },
         {
             "type": "hot_new_assigned",
-            "severity": "medium",
-            "label": "Hot en NEW asignado",
+            "severity": "high",
+            "label": "Hot en etapa NEW",
             "description": "Leads Hot con etapa NEW y ejecutivo",
             "count": _count({
                 "lead_temperature_effective": "HOT",
@@ -1272,9 +1272,18 @@ def query_priorities(
             }),
         },
         {
+            "type": "priority_critical",
+            "severity": "high",
+            "label": "Prioridad critica actual",
+            "description": "Leads con priority_bucket = CRITICAL",
+            "count": _count({
+                "priority_bucket": "CRITICAL",
+            }),
+        },
+        {
             "type": "unassigned_over_48h",
             "severity": "medium",
-            "label": "Sin asignar >48h",
+            "label": "Sin asignar por mas de 48 horas",
             "description": "Leads sin ejecutivo desde hace mas de 48 horas",
             "count": _count({
                 "ejecutivo_asignado": {"$in": ["Sin Asignar", "No Asignado", None, ""]},
@@ -1284,8 +1293,8 @@ def query_priorities(
         {
             "type": "new_over_7d",
             "severity": "medium",
-            "label": "NEW o sin etapa >7d",
-            "description": "Leads en NEW o sin etapa con mas de 7 dias",
+            "label": "Estancados en etapa inicial",
+            "description": "NEW o sin etapa por mas de 7 dias",
             "count": _count({
                 "pipeline_stage": {"$in": ["NEW", None, ""]},
                 "$expr": {"$lte": ["$_created_normalized", cutoff_7d]},
@@ -1294,24 +1303,12 @@ def query_priorities(
         {
             "type": "no_source",
             "severity": "low",
-            "label": "Activos sin origen",
-            "description": "Leads activos sin fuente registrada",
+            "label": "Sin codigo de propiedad",
+            "description": "Leads activos sin codigo de propiedad registrado",
             "count": _count({
                 "$or": [
-                    {"prospecto.origen": {"$in": [None, ""]}},
-                    {"prospecto.origen": {"$exists": False}},
-                ],
-            }),
-        },
-        {
-            "type": "no_executive",
-            "severity": "low",
-            "label": "Activos sin ejecutivo",
-            "description": "Todos los leads activos sin ejecutivo",
-            "count": _count({
-                "$or": [
-                    {"ejecutivo_asignado": {"$in": ["Sin Asignar", "No Asignado", None, ""]}},
-                    {"ejecutivo_asignado": {"$exists": False}},
+                    {"prospecto.codigo": {"$in": [None, ""]}},
+                    {"prospecto.codigo": {"$exists": False}},
                 ],
             }),
         },

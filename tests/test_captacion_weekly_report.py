@@ -297,6 +297,22 @@ def test_whatsapp_omits_zero_groups_and_uses_compact_executive_lines(monkeypatch
     monkeypatch.setattr(weekly, "get_captacion_goal_dashboard", lambda db, now=None: _panel())
     snapshot = weekly.build_weekly_snapshot(object(), "2026-07-13", "2026-07-17", is_test=True)
     message = weekly.assemble_whatsapp_message(snapshot, _narrative())
-    assert "Pendientes de nueva gestión: *8*" in message
+    assert "📋 *Estado al cierre*" in message
+    assert "• *5* por contactar" in message
+    assert "• *3* sin respuesta" in message
+    assert "Pendientes de nueva gestión: *8*" not in message
     assert "Gestión en curso: *0*" not in message
     assert "contactos efectivos ·" not in message
+    assert "Compartimos el resumen" not in message
+    assert "sin registros acreditables" in message
+    assert "¡Buen inicio de semana! 💪" in message
+
+
+def test_official_format_has_no_test_reference(monkeypatch):
+    panel = _panel()
+    monkeypatch.setattr(weekly, "get_captacion_goal_dashboard", lambda db, now=None: panel)
+    snapshot = weekly.build_weekly_snapshot(object(), "2026-07-13", "2026-07-17", is_test=False)
+    message = weekly.assemble_whatsapp_message(snapshot, _narrative())
+    assert "CAPTACIONES | INICIO DE SEMANA" in message
+    assert "PRUEBA" not in message
+    assert "Prueba enviada" not in message

@@ -393,8 +393,8 @@ def _deterministic_focus_message(snapshot: dict) -> str:
     details = snapshot.get("detailed_outcomes") or {}
     if snapshot["operational_priority"]["key"] == "pending_follow_up":
         return (
-            f"Priorizar las *{details.get('por_contactar', 0)} propiedades por contactar* y retomar las "
-            f"*{details.get('no_respondio', 0)} sin respuesta*, registrando el resultado de cada nueva gestión en el CRM."
+            f"Contactar las *{details.get('por_contactar', 0)} propiedades pendientes* y retomar las "
+            f"*{details.get('no_respondio', 0)} sin respuesta*, registrando siempre el resultado en el CRM."
         )
     return snapshot["operational_priority"]["label"] + ", registrando cada resultado en el CRM."
 
@@ -404,31 +404,31 @@ def assemble_whatsapp_message(snapshot: dict, narrative: dict) -> str:
     period = snapshot["report"]["period_label"]
     team = snapshot["team"]
     lines = [
-        "🧪 *PRUEBA INTERNA — CAPTACIONES*" if snapshot["report"]["is_test"] else "🏠 *REPORTE SEMANAL — CAPTACIONES*",
+        "🧪 *PRUEBA INTERNA — CAPTACIONES*" if snapshot["report"]["is_test"] else "🏠 *CAPTACIONES | INICIO DE SEMANA*",
         f"🗓️ *Resumen del {period}*",
-        "",
-        narrative["intro"],
         "",
         f"La semana pasada quedaron registradas *{team['properties_managed_unique']} propiedades gestionadas* por el equipo.",
         "",
-        "📋 *Resultado de las gestiones*",
+        "📋 *Estado al cierre*",
     ]
-    for group in snapshot["outcome_groups"].values():
-        if not group["total"]:
-            continue
-        lines.append(f"• {group['label']}: *{group['total']}*")
+    nonzero_groups = [group for group in snapshot["outcome_groups"].values() if group["total"]]
+    for group in nonzero_groups:
         details = []
         for key, value in group["details"].items():
             if value:
                 label = OUTCOME_COMMUNICATION_LABELS.get(key) or snapshot.get("detail_labels", {}).get(key) or key.replace("_", " ")
-                details.append(f"{value} {label.casefold()}")
-        if details:
-            lines.append(f"  _{' · '.join(details)}_")
+                details.append((value, label.casefold()))
+        if len(nonzero_groups) == 1:
+            lines.extend(f"• *{value}* {label}" for value, label in details)
+        else:
+            lines.append(f"• {group['label']}: *{group['total']}*")
+            if details:
+                lines.append(f"  _{' · '.join(f'{value} {label}' for value, label in details)}_")
     lines.extend(["", "👥 *Gestión por ejecutiva*"])
     for row in snapshot["executives"]:
         managed = row["properties_managed_unique"]
         if not managed and not snapshot["data_quality"]["historical_measurement_complete"]:
-            lines.append(f"• {row['name']}: _sin gestiones acreditables registradas_")
+            lines.append(f"• {row['name']}: _sin registros acreditables_")
         else:
             noun = "gestionada" if managed == 1 else "gestionadas"
             lines.append(f"• {row['name']}: *{managed} {noun}*")
@@ -437,15 +437,15 @@ def assemble_whatsapp_message(snapshot: dict, narrative: dict) -> str:
         "🎯 *Foco de esta semana*",
         _deterministic_focus_message(snapshot),
         "",
-        narrative["closing"],
+        "¡Buen inicio de semana! 💪",
     ])
     if not snapshot["data_quality"]["historical_measurement_complete"]:
         lines.extend([
             "",
-            "_Nota: este periodo corresponde a la etapa inicial de medición y puede no representar gestiones que no quedaron registradas bajo las reglas actuales._",
+            "_Este periodo corresponde al inicio de la nueva medición y puede no incluir gestiones que no quedaron registradas con las reglas actuales._",
         ])
     if snapshot["report"]["is_test"]:
-        lines.extend(["", "_Este mensaje de prueba fue enviado únicamente al administrador._"])
+        lines.extend(["", "_Prueba enviada únicamente al administrador._"])
     return "\n".join(lines)
 
 
@@ -462,7 +462,7 @@ def validate_test_preview(snapshot: dict, message: str, *, expected_snapshot_id:
         "group_sum": sum(group["total"] for group in groups.values()) == 8,
         "executives_unique": len(snapshot["executives"]) == len({row["name"] for row in snapshot["executives"]}),
         "message_length": len(message) <= 1100,
-        "transitional_note_once": message.count("etapa inicial de medición") == 1,
+        "transitional_note_once": message.count("inicio de la nueva medición") == 1,
         "no_owner_pii": not any(term in message.casefold() for term in ("propietario:", "teléfono:", "dirección:", "correo:")),
     }
     if not all(checks.values()):

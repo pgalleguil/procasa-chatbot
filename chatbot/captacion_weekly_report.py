@@ -16,7 +16,7 @@ from openai import OpenAI
 from pymongo.errors import DuplicateKeyError
 
 from captacion_goals import get_captacion_goal_dashboard
-from captacion_management import OUTCOME_GROUPS
+from captacion_management import OUTCOME_COMMUNICATION_LABELS, OUTCOME_GROUPS
 from captacion_workforce import DEFAULT_TIMEZONE
 from config import Config
 from .storage import get_db
@@ -167,17 +167,27 @@ def derive_operational_priority(snapshot: dict) -> dict:
     contacts = snapshot["team"]["effective_contacts_unique"]
     captures = snapshot["team"]["captured_properties_unique"]
     if pending:
-        return {"key": "pending_follow_up", "label": "Priorizar pendientes y contactos sin respuesta", "supporting_total": pending}
+        por_contactar = details.get("por_contactar", 0)
+        sin_respuesta = details.get("no_respondio", 0)
+        return {
+            "key": "pending_follow_up",
+            "label": "Priorizar pendientes y contactos sin respuesta",
+            "supporting_total": pending,
+            "message": (
+                f"Priorizar las *{por_contactar} propiedades por contactar* y retomar las "
+                f"*{sin_respuesta} sin respuesta*, registrando el resultado de cada nueva gestión en el CRM."
+            ),
+        }
     if details.get("corredor"):
-        return {"key": "initial_filtering", "label": "Reforzar el filtrado y la clasificación inicial", "supporting_total": details["corredor"]}
+        return {"key": "initial_filtering", "label": "Reforzar el filtrado y la clasificación inicial", "supporting_total": details["corredor"], "message": "Reforzar el filtrado y la clasificación inicial, registrando cada decisión en el CRM."}
     stale = details.get("propiedad_no_disponible", 0) + details.get("publicacion_expirada", 0)
     if stale:
-        return {"key": "listing_freshness", "label": "Revisar antigüedad y vigencia de las propiedades", "supporting_total": stale}
+        return {"key": "listing_freshness", "label": "Revisar antigüedad y vigencia de las propiedades", "supporting_total": stale, "message": "Revisar la antigüedad y vigencia de las propiedades antes de iniciar una nueva gestión."}
     if contacts > captures:
-        return {"key": "commercial_proposal", "label": "Reforzar la propuesta comercial después del contacto", "supporting_total": contacts - captures}
+        return {"key": "commercial_proposal", "label": "Reforzar la propuesta comercial después del contacto", "supporting_total": contacts - captures, "message": "Reforzar la propuesta comercial después del contacto y registrar el resultado en el CRM."}
     if captures:
-        return {"key": "sustain_captures", "label": "Sostener las prácticas que permitieron captar", "supporting_total": captures}
-    return {"key": "consistent_recording", "label": "Mantener seguimiento y registro comercial consistente", "supporting_total": 0}
+        return {"key": "sustain_captures", "label": "Sostener las prácticas que permitieron captar", "supporting_total": captures, "message": "Sostener las prácticas de seguimiento y registrar cada resultado comercial en el CRM."}
+    return {"key": "consistent_recording", "label": "Mantener seguimiento y registro comercial consistente", "supporting_total": 0, "message": "Mantener un seguimiento consistente y registrar cada resultado comercial en el CRM."}
 
 
 def validate_crm_parity(snapshot: dict, panel: dict) -> dict:
@@ -374,15 +384,11 @@ def assemble_whatsapp_message(snapshot: dict, narrative: dict) -> str:
     team = snapshot["team"]
     lines = [
         "🧪 *PRUEBA INTERNA — CAPTACIONES*" if snapshot["report"]["is_test"] else "🏠 *REPORTE SEMANAL — CAPTACIONES*",
-        f"🗓️ *{period}*",
+        f"🗓️ *Resumen del {period}*",
         "",
         narrative["intro"],
         "",
-        "🏠 *Gestión registrada*",
-        f"• Propiedades gestionadas: *{team['properties_managed_unique']}*",
-        f"• Con intento de contacto: *{team['properties_with_contact_attempt_unique']}*",
-        f"• Contactos efectivos: *{team['effective_contacts_unique']}*",
-        f"• Captaciones logradas: *{team['captured_properties_unique']}*",
+        f"La semana pasada quedaron registradas *{team['properties_managed_unique']} propiedades gestionadas* por el equipo.",
         "",
         "📋 *Resultado de las gestiones*",
     ]
@@ -393,22 +399,22 @@ def assemble_whatsapp_message(snapshot: dict, narrative: dict) -> str:
         details = []
         for key, value in group["details"].items():
             if value:
-                label = snapshot.get("detail_labels", {}).get(key) or key.replace("_", " ")
+                label = OUTCOME_COMMUNICATION_LABELS.get(key) or snapshot.get("detail_labels", {}).get(key) or key.replace("_", " ")
                 details.append(f"{value} {label.casefold()}")
         if details:
             lines.append(f"  _{' · '.join(details)}_")
-    lines.extend(["", "👥 *Por ejecutiva*"])
+    lines.extend(["", "👥 *Gestión por ejecutiva*"])
     for row in snapshot["executives"]:
         managed = row["properties_managed_unique"]
-        noun = "gestionada" if managed == 1 else "gestionadas"
-        lines.append(f"• {row['name']}: *{managed} {noun}*")
+        if not managed and not snapshot["data_quality"]["historical_measurement_complete"]:
+            lines.append(f"• {row['name']}: _sin gestiones acreditables registradas_")
+        else:
+            noun = "gestionada" if managed == 1 else "gestionadas"
+            lines.append(f"• {row['name']}: *{managed} {noun}*")
     lines.extend([
         "",
-        "💡 *Lectura de la semana*",
-        narrative["insight"],
-        "",
-        "🎯 *Foco sugerido*",
-        narrative["weekly_focus"],
+        "🎯 *Foco de esta semana*",
+        snapshot["operational_priority"]["message"],
         "",
         narrative["closing"],
     ])
@@ -420,6 +426,28 @@ def assemble_whatsapp_message(snapshot: dict, narrative: dict) -> str:
     if snapshot["report"]["is_test"]:
         lines.extend(["", "_Este mensaje de prueba fue enviado únicamente al administrador._"])
     return "\n".join(lines)
+
+
+def validate_test_preview(snapshot: dict, message: str, *, expected_snapshot_id: str | None = None) -> dict:
+    groups = snapshot["outcome_groups"]
+    pending = groups["pending_next_action"]
+    checks = {
+        "snapshot_id": not expected_snapshot_id or snapshot.get("snapshot_id") == expected_snapshot_id,
+        "properties_managed": snapshot["team"]["properties_managed_unique"] == 8,
+        "pending_next_action": pending["total"] == 8,
+        "por_contactar": pending["details"].get("por_contactar") == 5,
+        "no_respondio": pending["details"].get("no_respondio") == 3,
+        "otros_por_revisar": groups["other_review"]["total"] == 0,
+        "group_sum": sum(group["total"] for group in groups.values()) == 8,
+        "executives_unique": len(snapshot["executives"]) == len({row["name"] for row in snapshot["executives"]}),
+        "message_length": len(message) <= 1100,
+        "transitional_note_once": message.count("etapa inicial de medición") == 1,
+        "no_owner_pii": not any(term in message.casefold() for term in ("propietario:", "teléfono:", "dirección:", "correo:")),
+    }
+    if not all(checks.values()):
+        failed = ", ".join(key for key, passed in checks.items() if not passed)
+        raise ValueError(f"Validación de prueba fallida: {failed}")
+    return checks
 
 
 async def create_weekly_report(period_start, period_end, *, is_test: bool, created_by="system") -> dict:
@@ -435,6 +463,7 @@ async def create_weekly_report(period_start, period_end, *, is_test: bool, creat
     now = datetime.now(timezone.utc)
     document = {
         "report_id": str(uuid.uuid4()),
+        "report_type": "captacion_weekly_preview" if is_test else "captacion_weekly_official",
         "snapshot_id": snapshot["snapshot_id"],
         "schema_version": SCHEMA_VERSION,
         "period_start": snapshot["report"]["period_start"],
@@ -454,6 +483,7 @@ async def create_weekly_report(period_start, period_end, *, is_test: bool, creat
         "message_final": None,
         "prompt_version": PROMPT_VERSION,
         "model": model,
+        "narrative_source": "DeepSeek",
         "created_by": str(created_by or "system"),
         "created_at": now,
         "updated_at": now,
@@ -461,6 +491,7 @@ async def create_weekly_report(period_start, period_end, *, is_test: bool, creat
     if is_test:
         document.update({
             "recipient_type": "administrator",
+            "recipient_normalized": ADMIN_RECIPIENT,
             "recipient_masked": mask_whatsapp_recipient(ADMIN_RECIPIENT),
         })
     else:
@@ -510,12 +541,14 @@ async def send_test_report(report_id: str, recipient: str) -> dict:
         raise ValueError("El reporte de prueba no posee paridad CRM validada")
     idempotency_key = f"test:{report['report_id']}:{normalized}"
     delivery, claimed = await _claim_delivery(db, idempotency_key, {
+        "report_type": "captacion_weekly_preview",
         "report_id": report["report_id"],
         "snapshot_id": report["snapshot_id"],
         "is_test": True,
         "test_recipient": True,
         "official_delivery": False,
         "recipient_type": "administrator",
+        "recipient_normalized": normalized,
         "recipient_masked": mask_whatsapp_recipient(normalized),
         "prompt_version": report.get("prompt_version"),
         "model": report.get("model"),

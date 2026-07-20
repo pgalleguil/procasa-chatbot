@@ -60,6 +60,9 @@ OUTCOME_GROUPS = {
     "captured": "Captadas",
     "other_review": "Otros / Por revisar",
 }
+OUTCOME_COMMUNICATION_LABELS = {
+    "no_respondio": "sin respuesta",
+}
 COMMERCIAL_OUTCOME_DEFINITIONS = {
     "ready_to_contact": ("por_contactar", "Por contactar", "pending_next_action", 10),
     "no_answer": ("no_respondio", "No respondió", "pending_next_action", 20),

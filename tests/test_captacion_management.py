@@ -271,6 +271,12 @@ def test_second_action_same_day_does_not_duplicate_ready_to_contact_credit():
     assert second["credited"] is False
     assert len(db[management.LEDGER_COLLECTION].rows) == 2
     assert sum(bool(row.get("credited")) for row in db[management.LEDGER_COLLECTION].rows) == 1
+    assert management.summarize_management_metrics(db[management.LEDGER_COLLECTION].rows) == {
+        "managed_properties": 1,
+        "contact_attempts": 1,
+        "effective_contacts": 1,
+        "captures": 0,
+    }
 
 
 def test_manual_decisions_keep_one_credit_per_property_user_and_day():

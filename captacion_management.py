@@ -570,19 +570,31 @@ def _active_credited_events(db, user_id, local_day: date) -> list[dict]:
         {
             "actor_user_id": clean_id(user_id),
             "local_date": local_day.isoformat(),
-            "credited": True,
             "event_type": {"$in": list(VALID_CREDIT_EVENT_TYPES)},
+            "$or": [{"credited": True}, {"commercially_valid": True}],
         }
     ))
-    event_ids = [row.get("event_id") for row in rows if row.get("event_id")]
+    credited_ids = {
+        clean_id(row.get("event_id")) for row in rows
+        if row.get("credited") and row.get("event_id")
+    }
     reversed_ids = {
         row.get("original_event_id")
         for row in db[LEDGER_COLLECTION].find(
-            {"event_type": "management_reversed", "original_event_id": {"$in": event_ids}},
+            {"event_type": "management_reversed", "original_event_id": {"$in": list(credited_ids)}},
             {"original_event_id": 1},
         )
     }
-    return [row for row in rows if row.get("event_id") not in reversed_ids]
+    active_credited_ids = credited_ids - {clean_id(value) for value in reversed_ids}
+    return [
+        row for row in rows
+        if (
+            row.get("credited") and clean_id(row.get("event_id")) in active_credited_ids
+        ) or (
+            row.get("commercially_valid")
+            and clean_id(row.get("duplicate_of_event_id")) in active_credited_ids
+        )
+    ]
 
 
 def summarize_management_metrics(events: list[dict]) -> dict:

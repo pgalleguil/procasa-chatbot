@@ -888,25 +888,8 @@ async def api_crm_log_action(request: Request):
             phone_clean = str(phone).replace("+", "").strip()
             lead = db["leads"].find_one({"phone": {"$regex": f"^{phone_clean}"}})
 
-            if lead:
-                current_stage = lead.get("stage") or lead.get("pipeline_stage")
-                from chatbot.constants import PipelineStage
-                if str(current_stage).lower() in ["nuevo", "new"] or current_stage == PipelineStage.NEW:
-                    management_events = [
-                        "SEND_WA_OWNER", "CLICK_WHATSAPP_OWNER", "SEND_EMAIL_OWNER", "CLICK_PHONE_OWNER",
-                        "CLICK_WHATSAPP_LEAD", "CLICK_PHONE_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD"
-                    ]
-                    if event_type in management_events:
-                        from chatbot.crm_service import CrmService
-                        try:
-                            CrmService.update_stage(
-                                phone_clean,
-                                PipelineStage.CONTACTED,
-                                actor="agent",
-                                notes=f"Auto-promocion por accion rapida: {event_type}"
-                            )
-                        except Exception as prom_err:
-                            logger.error(f"Error auto-promoviendo lead tras gestion: {prom_err}")
+            # Opening an external app or link is audit evidence only. It must
+            # never promote the lead or complete first-management SLA.
 
             log_crm_event(phone=phone, event_type=event_type, meta_data=payload.get("meta"))
 
@@ -916,6 +899,42 @@ async def api_crm_log_action(request: Request):
     except Exception as e:
         logger.error(f"Error logging CRM action: {e}")
         return {"status": "error"}
+
+
+@app.post("/api/crm/management-result")
+async def api_crm_management_result(request: Request):
+    data = await request.json()
+    phone = str(data.get("phone") or "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Falta teléfono")
+    user, lead = await _get_authorized_crm_lead(request, phone)
+    actor_user_id = str(user.get("_id") or "")
+    if not actor_user_id:
+        raise HTTPException(status_code=400, detail="Usuario sin identidad canónica")
+
+    def _record():
+        from chatbot.crm_management import record_management_result
+        from chatbot.crm_metrics import active_assignment_cycle
+        from chatbot.storage import get_db
+        db = get_db()
+        cycle = active_assignment_cycle(db, lead["_id"])
+        if not cycle:
+            raise ValueError("El lead no tiene un ciclo de asignación activo")
+        return record_management_result(
+            db, lead_id=lead["_id"], assignment_cycle_id=cycle["assignment_cycle_id"],
+            actor_user_id=actor_user_id, result_type=data.get("result_type"),
+            occurred_at=None, source="crm_quick_action",
+            idempotency_key=str(data.get("idempotency_key") or ""),
+            next_follow_up_at=data.get("next_follow_up_at"),
+        )
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(_WEB_THREAD_POOL, _record)
+        return {"status": "ok", "result_type": result.get("result_type"),
+                "follow_up_required": result.get("follow_up_required")}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 @app.post("/api/crm/update")
 async def api_crm_update_lead(request: Request):
     try:

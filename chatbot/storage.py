@@ -449,21 +449,49 @@ def delete_pending_notification(notification_id):
 # EVENT LOG & PIPELINE
 # ==========================================
 
-def log_event(phone: str, event_type: str, actor: str = "system", meta: dict = None):
+def log_event(phone: str, event_type: str, actor: str = "system", meta: dict = None,
+              *, lead_id=None, actor_type=None, result=None, confirmed=False,
+              timestamp=None):
     db = get_db()
+    from .crm_metrics import active_assignment_cycle, coerce_utc_datetime, event_evidence, resolve_canonical_lead, utc_now
+    resolution = resolve_canonical_lead(db, lead_id=lead_id, phone=phone)
+    lead = resolution.lead
+    event_at = coerce_utc_datetime(timestamp) or utc_now()
+    cycle = active_assignment_cycle(db, lead["_id"]) if lead else None
     event = {
         "phone": str(phone).replace("+", "").strip(),
-        "timestamp": datetime.now(CHILE_TZ).isoformat(),
+        "timestamp": event_at,
         "type": event_type,
         "actor": actor,
+        "actor_type": actor_type or ("system" if str(actor).lower() in {"system", "bot", "sistema"} else "human"),
+        "lead_id": lead.get("_id") if lead else None,
+        "assignment_cycle_id": cycle.get("assignment_cycle_id") if cycle else None,
+        "result": result,
+        "confirmed": bool(confirmed),
+        "identity_status": resolution.status,
         "meta": meta or {}
     }
+    event["evidence"] = event_evidence(event)
     db["crm_events"].insert_one(event)
+    if lead and event["evidence"]["management"]:
+        first_fields = {"lifecycle.first_valid_management_at": event_at}
+        if event["evidence"]["contact_attempt"]:
+            first_fields["lifecycle.first_contact_attempt_at"] = event_at
+        if event["evidence"]["effective_contact"]:
+            first_fields["lifecycle.first_effective_contact_at"] = event_at
+        for key, value in first_fields.items():
+            db["leads"].update_one({"_id": lead["_id"], key: {"$exists": False}}, {"$set": {key: value}})
+        if cycle:
+            db["crm_assignment_cycles"].update_one(
+                {"_id": cycle["_id"], "first_valid_management_at": {"$exists": False}},
+                {"$set": {"first_valid_management_at": event_at, "first_valid_management_actor": actor}},
+            )
     
     # Precomputación SaaS: Actualizar métricas del lead atómicamente
     try:
         from .metrics import update_lead_metrics
-        update_lead_metrics(db, phone, event_at=event["timestamp"], event_type=event_type)
+        update_lead_metrics(db, phone, event_at=event["timestamp"], event_type=event_type,
+                            lead_id=event.get("lead_id"))
     except Exception as e:
         logger.error(f"Error triggering metrics update in log_event: {e}")
     finally:

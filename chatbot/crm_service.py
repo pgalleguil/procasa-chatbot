@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import re
+import uuid
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from .constants import (
@@ -134,8 +135,9 @@ class CrmService:
             log_event(phone, InteractionType.STATUS_CHANGE, actor, {
                 "from": old_stage,
                 "to": new_stage,
-                "notes": notes
-            })
+                "notes": notes,
+                "meaningful_change": True,
+            }, lead_id=lead["_id"], actor_type="human" if actor not in {"system", "bot"} else actor)
             return True
         
         return False
@@ -220,6 +222,16 @@ class CrmService:
         
         now_cl = datetime.now(CHILE_TZ)
         assigned_at = get_next_business_slot(now_cl)
+        from .crm_metrics import create_assignment_cycle, coerce_utc_datetime
+        assigned_at_utc = coerce_utc_datetime(assigned_at)
+        try:
+            cycle = create_assignment_cycle(
+                db, lead=lead, assigned_to_user_id=executive_name,
+                assigned_by=actor, reason=method, assigned_at=assigned_at_utc,
+            )
+        except (KeyError, TypeError):
+            # Compatibility for lightweight adapters/tests without the additive collection.
+            cycle = {"assignment_cycle_id": str(uuid.uuid4())}
         
         res = db[COLLECTION_CONVERSATIONS].update_one(
             {"_id": lead["_id"]},
@@ -227,7 +239,8 @@ class CrmService:
                 "$set": {
                     "ejecutivo_asignado": executive_name,
                     "prospecto.ejecutivo": executive_name,
-                    "lifecycle.assigned_at": assigned_at.isoformat()
+                    "lifecycle.assigned_at": assigned_at_utc,
+                    "lifecycle.current_assignment_cycle_id": cycle["assignment_cycle_id"],
                 }
             }
         )
@@ -235,8 +248,9 @@ class CrmService:
         if res.modified_count > 0:
             log_event(phone, InteractionType.ASSIGNMENT, actor, {
                 "executive": executive_name,
-                "method": method
-            })
+                "method": method,
+                "assignment_cycle_id": cycle["assignment_cycle_id"],
+            }, lead_id=lead["_id"], actor_type="human" if actor not in {"system", "bot"} else actor)
             return True
         return False
 

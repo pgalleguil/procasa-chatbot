@@ -3,6 +3,7 @@ from datetime import datetime
 from config import Config
 from .constants import CHILE_TZ, PipelineStage
 from .utils import calculate_business_minutes
+from .crm_metrics import calculate_sla, resolve_canonical_lead
 import logging
 from .lead_temperature import (
     HOT,
@@ -21,6 +22,20 @@ def calculate_priority(lead_doc, now=None):
     """
     if not now:
         now = datetime.now(CHILE_TZ)
+    lifecycle = lead_doc.get("lifecycle", {}) or {}
+    canonical_sla = calculate_sla(
+        assigned_at=lifecycle.get("assigned_at") or lead_doc.get("fecha_asignacion"),
+        first_valid_management_at=lifecycle.get("first_valid_management_at"),
+        now=now,
+    )
+    if canonical_sla["status"] != "unknown":
+        if canonical_sla["fulfilled"]:
+            return "fulfilled", 0, "DONE"
+        score, bucket = {
+            "critical": (120, "CRITICAL"), "near_critical": (100, "HIGH"),
+            "warning": (70, "HIGH"), "good": (40, "NORMAL"),
+        }[canonical_sla["status"]]
+        return canonical_sla["status"], score, bucket
     
     last_event_at = lead_doc.get("last_event_at")
     if isinstance(last_event_at, str):
@@ -84,14 +99,14 @@ def calculate_priority(lead_doc, now=None):
     
     return sla_status, score, priority_bucket
 
-def update_lead_metrics(db, phone, event_at=None, event_type=None):
+def update_lead_metrics(db, phone, event_at=None, event_type=None, lead_id=None):
     """
     Actualiza los campos de performance en el documento del lead.
     """
     try:
         phone_clean = str(phone).replace("+", "").strip()
         # Find lead whether it has a + prefix or not
-        lead = db["leads"].find_one({"phone": {"$regex": f"\\+?{phone_clean}"}})
+        lead = resolve_canonical_lead(db, lead_id=lead_id, phone=phone).lead
         if not lead:
             return
         
@@ -164,7 +179,9 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None):
         ]
         
         current_stage = lead.get("pipeline_stage") or lead.get("stage") or PipelineStage.NEW
-        if is_managed and (current_stage == PipelineStage.NEW or str(current_stage).lower() in ["new", "nuevo"]):
+        # Stage transitions require an explicit, confirmed commercial decision.
+        # Metric events (including clicks) never promote a lead implicitly.
+        if False and is_managed and (current_stage == PipelineStage.NEW or str(current_stage).lower() in ["new", "nuevo"]):
             update_data["pipeline_stage"] = PipelineStage.CONTACTED
             update_data["stage"] = "gestion"
             # Registrar cambio de estado para el historial

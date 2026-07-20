@@ -502,6 +502,13 @@
             margin-top: 8px;
         }
 
+        .kpi-scope-note {
+            margin-top: 4px;
+            color: var(--text-secondary);
+            font-size: 0.68rem;
+            line-height: 1.25;
+        }
+
         /* TABLE CONTAINER */
         .table-container {
             background: var(--bg-card);
@@ -1165,10 +1172,12 @@
                 <div class="kpi-icon"><i class="fa-solid fa-layer-group"></i></div>
             </button>
             <button type="button" class="kpi-card gestion {{ 'is-active' if current_estado == 'GRUPO_GESTION' }}"
+                aria-label="Propiedades actualmente en gestión; estado actual, no gestiones de la semana"
                 aria-pressed="{{ 'true' if current_estado == 'GRUPO_GESTION' else 'false' }}" onclick="filterByGrupoEstado('GRUPO_GESTION')">
                 <div>
                     <div class="kpi-value">{{ in_gestion_count or '0' }}</div>
-                    <div class="kpi-label">En Gestión</div>
+                    <div class="kpi-label">Propiedades actualmente en gestión</div>
+                    <div class="kpi-scope-note">Estado actual · no corresponde a la semana</div>
                 </div>
                 <div class="kpi-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
             </button>

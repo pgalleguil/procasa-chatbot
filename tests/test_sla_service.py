@@ -23,6 +23,28 @@ class AsyncCollection:
             if all(doc.get(k) == v for k, v in query.items()): return doc
         return None
     async def update_one(self, query, update): return None
+    async def find_one_and_update(self, query, update, **kwargs):
+        def get_path(doc, path):
+            value = doc
+            for part in path.split("."):
+                if not isinstance(value, dict) or part not in value: return None, False
+                value = value[part]
+            return value, True
+        for doc in self.docs:
+            matched = True
+            for key, expected in query.items():
+                actual, exists = get_path(doc, key)
+                if isinstance(expected, dict) and "$exists" in expected:
+                    matched = matched and exists == expected["$exists"]
+                else:
+                    matched = matched and actual == expected
+            if matched:
+                for key, value in update.get("$set", {}).items():
+                    target = doc; parts = key.split(".")
+                    for part in parts[:-1]: target = target.setdefault(part, {})
+                    target[parts[-1]] = value
+                return doc
+        return None
 
 
 class AsyncDB(dict):
@@ -72,6 +94,7 @@ def test_async_sla_monitor_uses_shared_definition_and_deduplicated_notification(
         crm_sla_warnings=AsyncCollection(),
         crm_assignment_cycles=AsyncCollection([{
             "lead_id": lead["_id"], "assignment_cycle_id": "cycle-1",
+            "assigned_to_user_id": "user-1", "cycle_status": "active",
             "assigned_at": lead["lifecycle"]["assigned_at"].astimezone(timezone.utc),
             "unassigned_at": None,
         }]),
@@ -97,6 +120,7 @@ def test_historical_critical_warning_is_never_replayed():
         leads=AsyncCollection([lead]), crm_events=AsyncCollection([]),
         crm_assignment_cycles=AsyncCollection([{
             "lead_id": lead["_id"], "assignment_cycle_id": "cycle-1",
+            "assigned_to_user_id": "user-1", "cycle_status": "active",
             "assigned_at": lead["lifecycle"]["assigned_at"].astimezone(timezone.utc),
             "unassigned_at": None,
         }]),

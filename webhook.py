@@ -1619,6 +1619,7 @@ async def view_captaciones(
         app.state.captacion_stats_cache = cache_store
         
     total_pages = (total_count + limit - 1) // limit
+    worked_count = in_gestion_count + captados_count + descartados_count
 
     goal_executive = current_ejecutivo if user_role in CAPTACION_PRIVILEGED_ROLES else user_name
     captacion_goal = await loop.run_in_executor(
@@ -1635,6 +1636,7 @@ async def view_captaciones(
         "total_count": total_count,
         "available_count": available_count,
         "in_gestion_count": in_gestion_count,
+        "worked_count": worked_count,
         "captados_count": captados_count,
         "descartados_count": descartados_count,
         "captacion_goal": captacion_goal,

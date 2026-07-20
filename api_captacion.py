@@ -570,7 +570,11 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     if status_filter:
         terminal_states = list(CAPTURED_STATES + DISCARDED_STATES)
-        if status_filter in ("GRUPO_GESTION", "GESTION"):
+        if status_filter == "GRUPO_TRABAJADAS":
+            query["gestion.estado"] = {
+                "$in": list(MANAGEMENT_STATES + CAPTURED_STATES + DISCARDED_STATES)
+            }
+        elif status_filter in ("GRUPO_GESTION", "GESTION"):
             query["gestion.estado"] = {"$in": list(MANAGEMENT_STATES)}
         elif status_filter in ("GRUPO_CAPTADO", "CAPTADO"):
             query["gestion.estado"] = {"$in": list(CAPTURED_STATES)}

@@ -1171,13 +1171,13 @@
                 </div>
                 <div class="kpi-icon"><i class="fa-solid fa-layer-group"></i></div>
             </button>
-            <button type="button" class="kpi-card gestion {{ 'is-active' if current_estado == 'GRUPO_GESTION' }}"
-                aria-label="Propiedades actualmente en gestión; estado actual, no gestiones de la semana"
-                aria-pressed="{{ 'true' if current_estado == 'GRUPO_GESTION' else 'false' }}" onclick="filterByGrupoEstado('GRUPO_GESTION')">
+            <button type="button" class="kpi-card gestion {{ 'is-active' if current_estado == 'GRUPO_TRABAJADAS' }}"
+                aria-label="Propiedades trabajadas acumuladas según su estado actual"
+                aria-pressed="{{ 'true' if current_estado == 'GRUPO_TRABAJADAS' else 'false' }}" onclick="filterByGrupoEstado('GRUPO_TRABAJADAS')">
                 <div>
-                    <div class="kpi-value">{{ in_gestion_count or '0' }}</div>
-                    <div class="kpi-label">Propiedades actualmente en gestión</div>
-                    <div class="kpi-scope-note">Estado actual · no corresponde a la semana</div>
+                    <div class="kpi-value">{{ worked_count or '0' }}</div>
+                    <div class="kpi-label">Propiedades trabajadas</div>
+                    <div class="kpi-scope-note">Acumulado · incluye gestiÃ³n, captadas y descartadas</div>
                 </div>
                 <div class="kpi-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
             </button>

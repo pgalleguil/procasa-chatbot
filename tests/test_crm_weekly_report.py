@@ -148,7 +148,8 @@ def test_previous_complete_week_is_20_to_24():
 
 def test_scheduler_requires_approval_and_never_sends(monkeypatch):
     db = fixture_db(); create = AsyncMock(return_value={"report_id": "r1", "status": "pending_approval"})
-    with patch("chatbot.crm_weekly_report.create_preview", create):
+    with patch("chatbot.crm_weekly_report.create_preview", create), \
+         patch("chatbot.crm_weekly_report.Config.CRM_WEEKLY_REPORT_GENERATION_ENABLED", True):
         result = asyncio.run(scheduler_tick(CHILE_TZ.localize(datetime(2026, 7, 27, 8, 15)), db=db))
     assert result["status"] == "pending_approval"
     create.assert_awaited_once()
@@ -160,7 +161,8 @@ def test_official_idempotency_and_no_real_whatsapp(monkeypatch):
               "snapshot": snapshot, "generated_text": message}
     db = fixture_db(); db["crm_weekly_reports"] = Collection([report]); db["crm_weekly_deliveries"] = Collection()
     sender = AsyncMock(return_value={"success": True, "delivery_status": "delivered", "provider_message_id": "fake"})
-    with patch("chatbot.crm_weekly_report.Config.CRM_WEEKLY_REPORT_GROUP_ID", "12345@g.us"):
+    with patch("chatbot.crm_weekly_report.Config.CRM_WEEKLY_REPORT_GROUP_ID", "12345@g.us"), \
+         patch("chatbot.crm_weekly_report.Config.CRM_WEEKLY_REPORT_SEND_ENABLED", True):
         first = asyncio.run(approve_and_send("r1", "Admin", db=db, sender=sender))
         second = asyncio.run(approve_and_send("r1", "Admin", db=db, sender=sender))
     assert sender.await_count == 1

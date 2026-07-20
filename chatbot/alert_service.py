@@ -205,11 +205,16 @@ def _send_alert_once_sync(
             logger.error("[ALERT] canonical Hot blocked identity_status=%s", resolution.status)
             return
         due_local = get_next_business_slot(datetime.now(CHILE_TZ))
+        recipient_user = db["usuarios"].find_one({"nombre": exec_name, "is_active": {"$ne": False}})
+        if not recipient_user or recipient_user.get("_id") is None:
+            logger.error("[ALERT] canonical Hot blocked unresolved recipient_user_id")
+            return
+        recipient_user_id = str(recipient_user["_id"])
         lead_data["target_name"] = exec_name
         lead_data["target_phone"] = exec_phone
         lead_data["is_new_assignment"] = is_new_assignment
         canonical = assign_and_enqueue_hot(
-            db, lead=resolution.lead, recipient_user_id=exec_name,
+            db, lead=resolution.lead, recipient_user_id=recipient_user_id, recipient_name=exec_name,
             recipient_phone=exec_phone, payload=lead_data,
             assigned_by="system", reason="LeadRouter", assigned_at=due_local,
             send_after=due_local,

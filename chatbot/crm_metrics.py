@@ -33,9 +33,12 @@ VALID_MANAGEMENT_EVENT_TYPES = frozenset({
 CONTACT_ATTEMPT_RESULTS = frozenset({
     "NO_RESPONDIO", "OCUPADO", "NUMERO_INVALIDO", "MENSAJE_ENVIADO",
     "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO", "OTRO",
+    "MESSAGE_SENT_WAITING_RESPONSE", "CALL_NO_ANSWER", "EMAIL_SENT",
+    "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "INVALID_NUMBER",
 })
 EFFECTIVE_CONTACT_RESULTS = frozenset({
     "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO",
+    "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED",
 })
 HUMAN_ACTOR_TYPES = frozenset({"human", "agent", "administrator", "supervisor"})
 
@@ -96,6 +99,10 @@ def normalize_result(value: Any) -> Optional[str]:
         "REQUIERE_SEGUIMIENTO": "SOLICITA_SEGUIMIENTO",
         "LEAD_PAUSADO": "SOLICITA_SEGUIMIENTO", "LEAD_CERRADO": "NO_INTERESADO",
         "WHATSAPP_ENVIADO": "MENSAJE_ENVIADO", "VISITA_AGENDADA": "CONTACTADO",
+        "MENSAJE_ENVIADO_ESPERANDO_RESPUESTA": "MESSAGE_SENT_WAITING_RESPONSE",
+        "LLAMADA_SIN_RESPUESTA": "CALL_NO_ANSWER",
+        "CONTACTO_EFECTIVO": "EFFECTIVE_CONTACT",
+        "NUMERO_INVALIDO": "INVALID_NUMBER",
     }
     return aliases.get(result, result) if result else None
 
@@ -131,7 +138,7 @@ def unique_managed_lead_ids(events: Iterable[Mapping[str, Any]]) -> set[Any]:
 
 
 def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
-                            reason, assigned_at=None) -> dict[str, Any]:
+                            reason, assigned_at=None, assigned_to_display_name=None) -> dict[str, Any]:
     assigned_at = coerce_utc_datetime(assigned_at) or utc_now()
     active = db["crm_assignment_cycles"].find_one({"lead_id": lead["_id"], "unassigned_at": None})
     if (active and active.get("schema_version") == "crm_assignment_cycle_v1"
@@ -146,6 +153,7 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
     cycle = {
         "assignment_cycle_id": str(uuid.uuid4()), "lead_id": lead["_id"],
         "assigned_to_user_id": assigned_to_user_id, "assigned_at": assigned_at,
+        "assigned_to_display_name": assigned_to_display_name or str(assigned_to_user_id),
         "unassigned_at": None, "assigned_by": assigned_by, "reason": reason,
         "metric_version": METRIC_VERSION, "schema_version": "crm_assignment_cycle_v1",
         "cycle_status": "active",
@@ -404,13 +412,13 @@ def build_weekly_crm_snapshot(db, *, period_start, period_end, priority_as_of,
         return buckets.get(str(name or "").strip())
     new_sets, managed_sets, pending_sets, effective_sets = {}, {}, {}, {}
     for cycle in period_cycles:
-        name = cycle.get("assigned_to_user_id")
+        name = cycle.get("assigned_to_display_name") or cycle.get("assigned_to_user_id")
         if bucket(name): new_sets.setdefault(name, set()).add(cycle.get("lead_id"))
     for event in valid_management:
         name = event.get("actor")
         if bucket(name): managed_sets.setdefault(name, set()).add(event.get("lead_id"))
     for lead_id, cycle in current_pending_cycles.items():
-        name = cycle.get("assigned_to_user_id")
+        name = cycle.get("assigned_to_display_name") or cycle.get("assigned_to_user_id")
         if bucket(name): pending_sets.setdefault(name, set()).add(lead_id)
     for event in period_events:
         if event_evidence(event)["effective_contact"] and bucket(event.get("actor")):

@@ -228,8 +228,14 @@ class CrmService:
         from .crm_metrics import create_assignment_cycle, coerce_utc_datetime
         assigned_at_utc = coerce_utc_datetime(assigned_at)
         try:
+            recipient_user = db["usuarios"].find_one({"nombre": executive_name, "is_active": {"$ne": False}})
+        except (KeyError, TypeError):
+            recipient_user = None  # Lightweight adapters retain the display-name fallback.
+        assigned_to_user_id = str(recipient_user["_id"]) if recipient_user and recipient_user.get("_id") is not None else executive_name
+        try:
             cycle = create_assignment_cycle(
-                db, lead=lead, assigned_to_user_id=executive_name,
+                db, lead=lead, assigned_to_user_id=assigned_to_user_id,
+                assigned_to_display_name=executive_name,
                 assigned_by=actor, reason=method, assigned_at=assigned_at_utc,
             )
         except (KeyError, TypeError):

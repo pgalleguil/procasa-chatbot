@@ -15,7 +15,7 @@ NOTIFICATION_TYPE = "lead_assignment_hot"
 
 def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payload,
                            assigned_by="system", reason="LeadRouter", assigned_at=None,
-                           send_after=None):
+                           send_after=None, recipient_name=None):
     if lead.get("_id") is None:
         raise ValueError("canonical lead_id is required")
     assigned = coerce_utc_datetime(assigned_at) or utc_now()
@@ -23,10 +23,11 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
     cycle = create_assignment_cycle(
         db, lead=lead, assigned_to_user_id=recipient_user_id,
         assigned_by=assigned_by, reason=reason, assigned_at=assigned,
+        assigned_to_display_name=recipient_name or str(recipient_user_id),
     )
     db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
-        "ejecutivo_asignado": recipient_user_id,
-        "prospecto.ejecutivo": recipient_user_id,
+        "ejecutivo_asignado": recipient_name or str(recipient_user_id),
+        "prospecto.ejecutivo": recipient_name or str(recipient_user_id),
         "lifecycle.assigned_at": assigned,
         "lifecycle.current_assignment_cycle_id": cycle["assignment_cycle_id"],
     }})

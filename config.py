@@ -33,7 +33,7 @@ class Config:
     CAPTACION_WEEKLY_AUTOMATIC_SEND = False
     CAPTACION_WEEKLY_SCHEDULE_HOUR = 8
     CAPTACION_WEEKLY_SCHEDULE_MINUTE = 45
-    CAPTACION_WEEKLY_PROMPT_VERSION = "captacion_weekly_writer_v2"
+    CAPTACION_WEEKLY_PROMPT_VERSION = "captacion_weekly_writer_v3"
     CRM_BASE_URL = os.getenv("CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")
 
 

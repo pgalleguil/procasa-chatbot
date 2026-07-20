@@ -35,6 +35,16 @@ def _panel():
             "captado": 0,
             "otros": 0,
         },
+        "detailed_outcomes": {"por_contactar": 5, "no_respondio": 3},
+        "detail_labels": {"por_contactar": "Por contactar", "no_respondio": "No respondió"},
+        "requires_outcome_review": False,
+        "outcome_groups": {
+            "pending_next_action": {"label": "Pendientes de nueva gestión", "total": 8, "details": {"por_contactar": 5, "no_respondio": 3}},
+            "management_in_progress": {"label": "Gestión en curso", "total": 0, "details": {}},
+            "closed_without_capture": {"label": "Cerradas sin captación", "total": 0, "details": {}},
+            "captured": {"label": "Captadas", "total": 0, "details": {}},
+            "other_review": {"label": "Otros / Por revisar", "total": 0, "details": {}},
+        },
         "executives": [
             {"name": "Susana", "week_count": 5, "contact_attempts": 1, "effective_contacts": 0, "captures": 0, "daily": daily},
             {"name": "Mariela", "week_count": 2, "contact_attempts": 2, "effective_contacts": 0, "captures": 0, "daily": daily},
@@ -61,7 +71,7 @@ def test_snapshot_is_built_from_exact_panel_backend(monkeypatch):
     assert len(calls) == 1
     assert snapshot["team"]["properties_managed_unique"] == panel["week_count"] == 8
     assert snapshot["crm_parity"]["validated"] is True
-    assert sum(snapshot["final_outcomes"].values()) == 8
+    assert sum(group["total"] for group in snapshot["outcome_groups"].values()) == 8
 
 
 def test_six_events_on_one_property_are_one_management_unit_and_one_final_outcome():
@@ -80,7 +90,7 @@ def test_six_events_on_one_property_are_one_management_unit_and_one_final_outcom
         })
     assert management.summarize_management_metrics([row for row in events if row["credited"]])["managed_properties"] == 1
     outcomes = management.summarize_final_outcomes(events)
-    assert outcomes["no_respondio"] == 1
+    assert outcomes["contactado"] == 1
     assert sum(outcomes.values()) == 1
     assert len(events) == 6
 
@@ -132,7 +142,7 @@ def test_parity_failure_aborts():
             "captured_properties_unique": 0,
         },
         "executives": [],
-        "final_outcomes": {"otros": 7},
+        "outcome_groups": {"other_review": {"total": 7, "details": {"unknown": 7}}},
     }
     with pytest.raises(ValueError, match="Paridad CRM fallida"):
         weekly.validate_crm_parity(snapshot, panel)
@@ -224,6 +234,24 @@ def test_wrong_test_recipient_aborts_before_provider_call(monkeypatch):
     assert called == []
 
 
+def test_official_send_requires_acknowledgement_when_other_results_exist(monkeypatch):
+    db = _Db()
+    db[weekly.REPORT_COLLECTION].rows.append({
+        "report_id": "r-official", "is_test": False, "status": "pending_approval",
+        "crm_parity_validated": True, "snapshot": {"requires_outcome_review": True},
+    })
+    called = []
+
+    async def fake_send(*args):
+        called.append(args)
+
+    monkeypatch.setattr(weekly, "get_db", lambda: db)
+    monkeypatch.setattr(weekly, "send_whatsapp_message_detailed", fake_send)
+    with pytest.raises(ValueError, match="Otros / Por revisar"):
+        asyncio.run(weekly.approve_and_send_report("r-official", {"username": "admin"}))
+    assert called == []
+
+
 def test_scheduler_source_has_no_automatic_group_send():
     assert weekly.Config.CAPTACION_WEEKLY_PREVIEW_REQUIRED is True
     assert weekly.Config.CAPTACION_WEEKLY_AUTOMATIC_SEND is False
@@ -231,3 +259,44 @@ def test_scheduler_source_has_no_automatic_group_send():
     scheduler = source.split("async def check_and_prepare_weekly_report", 1)[1]
     assert "approve_and_send_report(" not in scheduler
     assert '"pending_approval"' in scheduler
+
+
+@pytest.mark.parametrize(("result", "expected_group", "expected_detail"), [
+    ("ready_to_contact", "pending_next_action", "por_contactar"),
+    ("no_answer", "pending_next_action", "no_respondio"),
+    ("contacted", "management_in_progress", "contactado"),
+    ("broker_identified", "closed_without_capture", "corredor"),
+    ("discarded", "closed_without_capture", "descartado"),
+    ("unavailable", "closed_without_capture", "propiedad_no_disponible"),
+    ("captured", "captured", "captado"),
+])
+def test_real_results_use_shared_grouping(result, expected_group, expected_detail):
+    events = [{
+        "event_id": "e1", "property_id": "p1", "actor_user_id": "u1",
+        "local_date": "2026-07-13", "occurred_at": datetime(2026, 7, 13, 12, tzinfo=timezone.utc),
+        "result": result, "credited": True, "commercially_valid": True,
+    }]
+    summary = management.summarize_grouped_outcomes(events)
+    assert summary["outcome_groups"][expected_group]["total"] == 1
+    assert summary["detailed_outcomes"][expected_detail] == 1
+    assert sum(group["total"] for group in summary["outcome_groups"].values()) == 1
+
+
+def test_unknown_valid_observation_is_preserved_for_review():
+    events = [{
+        "event_id": "e1", "property_id": "p1", "actor_user_id": "u1", "local_date": "2026-07-13",
+        "occurred_at": datetime(2026, 7, 13, 12, tzinfo=timezone.utc), "result": "new_crm_result",
+        "credited": True, "commercially_valid": True,
+    }]
+    summary = management.summarize_grouped_outcomes(events)
+    assert summary["requires_outcome_review"] is True
+    assert summary["outcome_groups"]["other_review"]["details"]["new_crm_result"] == 1
+
+
+def test_whatsapp_omits_zero_groups_and_uses_compact_executive_lines(monkeypatch):
+    monkeypatch.setattr(weekly, "get_captacion_goal_dashboard", lambda db, now=None: _panel())
+    snapshot = weekly.build_weekly_snapshot(object(), "2026-07-13", "2026-07-17", is_test=True)
+    message = weekly.assemble_whatsapp_message(snapshot, _narrative())
+    assert "Pendientes de nueva gestión: *8*" in message
+    assert "Gestión en curso: *0*" not in message
+    assert "contactos efectivos ·" not in message

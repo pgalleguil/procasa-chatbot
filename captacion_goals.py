@@ -24,6 +24,7 @@ from captacion_management import (
     normalize_result,
     normalize_started_action,
     summarize_final_outcomes,
+    summarize_grouped_outcomes,
 )
 
 
@@ -361,7 +362,7 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
         row for row in rows
         if monday <= _as_chile_datetime(row.get("occurred_at")).date() <= monday + timedelta(days=4)
     ]
-    final_outcomes = summarize_final_outcomes(weekday_rows)
+    outcome_summary = summarize_grouped_outcomes(weekday_rows)
 
     if selected_key:
         metrics = member_metrics(selected_key, names[selected_key])
@@ -374,11 +375,11 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
             "mode": "individual",
             "timezone": "America/Santiago",
             "final_outcomes": summarize_final_outcomes(individual_rows),
+            **{key: value for key, value in summarize_grouped_outcomes(individual_rows).items() if key != "units"},
             **metrics,
         }
 
     team_rows = [member_metrics(key, display) for key, display in names.items()]
-    team_rows.sort(key=lambda row: (row["met_today"], row["today_count"] == 0, row["today_count"], row["name"].casefold()))
     member_count = len(team_rows)
     return {
         "mode": "team",
@@ -399,7 +400,8 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
         "contact_attempts": sum(row["contact_attempts"] for row in team_rows),
         "effective_contacts": sum(row["effective_contacts"] for row in team_rows),
         "captures": sum(row["captures"] for row in team_rows),
-        "final_outcomes": final_outcomes,
+        "final_outcomes": outcome_summary["detailed_outcomes"],
+        **{key: value for key, value in outcome_summary.items() if key not in {"units", "detailed_outcomes"}},
         "anomaly_count": sum(row["anomaly_count"] for row in team_rows),
         "executives": team_rows,
     }

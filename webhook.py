@@ -73,6 +73,7 @@ from chatbot.crm_permissions import (
 from chatbot.crm_service import CrmService
 from chatbot.captacion_weekly_report import (
     REPORT_COLLECTION as CAPTACION_WEEKLY_REPORT_COLLECTION,
+    acknowledge_outcome_review,
     approve_and_send_report,
     cancel_report,
     create_weekly_report,
@@ -1930,6 +1931,18 @@ async def api_approve_captacion_weekly_report(request: Request, report_id: str):
             report_id, user_doc, edited_narrative=payload.get("narrative")
         )
         return {"status": "ok", "delivery": delivery}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/captacion/weekly-report/{report_id}/acknowledge-outcomes")
+async def api_acknowledge_captacion_weekly_outcomes(request: Request, report_id: str):
+    user_doc = await _require_captacion_report_admin(request)
+    try:
+        report = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, lambda: acknowledge_outcome_review(report_id, user_doc)
+        )
+        return {"status": "ok", "report_id": report["report_id"]}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

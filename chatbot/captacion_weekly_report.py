@@ -16,6 +16,7 @@ from openai import OpenAI
 from pymongo.errors import DuplicateKeyError
 
 from captacion_goals import get_captacion_goal_dashboard
+from captacion_management import OUTCOME_GROUPS
 from captacion_workforce import DEFAULT_TIMEZONE
 from config import Config
 from .storage import get_db
@@ -30,7 +31,7 @@ from .whatsapp_client import (
 
 logger = logging.getLogger(__name__)
 CHILE = pytz.timezone(DEFAULT_TIMEZONE)
-SCHEMA_VERSION = "captacion_weekly_report_v2"
+SCHEMA_VERSION = "captacion_weekly_report_v3"
 ADMIN_RECIPIENT = "+56983219804"
 PROMPT_VERSION = Config.CAPTACION_WEEKLY_PROMPT_VERSION
 REPORT_COLLECTION = Config.CAPTACION_WEEKLY_REPORT_COLLECTION
@@ -80,6 +81,9 @@ def ensure_weekly_report_indexes(db) -> None:
         [("period_start", 1), ("period_end", 1), ("is_test", 1), ("created_at", -1)],
         name="captacion_weekly_period",
     )
+    db[DELIVERY_COLLECTION].create_index(
+        "idempotency_key", unique=True, name="captacion_weekly_delivery_idempotency"
+    )
 
 
 async def _claim_delivery(db, idempotency_key: str, fields: dict) -> tuple[dict, bool]:
@@ -114,9 +118,6 @@ async def _complete_delivery(db, delivery: dict) -> dict:
         {"$set": payload},
     )
     return payload
-    db[DELIVERY_COLLECTION].create_index(
-        "idempotency_key", unique=True, name="captacion_weekly_delivery_idempotency"
-    )
 
 
 def _parse_date(value) -> date:
@@ -156,7 +157,27 @@ def _safe_executives(panel: dict) -> list[dict]:
         }
         for row in panel.get("executives") or []
     ]
-    return sorted(rows, key=lambda row: row["name"].casefold())
+    return rows
+
+
+def derive_operational_priority(snapshot: dict) -> dict:
+    groups = snapshot["outcome_groups"]
+    pending = groups["pending_next_action"]["total"]
+    details = snapshot.get("detailed_outcomes") or {}
+    contacts = snapshot["team"]["effective_contacts_unique"]
+    captures = snapshot["team"]["captured_properties_unique"]
+    if pending:
+        return {"key": "pending_follow_up", "label": "Priorizar pendientes y contactos sin respuesta", "supporting_total": pending}
+    if details.get("corredor"):
+        return {"key": "initial_filtering", "label": "Reforzar el filtrado y la clasificación inicial", "supporting_total": details["corredor"]}
+    stale = details.get("propiedad_no_disponible", 0) + details.get("publicacion_expirada", 0)
+    if stale:
+        return {"key": "listing_freshness", "label": "Revisar antigüedad y vigencia de las propiedades", "supporting_total": stale}
+    if contacts > captures:
+        return {"key": "commercial_proposal", "label": "Reforzar la propuesta comercial después del contacto", "supporting_total": contacts - captures}
+    if captures:
+        return {"key": "sustain_captures", "label": "Sostener las prácticas que permitieron captar", "supporting_total": captures}
+    return {"key": "consistent_recording", "label": "Mantener seguimiento y registro comercial consistente", "supporting_total": 0}
 
 
 def validate_crm_parity(snapshot: dict, panel: dict) -> dict:
@@ -181,7 +202,8 @@ def validate_crm_parity(snapshot: dict, panel: dict) -> dict:
     validated = (
         report_total == panel_total
         and report_exec == panel_exec
-        and sum(snapshot["final_outcomes"].values()) == report_total
+        and sum(group["total"] for group in snapshot["outcome_groups"].values()) == report_total
+        and all(sum(group["details"].values()) == group["total"] for group in snapshot["outcome_groups"].values())
         and snapshot["team"]["properties_with_contact_attempt_unique"] == int(panel.get("contact_attempts") or 0)
         and snapshot["team"]["effective_contacts_unique"] == int(panel.get("effective_contacts") or 0)
         and snapshot["team"]["captured_properties_unique"] == int(panel.get("captures") or 0)
@@ -208,9 +230,15 @@ def build_weekly_snapshot(db, period_start, period_end, *, is_test: bool) -> dic
     if panel_dates and set(panel_dates) != expected_dates:
         raise ValueError("El backend de /captacion resolvió un periodo distinto al solicitado")
 
-    final_outcomes = {
-        key: int((panel.get("final_outcomes") or {}).get(key) or 0) for key in OUTCOME_LABELS
-    }
+    panel_groups = panel.get("outcome_groups") or {}
+    outcome_groups = {}
+    for key, label in OUTCOME_GROUPS.items():
+        source = panel_groups.get(key) or {}
+        outcome_groups[key] = {
+            "label": source.get("label") or label,
+            "total": int(source.get("total") or 0),
+            "details": {name: int(value or 0) for name, value in (source.get("details") or {}).items()},
+        }
     snapshot = {
         "schema_version": SCHEMA_VERSION,
         "report": {
@@ -232,7 +260,10 @@ def build_weekly_snapshot(db, period_start, period_end, *, is_test: bool) -> dic
             "effective_contacts_unique": int(panel.get("effective_contacts") or 0),
             "captured_properties_unique": int(panel.get("captures") or 0),
         },
-        "final_outcomes": final_outcomes,
+        "outcome_groups": outcome_groups,
+        "detailed_outcomes": {key: int(value or 0) for key, value in (panel.get("detailed_outcomes") or panel.get("final_outcomes") or {}).items()},
+        "detail_labels": dict(panel.get("detail_labels") or {}),
+        "requires_outcome_review": bool(panel.get("requires_outcome_review")),
         "executives": _safe_executives(panel),
         "data_quality": {
             "historical_measurement_complete": start >= date.fromisoformat("2026-07-20"),
@@ -248,6 +279,7 @@ def build_weekly_snapshot(db, period_start, period_end, *, is_test: bool) -> dic
             "technical_data": True,
         },
     }
+    snapshot["operational_priority"] = derive_operational_priority(snapshot)
     snapshot["crm_parity"] = validate_crm_parity(snapshot, panel)
     canonical = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
     snapshot["snapshot_id"] = "cws_" + hashlib.sha256(canonical).hexdigest()[:24]
@@ -258,8 +290,8 @@ def build_deepseek_payload(snapshot: dict) -> dict:
     payload = {
         key: deepcopy(snapshot[key])
         for key in (
-            "schema_version", "report", "measurement", "team", "final_outcomes",
-            "executives", "data_quality", "crm_parity",
+            "schema_version", "report", "measurement", "team", "outcome_groups",
+            "executives", "data_quality", "crm_parity", "operational_priority",
         )
     }
     forbidden = {
@@ -352,19 +384,24 @@ def assemble_whatsapp_message(snapshot: dict, narrative: dict) -> str:
         f"• Contactos efectivos: *{team['effective_contacts_unique']}*",
         f"• Captaciones logradas: *{team['captured_properties_unique']}*",
         "",
-        "📋 *Resultado actual de las propiedades gestionadas*",
+        "📋 *Resultado de las gestiones*",
     ]
-    for key, label in OUTCOME_LABELS.items():
-        value = int(snapshot["final_outcomes"].get(key) or 0)
-        if value:
-            lines.append(f"• {label}: *{value}*")
+    for group in snapshot["outcome_groups"].values():
+        if not group["total"]:
+            continue
+        lines.append(f"• {group['label']}: *{group['total']}*")
+        details = []
+        for key, value in group["details"].items():
+            if value:
+                label = snapshot.get("detail_labels", {}).get(key) or key.replace("_", " ")
+                details.append(f"{value} {label.casefold()}")
+        if details:
+            lines.append(f"  _{' · '.join(details)}_")
     lines.extend(["", "👥 *Por ejecutiva*"])
     for row in snapshot["executives"]:
-        lines.append(
-            f"• {row['name']}: *{row['properties_managed_unique']} gestionadas · "
-            f"{row['effective_contacts_unique']} contactos efectivos · "
-            f"{row['captured_properties_unique']} captadas*"
-        )
+        managed = row["properties_managed_unique"]
+        noun = "gestionada" if managed == 1 else "gestionadas"
+        lines.append(f"• {row['name']}: *{managed} {noun}*")
     lines.extend([
         "",
         "💡 *Lectura de la semana*",
@@ -552,6 +589,8 @@ async def approve_and_send_report(report_id: str, actor: dict, edited_narrative:
         raise ValueError("El reporte no está pendiente de aprobación")
     if not report.get("crm_parity_validated"):
         raise ValueError("La paridad CRM no está validada")
+    if report.get("snapshot", {}).get("requires_outcome_review") and not report.get("outcome_review_acknowledged"):
+        raise ValueError("Hay resultados en Otros / Por revisar; un administrador debe revisarlos antes del envío")
     narrative = validate_narrative(edited_narrative or report["narrative"])
     final_message = assemble_whatsapp_message(report["snapshot"], narrative)
     idempotency_key = f"official:{report['period_start']}:{report['period_end']}"
@@ -599,6 +638,19 @@ async def approve_and_send_report(report_id: str, actor: dict, edited_narrative:
         }},
     )
     return delivery
+
+
+def acknowledge_outcome_review(report_id: str, actor: dict) -> dict:
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    reviewer = str(actor.get("_id") or actor.get("username") or "admin")
+    result = db[REPORT_COLLECTION].update_one(
+        {"report_id": str(report_id), "is_test": False, "status": "pending_approval", "snapshot.requires_outcome_review": True},
+        {"$set": {"outcome_review_acknowledged": True, "outcome_reviewed_by": reviewer, "outcome_reviewed_at": now, "updated_at": now}},
+    )
+    if not getattr(result, "modified_count", 0):
+        raise ValueError("El reporte no requiere revisión de resultados o ya no está pendiente")
+    return db[REPORT_COLLECTION].find_one({"report_id": str(report_id)}, {"_id": 0})
 
 
 def cancel_report(report_id: str, actor: dict) -> dict:

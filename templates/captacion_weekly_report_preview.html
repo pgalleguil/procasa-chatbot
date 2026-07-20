@@ -88,6 +88,22 @@
             <p><span class="badge {{ 'ok' if report.snapshot.data_quality.historical_measurement_complete else 'pending' }}">Cobertura histórica {{ 'completa' if report.snapshot.data_quality.historical_measurement_complete else 'transicional' }}</span></p>
             {% for limitation in report.snapshot.data_quality.limitations %}<p class="muted">• {{ limitation }}</p>{% endfor %}
             <p class="muted"><strong>Dato técnico:</strong> {{ report.snapshot.administrative.history_events_label }}: {{ report.snapshot.administrative.history_events_registered }}. No se incluye en WhatsApp ni en DeepSeek.</p>
+            {% if report.snapshot.requires_outcome_review %}
+            <p><span class="badge bad">Otros / Por revisar requiere revisión administrativa</span></p>
+            {% if not report.outcome_review_acknowledged and report.status == 'pending_approval' %}
+            <button class="secondary" onclick="runAction('acknowledge-outcomes')">Confirmar revisión de resultados</button>
+            {% else %}<p class="muted">Revisión confirmada por {{ report.outcome_reviewed_by }}.</p>{% endif %}
+            {% endif %}
+        </section>
+
+        <section class="panel">
+            <h2>Resultados comerciales</h2>
+            {% for key, group in report.snapshot.outcome_groups.items() %}
+            <h3>{{ group.label }}: {{ group.total }}</h3>
+            {% if group.details %}<table><thead><tr><th>Resultado detallado</th><th>Total</th></tr></thead><tbody>
+            {% for detail, total in group.details.items() %}<tr><td>{{ report.snapshot.detail_labels.get(detail, detail|replace('_', ' ')) }}</td><td>{{ total }}</td></tr>{% endfor %}
+            </tbody></table>{% endif %}
+            {% endfor %}
         </section>
 
         <section class="panel">

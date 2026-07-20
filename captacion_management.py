@@ -51,33 +51,31 @@ VALID_CREDIT_EVENT_TYPES = {
     "capture_confirmed",
 }
 
-FINAL_OUTCOME_BY_RESULT = {
-    "ready_to_contact": "por_contactar",
-    "in_progress": "en_gestion",
-    "no_answer": "no_respondio",
-    "busy": "ocupado",
-    "invalid_number": "numero_invalido",
-    "contacted": "contactado",
-    "callback_requested": "solicita_llamada_posterior",
-    "message_sent": "mensaje_enviado",
-    "broker_identified": "corredor",
-    "discarded": "descartado",
-    "captured": "captado",
+# Catálogo compartido por /captacion y sus reportes. Sus claves son los
+# resultados técnicos que ya producen las reglas centrales de acreditación.
+OUTCOME_GROUPS = {
+    "pending_next_action": "Pendientes de nueva gestión",
+    "management_in_progress": "Gestión en curso",
+    "closed_without_capture": "Cerradas sin captación",
+    "captured": "Captadas",
+    "other_review": "Otros / Por revisar",
 }
-FINAL_OUTCOME_KEYS = (
-    "por_contactar",
-    "en_gestion",
-    "no_respondio",
-    "ocupado",
-    "numero_invalido",
-    "contactado",
-    "solicita_llamada_posterior",
-    "mensaje_enviado",
-    "corredor",
-    "descartado",
-    "captado",
-    "otros",
-)
+COMMERCIAL_OUTCOME_DEFINITIONS = {
+    "ready_to_contact": ("por_contactar", "Por contactar", "pending_next_action", 10),
+    "no_answer": ("no_respondio", "No respondió", "pending_next_action", 20),
+    "busy": ("ocupado", "Ocupado", "pending_next_action", 20),
+    "callback_requested": ("solicita_llamada_posterior", "Solicita llamada posterior", "pending_next_action", 30),
+    "message_sent": ("mensaje_enviado", "Mensaje enviado", "management_in_progress", 40),
+    "in_progress": ("en_gestion", "En gestión", "management_in_progress", 40),
+    "contacted": ("contactado", "Contactado", "management_in_progress", 50),
+    "broker_identified": ("corredor", "Corredor", "closed_without_capture", 70),
+    "discarded": ("descartado", "Descartado", "closed_without_capture", 70),
+    "unavailable": ("propiedad_no_disponible", "Propiedad no disponible", "closed_without_capture", 70),
+    "listing_expired": ("publicacion_expirada", "Publicación expirada", "closed_without_capture", 70),
+    "not_interested": ("no_interesado", "No interesado", "closed_without_capture", 70),
+    "invalid_number": ("numero_invalido", "Número inválido", "closed_without_capture", 70),
+    "captured": ("captado", "Captado", "captured", 100),
+}
 
 # Fuente Ãºnica de verdad para decisiones manuales que representan trabajo
 # comercial real. El frontend no decide si una acciÃ³n acredita la meta.
@@ -602,13 +600,25 @@ def summarize_management_metrics(events: list[dict]) -> dict:
     }
 
 
-def summarize_final_outcomes(events: list[dict]) -> dict:
-    """Clasifica una sola vez cada unidad propiedad/ejecutivo/día acreditada.
+def _outcome_definition(row: dict) -> dict:
+    result = clean_id(row.get("final_result") or row.get("result")).lower()
+    definition = COMMERCIAL_OUTCOME_DEFINITIONS.get(result)
+    if definition:
+        detail, label, group, priority = definition
+        if result == "message_sent" and clean_id(row.get("channel")).lower() == "email":
+            detail, label = "correo_enviado", "Correo enviado"
+        return {"result": result, "detail": detail, "label": label, "group": group, "priority": priority}
+    return {
+        "result": result or "unknown",
+        "detail": result or "sin_resultado",
+        "label": clean_id(row.get("result_label") or row.get("result") or "Sin resultado"),
+        "group": "other_review",
+        "priority": 0,
+    }
 
-    Los eventos posteriores de la misma unidad siguen en el ledger como
-    observaciones válidas y pueden definir su resultado final, pero nunca
-    incrementan la cantidad de propiedades gestionadas.
-    """
+
+def resolve_management_unit_outcomes(events: list[dict]) -> list[dict]:
+    """Resuelve exactamente un resultado por propiedad/ejecutivo/día."""
     credited_units = set()
     candidates = {}
     for row in events:
@@ -622,22 +632,65 @@ def summarize_final_outcomes(events: list[dict]) -> dict:
         unit = (property_id, actor_user_id, local_date)
         if row.get("credited", True):
             credited_units.add(unit)
-        if not (row.get("commercially_valid", row.get("credited", True))):
+        if not row.get("commercially_valid", row.get("credited", True)):
             continue
+        definition = _outcome_definition(row)
         occurred_at = row.get("occurred_at") or datetime.min.replace(tzinfo=timezone.utc)
         if occurred_at.tzinfo is None:
             occurred_at = occurred_at.replace(tzinfo=timezone.utc)
-        order = (occurred_at.astimezone(timezone.utc), clean_id(row.get("event_id")))
-        current = candidates.get(unit)
-        if current is None or order > current[0]:
-            candidates[unit] = (order, FINAL_OUTCOME_BY_RESULT.get(clean_id(row.get("result")).lower(), "otros"))
+        # El resultado más concluyente prevalece; empates se resuelven por el
+        # último evento manual válido y finalmente por event_id.
+        order = (definition["priority"], occurred_at.astimezone(timezone.utc), clean_id(row.get("event_id")))
+        if unit not in candidates or order > candidates[unit][0]:
+            candidates[unit] = (order, definition)
+    resolved = []
+    for unit in sorted(credited_units):
+        definition = (candidates.get(unit) or (None, _outcome_definition({})))[1]
+        resolved.append({"property_id": unit[0], "actor_user_id": unit[1], "local_date": unit[2], **definition})
+    return resolved
 
-    totals = {key: 0 for key in FINAL_OUTCOME_KEYS}
-    for unit in credited_units:
-        totals[(candidates.get(unit) or (None, "otros"))[1]] += 1
-    if sum(totals.values()) != len(credited_units):
-        raise ValueError("La suma de resultados finales no coincide con las propiedades gestionadas")
-    return totals
+
+def summarize_grouped_outcomes(events: list[dict]) -> dict:
+    units = resolve_management_unit_outcomes(events)
+    groups = {key: {"label": label, "total": 0, "details": {}} for key, label in OUTCOME_GROUPS.items()}
+    detailed = {}
+    detail_labels = {}
+    for detail, label, group_key, _priority in COMMERCIAL_OUTCOME_DEFINITIONS.values():
+        groups[group_key]["details"].setdefault(detail, 0)
+        detailed.setdefault(detail, 0)
+        detail_labels[detail] = label
+    # El CRM confirma email con message_sent + channel=email.
+    groups["management_in_progress"]["details"].setdefault("correo_enviado", 0)
+    detailed.setdefault("correo_enviado", 0)
+    detail_labels["correo_enviado"] = "Correo enviado"
+    for unit in units:
+        group = groups[unit["group"]]
+        group["total"] += 1
+        group["details"][unit["detail"]] = group["details"].get(unit["detail"], 0) + 1
+        detailed[unit["detail"]] = detailed.get(unit["detail"], 0) + 1
+        detail_labels[unit["detail"]] = unit["label"]
+    for group in groups.values():
+        if sum(group["details"].values()) != group["total"]:
+            raise ValueError("El detalle no coincide con su categoría de resultados")
+    if sum(group["total"] for group in groups.values()) != len(units):
+        raise ValueError("La suma agrupada no coincide con las propiedades gestionadas")
+    return {
+        "outcome_groups": groups,
+        "detailed_outcomes": detailed,
+        "detail_labels": detail_labels,
+        "requires_outcome_review": groups["other_review"]["total"] > 0,
+        "units": units,
+    }
+
+
+def summarize_final_outcomes(events: list[dict]) -> dict:
+    """Clasifica una sola vez cada unidad propiedad/ejecutivo/día acreditada.
+
+    Los eventos posteriores de la misma unidad siguen en el ledger como
+    observaciones válidas y pueden definir su resultado final, pero nunca
+    incrementan la cantidad de propiedades gestionadas.
+    """
+    return summarize_grouped_outcomes(events)["detailed_outcomes"]
 
 
 def recalculate_daily_metric(db, user_id, local_day: date | str, now=None) -> dict:

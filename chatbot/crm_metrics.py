@@ -316,10 +316,19 @@ def build_weekly_crm_snapshot(db, *, period_start, period_end, priority_as_of,
         if to_stage == "CLOSED_LOST": lost.add(event["lead_id"])
 
     temperatures = {lead_id: historical_temperature_at(lead_by_id[lead_id], end_utc) for lead_id in cohort_ids}
-    temperature_publishable = bool(cohort_ids) and all(value in {"HOT", "COLD"} for value in temperatures.values())
-    hot_cutoff = sum(value == "HOT" for value in temperatures.values()) if temperature_publishable else None
-    cold_cutoff = sum(value == "COLD" for value in temperatures.values()) if temperature_publishable else None
-    hot_pending_cutoff = sum(lead_id in unmanaged_ids and value == "HOT" for lead_id, value in temperatures.items()) if temperature_publishable else None
+    # Preserve partial historical evidence. Unknown is a first-class value and
+    # must never be silently converted to Cold or make known counts disappear.
+    hot_cutoff = sum(value == "HOT" for value in temperatures.values())
+    cold_cutoff = sum(value == "COLD" for value in temperatures.values())
+    unknown_cutoff = sum(value not in {"HOT", "COLD"} for value in temperatures.values())
+    temperature_invariant_valid = hot_cutoff + cold_cutoff + unknown_cutoff == len(cohort_ids)
+    temperature_publishable = unknown_cutoff == 0
+    hot_pending_cutoff = sum(lead_id in unmanaged_ids and value == "HOT" for lead_id, value in temperatures.items())
+    cold_pending_cutoff = sum(lead_id in unmanaged_ids and value == "COLD" for lead_id, value in temperatures.items())
+    unknown_pending_cutoff = sum(
+        lead_id in unmanaged_ids and value not in {"HOT", "COLD"}
+        for lead_id, value in temperatures.items()
+    )
 
     cycles = list(db["crm_assignment_cycles"].find({}))
     period_cycles = [c for c in cycles if in_utc_interval(c.get("assigned_at"), start_utc, end_utc)]
@@ -380,8 +389,15 @@ def build_weekly_crm_snapshot(db, *, period_start, period_end, priority_as_of,
         "report": {"period_start": str(period_start), "period_end": str(period_end), "timezone": "America/Santiago",
                    "generated_at": utc_now(), "historical_comparison_allowed": False},
         "cohort": {"received_unique": len(cohort_ids), "hot_at_cutoff_unique": hot_cutoff,
-                   "cold_at_cutoff_unique": cold_cutoff, "managed_unique": len(managed_ids),
-                   "unmanaged_at_cutoff_unique": len(unmanaged_ids), "hot_pending_at_cutoff_unique": hot_pending_cutoff},
+                   "cold_at_cutoff_unique": cold_cutoff,
+                   "unknown_temperature_at_cutoff_unique": unknown_cutoff,
+                   "managed_unique": len(managed_ids),
+                   "unmanaged_at_cutoff_unique": len(unmanaged_ids),
+                   "hot_unmanaged_at_cutoff_unique": hot_pending_cutoff,
+                   "cold_unmanaged_at_cutoff_unique": cold_pending_cutoff,
+                   "unknown_temperature_unmanaged_at_cutoff_unique": unknown_pending_cutoff,
+                   # Compatibility for the not-yet-active report code.
+                   "hot_pending_at_cutoff_unique": hot_pending_cutoff},
         "pipeline_activity": {"leads_with_confirmed_attempt_unique": len(attempts),
                               "leads_with_effective_contact_unique": len(effective),
                               "leads_with_visit_unique": len(visit_lead_ids), "visit_events_total": len(period_visits),
@@ -398,7 +414,10 @@ def build_weekly_crm_snapshot(db, *, period_start, period_end, priority_as_of,
                          "sla_definition": "team_first_assignment_to_first_valid_management",
                          "excluded_ambiguous_events": ambiguous,
                          "excluded_unresolved_actor_events": unresolved_actor,
-                         "excluded_unassigned_leads": excluded_unassigned, "limitations": limitations},
+                         "excluded_unassigned_leads": excluded_unassigned,
+                         "unknown_temperature_count": unknown_cutoff,
+                         "temperature_invariant_valid": temperature_invariant_valid,
+                         "limitations": limitations},
         "crm_parity": {"validated": False, "differences": []},
         "_audit": {"cohort_ids": list(cohort_ids), "managed_ids": list(managed_ids), "unmanaged_ids": list(unmanaged_ids)},
     }

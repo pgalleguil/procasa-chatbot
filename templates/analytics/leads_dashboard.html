@@ -17,146 +17,121 @@
         <div class="brand">
             <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
                 style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
-                onerror="this.style.display='none'">
-            <span>MEN&Uacute;</span>
+                onerror="this.style.display='none'"> <span>MENU</span>
         </div>
-
-        <div class="nav-section-label"><span>Control Comercial</span></div>
-        <a href="/analytics/leads" class="nav-link active">
-            <i class="fa-solid fa-chart-line"></i> <span>Dashboard Leads</span>
-        </a>
-
-        <div class="nav-section-label"><span>Operaci&oacute;n</span></div>
-        <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
-        <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i> <span>Captaciones</span></a>
-        <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
-        <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>&Oacute;rdenes de Visita</span></a>
-
-        {% if user_role in ['supervisor', 'admin'] %}
-        <div class="nav-section-label"><span>Administraci&oacute;n</span></div>
-        <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso Manual</span></a>
-        {% endif %}
-
-        <div class="nav-section-label"><span>Configuraci&oacute;n</span></div>
-        <a href="#" class="nav-link theme-toggle" onclick="toggleTheme(); return false;">
-            <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
-        </a>
-        <a href="/logout" class="nav-link logout">
-            <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesi&oacute;n</span>
-        </a>
+        <div class="sidebar-main-nav">
+            <a href="/analytics/leads" class="nav-link active"><i class="fa-solid fa-chart-line"></i><span>Dashboard Leads</span></a>
+            {% if user_role in ['supervisor', 'admin'] %}
+            <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i><span>Dashboard</span></a>
+            <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i><span>Ingreso Manual</span></a>
+            {% endif %}
+            <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i><span>Listado Leads</span></a>
+            <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i><span>Captaciones</span></a>
+            <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i><span>Convenios</span></a>
+            <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i><span>Ordenes de Visita</span></a>
+        </div>
+        <div class="sidebar-footer">
+            <a href="#" class="nav-link theme-toggle" onclick="toggleTheme(); return false;">
+                <i class="fa-solid fa-sun" id="themeIcon"></i><span>Tema</span>
+            </a>
+            <a href="/logout" class="nav-link logout"><i class="fa-solid fa-power-off"></i><span>Cerrar Sesion</span></a>
+        </div>
     </nav>
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()" style="display:none;position:fixed;inset:0;z-index:1040;background:rgba(0,0,0,0.4)"></div>
+    <button class="hamburger-mobile" onclick="toggleMobileMenu()"><i class="fa-solid fa-bars"></i></button>
 
-    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()" style="display:none"></div>
-    <div class="hamburger-mobile" onclick="toggleMobileMenu()">
-        <i class="fa-solid fa-bars"></i>
-    </div>
-
-    <div class="main-content" id="main-content">
-        <div class="header-container">
+    <div class="main-content">
+        <div class="header-bar">
             <div>
-                <h2 class="fw-bold m-0">Dashboard de Leads</h2>
-                <p class="text-secondary m-0 small">Control Comercial &mdash; Vista de reporter&iacute;a</p>
+                <h2 class="fw-bold m-0">Gestion de Leads</h2>
+                <p class="header-sub m-0">Resumen comercial y composicion de la cartera</p>
             </div>
-            <div class="d-flex gap-2 align-items-center flex-wrap">
-                <button id="btn-clear" class="btn-clear" onclick="clearAllFilters()" style="display:none">
-                    <i class="fa-solid fa-filter-circle-xmark me-2"></i>Limpiar
-                </button>
-                <div class="filter-container">
-                    <i class="fa-solid fa-calendar-days text-secondary"></i>
-                    <input type="text" id="dateRange" class="calendar-input" placeholder="Filtrar fechas...">
-                    <i class="fa-solid fa-xmark text-secondary ms-auto cursor-pointer" id="clearDate" style="display:none;cursor:pointer" onclick="clearDateFilter()"></i>
+            <div class="header-controls">
+                <div class="quality-floater" id="qualityFloater" onclick="toggleQualityDropdown()" title="Calidad de datos">
+                    <i class="fa-solid fa-database"></i><span id="qualityPct">--</span>
+                </div>
+                <div class="quality-dropdown" id="qualityDropdown"></div>
+                <input type="text" id="dateRange" class="date-input" placeholder="Periodo...">
+                <select id="filterExecutive" class="select-sm" onchange="applyFilters()"><option value="">Ejecutivo</option></select>
+                <select id="filterUniverse" class="select-sm" onchange="applyFilters()">
+                    <option value="current_active">Activos</option>
+                    <option value="received_in_period">Recibidos</option>
+                </select>
+                <button class="filter-btn" onclick="toggleExtraFilters()"><i class="fa-solid fa-sliders me-1"></i>Filtros</button>
+                <button class="btn-outline-sm danger" id="btnClear" onclick="clearAllFilters()" style="display:none"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="extra-filters" id="extraFilters">
+            <select id="filterStage" class="select-sm" onchange="applyFilters()"><option value="">Etapa</option></select>
+            <select id="filterTemperature" class="select-sm" onchange="applyFilters()"><option value="">Temperatura</option><option value="HOT">Hot</option><option value="COLD">Cold</option></select>
+            <select id="filterSource" class="select-sm" onchange="applyFilters()"><option value="">Origen</option></select>
+        </div>
+
+        <div class="unavailable-inline">Algunas metricas de gestion no pueden calcularse con el historial actual.&nbsp;<span style="color:var(--accent);cursor:pointer" onclick="alert('Gestion humana, SLA, embudo y productividad requieren instrumentacion futura.')">Ver detalle</span></div>
+
+        <div class="row" id="kpiRow">
+            <div class="col-2"><div class="kpi-card"><div class="kpi-body"><div class="kpi-scope">Periodo</div><div class="kpi-value skel">--</div><div class="kpi-label">Recibidos</div></div><i class="fa-solid fa-inbox kpi-icon"></i></div></div>
+            <div class="col-2"><div class="kpi-card"><div class="kpi-body"><div class="kpi-scope">Actual</div><div class="kpi-value skel">--</div><div class="kpi-label">Activos</div></div><i class="fa-solid fa-users kpi-icon"></i></div></div>
+            <div class="col-2"><div class="kpi-card"><div class="kpi-body"><div class="kpi-scope">Actual</div><div class="kpi-value skel">--</div><div class="kpi-label">Asignados</div></div><i class="fa-solid fa-user-check kpi-icon"></i></div></div>
+            <div class="col-2"><div class="kpi-card"><div class="kpi-body"><div class="kpi-scope">Actual</div><div class="kpi-value skel">--</div><div class="kpi-label">Sin asignar</div></div><i class="fa-solid fa-user-slash kpi-icon"></i></div></div>
+            <div class="col-2"><div class="kpi-card"><div class="kpi-body"><div class="kpi-scope">Actual</div><div class="kpi-value skel">--</div><div class="kpi-label">Hot</div></div><i class="fa-solid fa-fire kpi-icon hot"></i></div></div>
+            <div class="col-2"><div class="kpi-card"><div class="kpi-body"><div class="kpi-scope">Actual</div><div class="kpi-value skel">--</div><div class="kpi-label">Cerrados*</div></div><i class="fa-solid fa-trophy kpi-icon"></i></div></div>
+        </div>
+
+        <div class="row">
+            <div class="col-8"><div class="chart-card"><h6>Tendencia de leads recibidos</h6><div id="chartTrends" style="height:240px"></div></div></div>
+            <div class="col-4">
+                <div class="chart-card"><h6>Composicion actual</h6>
+                    <div id="compStages"></div>
+                    <div style="margin-top:12px">
+                        <div class="compact-bar"><span class="bar-label">Hot</span><div class="bar-track"><div class="bar-fill red" id="barHot" style="width:0%"></div></div><span class="bar-count" id="barHotCnt">--</span></div>
+                        <div class="compact-bar"><span class="bar-label">Cold</span><div class="bar-track"><div class="bar-fill cyan" id="barCold" style="width:0%"></div></div><span class="bar-count" id="barColdCnt">--</span></div>
+                        <div class="compact-bar" style="margin-top:6px"><span class="bar-label">Asignados</span><div class="bar-track"><div class="bar-fill indigo" id="barAssigned" style="width:0%"></div></div><span class="bar-count" id="barAssignedCnt">--</span></div>
+                        <div class="compact-bar"><span class="bar-label">Sin asignar</span><div class="bar-track"><div class="bar-fill amber" id="barUnassigned" style="width:0%"></div></div><span class="bar-count" id="barUnassignedCnt">--</span></div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="filter-bar">
-            <select id="filterExecutive" class="filter-select" onchange="applyFilters()">
-                <option value="">Todos los ejecutivos</option>
-            </select>
-            <select id="filterStage" class="filter-select" onchange="applyFilters()">
-                <option value="">Todas las etapas</option>
-            </select>
-            <select id="filterTemperature" class="filter-select" onchange="applyFilters()">
-                <option value="">Todas las temperaturas</option>
-                <option value="HOT">Hot</option>
-                <option value="COLD">Cold</option>
-            </select>
-            <select id="filterSource" class="filter-select" onchange="applyFilters()">
-                <option value="">Todos los or&iacute;genes</option>
-            </select>
-            <select id="filterUniverse" class="filter-select" onchange="applyFilters()">
-                <option value="current_active">Activos actuales</option>
-                <option value="received_in_period">Recibidos en el periodo</option>
-            </select>
-        </div>
-
-        <div id="quality-banner" class="quality-banner" style="display:none"></div>
-
-        <div class="row g-3 mb-3" id="kpi-cards">
-            <div class="col-xl-2 col-lg-3 col-md-4 col-6"><div class="kpi-card"><div class="kpi-scope">Periodo</div><div class="kpi-value skeleton">--</div><div class="kpi-label">Recibidos</div></div></div>
-            <div class="col-xl-2 col-lg-3 col-md-4 col-6"><div class="kpi-card"><div class="kpi-scope">Actual</div><div class="kpi-value skeleton">--</div><div class="kpi-label">Activos</div></div></div>
-            <div class="col-xl-2 col-lg-3 col-md-4 col-6"><div class="kpi-card"><div class="kpi-scope">Actual</div><div class="kpi-value skeleton">--</div><div class="kpi-label">Asignados</div></div></div>
-            <div class="col-xl-2 col-lg-3 col-md-4 col-6"><div class="kpi-card"><div class="kpi-scope">Actual</div><div class="kpi-value skeleton">--</div><div class="kpi-label">Sin asignar</div></div></div>
-            <div class="col-xl-2 col-lg-3 col-md-4 col-6"><div class="kpi-card"><div class="kpi-scope">Actual</div><div class="kpi-value skeleton">--</div><div class="kpi-label hot-label">Hot</div></div></div>
-            <div class="col-xl-2 col-lg-3 col-md-4 col-6"><div class="kpi-card"><div class="kpi-scope">Actual</div><div class="kpi-value skeleton">--</div><div class="kpi-label">Cerrados*</div></div></div>
-        </div>
-
-        <div class="row g-3 mb-3" id="charts-row-1">
-            <div class="col-lg-8"><div class="chart-container"><h6 class="chart-title">Tendencia de leads recibidos</h6><div id="chart-trends" style="height:280px"></div></div></div>
-            <div class="col-lg-4"><div class="chart-container"><h6 class="chart-title">Distribuci&oacute;n por etapa</h6><div id="chart-stages" style="height:280px"></div></div></div>
-        </div>
-
-        <div class="row g-3 mb-3" id="charts-row-2">
-            <div class="col-lg-6"><div class="chart-container"><h6 class="chart-title">Distribuci&oacute;n por origen</h6><div id="chart-sources" style="height:260px"></div></div></div>
-            <div class="col-lg-6"><div class="chart-container"><h6 class="chart-title">Distribuci&oacute;n por comuna</h6><div id="chart-communes" style="height:260px"></div></div></div>
-        </div>
-
-        <div class="quality-section mb-3" id="quality-section">
-            <div class="section-title">Calidad de datos</div>
-            <div class="quality-grid" id="quality-grid"></div>
-        </div>
-
-        <div class="unavailable-panel mb-3" id="unavailable-panel">
-            <div class="section-title">Disponibilidad de m&eacute;tricas</div>
-            <div class="unavailable-grid">
-                <div class="unavailable-item"><i class="fa-solid fa-triangle-exclamation text-warning"></i><span>Gesti&oacute;n humana: no disponible</span></div>
-                <div class="unavailable-item"><i class="fa-solid fa-triangle-exclamation text-warning"></i><span>SLA de gesti&oacute;n: no disponible</span></div>
-                <div class="unavailable-item"><i class="fa-solid fa-triangle-exclamation text-warning"></i><span>Embudo de conversi&oacute;n: no disponible</span></div>
-                <div class="unavailable-item"><i class="fa-solid fa-triangle-exclamation text-warning"></i><span>Temperatura hist&oacute;rica: no disponible</span></div>
-                <div class="unavailable-item"><i class="fa-solid fa-triangle-exclamation text-warning"></i><span>Productividad por ejecutivo: no disponible</span></div>
-            </div>
-        </div>
-
-        <div class="table-section" id="table-section">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="section-title m-0">Tabla de Leads</div>
-                <div class="search-container">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                    <input type="text" class="search-input" id="searchInput" placeholder="Buscar nombre o tel&eacute;fono..." onkeyup="debounceSearch()">
+        <div class="row">
+            <div class="col-6"><div class="chart-card"><h6>Origen de leads</h6><div id="chartSources" style="height:200px"></div></div></div>
+            <div class="col-6">
+                <div class="chart-card">
+                    <div class="tabs">
+                        <button class="tab-btn active" onclick="switchTab('operacion')">Operacion</button>
+                        <button class="tab-btn" onclick="switchTab('tipo')">Tipo</button>
+                        <button class="tab-btn" onclick="switchTab('comuna')">Comuna</button>
+                    </div>
+                    <div id="chartDemand" style="height:180px"></div>
                 </div>
             </div>
-            <div class="table-responsive">
-                <table class="table-custom" id="leads-table">
-                    <thead id="table-head"></thead>
-                    <tbody id="table-body"></tbody>
-                </table>
+        </div>
+
+        <div class="table-section" style="margin-top:12px">
+            <div class="table-header">
+                <h6>Detalle de Leads</h6>
+                <div class="table-filters">
+                    <input type="text" class="search-sm" id="searchInput" placeholder="Buscar..." onkeyup="debounceSearch()">
+                    <select id="tblStage" class="select-sm" onchange="applyFilters()"><option value="">Etapa</option></select>
+                    <select id="tblTemp" class="select-sm" onchange="applyFilters()"><option value="">Temp</option><option value="HOT">Hot</option><option value="COLD">Cold</option></select>
+                    <select id="tblSource" class="select-sm" onchange="applyFilters()"><option value="">Origen</option></select>
+                </div>
             </div>
-            <div class="pagination-bar" id="pagination-bar"></div>
+            <div style="overflow-x:auto">
+                <table class="table-custom"><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table>
+            </div>
+            <div class="pagination-bar" id="paginationBar"></div>
         </div>
     </div>
 
-    <div class="detail-panel" id="detail-panel">
-        <div class="detail-header">
-            <h5>Detalle del Lead</h5>
+    <div class="detail-panel" id="detailPanel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h6 style="margin:0">Detalle del Lead</h6>
             <button class="detail-close" onclick="closeDetail()">&times;</button>
         </div>
-        <div class="detail-body" id="detail-body"></div>
+        <div id="detailBody"></div>
     </div>
-    <div class="detail-overlay" id="detail-overlay" onclick="closeDetail()" style="display:none"></div>
-
-    <div class="loading-overlay" id="loading-overlay" style="display:none">
-        <div class="spinner"></div>
-    </div>
+    <div class="detail-overlay" id="detailOverlay" onclick="closeDetail()" style="display:none"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>

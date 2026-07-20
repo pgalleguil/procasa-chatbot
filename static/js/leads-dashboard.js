@@ -1,76 +1,31 @@
-/* ============================
-   Analytics Dashboard — PROCASA
-   Read-only Leads Dashboard JS
-   ============================ */
-let CURRENT_THEME = 'dark';
-let FLATPICKR = null;
-let SEARCH_TIMER = null;
-let currentSort = { field: 'created_at', dir: 'desc' };
+let CURRENT_THEME = 'dark', FLATPICKR, SEARCH_TIMER, currentSort = { field: 'created_at', dir: 'desc' }, currentPage = 1, activeTab = 'operacion';
 
 (function () {
-    const saved = localStorage.getItem('procasa_theme') || 'dark';
-    CURRENT_THEME = saved;
-    document.documentElement.setAttribute('data-theme', saved);
-    const icon = document.getElementById('themeIcon');
-    if (icon) icon.className = saved === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+    const s = localStorage.getItem('procasa_theme') || 'dark';
+    CURRENT_THEME = s;
+    document.documentElement.setAttribute('data-theme', s);
+    const ic = document.getElementById('themeIcon');
+    if (ic) ic.className = s === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
 })();
 
 document.addEventListener('DOMContentLoaded', () => {
-    initDatePicker();
+    FLATPICKR = flatpickr('#dateRange', { mode: 'range', dateFormat: 'Y-m-d', locale: 'es', defaultDate: [d(30), d(0)], onChange: applyFilters });
     loadFilters();
     loadAll();
 });
 
-function initDatePicker() {
-    FLATPICKR = flatpickr('#dateRange', {
-        mode: 'range',
-        dateFormat: 'Y-m-d',
-        locale: 'es',
-        defaultDate: [thirtyDaysAgo(), today()],
-        onChange: () => {
-            document.getElementById('clearDate').style.display = FLATPICKR.selectedDates.length ? 'block' : 'none';
-            applyFilters();
-        }
-    });
+function d(offset) { const dt = new Date(); dt.setDate(dt.getDate() - offset); return dt; }
+
+function getRange() {
+    if (!FLATPICKR || !FLATPICKR.selectedDates || FLATPICKR.selectedDates.length < 2) return { s: '', e: '' };
+    const f = x => x.toISOString().split('T')[0];
+    return { s: f(FLATPICKR.selectedDates[0]), e: f(FLATPICKR.selectedDates[1]) };
 }
 
-function getDateRange() {
-    if (!FLATPICKR || !FLATPICKR.selectedDates || FLATPICKR.selectedDates.length < 2) return { start: '', end: '' };
-    const fmt = d => d.toISOString().split('T')[0];
-    return { start: fmt(FLATPICKR.selectedDates[0]), end: fmt(FLATPICKR.selectedDates[1]) };
-}
-
-function getFilters() {
-    return {
-        stage: getVal('filterStage'),
-        temperature: getVal('filterTemperature'),
-        source: getVal('filterSource'),
-    };
-}
-
-function getVal(id) { const el = document.getElementById(id); return el ? el.value : ''; }
-function thirtyDaysAgo() { const d = new Date(); d.setDate(d.getDate() - 30); return d; }
-function today() { return new Date(); }
-
-async function loadAll() {
-    showLoading();
-    const { start, end } = getDateRange();
-    const exec = getVal('filterExecutive');
-    const filters = getFilters();
-    const universe = getVal('filterUniverse');
-
-    await Promise.all([
-        loadSummary(start, end, exec, filters),
-        loadTrends(start, end),
-        loadDistributions(start, end, exec, filters, universe),
-        loadCoverage(exec, universe),
-        loadTable(1, exec, filters, universe, start, end)
-    ]);
-    hideLoading();
-}
+function gv(id) { const e = document.getElementById(id); return e ? e.value : ''; }
 
 function applyFilters() {
-    document.getElementById('btn-clear').style.display = (getVal('filterStage') || getVal('filterTemperature') || getVal('filterSource') || getVal('filterExecutive')) ? 'block' : 'none';
+    document.getElementById('btnClear').style.display = (gv('filterStage') || gv('filterTemperature') || gv('filterSource') || gv('filterExecutive')) ? 'inline-flex' : 'none';
     loadAll();
 }
 
@@ -80,51 +35,70 @@ function clearAllFilters() {
     document.getElementById('filterTemperature').value = '';
     document.getElementById('filterSource').value = '';
     document.getElementById('filterUniverse').value = 'current_active';
-    FLATPICKR.clear();
+    if (FLATPICKR) FLATPICKR.clear();
+    document.getElementById('searchInput').value = '';
     applyFilters();
 }
 
-function clearDateFilter() {
-    FLATPICKR.clear();
-    applyFilters();
+async function loadAll() {
+    const { s, e } = getRange();
+    const exec = gv('filterExecutive'), universe = gv('filterUniverse');
+    const f = buildFilters();
+    await Promise.all([
+        loadSummary(s, e, exec, f),
+        loadTrends(s, e),
+        loadComposition(exec, f, universe),
+        loadDistributions(s, e, exec, f, universe),
+        loadTable(1, exec, f, universe, s, e),
+        loadCoverageFloater(exec, universe)
+    ]);
+}
+
+function buildFilters() {
+    const f = {};
+    const v = gv('filterStage') || gv('tblStage');
+    if (v) f.stage = v;
+    const t = gv('filterTemperature') || gv('tblTemp');
+    if (t) f.temperature = t;
+    const src = gv('filterSource') || gv('tblSource');
+    if (src) f.source = src;
+    return f;
 }
 
 async function loadFilters() {
     try {
-        const resp = await fetch('/api/analytics/leads/filters');
-        const data = await resp.json();
-        populateSelect('filterExecutive', data.executives || []);
-        populateSelect('filterSource', data.sources || []);
-        populateSelect('filterStage', data.stages || []);
-        populateSelect('filterTemperature', data.temperatures || [], true);
-    } catch (e) { console.error('Filters error:', e); }
+        const r = await (await fetch('/api/analytics/leads/filters')).json();
+        populate('filterExecutive', r.executives);
+        populate('filterStage', r.stages);
+        populate('tblStage', r.stages);
+        populate('filterSource', r.sources);
+        populate('tblSource', r.sources);
+    } catch (_) {}
 }
 
-function populateSelect(id, items, prependEmpty = true) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const current = el.value;
-    el.innerHTML = prependEmpty ? '<option value="">Todos</option>' : (items.length === 0 ? '<option value="">--</option>' : '');
-    items.forEach(item => {
-        const v = item.value || item._id || item.stage || item.executive || item;
-        const lbl = item.label || item.value || item._id || item.stage || item.executive || item;
-        const cnt = item.count !== undefined ? ` (${item.count})` : '';
-        el.innerHTML += `<option value="${esc(v)}">${esc(lbl)}${cnt}</option>`;
+function populate(id, items) {
+    const el = document.getElementById(id); if (!el) return;
+    const cv = el.value;
+    el.innerHTML = id.includes('Executive') ? '<option value="">Ejecutivo</option>' : id.includes('Stage') || id.includes('tblStage') ? '<option value="">Etapa</option>' : '<option value="">Origen</option>';
+    (items || []).forEach(x => {
+        const v = x.value || x.stage || x.executive || x._id || x;
+        const l = x.label || x.value || v;
+        const c = x.count !== undefined ? ` (${x.count})` : '';
+        el.innerHTML += `<option value="${esc(v)}">${esc(l)}${c}</option>`;
     });
-    el.value = current;
+    try { el.value = cv; } catch (_) {}
 }
 
-async function loadSummary(start, end, exec, filters) {
+async function loadSummary(ps, pe, exec, f) {
     try {
-        const params = new URLSearchParams();
-        if (start) params.set('period_start', start);
-        if (end) params.set('period_end', end);
-        if (exec) params.set('executive', exec);
-        if (filters.stage) params.set('stage', filters.stage);
-        if (filters.temperature) params.set('temperature', filters.temperature);
-        if (filters.source) params.set('source', filters.source);
-        const resp = await fetch('/api/analytics/leads/summary?' + params);
-        const d = await resp.json();
+        const p = new URLSearchParams();
+        if (ps) p.set('period_start', ps);
+        if (pe) p.set('period_end', pe);
+        if (exec) p.set('executive', exec);
+        if (f.stage) p.set('stage', f.stage);
+        if (f.temperature) p.set('temperature', f.temperature);
+        if (f.source) p.set('source', f.source);
+        const d = await (await fetch('/api/analytics/leads/summary?' + p)).json();
         const s = d.stock || {};
         setKpi(0, d.flow?.received_in_period ?? '--', 'Periodo');
         setKpi(1, s.active_operational ?? '--', 'Actual');
@@ -132,300 +106,225 @@ async function loadSummary(start, end, exec, filters) {
         setKpi(3, s.unassigned ?? '--', 'Actual');
         setKpi(4, s.hot ?? '--', 'Actual');
         setKpi(5, (s.closed_won_current ?? '--') + '*', 'Actual');
-    } catch (e) { console.error('Summary error:', e); }
+    } catch (_) {}
 }
 
-function setKpi(idx, value, scope) {
-    const cards = document.querySelectorAll('#kpi-cards .kpi-card');
+function setKpi(idx, val, scope) {
+    const cards = document.querySelectorAll('#kpiRow .kpi-card');
     if (idx >= cards.length) return;
-    const card = cards[idx];
-    const scopeEl = card.querySelector('.kpi-scope');
-    const valEl = card.querySelector('.kpi-value');
-    if (scopeEl) scopeEl.textContent = scope;
-    if (valEl) { valEl.textContent = value; valEl.classList.remove('skeleton'); }
+    const c = cards[idx];
+    const s = c.querySelector('.kpi-scope'), v = c.querySelector('.kpi-value');
+    if (s) s.textContent = scope;
+    if (v) { v.textContent = val; v.classList.remove('skel'); }
 }
 
-async function loadTrends(start, end) {
+async function loadTrends(ps, pe) {
     try {
-        const params = new URLSearchParams();
-        if (start) params.set('period_start', start);
-        if (end) params.set('period_end', end);
-        const resp = await fetch('/api/analytics/leads/trends?' + params);
-        const d = await resp.json();
+        const p = new URLSearchParams(); if (ps) p.set('period_start', ps); if (pe) p.set('period_end', pe);
+        const d = await (await fetch('/api/analytics/leads/trends?' + p)).json();
         const daily = d.daily || [];
-        if (daily.length === 0) {
-            document.getElementById('chart-trends').innerHTML = '<div class="empty-state"><i class="fa-solid fa-chart-line"></i><p>Sin datos en el periodo seleccionado</p></div>';
-            return;
-        }
-        const dates = daily.map(r => r.date);
-        const vals = daily.map(r => r.received);
+        const el = document.getElementById('chartTrends');
+        if (!daily.length) { el.innerHTML = '<div class="empty-state">Sin datos en el periodo</div>'; return; }
+        const dates = daily.map(r => r.date), vals = daily.map(r => r.received);
         const isDark = CURRENT_THEME === 'dark';
-        const layout = baseLayout(isDark);
-        Plotly.newPlot('chart-trends', [{
-            x: dates, y: vals, type: 'scatter', mode: 'lines+markers',
-            line: { shape: 'spline', color: '#6366f1', width: 3 },
-            fill: 'tozeroy', fillcolor: 'rgba(99,102,241,0.08)',
-            marker: { size: 4 }
-        }], { ...layout, showlegend: false, margin: { t: 10, b: 30, l: 40, r: 10 } },
-        { responsive: true });
-    } catch (e) { console.error('Trends error:', e); }
+        const textColor = isDark ? '#f8fafc' : '#172033';
+        const gridColor = isDark ? '#1e293b' : '#cbd5e1';
+        Plotly.newPlot(el, [{ x: dates, y: vals, type: 'scatter', mode: 'lines+markers', line: { shape: 'spline', color: '#6366f1', width: 3 }, fill: 'tozeroy', fillcolor: 'rgba(99,102,241,0.08)', marker: { size: 3 } }],
+            { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { color: textColor, family: 'Outfit', size: 11 }, xaxis: { gridcolor: gridColor }, yaxis: { gridcolor: gridColor }, showlegend: false, margin: { t: 8, b: 30, l: 40, r: 8 } },
+            { responsive: true });
+    } catch (_) {}
 }
 
-async function loadDistributions(start, end, exec, filters, universe) {
-    try {
-        const params = new URLSearchParams();
-        if (start) params.set('period_start', start);
-        if (end) params.set('period_end', end);
-        if (exec) params.set('executive', exec);
-        if (filters.stage) params.set('stage', filters.stage);
-        if (filters.temperature) params.set('temperature', filters.temperature);
-        if (filters.source) params.set('source', filters.source);
-        if (universe) params.set('universe', universe);
+async function loadComposition(exec, f, universe) {
+    try { const s = await (await fetch('/api/analytics/leads/summary?' + new URLSearchParams({ executive: exec || '', stage: f.stage || '', temperature: f.temperature || '', source: f.source || '' }))).json();
+        const stock = s.stock || {}, total = stock.active_operational || 1;
+        const stages = s.by_stage || [];
+        const el = document.getElementById('compStages');
+        el.innerHTML = stages.slice(0, 4).map(r => `<div class="compact-bar"><span class="bar-label">${esc(r.stage || 'Sin etapa')}</span><div class="bar-track"><div class="bar-fill indigo" style="width:${(r.count/total*100)}%"></div></div><span class="bar-count">${r.count}</span></div>`).join('');
+        document.getElementById('barHot').style.width = (stock.hot / total * 100) + '%';
+        document.getElementById('barHotCnt').textContent = stock.hot ?? '--';
+        document.getElementById('barCold').style.width = (stock.cold / total * 100) + '%';
+        document.getElementById('barColdCnt').textContent = stock.cold ?? '--';
+        document.getElementById('barAssigned').style.width = (stock.assigned / total * 100) + '%';
+        document.getElementById('barAssignedCnt').textContent = stock.assigned ?? '--';
+        document.getElementById('barUnassigned').style.width = (stock.unassigned / total * 100) + '%';
+        document.getElementById('barUnassignedCnt').textContent = stock.unassigned ?? '--';
+    } catch (_) {}
+}
 
-        const resp = await fetch('/api/analytics/leads/distributions?' + params);
-        const d = await resp.json();
+async function loadDistributions(ps, pe, exec, f, universe) {
+    try {
+        const p = new URLSearchParams();
+        if (ps) p.set('period_start', ps); if (pe) p.set('period_end', pe);
+        if (exec) p.set('executive', exec);
+        if (f.stage) p.set('stage', f.stage); if (f.temperature) p.set('temperature', f.temperature); if (f.source) p.set('source', f.source);
+        if (universe) p.set('universe', universe);
+        const d = await (await fetch('/api/analytics/leads/distributions?' + p)).json();
         const isDark = CURRENT_THEME === 'dark';
-        const layout = baseLayout(isDark);
-        const barLayout = { ...layout, showlegend: false, margin: { t: 10, b: 30, l: 120, r: 10 }, yaxis: { ...layout.yaxis, automargin: true } };
-
-        renderBar('chart-stages', d.by_stage || d.stages || [], barLayout, isDark);
-        renderBar('chart-sources', d.sources || [], barLayout, isDark);
-        renderBar('chart-communes', d.communes || [], barLayout, isDark);
-
-    } catch (e) { console.error('Distributions error:', e); }
+        const textColor = isDark ? '#f8fafc' : '#172033';
+        const gridColor = isDark ? '#1e293b' : '#cbd5e1';
+        const layout = { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { color: textColor, family: 'Outfit', size: 10 }, xaxis: { gridcolor: gridColor }, yaxis: { gridcolor: gridColor, automargin: true }, showlegend: false, margin: { t: 4, b: 20, l: 110, r: 10 } };
+        const barData = (data, divId) => {
+            const el = document.getElementById(divId);
+            if (!data.length) { if (el) el.innerHTML = '<div class="empty-state">Sin datos</div>'; return; }
+            const vals = data.map(r => r.count), labels = data.map(r => r.value || 'Sin info');
+            Plotly.newPlot(el, [{ x: vals, y: labels, type: 'bar', orientation: 'h', marker: { color: isDark ? '#6366f1' : '#4f46e5' }, text: vals.map(String), textposition: 'outside', textfont: { color: textColor } }], layout, { responsive: true });
+        };
+        barData(d.sources || [], 'chartSources');
+        window._distData = d;
+        renderDemandTab();
+    } catch (_) {}
 }
 
-function renderBar(divId, data, layout, isDark) {
-    const el = document.getElementById(divId);
-    if (!el) return;
-    if (!data || data.length === 0) {
-        el.innerHTML = '<div class="empty-state"><i class="fa-solid fa-chart-simple"></i><p>Sin datos</p></div>';
-        return;
-    }
-    const labels = data.map(r => r.value || r._id || r.stage || r.date || r.executive || '?');
-    const values = data.map(r => r.count || 0);
-    Plotly.newPlot(el, [{
-        x: values, y: labels, type: 'bar', orientation: 'h',
-        marker: { color: values.map(() => isDark ? '#6366f1' : '#4f46e5') },
-        text: values.map(String), textposition: 'outside',
-    }], layout, { responsive: true });
+function renderDemandTab() {
+    const d = window._distData || {};
+    let data;
+    if (activeTab === 'operacion') data = d.operations || [];
+    else if (activeTab === 'tipo') data = d.types || [];
+    else data = d.communes || [];
+    const el = document.getElementById('chartDemand');
+    if (!data.length) { el.innerHTML = '<div class="empty-state">Sin datos</div>'; return; }
+    const isDark = CURRENT_THEME === 'dark';
+    const textColor = isDark ? '#f8fafc' : '#172033';
+    const gridColor = isDark ? '#1e293b' : '#cbd5e1';
+    const vals = data.map(r => r.count), labels = data.map(r => r.value || 'Sin info');
+    const layout = { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { color: textColor, family: 'Outfit', size: 10 }, xaxis: { gridcolor: gridColor }, yaxis: { gridcolor: gridColor, automargin: true }, showlegend: false, margin: { t: 4, b: 20, l: 100, r: 10 } };
+    Plotly.newPlot(el, [{ x: vals, y: labels, type: 'bar', orientation: 'h', marker: { color: isDark ? '#6366f1' : '#4f46e5' }, text: vals.map(String), textposition: 'outside', textfont: { color: textColor } }], layout, { responsive: true });
 }
 
-async function loadCoverage(exec, universe) {
+function switchTab(tab) {
+    activeTab = tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.textContent.toLowerCase().includes(tab)));
+    renderDemandTab();
+}
+
+async function loadCoverageFloater(exec, universe) {
     try {
-        const params = new URLSearchParams();
-        if (exec) params.set('executive', exec);
-        if (universe) params.set('universe', universe);
-        const resp = await fetch('/api/analytics/leads/coverage?' + params);
-        const data = await resp.json();
-        const grid = document.getElementById('quality-grid');
-        if (!grid) return;
-        grid.innerHTML = '';
-        for (const [key, info] of Object.entries(data)) {
-            const pct = info.coverage_pct || 0;
-            const cls = pct >= 90 ? 'good' : pct >= 70 ? 'warn' : 'bad';
-            grid.innerHTML += `<div class="quality-item">
-                <div><span class="field-name">${key}</span>
-                <div class="quality-bar"><div class="quality-bar-fill ${cls}" style="width:${pct}%"></div></div></div>
-                <div class="field-value">${info.populated}/${info.total} (${pct}%)</div>
-            </div>`;
-        }
-    } catch (e) { console.error('Coverage error:', e); }
+        const p = new URLSearchParams(); if (exec) p.set('executive', exec); if (universe) p.set('universe', universe);
+        const d = await (await fetch('/api/analytics/leads/coverage?' + p)).json();
+        const vals = Object.values(d), total = vals.length ? vals.reduce((a,x) => a + (x.coverage_pct || 0), 0) / vals.length : 0;
+        document.getElementById('qualityPct').textContent = `Calidad: ${Math.round(total)}%`;
+        const dd = document.getElementById('qualityDropdown');
+        dd.innerHTML = vals.map(x => `<div class="compact-bar"><span class="bar-label" style="font-size:0.74rem">${x.field}</span><div class="bar-track"><div class="bar-fill ${x.coverage_pct >= 90 ? 'green' : x.coverage_pct >= 70 ? 'amber' : 'red'}" style="width:${x.coverage_pct}%"></div></div><span class="bar-count" style="font-size:0.74rem">${x.populated}/${x.total}</span></div>`).join('');
+    } catch (_) {}
 }
 
-async function loadTable(page, exec, filters, universe, start, end, sortField, sortDir) {
-    const sf = sortField || currentSort.field;
-    const sd = sortDir || currentSort.dir;
+function toggleQualityDropdown() {
+    const dd = document.getElementById('qualityDropdown');
+    dd.classList.toggle('open');
+    setTimeout(() => { if (dd.classList.contains('open')) { const c = e => { if (!dd.contains(e.target) && e.target.id !== 'qualityFloater') { dd.classList.remove('open'); document.removeEventListener('click', c); } }; document.addEventListener('click', c); } }, 10);
+}
+
+function toggleExtraFilters() { document.getElementById('extraFilters').classList.toggle('open'); }
+
+async function loadTable(page, exec, f, universe, ps, pe) {
+    currentPage = page || 1;
     try {
-        const params = new URLSearchParams();
-        params.set('page', page);
-        params.set('limit', 50);
-        params.set('sort_by', sf);
-        params.set('sort_dir', sd);
-        if (exec) params.set('executive', exec);
-        if (filters.stage) params.set('stage', filters.stage);
-        if (filters.temperature) params.set('temperature', filters.temperature);
-        if (filters.source) params.set('source', filters.source);
-        if (universe) params.set('universe', universe);
-        if (start) params.set('period_start', start);
-        if (end) params.set('period_end', end);
-        const searchVal = document.getElementById('searchInput')?.value?.trim();
-        if (searchVal && searchVal.length >= 2) params.set('search', searchVal.substring(0, 60));
-
-        const resp = await fetch('/api/analytics/leads/table?' + params);
-        const d = await resp.json();
-        renderTable(d, page, sf, sd);
-    } catch (e) { console.error('Table error:', e); }
+        const p = new URLSearchParams();
+        p.set('page', currentPage); p.set('limit', 50);
+        p.set('sort_by', currentSort.field); p.set('sort_dir', currentSort.dir);
+        if (exec) p.set('executive', exec);
+        if (f.stage) p.set('stage', f.stage); if (f.temperature) p.set('temperature', f.temperature); if (f.source) p.set('source', f.source);
+        if (universe) p.set('universe', universe);
+        if (ps) p.set('period_start', ps); if (pe) p.set('period_end', pe);
+        const sv = document.getElementById('searchInput')?.value?.trim();
+        if (sv && sv.length >= 2) p.set('search', sv.substring(0, 60));
+        const d = await (await fetch('/api/analytics/leads/table?' + p)).json();
+        renderTable(d);
+    } catch (_) {}
 }
 
-function renderTable(data, page, sortField, sortDir) {
-    const head = document.getElementById('table-head');
-    const body = document.getElementById('table-body');
-    const pagBar = document.getElementById('pagination-bar');
-    if (!head || !body) return;
-
+function renderTable(d) {
     const cols = [
-        { key: 'nombre', label: 'Nombre' },
-        { key: 'phone', label: 'Telefono' },
-        { key: 'origen', label: 'Origen' },
-        { key: 'etapa', label: 'Etapa' },
-        { key: 'ejecutivo', label: 'Ejecutivo' },
-        { key: 'temperatura', label: 'Temp' },
-        { key: 'dias_desde_creacion', label: 'Dias' },
+        { k: 'nombre', l: 'Prospecto' }, { k: 'origen', l: 'Origen' },
+        { k: 'operacion', l: 'Requerimiento' }, { k: 'etapa', l: 'Etapa' },
+        { k: 'ejecutivo', l: 'Ejecutivo' }, { k: 'temperatura', l: 'Temp' },
+        { k: 'dias_desde_creacion', l: 'Antig.' },
     ];
-
-    head.innerHTML = '<tr>' + cols.map(c => {
-        const icon = sortField === c.key ? `<i class="fa-solid fa-sort-${sortDir === 'asc' ? 'up' : 'down'}"></i>` : '<i class="fa-solid fa-sort"></i>';
-        return `<th onclick="sortTable('${c.key}')">${c.label}${icon}</th>`;
+    document.getElementById('tableHead').innerHTML = '<tr>' + cols.map(c => {
+        const icon = currentSort.field === c.k ? `<i class="fa-solid fa-sort-${currentSort.dir === 'asc' ? 'up' : 'down'}"></i>` : '';
+        return `<th onclick="sortTable('${c.k}')">${c.l}${icon}</th>`;
     }).join('') + '</tr>';
 
-    const items = data.items || [];
-    if (items.length === 0) {
-        body.innerHTML = '<tr><td colspan="7"><div class="empty-state"><i class="fa-solid fa-inbox"></i><p>Sin resultados</p></div></td></tr>';
-        pagBar.innerHTML = '';
+    const items = d.items || [];
+    if (!items.length) {
+        document.getElementById('tableBody').innerHTML = '<tr><td colspan="7"><div class="empty-state">Sin resultados</div></td></tr>';
+        document.getElementById('paginationBar').innerHTML = '';
         return;
     }
 
-    body.innerHTML = items.map(r => {
-        const stageLabel = r.etapa || 'Sin etapa';
-        let stageClass = 'badge-unknown';
-        if (stageLabel === 'NEW') stageClass = 'badge-new';
-        else if (stageLabel === 'CONTACTED') stageClass = 'badge-contacted';
-        else if (stageLabel === 'CLOSED_WON') stageClass = 'badge-won';
-
-        const tempLabel = r.temperatura || 'N/A';
-        const tempClass = tempLabel === 'HOT' ? 'badge-hot' : tempLabel === 'COLD' ? 'badge-cold' : 'badge-unknown';
-
+    document.getElementById('tableBody').innerHTML = items.map(r => {
+        const s = r.etapa || 'Sin etapa';
+        let sc = 'badge-other'; if (s === 'NEW') sc = 'badge-new'; else if (s === 'CONTACTED') sc = 'badge-contacted'; else if (s === 'CLOSED_WON') sc = 'badge-won';
+        const t = r.temperatura || 'N/A';
         return `<tr onclick="openDetail('${esc(r.id)}')">
-            <td>${esc(r.nombre || '—')}</td>
-            <td>${esc(r.phone || r.phone_masked || '—')}</td>
-            <td>${esc(r.origen || '—')}</td>
-            <td><span class="badge-stage ${stageClass}">${esc(stageLabel)}</span></td>
-            <td>${esc(r.ejecutivo || 'Sin Asignar')}</td>
-            <td><span class="badge-stage ${tempClass}">${esc(tempLabel)}</span></td>
-            <td>${r.dias_desde_creacion ?? '—'}</td>
+            <td>${esc(r.nombre || '-')}</td><td>${esc(r.origen || '-')}</td>
+            <td>${esc(r.operacion || '-')}</td><td><span class="badge-sm ${sc}">${esc(s)}</span></td>
+            <td>${esc(r.ejecutivo || 'Sin Asignar')}</td><td><span class="badge-sm ${t==='HOT'?'badge-hot':'badge-cold'}">${esc(t)}</span></td>
+            <td>${r.dias_desde_creacion ?? '-'}d</td>
         </tr>`;
     }).join('');
 
-    const total = data.total || 0;
-    const limit = data.limit || 50;
-    const totalPages = Math.ceil(total / limit) || 1;
-    pagBar.innerHTML = `
-        <button ${page <= 1 ? 'disabled' : ''} onclick="loadTable(${page - 1})">Anterior</button>
-        <span>Pag ${page} de ${totalPages} (${total} leads)</span>
-        <button ${page >= totalPages ? 'disabled' : ''} onclick="loadTable(${page + 1})">Siguiente</button>
-    `;
+    const tp = Math.ceil((d.total || 0) / (d.limit || 50)) || 1;
+    document.getElementById('paginationBar').innerHTML = `
+        <button ${currentPage <= 1 ? 'disabled' : ''} onclick="loadTable(${currentPage-1})">Anterior</button>
+        <span>Pag ${currentPage} de ${tp} (${d.total || 0})</span>
+        <button ${currentPage >= tp ? 'disabled' : ''} onclick="loadTable(${currentPage+1})">Siguiente</button>`;
 }
 
 function sortTable(field) {
-    if (currentSort.field === field) {
-        currentSort.dir = currentSort.dir === 'asc' ? 'desc' : 'asc';
-    } else {
-        currentSort.field = field;
-        currentSort.dir = 'desc';
-    }
+    currentSort.field = field;
+    currentSort.dir = currentSort.field === field && currentSort.dir === 'asc' ? 'desc' : 'asc';
+    currentPage = 1;
     loadTable(1);
 }
 
-function debounceSearch() {
-    clearTimeout(SEARCH_TIMER);
-    SEARCH_TIMER = setTimeout(() => loadTable(1), 350);
-}
+function debounceSearch() { clearTimeout(SEARCH_TIMER); SEARCH_TIMER = setTimeout(() => { currentPage = 1; loadTable(1); }, 350); }
 
 async function openDetail(id) {
     try {
-        const resp = await fetch(`/api/analytics/leads/${id}/detail`);
-        if (!resp.ok) { alert('Lead no encontrado o sin acceso'); return; }
-        const d = await resp.json();
-        const body = document.getElementById('detail-body');
-        const pub = d.public || {};
-        const mgmt = d.management || {};
-        const cls = d.classification || {};
-        const tl = d.timeline || [];
-
-        const stage = pub.etapa || '—';
-        body.innerHTML = `
-            <div class="detail-section">
-                <h6>Datos del Lead</h6>
-                <div class="detail-field"><span class="label">Nombre</span><span class="value">${esc(pub.nombre || '—')}</span></div>
-                <div class="detail-field"><span class="label">Telefono</span><span class="value">${esc(pub.phone_masked || pub.phone || '—')}</span></div>
-                <div class="detail-field"><span class="label">Origen</span><span class="value">${esc(pub.origen || '—')}</span></div>
-                <div class="detail-field"><span class="label">Etapa</span><span class="value">${esc(stage)}</span></div>
-                <div class="detail-field"><span class="label">Ejecutivo</span><span class="value">${esc(pub.ejecutivo || 'Sin Asignar')}</span></div>
-                <div class="detail-field"><span class="label">Temperatura</span><span class="value">${esc(pub.temperatura || '—')}</span></div>
-            </div>
-            ${pub.propiedad ? `
-            <div class="detail-section">
-                <h6>Propiedad</h6>
-                <div class="detail-field"><span class="label">Codigo</span><span class="value">${esc(pub.propiedad.codigo || '—')}</span></div>
-                <div class="detail-field"><span class="label">Comuna</span><span class="value">${esc(pub.propiedad.comuna || '—')}</span></div>
-                <div class="detail-field"><span class="label">Tipo</span><span class="value">${esc(pub.propiedad.tipo || '—')}</span></div>
-                <div class="detail-field"><span class="label">Operacion</span><span class="value">${esc(pub.propiedad.operacion || '—')}</span></div>
-                <div class="detail-field"><span class="label">Precio UF</span><span class="value">${pub.propiedad.precio_uf || '—'}</span></div>
-            </div>` : ''}
-            <div class="detail-section">
-                <h6>Gestion</h6>
-                <div class="detail-field"><span class="label">Estado</span><span class="value">${mgmt.managed?.available === false ? '<span class="text-warning">No disponible</span>' : esc(String(mgmt.managed?.value ?? '—'))}</span></div>
-            </div>
-            ${cls.resultado_chat ? `
-            <div class="detail-section">
-                <h6>Clasificacion chatbot</h6>
-                <div class="detail-field"><span class="label">Resultado</span><span class="value">${esc(cls.resultado_chat)}</span></div>
-                <div class="detail-field"><span class="label">Recuperabilidad</span><span class="value">${esc(cls.recuperabilidad || '—')}</span></div>
-            </div>` : ''}
-            <div class="detail-section">
-                <h6>Linea de tiempo</h6>
-                ${tl.length === 0 ? '<p class="text-secondary small">Sin eventos registrados</p>' :
-                tl.map(e => `<div class="timeline-entry"><div><div class="tl-date">${esc(String(e.timestamp || '').substring(0, 19))}</div><div class="tl-desc">${esc(e.label || '')}</div></div></div>`).join('')}
-            </div>
-        `;
-        openPanel();
-    } catch (e) { console.error('Detail error:', e); }
+        const d = await (await fetch(`/api/analytics/leads/${id}/detail`)).json();
+        if (!d || !d.public) { alert('No disponible'); return; }
+        const p = d.public, mg = d.management, cl = d.classification, tl = d.timeline || [];
+        document.getElementById('detailBody').innerHTML = `
+            <div style="margin-bottom:14px"><div class="detail-field"><span class="label">Nombre</span><span class="value">${esc(p.nombre||'-')}</span></div>
+            <div class="detail-field"><span class="label">Telefono</span><span class="value">${esc(p.phone_masked||p.phone||'-')}</span></div>
+            <div class="detail-field"><span class="label">Origen</span><span class="value">${esc(p.origen||'-')}</span></div>
+            <div class="detail-field"><span class="label">Etapa</span><span class="value">${esc(p.etapa||'-')}</span></div>
+            <div class="detail-field"><span class="label">Ejecutivo</span><span class="value">${esc(p.ejecutivo||'Sin Asignar')}</span></div>
+            <div class="detail-field"><span class="label">Temperatura</span><span class="value">${esc(p.temperatura||'-')}</span></div></div>
+            ${p.propiedad ? `<div style="margin-bottom:14px"><h6 style="font-size:0.78rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Propiedad</h6>
+            <div class="detail-field"><span class="label">Codigo</span><span class="value">${esc(p.propiedad.codigo||'-')}</span></div>
+            <div class="detail-field"><span class="label">Comuna</span><span class="value">${esc(p.propiedad.comuna||'-')}</span></div>
+            <div class="detail-field"><span class="label">Tipo</span><span class="value">${esc(p.propiedad.tipo||'-')}</span></div>
+            <div class="detail-field"><span class="label">Operacion</span><span class="value">${esc(p.propiedad.operacion||'-')}</span></div>
+            <div class="detail-field"><span class="label">Precio UF</span><span class="value">${p.propiedad.precio_uf||'-'}</span></div></div>` : ''}
+            <div style="margin-bottom:14px"><h6 style="font-size:0.78rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Gestion</h6>
+            <div style="color:var(--amber);font-size:0.82rem">No disponible</div></div>
+            ${cl.resultado_chat ? `<div style="margin-bottom:14px"><h6 style="font-size:0.78rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Chatbot</h6>
+            <div class="detail-field"><span class="label">Resultado</span><span class="value">${esc(cl.resultado_chat)}</span></div>
+            <div class="detail-field"><span class="label">Recuperabilidad</span><span class="value">${esc(cl.recuperabilidad||'-')}</span></div></div>` : ''}
+            <div><h6 style="font-size:0.78rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Timeline</h6>
+            ${!tl.length ? '<div style="color:var(--text-secondary);font-size:0.82rem">Sin eventos</div>' : tl.map(e => `<div class="timeline-entry"><div><div style="color:var(--text-secondary);font-size:0.72rem">${esc(String(e.timestamp||'').substring(0,19))}</div><div style="font-size:0.82rem">${esc(e.label||'')}</div></div></div>`).join('')}</div>`;
+        document.getElementById('detailPanel').classList.add('open');
+        document.getElementById('detailOverlay').style.display = 'block';
+    } catch (_) {}
 }
-
-function openPanel() {
-    document.getElementById('detail-panel').classList.add('open');
-    document.getElementById('detail-overlay').style.display = 'block';
-}
-function closeDetail() {
-    document.getElementById('detail-panel').classList.remove('open');
-    document.getElementById('detail-overlay').style.display = 'none';
-}
+function closeDetail() { document.getElementById('detailPanel').classList.remove('open'); document.getElementById('detailOverlay').style.display = 'none'; }
 
 function toggleTheme() {
     CURRENT_THEME = CURRENT_THEME === 'dark' ? 'light' : 'dark';
     localStorage.setItem('procasa_theme', CURRENT_THEME);
     document.documentElement.setAttribute('data-theme', CURRENT_THEME);
-    const icon = document.getElementById('themeIcon');
-    if (icon) icon.className = CURRENT_THEME === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+    const ic = document.getElementById('themeIcon');
+    if (ic) ic.className = CURRENT_THEME === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
     loadAll();
 }
 
 function toggleMobileMenu() {
     document.getElementById('sidebar').classList.toggle('mobile-open');
-    const ov = document.getElementById('sidebarOverlay');
-    ov.style.display = document.getElementById('sidebar').classList.contains('mobile-open') ? 'block' : 'none';
+    document.getElementById('sidebarOverlay').style.display = document.getElementById('sidebar').classList.contains('mobile-open') ? 'block' : 'none';
 }
-function closeSidebar() {
-    document.getElementById('sidebar').classList.remove('mobile-open');
-    document.getElementById('sidebarOverlay').style.display = 'none';
-}
+function closeSidebar() { document.getElementById('sidebar').classList.remove('mobile-open'); document.getElementById('sidebarOverlay').style.display = 'none'; }
 
-function showLoading() { document.getElementById('loading-overlay').style.display = 'flex'; }
-function hideLoading() { document.getElementById('loading-overlay').style.display = 'none'; }
-
-function baseLayout(isDark) {
-    const textColor = isDark ? '#f1f5f9' : '#1e293b';
-    const gridColor = isDark ? '#1e293b' : '#e2e8f0';
-    return {
-        paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
-        font: { color: textColor, family: 'Outfit', size: 11 },
-        xaxis: { gridcolor: gridColor, zerolinecolor: gridColor },
-        yaxis: { gridcolor: gridColor, zerolinecolor: gridColor },
-    };
-}
-
-function esc(str) {
-    if (str === null || str === undefined) return '';
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+function esc(s) { if (s === null || s === undefined) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }

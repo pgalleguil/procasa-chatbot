@@ -18,6 +18,11 @@ class AsyncCollection:
     def find(self, query, projection=None): return AsyncCursor(self.docs)
     async def distinct(self, field, query=None): return []
     async def insert_one(self, doc): self.inserted.append(doc)
+    async def find_one(self, query):
+        for doc in self.docs:
+            if all(doc.get(k) == v for k, v in query.items()): return doc
+        return None
+    async def update_one(self, query, update): return None
 
 
 class AsyncDB(dict):
@@ -65,12 +70,17 @@ def test_async_sla_monitor_uses_shared_definition_and_deduplicated_notification(
             "actor": "system", "actor_type": "system", "timestamp": lead["lifecycle"]["assigned_at"],
         }]),
         crm_sla_warnings=AsyncCollection(),
+        crm_assignment_cycles=AsyncCollection([{
+            "lead_id": lead["_id"], "assignment_cycle_id": "cycle-1",
+            "assigned_at": lead["lifecycle"]["assigned_at"].astimezone(timezone.utc),
+            "unassigned_at": None,
+        }]),
     )
     send = AsyncMock(return_value=True)
     with patch("chatbot.sla_service.get_async_db", return_value=db), \
          patch("chatbot.sla_service.Config.CRM_SLA_ALERTS_ENABLED", True), \
          patch("chatbot.sla_service.should_send_now", return_value=True), \
-         patch("chatbot.sla_service.get_executive_phone", return_value="+56912345678"), \
+         patch("chatbot.sla_service.get_active_executive_phone", return_value="+56912345678"), \
          patch("chatbot.sla_service.utc_now", return_value=chile_datetime(12, 1).astimezone(timezone.utc)), \
          patch("chatbot.sla_service.NotificationService.send_notification", send), \
          patch("chatbot.sla_service.asyncio.sleep", new=AsyncMock()):
@@ -79,3 +89,42 @@ def test_async_sla_monitor_uses_shared_definition_and_deduplicated_notification(
     send.assert_awaited_once()
     assert len(db["crm_sla_warnings"].inserted) == 1
     assert db["crm_sla_warnings"].inserted[0]["level"] == "critical"
+
+
+def test_historical_critical_warning_is_never_replayed():
+    lead = assigned_lead()
+    db = AsyncDB(
+        leads=AsyncCollection([lead]), crm_events=AsyncCollection([]),
+        crm_assignment_cycles=AsyncCollection([{
+            "lead_id": lead["_id"], "assignment_cycle_id": "cycle-1",
+            "assigned_at": lead["lifecycle"]["assigned_at"].astimezone(timezone.utc),
+            "unassigned_at": None,
+        }]),
+        crm_sla_warnings=AsyncCollection([{
+            "phone": "56988888888", "level": "critical", "status": "sent",
+        }]),
+    )
+    send = AsyncMock(return_value=True)
+    with patch("chatbot.sla_service.get_async_db", return_value=db), \
+         patch("chatbot.sla_service.Config.CRM_SLA_ALERTS_ENABLED", True), \
+         patch("chatbot.sla_service.should_send_now", return_value=True), \
+         patch("chatbot.sla_service.get_active_executive_phone", return_value="+56912345678"), \
+         patch("chatbot.sla_service.utc_now", return_value=chile_datetime(12, 1).astimezone(timezone.utc)), \
+         patch("chatbot.sla_service.NotificationService.send_notification", send):
+        from chatbot.sla_service import monitor_sla_thresholds
+        asyncio.run(monitor_sla_thresholds())
+    send.assert_not_awaited()
+
+
+def test_lead_without_canonical_assignment_cycle_never_alerts():
+    lead = assigned_lead()
+    db = AsyncDB(leads=AsyncCollection([lead]), crm_events=AsyncCollection([]),
+                 crm_assignment_cycles=AsyncCollection([]), crm_sla_warnings=AsyncCollection([]))
+    send = AsyncMock(return_value=True)
+    with patch("chatbot.sla_service.get_async_db", return_value=db), \
+         patch("chatbot.sla_service.Config.CRM_SLA_ALERTS_ENABLED", True), \
+         patch("chatbot.sla_service.should_send_now", return_value=True), \
+         patch("chatbot.sla_service.NotificationService.send_notification", send):
+        from chatbot.sla_service import monitor_sla_thresholds
+        asyncio.run(monitor_sla_thresholds())
+    send.assert_not_awaited()

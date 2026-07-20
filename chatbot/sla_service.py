@@ -1,226 +1,116 @@
-import logging
+"""SLA executive alerts with fail-closed eligibility and permanent idempotency."""
 import asyncio
-from datetime import datetime, timedelta
-from .storage import get_async_db, log_event
-from .constants import CHILE_TZ, PipelineStage, EventType
-from .notification_service import NotificationService
-from .lead_router import get_executive_phone, should_send_now
-from .utils import calculate_business_minutes
-from .crm_metrics import calculate_sla, coerce_utc_datetime, event_evidence, utc_now
+import logging
+
+from pymongo.errors import DuplicateKeyError
+
 from config import Config
+from .constants import PipelineStage
+from .crm_metrics import (
+    INSTRUMENTATION_CUTOVER, calculate_sla, coerce_utc_datetime,
+    event_evidence, utc_now,
+)
+from .lead_router import get_active_executive_phone, should_send_now
+from .notification_service import NotificationService
+from .storage import get_async_db
 
 logger = logging.getLogger(__name__)
 
+
 async def monitor_sla_thresholds():
-    """
-    Monitorea los leads para detectar aquellos que están próximos a entrar en estado crítico
-    (estado Naranja: >= 150 minutos desde la asignación sin gestión).
-    Usa la colección 'crm_sla_warnings' para evitar duplicados.
-    """
     if not Config.CRM_SLA_ALERTS_ENABLED:
-        logger.info("[SLA_MONITOR] Alertas a ejecutivos desactivadas por configuracion.")
+        logger.info("[SLA_MONITOR] Alertas a ejecutivos desactivadas.")
         return
     if not should_send_now():
-        logger.debug("[SLA_MONITOR] Fuera de horario comercial. Saltando revisión.")
         return
 
-    from .constants import UNASSIGNED_LABEL
     db = get_async_db()
-    
-    # 1. Búsqueda Robusta de Leads en etapas iniciales
-    # Incluimos leads donde el stage es NEW, CONTACTED o simplemente NO existe/es null.
-    # Excluimos explícitamente cualquier variante de "No Asignado" / "Sin Asignar"
-    unassigned_patterns = [
-        UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", "Sin asignar", 
-        "no asignado", "sin asignar", "N/A", "Desconocido"
-    ]
-    query = {
+    cutover = coerce_utc_datetime(INSTRUMENTATION_CUTOVER)
+    cycles = await db["crm_assignment_cycles"].find({
+        "unassigned_at": None,
+        "assigned_at": {"$gte": cutover},
+        "assignment_cycle_id": {"$exists": True},
+    }).to_list(length=2000)
+    cycle_by_lead = {str(c["lead_id"]): c for c in cycles if c.get("lead_id") is not None}
+    if not cycle_by_lead:
+        return
+
+    leads = await db["leads"].find({
+        "_id": {"$in": [c["lead_id"] for c in cycles]},
+        "lead_temperature_effective": "HOT",
         "$or": [
             {"pipeline_stage": {"$in": [PipelineStage.NEW, PipelineStage.CONTACTED]}},
-            {"pipeline_stage": None},
-            {"pipeline_stage": {"$exists": False}},
-            {"stage": {"$in": ["new", "nuevo", "gestion", "contacted"]}},
-            {"stage": None},
-            {"stage": {"$exists": False}}
+            {"pipeline_stage": None}, {"pipeline_stage": {"$exists": False}},
         ],
-        "ejecutivo_asignado": {"$exists": True, "$nin": unassigned_patterns},
-        "lead_temperature_effective": "HOT"
-    }
-    
-    leads = await db["leads"].find(query, {"messages": 0, "stage_history": 0}).to_list(length=2000)
-    if not leads:
-        return
+    }, {"messages": 0, "stage_history": 0}).to_list(length=2000)
 
-    logger.debug(f"[SLA_MONITOR] Revisando {len(leads)} leads potenciales para SLA...")
-
-    # --- OPTIMIZACIÓN: BULK QUERIES ---
-    phones_clean = []
-    lead_by_phone = {}
-    for l in leads:
-        p = l.get("phone")
-        if p:
-            pc = p.replace("+", "").replace(" ", "").strip()
-            phones_clean.append(pc)
-            lead_by_phone[pc] = l
-
-    # 1. Obtener todas las advertencias existentes de una vez
-    existing_warnings = set(await db["crm_sla_warnings"].distinct("phone", {"phone": {"$in": phones_clean}}))
-    warnings_docs = await db["crm_sla_warnings"].find({"phone": {"$in": phones_clean}}).to_list(length=5000)
-    warnings_by_phone = {}
-    for w in warnings_docs:
-        ph = w.get("phone")
-        if not ph:
-            continue
-        if ph not in warnings_by_phone:
-            warnings_by_phone[ph] = []
-        warnings_by_phone[ph].append(w)
-
-    # 2. Obtener eventos relevantes (notificaciones iniciales y gestiones) para todos
-    relevant_event_types = ["alert_sent", "ALERT", "ASSIGNMENT"] + [
-        "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
-        "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", 
-        "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
-    ]
-    
-    events_by_phone = {}
-    cursor = db["crm_events"].find({"phone": {"$in": phones_clean}, "type": {"$in": relevant_event_types}})
-    for evt in await cursor.to_list(length=20000):
-        ph = evt["phone"]
-        if ph not in events_by_phone: events_by_phone[ph] = []
-        events_by_phone[ph].append(evt)
-
-    # --- PROCESAMIENTO EN MEMORIA ---
-    management_types = [
-        "GESTION_LOG", "HUMAN_NOTE", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", 
-        "CLICK_PHONE_LEAD", "CLICK_WHATSAPP_LEAD", "SEND_WA_OWNER", "SEND_EMAIL_OWNER", 
-        "CLICK_PHONE_OWNER", "CLICK_WHATSAPP_OWNER"
-    ]
-    initial_notif_types = ["alert_sent", "ALERT", "ASSIGNMENT", "assignment", "alert"]
-
-    for phone_clean, lead in lead_by_phone.items():
+    for lead in leads:
         try:
-            # 1. Tiempos de referencia
-            raw_assigned = lead.get("lifecycle", {}).get("assigned_at")
-            raw_created = lead.get("created_at")
-            raw_hot_since = lead.get("lifecycle", {}).get("hot_since")
-            
-            if not raw_assigned: continue 
-
-            try:
-                # Usamos start_dt para mantener compatibilidad con el resto del archivo
-                if isinstance(raw_assigned, datetime):
-                    start_dt = raw_assigned
-                else:
-                    start_dt = datetime.fromisoformat(str(raw_assigned).replace("Z", ""))
-                
-                if start_dt.tzinfo is None: start_dt = CHILE_TZ.localize(start_dt)
-                
-                if raw_hot_since:
-                    if isinstance(raw_hot_since, datetime):
-                        hot_dt = raw_hot_since
-                    else:
-                        hot_dt = datetime.fromisoformat(str(raw_hot_since).replace("Z", ""))
-                    if hot_dt.tzinfo is None: hot_dt = CHILE_TZ.localize(hot_dt)
-                    start_dt = max(start_dt, hot_dt)
-                
-                if isinstance(raw_created, datetime):
-                    created_dt = raw_created
-                else:
-                    created_dt = datetime.fromisoformat(str(raw_created).replace("Z", ""))
-                    
-                if created_dt.tzinfo is None: created_dt = CHILE_TZ.localize(created_dt)
-            except: continue
-
-            # 2. Cargar advertencias existentes para este lead específico
-            existing = warnings_by_phone.get(phone_clean, [])
-            has_red_warning = any(w.get("level") == "critical" for w in existing)
-            has_orange_warning = any(w.get("level") == "near_critical" for w in existing)
-            
-            if has_red_warning: continue
-
-            # 3. Filtrar eventos por fecha (Gestiones desde creación, Alertas desde asignación)
-            phone_events = events_by_phone.get(phone_clean, [])
-            current_events = []
-            has_management_ever = bool(lead.get("lifecycle", {}).get("first_valid_management_at"))
-
-            for e in phone_events:
-                e_ts = e.get("timestamp")
-                e_ts = coerce_utc_datetime(e_ts)
-                if not e_ts:
-                    continue
-                
-                # ¿Es una gestión? (Buscamos desde creación)
-                if event_evidence(e)["management"] and e_ts >= (created_dt - timedelta(minutes=5)).astimezone(e_ts.tzinfo):
-                    has_management_ever = True
-                
-                # ¿Es un evento relevante para el flujo actual? (Desde asignación)
-                if e_ts >= (start_dt - timedelta(minutes=1)).astimezone(e_ts.tzinfo):
-                    current_events.append(e)
-
-            # 4. CRITERIO DE EXCLUSIÓN: Si ya tiene gestión (incluso pre-asignación), NO ALERTAR.
-            if has_management_ever:
-                if not any(w.get("status") == "ignored_already_managed" for w in existing):
-                    await db["crm_sla_warnings"].insert_one({
-                        "phone": phone_clean,
-                        "status": "ignored_already_managed",
-                        "reason": "proactive_management_detected",
-                        "timestamp": datetime.now(CHILE_TZ).isoformat()
-                    })
+            cycle = cycle_by_lead.get(str(lead.get("_id")))
+            if not cycle:
+                continue
+            assigned_at = coerce_utc_datetime(cycle.get("assigned_at"))
+            if not assigned_at or assigned_at < cutover:
                 continue
 
-            # 5. Verificar notificación inicial (Cualquier alerta de asignación)
-            has_initial = any(e["type"] in initial_notif_types for e in current_events)
-            if not has_initial:
-                # Caso borde: Si no hay evento pero tiene 'assigned_at' reciente, confiamos en el campo
-                if lead.get("lifecycle", {}).get("assigned_at"):
-                    has_initial = True
-                else:
-                    continue
+            events = await db["crm_events"].find({
+                "lead_id": lead["_id"], "timestamp": {"$gte": assigned_at}
+            }).to_list(length=2000)
+            if any(event_evidence(event)["management"] for event in events):
+                continue
 
-            # diff = datetime.now(CHILE_TZ) - start_dt
-            # minutes_diff = diff.total_seconds() / 60
-            sla = calculate_sla(assigned_at=start_dt, now=utc_now())
-            minutes_diff = sla["minutes"] or 0
-            level = sla["status"] if sla["status"] in {"critical", "near_critical"} else None
-            if level == "near_critical" and has_orange_warning:
-                level = None
+            sla = calculate_sla(assigned_at=assigned_at, now=utc_now())
+            level = sla["status"] if sla["status"] in {"near_critical", "critical"} else None
+            if not level:
+                continue
 
-            if level:
-                ejecutivo = lead.get("ejecutivo_asignado")
-                logger.info(f"[SLA_MONITOR] Alerta {level.upper()}! Lead {phone_clean} asignado a {ejecutivo} hace {minutes_diff:.1f} min sin gestión.")
-                
-                exec_phone = await asyncio.to_thread(get_executive_phone, ejecutivo)
-                if not exec_phone or exec_phone == "+56900000000":
-                    continue
+            executive = lead.get("ejecutivo_asignado")
+            executive_phone = await asyncio.to_thread(get_active_executive_phone, executive)
+            if not executive_phone or executive_phone == "+56900000000":
+                continue
 
-                nombre_cliente = lead.get("prospecto", {}).get("nombre", "Cliente")
-                message = format_sla_warning_message(ejecutivo, nombre_cliente, level)
-                
-                sent = await NotificationService.send_notification(
-                    phone=exec_phone,
-                    message=message,
-                    alert_type=f"SLA_{level.upper()}",
-                    meta={"to": ejecutivo, "level": level},
-                    dedup_window_minutes=30
-                )
+            cycle_id = str(cycle["assignment_cycle_id"])
+            key = f"crm_sla:{lead['_id']}:{cycle_id}:{level}"
 
-                if sent:
-                    await db["crm_sla_warnings"].insert_one({
-                        "phone": phone_clean,
-                        "executive": ejecutivo,
-                        "executive_phone": exec_phone,
-                        "sent_at": datetime.now(CHILE_TZ).isoformat(),
-                        "level": level,
-                        "status": "sent"
-                    })
-                    logger.info(f"[SLA_MONITOR] Notificación SLA {level} procesada para {ejecutivo}")
-                    await asyncio.sleep(2)
+            # Old phone-based critical records are permanent evidence that this
+            # historical alert was already delivered. Never replay them.
+            phone = _normalize_phone(lead.get("phone"))
+            if level == "critical" and phone and await db["crm_sla_warnings"].find_one({
+                "phone": phone, "level": "critical", "status": "sent"
+            }):
+                continue
 
-        except Exception as e:
-            logger.error(f"[SLA_MONITOR] Error procesando lead {phone_clean}: {e}")
+            claim = {
+                "_id": key, "idempotency_key": key, "lead_id": lead["_id"],
+                "assignment_cycle_id": cycle_id, "phone": phone,
+                "executive": executive, "level": level, "status": "sending",
+                "created_at": utc_now(),
+            }
+            try:
+                await db["crm_sla_warnings"].insert_one(claim)
+            except DuplicateKeyError:
+                continue
+
+            sent = await NotificationService.send_notification(
+                phone=executive_phone,
+                message=format_sla_warning_message(executive, lead.get("prospecto", {}).get("nombre", "Cliente"), level),
+                alert_type=f"SLA_{level.upper()}",
+                meta={"to": executive, "level": level, "lead_id": str(lead["_id"]),
+                      "assignment_cycle_id": cycle_id, "idempotency_key": key},
+            )
+            status = "sent" if sent else "failed"
+            await db["crm_sla_warnings"].update_one(
+                {"_id": key}, {"$set": {"status": status, f"{status}_at": utc_now()}}
+            )
+        except Exception:
+            logger.exception("[SLA_MONITOR] Error procesando lead canónico")
+
+
+def _normalize_phone(value):
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
+
 
 def format_sla_warning_message(executive_name, client_name, level):
-    """Formatea el mensaje de advertencia de SLA según el nivel."""
     if level == "critical":
         header = "🔴 *SLA CRÍTICO - SIN RESPUESTA* 🔴"
         time_text = "más de 3 horas"
@@ -229,11 +119,8 @@ def format_sla_warning_message(executive_name, client_name, level):
         header = "🟠 *PRÓXIMO A CRÍTICO - ALERTA SLA* 🟠"
         time_text = "2:30 horas"
         footer = "Por favor, contacta al cliente pronto para evitar indicadores rojos."
-
     return (
-        f"{header}\n\n"
-        f"Hola *{executive_name}*, el cliente *{client_name}* lleva *{time_text}* asignado sin recibir gestión comercial.\n\n"
-        f"{footer}\n\n"
-        f"🔗 *Gestionar ahora:* https://procasa-chatbot-yr8d.onrender.com/\n\n"
-        f"¡Mucho éxito! 🚀"
+        f"{header}\n\nHola *{executive_name}*, el cliente *{client_name}* lleva "
+        f"*{time_text}* asignado sin recibir gestión comercial.\n\n{footer}\n\n"
+        "🔗 *Gestionar ahora:* https://procasa-chatbot-yr8d.onrender.com/\n\n¡Mucho éxito! 🚀"
     )

@@ -282,6 +282,18 @@ def get_executive_phone(executive_name: str) -> Optional[str]:
     logger.warning(f"[LOOKUP] No se encontró usuario '{executive_name}' en colección 'usuarios'.")
     return None
 
+def get_active_executive_phone(executive_name: str) -> Optional[str]:
+    """Return a phone only for an explicitly active, exact CRM user."""
+    if not executive_name or executive_name == UNASSIGNED_LABEL:
+        return None
+    user = get_db()["usuarios"].find_one({"nombre": executive_name, "is_active": True})
+    if not user:
+        logger.warning("[LOOKUP] Ejecutivo no activo o no inequívoco: %r", executive_name)
+        return None
+    phone = user.get("telefono") or user.get("tel") or user.get("movil")
+    return str(phone).strip() if phone else None
+
+
 def find_responsible_executive(property_code: Optional[str] = None, comuna: Optional[str] = None, zone: Optional[str] = None, lead_phone: Optional[str] = None, lead_name: Optional[str] = None) -> Tuple[str, Optional[str], str]:
     """
     Determines the responsible executive based on property rules or regional fallbacks.

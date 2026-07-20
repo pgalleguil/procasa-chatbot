@@ -51,6 +51,34 @@ VALID_CREDIT_EVENT_TYPES = {
     "capture_confirmed",
 }
 
+FINAL_OUTCOME_BY_RESULT = {
+    "ready_to_contact": "por_contactar",
+    "in_progress": "en_gestion",
+    "no_answer": "no_respondio",
+    "busy": "ocupado",
+    "invalid_number": "numero_invalido",
+    "contacted": "contactado",
+    "callback_requested": "solicita_llamada_posterior",
+    "message_sent": "mensaje_enviado",
+    "broker_identified": "corredor",
+    "discarded": "descartado",
+    "captured": "captado",
+}
+FINAL_OUTCOME_KEYS = (
+    "por_contactar",
+    "en_gestion",
+    "no_respondio",
+    "ocupado",
+    "numero_invalido",
+    "contactado",
+    "solicita_llamada_posterior",
+    "mensaje_enviado",
+    "corredor",
+    "descartado",
+    "captado",
+    "otros",
+)
+
 # Fuente Ãºnica de verdad para decisiones manuales que representan trabajo
 # comercial real. El frontend no decide si una acciÃ³n acredita la meta.
 MANUAL_DECISION_RULES = {
@@ -233,6 +261,27 @@ def management_dedup_key(property_id, actor_user_id, occurred_at, timezone_name=
     return f"{clean_id(property_id)}:{clean_id(actor_user_id)}:{local.date().isoformat()}"
 
 
+def _write_credited_event_or_observation(db, event: dict) -> tuple[bool, str]:
+    """Conserva todo evento válido y acredita solo el primero de su unidad diaria."""
+    dedup_key = event["dedup_key"]
+    write = db[LEDGER_COLLECTION].update_one(
+        {"dedup_key": dedup_key}, {"$setOnInsert": event}, upsert=True
+    )
+    credited = bool(getattr(write, "upserted_id", None))
+    if credited:
+        return True, clean_id(event.get("event_id"))
+
+    existing = db[LEDGER_COLLECTION].find_one({"dedup_key": dedup_key}, {"event_id": 1}) or {}
+    observation = dict(event)
+    observation.pop("dedup_key", None)
+    observation["credited"] = False
+    observation["credit_duplicate"] = True
+    observation["duplicate_of_event_id"] = clean_id(existing.get("event_id")) or None
+    observation["commercially_valid"] = True
+    db[LEDGER_COLLECTION].insert_one(observation)
+    return False, observation["duplicate_of_event_id"] or clean_id(observation.get("event_id"))
+
+
 def start_management_attempt(
     db,
     *,
@@ -331,14 +380,10 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
         "source_system": "captacion_crm",
         "migration_version": LEDGER_VERSION,
         "legacy_inferred": False,
+        "commercially_valid": True,
         "created_at": occurred_at.astimezone(timezone.utc),
     }
-    write = db[LEDGER_COLLECTION].update_one(
-        {"dedup_key": dedup_key}, {"$setOnInsert": event}, upsert=True
-    )
-    credited = bool(getattr(write, "upserted_id", None))
-    existing = None if credited else db[LEDGER_COLLECTION].find_one({"dedup_key": dedup_key}, {"event_id": 1})
-    resolved_event_id = event_id if credited else clean_id((existing or {}).get("event_id"))
+    credited, resolved_event_id = _write_credited_event_or_observation(db, event)
     db[ATTEMPT_COLLECTION].update_one(
         {"attempt_id": attempt["attempt_id"], "status": "pending_confirmation"},
         {"$set": {
@@ -407,6 +452,35 @@ def record_manual_management_decision(
         "result": decision["result"],
         "event_type": "manual_decision_confirmed",
     }):
+        db[LEDGER_COLLECTION].insert_one({
+            "event_id": event_id,
+            "event_type": "manual_decision_confirmed",
+            "credited": False,
+            "credit_duplicate": True,
+            "commercially_valid": True,
+            "property_id": property_id,
+            "assignment_cycle_id": cycle_id,
+            "actor_user_id": actor_user_id,
+            "actor_name_snapshot": actor_user.get("nombre") or actor_user.get("username") or "",
+            "actor_email_snapshot": actor_user.get("email") or "",
+            "action": "manual_decision",
+            "channel": "manual",
+            "result": decision["result"],
+            "status_snapshot": str(status or ""),
+            "previous_status_snapshot": str(previous_status or ""),
+            "notes": decision["evidence"],
+            "contact_attempt": decision["contact_attempt"],
+            "contact_effective": decision["contact_effective"],
+            "occurred_at": occurred_at.astimezone(timezone.utc),
+            "local_date": local.date().isoformat(),
+            "timezone": DEFAULT_TIMEZONE,
+            "source_event_id": f"manual:{event_id}",
+            "source_system": "captacion_crm",
+            "migration_version": LEDGER_VERSION,
+            "legacy_inferred": False,
+            "non_credit_reason": "assignment_cycle_decision_already_recorded",
+            "created_at": occurred_at.astimezone(timezone.utc),
+        })
         return {
             "status": "not_credited",
             "credited": False,
@@ -437,14 +511,10 @@ def record_manual_management_decision(
         "source_system": "captacion_crm",
         "migration_version": LEDGER_VERSION,
         "legacy_inferred": False,
+        "commercially_valid": True,
         "created_at": occurred_at.astimezone(timezone.utc),
     }
-    write = db[LEDGER_COLLECTION].update_one(
-        {"dedup_key": dedup_key}, {"$setOnInsert": event}, upsert=True
-    )
-    credited = bool(getattr(write, "upserted_id", None))
-    existing = None if credited else db[LEDGER_COLLECTION].find_one({"dedup_key": dedup_key}, {"event_id": 1})
-    resolved_event_id = event_id if credited else clean_id((existing or {}).get("event_id"))
+    credited, resolved_event_id = _write_credited_event_or_observation(db, event)
     if credited:
         _record_first_action_for_cycle(db, event)
         recalculate_daily_metric(db, actor_user_id, local.date(), now=occurred_at)
@@ -530,6 +600,44 @@ def summarize_management_metrics(events: list[dict]) -> dict:
         "effective_contacts": len(contacts),
         "captures": len(captures),
     }
+
+
+def summarize_final_outcomes(events: list[dict]) -> dict:
+    """Clasifica una sola vez cada unidad propiedad/ejecutivo/día acreditada.
+
+    Los eventos posteriores de la misma unidad siguen en el ledger como
+    observaciones válidas y pueden definir su resultado final, pero nunca
+    incrementan la cantidad de propiedades gestionadas.
+    """
+    credited_units = set()
+    candidates = {}
+    for row in events:
+        property_id = clean_id(row.get("property_id"))
+        actor_user_id = clean_id(row.get("actor_user_id")) or clean_id(row.get("actor"))
+        local_date = clean_id(row.get("local_date"))
+        if not local_date and row.get("occurred_at"):
+            local_date = localize(row.get("occurred_at"), DEFAULT_TIMEZONE).date().isoformat()
+        if not property_id or not actor_user_id or not local_date:
+            continue
+        unit = (property_id, actor_user_id, local_date)
+        if row.get("credited", True):
+            credited_units.add(unit)
+        if not (row.get("commercially_valid", row.get("credited", True))):
+            continue
+        occurred_at = row.get("occurred_at") or datetime.min.replace(tzinfo=timezone.utc)
+        if occurred_at.tzinfo is None:
+            occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+        order = (occurred_at.astimezone(timezone.utc), clean_id(row.get("event_id")))
+        current = candidates.get(unit)
+        if current is None or order > current[0]:
+            candidates[unit] = (order, FINAL_OUTCOME_BY_RESULT.get(clean_id(row.get("result")).lower(), "otros"))
+
+    totals = {key: 0 for key in FINAL_OUTCOME_KEYS}
+    for unit in credited_units:
+        totals[(candidates.get(unit) or (None, "otros"))[1]] += 1
+    if sum(totals.values()) != len(credited_units):
+        raise ValueError("La suma de resultados finales no coincide con las propiedades gestionadas")
+    return totals
 
 
 def recalculate_daily_metric(db, user_id, local_day: date | str, now=None) -> dict:

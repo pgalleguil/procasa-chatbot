@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Vista previa · Reporte semanal de Captaciones</title>
+    <style>
+        :root { color-scheme: dark; --bg:#07111f; --panel:#101c2d; --line:#26364b; --text:#eef5ff; --muted:#9db0c8; --green:#35d07f; --red:#ff6b75; --amber:#ffca62; --blue:#62a9ff; }
+        * { box-sizing:border-box; }
+        body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 Inter,system-ui,sans-serif; }
+        main { width:min(1120px,94vw); margin:32px auto 64px; }
+        a { color:var(--blue); }
+        header { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; margin-bottom:20px; }
+        h1,h2 { margin:0 0 8px; }
+        .muted { color:var(--muted); }
+        .grid { display:grid; grid-template-columns:repeat(12,1fr); gap:16px; }
+        .panel { grid-column:span 12; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; }
+        .half { grid-column:span 6; }
+        .badge { display:inline-flex; padding:5px 9px; border-radius:999px; font-weight:700; font-size:12px; }
+        .ok { color:var(--green); background:#123425; }
+        .bad { color:var(--red); background:#3b1820; }
+        .pending { color:var(--amber); background:#3b3018; }
+        table { width:100%; border-collapse:collapse; }
+        th,td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); }
+        .metric { font-size:28px; font-weight:800; }
+        .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+        .metric-card { padding:14px; background:#0b1726; border:1px solid var(--line); border-radius:10px; }
+        textarea { width:100%; min-height:88px; resize:vertical; background:#091522; color:var(--text); border:1px solid var(--line); border-radius:9px; padding:11px; margin:6px 0 13px; }
+        button { border:0; border-radius:9px; padding:11px 14px; font-weight:800; cursor:pointer; }
+        .primary { background:var(--green); color:#05140d; }
+        .secondary { background:#263a55; color:var(--text); }
+        .danger { background:#5b2530; color:#fff; }
+        .actions { display:flex; flex-wrap:wrap; gap:10px; }
+        pre { white-space:pre-wrap; word-wrap:break-word; background:#081321; border:1px solid var(--line); border-radius:10px; padding:16px; color:#dceaff; }
+        #notice { margin-top:12px; min-height:24px; }
+        @media (max-width:760px) { .half{grid-column:span 12}.metrics{grid-template-columns:1fr 1fr}header{display:block} }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div>
+            <a href="/captacion">← Volver a Captaciones</a>
+            <h1>Reporte semanal de Captaciones</h1>
+            <div class="muted">Cálculo automatizado con aprobación humana permanente</div>
+        </div>
+        {% if report %}
+        <span class="badge {% if report.status == 'pending_approval' %}pending{% elif report.status == 'sent' %}ok{% else %}bad{% endif %}">{{ report.status }}</span>
+        {% endif %}
+    </header>
+
+    {% if not report %}
+    <section class="panel"><h2>Sin reporte disponible</h2><p class="muted">El scheduler preparará una versión el lunes a las 08:45, hora de Chile.</p></section>
+    {% else %}
+    <div class="grid">
+        <section class="panel">
+            <h2>{{ report.snapshot.report.period_label }}</h2>
+            <p>Destinatario grupal: <strong>{{ group_recipient }}</strong></p>
+            <div class="actions">
+                <span class="badge {{ 'ok' if report.preview_required else 'bad' }}">preview_required = {{ report.preview_required|string|lower }}</span>
+                <span class="badge {{ 'ok' if not report.automatic_send else 'bad' }}">automatic_send = {{ report.automatic_send|string|lower }}</span>
+                <span class="badge {{ 'ok' if report.crm_parity_validated else 'bad' }}">Paridad CRM {{ 'aprobada' if report.crm_parity_validated else 'fallida' }}</span>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Métricas</h2>
+            <div class="metrics">
+                <div class="metric-card"><div class="metric">{{ report.snapshot.team.properties_managed_unique }}</div><div class="muted">Propiedades gestionadas</div></div>
+                <div class="metric-card"><div class="metric">{{ report.snapshot.team.properties_with_contact_attempt_unique }}</div><div class="muted">Con intento</div></div>
+                <div class="metric-card"><div class="metric">{{ report.snapshot.team.effective_contacts_unique }}</div><div class="muted">Contactos efectivos</div></div>
+                <div class="metric-card"><div class="metric">{{ report.snapshot.team.captured_properties_unique }}</div><div class="muted">Captaciones</div></div>
+            </div>
+        </section>
+
+        <section class="panel half">
+            <h2>Por ejecutiva</h2>
+            <table><thead><tr><th>Ejecutiva</th><th>Gestionadas</th><th>Contactos</th><th>Captadas</th></tr></thead><tbody>
+            {% for row in report.snapshot.executives %}
+                <tr><td>{{ row.name }}</td><td>{{ row.properties_managed_unique }}</td><td>{{ row.effective_contacts_unique }}</td><td>{{ row.captured_properties_unique }}</td></tr>
+            {% endfor %}
+            </tbody></table>
+        </section>
+
+        <section class="panel half">
+            <h2>Calidad y validaciones</h2>
+            <p><span class="badge {{ 'ok' if report.snapshot.crm_parity.validated else 'bad' }}">Paridad total: {{ report.snapshot.crm_parity.report_properties_managed }} / {{ report.snapshot.crm_parity.panel_properties_managed }}</span></p>
+            <p><span class="badge {{ 'ok' if report.snapshot.data_quality.historical_measurement_complete else 'pending' }}">Cobertura histórica {{ 'completa' if report.snapshot.data_quality.historical_measurement_complete else 'transicional' }}</span></p>
+            {% for limitation in report.snapshot.data_quality.limitations %}<p class="muted">• {{ limitation }}</p>{% endfor %}
+            <p class="muted"><strong>Dato técnico:</strong> {{ report.snapshot.administrative.history_events_label }}: {{ report.snapshot.administrative.history_events_registered }}. No se incluye en WhatsApp ni en DeepSeek.</p>
+        </section>
+
+        <section class="panel">
+            <h2>Texto generado</h2>
+            <label for="intro">Introducción</label><textarea id="intro">{{ report.narrative.intro }}</textarea>
+            <label for="insight">Lectura de la semana</label><textarea id="insight">{{ report.narrative.insight }}</textarea>
+            <label for="weekly_focus">Foco sugerido</label><textarea id="weekly_focus">{{ report.narrative.weekly_focus }}</textarea>
+            <label for="closing">Cierre</label><textarea id="closing">{{ report.narrative.closing }}</textarea>
+        </section>
+
+        <section class="panel">
+            <h2>Mensaje final</h2>
+            <pre>{{ report.message_original }}</pre>
+            {% if report.status == 'pending_approval' %}
+            <div class="actions">
+                <button class="primary" onclick="approve(false)">Aprobar y enviar</button>
+                <button class="secondary" onclick="approve(true)">Editar y enviar</button>
+                <button class="secondary" onclick="runAction('regenerate')">Regenerar narración</button>
+                <button class="danger" onclick="runAction('cancel')">Cancelar</button>
+            </div>
+            {% endif %}
+            <div id="notice" class="muted"></div>
+        </section>
+    </div>
+    <script>
+        const reportId = {{ report.report_id|tojson }};
+        const narrative = () => ({
+            intro: document.getElementById('intro').value,
+            insight: document.getElementById('insight').value,
+            weekly_focus: document.getElementById('weekly_focus').value,
+            closing: document.getElementById('closing').value
+        });
+        async function call(path, body={}) {
+            const notice = document.getElementById('notice');
+            notice.textContent = 'Procesando…';
+            const response = await fetch(`/api/captacion/weekly-report/${reportId}/${path}`, {
+                method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'No fue posible completar la acción');
+            notice.textContent = 'Acción completada.';
+            location.reload();
+        }
+        async function approve(edited) {
+            if (!confirm('Esta acción enviará el reporte al grupo configurado. ¿Continuar?')) return;
+            try { await call('approve-send', edited ? {narrative:narrative()} : {}); }
+            catch (error) { document.getElementById('notice').textContent = error.message; }
+        }
+        async function runAction(action) {
+            if (action === 'cancel' && !confirm('¿Cancelar este reporte sin enviarlo?')) return;
+            try { await call(action); }
+            catch (error) { document.getElementById('notice').textContent = error.message; }
+        }
+    </script>
+    {% endif %}
+</main>
+</body>
+</html>

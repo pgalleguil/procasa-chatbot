@@ -71,6 +71,15 @@ from chatbot.crm_permissions import (
     payload_attempts_reassignment,
 )
 from chatbot.crm_service import CrmService
+from chatbot.captacion_weekly_report import (
+    REPORT_COLLECTION as CAPTACION_WEEKLY_REPORT_COLLECTION,
+    approve_and_send_report,
+    cancel_report,
+    create_weekly_report,
+    record_delivery_status_webhook,
+    regenerate_report_narrative,
+    send_test_report,
+)
 
 # ========================= CONFIGURACIÓN =========================
 from config import Config
@@ -1175,6 +1184,12 @@ async def webhook(
         logger.info("TEST WEBHOOK EXITOSO")
         return JSONResponse({"ok": True}, status_code=200)
 
+    if data.get("event") == "messages.update":
+        updated = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, lambda: record_delivery_status_webhook(data)
+        )
+        return JSONResponse({"status": "delivery_updated" if updated else "delivery_not_tracked"}, status_code=200)
+
     # --- LOG AGRESIVO PARA DEBUG ---
     logger.info(f"Incoming Webhook Event: {data.get('event')} | Payload size: {len(raw_body)}")
     if "@g.us" in str(data):
@@ -1849,6 +1864,96 @@ async def _require_captacion_workforce_admin(request: Request):
     if str(user_doc.get("rol") or "").lower() not in CAPTACION_PRIVILEGED_ROLES:
         raise HTTPException(status_code=403, detail="Permiso administrativo requerido")
     return user_doc
+
+
+async def _require_captacion_report_admin(request: Request):
+    user_doc = await get_current_user_doc(request)
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="Sesión inválida")
+    if str(user_doc.get("rol") or "").lower() != "admin":
+        raise HTTPException(status_code=403, detail="Permiso de administrador requerido")
+    return user_doc
+
+
+@app.get("/captacion/reporte-semanal", response_class=HTMLResponse)
+async def view_captacion_weekly_report(request: Request, report_id: str = Query(None)):
+    await _require_captacion_report_admin(request)
+    from chatbot.storage import get_db
+
+    def load_report():
+        query = {"report_id": report_id} if report_id else {"is_test": False}
+        return get_db()[CAPTACION_WEEKLY_REPORT_COLLECTION].find_one(
+            query, {"_id": 0, "deepseek_payload": 0}, sort=[("created_at", -1)]
+        )
+
+    report = await asyncio.get_running_loop().run_in_executor(_WEB_THREAD_POOL, load_report)
+    return templates.TemplateResponse("captacion_weekly_report_preview.html", {
+        "request": request,
+        "report": report,
+        "group_recipient": (report or {}).get("group_recipient") or Config.DAILY_REPORT_GROUP_ID,
+    })
+
+
+@app.post("/api/captacion/weekly-report/test/generate")
+async def api_generate_captacion_weekly_test(request: Request):
+    user_doc = await _require_captacion_report_admin(request)
+    payload = await request.json()
+    try:
+        report = await create_weekly_report(
+            payload.get("period_start"), payload.get("period_end"), is_test=True,
+            created_by=user_doc.get("_id") or user_doc.get("username"),
+        )
+        return {"status": "ok", "report_id": report["report_id"], "snapshot_id": report["snapshot_id"]}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/captacion/weekly-report/{report_id}/test-send")
+async def api_send_captacion_weekly_test(request: Request, report_id: str):
+    await _require_captacion_report_admin(request)
+    payload = await request.json()
+    try:
+        delivery = await send_test_report(report_id, payload.get("recipient"))
+        return {"status": "ok", "delivery": delivery}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/captacion/weekly-report/{report_id}/approve-send")
+async def api_approve_captacion_weekly_report(request: Request, report_id: str):
+    user_doc = await _require_captacion_report_admin(request)
+    payload = await request.json()
+    try:
+        delivery = await approve_and_send_report(
+            report_id, user_doc, edited_narrative=payload.get("narrative")
+        )
+        return {"status": "ok", "delivery": delivery}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/captacion/weekly-report/{report_id}/regenerate")
+async def api_regenerate_captacion_weekly_report(request: Request, report_id: str):
+    user_doc = await _require_captacion_report_admin(request)
+    try:
+        report = await regenerate_report_narrative(report_id, user_doc)
+        return {"status": "ok", "report_id": report["report_id"]}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/captacion/weekly-report/{report_id}/cancel")
+async def api_cancel_captacion_weekly_report(request: Request, report_id: str):
+    user_doc = await _require_captacion_report_admin(request)
+    try:
+        report = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, lambda: cancel_report(report_id, user_doc)
+        )
+        return {"status": "ok", "report_id": report["report_id"], "report_status": report["status"]}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.post("/api/captacion/workforce/membership")
@@ -3102,8 +3207,9 @@ async def daily_report_loop():
             # Reporte 2: Resumen Matutino Personalizado (09:00 AM)
             await check_and_run_personalized_summary()
             
-            # Reporte 3: Meta Diaria de Captaciones (09:00 AM)
-            # await check_and_run_meta_diaria_report()  # DESACTIVADO A PETICIÓN DEL USUARIO
+            # Reporte 3: prepara el semanal de Captaciones (lunes 08:45).
+            # Nunca envía al grupo: queda permanentemente pending_approval.
+            await check_and_run_meta_diaria_report()
             # Monitoreo de anomalias (cada lunes a las 08:00)
             now = datetime.now(CHILE_TZ)
             if now.weekday() == 0 and now.hour == 8 and now.minute < 5:

@@ -23,6 +23,7 @@ from captacion_management import (
     ensure_management_indexes,
     normalize_result,
     normalize_started_action,
+    summarize_final_outcomes,
 )
 
 
@@ -153,11 +154,20 @@ def _iter_historical_activity_rows(db, start_local: datetime, end_local: datetim
             result_value = _clean(activity.get("result")).casefold()
             if result_value not in LEGACY_CONFIRMED_RESULTS:
                 continue
+            try:
+                result_value = normalize_result(result_value)
+            except ValueError:
+                continue
             yield {
                 "property_id": property_id,
                 "actor": activity.get("user"),
                 "actor_user_id": _clean(activity.get("user_id")),
                 "occurred_at": local,
+                "local_date": local.date().isoformat(),
+                "result": result_value,
+                "event_type": "management_confirmed",
+                "credited": True,
+                "commercially_valid": True,
                 "legacy_inferred": True,
             }
 
@@ -174,11 +184,24 @@ def get_captacion_management_rows(db, now=None) -> list[dict]:
     ledger_query = {
         "occurred_at": {"$gte": start_utc, "$lt": end_utc},
         "event_type": {"$in": list(VALID_CREDIT_EVENT_TYPES)},
-        "credited": True,
+        "$or": [{"credited": True}, {"commercially_valid": True}],
     }
     ledger = list(db[CAPTACION_GOAL_COLLECTION].find(
         ledger_query,
-        {"event_id": 1, "property_id": 1, "actor": 1, "actor_user_id": 1, "occurred_at": 1},
+        {
+            "event_id": 1,
+            "event_type": 1,
+            "property_id": 1,
+            "actor": 1,
+            "actor_user_id": 1,
+            "occurred_at": 1,
+            "local_date": 1,
+            "result": 1,
+            "credited": 1,
+            "commercially_valid": 1,
+            "contact_attempt": 1,
+            "contact_effective": 1,
+        },
     ))
     event_ids = [event.get("event_id") for event in ledger if event.get("event_id")]
     reversed_ids = {
@@ -197,6 +220,14 @@ def get_captacion_management_rows(db, now=None) -> list[dict]:
                 "actor": event.get("actor"),
                 "actor_user_id": _clean(event.get("actor_user_id")),
                 "occurred_at": _as_chile_datetime(event.get("occurred_at")),
+                "local_date": event.get("local_date") or _as_chile_datetime(event.get("occurred_at")).date().isoformat(),
+                "event_id": _clean(event.get("event_id")),
+                "event_type": event.get("event_type"),
+                "result": event.get("result"),
+                "credited": bool(event.get("credited")),
+                "commercially_valid": bool(event.get("commercially_valid", event.get("credited"))),
+                "contact_attempt": bool(event.get("contact_attempt")),
+                "contact_effective": bool(event.get("contact_effective")),
             }
         )
     cutover = date.fromisoformat(LEDGER_CUTOVER_DATE)
@@ -231,9 +262,9 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
             continue
         local = _as_chile_datetime(row.get("occurred_at"))
         dedup = f"{actor_key}:{property_id}:{local.date().isoformat()}"
-        if local.date() in weekdays:
+        if row.get("credited", True) and local.date() in weekdays:
             counts[actor_key][local.date()].add(dedup)
-        elif monday <= local.date() <= monday + timedelta(days=6):
+        elif row.get("credited", True) and monday <= local.date() <= monday + timedelta(days=6):
             weekend_activity[actor_key].add(dedup)
         if actor_key not in last_activity or local > last_activity[actor_key]:
             last_activity[actor_key] = local
@@ -326,9 +357,25 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
             "anomaly_count": int(member.get("anomaly_count") or 0),
         }
 
+    weekday_rows = [
+        row for row in rows
+        if monday <= _as_chile_datetime(row.get("occurred_at")).date() <= monday + timedelta(days=4)
+    ]
+    final_outcomes = summarize_final_outcomes(weekday_rows)
+
     if selected_key:
         metrics = member_metrics(selected_key, names[selected_key])
-        return {"mode": "individual", "timezone": "America/Santiago", **metrics}
+        identity_key = metrics.get("user_id") or selected_key
+        individual_rows = [
+            row for row in weekday_rows
+            if (_clean(row.get("actor_user_id")) or _name_key(row.get("actor"))) in {identity_key, selected_key}
+        ]
+        return {
+            "mode": "individual",
+            "timezone": "America/Santiago",
+            "final_outcomes": summarize_final_outcomes(individual_rows),
+            **metrics,
+        }
 
     team_rows = [member_metrics(key, display) for key, display in names.items()]
     team_rows.sort(key=lambda row: (row["met_today"], row["today_count"] == 0, row["today_count"], row["name"].casefold()))
@@ -352,6 +399,7 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
         "contact_attempts": sum(row["contact_attempts"] for row in team_rows),
         "effective_contacts": sum(row["effective_contacts"] for row in team_rows),
         "captures": sum(row["captures"] for row in team_rows),
+        "final_outcomes": final_outcomes,
         "anomaly_count": sum(row["anomaly_count"] for row in team_rows),
         "executives": team_rows,
     }
@@ -385,4 +433,13 @@ def get_captacion_goal_dashboard(db, selected_executive=None, now=None) -> dict:
         }
         member["anomaly_count"] = sum(1 for row in anomalies if row.get("actor_user_id") == member["id"])
     rows = get_captacion_management_rows(db, now=now)
-    return build_captacion_goal_dashboard(team, rows, selected_executive=selected_executive, now=now)
+    result = build_captacion_goal_dashboard(team, rows, selected_executive=selected_executive, now=now)
+    start_local = CAPTACION_TIMEZONE.localize(datetime.combine(monday, time.min))
+    end_local = start_local + timedelta(days=5)
+    result["history_event_count"] = db[CAPTACION_GOAL_COLLECTION].count_documents({
+        "occurred_at": {
+            "$gte": start_local.astimezone(timezone.utc),
+            "$lt": end_local.astimezone(timezone.utc),
+        }
+    })
+    return result

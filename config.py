@@ -22,6 +22,18 @@ class Config:
     WASENDER_WEBHOOK_SECRET = os.getenv("WASENDER_WEBHOOK_SECRET")
     WASENDER_BASE_URL = os.getenv("WASENDER_BASE_URL", "https://wasenderapi.com/api")
     DAILY_REPORT_GROUP_ID = os.getenv("DAILY_REPORT_GROUP_ID")
+    CAPTACION_WEEKLY_ADMIN_PHONE = os.getenv("CAPTACION_WEEKLY_ADMIN_PHONE", "+56983219804")
+    CAPTACION_WEEKLY_REPORT_COLLECTION = os.getenv(
+        "CAPTACION_WEEKLY_REPORT_COLLECTION", "captacion_weekly_reports"
+    )
+    CAPTACION_WEEKLY_DELIVERY_COLLECTION = os.getenv(
+        "CAPTACION_WEEKLY_DELIVERY_COLLECTION", "captacion_weekly_deliveries"
+    )
+    CAPTACION_WEEKLY_PREVIEW_REQUIRED = True
+    CAPTACION_WEEKLY_AUTOMATIC_SEND = False
+    CAPTACION_WEEKLY_SCHEDULE_HOUR = 8
+    CAPTACION_WEEKLY_SCHEDULE_MINUTE = 45
+    CAPTACION_WEEKLY_PROMPT_VERSION = "captacion_weekly_writer_v2"
     CRM_BASE_URL = os.getenv("CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")
 
 

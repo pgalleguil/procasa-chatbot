@@ -89,7 +89,9 @@ def test_valid_confirmation_credits_once_per_property_user_and_day():
     second = management.start_management_attempt(db, property_doc=_property(), actor_user=_user(), action="message", channel="wa", now=now)
     duplicate = management.confirm_management_attempt(db, attempt_id=second["attempt_id"], actor_user=_user(), result="message_sent", now=now)
     assert duplicate["credited"] is False
-    assert len(db[management.LEDGER_COLLECTION].rows) == 1
+    assert len(db[management.LEDGER_COLLECTION].rows) == 2
+    assert sum(bool(row.get("credited")) for row in db[management.LEDGER_COLLECTION].rows) == 1
+    assert db[management.LEDGER_COLLECTION].rows[1]["credit_duplicate"] is True
 
 
 def test_cancel_never_creates_ledger_event():
@@ -225,7 +227,8 @@ def test_ready_to_contact_credits_only_once_per_assignment_cycle():
         "credited": False,
         "reason": "assignment_cycle_decision_already_recorded",
     }
-    assert len(db[management.LEDGER_COLLECTION].rows) == 1
+    assert len(db[management.LEDGER_COLLECTION].rows) == 2
+    assert sum(bool(row.get("credited")) for row in db[management.LEDGER_COLLECTION].rows) == 1
 
 
 def test_new_assignment_cycle_allows_a_new_ready_to_contact_decision():
@@ -261,7 +264,8 @@ def test_second_action_same_day_does_not_duplicate_ready_to_contact_credit():
     )
     assert first["credited"] is True
     assert second["credited"] is False
-    assert len(db[management.LEDGER_COLLECTION].rows) == 1
+    assert len(db[management.LEDGER_COLLECTION].rows) == 2
+    assert sum(bool(row.get("credited")) for row in db[management.LEDGER_COLLECTION].rows) == 1
 
 
 def test_manual_decisions_keep_one_credit_per_property_user_and_day():
@@ -277,7 +281,8 @@ def test_manual_decisions_keep_one_credit_per_property_user_and_day():
     )
     assert first["credited"] is True
     assert second["credited"] is False
-    assert len(db[management.LEDGER_COLLECTION].rows) == 1
+    assert len(db[management.LEDGER_COLLECTION].rows) == 2
+    assert sum(bool(row.get("credited")) for row in db[management.LEDGER_COLLECTION].rows) == 1
 
 
 def test_reversal_appends_event_without_editing_original():

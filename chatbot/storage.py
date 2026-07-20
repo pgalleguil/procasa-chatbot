@@ -387,14 +387,14 @@ def save_pending_notification(lead_data: dict):
     if notification_key:
         collection = db[COLLECTION_PENDING_NOTIFICATIONS]
         existing = collection.find_one({
-            "status": "pending",
+            "status": {"$in": ["pending", "sent"]},
             "notification_key": notification_key,
         })
 
         # Compatibilidad con documentos pendientes creados antes de esta clave.
         if not existing and lead_phone:
             legacy_candidates = collection.find({
-                "status": "pending",
+                "status": {"$in": ["pending", "sent"]},
                 "$or": [
                     {"lead_data.lead_phone": lead_phone},
                     {"lead_data.phone": lead_phone},
@@ -405,6 +405,9 @@ def save_pending_notification(lead_data: dict):
                  if lead_notification_identity(candidate) == notification_key),
                 None,
             )
+
+        if existing and existing.get("status") == "sent":
+            return
 
         if existing:
             collection.update_one(
@@ -432,7 +435,79 @@ def save_pending_notification(lead_data: dict):
 
 def get_pending_notifications():
     db = get_db()
+    _reconcile_missing_hot_notifications(db)
     return list(db[COLLECTION_PENDING_NOTIFICATIONS].find({"status": "pending"}))
+
+
+_HOT_RECONCILIATION_LAST_RUN = None
+_HOT_RECONCILIATION_CUTOVER = "2026-07-20T00:00:00-04:00"
+
+
+def _reconcile_missing_hot_notifications(db):
+    """Recover post-cutover HOT assignments that never reached the durable queue.
+
+    Existing pending or sent notification identities are permanent evidence and
+    are never recreated. The scan is throttled and runs only when the normal
+    business-hours consumer asks for pending work.
+    """
+    global _HOT_RECONCILIATION_LAST_RUN
+    from datetime import timezone
+    from .crm_metrics import coerce_utc_datetime
+    from .notification_identity import lead_notification_identity
+
+    now = datetime.now(timezone.utc)
+    if _HOT_RECONCILIATION_LAST_RUN and (now - _HOT_RECONCILIATION_LAST_RUN).total_seconds() < 300:
+        return
+    _HOT_RECONCILIATION_LAST_RUN = now
+    cutover = coerce_utc_datetime(_HOT_RECONCILIATION_CUTOVER)
+    recovered = 0
+    closed = {"ARCHIVED", "REJECTED", "CLOSED_LOST", "CLOSED_WON"}
+
+    projection = {
+        "_id": 1, "phone": 1, "created_at": 1, "ejecutivo_asignado": 1,
+        "lead_temperature_effective": 1, "pipeline_stage": 1, "stage": 1,
+        "prospecto": 1, "last_message_preview": 1,
+    }
+    for lead in db["leads"].find({"lead_temperature_effective": "HOT"}, projection):
+        created_at = coerce_utc_datetime(lead.get("created_at"))
+        if not created_at or created_at < cutover:
+            continue
+        if str(lead.get("pipeline_stage") or lead.get("stage") or "").upper() in closed:
+            continue
+        executive = lead.get("ejecutivo_asignado")
+        if not executive:
+            continue
+        user = db["usuarios"].find_one({"nombre": executive, "is_active": True})
+        if not user:
+            continue
+        target_phone = user.get("telefono") or user.get("tel") or user.get("movil")
+        prospect = lead.get("prospecto") or {}
+        property_code = (
+            prospect.get("codigo") or prospect.get("codigo_interno")
+            or prospect.get("codigo_propiedad") or prospect.get("codigo_mercadolibre")
+        )
+        payload = {
+            "lead_id": str(lead["_id"]), "phone": lead.get("phone"),
+            "lead_phone": lead.get("phone"), "property_code": property_code,
+            "target_name": executive, "target_phone": str(target_phone or "").strip(),
+            "nombre": prospect.get("nombre"), "prospecto_nombre": prospect.get("nombre"),
+            "comuna": prospect.get("comuna"), "operacion": prospect.get("operacion"),
+            "canal": prospect.get("origen"), "source": prospect.get("origen"),
+            "last_message": prospect.get("ultimo_mensaje") or lead.get("last_message_preview"),
+            "lead_type": "CRMLead", "notification_type": "lead_assignment_reconciled",
+            "reconciled": True,
+        }
+        key = lead_notification_identity(payload)
+        if not key or not payload["target_phone"]:
+            continue
+        if db[COLLECTION_PENDING_NOTIFICATIONS].find_one({
+            "notification_key": key, "status": {"$in": ["pending", "sent"]}
+        }):
+            continue
+        save_pending_notification(payload)
+        recovered += 1
+    if recovered:
+        logger.warning("[NOTIFICATION_RECONCILIATION] Recuperados %s leads HOT sin cola", recovered)
 
 def mark_notification_sent(notification_id):
     db = get_db()

@@ -233,6 +233,8 @@ async def send_daily_sla_report(group_id: str):
         return False
 
 async def check_and_run_daily_report(force: bool = False):
+    if not Config.CRM_LEGACY_DAILY_REPORT_ENABLED:
+        return None
     """Lógica de scheduler que verifica si toca enviar el reporte hoy."""
     logger.info("[DAILY_REPORT] Scheduler desactivado temporalmente. No se enviará reporte al grupo.")
     return
@@ -347,6 +349,8 @@ async def send_personalized_morning_summary():
     return sent_count > 0
 
 async def check_and_run_personalized_summary(force: bool = False):
+    if not Config.CRM_LEGACY_DAILY_REPORT_ENABLED:
+        return None
     """Verifica si corresponde enviar el resumen matutino personalizado (09:00 AM)."""
     logger.info("[MORNING_SUMMARY] Envío al grupo desactivado temporalmente.")
     return

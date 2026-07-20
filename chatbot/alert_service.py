@@ -7,6 +7,7 @@ from .storage import obtener_prospecto, actualizar_prospecto, save_pending_notif
 from .lead_router import find_responsible_executive, should_send_now, format_whatsapp_template
 from .constants import CHILE_TZ
 from .notification_service import NotificationService
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,9 @@ def _send_alert_once_sync(
     window_minutes: int = 60, # MODIFICADO: 60 minutos para evitar duplicidad si el cliente sigue hablando
     lead_type_label: str | None = None
 ):
+    if not Config.LEAD_HOT_NOTIFICATIONS_ENABLED:
+        logger.info("[ALERT] delivery suppressed flag=LEAD_HOT_NOTIFICATIONS_ENABLED")
+        return
     """
     Gestiona el envío de la alerta (WhatsApp al ejecutivo) para evitar spam.
     window_minutes: Tiempo mínimo entre alertas del MISMO tipo.

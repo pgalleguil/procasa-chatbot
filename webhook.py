@@ -205,6 +205,17 @@ async def lifespan(app: FastAPI):
     _OAUTH_HTTP_CLIENT = httpx.AsyncClient(timeout=10.0)
 
     # Iniciar tareas de fondo
+    logger.info("[CRM_FLAGS] %s", {
+        "lead_hot_notifications": Config.LEAD_HOT_NOTIFICATIONS_ENABLED,
+        "lead_hot_reconciliation": Config.LEAD_HOT_RECONCILIATION_ENABLED,
+        "lead_cold_digest": Config.LEAD_COLD_DIGEST_ENABLED,
+        "sla_shadow": Config.CRM_SLA_SHADOW_ENABLED,
+        "sla_alerts": Config.CRM_SLA_ALERTS_ENABLED,
+        "weekly_generation": Config.CRM_WEEKLY_REPORT_GENERATION_ENABLED,
+        "weekly_send": Config.CRM_WEEKLY_REPORT_SEND_ENABLED,
+        "legacy_daily_report": Config.CRM_LEGACY_DAILY_REPORT_ENABLED,
+        "inactive_nudge": Config.CRM_INACTIVE_NUDGE_ENABLED,
+    })
 
     # Iniciar tareas de fondo
     n_task = asyncio.create_task(process_pending_leads_loop())
@@ -2764,6 +2775,10 @@ async def run_db(operation_name: str, fn, *args, **kwargs):
 async def inactive_lead_nudge_loop():
     logger.info("[NUDGE_LOOP] Iniciando monitor de reactivación (Nudge) de leads inactivos...")
     while True:
+        if not Config.CRM_INACTIVE_NUDGE_ENABLED:
+            background_tasks_status["nudge_loop"] = {"status": "disabled", "last_heartbeat": datetime.now(CHILE_TZ).isoformat()}
+            await asyncio.sleep(300)
+            continue
         try:
             background_tasks_status["nudge_loop"] = {"status": "running", "last_heartbeat": datetime.now(CHILE_TZ).isoformat()}
             

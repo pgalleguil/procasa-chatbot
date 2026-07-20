@@ -45,7 +45,15 @@ class Config:
     CRM_WEEKLY_AUTOMATIC_SEND = False
     CRM_WEEKLY_SCHEDULE_HOUR = 8
     CRM_WEEKLY_SCHEDULE_MINUTE = 15
+    LEAD_HOT_NOTIFICATIONS_ENABLED = os.getenv("LEAD_HOT_NOTIFICATIONS_ENABLED", "true").lower() == "true"
+    LEAD_HOT_RECONCILIATION_ENABLED = os.getenv("LEAD_HOT_RECONCILIATION_ENABLED", "false").lower() == "true"
+    LEAD_COLD_DIGEST_ENABLED = os.getenv("LEAD_COLD_DIGEST_ENABLED", "false").lower() == "true"
+    CRM_SLA_SHADOW_ENABLED = os.getenv("CRM_SLA_SHADOW_ENABLED", "false").lower() == "true"
     CRM_SLA_ALERTS_ENABLED = os.getenv("CRM_SLA_ALERTS_ENABLED", "false").lower() == "true"
+    CRM_WEEKLY_REPORT_GENERATION_ENABLED = os.getenv("CRM_WEEKLY_REPORT_GENERATION_ENABLED", "false").lower() == "true"
+    CRM_WEEKLY_REPORT_SEND_ENABLED = os.getenv("CRM_WEEKLY_REPORT_SEND_ENABLED", "false").lower() == "true"
+    CRM_LEGACY_DAILY_REPORT_ENABLED = os.getenv("CRM_LEGACY_DAILY_REPORT_ENABLED", "false").lower() == "true"
+    CRM_INACTIVE_NUDGE_ENABLED = os.getenv("CRM_INACTIVE_NUDGE_ENABLED", "false").lower() == "true"
     CRM_BASE_URL = os.getenv("CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")
 
 

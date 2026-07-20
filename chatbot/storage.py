@@ -451,6 +451,8 @@ def _reconcile_missing_hot_notifications(db):
     business-hours consumer asks for pending work.
     """
     global _HOT_RECONCILIATION_LAST_RUN
+    if not Config.LEAD_HOT_RECONCILIATION_ENABLED:
+        return
     from datetime import timezone
     from .crm_metrics import coerce_utc_datetime
     from .notification_identity import lead_notification_identity

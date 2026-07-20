@@ -241,6 +241,8 @@ def official_idempotency_key(report, group_id):
 
 
 async def approve_and_send(report_id, actor, final_text=None, db=None, sender=None):
+    if not Config.CRM_WEEKLY_REPORT_SEND_ENABLED:
+        raise ValueError("CRM weekly report sending is disabled")
     db = db or get_db(); ensure_indexes(db)
     report = await get_report(report_id, db)
     if report["status"] == "sent":
@@ -290,6 +292,8 @@ def previous_complete_week(now_local):
 
 
 async def scheduler_tick(now=None, db=None):
+    if not Config.CRM_WEEKLY_REPORT_GENERATION_ENABLED:
+        return None
     db = db or get_db(); now_local = (now or datetime.now(CHILE)).astimezone(CHILE)
     if now_local.weekday() != 0: return None
     scheduled = CHILE.localize(datetime.combine(now_local.date(), time(Config.CRM_WEEKLY_SCHEDULE_HOUR, Config.CRM_WEEKLY_SCHEDULE_MINUTE)))

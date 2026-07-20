@@ -205,6 +205,9 @@ def _enqueue_hot_lead_notification(lead):
     When that transition happens, notify the already assigned executive.
     """
     try:
+        if not Config.LEAD_HOT_NOTIFICATIONS_ENABLED:
+            logger.info("[HOT_LEAD] notification suppressed flag=LEAD_HOT_NOTIFICATIONS_ENABLED")
+            return
         from .constants import UNASSIGNED_LABEL
         from .lead_router import get_executive_phone
         from .storage import get_db, save_pending_notification

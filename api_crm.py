@@ -575,6 +575,11 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         "sin_asignar": get_facet_count("sin_asignar"),
         "sin_asignar_global": get_facet_count("sin_asignar_global"),
     }
+    from chatbot.crm_metrics import validate_list_parity
+    parity = validate_list_parity(kpis=kpi_counts, listed_total=total_count, state_filter=filtro_estado)
+    if not parity["validated"]:
+        logger.error("[CRM_PARITY] KPI/list mismatch: %s", parity)
+        raise RuntimeError(f"CRM KPI/list parity failed: {parity}")
     for state_key in state_kpi_conditions:
         kpi_counts[f"{state_key}_hot"] = get_facet_count(f"{state_key}_hot")
         kpi_counts[f"{state_key}_cold"] = get_facet_count(f"{state_key}_cold")
@@ -789,6 +794,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         else:
             sla_status = "fulfilled"
             
+        # One SLA definition for cards, list, detail and monitor.
+        from chatbot.crm_metrics import calculate_sla
+        canonical_sla = calculate_sla(
+            assigned_at=(lead.get("lifecycle", {}) or {}).get("assigned_at") or lead.get("fecha_asignacion"),
+            first_valid_management_at=(lead.get("lifecycle", {}) or {}).get("first_valid_management_at"),
+        )
+        if canonical_sla["status"] != "unknown":
+            sla_status = canonical_sla["status"]
+            sla_hours = (canonical_sla["minutes"] or 0) / 60.0
         sla_labels_map = {
             "critical": "Vencido",
             "near_critical": "Próximo a vencer",
@@ -1123,8 +1137,10 @@ def update_lead_crm_data(phone, data):
         "result": result,
         "notes": data.get("notas"),
         "action_label": data.get("action_label"),
-        "details_json": data.get("details_json", {})
-    })
+        "details_json": data.get("details_json", {}),
+        "meaningful_change": bool(result or data.get("notas") or next_date),
+    }, lead_id=current_lead["_id"], actor_type="human", result=result,
+       confirmed=bool(result))
     
     # NOTA: No actualizamos "crm_estado" manual en DB, update_stage ya lo hizo.
     # Solo actualizamos last_crm_update si no hubo cambio de estado (si hubo, update_stage lo hizo)

@@ -54,6 +54,9 @@ class CrmService:
             return False
 
         old_stage = lead.get("stage", PipelineStage.NEW)
+        if new_stage == PipelineStage.CONTACTED and str(notes or "").startswith("Auto-promocion por accion rapida"):
+            logger.info("[CRM_METRICS] Quick-app opening does not promote lead %s", lead.get("_id"))
+            return False
         
         # ============================================================================
         # ENTERPRISE VALIDATION RULES

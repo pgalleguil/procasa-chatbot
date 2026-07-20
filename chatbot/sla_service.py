@@ -6,6 +6,7 @@ from .constants import CHILE_TZ, PipelineStage, EventType
 from .notification_service import NotificationService
 from .lead_router import get_executive_phone, should_send_now
 from .utils import calculate_business_minutes
+from .crm_metrics import calculate_sla, coerce_utc_datetime, event_evidence, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -136,19 +137,20 @@ async def monitor_sla_thresholds():
             # 3. Filtrar eventos por fecha (Gestiones desde creación, Alertas desde asignación)
             phone_events = events_by_phone.get(phone_clean, [])
             current_events = []
-            has_management_ever = False
+            has_management_ever = bool(lead.get("lifecycle", {}).get("first_valid_management_at"))
 
             for e in phone_events:
                 e_ts = e.get("timestamp")
-                if isinstance(e_ts, str): e_ts = datetime.fromisoformat(e_ts.replace("Z", ""))
-                if e_ts.tzinfo is None: e_ts = CHILE_TZ.localize(e_ts)
+                e_ts = coerce_utc_datetime(e_ts)
+                if not e_ts:
+                    continue
                 
                 # ¿Es una gestión? (Buscamos desde creación)
-                if e.get("type") in management_types and e_ts >= (created_dt - timedelta(minutes=5)):
+                if event_evidence(e)["management"] and e_ts >= (created_dt - timedelta(minutes=5)).astimezone(e_ts.tzinfo):
                     has_management_ever = True
                 
                 # ¿Es un evento relevante para el flujo actual? (Desde asignación)
-                if e_ts >= (start_dt - timedelta(minutes=1)):
+                if e_ts >= (start_dt - timedelta(minutes=1)).astimezone(e_ts.tzinfo):
                     current_events.append(e)
 
             # 4. CRITERIO DE EXCLUSIÓN: Si ya tiene gestión (incluso pre-asignación), NO ALERTAR.
@@ -173,13 +175,11 @@ async def monitor_sla_thresholds():
 
             # diff = datetime.now(CHILE_TZ) - start_dt
             # minutes_diff = diff.total_seconds() / 60
-            minutes_diff = calculate_business_minutes(start_dt, datetime.now(CHILE_TZ))
-            
-            level = None
-            if minutes_diff >= 180:
-                level = "critical"
-            elif minutes_diff >= 150 and not has_orange_warning:
-                level = "near_critical"
+            sla = calculate_sla(assigned_at=start_dt, now=utc_now())
+            minutes_diff = sla["minutes"] or 0
+            level = sla["status"] if sla["status"] in {"critical", "near_critical"} else None
+            if level == "near_critical" and has_orange_warning:
+                level = None
 
             if level:
                 ejecutivo = lead.get("ejecutivo_asignado")

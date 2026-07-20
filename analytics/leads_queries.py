@@ -803,6 +803,314 @@ def _build_timeline(lead: dict) -> list:
     return timeline
 
 
+ADVANCED_STAGES = ["CONTACTED", "INTERESTED", "VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION", "CLOSED_WON", "CLOSED_LOST"]
+
+
+def query_funnel(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    executive: Optional[str] = None,
+) -> dict:
+    """Funnel de cohorte: leads recibidos en el periodo."""
+    from datetime import timezone as tz
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    user_filter = _build_user_filter(executive)
+
+    eff = _effective_stage_expr()
+    now_u = datetime.now(timezone.utc)
+
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": {"$expr": {"$and": [{"$gte": ["$_created_normalized", start_utc]}, {"$lt": ["$_created_normalized", end_utc]}]}, **({} if not user_filter else {"$and": [user_filter]} ) }},
+    ]
+
+    def cohort_count(extra_cond: Optional[dict] = None) -> int:
+        p = [
+            _normalized_created_at_stage(),
+            {"$match": {"$expr": {"$and": [{"$gte": ["$_created_normalized", start_utc]}, {"$lt": ["$_created_normalized", end_utc]}]}}},
+        ]
+        if user_filter:
+            p.append({"$match": user_filter})
+        if extra_cond:
+            p.append({"$match": extra_cond})
+        p.append({"$count": "c"})
+        r = list(db["leads"].aggregate(p))
+        return r[0]["c"] if r else 0
+
+    received = cohort_count()
+    assigned = cohort_count({"ejecutivo_asignado": {"$nin": UNASSIGNED_VALUES}})
+    advanced = cohort_count({"$expr": {"$in": [eff, ADVANCED_STAGES]}})
+    won = cohort_count({"$expr": {"$eq": [eff, "CLOSED_WON"]}})
+
+    funnel = [
+        {"stage": "received", "label": "Recibidos", "count": received, "pct_of_cohort": 100.0},
+        {"stage": "assigned", "label": "Asignados actualmente", "count": assigned, "pct_of_cohort": round(assigned / received * 100, 1) if received else 0},
+        {"stage": "advanced", "label": "Avanzados actualmente", "count": advanced, "pct_of_cohort": round(advanced / received * 100, 1) if received else 0},
+        {"stage": "won", "label": "Cerrados ganados actualmente", "count": won, "pct_of_cohort": round(won / received * 100, 1) if received else 0},
+    ]
+
+    return funnel
+
+
+def query_management_metrics(
+    executive: Optional[str] = None,
+) -> dict:
+    """Metricas de primera respuesta con cobertura."""
+    db = get_db()
+    user_filter = _build_user_filter(executive)
+    active = build_active_filter()
+
+    assigned_match = {"ejecutivo_asignado": {"$nin": UNASSIGNED_VALUES}}
+    fvma_match = {"lifecycle.first_valid_management_at": {"$ne": None, "$exists": True}}
+    assigned_at_match = {"lifecycle.assigned_at": {"$ne": None, "$exists": True}}
+    sla_statuses = [None, False]
+
+    total_assigned = db["leads"].count_documents({"$and": [active, user_filter, assigned_match]} if user_filter else {"$and": [active, assigned_match]}) if user_filter else db["leads"].count_documents({"$and": [active, assigned_match]})
+    total_with_both = db["leads"].count_documents({"$and": [active, user_filter, assigned_match, fvma_match, assigned_at_match]} if user_filter else {"$and": [active, assigned_match, fvma_match, assigned_at_match]})
+
+    coverage_pct = round(total_with_both / total_assigned * 100, 1) if total_assigned else 0
+    sample_sufficient = total_with_both >= 20 and coverage_pct >= 70.0
+
+    if not sample_sufficient:
+        return {
+            "total_assigned": total_assigned,
+            "total_with_evidence": total_with_both,
+            "coverage_pct": coverage_pct,
+            "sample_sufficient": False,
+            "median_minutes": None,
+            "p90_minutes": None,
+            "before_threshold_pct": None,
+            "distribution": [],
+            "threshold_minutes": 180,
+        }
+
+    minutes_pipeline = [
+        {"$match": {"$and": [active, assigned_match, fvma_match, assigned_at_match]}},
+        {"$addFields": {
+            "_assigned_dt": {"$convert": {"input": "$lifecycle.assigned_at", "to": "date", "onError": None, "onNull": None}},
+            "_mgmt_dt": {"$convert": {"input": "$lifecycle.first_valid_management_at", "to": "date", "onError": None, "onNull": None}},
+        }},
+        {"$match": {"$expr": {"$and": [{"$ne": ["$_assigned_dt", None]}, {"$ne": ["$_mgmt_dt", None]}]}}},
+        {"$addFields": {
+            "_business_minutes": {
+                "$function": {
+                    "body": "function(start,end){if(!start||!end)return null;let m=0;let d=new Date(start);const ed=new Date(end);while(d<=ed){const dw=d.getDay();if(dw!==5&&dw!==6){const bs=new Date(d);bs.setHours(9,0,0,0);const be=new Date(d);be.setHours(19,0,0,0);const ps=new Date(Math.max(d.getTime(),bs.getTime()));const pe=new Date(Math.min(ed.getTime(),be.getTime()));if(ps<pe)m+=(pe-ps)/60000;}d.setDate(d.getDate()+1);d.setHours(0,0,0,0);}return m;}",
+                    "args": ["$_assigned_dt", "$_mgmt_dt"],
+                    "lang": "js",
+                }
+            }
+        }},
+        {"$group": {
+            "_id": None,
+            "minutes": {"$push": "$_business_minutes"},
+            "before_threshold": {"$sum": {"$cond": [{"$lt": ["$_business_minutes", 180]}, 1, 0]}},
+            "total": {"$sum": 1},
+        }},
+    ]
+    raw = list(db["leads"].aggregate(minutes_pipeline))
+    if not raw:
+        return {"total_assigned": total_assigned, "total_with_evidence": total_with_both, "coverage_pct": coverage_pct, "sample_sufficient": False, "median_minutes": None, "p90_minutes": None, "before_threshold_pct": None, "distribution": [], "threshold_minutes": 180}
+
+    r = raw[0]
+    mins = sorted(r.get("minutes", []))
+    before_threshold_pct = round(r.get("before_threshold", 0) / r.get("total", 1) * 100, 1)
+
+    def percentile(sorted_list, p):
+        if not sorted_list:
+            return None
+        k = (len(sorted_list) - 1) * p / 100
+        f = int(k)
+        c = f + 1
+        if c >= len(sorted_list):
+            return sorted_list[f]
+        return sorted_list[f] + (k - f) * (sorted_list[c] - sorted_list[f])
+
+    dist = [
+        {"tramo": "<30 min", "count": sum(1 for m in mins if m is not None and m < 30)},
+        {"tramo": "30-60 min", "count": sum(1 for m in mins if m is not None and 30 <= m < 60)},
+        {"tramo": "1-3 h", "count": sum(1 for m in mins if m is not None and 60 <= m < 180)},
+        {"tramo": ">3 h", "count": sum(1 for m in mins if m is not None and m >= 180)},
+    ]
+
+    return {
+        "total_assigned": total_assigned,
+        "total_with_evidence": total_with_both,
+        "coverage_pct": coverage_pct,
+        "sample_sufficient": True,
+        "median_minutes": round(percentile(mins, 50), 1) if mins else None,
+        "p90_minutes": round(percentile(mins, 90), 1) if mins else None,
+        "before_threshold_pct": before_threshold_pct,
+        "distribution": dist,
+        "threshold_minutes": 180,
+    }
+
+
+def query_property_ranking(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    executive: Optional[str] = None,
+) -> dict:
+    """Top 10 codigos de propiedad con mayor cantidad de leads en el periodo."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    user_filter = _build_user_filter(executive)
+
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": {"$expr": {"$and": [{"$gte": ["$_created_normalized", start_utc]}, {"$lt": ["$_created_normalized", end_utc]}]}}},
+        *([{"$match": user_filter}] if user_filter else []),
+        {"$addFields": {
+            "_code": {"$ifNull": ["$prospecto.codigo", None]},
+            "_is_hot": {"$cond": [{"$eq": ["$lead_temperature_effective", "HOT"]}, 1, 0]},
+            "_is_assigned": {"$cond": [{"$not": [{"$in": ["$ejecutivo_asignado", UNASSIGNED_VALUES]}]}, 1, 0]},
+            "_is_advanced": {"$cond": [{"$in": [{"$ifNull": ["$pipeline_stage", ""]}, ADVANCED_STAGES]}, 1, 0]},
+        }},
+        {"$group": {
+            "_id": "$_code",
+            "count": {"$sum": 1},
+            "hot": {"$sum": "$_is_hot"},
+            "assigned": {"$sum": "$_is_assigned"},
+            "advanced": {"$sum": "$_is_advanced"},
+            "sources": {"$addToSet": "$prospecto.origen"},
+        }},
+        {"$sort": {"count": -1}},
+        {"$limit": 11},
+    ]
+
+    raw = list(db["leads"].aggregate(pipeline))
+    ranking = []
+    no_code_count = 0
+
+    for r in raw:
+        code = r["_id"]
+        if not code or str(code).strip() == "":
+            no_code_count = r["count"]
+            continue
+        total = r["count"]
+        srcs = [s for s in r.get("sources", []) if s]
+        dominant = max(srcs, key=lambda x: str(x) if x else "") if srcs else "S/I"
+        ranking.append({
+            "code": code,
+            "count": total,
+            "hot_pct": round(r["hot"] / total * 100, 1) if total else 0,
+            "assigned_pct": round(r["assigned"] / total * 100, 1) if total else 0,
+            "advanced_pct": round(r["advanced"] / total * 100, 1) if total else 0,
+            "dominant_source": dominant,
+        })
+
+    return {"ranking": ranking[:10], "no_code_count": no_code_count}
+
+
+def query_executive_load_detail(
+    executive: Optional[str] = None,
+) -> list:
+    """Carga actual por ejecutivo con metricas detalladas."""
+    db = get_db()
+    active = build_active_filter()
+    user_filter = _build_user_filter(executive)
+    match = {"$and": [active, user_filter]} if user_filter else active
+    now_u = datetime.now(timezone.utc)
+
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": match},
+        {"$addFields": {
+            "_ex": {"$ifNull": ["$ejecutivo_asignado", "Sin Asignar"]},
+            "_eff": _effective_stage_expr(),
+            "_is_hot": {"$cond": [{"$eq": ["$lead_temperature_effective", "HOT"]}, 1, 0]},
+            "_is_pending": {"$cond": [{"$in": ["$_eff", ["NEW", None, ""]]}, 1, 0]},
+            "_is_critical": {"$cond": [{"$eq": [{"$ifNull": ["$priority_bucket", ""]}, "CRITICAL"]}, 1, 0]},
+            "_age_days": {"$dateDiff": {"startDate": "$_created_normalized", "endDate": now_u, "unit": "day"}},
+        }},
+        {"$group": {
+            "_id": "$_ex",
+            "active": {"$sum": 1},
+            "hot": {"$sum": "$_is_hot"},
+            "pending_7d": {"$sum": {"$cond": [{"$and": [{"$eq": ["$_is_pending", 1]}, {"$gte": ["$_age_days", 7]}]}, 1, 0]}},
+            "critical": {"$sum": "$_is_critical"},
+            "ages": {"$push": "$_age_days"},
+        }},
+        {"$sort": {"active": -1}},
+    ]
+
+    rows = list(db["leads"].aggregate(pipeline))
+    result = []
+    for r in rows:
+        if r["_id"] in UNASSIGNED_VALUES:
+            continue
+        ages = sorted([a for a in r.get("ages", []) if a is not None])
+        median = ages[len(ages) // 2] if ages else 0
+        result.append({
+            "executive": r["_id"],
+            "active": r["active"],
+            "hot": r["hot"],
+            "pending_gt_7d": r["pending_7d"],
+            "critical": r["critical"],
+            "median_age_days": median,
+        })
+    return result
+
+
+def query_source_performance(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    executive: Optional[str] = None,
+) -> list:
+    """Rendimiento de fuentes en el periodo: volumen, %hot, %asignados, %avanzados, variacion."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    prev_end = start_utc
+    prev_start = prev_end - (end_utc - start_utc)
+    user_filter = _build_user_filter(executive)
+
+    eff = _effective_stage_expr()
+
+    def _per_source(start_dt, end_dt):
+        pipeline = [
+            _normalized_created_at_stage(),
+            {"$match": {"$expr": {"$and": [{"$gte": ["$_created_normalized", start_dt]}, {"$lt": ["$_created_normalized", end_dt]}]}}},
+            *([{"$match": user_filter}] if user_filter else []),
+            {"$addFields": {
+                "_src": {"$ifNull": ["$prospecto.origen", "Sin informacion"]},
+                "_is_hot": {"$cond": [{"$eq": ["$lead_temperature_effective", "HOT"]}, 1, 0]},
+                "_is_assigned": {"$cond": [{"$not": [{"$in": ["$ejecutivo_asignado", UNASSIGNED_VALUES]}]}, 1, 0]},
+                "_is_advanced": {"$cond": [{"$in": [{"$ifNull": ["$pipeline_stage", ""]}, ADVANCED_STAGES]}, 1, 0]},
+            }},
+            {"$group": {
+                "_id": "$_src",
+                "received": {"$sum": 1},
+                "hot": {"$sum": "$_is_hot"},
+                "assigned": {"$sum": "$_is_assigned"},
+                "advanced": {"$sum": "$_is_advanced"},
+            }},
+        ]
+        return list(db["leads"].aggregate(pipeline))
+
+    current_rows = {r["_id"]: r for r in _per_source(start_utc, end_utc)}
+    previous_rows = {r["_id"]: r for r in _per_source(prev_start, prev_end)}
+
+    total_cur = sum(r["received"] for r in current_rows.values())
+    total_prev = sum(r["received"] for r in previous_rows.values())
+
+    result = []
+    for src_id, cur in sorted(current_rows.items(), key=lambda kv: kv[1]["received"], reverse=True):
+        prev = previous_rows.get(src_id, {})
+        prev_recv = prev.get("received", 0)
+        var_pct = round((cur["received"] - prev_recv) / prev_recv * 100, 1) if prev_recv else None
+        result.append({
+            "source": src_id,
+            "received": cur["received"],
+            "pct_of_total": round(cur["received"] / total_cur * 100, 1) if total_cur else 0,
+            "hot_pct": round(cur["hot"] / cur["received"] * 100, 1) if cur["received"] else 0,
+            "assigned_pct": round(cur["assigned"] / cur["received"] * 100, 1) if cur["received"] else 0,
+            "advanced_pct": round(cur["advanced"] / cur["received"] * 100, 1) if cur["received"] else 0,
+            "variation_pct": var_pct,
+        })
+
+    return result
+
+
 def _safe_timestamp(value: Any) -> str:
     """Convierte cualquier valor a string ISO."""
     if isinstance(value, datetime):

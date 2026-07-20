@@ -1,114 +1,77 @@
-<!DOCTYPE html>
-<html lang="es" data-theme="dark">
-<head>
-    <meta charset="UTF-8">
-    <title>Procasa | Dashboard Leads</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
-    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <link rel="stylesheet" href="/static/css/analytics-dashboard.css">
-</head>
-<body>
-    <nav class="sidebar" id="sidebar">
-        <div class="brand">
-            <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
-                style="width:80px;height:50px;flex-shrink:0;object-fit:contain;object-position:center;padding:0 12px"
-                onerror="this.style.display='none'"> <span>MENU</span>
-        </div>
-        <div class="sidebar-main-nav">
-            <a href="/analytics/leads" class="nav-link active"><i class="fa-solid fa-chart-line"></i><span>Dashboard Leads</span></a>
-            {% if user_role in ['supervisor', 'admin'] %}
-            <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i><span>Dashboard</span></a>
-            <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i><span>Ingreso Manual</span></a>
-            {% endif %}
-            <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i><span>Listado Leads</span></a>
-            <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i><span>Captaciones</span></a>
-            <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i><span>Convenios</span></a>
-            <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i><span>Ordenes de Visita</span></a>
-        </div>
-        <div class="sidebar-footer">
-            <a href="#" class="nav-link theme-toggle" onclick="toggleTheme();return false">
-                <i class="fa-solid fa-sun" id="themeIcon"></i><span>Tema</span>
-            </a>
-            <a href="/logout" class="nav-link logout"><i class="fa-solid fa-power-off"></i><span>Cerrar Sesion</span></a>
-        </div>
-    </nav>
-    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()" style="display:none;position:fixed;inset:0;z-index:1040;background:rgba(0,0,0,0.4)"></div>
-    <button class="hamburger-mobile" onclick="toggleMobileMenu()"><i class="fa-solid fa-bars"></i></button>
+<!DOCTYPE html><html lang="es" data-theme="dark"><head>
+<meta charset="UTF-8"><title>Procasa | Dashboard Leads</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" config="{displayModeBar:false}"></script>
+<link rel="stylesheet" href="/static/css/analytics-dashboard.css">
+</head><body>
+<nav class="sidebar" id="sidebar">
+<div class="brand"><img src="/static/logo.png?v=1.0.1" alt="PROCASA" style="width:80px;height:50px;flex-shrink:0;object-fit:contain;object-position:center;padding:0 12px" onerror="this.style.display='none'"> <span>MENU</span></div>
+<div class="sidebar-main-nav">
+<a href="/analytics/leads" class="nav-link active"><i class="fa-solid fa-chart-line"></i><span>Dashboard Leads</span></a>
+{% if user_role in ['supervisor','admin'] %}<a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i><span>Dashboard</span></a><a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i><span>Ingreso Manual</span></a>{% endif %}
+<a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i><span>Listado Leads</span></a>
+<a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i><span>Captaciones</span></a>
+<a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i><span>Convenios</span></a>
+<a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i><span>Ordenes de Visita</span></a>
+</div>
+<div class="sidebar-footer">
+<a href="#" class="nav-link theme-toggle" onclick="toggleTheme();return false"><i class="fa-solid fa-sun" id="themeIcon"></i><span>Tema</span></a>
+<a href="/logout" class="nav-link logout"><i class="fa-solid fa-power-off"></i><span>Cerrar Sesion</span></a>
+</div>
+</nav>
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()" style="display:none"></div>
+<button class="hamburger-mobile" onclick="toggleMobileMenu()"><i class="fa-solid fa-bars"></i></button>
 
-    <div class="main-content">
-        <div class="dash-header">
-            <div class="dash-title-group">
-                <h1>Gestion de Leads</h1>
-                <p class="dash-sub">Resumen comercial de la cartera</p>
-            </div>
-            <div class="dash-controls">
-                <div class="quality-btn" id="qualityBtn" onclick="toggleQual()">
-                    <i class="fa-solid fa-database"></i><span id="qualityPct">--</span>
-                    <div class="quality-popover" id="qualityPop"></div>
-                </div>
-                <input type="text" id="dateRange" class="date-input" placeholder="Periodo">
-                <select id="filterExecutive" class="select-sm" onchange="load()"><option value="">Ejecutivo</option></select>
-                <button class="btn-clear-link" id="btnClear" onclick="clearAll()" style="display:none"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-        </div>
+<div class="main-content">
+<div class="dash-header">
+<div><h1>Gestion de Leads</h1><p class="dash-sub">Vision ejecutiva de volumen, distribucion, prioridad y avance comercial</p></div>
+<div class="dash-controls">
+<div class="quality-btn" id="qualityBtn" onclick="toggleQual()"><i class="fa-solid fa-database"></i><span id="qualityPct">--</span><div class="quality-pop" id="qualityPop"></div></div>
+<input type="text" id="dateRange" class="date-input" placeholder="Periodo">
+<select id="filterExecutive" class="select-sm" onchange="load()"><option value="">Ejecutivo</option></select>
+<button class="btn-more" onclick="toggleMore()"><i class="fa-solid fa-sliders"></i> Mas filtros</button>
+<button class="btn-clear" id="btnClear" onclick="clearAll()" style="display:none"><i class="fa-solid fa-xmark"></i></button>
+</div></div>
+<div class="extra-filters" id="extraFilters">
+<select id="filterSource" class="select-sm" onchange="load()"><option value="">Origen</option></select>
+<select id="filterOperation" class="select-sm" onchange="load()"><option value="">Operacion</option></select>
+<select id="filterType" class="select-sm" onchange="load()"><option value="">Tipo</option></select>
+<select id="filterCommune" class="select-sm" onchange="load()"><option value="">Comuna</option></select>
+<select id="filterTemp" class="select-sm" onchange="load()"><option value="">Temperatura</option><option value="HOT">Hot</option><option value="COLD">Cold</option></select>
+<select id="filterStage" class="select-sm" onchange="load()"><option value="">Etapa</option></select>
+</div>
 
-        <div class="summary-text" id="summaryText">Cargando...</div>
+<div class="summary-text" id="summaryText">Cargando...</div>
 
-        <div class="kpi-grid" id="kpiGrid">
-            <div class="kpi"><div class="kpi-scope">Periodo</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Recibidos</div><div class="kpi-var"></div></div>
-            <div class="kpi"><div class="kpi-scope">Actual</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Activos</div></div>
-            <div class="kpi"><div class="kpi-scope">Actual</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Hot</div><div class="kpi-pct"></div></div>
-            <div class="kpi"><div class="kpi-scope">Actual</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Sin asignar</div><div class="kpi-pct"></div></div>
-            <div class="kpi"><div class="kpi-scope">Mediana</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Antig. Activos</div></div>
-        </div>
+<div class="kpi-grid" id="kpiGrid">
+<div class="kpi" id="kpi0"><div class="kpi-scope">Periodo</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Ingresados</div><div class="kpi-sub"></div></div>
+<div class="kpi" id="kpi1"><div class="kpi-scope">Actual</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Activos</div></div>
+<div class="kpi" id="kpi2"><div class="kpi-scope">Actual</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Temperatura</div></div>
+<div class="kpi" id="kpi3"><div class="kpi-scope">Actual</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Distribucion</div></div>
+<div class="kpi" id="kpi4"><div class="kpi-scope">Actual</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Pendientes >7d</div><div class="kpi-sub"></div></div>
+<div class="kpi" id="kpi5"><div class="kpi-scope">Respuesta</div><div class="kpi-val skel">--</div><div class="kpi-lbl">Gestion</div><div class="kpi-sub"></div></div>
+</div>
 
-        <div class="row-2col">
-            <div class="card-dash card-wide">
-                <h6>Entrada de leads</h6>
-                <p class="card-sub" id="trendSub"></p>
-                <div id="chartTrends" style="height:260px"></div>
-            </div>
-            <div class="card-dash card-prio">
-                <h6>Prioridades de hoy</h6>
-                <div id="prioritiesList" class="prio-list"></div>
-            </div>
-        </div>
+<div class="row-2col"><div class="card card-8"><h6>Entrada de leads</h6><p class="card-sub" id="trendSub"></p><div id="chartTrends" style="height:240px"></div></div>
+<div class="card card-4"><h6>Prioridades de hoy</h6><div id="prioritiesList"></div></div></div>
 
-        <div class="row-2col">
-            <div class="card-dash">
-                <h6>Calidad por origen</h6>
-                <div id="sourceQuality"></div>
-            </div>
-            <div class="card-dash">
-                <h6>Carga por ejecutivo</h6>
-                <div id="execLoad"></div>
-            </div>
-        </div>
+<div class="row-2col"><div class="card card-7"><h6>Avance actual de los leads recibidos</h6><p class="card-sub">Estado actual de la cohorte del periodo seleccionado</p><div id="funnelContainer"></div></div>
+<div class="card card-5"><h6>Gestion y tiempos</h6><div id="managementContainer"></div></div></div>
 
-        <div class="row-2col">
-            <div class="card-dash">
-                <h6>Estado de la cartera</h6>
-                <div id="carteraState"></div>
-            </div>
-            <div class="card-dash">
-                <div class="tabs" style="margin-bottom:10px">
-                    <button class="tab-btn active" onclick="switchTab('operacion')">Operacion</button>
-                    <button class="tab-btn" onclick="switchTab('tipo')">Tipo</button>
-                    <button class="tab-btn" onclick="switchTab('comuna')">Comuna</button>
-                </div>
-                <div id="chartDemand" style="height:220px"></div>
-            </div>
-        </div>
-    </div>
+<div class="row-2col"><div class="card card-6"><h6>Carga actual por ejecutivo</h6><div class="sort-opt"><span>Ordenar:</span><a href="#" onclick="sortExec('active');return false" id="sort-active" class="sort-active">Activos</a><a href="#" onclick="sortExec('hot');return false" id="sort-hot">Hot</a><a href="#" onclick="sortExec('pending_gt_7d');return false" id="sort-pending">Pendientes</a><a href="#" onclick="sortExec('median_age_days');return false" id="sort-age">Antiguedad</a></div><div id="execContainer"></div></div>
+<div class="card card-6"><h6>Rendimiento de fuentes</h6><div id="sourceContainer"></div></div></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="/static/js/leads-dashboard.js"></script>
-</body>
-</html>
+<div class="row-2col"><div class="card card-6"><h6>Propiedades con mayor interes</h6><div id="propContainer"></div></div>
+<div class="card card-6"><h6>Perfil de demanda</h6><div class="tabs"><button class="tab-btn active" onclick="switchTab('operacion')">Operacion</button><button class="tab-btn" onclick="switchTab('tipo')">Tipo</button><button class="tab-btn" onclick="switchTab('comuna')">Comuna</button></div><div id="chartDemand" style="height:220px"></div></div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/static/js/leads-dashboard.js"></script>
+</body></html>

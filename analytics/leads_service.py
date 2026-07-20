@@ -16,6 +16,11 @@ from .leads_queries import (
     query_source_quality,
     query_priorities,
     query_comparative_trends,
+    query_funnel,
+    query_management_metrics,
+    query_property_ranking,
+    query_executive_load_detail,
+    query_source_performance,
 )
 
 L1_CACHE: dict[str, tuple[float, dict]] = {}
@@ -237,18 +242,31 @@ def get_dashboard(
     comparative = query_comparative_trends(
         period_start=period_start, period_end=period_end,
     )
+    funnel_data = query_funnel(
+        period_start=period_start, period_end=period_end,
+        executive=exec_filter if exec_filter else None,
+    )
+    management = query_management_metrics(
+        executive=exec_filter if exec_filter else None,
+    )
     priorities = query_priorities(
         executive=exec_filter if exec_filter else None,
     )
-    exec_load = query_executive_load(
+    exec_load = query_executive_load_detail(
         executive=exec_filter if exec_filter else None,
     )
-    source_qual = query_source_quality(
+    source_perf = query_source_performance(
+        period_start=period_start, period_end=period_end,
+        executive=exec_filter if exec_filter else None,
+    )
+    prop_ranking = query_property_ranking(
+        period_start=period_start, period_end=period_end,
         executive=exec_filter if exec_filter else None,
     )
     distributions = query_distributions(
+        period_start=period_start, period_end=period_end,
         executive=exec_filter if exec_filter else None,
-        universe="current_active",
+        universe="received_in_period",
     )
     coverage = query_field_coverage(
         executive=exec_filter if exec_filter else None,
@@ -257,53 +275,90 @@ def get_dashboard(
 
     stock = summary.get("stock", {})
     flow = summary.get("flow", {})
-
     total_active = stock.get("total_active", 0)
     hot = stock.get("hot", 0)
     cold = stock.get("cold", 0)
     assigned = stock.get("assigned", 0)
     unassigned = stock.get("unassigned", 0)
     received = flow.get("received_in_period", 0)
+    closed_won = summary.get("closed_won_current", 0)
 
     prev_total = comparative.get("previous", {}).get("total", 0)
-    var_pct = comparative.get("variation_pct", 0)
-    var_sign = "mas" if var_pct > 0 else "menos"
+    var_pct = round(((received - prev_total) / prev_total * 100), 1) if prev_total else None
+    var_label = f"un {abs(var_pct)}% {'mas' if var_pct and var_pct > 0 else 'menos'} que el periodo anterior" if var_pct is not None else "sin datos del periodo anterior"
 
-    ages = []
-    for item in exec_load.get("executives", []):
-        a = item.get("median_age_days", 0)
-        if a:
-            ages.append(a)
-    median_age = round(sum(ages) / len(ages)) if ages else 0
+    tem_desktop = hot + cold
+    unknown_temp = total_active - tem_desktop
+    pending_7d = sum(e.get("pending_gt_7d", 0) for e in exec_load)
+
+    summary_text = (
+        f"En el periodo ingresaron {received} leads, {var_label}. "
+        f"Actualmente existen {hot} Hot, {cold} Cold y {unassigned} leads sin ejecutivo asignado."
+    )
+    if pending_7d > 0:
+        summary_text += f" {pending_7d} leads permanecen en NEW o sin etapa por mas de siete dias."
+
+    mgmt_coverage_text = "La medicion de primera respuesta no tiene cobertura suficiente."
+    if management.get("total_assigned", 0) > 0:
+        mgmt_coverage_text += f" {management.get('total_with_evidence', 0)} de {management.get('total_assigned', 0)} leads asignados contienen timestamps verificables."
 
     result = {
         "meta": {
             "period": {"start": period_start, "end": period_end, "timezone": "America/Santiago"},
+            "previous_period": {"start": None, "end": None},
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "cache_ttl_seconds": CACHE_TTL,
+            "snapshot_scope": "current",
+            "period_scope": "created_at_flow",
         },
+        "summary": {"text": summary_text, "mgmt_coverage_text": mgmt_coverage_text},
         "kpis": {
-            "received": {"value": received, "variation_pct": var_pct, "variation_label": f"{abs(var_pct)}% {var_sign} que el periodo anterior"},
-            "active": {"value": total_active, "scope": "actual"},
-            "hot": {"value": hot, "pct": round(hot / total_active * 100, 1) if total_active else 0},
-            "unassigned": {"value": unassigned, "pct": round(unassigned / total_active * 100, 1) if total_active else 0},
-            "aging": {"value": median_age, "scope": "mediana activos"},
+            "received": {
+                "value": received, "previous_value": prev_total,
+                "variation_pct": var_pct,
+                "variation_label": f"{abs(var_pct)}% {'mas' if var_pct and var_pct > 0 else 'menos'}" if var_pct is not None else None,
+                "daily_trend": comparative.get("current", {}).get("daily", []),
+                "previous_daily": comparative.get("previous", {}).get("daily", []),
+            },
+            "active": {"value": total_active},
+            "temperature": {
+                "hot": hot, "cold": cold, "unknown": unknown_temp,
+                "hot_pct": round(hot / tem_desktop * 100, 1) if tem_desktop else 0,
+                "cold_pct": round(cold / tem_desktop * 100, 1) if tem_desktop else 0,
+            },
+            "distribution": {
+                "assigned": assigned, "unassigned": unassigned,
+                "assigned_pct": round(assigned / total_active * 100, 1) if total_active else 0,
+                "unassigned_pct": round(unassigned / total_active * 100, 1) if total_active else 0,
+            },
+            "pending_attention": {
+                "value": pending_7d,
+                "pct_of_active": round(pending_7d / total_active * 100, 1) if total_active else 0,
+            },
+            "management": {
+                "total_assigned": management.get("total_assigned", 0),
+                "total_with_evidence": management.get("total_with_evidence", 0),
+                "coverage_pct": management.get("coverage_pct", 0),
+                "sample_sufficient": management.get("sample_sufficient", False),
+                "median_minutes": management.get("median_minutes"),
+                "p90_minutes": management.get("p90_minutes"),
+                "before_threshold_pct": management.get("before_threshold_pct"),
+                "distribution": management.get("distribution", []),
+                "threshold_minutes": management.get("threshold_minutes", 180),
+            },
         },
-        "summary_text": (
-            f"En el periodo ingresaron {received} leads, "
-            f"un {abs(var_pct)}% {var_sign} que en el periodo anterior. "
-            f"Actualmente hay {unassigned} sin asignar y {hot} clasificados como Hot. "
-            f"La mediana de antiguedad de la cartera activa es de {median_age} dias."
-        ),
-        "comparative_trends": comparative,
+        "trends": comparative,
         "priorities": priorities,
+        "funnel": funnel_data,
         "executive_load": exec_load,
-        "source_quality": source_qual,
-        "by_stage": summary.get("by_stage", []),
-        "closed_won_current": summary.get("closed_won_current", 0),
-        "distributions": distributions,
-        "coverage": coverage,
-        "quality": summary.get("quality", {}),
+        "source_performance": source_perf,
+        "property_ranking": prop_ranking.get("ranking", []),
+        "no_code_count": prop_ranking.get("no_code_count", 0),
+        "demand": {
+            "operations": distributions.get("operations", []),
+            "types": distributions.get("types", []),
+            "communes": distributions.get("communes", []),
+        },
+        "coverage": {"fields": {k: v for k, v in coverage.items()}},
     }
     _cache_set(key, result)
     return result

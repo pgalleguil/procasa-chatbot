@@ -44,6 +44,7 @@ class Config:
     CRM_WEEKLY_AUTOMATIC_SEND = False
     CRM_WEEKLY_SCHEDULE_HOUR = 8
     CRM_WEEKLY_SCHEDULE_MINUTE = 15
+    CRM_SLA_ALERTS_ENABLED = os.getenv("CRM_SLA_ALERTS_ENABLED", "false").lower() == "true"
     CRM_BASE_URL = os.getenv("CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")
 
 

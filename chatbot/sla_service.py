@@ -7,6 +7,7 @@ from .notification_service import NotificationService
 from .lead_router import get_executive_phone, should_send_now
 from .utils import calculate_business_minutes
 from .crm_metrics import calculate_sla, coerce_utc_datetime, event_evidence, utc_now
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,9 @@ async def monitor_sla_thresholds():
     (estado Naranja: >= 150 minutos desde la asignación sin gestión).
     Usa la colección 'crm_sla_warnings' para evitar duplicados.
     """
+    if not Config.CRM_SLA_ALERTS_ENABLED:
+        logger.info("[SLA_MONITOR] Alertas a ejecutivos desactivadas por configuracion.")
+        return
     if not should_send_now():
         logger.debug("[SLA_MONITOR] Fuera de horario comercial. Saltando revisión.")
         return

@@ -68,6 +68,7 @@ def test_async_sla_monitor_uses_shared_definition_and_deduplicated_notification(
     )
     send = AsyncMock(return_value=True)
     with patch("chatbot.sla_service.get_async_db", return_value=db), \
+         patch("chatbot.sla_service.Config.CRM_SLA_ALERTS_ENABLED", True), \
          patch("chatbot.sla_service.should_send_now", return_value=True), \
          patch("chatbot.sla_service.get_executive_phone", return_value="+56912345678"), \
          patch("chatbot.sla_service.utc_now", return_value=chile_datetime(12, 1).astimezone(timezone.utc)), \

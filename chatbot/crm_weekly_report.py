@@ -195,3 +195,36 @@ async def create_preview(*, period_start, period_end, priority_as_of, db=None):
     await asyncio.to_thread(db[REPORT_COLLECTION].insert_one, deepcopy(report))
     report.pop("_id", None)
     return report
+
+
+async def get_report(report_id, db=None):
+    db = db or get_db()
+    report = await asyncio.to_thread(db[REPORT_COLLECTION].find_one, {"report_id": report_id}, {"_id": 0})
+    if not report: raise ValueError("Reporte CRM no encontrado")
+    return report
+
+
+async def list_reports(limit=20, db=None):
+    db = db or get_db()
+    def load(): return list(db[REPORT_COLLECTION].find({}, {"_id": 0}).sort("created_at", -1).limit(limit))
+    return await asyncio.to_thread(load)
+
+
+async def regenerate_narrative(report_id, actor, db=None):
+    db = db or get_db(); report = await get_report(report_id, db)
+    if report["status"] != "pending_approval": raise ValueError("Solo se regenera un reporte pendiente")
+    narrative, source = await generate_narrative(report["snapshot"])
+    text = assemble_message(report["snapshot"], narrative)
+    validate_snapshot(report["snapshot"], message=text)
+    update = {"narrative": narrative, "narrative_source": source, "generated_text": text,
+              "regenerated_by": actor, "updated_at": utc_now()}
+    await asyncio.to_thread(db[REPORT_COLLECTION].update_one, {"report_id": report_id}, {"$set": update})
+    return await get_report(report_id, db)
+
+
+async def cancel_report(report_id, actor, db=None):
+    db = db or get_db(); report = await get_report(report_id, db)
+    if report["status"] == "sent": raise ValueError("Un reporte enviado no puede modificarse")
+    await asyncio.to_thread(db[REPORT_COLLECTION].update_one, {"report_id": report_id},
+                            {"$set": {"status": "cancelled", "cancelled_by": actor, "cancelled_at": utc_now(), "updated_at": utc_now()}})
+    return await get_report(report_id, db)

@@ -88,7 +88,7 @@ MANUAL_DECISION_RULES = {
         "once_per_assignment_cycle": True,
         "requires_transition": True,
     },
-    "en gestion": {"result": "in_progress", "requires_context": True},
+    "en gestion": {"result": "in_progress", "requires_transition": True},
     "contacto exitoso": {"result": "contacted", "contact_attempt": True, "contact_effective": True},
     "sin respuesta": {"result": "no_answer", "contact_attempt": True},
     "telefono invalido": {"result": "invalid_number", "contact_attempt": True},

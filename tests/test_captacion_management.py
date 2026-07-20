@@ -134,13 +134,18 @@ def test_manual_commercial_conclusion_with_reason_credits(status, result):
     assert db[management.LEDGER_COLLECTION].rows[0]["result"] == result
 
 
-def test_in_progress_requires_context_and_capture_is_a_managed_property():
-    assert not management.evaluate_manual_decision(
+def test_in_progress_transition_credits_without_requiring_a_comment():
+    decision = management.evaluate_manual_decision(
         status="En gestion", previous_status="Por contactar", notes=""
+    )
+    assert decision["eligible"] is True
+    assert decision["result"] == "in_progress"
+    assert not management.evaluate_manual_decision(
+        status="En gestion", previous_status="En gestion", notes=""
     )["eligible"]
-    assert management.evaluate_manual_decision(
-        status="En gestion", previous_status="Por contactar", notes="Seguimiento acordado"
-    )["eligible"]
+
+
+def test_capture_is_a_managed_property():
     db = _Db()
     captured = management.record_manual_management_decision(
         db,

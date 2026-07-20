@@ -30,6 +30,7 @@ def _match(doc, query):
 
 class Result:
     inserted_id = "id"
+    modified_count = 1
 
 
 class Collection:
@@ -38,6 +39,13 @@ class Collection:
     def find(self, query=None, projection=None): return deepcopy([d for d in self.docs if _match(d, query or {})])
     def find_one(self, query, *args, **kwargs):
         rows = self.find(query); return rows[0] if rows else None
+    def update_one(self, query, update, **kwargs):
+        with self.lock:
+            for doc in self.docs:
+                if _match(doc, query):
+                    doc.update(deepcopy(update.get("$set", {}))); return Result()
+        return Result()
+    def count_documents(self, query): return len(self.find(query))
     def insert_one(self, doc):
         with self.lock:
             for field in self.unique:
@@ -178,7 +186,7 @@ def test_real_sla_worker_flag_prevents_database_and_provider_access():
 
 def test_containment_flags_are_independent_and_safe_by_default():
     from config import Config
-    assert Config.LEAD_HOT_NOTIFICATIONS_ENABLED is True
+    assert Config.LEAD_HOT_NOTIFICATIONS_ENABLED is False
     assert Config.LEAD_HOT_RECONCILIATION_ENABLED is False
     assert Config.LEAD_COLD_DIGEST_ENABLED is False
     assert Config.CRM_SLA_SHADOW_ENABLED is False

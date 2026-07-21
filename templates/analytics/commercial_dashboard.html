@@ -143,7 +143,8 @@ body.cd-page{background:var(--cd-bg);color:var(--cd-txt);font-family:'Outfit',sy
 .cd-kpi-meta{font-size:.64rem;color:var(--cd-txt3)}
 .cd-kpi-meta b{color:var(--cd-txt2)}
 /* ---- Tabs ---- */
-.cd-tabs{display:flex;gap:2px;border-bottom:1px solid var(--cd-line);margin-bottom:14px;overflow-x:auto;scrollbar-width:none}
+.cd-tabs{display:flex;gap:2px;border-bottom:1px solid var(--cd-line);margin-bottom:14px;overflow-x:auto;scrollbar-width:none;position:relative}
+@media(max-width:991px){.cd-tabs::after{content:'';position:sticky;right:0;top:0;bottom:0;min-width:36px;pointer-events:none;background:linear-gradient(90deg,transparent,var(--cd-bg));margin-left:-36px}}
 .cd-tabs::-webkit-scrollbar{display:none}
 .cd-tabs button{padding:9px 18px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--cd-txt2);cursor:pointer;font-size:.8rem;font-weight:600;transition:color .18s,border-color .18s;white-space:nowrap}
 .cd-tabs button:hover{color:var(--cd-txt)}
@@ -259,7 +260,8 @@ body.cd-page{background:var(--cd-bg);color:var(--cd-txt);font-family:'Outfit',sy
 /* ============ RESPONSIVE ============ */
 @media(max-width:1500px){.cd-kpis{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:1200px){.cd-g-exec{grid-template-columns:1fr}.cd-insights{grid-template-columns:1fr 1fr}}
-@media(max-width:1100px){.cd-kpis{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:1100px){.cd-kpis{grid-template-columns:repeat(3,1fr)}.cd-kpi:last-child{grid-column:1/-1;min-height:0}}
+@media(max-width:520px){.cd-seg button{padding:6px 9px;font-size:.72rem}}
 @media(max-width:991px){
   .cd{padding:14px 14px 90px}
   .cd-hamb{display:flex}
@@ -1101,7 +1103,8 @@ function actTab(name){
   document.querySelectorAll('.cd-tabs button').forEach(b=>{b.classList.remove('active');b.setAttribute('aria-selected','false')});
   const t=$('tab-'+name);if(t)t.classList.add('active');
   const btn=document.querySelector('.cd-tabs button[data-tab="'+name+'"]');
-  if(btn){btn.classList.add('active');btn.setAttribute('aria-selected','true')}
+  if(btn){btn.classList.add('active');btn.setAttribute('aria-selected','true');
+    if(window.innerWidth<992)btn.scrollIntoView({inline:'center',block:'nearest',behavior:RM?'auto':'smooth'})}
 }
 function toggleMobileMenu(){
   const s=$('sidebar'),o=$('sidebarOverlay');

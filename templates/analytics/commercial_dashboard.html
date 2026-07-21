@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PROCASA | Dashboard Comercial</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/static/css/crm_module_shell.css">
+  <link rel="stylesheet" href="/static/css/commercial-dashboard.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body class="commercial-page">
+  <nav class="sidebar" id="sidebar">
+    <div class="brand"><img src="/static/logo.png?v=1.0.1" alt="PROCASA" onerror="this.style.display='none'"><span>MEN&Uacute;</span></div>
+    <div class="sidebar-main-nav">
+      {% if user_role in ['supervisor','admin'] %}<a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i><span>Dashboard</span></a>{% endif %}
+      {% if user_role in ['supervisor','admin'] %}<a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i><span>Ingreso Manual</span></a>{% endif %}
+      <a href="/analytics/leads" class="nav-link"><i class="fa-solid fa-chart-simple"></i><span>Gesti&oacute;n de Leads</span></a>
+      <a href="/analytics/commercial" class="nav-link active"><i class="fa-solid fa-chart-bar"></i><span>Dashboard Comercial</span></a>
+      <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i><span>Listado Leads</span></a>
+      <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i><span>Captaciones</span></a>
+      <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i><span>Convenios</span></a>
+      <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i><span>&Oacute;rdenes de Visita</span></a>
+    </div>
+    <div class="sidebar-footer">
+      <a href="#" class="nav-link theme-toggle" aria-label="Cambiar tema" onclick="toggleTheme();return false"><i class="fa-solid fa-sun" id="themeIcon"></i><span>Tema</span></a>
+      <a href="/logout" class="nav-link logout"><i class="fa-solid fa-power-off"></i><span>Cerrar Sesi&oacute;n</span></a>
+    </div>
+  </nav>
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+  <main class="commercial-dashboard">
+    <!-- HEADER -->
+    <header class="commercial-header">
+      <button class="mobile-menu" type="button" aria-label="Abrir men&uacute;" onclick="toggleMobileMenu()"><i class="fa-solid fa-bars"></i></button>
+      <div class="header-title-section">
+        <h1>Dashboard Comercial de Leads</h1>
+        <div class="header-meta">
+          <span class="meta-period" id="metaPeriod">Cargando...</span>
+          <span class="meta-divider">|</span>
+          <span class="meta-updated" id="metaUpdated">Actualizando...</span>
+        </div>
+      </div>
+      <div class="header-filters">
+        <div class="filter-group">
+          <label>Per&iacute;odo</label>
+          <div class="filter-inputs">
+            <input type="date" id="periodStart" aria-label="Inicio">
+            <input type="date" id="periodEnd" aria-label="Fin">
+          </div>
+        </div>
+        <div class="filter-group">
+          <label>Oficina</label>
+          <select id="filterOffice"><option value="">Todas</option></select>
+        </div>
+        <div class="filter-group">
+          <label>Ejecutiva</label>
+          <select id="filterExecutive"><option value="">Todas</option></select>
+        </div>
+        <button class="filter-toggle" id="moreFiltersBtn" type="button" title="M&aacute;s filtros"><i class="fa-solid fa-sliders"></i></button>
+        <button class="filter-reset" id="resetFiltersBtn" type="button" title="Restablecer"><i class="fa-solid fa-rotate"></i></button>
+      </div>
+      <div class="filter-drawer" id="filterDrawer" hidden>
+        <label>Fuente<select id="filterSource"><option value="">Todas</option></select></label>
+        <label>Operaci&oacute;n<select id="filterOperation"><option value="">Todas</option></select></label>
+        <label>Tipo propiedad<select id="filterType"><option value="">Todos</option></select></label>
+        <label>Comuna<select id="filterCommune"><option value="">Todas</option></select></label>
+        <label>Temperatura<select id="filterTemperature"><option value="">Todas</option><option value="HOT">Hot</option><option value="COLD">Cold</option></select></label>
+        <label>Asignaci&oacute;n<select id="filterAssignment"><option value="">Todas</option><option value="assigned">Asignados</option><option value="unassigned">Sin asignar</option></select></label>
+      </div>
+    </header>
+
+    <!-- ERROR -->
+    <div class="commercial-error" id="commercialError" hidden>
+      <strong>Error al cargar datos.</strong>
+      <span id="errorDetail"></span>
+      <button id="retryBtn" type="button">Reintentar</button>
+    </div>
+
+    <!-- STATUS BAR -->
+    <div class="status-bar" id="statusBar">
+      <span class="status-loading" id="statusLoading">Cargando dashboard comercial...</span>
+    </div>
+
+    <!-- SECTION 1: KPI ROW -->
+    <section class="kpi-row" id="kpiRow">
+      <article class="kpi-card" id="kpi-leads">
+        <div class="kpi-icon-wrap"><i class="fa-solid fa-users"></i></div>
+        <div class="kpi-body">
+          <span class="kpi-label">Leads Recibidos</span>
+          <span class="kpi-value">--</span>
+          <span class="kpi-variation" id="kpi-leads-var"></span>
+          <span class="kpi-period" id="kpi-leads-period"></span>
+        </div>
+        <div class="kpi-tooltip">Total de leads recibidos en el per&iacute;odo. Unidad can&oacute;nica: lead._id. No se duplican por actividades.</div>
+      </article>
+      <article class="kpi-card" id="kpi-hot">
+        <div class="kpi-icon-wrap hot"><i class="fa-solid fa-fire"></i></div>
+        <div class="kpi-body">
+          <span class="kpi-label">Leads Hot</span>
+          <span class="kpi-value">--</span>
+          <span class="kpi-variation" id="kpi-hot-var"></span>
+          <span class="kpi-period" id="kpi-hot-period"></span>
+        </div>
+        <div class="kpi-tooltip">Leads con temperatura Hot: intenci&oacute;n de visita, solicitud de contacto, escalamiento o alerta comercial.</div>
+      </article>
+      <article class="kpi-card" id="kpi-visit-intent">
+        <div class="kpi-icon-wrap intent"><i class="fa-solid fa-location-dot"></i></div>
+        <div class="kpi-body">
+          <span class="kpi-label">Intenci&oacute;n de Visita</span>
+          <span class="kpi-value">--</span>
+          <span class="kpi-variation" id="kpi-visit-var"></span>
+          <span class="kpi-period" id="kpi-visit-period"></span>
+        </div>
+        <div class="kpi-tooltip">Leads que expresaron intenci&oacute;n real de visitar una propiedad, seg&uacute;n clasificaci&oacute;n del chatbot o regla hist&oacute;rica.</div>
+      </article>
+      <article class="kpi-card" id="kpi-visits">
+        <div class="kpi-icon-wrap coord"><i class="fa-solid fa-calendar-check"></i></div>
+        <div class="kpi-body">
+          <span class="kpi-label">Visitas Coordinadas</span>
+          <span class="kpi-value">--</span>
+          <span class="kpi-variation" id="kpi-visits-var"></span>
+          <span class="kpi-period" id="kpi-visits-period"></span>
+        </div>
+        <div class="kpi-tooltip">Leads con visita coordinada (etapa VISIT_SCHEDULED). Requiere confirmaci&oacute;n humana.</div>
+      </article>
+      <article class="kpi-card" id="kpi-sla">
+        <div class="kpi-icon-wrap sla"><i class="fa-solid fa-gauge-high"></i></div>
+        <div class="kpi-body">
+          <span class="kpi-label">Hot dentro de SLA</span>
+          <span class="kpi-value">--</span>
+          <span class="kpi-variation" id="kpi-sla-var"></span>
+          <span class="kpi-period" id="kpi-sla-period"></span>
+        </div>
+        <div class="kpi-tooltip">Porcentaje de leads Hot gestionados dentro del SLA de 3 horas. Variaci&oacute;n en puntos porcentuales.</div>
+      </article>
+      <article class="kpi-card" id="kpi-closed">
+        <div class="kpi-icon-wrap closed"><i class="fa-solid fa-trophy"></i></div>
+        <div class="kpi-body">
+          <span class="kpi-label">Negocios Cerrados</span>
+          <span class="kpi-value">--</span>
+          <span class="kpi-variation" id="kpi-closed-var"></span>
+          <span class="kpi-period" id="kpi-closed-period"></span>
+        </div>
+        <div class="kpi-tooltip">Leads con estado CLOSED_WON en el per&iacute;odo. Representa cierres ganados.</div>
+      </article>
+    </section>
+
+    <!-- SECTION 2: FUNNEL + INSIGHTS -->
+    <section class="funnel-insights-row">
+      <article class="funnel-section card-surface">
+        <div class="section-heading"><h2>Embudo Comercial</h2><p>Volumen y conversi&oacute;n por etapa</p></div>
+        <div class="funnel-chart" id="funnelChart"></div>
+        <div class="funnel-bottleneck" id="funnelBottleneck"></div>
+      </article>
+      <aside class="insights-section card-surface">
+        <div class="section-heading"><h2><i class="fa-solid fa-lightbulb"></i> Insights</h2><p>Hallazgos determin&iacute;sticos basados en reglas auditables</p></div>
+        <div class="insights-list" id="insightsList"><span class="loading">Cargando insights...</span></div>
+        <div class="insights-footer">
+          <span class="insights-note">Los insights se generan mediante reglas determin&iacute;sticas. No reemplazan el an&aacute;lisis gerencial.</span>
+        </div>
+      </aside>
+    </section>
+
+    <!-- SECTION 3: EVOLUTION + SLA RISK -->
+    <section class="evolution-sla-row">
+      <article class="evolution-section card-surface">
+        <div class="section-heading"><h2>Evoluci&oacute;n Comercial</h2><p>Comparaci&oacute;n per&iacute;odo actual vs anterior</p></div>
+        <div class="evolution-chart" id="evolutionChart"></div>
+      </article>
+      <article class="sla-risk-section card-surface">
+        <div class="section-heading"><h2><i class="fa-solid fa-clock"></i> Riesgo SLA</h2><p>Distribuci&oacute;n de tiempos de respuesta en leads Hot</p></div>
+        <div class="sla-kpi-strip" id="slaKpiStrip"></div>
+        <div class="sla-distribution-chart" id="slaDistributionChart"></div>
+      </article>
+    </section>
+
+    <!-- SECTION 4: DEMAND (Operation, Type, Commune, Price) -->
+    <section class="demand-section">
+      <div class="section-heading"><h2>Qu&eacute; Buscan los Clientes</h2><p>Demanda por tipo de operaci&oacute;n, propiedad, comuna y rango de precio</p></div>
+      <div class="demand-tabs">
+        <button class="active" data-demand="operations">Operaci&oacute;n</button>
+        <button data-demand="types">Tipo Propiedad</button>
+        <button data-demand="communes">Comuna</button>
+        <button data-demand="price">Rango Precio</button>
+      </div>
+      <div class="demand-content" id="demandContent">
+        <div class="demand-chart" id="demandChart"></div>
+      </div>
+    </section>
+
+    <!-- SECTION 5: SOURCES + PROPERTIES -->
+    <section class="sources-properties-row">
+      <article class="sources-section card-surface">
+        <div class="section-heading"><h2>Calidad por Fuente</h2><p>Volumen, conversi&oacute;n y cumplimiento SLA por origen</p></div>
+        <div class="sources-matrix" id="sourcesMatrix"></div>
+        <div class="sources-table-wrap" id="sourcesTable"></div>
+      </article>
+      <article class="properties-section card-surface">
+        <div class="section-heading"><h2>Propiedades</h2><p>Oportunidad y fuga</p></div>
+        <div class="prop-tabs">
+          <button class="active" data-prop="opportunity">Mayor oportunidad</button>
+          <button data-prop="leakage">Mayor fuga</button>
+        </div>
+        <div class="prop-content" id="propContent"></div>
+      </article>
+    </section>
+
+    <!-- SECTION 6: EXECUTIVE PERFORMANCE -->
+    <section class="executive-section card-surface">
+      <div class="section-heading"><h2>Desempe&ntilde;o por Ejecutiva</h2><p>Matriz equilibrada con contexto de carga y conversi&oacute;n</p></div>
+      <div class="executive-table-wrap" id="executiveTable"></div>
+    </section>
+
+    <!-- SECTION 7: SECONDARY INDICATORS -->
+    <section class="secondary-section card-surface">
+      <div class="section-heading"><h2>Indicadores Secundarios</h2><p>Calidad de datos y cobertura</p></div>
+      <div class="secondary-grid" id="secondaryGrid"></div>
+    </section>
+  </main>
+
+  <script src="/static/js/commercial-dashboard.js"></script>
+</body>
+</html>

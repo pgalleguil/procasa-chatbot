@@ -13,6 +13,7 @@
 <div class="brand"><img src="/static/logo.png?v=1.0.1" alt="PROCASA" style="width:80px;height:50px;flex-shrink:0;object-fit:contain;object-position:center;padding:0 12px" onerror="this.style.display='none'"> <span>MENU</span></div>
 <div class="sidebar-main-nav">
 <a href="/analytics/leads" class="nav-link active"><i class="fa-solid fa-chart-line"></i><span>Dashboard Leads</span></a>
+<a href="/analytics/commercial" class="nav-link"><i class="fa-solid fa-chart-bar"></i><span>Dashboard Comercial</span></a>
 {% if user_role in ['supervisor','admin'] %}<a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i><span>Dashboard</span></a><a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i><span>Ingreso Manual</span></a>{% endif %}
 <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i><span>Listado Leads</span></a>
 <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i><span>Captaciones</span></a>

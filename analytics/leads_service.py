@@ -362,3 +362,101 @@ def get_dashboard(
     }
     _cache_set(key, result)
     return result
+
+
+# =============================================================================
+# COMMERCIAL DASHBOARD SERVICE
+# =============================================================================
+
+
+def get_commercial_dashboard(
+    period_start: str = None,
+    period_end: str = None,
+    executive: str = None,
+    role: str = None,
+    user_name: str = None,
+    filters: dict = None,
+) -> dict:
+    """Consolidated commercial dashboard data.
+
+    Returns all data needed for the commercial dashboard in one call.
+    Strictly read-only, never modifies commercial data.
+    """
+    exec_filter = executive if role in ("admin", "supervisor") else user_name
+    ef = {"ejecutivo_asignado": exec_filter} if exec_filter else None
+    merged_filters = {**(filters or {})}
+    if ef:
+        merged_filters.update(ef)
+    key = _cache_key("commercial-dashboard-v1", ps=period_start, pe=period_end,
+                     exec=exec_filter, role=role, filters=repr(sorted((merged_filters or {}).items())))
+    cached = _cache_get(key)
+    if cached:
+        return cached
+
+    from .leads_queries import (
+        query_commercial_kpis,
+        query_commercial_funnel,
+        query_sla_risk_panel,
+        query_demand_by_price_ranges,
+        query_commercial_executive_matrix,
+        query_commercial_property_ranking,
+        query_commercial_insights,
+        query_source_performance,
+        query_comparative_trends,
+        query_field_coverage,
+        query_executive_load_detail,
+    )
+
+    kwargs = {"period_start": period_start, "period_end": period_end, "filters": merged_filters or None}
+    kwargs_no_filters = {"period_start": period_start, "period_end": period_end}
+    period_label = f"{period_start or ''} - {period_end or ''}"
+
+    # Period comparison
+    period_info = {
+        "type": "custom_vs_previous",
+        "timezone": "America/Santiago",
+        "current": {"start": period_start or "", "end": period_end or "", "label": period_label},
+        "previous": {"start": "", "end": "", "label": "Per\u00edodo anterior (igual duraci\u00f3n)"},
+    }
+
+    kpis = query_commercial_kpis(**kwargs)
+    funnel = query_commercial_funnel(**kwargs)
+    sla = query_sla_risk_panel(**kwargs)
+    demand_price = query_demand_by_price_ranges(**kwargs)
+    executives = query_commercial_executive_matrix(**kwargs)
+    properties = query_commercial_property_ranking(**kwargs)
+    sources = query_source_performance(**kwargs_no_filters)
+    trends = query_comparative_trends(**kwargs_no_filters)
+    insights = query_commercial_insights(
+        kpis=kpis, funnel=funnel, sla=sla,
+        sources=sources, demand=demand_price,
+        executives=executives,
+    )
+
+    meta = {
+        "period": period_info,
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "read_only": True,
+        "unit": "lead._id",
+        "sla_policy": {
+            "type": "calendar_minutes",
+            "threshold_minutes": 180,
+            "display_label": "SLA actual: 3 horas corridas",
+            "timezone": "America/Santiago",
+        },
+    }
+
+    result = {
+        "meta": meta,
+        "kpis": kpis,
+        "funnel": funnel,
+        "sla_risk": sla,
+        "demand_by_price": demand_price,
+        "executives": executives,
+        "properties": properties,
+        "sources": sources,
+        "trends": trends,
+        "insights": insights,
+    }
+    _cache_set(key, result)
+    return result

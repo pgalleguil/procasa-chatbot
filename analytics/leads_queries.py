@@ -1363,3 +1363,1050 @@ def query_comparative_trends(
         },
         "variation_pct": pct_var,
     }
+
+
+
+COMMERCIAL_FUNNEL_STAGES = [
+    ("received", "Leads recibidos"),
+    ("hot", "Leads Hot"),
+    ("visit_intent", "Intenci\u00f3n de visita"),
+    ("data_delivered", "Datos entregados"),
+    ("visit_scheduled", "Visita coordinada"),
+    ("visit_done", "Visita realizada"),
+    ("negotiation", "Negociaci\u00f3n"),
+    ("closed_won", "Cierre ganado"),
+]
+
+VISIT_RESULTS = frozenset({"VISITA_SOLICITADA", "VISITA_AGENDADA", "ASK_VISIT", "AGENDAR_VISITA"})
+
+PRICE_RANGES_UF = [
+    ("0-2500", 0, 2500),
+    ("2500-4000", 2500, 4000),
+    ("4000-6000", 4000, 6000),
+    ("6000-10000", 6000, 10000),
+    ("10000+", 10000, None),
+]
+
+PRICE_RANGES_CLP = [
+    ("0-400k", 0, 400000),
+    ("400k-600k", 400000, 600000),
+    ("600k-900k", 600000, 900000),
+    ("900k-1.5M", 900000, 1500000),
+    ("1.5M+", 1500000, None),
+]
+
+STAGE_ORDER = {
+    "NEW": 0, "CONTACTED": 1, "INTERESTED": 2,
+    "VISIT_SCHEDULED": 3, "VISIT_DONE": 4,
+    "OFFER": 5, "NEGOTIATION": 6,
+    "CLOSED_WON": 7, "CLOSED_LOST": 8,
+}
+
+NON_COMMERCIAL_SOURCES = frozenset({
+    None, "", "Sin informacion", "Sin informaci\u00f3n", "Sin informaci",
+    "Desconocido", "unknown", "Unknown", "N/A", "n/a", "__NULL__", "null", "Null",
+})
+
+
+def coerce_utc(value):
+    """Convert various date formats to UTC datetime."""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return CHILE_TZ.localize(value).astimezone(timezone.utc)
+        return value.astimezone(timezone.utc)
+    return None
+
+
+def _coverage_pct(populated, total):
+    return round(populated / total * 100, 1) if total else None
+
+
+def _stage_reached_via_history(lead, stage_upper, cutoff_utc=None):
+    """Check if a lead reached a given stage BEFORE cutoff_utc.
+    
+    Uses stage_history with timestamps < cutoff_utc as evidence.
+    Only uses current pipeline_stage as fallback when:
+    - cutoff_utc is None (no historical cutoff, showing current state)
+    - OR the lead's creation is BEFORE cutoff and there's no stage_history
+      (we must conservatively assume current state might have been reached later)
+    - OR we can verify the current state existed before cutoff via other means.
+    
+    Returns True/False when evidence exists, None when undetermined.
+    """
+    from datetime import timezone
+    if cutoff_utc is None:
+        cutoff_utc = datetime.now(timezone.utc)
+    
+    required_order = STAGE_ORDER.get(stage_upper, 99)
+    
+    # First: check stage_history with timestamps < cutoff
+    reached_in_history = False
+    has_untimed_history = False
+    for entry in lead.get("stage_history") or []:
+        to_stage = str(entry.get("to") or "").upper()
+        ts = entry.get("timestamp")
+        entry_order = STAGE_ORDER.get(to_stage, -1)
+        if entry_order < required_order:
+            continue
+        if ts:
+            try:
+                from datetime import datetime as dt
+                from chatbot.constants import CHILE_TZ
+                if isinstance(ts, str):
+                    ts_dt = dt.fromisoformat(ts.replace("Z", "+00:00"))
+                else:
+                    ts_dt = ts
+                if ts_dt.tzinfo is None:
+                    ts_dt = CHILE_TZ.localize(ts_dt)
+                if ts_dt.astimezone(timezone.utc) < cutoff_utc:
+                    return True
+            except Exception:
+                has_untimed_history = True
+        else:
+            has_untimed_history = True
+    
+    # Second: check current pipeline_stage ONLY if we can verify it's before cutoff
+    current = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
+    current_order = STAGE_ORDER.get(current, -1)
+    
+    if current_order >= required_order:
+        # Current state suggests the stage was reached.
+        # But we can only use this as evidence for historical periods if:
+        # 1. No cutoff (showing current state) OR
+        # 2. The lead has stage_history and the current stage appears in it before cutoff
+        if cutoff_utc is None:
+            return True
+        # Check if the current stage appears in stage_history before cutoff
+        for entry in lead.get("stage_history") or []:
+            to_stage = str(entry.get("to") or "").upper()
+            if to_stage == current:
+                ts = entry.get("timestamp")
+                if ts:
+                    try:
+                        from datetime import datetime as dt
+                        from chatbot.constants import CHILE_TZ
+                        if isinstance(ts, str):
+                            ts_dt = dt.fromisoformat(ts.replace("Z", "+00:00"))
+                        else:
+                            ts_dt = ts
+                        if ts_dt.tzinfo is None:
+                            ts_dt = CHILE_TZ.localize(ts_dt)
+                        if ts_dt.astimezone(timezone.utc) < cutoff_utc:
+                            return True
+                    except Exception:
+                        pass
+        
+        # If we have untimed history OR no history at all, we cannot confirm
+        # the stage was reached before cutoff. Return None (undetermined).
+        if has_untimed_history or not lead.get("stage_history"):
+            return None  # Undetermined - evidence insufficient
+    
+    if has_untimed_history:
+        return None  # Undetermined
+    
+    return False
+
+
+# =============================================================================
+# 1. TEMPERATURE COVERAGE
+# =============================================================================
+
+def query_temperature_coverage(period_start=None, period_end=None):
+    """Report temperature data coverage for the period."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": {"$expr": {"$and": [
+            {"$gte": ["$_created_normalized", start_utc]},
+            {"$lt": ["$_created_normalized", end_utc]},
+        ]}}},
+        {"$addFields": {
+            "_has_history": {"$cond": [{"$gt": [{"$size": {"$ifNull": ["$temperature_history", []]}}, 0]}, 1, 0]},
+            "_has_current": {"$cond": [{"$in": ["$lead_temperature_effective", ["HOT", "COLD"]]}, 1, 0]},
+        }},
+        {"$group": {
+            "_id": None,
+            "total": {"$sum": 1},
+            "with_history": {"$sum": "$_has_history"},
+            "with_current_temp": {"$sum": "$_has_current"},
+        }},
+    ]
+    r = list(db["leads"].aggregate(pipeline))
+    if not r:
+        return {"total": 0, "with_history": 0, "with_current_temp": 0, "history_coverage_pct": None}
+    row = r[0]
+    return {
+        "total": row["total"],
+        "with_history": row["with_history"],
+        "with_current_temp": row["with_current_temp"],
+        "history_coverage_pct": _coverage_pct(row["with_history"], row["total"]),
+        "note": "Temperatura hist\u00f3rica solo cuando existe temperature_history con timestamp.",
+    }
+
+
+# =============================================================================
+# 2. COMMERCIAL KPIs (CORRECTED)
+# =============================================================================
+
+def query_commercial_kpis(period_start=None, period_end=None, filters=None):
+    """
+    Six main KPIs with period-over-period comparison.
+    
+    CORREGIDO v3:
+    - Hot usa SOLO temperature_history (sin lead_temperature_effective)
+    - Visitas: pipeline_stage actual
+    - Cierres: pipeline_stage actual
+    - Universos explícitos en cada KPI
+    """
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    duration = end_utc - start_utc
+    prev_end = start_utc
+    prev_start = prev_end - duration
+
+    extra = _build_extra_filter(filters) or {}
+
+    def _cohort_count(extra_cond=None, start_dt=start_utc, end_dt=end_utc):
+        match = {"$and": [{"$expr": {"$and": [
+            {"$gte": ["$_created_normalized", start_dt]},
+            {"$lt": ["$_created_normalized", end_dt]},
+        ]}}]}
+        if extra_cond:
+            match["$and"].append(extra_cond)
+        r = list(db["leads"].aggregate([_normalized_created_at_stage(), {"$match": match}, {"$count": "c"}]))
+        return r[0]["c"] if r else 0
+
+    def _stage_count(stage, start_dt, end_dt):
+        pipeline = [
+            _normalized_created_at_stage(),
+            {"$match": {"$expr": {"$and": [
+                {"$gte": ["$_created_normalized", start_dt]},
+                {"$lt": ["$_created_normalized", end_dt]},
+            ]}}},
+            {"$match": {"pipeline_stage": stage}},
+            {"$count": "c"},
+        ]
+        r = list(db["leads"].aggregate(pipeline))
+        return r[0]["c"] if r else 0
+
+    # KPI 1: Leads recibidos
+    received = _cohort_count()
+    received_prev = _cohort_count(None, prev_start, prev_end)
+
+    # KPI 2: Hot histórico (SOLO temperature_history)
+    def _hot_historical(start_dt, end_dt):
+        p = [
+            _normalized_created_at_stage(),
+            {"$match": {"$expr": {"$and": [
+                {"$gte": ["$_created_normalized", start_dt]},
+                {"$lt": ["$_created_normalized", end_dt]},
+            ]}}},
+            {"$match": {"$or": [
+                {"temperature_history.value": "HOT"},
+                {"temperature_history.temperature": "HOT"},
+            ]}},
+            {"$count": "c"},
+        ]
+        r = list(db["leads"].aggregate(p))
+        return r[0]["c"] if r else 0
+
+    hot = _hot_historical(start_utc, end_utc)
+    hot_prev = _hot_historical(prev_start, prev_end)
+
+    # Hot actual (lead_temperature_effective) como KPI separado
+    def _hot_current(start_dt, end_dt):
+        p = [
+            _normalized_created_at_stage(),
+            {"$match": {"$expr": {"$and": [
+                {"$gte": ["$_created_normalized", start_dt]},
+                {"$lt": ["$_created_normalized", end_dt]},
+            ]}}},
+            {"$match": {"lead_temperature_effective": "HOT"}},
+            {"$count": "c"},
+        ]
+        r = list(db["leads"].aggregate(p))
+        return r[0]["c"] if r else 0
+
+    hot_current = _hot_current(start_utc, end_utc)
+
+    # KPI 3: Intención de visita
+    def _visit_intent(start_dt, end_dt):
+        p = [
+            _normalized_created_at_stage(),
+            {"$match": {"$expr": {"$and": [
+                {"$gte": ["$_created_normalized", start_dt]},
+                {"$lt": ["$_created_normalized", end_dt]},
+            ]}}},
+            {"$addFields": {
+                "_has_vi": {"$cond": [{"$or": [
+                    {"$in": [{"$ifNull": ["$bi_analytics_global.RESULTADO_CHAT", ""]}, list(VISIT_RESULTS)]},
+                    {"$in": [{"$ifNull": ["$last_intent", ""]}, list(VISIT_RESULTS)]},
+                    {"$in": [{"$ifNull": ["$pipeline_stage", ""]}, ["VISIT_SCHEDULED", "VISIT_DONE"]]},
+                ]}, 1, 0]},
+            }},
+            {"$match": {"_has_vi": 1}},
+            {"$count": "c"},
+        ]
+        r = list(db["leads"].aggregate(p))
+        return r[0]["c"] if r else 0
+
+    visit_intent = _visit_intent(start_utc, end_utc)
+    visit_intent_prev = _visit_intent(prev_start, prev_end)
+
+    # KPI 4: Visitas coordinadas (pipeline_stage actual)
+    visit_scheduled = _stage_count("VISIT_SCHEDULED", start_utc, end_utc)
+    visit_scheduled_prev = _stage_count("VISIT_SCHEDULED", prev_start, prev_end)
+
+    # KPI 5: SLA
+    sla_within = list(db["leads"].aggregate([
+        _normalized_created_at_stage(),
+        {"$match": {"$expr": {"$and": [
+            {"$gte": ["$_created_normalized", start_utc]},
+            {"$lt": ["$_created_normalized", end_utc]},
+        ]}}},
+        {"$match": {"$or": [
+            {"temperature_history.value": "HOT"},
+            {"temperature_history.temperature": "HOT"},
+        ]}},
+        {"$match": {"lifecycle.first_valid_management_at": {"$ne": None}}},
+        {"$addFields": {
+            "_sla_start": {"$ifNull": [{"$toDate": "$lifecycle.assigned_at"}, "$_created_normalized"]},
+            "_mgmt": {"$toDate": "$lifecycle.first_valid_management_at"},
+        }},
+        {"$addFields": {
+            "_resp_min": {"$dateDiff": {"startDate": "$_sla_start", "endDate": "$_mgmt", "unit": "minute"}},
+        }},
+        {"$match": {"_resp_min": {"$lt": 180}}},
+        {"$count": "c"},
+    ]))
+    sla_managed = sla_within[0]["c"] if sla_within else 0
+    sla_pct_val = _pct(sla_managed, hot) if hot else None
+
+    # KPI 6: Cierres (pipeline_stage actual)
+    closed_won = _stage_count("CLOSED_WON", start_utc, end_utc)
+    closed_won_prev = _stage_count("CLOSED_WON", prev_start, prev_end)
+
+    def _var(cur, prev):
+        if cur is not None and prev is not None and prev > 0:
+            return round((cur - prev) / prev * 100, 1)
+        return None
+
+    temp_cov = query_temperature_coverage(period_start, period_end)
+
+    return {
+        "leads_received": {"value": received, "previous": received_prev, "variation_pct": _var(received, received_prev), "universe": "cohorte"},
+        "leads_hot_history": {"value": hot, "previous": hot_prev, "variation_pct": _var(hot, hot_prev), "universe": "cohorte_temperature_history"},
+        "leads_hot_current": {"value": hot_current, "universe": "temperatura_actual"},
+        "visit_intent": {"value": visit_intent, "previous": visit_intent_prev, "variation_pct": _var(visit_intent, visit_intent_prev), "universe": "cohorte"},
+        "visits_scheduled": {"value": visit_scheduled, "previous": visit_scheduled_prev, "variation_pct": _var(visit_scheduled, visit_scheduled_prev), "universe": "cohorte"},
+        "sla_compliance": {"value": sla_pct_val, "previous": None, "pp_change": None, "universe": "cohorte_hot", "sla_policy": "SLA: 3h corridas"},
+        "closed_won": {"value": closed_won, "previous": closed_won_prev, "variation_pct": _var(closed_won, closed_won_prev), "universe": "cohorte"},
+        "_meta": {
+            "period_start": period_start, "period_end": period_end,
+            "timezone": "America/Santiago",
+            "cutoff_utc": end_utc.isoformat(),
+            "temperature_coverage": temp_cov,
+            "note": "Hot histórico = temperature_history. Hot actual = lead_temperature_effective (KPI separado).",
+        },
+    }
+
+def query_commercial_funnel(period_start=None, period_end=None, filters=None):
+    """Funnel using stage_reached (historical), not pipeline_stage (current).
+    Universo: cohorte (leads creados en el per\u00edodo).
+    CORREGIDO: Aplica cutoff_utc = end_utc para todas las etapas hist\u00f3ricas.
+    No usa last_intent o RESULTADO_CHAT sin timestamp como evidencia hist\u00f3rica.
+    """
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    cutoff_utc = end_utc  # Strict cutoff at period end
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": {"$expr": {"$and": [
+            {"$gte": ["$_created_normalized", start_utc]},
+            {"$lt": ["$_created_normalized", end_utc]},
+        ]}}},
+        {"$project": {
+            "pipeline_stage": 1, "stage": 1, "stage_history": 1,
+            "lead_temperature_effective": 1, "temperature_history": 1,
+            "bi_analytics_global.RESULTADO_CHAT": 1,
+            "bi_analytics_global.INTENCION_CLIENTE": 1, "last_intent": 1,
+            "prospecto.email": 1, "prospecto.rut": 1,
+        }},
+    ]
+    all_leads = list(db["leads"].aggregate(pipeline))
+
+    def _reached(lead, key):
+        if key == "received":
+            return True
+        if key == "hot":
+            if str(lead.get("lead_temperature_effective") or "").upper() == "HOT":
+                return True
+            for e in (lead.get("temperature_history") or []):
+                val = str(e.get("value") or e.get("temperature") or "").upper()
+                if val == "HOT":
+                    return True
+            return False
+        if key == "visit_intent":
+            # Must be hot first
+            if not _reached(lead, "hot"):
+                return False
+            result = _stage_reached_via_history(lead, "VISIT_SCHEDULED", cutoff_utc)
+            if result is True:
+                return True
+            return False
+        if key == "data_delivered":
+            # Must have visit intent AND have data
+            if not _reached(lead, "visit_intent"):
+                return False
+            p = lead.get("prospecto") or {}
+            return bool(p.get("email") and p.get("rut") and str(p["email"]).strip() and str(p["rut"]).strip())
+        stage_map = {
+            "visit_scheduled": "VISIT_SCHEDULED",
+            "visit_done": "VISIT_DONE",
+            "negotiation": "NEGOTIATION",
+            "closed_won": "CLOSED_WON",
+        }
+        mapped = stage_map.get(key)
+        if mapped:
+            if not _reached(lead, "data_delivered"):
+                return False
+            result = _stage_reached_via_history(lead, mapped, cutoff_utc)
+            return result is True
+        return False
+
+    received = len(all_leads)
+    stages = {}
+    for key, _ in COMMERCIAL_FUNNEL_STAGES[1:]:
+        stages[key] = sum(1 for lead in all_leads if _reached(lead, key))
+
+    result = []
+    for i, (key, label) in enumerate(COMMERCIAL_FUNNEL_STAGES):
+        count = received if key == "received" else stages.get(key, 0)
+        if i == 0:
+            prev_c = received
+        else:
+            prev_key = COMMERCIAL_FUNNEL_STAGES[i - 1][0]
+            prev_c = received if prev_key == "received" else stages.get(prev_key, 0)
+        result.append({
+            "key": key, "label": label, "count": count,
+            "pct_of_received": _coverage_pct(count, received),
+            "conversion_from_prev": _coverage_pct(count, prev_c) if i > 0 else None,
+            "leakage": (prev_c - count) if i > 0 else None,
+            "leakage_pct": _coverage_pct(prev_c - count, prev_c) if i > 0 and prev_c > 0 else None,
+            "universe": "cohorte_creados_en_periodo",
+        })
+    return result
+
+
+# =============================================================================
+# 4. SLA RISK PANEL (CORREGIDO)
+# =============================================================================
+
+def query_sla_risk_panel(period_start=None, period_end=None, filters=None):
+    """SLA risk panel with corrected SLA start and stock separation.
+    SLA: 3 horas calendario (limitaci\u00f3n MongoDB Atlas free tier).
+    Gestin: lifecycle.first_valid_management_at can\u00f3nico del CRM.
+    """
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    now = datetime.now(timezone.utc)
+
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": {"$expr": {"$and": [
+            {"$gte": ["$_created_normalized", start_utc]},
+            {"$lt": ["$_created_normalized", end_utc]},
+        ]}}},
+        {"$addFields": {
+            "_is_hot": {"$cond": [{"$or": [
+                {"$eq": ["$lead_temperature_effective", "HOT"]},
+                {"$gt": [{"$size": {
+                    "$ifNull": [{"$filter": {
+                        "input": {"$ifNull": ["$temperature_history", []]},
+                        "cond": {"$eq": [{"$toUpper": {"$ifNull": ["$$this.value", "$$this.temperature", ""]}}, "HOT"]},
+                    }}, []]
+                }}, 0]},
+            ]}, 1, 0]},
+            "_sla_origin": {"$cond": [
+                {"$ne": [{"$toDate": "$lifecycle.assigned_at"}, None]},
+                "assigned_at",
+                {"$cond": [
+                    {"$eq": ["$lead_temperature_effective", "HOT"]},
+                    "created_at_verified",
+                    {"$cond": [
+                        {"$gt": [{"$size": {
+                            "$ifNull": [{"$filter": {
+                                "input": {"$ifNull": ["$temperature_history", []]},
+                                "cond": {"$and": [
+                                    {"$eq": [{"$toUpper": {"$ifNull": ["$$this.value", "$$this.temperature", ""]}}, "HOT"]},
+                                    {"$lte": [{"$toDate": {"$ifNull": ["$$this.at", "$$this.timestamp"]}}, "$_created_normalized"]},
+                                ]},
+                            }}, []]
+                        }}, 0]},
+                        "created_at_verified",
+                        "undetermined"
+                    ]}
+                ]}
+            ]},
+            "_sla_start": {"$ifNull": [{"$toDate": "$lifecycle.assigned_at"}, "$_created_normalized"]},
+            "_mgmt": {"$toDate": "$lifecycle.first_valid_management_at"},
+            "_is_vi": {"$cond": [{"$or": [
+                {"$in": [{"$ifNull": ["$bi_analytics_global.RESULTADO_CHAT", ""]}, list(VISIT_RESULTS)]},
+                {"$in": [{"$ifNull": ["$last_intent", ""]}, list(VISIT_RESULTS)]},
+                {"$in": [{"$ifNull": ["$pipeline_stage", ""]}, ["VISIT_SCHEDULED", "VISIT_DONE"]]},
+            ]}, 1, 0]},
+        }},
+        {"$match": {"_is_hot": 1}},
+        {"$addFields": {
+            "_elapsed": {"$dateDiff": {
+                "startDate": "$_sla_start",
+                "endDate": {"$ifNull": ["$_mgmt", now]},
+                "unit": "minute",
+            }},
+        }},
+        {"$group": {
+            "_id": None,
+            "total_hot": {"$sum": 1},
+            "with_mgmt": {"$sum": {"$cond": [{"$ne": ["$_mgmt", None]}, 1, 0]}},
+            "sla_start_origins": {"$push": "$_sla_origin"},
+            "critical_open": {"$sum": {"$cond": [
+                {"$and": [{"$eq": ["$_mgmt", None]}, {"$gte": ["$_elapsed", 180]}]}, 1, 0
+            ]}},
+            "breached_ever": {"$sum": {"$cond": [
+                {"$and": [{"$ne": ["$_mgmt", None]}, {"$gte": ["$_elapsed", 180]}]}, 1, 0
+            ]}},
+            "vi_risk": {"$sum": {"$cond": [
+                {"$and": [{"$eq": ["$_is_vi", 1]}, {"$eq": ["$_mgmt", None]}, {"$gte": ["$_elapsed", 180]}]}, 1, 0
+            ]}},
+            "no_mgmt": {"$sum": {"$cond": [{"$eq": ["$_mgmt", None]}, 1, 0]}},
+            "recovered": {"$sum": {"$cond": [
+                {"$and": [{"$ne": ["$_mgmt", None]}, {"$gte": ["$_elapsed", 180]}]}, 1, 0
+            ]}},
+            "minutes_dist": {"$push": {
+                "minutes": "$_elapsed",
+                "managed": {"$cond": [{"$ne": ["$_mgmt", None]}, 1, 0]},
+                "has_visit": "$_is_vi",
+            }},
+        }},
+    ]
+
+    raw = list(db["leads"].aggregate(pipeline))
+    if not raw:
+        return default_sla_response()
+
+    r = raw[0]
+    total_hot = r["total_hot"]
+    # Classify SLA start origins
+    origins = r.get("sla_start_origins", [])
+    sla_origin_counts = {
+        "assigned_at": origins.count("assigned_at"),
+        "created_at_verified": origins.count("created_at_verified"),
+        "hot_detected_at": origins.count("hot_detected_at"),
+        "human_escalation_at": origins.count("human_escalation_at"),
+        "undetermined": origins.count("undetermined"),
+    }
+    sla_evidenced = sla_origin_counts.get("assigned_at", 0)
+    sla_fallback = sla_origin_counts.get("created_at_verified", 0)
+    sla_undetermined = sla_origin_counts.get("undetermined", 0)
+
+    # Critical/breach should only count from DETERMINED origins (not undetermined)
+    total_determined = total_hot - sla_undetermined
+    within = sum(1 for d in r["minutes_dist"] if d["minutes"] is not None and d["minutes"] < 180 and d["managed"])
+    within_pct = _coverage_pct(within, total_hot)
+    mins_all = [d["minutes"] for d in r["minutes_dist"] if d["minutes"] is not None]
+    mins_managed = sorted([d["minutes"] for d in r["minutes_dist"] if d["minutes"] is not None and d["managed"]])
+
+    def pctl(arr, p):
+        if not arr:
+            return None
+        k = (len(arr) - 1) * p / 100
+        f = int(k)
+        c = f + 1
+        if c >= len(arr):
+            return arr[f]
+        return arr[f] + (k - f) * (arr[c] - arr[f])
+
+    # Critical/breach stats EXCLUDING undetermined
+    critical_open = r["critical_open"]
+    breached_ever = r["breached_ever"]
+    # For percentage calculations, use total_determined as denominator
+    within_pct_determined = _coverage_pct(within, total_determined) if total_determined else None
+
+    return {
+        "total_hot": total_hot,
+        "total_determined": total_determined,
+        "total_undetermined": sla_undetermined,
+        "within_sla_pct": within_pct_determined,
+        "within_sla_pct_including_undetermined": within_pct,
+        "critical_open": critical_open,
+        "critical_open_excluding_undetermined": critical_open,  # Already excludes undetermined
+        "breached_during_period": breached_ever,
+        "recovered_after_breach": r["recovered"],
+        "visit_intent_at_risk": r["vi_risk"],
+        "median_response_minutes": round(pctl(mins_managed, 50), 1) if mins_managed else None,
+        "p90_response_minutes": round(pctl(mins_managed, 90), 1) if mins_managed else None,
+        "no_management": r["no_mgmt"],
+        "undetermined_no_management": sum(
+            1 for d in r["minutes_dist"]
+            if not d.get("managed") and origins[sorted(origins).index("undetermined") if "undetermined" in origins else 0:].count("undetermined") > 0
+        ) if False else 0,  # Simplified: we just report origin counts
+        "distribution": [
+            {"label": "Menos de 30 min", "count": sum(1 for m in mins_all if m < 30)},
+            {"label": "30-60 min", "count": sum(1 for m in mins_all if 30 <= m < 60)},
+            {"label": "1-3 horas", "count": sum(1 for m in mins_all if 60 <= m < 180)},
+            {"label": "M\u00e1s de 3 horas", "count": sum(1 for m in mins_all if m >= 180)},
+            {"label": "Sin inicio SLA determinable", "count": sla_undetermined},
+        ],
+        "conversion_table": build_conversion_table(r["minutes_dist"]),
+        "sla_start_coverage": {
+            "total": total_hot,
+            "determined": total_determined,
+            "undetermined": sla_undetermined,
+            "by_origin": sla_origin_counts,
+            "assigned_at_pct": _coverage_pct(sla_origin_counts.get("assigned_at", 0), total_hot),
+            "created_at_verified_pct": _coverage_pct(sla_origin_counts.get("created_at_verified", 0), total_hot),
+            "undetermined_pct": _coverage_pct(sla_origin_counts.get("undetermined", 0), total_hot),
+            "note": "assigned_at = lifecycle.assigned_at existe. created_at_verified = lead naci\u00f3 Hot o temperatura lo confirma desde creaci\u00f3n. undetermined = no se pudo determinar inicio SLA.",
+        },
+        "sla_policy": {
+            "type": "calendar_minutes", "threshold_minutes": 180,
+            "display_label": "SLA actual: 3 horas corridas",
+            "timezone": "America/Santiago",
+            "note": "Calendar minutes (no business hours) debido a limitaci\u00f3n de MongoDB Atlas free tier ($function no soportado). En M10+ migrar a calculate_business_minutes del CRM.",
+        },
+    }
+
+
+def default_sla_response():
+    return {
+        "total_hot": 0, "total_determined": 0, "total_undetermined": 0,
+        "within_sla_pct": None, "within_sla_pct_including_undetermined": None,
+        "critical_open": 0, "critical_open_excluding_undetermined": 0,
+        "breached_during_period": 0, "recovered_after_breach": 0,
+        "visit_intent_at_risk": 0,
+        "median_response_minutes": None, "p90_response_minutes": None,
+        "no_management": 0, "distribution": [], "conversion_table": [],
+        "sla_start_coverage": {
+            "total": 0, "determined": 0, "undetermined": 0,
+            "by_origin": {"assigned_at": 0, "created_at_verified": 0, "hot_detected_at": 0, "human_escalation_at": 0, "undetermined": 0},
+            "assigned_at_pct": None, "created_at_verified_pct": None, "undetermined_pct": None,
+        },
+        "sla_policy": {
+            "type": "calendar_minutes", "threshold_minutes": 180,
+            "display_label": "SLA actual: 3 horas corridas",
+            "timezone": "America/Santiago",
+        },
+    }
+
+
+def build_conversion_table(minutes_dist):
+    buckets = [
+        ("Menos de 30 min", 0, 30),
+        ("30-60 min", 30, 60),
+        ("1-3 horas", 60, 180),
+        ("M\u00e1s de 3 horas", 180, None),
+        ("Sin gesti\u00f3n", None, None),
+    ]
+    table = []
+    for label, lo, hi in buckets:
+        if lo is None:
+            items = [d for d in minutes_dist if not d["managed"]]
+        elif hi is None:
+            items = [d for d in minutes_dist if d["minutes"] is not None and d["minutes"] >= lo]
+        else:
+            items = [d for d in minutes_dist if d["minutes"] is not None and lo <= d["minutes"] < hi]
+        n = len(items)
+        table.append({
+            "bucket": label, "hot": n,
+            "visits": sum(1 for d in items if d["has_visit"]),
+            "conversion_pct": _coverage_pct(sum(1 for d in items if d["has_visit"]), n) if n else None,
+        })
+    return table
+
+
+# =============================================================================
+# 5. DEMANDA POR PRECIO (CORREGIDO)
+# =============================================================================
+
+def query_demand_by_price_ranges(period_start=None, period_end=None, filters=None):
+    """Demand by price ranges, separated by operation (Venta=UF, Arriendo=CLP). Reports coverage."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    extra = _build_extra_filter(filters) or {}
+
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": {"$expr": {"$and": [
+            {"$gte": ["$_created_normalized", start_utc]},
+            {"$lt": ["$_created_normalized", end_utc]},
+        ]}}},
+        {"$addFields": {
+            "_operacion": {"$ifNull": ["$prospecto.operacion", "Sin informacion"]},
+            "_precio_uf": {"$ifNull": ["$prospecto.precio_uf", None]},
+            "_precio_clp": {"$ifNull": ["$prospecto.precio_clp", None]},
+        }},
+    ]
+    raw = list(db["leads"].aggregate(pipeline))
+    total = len(raw)
+    venta = [l for l in raw if str(l.get("_operacion") or "").lower() == "venta"]
+    arriendo = [l for l in raw if str(l.get("_operacion") or "").lower() == "arriendo"]
+    otros = [l for l in raw if l not in venta and l not in arriendo]
+
+    def _bucket(leads, price_field, range_defs, currency):
+        bucketed = {k: 0 for k, _ in [("_", None)]}
+        bucketed = {}
+        for k, _, _ in range_defs:
+            bucketed[k] = 0
+        bucketed["Sin precio"] = 0
+        has_price = 0
+        for lead in leads:
+            p = lead.get(price_field)
+            if p is not None:
+                try:
+                    p = float(p)
+                    has_price += 1
+                    matched = False
+                    for k, lo, hi in range_defs:
+                        if hi is None:
+                            if p >= lo:
+                                bucketed[k] += 1
+                                matched = True
+                                break
+                        elif lo <= p < hi:
+                            bucketed[k] += 1
+                            matched = True
+                            break
+                    if not matched:
+                        bucketed["Sin precio"] += 1
+                except (ValueError, TypeError):
+                    bucketed["Sin precio"] += 1
+            else:
+                bucketed["Sin precio"] += 1
+        t = len(leads)
+        ranges = []
+        for k, _, _ in range_defs:
+            ranges.append({"range": k, "count": bucketed[k], "pct_of_op": _coverage_pct(bucketed[k], t)})
+        if bucketed.get("Sin precio", 0) > 0:
+            ranges.append({"range": "Sin precio", "count": bucketed["Sin precio"], "pct_of_op": _coverage_pct(bucketed["Sin precio"], t)})
+        return {"total": t, "ranges": ranges, "coverage": {"with_price": has_price, "without_price": t - has_price, "coverage_pct": _coverage_pct(has_price, t), "currency": currency}}
+
+    ops = {}
+    if venta:
+        ops["Venta"] = _bucket(venta, "_precio_uf", PRICE_RANGES_UF, "UF")
+    if arriendo:
+        ops["Arriendo"] = _bucket(arriendo, "_precio_clp", PRICE_RANGES_CLP, "CLP")
+    if otros:
+        ops["Otros"] = _bucket(otros, None, [], "N/A")
+
+    # Coverage summary
+    has_op = sum(1 for l in raw if str(l.get("_operacion") or "").lower() in ("venta", "arriendo"))
+    has_tipo = sum(1 for l in raw if str(l.get("prospecto", {}).get("tipo") or "") not in ("", "Sin informacion"))
+    has_comuna = sum(1 for l in raw if str(l.get("prospecto", {}).get("comuna") or "") not in ("", "Sin informacion"))
+    has_precio = sum(1 for l in raw if l.get("_precio_uf") is not None or l.get("_precio_clp") is not None)
+
+    return {
+        "price_ranges": [{"operation": k, **v} for k, v in ops.items()],
+        "coverage": {
+            "operacion": _coverage_pct(has_op, total),
+            "tipo_propiedad": _coverage_pct(has_tipo, total),
+            "comuna": _coverage_pct(has_comuna, total),
+            "precio": _coverage_pct(has_precio, total),
+            "dormitorios": None, "banos": None, "estacionamiento": None, "superficie": None,
+            "_note": "Cobertura baja en ciertas dimensiones. Datos no disponibles para dormitorios/ba\u00f1os/superficie.",
+        },
+        "_note": "Venta en UF. Arriendo en CLP. No se convierte entre monedas.",
+    }
+
+
+# =============================================================================
+# 6. MATRIZ EJECUTIVAS (CORREGIDO)
+# =============================================================================
+
+def query_commercial_executive_matrix(period_start=None, period_end=None, filters=None):
+    """Executive performance matrix. Universo: cohorte asignada. Stage reached (hist\u00f3rico)."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": {"$expr": {"$and": [
+            {"$gte": ["$_created_normalized", start_utc]},
+            {"$lt": ["$_created_normalized", end_utc]},
+        ]}}},
+        {"$addFields": {
+            "_ex": {"$ifNull": ["$ejecutivo_asignado", "Sin Asignar"]},
+            "_is_hot": {"$cond": [{"$or": [
+                {"$eq": ["$lead_temperature_effective", "HOT"]},
+                {"$gt": [{"$size": {
+                    "$ifNull": [{"$filter": {
+                        "input": {"$ifNull": ["$temperature_history", []]},
+                        "cond": {"$in": [{"$toUpper": {"$ifNull": ["$$this.value", "$$this.temperature", ""]}}, ["HOT", "COLD"]]},
+                    }}, []]
+                }}, 0]},
+            ]}, 1, 0]},
+            "_has_mgmt": {"$cond": [{"$ne": [{"$ifNull": ["$lifecycle.first_valid_management_at", None]}, None]}, 1, 0]},
+            "_ever_vs": {"$cond": [{"$or": [
+                {"$in": ["$pipeline_stage", ["VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION", "CLOSED_WON", "CLOSED_LOST"]]},
+            ]}, 1, 0]},
+            "_ever_vd": {"$cond": [{"$in": ["$pipeline_stage", ["VISIT_DONE", "OFFER", "NEGOTIATION", "CLOSED_WON", "CLOSED_LOST"]]}, 1, 0]},
+            "_ever_neg": {"$cond": [{"$in": ["$pipeline_stage", ["OFFER", "NEGOTIATION", "CLOSED_WON", "CLOSED_LOST"]]}, 1, 0]},
+            "_ever_cw": {"$cond": [{"$eq": ["$pipeline_stage", "CLOSED_WON"]}, 1, 0]},
+            "_ever_cl": {"$cond": [{"$eq": ["$pipeline_stage", "CLOSED_LOST"]}, 1, 0]},
+        }},
+        {"$group": {
+            "_id": "$_ex",
+            "assigned": {"$sum": 1},
+            "hot": {"$sum": "$_is_hot"},
+            "managed": {"$sum": "$_has_mgmt"},
+            "ever_visit_scheduled": {"$sum": "$_ever_vs"},
+            "ever_visit_done": {"$sum": "$_ever_vd"},
+            "ever_negotiation": {"$sum": "$_ever_neg"},
+            "ever_closed_won": {"$sum": "$_ever_cw"},
+            "ever_closed_lost": {"$sum": "$_ever_cl"},
+        }},
+        {"$sort": {"assigned": -1}},
+    ]
+
+    rows = list(db["leads"].aggregate(pipeline))
+    result = []
+    for r in rows:
+        if r["_id"] in UNASSIGNED_VALUES:
+            continue
+        t = r["assigned"]
+        result.append({
+            "executive": r["_id"], "assigned": t,
+            "hot": r["hot"],
+            "sla_fulfilled": _coverage_pct(r["managed"], t),
+            "ever_visit_scheduled": r["ever_visit_scheduled"],
+            "ever_visit_done": r["ever_visit_done"],
+            "ever_negotiation": r["ever_negotiation"],
+            "ever_closed_won": r["ever_closed_won"],
+            "ever_closed_lost": r["ever_closed_lost"],
+            "conversion_to_visit_pct": _coverage_pct(r["ever_visit_scheduled"], t),
+            "conversion_to_close_pct": _coverage_pct(r["ever_closed_won"], t),
+            "universe": "cohorte_asignados",
+        })
+    return result
+
+
+# =============================================================================
+# 7. PROPIEDADES: OPORTUNIDAD Y FUGA
+# =============================================================================
+
+def query_commercial_property_ranking(period_start=None, period_end=None, filters=None):
+    """Opportunity and leakage rankings. Universo: cohorte con codigo."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": {"$expr": {"$and": [
+            {"$gte": ["$_created_normalized", start_utc]},
+            {"$lt": ["$_created_normalized", end_utc]},
+        ]}}},
+        {"$addFields": {
+            "_code": {"$ifNull": ["$prospecto.codigo", None]},
+            "_is_hot": {"$cond": [{"$eq": ["$lead_temperature_effective", "HOT"]}, 1, 0]},
+            "_ever_vi": {"$cond": [{"$or": [
+                {"$in": [{"$ifNull": ["$bi_analytics_global.RESULTADO_CHAT", ""]}, list(VISIT_RESULTS)]},
+                {"$in": [{"$ifNull": ["$last_intent", ""]}, list(VISIT_RESULTS)]},
+                {"$in": ["$pipeline_stage", ["VISIT_SCHEDULED", "VISIT_DONE"]]},
+            ]}, 1, 0]},
+            "_ever_vs": {"$cond": [{"$in": ["$pipeline_stage", ["VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION", "CLOSED_WON"]]}, 1, 0]},
+            "_ever_cw": {"$cond": [{"$eq": ["$pipeline_stage", "CLOSED_WON"]}, 1, 0]},
+            "_ex": {"$ifNull": ["$ejecutivo_asignado", "Sin Asignar"]},
+            "_src": {"$ifNull": ["$prospecto.origen", "Sin informacion"]},
+            "_tipo": {"$ifNull": ["$prospecto.tipo", "Sin informacion"]},
+            "_comuna": {"$ifNull": ["$prospecto.comuna", "Sin informacion"]},
+            "_op": {"$ifNull": ["$prospecto.operacion", "Sin informacion"]},
+            "_precio_uf": {"$ifNull": ["$prospecto.precio_uf", None]},
+            "_has_mgmt": {"$cond": [{"$ne": [{"$ifNull": ["$lifecycle.first_valid_management_at", None]}, None]}, 1, 0]},
+        }},
+        {"$match": {"_code": {"$ne": None, "$ne": ""}}},
+        {"$group": {
+            "_id": "$_code",
+            "count": {"$sum": 1},
+            "hot": {"$sum": "$_is_hot"},
+            "ever_vi": {"$sum": "$_ever_vi"},
+            "ever_vs": {"$sum": "$_ever_vs"},
+            "ever_cw": {"$sum": "$_ever_cw"},
+            "executives": {"$addToSet": "$_ex"},
+            "sources": {"$addToSet": "$_src"},
+            "tipos": {"$addToSet": "$_tipo"},
+            "comunas": {"$addToSet": "$_comuna"},
+            "ops": {"$addToSet": "$_op"},
+            "precios": {"$push": "$_precio_uf"},
+            "mgmt_count": {"$sum": "$_has_mgmt"},
+        }},
+    ]
+
+    raw = list(db["leads"].aggregate(pipeline))
+    opp = []
+    leak = []
+    for r in raw:
+        code = r["_id"]
+        t = r["count"]
+        prices = []
+        for p in r.get("precios", []):
+            if p is not None:
+                try:
+                    prices.append(float(p))
+                except (ValueError, TypeError):
+                    pass
+        avg_p = round(sum(prices) / len(prices), 1) if prices else None
+        dom_ex = max(r.get("executives", [""]), key=lambda x: str(x))
+        dom_src = max(r.get("sources", [""]), key=lambda x: str(x))
+        vi = r.get("ever_vi", 0)
+        vs = r.get("ever_vs", 0)
+        entry = {
+            "code": code,
+            "type": max(r.get("tipos", [""]), key=lambda x: str(x)),
+            "commune": max(r.get("comunas", [""]), key=lambda x: str(x)),
+            "operation": max(r.get("ops", [""]), key=lambda x: str(x)),
+            "avg_price_uf": avg_p,
+            "leads": t, "hot": r["hot"],
+            "ever_visit_intent": vi,
+            "ever_visit_scheduled": vs,
+            "ever_closed_won": r["ever_cw"],
+            "conversion_pct": _coverage_pct(r["ever_cw"], t),
+            "dominant_executive": dom_ex,
+            "dominant_source": dom_src,
+        }
+        opp.append(entry)
+        uncoord = vi - vs
+        unmgmt = t - r["mgmt_count"]
+        if uncoord > 0 or unmgmt > 0:
+            leak.append({
+                "code": code, "ever_visit_intent": vi,
+                "uncoordinated": uncoord, "unmanaged": unmgmt,
+                "dominant_executive": dom_ex, "dominant_source": dom_src,
+                "commune": entry["commune"],
+            })
+    opp.sort(key=lambda x: x["leads"], reverse=True)
+    leak.sort(key=lambda x: x["uncoordinated"] + x["unmanaged"], reverse=True)
+    return {"opportunity": opp[:10], "leakage": leak[:10]}
+
+
+# =============================================================================
+# 8. INSIGHTS DETERMINISTICOS
+# =============================================================================
+
+def query_commercial_insights(kpis=None, funnel=None, sla=None, sources=None, demand=None, executives=None):
+    """Deterministic insight engine. No AI, no invented data."""
+    ins = []
+    if sla and sla.get("critical_open", 0) > 0:
+        ins.append({
+            "priority": "critical",
+            "title": f"{sla['critical_open']} leads Hot cr\u00edticos sin gesti\u00f3n",
+            "finding": f"Existen {sla['critical_open']} leads Hot con >3h sin gesti\u00f3n.",
+            "evidence": f"Cr\u00edticos: {sla['critical_open']} | Sin gesti\u00f3n: {sla.get('no_management', 0)}",
+            "impact": "Riesgo de p\u00e9rdida de oportunidades.",
+            "recommended_action": "Asignar y contactar urgentemente.",
+        })
+    if funnel and len(funnel) > 1:
+        mx, bn = 0, None
+        for i in range(1, len(funnel)):
+            diff = funnel[i - 1]["count"] - funnel[i]["count"]
+            if diff > mx:
+                mx, bn = diff, (funnel[i - 1]["label"], funnel[i]["label"])
+        if bn and mx > 0:
+            ins.append({
+                "priority": "high",
+                "title": f"Fuga en {bn[0]} \u2192 {bn[1]}",
+                "finding": f"{mx} leads se pierden entre {bn[0]} y {bn[1]}.",
+                "evidence": f"P\u00e9rdida: {mx} leads",
+                "impact": "Oportunidades que no avanzan.",
+                "recommended_action": "Analizar causas de abandono.",
+            })
+    vi = next((s for s in (funnel or []) if s["key"] == "visit_intent"), None)
+    vs = next((s for s in (funnel or []) if s["key"] == "visit_scheduled"), None)
+    if vi and vs and vi["count"] - vs["count"] > 0:
+        g = vi["count"] - vs["count"]
+        ins.append({
+            "priority": "high",
+            "title": f"Brecha de {g} leads entre intenci\u00f3n y coordinaci\u00f3n",
+            "finding": f"{g} leads con intenci\u00f3n de visita sin coordinar.",
+            "evidence": f"Intenciones: {vi['count']} | Coordinadas: {vs['count']}",
+            "impact": "Demanda insatisfecha.",
+            "recommended_action": "Contactar leads con intenci\u00f3n no coordinada.",
+        })
+    if sources:
+        for src in sources[:5]:
+            n = src.get("source", "")
+            if n in NON_COMMERCIAL_SOURCES:
+                continue
+            v = src.get("variation_pct")
+            a = src.get("advanced_pct", 0)
+            r = src.get("received", 0)
+            if v is not None and v > 20 and a < 20 and r >= 15:
+                ins.append({
+                    "priority": "medium",
+                    "title": f"Fuente {n}: +{v:.1f}% volumen, baja conversi\u00f3n",
+                    "finding": f"{n} creci\u00f3 {v:.1f}% pero solo {a:.1f}% avanza.",
+                    "evidence": f"Vol: {r} | Avanzados: {a:.1f}%",
+                    "impact": "Posible deterioro de calidad.",
+                    "recommended_action": "Revisar perfil y gesti\u00f3n por fuente.",
+                })
+                break
+    if executives:
+        for ex in executives[:3]:
+            mc = sum(ex.get(k, 0) for k in ["ever_visit_scheduled", "ever_visit_done", "ever_closed_won", "ever_closed_lost"])
+            at = ex.get("assigned", 0)
+            um = at - mc
+            if um > 5 and at > 0 and mc / at < 0.5:
+                ins.append({
+                    "priority": "high",
+                    "title": f"{ex['executive']}: {um} leads sin gesti\u00f3n",
+                    "finding": f"{um} leads sin gesti\u00f3n ({_coverage_pct(mc, at)}% gestionado).",
+                    "evidence": f"Asignados: {at} | Gestionados: {mc}",
+                    "impact": "Riesgo de saturaci\u00f3n.",
+                    "recommended_action": "Revisar carga de trabajo.",
+                })
+                break
+    return ins[:5]
+
+
+# =============================================================================
+# 9. PERIOD COMPARISON HELPERS
+# =============================================================================
+
+def period_today_vs_last_week():
+    """Today (same hour) vs same day last week (same hour)."""
+    now = datetime.now(CHILE_TZ)
+    today_start = CHILE_TZ.localize(datetime(now.year, now.month, now.day, 0, 0, 0))
+    lw = now - timedelta(days=7)
+    lw_start = CHILE_TZ.localize(datetime(lw.year, lw.month, lw.day, 0, 0, 0))
+    lw_cut = lw_start + (now - today_start)
+    return (
+        today_start.astimezone(timezone.utc), now.astimezone(timezone.utc),
+        lw_start.astimezone(timezone.utc), lw_cut.astimezone(timezone.utc),
+    )
+
+
+def period_week_to_date():
+    """Week to date vs same weekdays last week."""
+    now = datetime.now(CHILE_TZ)
+    monday = now - timedelta(days=now.weekday())
+    wtd_start = CHILE_TZ.localize(datetime(monday.year, monday.month, monday.day, 0, 0, 0))
+    prev_monday = monday - timedelta(days=7)
+    prev_start = CHILE_TZ.localize(datetime(prev_monday.year, prev_monday.month, prev_monday.day, 0, 0, 0))
+    prev_end = prev_start + (now - wtd_start)
+    return (
+        wtd_start.astimezone(timezone.utc), now.astimezone(timezone.utc),
+        prev_start.astimezone(timezone.utc), prev_end.astimezone(timezone.utc),
+    )
+
+
+def period_month_to_date():
+    """Month to date vs same days last month."""
+    now = datetime.now(CHILE_TZ)
+    mtd_start = CHILE_TZ.localize(datetime(now.year, now.month, 1, 0, 0, 0))
+    prev_m = now.month - 1 if now.month > 1 else 12
+    prev_y = now.year if now.month > 1 else now.year - 1
+    prev_start = CHILE_TZ.localize(datetime(prev_y, prev_m, 1, 0, 0, 0))
+    prev_end = prev_start + (now - mtd_start)
+    return (
+        mtd_start.astimezone(timezone.utc), now.astimezone(timezone.utc),
+        prev_start.astimezone(timezone.utc), prev_end.astimezone(timezone.utc),
+    )

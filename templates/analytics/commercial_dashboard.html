@@ -72,8 +72,8 @@ body{margin:0;background:var(--bg-body);color:var(--txt);font-family:'Outfit',sy
 .d .kpi-card .kpi-spark{font-size:.6rem;color:var(--txt3);letter-spacing:.15em;white-space:nowrap;overflow:hidden}
 .d .tab-nav{display:flex;gap:0;margin-bottom:8px;border-bottom:1px solid var(--bar)}
 .d .tab-nav button{padding:7px 18px;border:0;border-bottom:2px solid transparent;background:0;color:var(--txt2);cursor:pointer;font:.8rem Outfit,sans-serif;font-weight:500;transition:all .18s}
-.d .tab-nav button:hover{color:var(--txt)}.d .tab-nav button.active{color:var(--brand);border-bottom-color:var(--brand)}
-.d .tab-nav button[aria-selected="true"]{color:var(--brand);border-bottom-color:var(--brand)}
+.d .tab-nav button:hover{color:var(--txt);background:var(--bar)}
+.d .tab-nav button.active,.d .tab-nav button[aria-selected="true"]{color:var(--brand);border-bottom-color:var(--brand);background:var(--brand2)}
 .d .tab-panel{display:none}.d .tab-panel.active,.d .tab-panel.show{display:block!important}
 .d .card{background:var(--bg-card);border:1px solid var(--bar);border-radius:var(--radius);padding:14px 16px;margin-bottom:8px}
 .d .card h2{font-size:.9rem;font-weight:600;margin-bottom:8px;color:var(--txt)}
@@ -177,14 +177,14 @@ body{margin:0;background:var(--bg-body);color:var(--txt);font-family:'Outfit',sy
   <select id="fType" aria-label="Filtrar por tipo de propiedad"><option value="">Tipo prop.</option></select>
   <label for="fCommune" class="sr-only">Comuna</label>
   <select id="fCommune" aria-label="Filtrar por comuna"><option value="">Comuna</option></select>
-  <label for="fTemp" class="sr-only">Temperatura</label>
-  <select id="fTemp" aria-label="Filtrar por temperatura"><option value="">Temperatura</option><option value="HOT">Hot</option><option value="COLD">Cold</option></select>
+  <label for="fTemp" class="sr-only">Temperatura actual</label>
+  <select id="fTemp" aria-label="Filtrar por temperatura actual"><option value="">Temp. actual</option><option value="HOT">Hot</option><option value="COLD">Cold</option><option value="UNKNOWN">S/I</option></select>
   <label for="fProp" class="sr-only">Propiedad</label>
   <select id="fProp" aria-label="Filtrar por propiedad"><option value="">Propiedad</option></select>
   <label for="fAsgn" class="sr-only">Asignación</label>
   <select id="fAsgn" aria-label="Filtrar por estado de asignación"><option value="">Asignaci&oacute;n</option><option value="assigned">Asignados</option><option value="unassigned">Sin asignar</option></select>
   <button class="btn-sm primary" onclick="applyFilters()"><i class="fa-solid fa-check"></i> Aplicar</button>
-  <button class="btn-sm" onclick="resetFilters()"><i class="fa-solid fa-rotate"></i></button>
+  <button class="btn-sm" onclick="resetFilters()" title="Restablecer"><i class="fa-solid fa-rotate"></i> Restablecer</button>
 </div>
 <div class="flt-chips" id="fltChips" aria-live="polite"></div>
 
@@ -350,11 +350,16 @@ function applyFilters(){
 
 function renderChips(){
   const chips=$('fltChips'),items=[];
-  const labels={period:'Periodo',exec:'Ejecutiva',source:'Fuente',op:'Operacion',type:'Tipo',commune:'Comuna',temp:'Temp',prop:'Propiedad',asgn:'Asignacion'};
+  const labels={period:'Periodo',exec:'Ejecutiva',source:'Fuente',op:'Operacion',type:'Tipo',commune:'Comuna',temp:'Temp. actual',prop:'Propiedad',asgn:'Asignacion'};
   const selMap={exec:'fExec',source:'fSource',op:'fOp',type:'fType',commune:'fCommune',temp:'fTemp',prop:'fProp',asgn:'fAsgn'};
-  if(FILTERS.period_start)items.push({k:'period',v:buildPeriodLabel().replace(/<[^>]*>/g,'')});
+  if(FILTERS.period_start)items.push({k:'period',v:labels.period+': '+FD(FILTERS.period_start)+' \u2013 '+FD(FILTERS.period_end)});
   ['exec','source','op','type','commune','temp','prop','asgn'].forEach(k=>{if(FILTERS[k])items.push({k,v:labels[k]+': '+FILTERS[k]})});
-  let h=items.length?items.map(i=>'<span class="flt-chip" data-key="'+E(i.k)+'">'+E(i.v)+' <i class="fa-solid fa-times"></i></span>').join('')+' <button class="btn-sm danger" style="font-size:.68rem;padding:2px 6px" id="btnClearAll">Limpiar</button>':'';
+  let h='';
+  if(items.length){
+    h='<div style="font-size:.68rem;color:var(--txt3);margin-bottom:3px;font-weight:600">Filtros activos:</div>';
+    h+=items.map(i=>'<span class="flt-chip" data-key="'+E(i.k)+'">'+E(i.v)+' <i class="fa-solid fa-times"></i></span>').join('');
+    h+=' <button class="btn-sm danger" style="font-size:.68rem;padding:2px 6px" id="btnClearAll">Limpiar todos</button>';
+  }
   chips.innerHTML=h;
   chips.querySelectorAll('.flt-chip').forEach(el=>{el.onclick=()=>{
     const k=el.dataset.key;
@@ -367,10 +372,12 @@ function renderChips(){
 }
 
 function resetFilters(){
-  FILTERS={};setPeriod('30d');COMPARE='prev';
+  FILTERS={};setPeriod('30d');COMPARE='prev';CUR_PRICE_OP='Venta';
   document.querySelectorAll('.d select').forEach(s=>s.value='');
   $('pCompare').value='prev';
-  $('fltChips').innerHTML='';loadData();
+  $('fltChips').innerHTML='';
+  history.replaceState(null,'',location.pathname);
+  loadData();
 }
 
 function toggleMobileMenu(){
@@ -391,12 +398,20 @@ function actTab(name){
 
 function render(){
   if(!D)return;
-  $('statusText').innerHTML='<i class="fa-solid fa-circle-check" style="color:'+C.green+'"></i> Datos cargados | '+(D.meta?.sla_policy?.display_label||'SLA 3h corridas');
   const cur=D.meta?.period?.current||{},prv=D.meta?.period?.previous||{};
-  let compLabel='Periodo anterior';
+  let compLabel='Periodo anterior equivalente';
   if(COMPARE==='yoy')compLabel='Mismo periodo a\u00f1o anterior';
   if(COMPARE==='none')compLabel='Sin comparaci\u00f3n';
-  $('periodInfo').innerHTML='<strong>Actual:</strong> '+(cur.label||buildPeriodLabel()||FILTERS.period_start+' a '+FILTERS.period_end||'')+' | <strong>Comparaci\u00f3n:</strong> '+(prv.label||compLabel)+' | <strong>Tipo:</strong> '+(D.meta?.period?.type||'personalizado');
+  const curStart=FD(FILTERS.period_start),curEnd=FD(FILTERS.period_end);
+  const prvStart=prv.start?FD(prv.start.split('T')[0]):'S/I';
+  const prvEnd=prv.end?FD(prv.end.split('T')[0]):'S/I';
+  const presetLabels={today:'Hoy',week:'Semana',month:'Mes','30d':'\u00daltimos 30 d\u00edas',custom:'Personalizado'};
+  const mode=presetLabels[FILTERS.period_preset]||'Personalizado';
+  $('periodInfo').innerHTML='<div style="margin-bottom:1px"><strong>Periodo actual</strong> '+curStart+' \u2013 '+curEnd+'</div><div style="margin-bottom:1px"><strong>Comparaci\u00f3n</strong> '+prvStart+' \u2013 '+prvEnd+'</div><div><strong>Modo</strong> '+mode+' vs. '+compLabel.toLowerCase()+'</div>';
+  const totalLeads=D.kpis?.leads_received?.value||0;
+  let execLabel='Todas las ejecutivas';
+  if(FILTERS.exec)execLabel=FILTERS.exec;
+  $('statusText').innerHTML='<i class="fa-solid fa-circle-check" style="color:'+C.green+'"></i> <strong>'+F(totalLeads)+'</strong> leads &middot; '+mode+' &middot; '+execLabel;
   rKPI();rCharts();rInsights();
 }
 
@@ -415,10 +430,17 @@ function rKPI(){
   ];
   let h='';
   defs.forEach(([_,key,name,icon,bar])=>{
-    const v=k[key]||{},vv=v.variation_pct;
-    const vr=vv!=null?(''+(vv>0?'<i class="fa-solid fa-caret-up"></i> ':'<i class="fa-solid fa-caret-down"></i> ')+(vv>=0?'+':'')+Number(vv).toFixed(1)+'%'):'S/I';
-    const cls=vv!=null?(vv>0?'up':vv<0?'down':'neutral'):'neutral';
-    h+='<div class="kpi-card"><div class="kpi-bar '+bar+'"></div><div class="kpi-head"><div class="kpi-icon '+bar+'"><i class="fa-solid fa-'+icon+'"></i></div><div class="kpi-name">'+name+'</div></div><div class="kpi-val">'+(v.value!=null?F(v.value):'S/I')+'</div><div class="kpi-sub"><span class="kpi-var '+cls+'">'+vr+'</span></div></div>';
+    const v=k[key]||{},vv=v.variation_pct,pv=v.previous,curVal=v.value;
+    let vr='S/I',cls='neutral';
+    if(vv!=null){
+      cls=vv>0?'up':vv<0?'down':'neutral';
+      if(pv!=null&&pv<10&&curVal!=null){
+        vr='<i class="fa-solid fa-caret-'+(vv>0?'up':'down')+'"></i> '+F(curVal)+' vs. '+F(pv)+' leads <span class="kpi-vs">(+'+Number(vv).toFixed(0)+'%, base peque\u00f1a)</span>';
+      }else{
+        vr='<i class="fa-solid fa-caret-'+(vv>0?'up':'down')+'"></i> '+(vv>=0?'+':'')+Number(vv).toFixed(1)+'%';
+      }
+    }
+    h+='<div class="kpi-card"><div class="kpi-bar '+bar+'"></div><div class="kpi-head"><div class="kpi-icon '+bar+'"><i class="fa-solid fa-'+icon+'"></i></div><div class="kpi-name">'+name+'</div></div><div class="kpi-val">'+(curVal!=null?F(curVal):'S/I')+'</div><div class="kpi-sub"><span class="kpi-var '+cls+'">'+vr+'</span></div></div>';
   });
   const slaPct=slaVal.within_sla_pct;
   const slaColor=getSLAColor(slaPct);

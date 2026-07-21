@@ -1596,15 +1596,17 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None):
                 {"$gte": ["$_created_normalized", start_dt]},
                 {"$lt": ["$_created_normalized", end_dt]},
             ]}}},
-            {"$match": {"pipeline_stage": stage}},
-            {"$count": "c"},
         ]
+        if extra:
+            pipeline.append({"$match": extra})
+        pipeline.append({"$match": {"pipeline_stage": stage}})
+        pipeline.append({"$count": "c"})
         r = list(db["leads"].aggregate(pipeline))
         return r[0]["c"] if r else 0
 
     # KPI 1: Leads recibidos
-    received = _cohort_count()
-    received_prev = _cohort_count(None, prev_start, prev_end)
+    received = _cohort_count(extra)
+    received_prev = _cohort_count(extra, prev_start, prev_end)
 
     # KPI 2: Hot histórico (SOLO temperature_history)
     def _hot_historical(start_dt, end_dt):
@@ -1614,12 +1616,16 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None):
                 {"$gte": ["$_created_normalized", start_dt]},
                 {"$lt": ["$_created_normalized", end_dt]},
             ]}}},
+        ]
+        if extra:
+            p.append({"$match": extra})
+        p.extend([
             {"$match": {"$or": [
                 {"temperature_history.value": "HOT"},
                 {"temperature_history.temperature": "HOT"},
             ]}},
             {"$count": "c"},
-        ]
+        ])
         r = list(db["leads"].aggregate(p))
         return r[0]["c"] if r else 0
 
@@ -1634,9 +1640,13 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None):
                 {"$gte": ["$_created_normalized", start_dt]},
                 {"$lt": ["$_created_normalized", end_dt]},
             ]}}},
+        ]
+        if extra:
+            p.append({"$match": extra})
+        p.extend([
             {"$match": {"lead_temperature_effective": "HOT"}},
             {"$count": "c"},
-        ]
+        ])
         r = list(db["leads"].aggregate(p))
         return r[0]["c"] if r else 0
 
@@ -1650,6 +1660,10 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None):
                 {"$gte": ["$_created_normalized", start_dt]},
                 {"$lt": ["$_created_normalized", end_dt]},
             ]}}},
+        ]
+        if extra:
+            p.append({"$match": extra})
+        p.extend([
             {"$addFields": {
                 "_has_vi": {"$cond": [{"$or": [
                     {"$in": [{"$ifNull": ["$bi_analytics_global.RESULTADO_CHAT", ""]}, list(VISIT_RESULTS)]},
@@ -1659,7 +1673,7 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None):
             }},
             {"$match": {"_has_vi": 1}},
             {"$count": "c"},
-        ]
+        ])
         r = list(db["leads"].aggregate(p))
         return r[0]["c"] if r else 0
 
@@ -1671,12 +1685,16 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None):
     visit_scheduled_prev = _stage_count("VISIT_SCHEDULED", prev_start, prev_end)
 
     # KPI 5: SLA
-    sla_within = list(db["leads"].aggregate([
+    sla_parts = [
         _normalized_created_at_stage(),
         {"$match": {"$expr": {"$and": [
             {"$gte": ["$_created_normalized", start_utc]},
             {"$lt": ["$_created_normalized", end_utc]},
         ]}}},
+    ]
+    if extra:
+        sla_parts.append({"$match": extra})
+    sla_parts.extend([
         {"$match": {"$or": [
             {"temperature_history.value": "HOT"},
             {"temperature_history.temperature": "HOT"},
@@ -1691,7 +1709,8 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None):
         }},
         {"$match": {"_resp_min": {"$lt": 180}}},
         {"$count": "c"},
-    ]))
+    ])
+    sla_within = list(db["leads"].aggregate(sla_parts))
     sla_managed = sla_within[0]["c"] if sla_within else 0
     sla_pct_val = _pct(sla_managed, hot) if hot else None
 

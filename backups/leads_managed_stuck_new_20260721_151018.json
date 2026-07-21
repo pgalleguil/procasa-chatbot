@@ -1,0 +1,25 @@
+[
+  {
+    "_id": {
+      "$oid": "6a5e832ef9eab00c0b2fc617"
+    },
+    "phone": "+56982030519",
+    "stage": "NEW",
+    "pipeline_stage": "NEW",
+    "ejecutivo_asignado": "Susana Ensignia",
+    "lifecycle": {
+      "first_valid_management_at": {
+        "$date": "2026-07-21T13:44:27.441Z"
+      }
+    },
+    "stage_history": [
+      {
+        "from": null,
+        "to": "NEW",
+        "actor": "supervisor",
+        "timestamp": "2026-07-20T16:21:02.508152-04:00",
+        "notes": "Ingreso manual"
+      }
+    ]
+  }
+]

@@ -1,0 +1,4988 @@
+[
+  {
+    "_id": "695833583bfdb6de3d842612",
+    "phone": "+56942091437",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695873fc3bfdb6de3d842708",
+    "phone": "+56973971683",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "695984523bfdb6de3d842b39",
+    "phone": "+56988607001",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6959d1323bfdb6de3d84303f",
+    "phone": "+56979849235",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "695ac0ed3bfdb6de3d843476",
+    "phone": "+56932500493",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "695bc7e73bfdb6de3d8438a1",
+    "phone": "+56997266227",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "695bfc453bfdb6de3d843980",
+    "phone": "5656961716413",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695c09cb3bfdb6de3d8439b4",
+    "phone": "+56930706131",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "695c0d193bfdb6de3d8439c4",
+    "phone": "+56931994800",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695c0fd13bfdb6de3d8439d2",
+    "phone": "+56927088985",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695c250b3bfdb6de3d843a89",
+    "phone": "+56999190279",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695c26653bfdb6de3d843a8f",
+    "phone": "+56987161016",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695c27b83bfdb6de3d843a95",
+    "phone": "+56926374100",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695c29173bfdb6de3d843a99",
+    "phone": "+56987483645",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "695c30103bfdb6de3d843aad",
+    "phone": "+56948494377",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695d2c963bfdb6de3d8440c3",
+    "phone": "+56977079438",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695d2e033bfdb6de3d8440c8",
+    "phone": "+56965525140",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695d2e4c3bfdb6de3d8440c9",
+    "phone": "+56977496255",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695d31b53bfdb6de3d8440d4",
+    "phone": "+56992801634",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695d32173bfdb6de3d8440d8",
+    "phone": "+56981583487",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695d33373bfdb6de3d8440dc",
+    "phone": "+56976597822",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695d34c83bfdb6de3d8440e6",
+    "phone": "+56987931815",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695d354f3bfdb6de3d8440e8",
+    "phone": "+56959820323",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "695d709c3bfdb6de3d84419b",
+    "phone": "+56990519403",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695d8cf43bfdb6de3d8441ed",
+    "phone": "+56995738010",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "695dafc23bfdb6de3d84425e",
+    "phone": "+56932386895",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "695ddf193bfdb6de3d8445bb",
+    "phone": "+56982131625",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695e7b953bfdb6de3d8447b9",
+    "phone": "+56981680291",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "695f19d03bfdb6de3d844dfa",
+    "phone": "+56958596555",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "695f96843bfdb6de3d84513c",
+    "phone": "+56993340439",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6960fc973bfdb6de3d845d0d",
+    "phone": "+56984213653",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69610f813bfdb6de3d845d70",
+    "phone": "+56993936082",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "696276593bfdb6de3d846c56",
+    "phone": "+56989855745",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6963e59d3bfdb6de3d847f10",
+    "phone": "+56964581082",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "696414d23bfdb6de3d847fc1",
+    "phone": "+56978439015",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6964e2b03bfdb6de3d848b8e",
+    "phone": "+56988686654",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "696572d79b7646e0a5aec9f7",
+    "phone": "+56930898207",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69659af59b7646e0a5aeca9c",
+    "phone": "+56971943829",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "696665e89b7646e0a5aed423",
+    "phone": "+56971342607",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69678af99b7646e0a5aedeaf",
+    "phone": "+56986252962",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6967c5839b7646e0a5aee078",
+    "phone": "+56981571744",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6967caa79b7646e0a5aee08c",
+    "phone": "+56951441330",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6967dafd9b7646e0a5aee0bf",
+    "phone": "+56945976477",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6967ded49b7646e0a5aee0d1",
+    "phone": "+56958450996",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "696a667fa6b0abac7b7f362d",
+    "phone": "+56954493441",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "696a67e2a6b0abac7b7f3637",
+    "phone": "+56937573178",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "696a998fa6b0abac7b7f36db",
+    "phone": "+56920345354",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "696aae5ea6b0abac7b7f372b",
+    "phone": "+56975817025",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "696d5e86a6b0abac7b7f41c8",
+    "phone": "+56942402781",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "696e165fa6b0abac7b7f444d",
+    "phone": "+56976153333",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "696e18d8a6b0abac7b7f4456",
+    "phone": "+56972072029",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "696e198ca6b0abac7b7f4458",
+    "phone": "+56978701456",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "696e1b1ba6b0abac7b7f445c",
+    "phone": "+56989216063",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "696e6378a6b0abac7b7f4625",
+    "phone": "+56966538814",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "696f744da6b0abac7b7f4ad9",
+    "phone": "+56994190243",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6977a17bbbebf240378eb117",
+    "phone": "+56950967753",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6977eb7abbebf240378eb217",
+    "phone": "+56926106691",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6978c75fbbebf240378eb4d3",
+    "phone": "+56976997501",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6978d623bbebf240378eb516",
+    "phone": "+56971289760",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69793597bbebf240378eb678",
+    "phone": "+56951025492",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "697a4ce5e81d3554f96219ce",
+    "phone": "+56921701119",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "697aa029e81d3554f9621af3",
+    "phone": "+56937474756",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "697abd87e81d3554f9621b5a",
+    "phone": "+56993007964",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "697b9a71e81d3554f9621db9",
+    "phone": "+56926139948",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "697be473e81d3554f9621ec4",
+    "phone": "+56940300498",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "697be955e81d3554f9621ed2",
+    "phone": "+56956184379",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "697bf80ee81d3554f9621ef9",
+    "phone": "+56977353577",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "697d4c25e81d3554f96223be",
+    "phone": "+56987779800",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "697e2be4e81d3554f9622663",
+    "phone": "+56995007812",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "697e875ee81d3554f96227c6",
+    "phone": "+56988011945",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69800371aaac1d1c41155b0f",
+    "phone": "+56965769908",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6980b74a25057b3d0734861e",
+    "phone": "+56932334061",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6980bfec25057b3d07348639",
+    "phone": "+56987966503",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69815b7b25057b3d0734881c",
+    "phone": "+56978385976",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69827c2c25057b3d07348c57",
+    "phone": "+56949805752",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6983550f25057b3d07348ee6",
+    "phone": "+56956688631",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "698359fc25057b3d07348ef0",
+    "phone": "+56977770792",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69850c739dd2ba54e4780be4",
+    "phone": "+56930270298",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69854e6f9dd2ba54e4780ca1",
+    "phone": "+56975990989",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6986334e9dd2ba54e4780f06",
+    "phone": "+56998974276",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69867d839dd2ba54e4780fca",
+    "phone": "+56942899140",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69879de59dd2ba54e478127e",
+    "phone": "+56996318047",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6987af979dd2ba54e478129e",
+    "phone": "+56947124986",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6988988d9dd2ba54e47814e9",
+    "phone": "+56963033172",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6989c2c09dd2ba54e4781963",
+    "phone": "+56950931944",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6989cb5f9dd2ba54e478197c",
+    "phone": "+56961886576",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6989e0c39dd2ba54e47819ba",
+    "phone": "+56940318905",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6989e1419dd2ba54e47819bc",
+    "phone": "+56991951317",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6989e5b69dd2ba54e4781a38",
+    "phone": "+56942846680",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698a5ad89dd2ba54e478270e",
+    "phone": "+56951546931",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698a60649dd2ba54e4782722",
+    "phone": "+56986694257",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "698a82ff9dd2ba54e478288d",
+    "phone": "+56991369889",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698aa7349dd2ba54e4782a19",
+    "phone": "+56951978836",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "698b2d6e9dd2ba54e4782b77",
+    "phone": "+56994484323",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "698b33ce9dd2ba54e4782b89",
+    "phone": "+56939125978",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "698b46f19dd2ba54e4782bc8",
+    "phone": "+56920596628",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698b5a009dd2ba54e4782d21",
+    "phone": "+56987452292",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698b5cad9dd2ba54e4782d89",
+    "phone": "test_verification_001",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698b615f9dd2ba54e4782ddf",
+    "phone": "+56113383445647533",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698b63059dd2ba54e4782de5",
+    "phone": "+5689284317057206",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698b65c19dd2ba54e4782e2c",
+    "phone": "+113383445647533",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698b74409dd2ba54e4782eb4",
+    "phone": "+56997511895",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "698b78bc9dd2ba54e4782ed5",
+    "phone": "+56944054144",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698b7e9b9dd2ba54e4782ee7",
+    "phone": "+56976093318",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698ba5059dd2ba54e4783246",
+    "phone": "+56932926872",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "698d4a679dd2ba54e47839c5",
+    "phone": "+56994716934",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "698e24fe9dd2ba54e4783ec5",
+    "phone": "+56923824213",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698e384e6a099d6e9612a343",
+    "phone": "+32857137393849",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698e3de76a099d6e9612a38c",
+    "phone": "+56931852700",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "698e5fc46a099d6e9612a64b",
+    "phone": "+56959138875",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698f48366a099d6e9612b23d",
+    "phone": "+56944318968",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698f5a5f6a099d6e9612b2b8",
+    "phone": "+56951279657",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "698f6a9b6a099d6e9612b321",
+    "phone": "+256783327215815",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698f6f406a099d6e9612b337",
+    "phone": "+56942540708",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "698f70e66a099d6e9612b33c",
+    "phone": "+56994790747",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "698f7d646a099d6e9612b36e",
+    "phone": "+56994975685",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "698fa7c66a099d6e9612b438",
+    "phone": "+56953046344",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6990d15e6a099d6e9612ba2b",
+    "phone": "+56978583415",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6990fe096a099d6e9612baf9",
+    "phone": "+56974971140",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6991037d6a099d6e9612bb2f",
+    "phone": "+80612325122141",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6991ecc86a099d6e9612bf22",
+    "phone": "+56998636271",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69937dda6a099d6e9612c61a",
+    "phone": "+56978470907",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6993ecb66a099d6e9612c80d",
+    "phone": "+56991385819",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "699451ee6a099d6e9612c8d2",
+    "phone": "+56968494217",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "699496f36a099d6e9612c9e5",
+    "phone": "+56976253616",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "699515656a099d6e9612ccb2",
+    "phone": "+56937336921",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6995250d6a099d6e9612ccfe",
+    "phone": "+56955133734",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69952cce6a099d6e9612cd54",
+    "phone": "+56987937483",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69957bfa6a099d6e9612cec5",
+    "phone": "+56965327674",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6995e02f6a099d6e9612d0e5",
+    "phone": "+56996457908",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6995f2da4ee2dc16012bea5f",
+    "phone": "56940226921",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6995f3984ee2dc16012bea68",
+    "phone": "56990202746",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6995f45f4ee2dc16012bea74",
+    "phone": "56956925691",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699609f04ee2dc16012bea83",
+    "phone": "56987937483",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69964f35380e9282a940a7a9",
+    "phone": "no-phone-1771458357.403339",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699650a7380e9282a940a7b7",
+    "phone": "no-phone-1771458727.972403",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699656599b6a24e3e76c6859",
+    "phone": "+56942500287",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699657399b6a24e3e76c685e",
+    "phone": "+56993609964",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699657da9b6a24e3e76c6863",
+    "phone": "+56988061610",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699661769b6a24e3e76c686b",
+    "phone": "+56999296499",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699710e2c9ce571044eb95ee",
+    "phone": "+56996234910",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699711fac9ce571044eb95f8",
+    "phone": "+56996740361",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69971532c9ce571044eb9606",
+    "phone": "no-phone-1771509042.644269",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6997158ec9ce571044eb960d",
+    "phone": "no-phone-1771509134.309954",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699715f8c9ce571044eb9619",
+    "phone": "no-phone-1771509240.823911",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699716d3c9ce571044eb9628",
+    "phone": "+56973526504",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69971b30c9ce571044eb9633",
+    "phone": "+56973305364",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69971dd4c9ce571044eb9640",
+    "phone": "+56961177799",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699729d46a099d6e9612d8f6",
+    "phone": "+56966327239",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69975a54ebb8b982b60522ce",
+    "phone": "no-phone-1771526740.166642",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69975a95ebb8b982b60522d5",
+    "phone": "+56922480859",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69975ad1ebb8b982b60522da",
+    "phone": "+56941911175",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69975b15ebb8b982b60522e2",
+    "phone": "+56975404863",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69975c51ebb8b982b60522ec",
+    "phone": "+56961685940",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69975c99ebb8b982b60522f3",
+    "phone": "+56994906890",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69975cccebb8b982b60522fa",
+    "phone": "+56989019910",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69975dd0ebb8b982b6052306",
+    "phone": "+56987614570",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699796d76a099d6e9612db0e",
+    "phone": "+56958734390",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69979e466a099d6e9612db2a",
+    "phone": "+269921581813981",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69979ecc6a099d6e9612db2f",
+    "phone": "+56981744605",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69979f126a099d6e9612db30",
+    "phone": "+114959296032809",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69988c8f9016617590723d41",
+    "phone": "+56952123240",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69988f3abaa2d9af4a8f9a4d",
+    "phone": "+56995721482",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69988fefbaa2d9af4a8f9a5f",
+    "phone": "+56998350168",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6998adef9016617590723dcb",
+    "phone": "+56968446600",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69990bf79016617590723fac",
+    "phone": "+56991030593",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69990c1c9016617590723fad",
+    "phone": "+269290171330655",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69990e759016617590723fb5",
+    "phone": "+56987696059",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699910679016617590723fbb",
+    "phone": "+156019149815839",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699b63fb9016617590724867",
+    "phone": "+200626613051470",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699b85c690166175907248ce",
+    "phone": "+56942534975",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699c83579016617590724d34",
+    "phone": "+56944291170",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "699c91d09016617590724dc2",
+    "phone": "+56933440532",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "699c93ad9016617590724dcc",
+    "phone": "+33170300911693",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699c9a44baa2d9af4a8f9c41",
+    "phone": "+56965968639",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699c9a8abaa2d9af4a8f9c48",
+    "phone": "+87417388",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699c9ac2baa2d9af4a8f9c4e",
+    "phone": "no-phone-1771870914.518329",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699c9affbaa2d9af4a8f9c53",
+    "phone": "+56944727635",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699c9b30baa2d9af4a8f9c5a",
+    "phone": "no-phone-1771871024.826692",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699cb833baa2d9af4a8f9cce",
+    "phone": "+56986311315",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699cbae49016617590724ea0",
+    "phone": "+56997100002",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "699d00a69016617590724f9d",
+    "phone": "+56939285455",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699d0a669016617590724fc8",
+    "phone": "+56966448273",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699d11f99016617590724fe3",
+    "phone": "+56975858554",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699d45349016617590725092",
+    "phone": "+56995097913",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699dcd24baa2d9af4a8f9e37",
+    "phone": "+56223682711",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699dcd7cbaa2d9af4a8f9e3d",
+    "phone": "+56987715363",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699dec899016617590725326",
+    "phone": "+56966280030",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "699ef52a3146e63fab9eb043",
+    "phone": "+56990628123",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "699f02313146e63fab9eb09c",
+    "phone": "+56993029797",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "699f70003146e63fab9eb4e8",
+    "phone": "+267851457892496",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "699f9bfabaa2d9af4a8fa07f",
+    "phone": "+56978471779",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a07c70baa2d9af4a8fa0f5",
+    "phone": "no-phone-1772125296.924185",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a0af763146e63fab9ec410",
+    "phone": "+176905676419193",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a0c6b3baa2d9af4a8fa163",
+    "phone": "+56941379851",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a0fb7d3146e63fab9ec7b9",
+    "phone": "+56966886477",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69a1021e3146e63fab9ec835",
+    "phone": "+56987308269",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a21cbfb6d1ece435d54fa4",
+    "phone": "+56995844979",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a45f3a3146e63fab9f0aa3",
+    "phone": "+56990047433",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69a4e7bae5a625e02ca3a4d5",
+    "phone": "+56942974268",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a50c35e5a625e02ca3a601",
+    "phone": "+56993048914",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69a57c57e5a625e02ca3a797",
+    "phone": "+124296504578053",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a57c68e5a625e02ca3a79d",
+    "phone": "+197826311155901",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a57c75e5a625e02ca3a79f",
+    "phone": "+17425168904257",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a5a11fe5a625e02ca3a9b7",
+    "phone": "+56945675847",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a5a134e5a625e02ca3a9ba",
+    "phone": "56983219804",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a5a25ee5a625e02ca3a9c2",
+    "phone": "+56981211873",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a63f18e5a625e02ca3b010",
+    "phone": "+56947775691",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a6e530e5a625e02ca3b7d2",
+    "phone": "+56995196962",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69a85b1de5a625e02ca3c43c",
+    "phone": "+56994926067",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69a8b057e5a625e02ca3d219",
+    "phone": "+56910124055",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69a9cc25e5a625e02ca3fb2d",
+    "phone": "+56932173833",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69aa4502e5a625e02ca403f9",
+    "phone": "+56978005867",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69aac87de5a625e02ca405bb",
+    "phone": "+246243494207566",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69aaddc9beeb38844d52416d",
+    "phone": "+56930180967",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69aade3ebeeb38844d524173",
+    "phone": "no-phone-1772805693.848331",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69aae3ea750ee8411fa16b74",
+    "phone": "+56987581152",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69aaeb4a750ee8411fa16b8f",
+    "phone": "+56977676106",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69ab26edafa53ee5a57e02ae",
+    "phone": "+56947968998",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69ab2d35afa53ee5a57e02c5",
+    "phone": "+62754270535898",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69ab4fe2afa53ee5a57e034a",
+    "phone": "+56932644477",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69ab4ff6afa53ee5a57e034b",
+    "phone": "+60872789602305",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69ab71e5afa53ee5a57e03c0",
+    "phone": "+79660282565",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69ad656dafa53ee5a57e0a8e",
+    "phone": "+56999114163",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69adcd64afa53ee5a57e0c13",
+    "phone": "+56982677233",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69adff9cafa53ee5a57e0cc5",
+    "phone": "+56971464292",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69ae429fafa53ee5a57e0e67",
+    "phone": "+56994183315",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69ae9870afa53ee5a57e0f6d",
+    "phone": "+56954012648",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69aeb7d1afa53ee5a57e0fc2",
+    "phone": "+28694760411153",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69aeb7e2afa53ee5a57e0fc3",
+    "phone": "+27187226886209",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69aed81eafa53ee5a57e1059",
+    "phone": "+56981243364",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69af3554afa53ee5a57e1626",
+    "phone": "+56985655115",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69af3579afa53ee5a57e1627",
+    "phone": "+178327126057163",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69af4e58afa53ee5a57e2540",
+    "phone": "+56987103177",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b012baafa53ee5a57e84c8",
+    "phone": "+273847249010713",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b07702afa53ee5a57e8836",
+    "phone": "+56953196378",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b18afbafa53ee5a57e93a2",
+    "phone": "+77086291177639",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b1e95bafa53ee5a57e9549",
+    "phone": "+56942201417",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b2128cafa53ee5a57e960e",
+    "phone": "+972587655508",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b232f1afa53ee5a57e9690",
+    "phone": "+56944557795",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b2aa43afa53ee5a57e981a",
+    "phone": "+195348115001467",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b2aba9afa53ee5a57e9844",
+    "phone": "+56962895647",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b2b1c58ada4348d53c5c22",
+    "phone": "+56944487302",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b2b2018ada4348d53c5c27",
+    "phone": "+56972881867",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b2b2308ada4348d53c5c2c",
+    "phone": "+56991285538",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b2f025afa53ee5a57e9a06",
+    "phone": "+56968363393",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b3902cad605106592be8b1",
+    "phone": "+56998794069",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b42d86ad605106592beb04",
+    "phone": "+56982652862",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b44cf8ad605106592bebe9",
+    "phone": "+56953712426",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b4558cad605106592bec13",
+    "phone": "+56982336427",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b455bead605106592bec14",
+    "phone": "+154678985793625",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b48ff7ad605106592becf9",
+    "phone": "+56973790962",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b4c705ad605106592bee4d",
+    "phone": "+56920502134",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b55373ad605106592bf017",
+    "phone": "+56992274881",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b556dfad605106592bf01e",
+    "phone": "+56923732797",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b70448ad605106592bf67f",
+    "phone": "+56992009326",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b81b03d1d1b30501be783e",
+    "phone": "+56966309807",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b8976aad605106592bfc2d",
+    "phone": "+56964413683",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b96b4dad605106592bfe80",
+    "phone": "+56949332467",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b96e17ad605106592bfe8e",
+    "phone": "+56940767832",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69b975b8ad605106592bfe9e",
+    "phone": "+17787981883",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69b97676ad605106592bfea0",
+    "phone": "+56981627541",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69ba0802ad605106592c0086",
+    "phone": "+56973384957",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69ba4a54ad605106592c012c",
+    "phone": "+56993280387",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69bab624fbbbf113235ad58d",
+    "phone": "+56961084074",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69bab675fbbbf113235ad58f",
+    "phone": "+56963519403",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69bd63da6e9f49a3f61f0542",
+    "phone": "+84590605",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c179b2fbbbf113235ba7ba",
+    "phone": "+56991540839",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c17fe2fbbbf113235ba7d0",
+    "phone": "+56945398159",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c198072f425955462591ff",
+    "phone": "no-phone-1774295047.072127",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c198b02f42595546259205",
+    "phone": "+47991189341",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c199a92f4259554625920b",
+    "phone": "+56942566173",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c19d4a2f42595546259211",
+    "phone": "+56996454400",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c287f0ad33da6323a7c929",
+    "phone": "+56987894609",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c2b6a3fbbbf113235bb32a",
+    "phone": "+56983712769",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69c2f579fbbbf113235bb45d",
+    "phone": "+56964945699",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c3cfbafbbbf113235bb755",
+    "phone": "+56969049631",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69c438681d184582ac083b4f",
+    "phone": "+56974321725",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c438b91d184582ac083b55",
+    "phone": "+56959708868",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c45c90fbbbf113235bb972",
+    "phone": "+56937179090",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c57046fbbbf113235bcb48",
+    "phone": "+56982549577",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69c5b147fbbbf113235bd15c",
+    "phone": "+56920391721",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c5dfa1fbbbf113235bd9ac",
+    "phone": "+56954026153",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c69927fbbbf113235be81f",
+    "phone": "+56987983272",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69c69ba2fbbbf113235be83c",
+    "phone": "+56962425655",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c69e36de66573f774b05cf",
+    "phone": "+56973817884",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c69f53de66573f774b05d5",
+    "phone": "+56986730494",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c69fcade66573f774b05db",
+    "phone": "+56946202688",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c6b57afbbbf113235be8c6",
+    "phone": "+56974641008",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69c6c690fbbbf113235be900",
+    "phone": "+56971802786",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69c6e358de66573f774b068b",
+    "phone": "+56965892897",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69ca64ac0ec055e97616cff2",
+    "phone": "+56991588943",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69caa787517640b477b7f3a9",
+    "phone": "+56986917937",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69caa7eb517640b477b7f3ae",
+    "phone": "+56976886616",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69caa816517640b477b7f3b3",
+    "phone": "+56991077370",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69caab85517640b477b7f3ba",
+    "phone": "+56967346845",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69cab947517640b477b7f3cd",
+    "phone": "+56962055504",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69cab9d2517640b477b7f3d3",
+    "phone": "+56945775565",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69cabaa4517640b477b7f3d9",
+    "phone": "+56947566056",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69cabaf2517640b477b7f3df",
+    "phone": "+56997179282",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69cabb57517640b477b7f3e5",
+    "phone": "+56965431593",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69cabd84517640b477b7f3ee",
+    "phone": "+56952263536",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69cabdd9517640b477b7f3f3",
+    "phone": "+56998870041",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69cb1a70fbbbf113235bfdd1",
+    "phone": "+56949495651",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69cbf445fbbbf113235c0037",
+    "phone": "+56986148770",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69cc6997fbbbf113235c0189",
+    "phone": "+17817330865",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69cdbdb3fbbbf113235c0627",
+    "phone": "+56962016093",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d021bd8cfa252ca605076c",
+    "phone": "+56937467175",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d03bd08cfa252ca60507b1",
+    "phone": "+56965037184",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d050fc8cfa252ca60507ed",
+    "phone": "+56962086187",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d05d918cfa252ca6050811",
+    "phone": "+56975399737",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d133d68cfa252ca6050a79",
+    "phone": "+56993190668",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d2c1a38cfa252ca605109f",
+    "phone": "+56956297287",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d3e2252be7175857b77dfc",
+    "phone": "+56935995618",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d3e51d2be7175857b77e09",
+    "phone": "+56946237351",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d401ec255e88b117f58f45",
+    "phone": "+56977792987",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d445098cfa252ca60513ef",
+    "phone": "+56935875951",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d4536c036d49b8201a830e",
+    "phone": "+56965193222",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d4574509607cebb58b97fd",
+    "phone": "+56957478282",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d502978cfa252ca605165d",
+    "phone": "+56966111227",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d526658cfa252ca605174b",
+    "phone": "+56964936757",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d565cb8cfa252ca605195c",
+    "phone": "+56985482827",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d57c568cfa252ca6051f37",
+    "phone": "+56956037769",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d5b4be8cfa252ca60522b4",
+    "phone": "+56935304204",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d5b9fd8cfa252ca60522e4",
+    "phone": "+56930003142",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d661d88cfa252ca60525ea",
+    "phone": "+56964089001",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d678218cfa252ca60526da",
+    "phone": "+56992506799",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d684c4fcc0452dfc4867ca",
+    "phone": "+56972189123",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d6afcb8cfa252ca60528f3",
+    "phone": "+56953631092",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d6da7d63e57c52cddb0ad2",
+    "phone": "+56967130415",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d6db2a63e57c52cddb0ade",
+    "phone": "+98414298",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d6db9263e57c52cddb0ae4",
+    "phone": "+98264820",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d6dc0463e57c52cddb0aea",
+    "phone": "+56956619085",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d7b77d8cfa252ca6052d8e",
+    "phone": "+56968369036",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d7ba438cfa252ca6052d9f",
+    "phone": "+56995497277",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d7d0c48cfa252ca6052e0b",
+    "phone": "+56992139605",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d7d12125f470e2b2eecfaf",
+    "phone": "+56952364361",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d7e48e8cfa252ca6052ea6",
+    "phone": "+56975044404",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d7f44a8cfa252ca6052f02",
+    "phone": "+56981869168",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d8d4578cfa252ca605328a",
+    "phone": "+56944992681",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69d90fb98cfa252ca6053385",
+    "phone": "+56954927663",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69d9bf678cfa252ca608133f",
+    "phone": "+56962098607",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69daf7938cfa252ca608188c",
+    "phone": "+56996249646",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69db85df8cfa252ca6081a48",
+    "phone": "+56992004980",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69dc31708cfa252ca6081c16",
+    "phone": "+56956279031",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69dd71373beb1c26c7d26079",
+    "phone": "+56956595581",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69dd73b08cfa252ca6082163",
+    "phone": "+56933408593",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69dda3b28cfa252ca60821fe",
+    "phone": "+56930919484",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69de40388cfa252ca608236a",
+    "phone": "+56973986637",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69de48b88cfa252ca6082383",
+    "phone": "+56951489361",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69de6bec4016c48d99c7bcc6",
+    "phone": "+56992207130",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69de7dcc8cfa252ca6082538",
+    "phone": "+56959319166",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69de7f788cfa252ca608253d",
+    "phone": "+56987265663",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69de85768cfa252ca60825a7",
+    "phone": "+56957007101",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69de8d558cfa252ca60825c1",
+    "phone": "+56927980080",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69deab928cfa252ca6082622",
+    "phone": "+56931007677",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69deb3a88cfa252ca6082641",
+    "phone": "+56989023825",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69dedf258cfa252ca60826d3",
+    "phone": "+56992337242",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69df01bb8cfa252ca6082771",
+    "phone": "+56962061923",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69df7d688cfa252ca60828a8",
+    "phone": "+56995544660",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69dfa41d8cfa252ca6082981",
+    "phone": "+56965958127",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69dfa6968cfa252ca6082991",
+    "phone": "+56956305844",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69dff1f18cfa252ca6082f09",
+    "phone": "+56995311456",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e076f08cfa252ca60830c6",
+    "phone": "+56962203601",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e0de11f46e2e3d1a932083",
+    "phone": "+56991983628",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e0e190f46e2e3d1a9320af",
+    "phone": "+56985687088",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e0f6908cfa252ca608321c",
+    "phone": "+56977094737",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e1052df46e2e3d1a932120",
+    "phone": "+56941920114",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e156baf46e2e3d1a932189",
+    "phone": "+56961209159",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e166708cfa252ca6083e46",
+    "phone": "+56956918142",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e18fa28cfa252ca6083f80",
+    "phone": "+56971084783",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e19f298cfa252ca6083fd9",
+    "phone": "+56945251987",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e25ff28cfa252ca60841f2",
+    "phone": "+56975190668",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e26cc48cfa252ca608421c",
+    "phone": "+56998407456",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e2b7d72b42edc7f90832c4",
+    "phone": "+56957505731",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e2b8442b42edc7f90832ca",
+    "phone": "+56667548692",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e2cfd550add6bb4199832a",
+    "phone": "+56938756729",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e2d1fc50add6bb41998331",
+    "phone": "+56977194778",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e3a63b50add6bb4199852c",
+    "phone": "+56956992829",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e3bcd050add6bb419985b0",
+    "phone": "+56988197364",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e3cb7550add6bb4199861d",
+    "phone": "+56999794007",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e3f26950add6bb4199869c",
+    "phone": "+56938819088",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e4e31a50add6bb41998adf",
+    "phone": "+56932698680",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e4e3d850add6bb41998ae3",
+    "phone": "+56964238727",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e59cf950add6bb41998d46",
+    "phone": "+56992370056",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e65dc850add6bb41998f64",
+    "phone": "+56934491283",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e672d850add6bb41998fc3",
+    "phone": "+56942164755",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e6b8d050add6bb41999166",
+    "phone": "+56945576994",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e7a46c50add6bb41999403",
+    "phone": "+56961683572",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e7da0f50add6bb41999537",
+    "phone": "+56992422980",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e7ddd550add6bb4199954f",
+    "phone": "+56976205319",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69e7efcf96cc2c2ca879de9b",
+    "phone": "+56998289720",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e7f47996cc2c2ca879dea2",
+    "phone": "+56998726090",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e7fb2e96cc2c2ca879deb5",
+    "phone": "+83050459",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e7fb9f96cc2c2ca879debb",
+    "phone": "+92926082",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e8b91450add6bb419998dd",
+    "phone": "+56965208434",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69e900ea50add6bb419999cd",
+    "phone": "+56977336514",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69efdb5a70cb2d9190b4f8af",
+    "phone": "+94750032",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efdcc370cb2d9190b4f8b5",
+    "phone": "+98734380",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efdd8270cb2d9190b4f8bb",
+    "phone": "+67531337",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efddf170cb2d9190b4f8c1",
+    "phone": "+32644081",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efdee470cb2d9190b4f8cb",
+    "phone": "+67302178",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efdf4070cb2d9190b4f8d1",
+    "phone": "+53822781",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efdfa570cb2d9190b4f8db",
+    "phone": "+56988073727",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe03570cb2d9190b4f8e1",
+    "phone": "+56942049393",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe36d47cea5f9d00b9a87",
+    "phone": "+56939200309",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe3f247cea5f9d00b9a8d",
+    "phone": "+96840065",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe53c47cea5f9d00b9a95",
+    "phone": "+56954140679",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe59647cea5f9d00b9a9b",
+    "phone": "+56979840845",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe61347cea5f9d00b9aa1",
+    "phone": "+56932644081",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe67a47cea5f9d00b9aa7",
+    "phone": "+56974523450",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe6e247cea5f9d00b9aad",
+    "phone": "+56986079354",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe75347cea5f9d00b9ab2",
+    "phone": "+56967351881",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe7c18e84d1a4e9988dcc",
+    "phone": "+56931370074",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe82d8e84d1a4e9988dd2",
+    "phone": "+85560075",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe8a38e84d1a4e9988dd8",
+    "phone": "+56956382000",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe90f8e84d1a4e9988dde",
+    "phone": "+56982260741",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe97c8e84d1a4e9988de4",
+    "phone": "+56927432612",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efe9fe8e84d1a4e9988dea",
+    "phone": "+56983710593",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efea5e8e84d1a4e9988df0",
+    "phone": "+56982782969",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69efeaab8e84d1a4e9988df5",
+    "phone": "+56937681971",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69f00b7b50add6bb4199ad26",
+    "phone": "+56982173940",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69f0ea6b50add6bb4199afed",
+    "phone": "+56962477400",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69f101b150add6bb4199b054",
+    "phone": "+56935925181",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69f1880c50add6bb4199b21a",
+    "phone": "+56974516934",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69f22c0b50add6bb4199b3f1",
+    "phone": "+56958341140",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69f24b8750add6bb4199b458",
+    "phone": "+56962662363",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69f27c4250add6bb4199b4f8",
+    "phone": "+56953822781",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69f3afc894ed569df40a8ce2",
+    "phone": "+56998184625",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69f3f0f894ed569df40a8d72",
+    "phone": "+56965963162",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69f530a4f6a9cfec1693aaa4",
+    "phone": "+56973952860",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69f5f8bff6a9cfec1693ac72",
+    "phone": "+56923708535",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69f60fc8f6a9cfec1693aca1",
+    "phone": "+56982722740",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69f655aaf6a9cfec1693ad75",
+    "phone": "+56957004325",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69f66a5af6a9cfec1693adac",
+    "phone": "+56944306665",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69f8dc9ff6a9cfec1693b439",
+    "phone": "+56982256990",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69f8eb72f6a9cfec1693b470",
+    "phone": "+56941109346",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69f924dff6a9cfec1693b892",
+    "phone": "+56961588012",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fa0620ca2705995d6eb9bc",
+    "phone": "+56956695017",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69fa5b3462f9047df9a44232",
+    "phone": "+56922531719",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fa662562f9047df9a44256",
+    "phone": "+56921964876",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcb6a797dd9eba854605cf",
+    "phone": "+56930167509",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcb81097dd9eba854605d4",
+    "phone": "+56981982975",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcbb555b98d5256710a097",
+    "phone": "+56930386332",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcbc3b5b98d5256710a09c",
+    "phone": "+56995326160",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcbcd15b98d5256710a0a1",
+    "phone": "+29680463",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcbd265b98d5256710a0a6",
+    "phone": "+56992107913",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcbe115b98d5256710a0ab",
+    "phone": "+56992233056",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcbeb85b98d5256710a0b0",
+    "phone": "+41109346",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcbeff5b98d5256710a0b5",
+    "phone": "+56979775734",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcbf7c5b98d5256710a0ba",
+    "phone": "+56978398115",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcc0db5b98d5256710a0c1",
+    "phone": "+56988071671",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcc3305b98d5256710a0c6",
+    "phone": "+56931803990",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcc66f5b98d5256710a0d0",
+    "phone": "+56976199267",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcc6e85b98d5256710a0d5",
+    "phone": "+56932619965",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fcc8fe4e0011255c6c9276",
+    "phone": "+56975116083",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69fcc9c55b98d5256710a0e7",
+    "phone": "+56944350853",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69fe3b964e0011255c6c968f",
+    "phone": "+56935565312",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69fe41834e0011255c6c96a2",
+    "phone": "+56920235746",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69ff3f184e0011255c6c9954",
+    "phone": "+56998284367",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "69ffa33e86414cfc7ae8167d",
+    "phone": "+56977093571",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69ffaaf186414cfc7ae81688",
+    "phone": "+56986345386",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "69ffd82186414cfc7ae816fd",
+    "phone": "+56979370957",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a0071ba86414cfc7ae81857",
+    "phone": "+56976974124",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a012eb286414cfc7ae81a9b",
+    "phone": "+56989295899",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a0153ed86414cfc7ae81af9",
+    "phone": "+56951306907",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a015e9286414cfc7ae81b15",
+    "phone": "+56985162476",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a024fc386414cfc7ae81ee9",
+    "phone": "+56975836964",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a025d2786414cfc7ae81f05",
+    "phone": "+56984620024",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a027a8386414cfc7ae81f4c",
+    "phone": "+56965930281",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a0308da86414cfc7ae8207c",
+    "phone": "+56982101418",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a03229a86414cfc7ae820ca",
+    "phone": "+56953705842",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a033fb786414cfc7ae82170",
+    "phone": "+56942418308",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a0349e686414cfc7ae821aa",
+    "phone": "+56986804421",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a034a14e36bc1f0443e7e43",
+    "phone": "no-phone-1778600468.540586",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a035298c176ead2ced7d491",
+    "phone": "+56988777765",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a035319c176ead2ced7d496",
+    "phone": "+56988224735",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a0353abc176ead2ced7d49b",
+    "phone": "+56977386697",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a03659186414cfc7ae82214",
+    "phone": "+56929535241",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a03811486414cfc7ae8227a",
+    "phone": "+56923899252",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a0387bd86414cfc7ae82289",
+    "phone": "+56994382488",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a038bdd86414cfc7ae82298",
+    "phone": "+56995408776",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a03cc8c86414cfc7ae82330",
+    "phone": "+56952654175",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a03d37186414cfc7ae8234d",
+    "phone": "+4571838679",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a041ad886414cfc7ae823c7",
+    "phone": "+56986643235",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a049a8d86414cfc7ae824d9",
+    "phone": "+56968013757",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a04da7986414cfc7ae82592",
+    "phone": "+56996615835",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a05f0a186414cfc7ae82836",
+    "phone": "+56949192593",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a05fd4386414cfc7ae8285c",
+    "phone": "+56948937626",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a061e3286414cfc7ae8290a",
+    "phone": "+56947584244",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a074f6c86414cfc7ae82c45",
+    "phone": "+56939666838",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a078e33f4931d4c55080465",
+    "phone": "+56990438012",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a078f06f4931d4c5508046a",
+    "phone": "+77328423",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a078f96f4931d4c5508046f",
+    "phone": "+56931058629",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a078fcff4931d4c55080474",
+    "phone": "+56957982257",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a079100f4931d4c5508047e",
+    "phone": "+56930959828",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a088a1886414cfc7ae83237",
+    "phone": "+56996879854",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a09972286414cfc7ae83796",
+    "phone": "+56954270996",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a0a253786414cfc7ae83914",
+    "phone": "+56989880784",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a0a4c0b86414cfc7ae83990",
+    "phone": "+56958941123",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a0a6d9c86414cfc7ae839f4",
+    "phone": "+56946193861",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a0a7eef86414cfc7ae83a36",
+    "phone": "+56950182138",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a0b5d7a25fe8f89478a7079",
+    "phone": "+56956133034",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a0c93c425fe8f89478a74b6",
+    "phone": "+56945741658",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a0cb01f25fe8f89478a752a",
+    "phone": "+56944362524",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a0cb20a25fe8f89478a7535",
+    "phone": "+56956695755",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a0daa1da082c2ce38889d27",
+    "phone": "+56997164654",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a0e81a4a082c2ce38889fde",
+    "phone": "+56983720530",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a0f6307a082c2ce3888a2e5",
+    "phone": "+56932187743",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a11b99f0a43ac2651ad6cfe",
+    "phone": "+56932352213",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1234c10a43ac2651ad6e26",
+    "phone": "+56927353763",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a126b0a0a43ac2651ad6edf",
+    "phone": "+56932235170",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1388d40a43ac2651ad70ec",
+    "phone": "+56984667773",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1473be0a43ac2651ad73a6",
+    "phone": "+56961210645",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1486710a43ac2651ad73e3",
+    "phone": "+56959256721",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a148fa60a775103839fddfc",
+    "phone": "+56985019058",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a14911d0a775103839fde05",
+    "phone": "+56995296023",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a14928c0a775103839fde1f",
+    "phone": "+33649563",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1492ec0a775103839fde27",
+    "phone": "+56964406854",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a14934c0a775103839fde2e",
+    "phone": "no-phone-1779733323.928406",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a14cdec0a43ac2651ad74aa",
+    "phone": "+56956182665",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a153d9d0a43ac2651ad75d1",
+    "phone": "+56956816441",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1557ef0a43ac2651ad75f9",
+    "phone": "+56953874004",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1579a40a43ac2651ad76f4",
+    "phone": "+56948481483",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a15a4ca0a43ac2651ad776e",
+    "phone": "+56933388729",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a15abeea976c1146683dae3",
+    "phone": "+33388729",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a15b14fa976c1146683daed",
+    "phone": "+49245565",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1641640a43ac2651ad7975",
+    "phone": "+56932384620",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1656880a43ac2651ad79b5",
+    "phone": "+56958199200",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1659900a43ac2651ad79be",
+    "phone": "+56999008084",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1739f00a43ac2651ad7d09",
+    "phone": "+56982568226",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a17556c0a43ac2651ad7d63",
+    "phone": "+56961384465",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a184e123167bb8335a25b3f",
+    "phone": "+56982418589",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a184f383167bb8335a25b4c",
+    "phone": "+56999378836",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a184f693167bb8335a25b51",
+    "phone": "+56963757683",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a184fad3167bb8335a25b55",
+    "phone": "+56937787522",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a184fd63167bb8335a25b5c",
+    "phone": "+56950882969",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a18502c3167bb8335a25b61",
+    "phone": "+56942731526",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a18507d3167bb8335a25b66",
+    "phone": "+56983466661",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1853943167bb8335a25b6b",
+    "phone": "+56932397596",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a18545a3167bb8335a25b77",
+    "phone": "+56995192060",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1854913167bb8335a25b7f",
+    "phone": "+56981293714",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1854c33167bb8335a25b84",
+    "phone": "+56998703940",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1854f53167bb8335a25b8a",
+    "phone": "+56977643053",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1857f03167bb8335a25ba1",
+    "phone": "+56998101036",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a18588a3167bb8335a25ba6",
+    "phone": "+56957882507",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1859123167bb8335a25bab",
+    "phone": "+56997973200",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1859e23167bb8335a25bb0",
+    "phone": "+56984235339",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a185ad03167bb8335a25bb5",
+    "phone": "+56975218450",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a185afe3167bb8335a25bba",
+    "phone": "+56950115506",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a18a0280a43ac2651ad80d4",
+    "phone": "+56932120662",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a18a73f3167bb8335a25c34",
+    "phone": "+56993090685",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a18cdb30a43ac2651ad814c",
+    "phone": "+56945796270",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a18ea800a43ac2651ad8194",
+    "phone": "+56953411153",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a198e270a43ac2651ad8373",
+    "phone": "+56926057728",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a198ea8f3b2e2953485f285",
+    "phone": "+56973371480",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a19a46d0a43ac2651ad839e",
+    "phone": "+595985283712",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a19a7520a43ac2651ad83a9",
+    "phone": "+56983606724",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1a13490a43ac2651ad84c2",
+    "phone": "+56995379753",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1b6fc30a43ac2651ad8759",
+    "phone": "+56989886216",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1b86650a43ac2651ad878a",
+    "phone": "+56958247025",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1b86930a43ac2651ad878b",
+    "phone": "+56968498405",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1b8d0f0a43ac2651ad879b",
+    "phone": "+56997411668",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1bb2db0a43ac2651ad87da",
+    "phone": "+56991050013",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1c83cd0a43ac2651ad8944",
+    "phone": "+56992264828",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1c84a30a43ac2651ad8947",
+    "phone": "+56932654728",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1ca2f70a43ac2651ad8997",
+    "phone": "+56934420936",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1cc5d10a43ac2651ad89f1",
+    "phone": "+56973770677",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1cc9430a43ac2651ad89f8",
+    "phone": "+56968751234",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1ceb110a43ac2651ad8a3b",
+    "phone": "+56994109713",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1cfb4f0a43ac2651ad8a5d",
+    "phone": "+56982708132",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1d8a070a43ac2651ad94e5",
+    "phone": "+56933452807",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1daf5618c450a7ece3281a",
+    "phone": "+56975499829",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1daf7b18c450a7ece3281f",
+    "phone": "+56920400970",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1dafc518c450a7ece32824",
+    "phone": "+56963538903",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1db27d18c450a7ece3282d",
+    "phone": "+56953471547",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1db49e18c450a7ece32834",
+    "phone": "+56956356825",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1db55318c450a7ece3283e",
+    "phone": "+56965849326",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1db900aa49d5b5c51137f3",
+    "phone": "+56987499869",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1db9b5aa49d5b5c51137fa",
+    "phone": "+56932510808",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1dc6590a43ac2651ad9583",
+    "phone": "+56979998116",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1dd7870a43ac2651ad95b5",
+    "phone": "+56998385533",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1dfed6aa3044a9daef1190",
+    "phone": "+56998793475",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1dff1f6f330b1a924f2999",
+    "phone": "+56978657288",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1e07fe0a43ac2651ad9634",
+    "phone": "+56978593883",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a1ed8a10a43ac2651ad97bf",
+    "phone": "+56997840552",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1f2348eafea188657af86f",
+    "phone": "+56979262009",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a1f23d6eafea188657af873",
+    "phone": "+56976250255",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a208dbe39ac62fb2305cfe8",
+    "phone": "+56995571631",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a21638e39ac62fb2305d724",
+    "phone": "+56939241452",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a21a483bfc05dbbb290cb86",
+    "phone": "+56964237719",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a21a4e0bfc05dbbb290cb8b",
+    "phone": "+56993462511",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a21a509bfc05dbbb290cb8f",
+    "phone": "+56997428340",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a21e22439ac62fb2305d8da",
+    "phone": "+56991788250",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a21f10639ac62fb2305dc2c",
+    "phone": "+56968309582",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a22331239ac62fb2305dfa2",
+    "phone": "+56999199101",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a224d8639ac62fb2305dfe4",
+    "phone": "+56968781360",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a22e0e1c0cb55b86de8a80d",
+    "phone": "+56923854484",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a22ec5c39ac62fb2305e162",
+    "phone": "+56984025735",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a2350ad39ac62fb2305e6a0",
+    "phone": "+56984758578",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a2351b339ac62fb2305e6a3",
+    "phone": "+56992327851",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a24305439ac62fb2305ec19",
+    "phone": "+56972343065",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a25e91e39ac62fb2305f10a",
+    "phone": "+56990848737",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a25eb0039ac62fb2305f110",
+    "phone": "+56973897607",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a26172639ac62fb2305f175",
+    "phone": "+56990552663",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a26bc6139ac62fb2305f28d",
+    "phone": "+56959682818",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a26c22e39ac62fb2305f2a0",
+    "phone": "+56985174299",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a26e42739ac62fb2305f336",
+    "phone": "+56932628045",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a26f9ee39ac62fb2305f3b7",
+    "phone": "+56958849359",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a2708fa39ac62fb2305f3e4",
+    "phone": "+56966246063",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a28388e39ac62fb2308099c",
+    "phone": "+56963631647",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a286a534c1346a8014207d5",
+    "phone": "+56958596231",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a286a7e4c1346a8014207d8",
+    "phone": "no-phone-1781033598.368335",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a286ace4c1346a8014207de",
+    "phone": "no-phone-1781033678.436117",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a286aef4c1346a8014207e2",
+    "phone": "no-phone-1781033710.880053",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a28798439ac62fb23080a58",
+    "phone": "+56979586118",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a28a56a39ac62fb23080b14",
+    "phone": "+56962842553",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a297a5839ac62fb23083ef7",
+    "phone": "+56956359911",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a298542a47565b4f88a7bfd",
+    "phone": "+98814247",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a29965e7734cb4bf0f6846e",
+    "phone": "+56930347481",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a299b8c89b76771aeb79f4c",
+    "phone": "+75865112",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a299bcf89b76771aeb79f50",
+    "phone": "+56962476686",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a29adc67734cb4bf0f684ef",
+    "phone": "+56957226833",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a29bfb9c6fafce23921cab5",
+    "phone": "+56927139618",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a2a23126b65594dafef20e0",
+    "phone": "+56959437816",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a2abccd7e18d6d99a4254e8",
+    "phone": "+56935586572",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a2ad811cbf444a055445e10",
+    "phone": "+573247206163",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a2af8757e18d6d99a42572a",
+    "phone": "+56991284724",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a2afe9f7e18d6d99a425744",
+    "phone": "+56944895692",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a2b11307e18d6d99a425828",
+    "phone": "+56959104754",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a2b3faf7e18d6d99a42592b",
+    "phone": "+56932363771",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a2b50a87e18d6d99a42596c",
+    "phone": "+56997421178",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a2b73f77e18d6d99a425a86",
+    "phone": "+56999704460",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a2c0d747e18d6d99a425c52",
+    "phone": "+56992630670",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a2c25877e18d6d99a425cac",
+    "phone": "+56956055613",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a2c9ad47e18d6d99a425e82",
+    "phone": "+56941083757",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a2d6a8a7e18d6d99a426182",
+    "phone": "+56983929705",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a2d93867e18d6d99a426244",
+    "phone": "+56976952313",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a2f06197e18d6d99a4266f2",
+    "phone": "+56954227980",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a2f09627e18d6d99a4266fb",
+    "phone": "+56976811056",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a2f404f7e18d6d99a4267ec",
+    "phone": "+56998243883",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a2f44af7e18d6d99a4267fe",
+    "phone": "+56964498954",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a2ffabb7e18d6d99a4269f9",
+    "phone": "+56981379059",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3004f07e18d6d99a426a1a",
+    "phone": "+56975687475",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a301196cdd8d28bcbcdb6f5",
+    "phone": "no-phone-1781535126.657239",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a301220cdd8d28bcbcdb6fe",
+    "phone": "no-phone-1781535263.961227",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a30276439b04bea4eed0d81",
+    "phone": "+56966916831",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3027ad39b04bea4eed0d85",
+    "phone": "+56940721490",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a30280b39b04bea4eed0d89",
+    "phone": "+56947755948",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a30287e39b04bea4eed0d8e",
+    "phone": "+56973694572",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3028b239b04bea4eed0d92",
+    "phone": "+5695751999",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a302bc07e18d6d99a426ae0",
+    "phone": "+56962076555",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a303f907e18d6d99a426c49",
+    "phone": "+56981550949",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3077487e18d6d99a42715d",
+    "phone": "+56958378114",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a308a11e97eca8a19aff16b",
+    "phone": "+5698735029",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a308ddf7e18d6d99a42755d",
+    "phone": "+56995090266",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a30a94c0b48969ebf05f5c2",
+    "phone": "+56950121815",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a31355effd1406f99858f67",
+    "phone": "+56944203141",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3166b1ffd1406f99859012",
+    "phone": "+56938831234",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a31bced6c280c4ca109adb4",
+    "phone": "+56957971253",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a31bfb66c280c4ca109adbc",
+    "phone": "+56974959078",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a31c3856c280c4ca109addd",
+    "phone": "+56985966791",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a31d1576c280c4ca109ae1b",
+    "phone": "+56998260753",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a31f7096c280c4ca109aeed",
+    "phone": "+56984894571",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a32bcb36c280c4ca109b1d0",
+    "phone": "+56937505211",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a32e2ede97eca8a19aff2ca",
+    "phone": "+56962718201",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a32e380e97eca8a19aff2d1",
+    "phone": "+56984111573",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3349926c280c4ca109c007",
+    "phone": "+56972427616",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3355476c280c4ca109c543",
+    "phone": "+56974917838",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a335ec26c280c4ca109c595",
+    "phone": "+56978616693",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a34151ee97eca8a19aff32f",
+    "phone": "+5663555949",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a341552e97eca8a19aff333",
+    "phone": "+5698490837",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3415cbe97eca8a19aff337",
+    "phone": "+56983405081",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3415f2e97eca8a19aff33b",
+    "phone": "+56938847982",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a341623e97eca8a19aff33e",
+    "phone": "+56967787590",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a341656e97eca8a19aff348",
+    "phone": "+56990063728",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a346f2e6c280c4ca109c913",
+    "phone": "+56934032552",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3487df6c280c4ca109c967",
+    "phone": "+56927628889",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3488346c280c4ca109c968",
+    "phone": "+56956386598",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a353bad6c280c4ca109cba4",
+    "phone": "+56999479627",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a35578f6c280c4ca109cc07",
+    "phone": "+56965961289",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3564fa6c280c4ca109cc39",
+    "phone": "+56942575906",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a356f686c280c4ca109cc55",
+    "phone": "+56956522237",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3587d06c280c4ca109cced",
+    "phone": "+56994345011",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a35c2406c280c4ca109cd70",
+    "phone": "+56942019709",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a35d0956c280c4ca109cd8c",
+    "phone": "+56946781614",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a35fadd6c280c4ca109ce11",
+    "phone": "+56965699930",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a35fe276c280c4ca109ce2b",
+    "phone": "+56934259535",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3601fb6c280c4ca109ce3f",
+    "phone": "+56950918547",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a369e806c280c4ca109cf1d",
+    "phone": "+56942791195",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a36ba986c280c4ca109cf4c",
+    "phone": "+56990176545",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a36ce636c280c4ca109cf7c",
+    "phone": "+56966978347",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a36fa9c6c280c4ca109cfe4",
+    "phone": "+56937029355",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3711e26c280c4ca109d036",
+    "phone": "+56933284944",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3713bc6c280c4ca109d039",
+    "phone": "+56985483663",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a37240f6c280c4ca109d073",
+    "phone": "+56942847796",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3788b46c280c4ca109d1a9",
+    "phone": "+56945875199",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a37df546c280c4ca109d2a8",
+    "phone": "+56982819584",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a387cdcf6b1162ebb50de05",
+    "phone": "+56992003400",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a388099f6b1162ebb50de0c",
+    "phone": "+56920466434",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a38ab38f6b1162ebb50de72",
+    "phone": "+56954952128",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a395bc3f6b1162ebb50f75c",
+    "phone": "+56994977597",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a395bedf6b1162ebb50f75d",
+    "phone": "+56992251462",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a397664f6b1162ebb50f83c",
+    "phone": "+56972706313",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a39a4d82c50211a7f721006",
+    "phone": "+569TESTCASE1",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a39a51d7e8220c87e1e7e6a",
+    "phone": "+569TESTCASE2",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a39a5f15f4d1bf3dc54bb6b",
+    "phone": "+569TESTCASE3",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a39c33045c76548cdcb4028",
+    "phone": "+56956621842",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a39e50345c76548cdcb40a4",
+    "phone": "+56990798314",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a39f19545c76548cdcb40ef",
+    "phone": "+56988400447",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a39f68c45c76548cdcb4100",
+    "phone": "+56937068141",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3a10c845c76548cdcb4131",
+    "phone": "+56983605579",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3a74bb45c76548cdcb41e2",
+    "phone": "+56966110541",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3a883c45c76548cdcb420c",
+    "phone": "+56937770498",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3afca145c76548cdcb43b4",
+    "phone": "+56989710811",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3b01bb45c76548cdcb43be",
+    "phone": "+56991461395",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3b03cafb7ecfa5c39fdfce",
+    "phone": "+56964217610",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3b1af845c76548cdcb4421",
+    "phone": "+56973394893",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3b8bd445c76548cdcb4552",
+    "phone": "+56985591111",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3bab7c45c76548cdcb457b",
+    "phone": "+56972824938",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3c01b00f6898db36a77eb1",
+    "phone": "+56988892982",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3c27d50f6898db36a77f65",
+    "phone": "+56957304958",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3c2b440f6898db36a77f7d",
+    "phone": "+56949735256",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3c41ca0f6898db36a77ff4",
+    "phone": "+56939307659",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3c46e00f6898db36a7801f",
+    "phone": "+56973561096",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3d395bf061d8c8f477244b",
+    "phone": "+56972140994",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3d3a07f061d8c8f477244d",
+    "phone": "+56966478767",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3d3a55f061d8c8f477244f",
+    "phone": "+56998430420",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3d3aa7f061d8c8f4772451",
+    "phone": "+56921964232",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3d3c5ff061d8c8f4772455",
+    "phone": "+56959929809",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3d3c94f061d8c8f4772457",
+    "phone": "no-phone-1782398100.038119",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3d3d3df061d8c8f4772459",
+    "phone": "+56950202322",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3d3d7df061d8c8f477245b",
+    "phone": "+56969072795",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3d3f48f061d8c8f477245e",
+    "phone": "+56974908637",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3d499e0f6898db36a7835b",
+    "phone": "+56959497561",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3d7f210f6898db36a78486",
+    "phone": "+56932191079",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3d8aa00f6898db36a784b3",
+    "phone": "+573147460964",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3da11df061d8c8f477252e",
+    "phone": "+3147460964",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3e92d9f9272555129ef011",
+    "phone": "+56995944190",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3eaf950f6898db36a78878",
+    "phone": "+56964214616",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a3f10a80f6898db36a789a5",
+    "phone": "+56996534096",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a3f33cf0f6898db36a789f5",
+    "phone": "+56995300955",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4023d90f6898db36a78b27",
+    "phone": "+56991234659",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a403c720f6898db36a78b62",
+    "phone": "+56930348853",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4064db0f6898db36a78bbf",
+    "phone": "+56993216530",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a412af70f6898db36a85eda",
+    "phone": "+56981542791",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4144d60f6898db36a85f4e",
+    "phone": "+56971078276",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4198400f6898db36a8612b",
+    "phone": "+56964253352",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a41ec450f6898db36a86294",
+    "phone": "+56996760308",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a43120d0f6898db36a866a7",
+    "phone": "+56974741273",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a43b03c0f6898db36a8684f",
+    "phone": "+5492614906244",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a43d2f0141527b7b9d152a3",
+    "phone": "+56975503153",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a43d3e9141527b7b9d152a6",
+    "phone": "+56988348938",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a43d421141527b7b9d152a8",
+    "phone": "+56988094657",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a43df1e141527b7b9d152ad",
+    "phone": "+56975971999",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a43ebc20f6898db36a86b4a",
+    "phone": "+56937236212",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a43f8910f6898db36a86b69",
+    "phone": "+56979754427",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a44ad83dc9725bba68cbc7c",
+    "phone": "+56990815796",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4526e28793aec9ea1c1625",
+    "phone": "+56944720208",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a45270e8793aec9ea1c1627",
+    "phone": "+56967184959",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4586bbdc9725bba68cc973",
+    "phone": "+56956197361",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a459956dc9725bba68cc9e6",
+    "phone": "+56977403987",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a45ae90dc9725bba68cca6a",
+    "phone": "+56973729387",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a45afc5dc9725bba68cca6e",
+    "phone": "+5491141615904",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a45b29ddc9725bba68cca84",
+    "phone": "+56930840590",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a45bd18dc9725bba68ccab0",
+    "phone": "+56967067374",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a45f6e8dc9725bba68ccc0b",
+    "phone": "+56996434686",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a46928bdc9725bba68cd268",
+    "phone": "+56988090492",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a46ae58dc9725bba68cd37b",
+    "phone": "+56941006602",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a46e781dc9725bba68cf6e9",
+    "phone": "+56963689252",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4738b0dc9725bba68cf9c0",
+    "phone": "+56940473629",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a47b7666817bd0a1678c804",
+    "phone": "+56940920961",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a47b7d36817bd0a1678c806",
+    "phone": "+56933964157",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a484300dc9725bba68d0212",
+    "phone": "+56966342083",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a486e77dc9725bba68d0276",
+    "phone": "+56990083727",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a48a4fedc9725bba68d0344",
+    "phone": "+56978173896",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a49a5be980123ee6f0318be",
+    "phone": "+56992495091",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a49e9af980123ee6f031a40",
+    "phone": "+56992438108",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4b1b91980123ee6f031d72",
+    "phone": "+56921685122",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4b9a0c980123ee6f031e55",
+    "phone": "+56950204506",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4be618980123ee6f0321d4",
+    "phone": "+56995105287",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4c0b91980123ee6f0322dd",
+    "phone": "+56959703764",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4c21a1980123ee6f03230e",
+    "phone": "+56998983127",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4c4edb980123ee6f0323b7",
+    "phone": "+56996496932",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4c6e74980123ee6f03240d",
+    "phone": "+56987414643",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4d26ec980123ee6f03258d",
+    "phone": "+56926453558",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4d2ffc980123ee6f0325a5",
+    "phone": "+56951471749",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4d35e1980123ee6f0325b3",
+    "phone": "+56977495291",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4d46037d23be450324c9b2",
+    "phone": "+56",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4d46a37d23be450324c9b5",
+    "phone": "+56985309827",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4d5679980123ee6f032676",
+    "phone": "+56992596554",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4d8b01980123ee6f0327bc",
+    "phone": "+56998270612",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4da36c980123ee6f0327fd",
+    "phone": "+56953712922",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4db1c0980123ee6f03281e",
+    "phone": "+56950132474",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4e68357d23be450324cb21",
+    "phone": "+56977626754",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4e7f2d980123ee6f032b9a",
+    "phone": "+56955939458",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4ea880980123ee6f032c11",
+    "phone": "+56984127996",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4fa07f980123ee6f0338d3",
+    "phone": "+56982840962",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a4fbbd6980123ee6f033924",
+    "phone": "+56985012833",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4fc7f8980123ee6f03396d",
+    "phone": "+56999456250",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a4ff378b2af2a5f7e04691b",
+    "phone": "+56942332508",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a50fc99b2af2a5f7e046b03",
+    "phone": "+56940477135",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a511a0e7d23be450324ccf8",
+    "phone": "+56957714776",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a511a5e7d23be450324ccfa",
+    "phone": "+56948617680",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a511a8a7d23be450324ccfc",
+    "phone": "+56966972320",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a5142edb2af2a5f7e046bcf",
+    "phone": "+56950686508",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a5149b8b2af2a5f7e046be1",
+    "phone": "+56985011880",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a53ad9fb2af2a5f7e0477bd",
+    "phone": "+56966128247",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a53c85db2af2a5f7e047835",
+    "phone": "+56998410555",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a543998b2af2a5f7e047b3f",
+    "phone": "+56953097354",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a54fea9b2af2a5f7e048473",
+    "phone": "+56941843080",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a550aa2b2af2a5f7e048539",
+    "phone": "+56984244164",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a551405b2af2a5f7e0485f8",
+    "phone": "+56982772572",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a56404fe0740306fd550349",
+    "phone": "+56992601249",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a56470fb2af2a5f7e0488ff",
+    "phone": "+56971415618",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a567580b2af2a5f7e048aa2",
+    "phone": "+56949548997",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a56938cb2af2a5f7e048b9d",
+    "phone": "+56992288093",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a57a1a2b3d804a6043074e7",
+    "phone": "+56930396209",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a582206592b78a8d88d4e79",
+    "phone": "+56998293543",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a591480592b78a8d88d50c9",
+    "phone": "+56981597620",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a592107592b78a8d88d50e3",
+    "phone": "+56950922943",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a59229b592b78a8d88d50e8",
+    "phone": "+56959314248",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a5970f6592b78a8d88d51bd",
+    "phone": "+56988299092",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a5977da592b78a8d88d51db",
+    "phone": "+56956170838",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a59a92b592b78a8d88d5280",
+    "phone": "+56989168767",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "HOT"
+  },
+  {
+    "_id": "6a5a648499356c7d45ab9e3c",
+    "phone": "+56950027439",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a5a64a799356c7d45ab9e3e",
+    "phone": "+56968398785",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a5a64e699356c7d45ab9e40",
+    "phone": "+56989027425",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a5a650699356c7d45ab9e42",
+    "phone": "+56973894591",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a5a652c99356c7d45ab9e44",
+    "phone": "+56940920131",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  },
+  {
+    "_id": "6a5a96db592b78a8d88d54a8",
+    "phone": "+56993116624",
+    "previous_lead_temperature_effective": null,
+    "new_lead_temperature_effective": "COLD"
+  }
+]

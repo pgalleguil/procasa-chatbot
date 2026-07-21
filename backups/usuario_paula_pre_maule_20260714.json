@@ -1,0 +1,21 @@
+{
+  "_id": {
+    "$oid": "699653a96a099d6e9612d519"
+  },
+  "email": "pmorales@procasa.cl",
+  "created_at_local": "2026-02-18 21:04:56",
+  "is_active": true,
+  "nombre": "Paula Morales",
+  "rol": "agente",
+  "telefono": "+56928065512",
+  "timestamp": {
+    "$date": "2026-02-19T00:04:56.767Z"
+  },
+  "username": "pmorales@procasa.cl",
+  "comunas_interes": [
+    "Talca"
+  ],
+  "comunas_interes_norm": [
+    "talca"
+  ]
+}

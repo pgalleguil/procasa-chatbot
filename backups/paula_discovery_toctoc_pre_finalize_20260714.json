@@ -1,0 +1,2279 @@
+{
+  "count": 8,
+  "documents": [
+    {
+      "_id": {
+        "$oid": "6a56b510b2af2a5f7e048c31"
+      },
+      "listing_id": "2976716",
+      "origen": "toctoc",
+      "banos": 2,
+      "broker_brand": "",
+      "canonical_url": "https://www.toctoc.com/propiedades/arriendoparticularsr/departamento/linares/arriendo-departamento-3d-2b-en-condominio-cumbres-ii/2976716",
+      "classification": {
+        "state": "INCIERTO",
+        "final_state": "INCIERTO",
+        "confidence": 0.3,
+        "score": 0.3,
+        "rule_state": "INCONCLUSIVE",
+        "signals": {},
+        "evidence": [],
+        "reason": "DeepSeek INVALID_JSON: DeepSeek invalid JSON: {\"state\": \"INCIERTO\", \"confidence\": 0.6, \"reason\": \"El anuncio indica 'Particular' como tipo de vendedor, pero no hay evidencia explícita de que quien publica sea el propietario (ej. 'vendo mi departa. Fallback a reglas.",
+        "decision_source": "rules_json",
+        "decision_pattern": "",
+        "state_source": "rules_json",
+        "deepseek_status": "INVALID_JSON",
+        "deepseek_state": "",
+        "deepseek_confidence": 0.0,
+        "deepseek_reason": "DeepSeek invalid JSON: {\"state\": \"INCIERTO\", \"confidence\": 0.6, \"reason\": \"El anuncio indica 'Particular' como tipo de vendedor, pero no hay evidencia explícita de que quien publica sea el propietario (ej. 'vendo mi departa",
+        "deepseek_evidence": [],
+        "deepseek_model": "deepseek-v4-flash",
+        "deepseek_finish_reason": "",
+        "deepseek_prompt_tokens": 0,
+        "deepseek_completion_tokens": 0,
+        "deepseek_reasoning_tokens": 0,
+        "deepseek_provider": "",
+        "version": "toctoc-v1",
+        "ai_used": false,
+        "ai_model": "",
+        "ai_owner_score": 0.0,
+        "ai_broker_score": 0.0,
+        "ai_reason": "DeepSeek INVALID_JSON: DeepSeek invalid JSON: {\"state\": \"INCIERTO\", \"confidence\": 0.6, \"reason\": \"El anuncio indica 'Particular' como tipo de vendedor, pero no hay evidencia explícita de que quien publica sea el propietario (ej. 'vendo mi departa. Fallback a reglas.",
+        "ai_disabled_reason": "",
+        "rules_version": "toctoc-owner-rules-v2",
+        "prompt_version": "toctoc-deepseek-owner-v2",
+        "analysis_at": "2026-07-14T22:15:42.178155+00:00",
+        "deepseek_payload": {},
+        "deepseek_message_content": "",
+        "deepseek_reasoning_content": "",
+        "deepseek_raw": {},
+        "trace": {
+          "rule_state": "INCONCLUSIVE",
+          "final_state": "INCONCLUSIVE",
+          "deepseek_payload": {},
+          "deepseek_message_content": "",
+          "deepseek_reasoning_content": "",
+          "deepseek_raw": {},
+          "rules_version": "toctoc-owner-rules-v2",
+          "prompt_version": "toctoc-deepseek-owner-v2",
+          "analysis_at": "2026-07-14T22:15:42.178155+00:00"
+        },
+        "assignment_ready": false,
+        "assignment_gate_version": "assignment-gate-v2"
+      },
+      "company_name": "",
+      "comuna": "Linares",
+      "description": "Acogedor Departamento 3D , 2B - 78m2 (como nuevo) Excelente ubicación - Guadantún con Leon Bustos Cocina con piso cerámico y semi amoblada Lavadero, Balcón, Portería con guardia, Ventanas Termopanel Estacionamiento Cercano a: Supermercado Líder Patio de Comidas Restaurantes Hotel Parada Gimnasio Energy Homecenter Sodimac Requisitos: Justificar renta Garantías en efectivo y/o documentada [Arriendo, Gastos Comunes y Cuentas de servicios] Gastos Adm Contrato arriendo $45.000 (al confirmar e iniciar proceso)",
+      "description_available": true,
+      "description_is_truncated": false,
+      "description_length": 509,
+      "direccion_exacta": "Linares",
+      "dormitorios": 3,
+      "estacionamientos": null,
+      "fecha_publicacion": "",
+      "fecha_publicacion_raw": "",
+      "fetch_source": "requests",
+      "gastos_comunes": null,
+      "html_path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scraper_toctoc\\html_dumps\\toctoc_scrape_20260714_181511_0b97\\fef29d0e4fb827590a03bc4ecaf925f4.html",
+      "html_sha256": "2ba7880dec441f968d2c304588edb1e7b7d19770f906dadbbf58f6fb7516856d",
+      "html_validation_reason": "valid_html",
+      "html_validation_status": "OK",
+      "image_urls": [
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20231219/2976716/n_wm_2023121944365270440.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20231219/2976716/n_wm_2023121944357359123.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20231219/2976716/n_wm_2023121945020339541.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20231219/2976716/n_wm_2023121945020448880.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20231219/2976716/n_wm_2023121945008314111.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20231219/2976716/n_wm_2026061123289367124.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20231219/2976716/n_wm_2026061124004270916.jpg"
+      ],
+      "image_urls_count": 7,
+      "listing_id_source": "next_data",
+      "m2_construidos": 78.0,
+      "m2_totales": 78.0,
+      "main_image_url": "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20231219/2976716/n_wm_2023121944365270440.jpg",
+      "manual_review": {
+        "status": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "operacion": "arriendo",
+      "precio_clp": 375000,
+      "precio_clp_raw": "$375.000",
+      "precio_conversion_source": "toctoc_explicit_both_currencies",
+      "precio_moneda_original": "UF",
+      "precio_original_num": 9.18,
+      "precio_raw": "$ 375.000 / UF 9,18",
+      "precio_uf": 9.18,
+      "precio_uf_raw": "UF 9,18",
+      "precio_validacion": "OK",
+      "price": "UF 9,18 / $375.000",
+      "processed_at": "2026-07-14T22:15:42.180167+00:00",
+      "publicador_visible": "Particular",
+      "publisher_activity": {},
+      "publisher_identity_candidates": [
+        {
+          "source": "info_anunciante",
+          "value": "Particular"
+        },
+        {
+          "source": "seller_type",
+          "value": "PARTICULAR"
+        },
+        {
+          "source": "seller_type_evidence",
+          "value": "Anunciante - Particular"
+        }
+      ],
+      "raw_attributes": {},
+      "region": "Maule",
+      "run_id": "toctoc_scrape_20260714_181511_0b97",
+      "schema_version": "crm_v1",
+      "scrape_stage": "classification_done",
+      "seller_avatar_alt": "",
+      "seller_is_pro": false,
+      "seller_name": "Particular",
+      "seller_profile_id": "",
+      "seller_text": "Anunciante - Particular",
+      "seller_type": "PARTICULAR",
+      "seller_type_evidence": "Anunciante - Particular",
+      "seller_type_source": "info-anunciante",
+      "source": "owner_hunt",
+      "source_metadata": {
+        "portal": "toctoc",
+        "url_format": "arriendoparticularsr",
+        "listing_id_source": "next_data",
+        "parse_source": "requests",
+        "discovery_page": 1,
+        "publisher_extraction_status": "FOUND",
+        "dormitorios_min": null,
+        "dormitorios_max": null,
+        "dormitorios_raw": "",
+        "banos_min": null,
+        "banos_max": null,
+        "banos_raw": "",
+        "superficie_total_min": null,
+        "superficie_total_max": null,
+        "superficie_total_raw": "",
+        "superficie_util_min": null,
+        "superficie_util_max": null,
+        "superficie_util_raw": "",
+        "seller_type_source": "info-anunciante",
+        "seller_type_evidence": "Anunciante - Particular",
+        "comuna_source": "detail_html",
+        "region_source": "detail_html",
+        "location_validation": {
+          "status": "VALID",
+          "reason": ""
+        },
+        "precio_uf_source": "requests",
+        "precio_clp_source": "requests",
+        "dormitorios_source": "requests",
+        "banos_source": "requests",
+        "surface_source": "requests",
+        "title_source": "requests"
+      },
+      "source_portal": "toctoc",
+      "source_signals": {
+        "seller_type": "PARTICULAR",
+        "seller_is_pro": false,
+        "company_name": "",
+        "broker_brand": "",
+        "publisher_activity": {},
+        "classifier_original_signals": {}
+      },
+      "tipo_propiedad": "departamento",
+      "title": "Arriendo Departamento 3D 2B en Condominio Cumbres II",
+      "uf_fecha": "2026-07-08",
+      "uf_valor_usado": 40842.07,
+      "updated_at": "2026-07-14T22:15:42.234677+00:00",
+      "url": "https://www.toctoc.com/propiedades/arriendoparticularsr/departamento/linares/arriendo-departamento-3d-2b-en-condominio-cumbres-ii/2976716"
+    },
+    {
+      "_id": {
+        "$oid": "6a56b4f0b2af2a5f7e048c2f"
+      },
+      "listing_id": "4181850",
+      "origen": "toctoc",
+      "banos": 2,
+      "broker_brand": "",
+      "canonical_url": "https://www.toctoc.com/propiedades/compraparticularsr/departamento/linares/arriendo-depto-3d-2b-en-condominio-cumbres-ii/4181850",
+      "classification": {
+        "state": "DUEÑO_SEGURO",
+        "final_state": "DUEÑO_SEGURO",
+        "confidence": 0.95,
+        "score": 0.95,
+        "rule_state": "INCONCLUSIVE",
+        "signals": {},
+        "evidence": [
+          "owner_signal_evidence: dueño, dueno, particular",
+          "descripcion: Vende Dueño"
+        ],
+        "reason": "La descripción contiene 'Vende Dueño', evidencia explícita de que el anunciante es el propietario.",
+        "decision_source": "deepseek",
+        "decision_pattern": "",
+        "state_source": "deepseek",
+        "deepseek_status": "VALID",
+        "deepseek_state": "",
+        "deepseek_confidence": 0.0,
+        "deepseek_reason": "",
+        "deepseek_evidence": [],
+        "deepseek_model": "deepseek-v4-flash",
+        "deepseek_finish_reason": "stop",
+        "deepseek_prompt_tokens": 883,
+        "deepseek_completion_tokens": 267,
+        "deepseek_reasoning_tokens": 186,
+        "deepseek_provider": "",
+        "version": "toctoc-v1",
+        "ai_used": true,
+        "ai_model": "deepseek-v4-flash",
+        "ai_owner_score": 0.0,
+        "ai_broker_score": 0.0,
+        "ai_reason": "La descripción contiene 'Vende Dueño', evidencia explícita de que el anunciante es el propietario.",
+        "ai_disabled_reason": "",
+        "rules_version": "toctoc-owner-rules-v2",
+        "prompt_version": "toctoc-deepseek-owner-v2",
+        "analysis_at": "2026-07-14T22:15:10.591667+00:00",
+        "deepseek_payload": {
+          "model": "deepseek-v4-flash",
+          "messages": [
+            {
+              "role": "system",
+              "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+            },
+            {
+              "role": "user",
+              "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"dueño\", \"dueno\", \"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"3\", \"banos\": \"2\", \"superficie\": \"78\", \"descripcion_para_llm\": \"Acogedor Departamento 3D , 2B - 78m2 (como nuevo) Excelente ubicación - Guadantún con Leon Bustos Cocina con piso cerámico y semi amoblada Lavadero, Balcón, Portería con guardia, Ventanas Termopanel Estacionamiento Vende Dueño Cercano a: Supermercado Líder Patio de Comidas Restaurantes Hotel Parada Gimnasio Energy Homecenter Sodimac\", \"llm_description_original_len\": 334, \"llm_description_sent_len\": 334, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+            }
+          ],
+          "max_tokens": 500,
+          "temperature": 0,
+          "extra_body": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "response_format": {
+            "type": "json_object"
+          }
+        },
+        "deepseek_message_content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"La descripción contiene 'Vende Dueño', evidencia explícita de que el anunciante es el propietario.\", \"signals\": [\"owner_signal_evidence: dueño, dueno, particular\", \"descripcion: Vende Dueño\"]}",
+        "deepseek_reasoning_content": "We are to classify the advertiser based on the provided data. The data includes \"owner_signal_evidence\": [\"dueño\", \"dueno\", \"particular\"] and the description contains \"Vende Dueño\". This is a clear positive evidence that the advertiser is the owner. The rule says \"DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario.\" The phrase \"Vende Dueño\" is a Spanish phrase meaning \"Owner sells\", which indicates the owner is selling. This is explicit. Also, the seller_type is \"PARTICULAR\", but that alone is not sufficient, but combined with explicit evidence it supports. So state DUEÑO_SEGURO. Confidence high. Reason: Explicit mention of \"Vende Dueño\" in description indicates owner selling. Signals include the owner_signal_evidence.",
+        "deepseek_raw": {
+          "id": "e0a1ec24-2e04-4aa6-8267-7040c7841075",
+          "object": "chat.completion",
+          "created": 1784067310,
+          "model": "deepseek-v4-flash",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"La descripción contiene 'Vende Dueño', evidencia explícita de que el anunciante es el propietario.\", \"signals\": [\"owner_signal_evidence: dueño, dueno, particular\", \"descripcion: Vende Dueño\"]}",
+                "reasoning_content": "We are to classify the advertiser based on the provided data. The data includes \"owner_signal_evidence\": [\"dueño\", \"dueno\", \"particular\"] and the description contains \"Vende Dueño\". This is a clear positive evidence that the advertiser is the owner. The rule says \"DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario.\" The phrase \"Vende Dueño\" is a Spanish phrase meaning \"Owner sells\", which indicates the owner is selling. This is explicit. Also, the seller_type is \"PARTICULAR\", but that alone is not sufficient, but combined with explicit evidence it supports. So state DUEÑO_SEGURO. Confidence high. Reason: Explicit mention of \"Vende Dueño\" in description indicates owner selling. Signals include the owner_signal_evidence."
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 883,
+            "completion_tokens": 267,
+            "total_tokens": 1150,
+            "prompt_tokens_details": {
+              "cached_tokens": 640
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 186
+            },
+            "prompt_cache_hit_tokens": 640,
+            "prompt_cache_miss_tokens": 243
+          },
+          "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+        },
+        "trace": {
+          "rule_state": "INCONCLUSIVE",
+          "final_state": "DUEÑO_SEGURO",
+          "deepseek_payload": {
+            "model": "deepseek-v4-flash",
+            "messages": [
+              {
+                "role": "system",
+                "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+              },
+              {
+                "role": "user",
+                "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"dueño\", \"dueno\", \"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"3\", \"banos\": \"2\", \"superficie\": \"78\", \"descripcion_para_llm\": \"Acogedor Departamento 3D , 2B - 78m2 (como nuevo) Excelente ubicación - Guadantún con Leon Bustos Cocina con piso cerámico y semi amoblada Lavadero, Balcón, Portería con guardia, Ventanas Termopanel Estacionamiento Vende Dueño Cercano a: Supermercado Líder Patio de Comidas Restaurantes Hotel Parada Gimnasio Energy Homecenter Sodimac\", \"llm_description_original_len\": 334, \"llm_description_sent_len\": 334, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+              }
+            ],
+            "max_tokens": 500,
+            "temperature": 0,
+            "extra_body": {
+              "thinking": {
+                "type": "disabled"
+              }
+            },
+            "response_format": {
+              "type": "json_object"
+            }
+          },
+          "deepseek_message_content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"La descripción contiene 'Vende Dueño', evidencia explícita de que el anunciante es el propietario.\", \"signals\": [\"owner_signal_evidence: dueño, dueno, particular\", \"descripcion: Vende Dueño\"]}",
+          "deepseek_reasoning_content": "We are to classify the advertiser based on the provided data. The data includes \"owner_signal_evidence\": [\"dueño\", \"dueno\", \"particular\"] and the description contains \"Vende Dueño\". This is a clear positive evidence that the advertiser is the owner. The rule says \"DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario.\" The phrase \"Vende Dueño\" is a Spanish phrase meaning \"Owner sells\", which indicates the owner is selling. This is explicit. Also, the seller_type is \"PARTICULAR\", but that alone is not sufficient, but combined with explicit evidence it supports. So state DUEÑO_SEGURO. Confidence high. Reason: Explicit mention of \"Vende Dueño\" in description indicates owner selling. Signals include the owner_signal_evidence.",
+          "deepseek_raw": {
+            "id": "e0a1ec24-2e04-4aa6-8267-7040c7841075",
+            "object": "chat.completion",
+            "created": 1784067310,
+            "model": "deepseek-v4-flash",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "role": "assistant",
+                  "content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"La descripción contiene 'Vende Dueño', evidencia explícita de que el anunciante es el propietario.\", \"signals\": [\"owner_signal_evidence: dueño, dueno, particular\", \"descripcion: Vende Dueño\"]}",
+                  "reasoning_content": "We are to classify the advertiser based on the provided data. The data includes \"owner_signal_evidence\": [\"dueño\", \"dueno\", \"particular\"] and the description contains \"Vende Dueño\". This is a clear positive evidence that the advertiser is the owner. The rule says \"DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario.\" The phrase \"Vende Dueño\" is a Spanish phrase meaning \"Owner sells\", which indicates the owner is selling. This is explicit. Also, the seller_type is \"PARTICULAR\", but that alone is not sufficient, but combined with explicit evidence it supports. So state DUEÑO_SEGURO. Confidence high. Reason: Explicit mention of \"Vende Dueño\" in description indicates owner selling. Signals include the owner_signal_evidence."
+                },
+                "logprobs": null,
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 883,
+              "completion_tokens": 267,
+              "total_tokens": 1150,
+              "prompt_tokens_details": {
+                "cached_tokens": 640
+              },
+              "completion_tokens_details": {
+                "reasoning_tokens": 186
+              },
+              "prompt_cache_hit_tokens": 640,
+              "prompt_cache_miss_tokens": 243
+            },
+            "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+          },
+          "rules_version": "toctoc-owner-rules-v2",
+          "prompt_version": "toctoc-deepseek-owner-v2",
+          "analysis_at": "2026-07-14T22:15:10.591667+00:00"
+        },
+        "assignment_ready": false,
+        "assignment_gate_version": "assignment-gate-v2"
+      },
+      "company_name": "",
+      "comuna": "Linares",
+      "description": "Acogedor Departamento 3D , 2B - 78m2 (como nuevo) Excelente ubicación - Guadantún con Leon Bustos Cocina con piso cerámico y semi amoblada Lavadero, Balcón, Portería con guardia, Ventanas Termopanel Estacionamiento Vende Dueño Cercano a: Supermercado Líder Patio de Comidas Restaurantes Hotel Parada Gimnasio Energy Homecenter Sodimac",
+      "description_available": true,
+      "description_is_truncated": false,
+      "description_length": 334,
+      "direccion_exacta": "Linares",
+      "dormitorios": 3,
+      "estacionamientos": null,
+      "fecha_publicacion": "",
+      "fecha_publicacion_raw": "",
+      "fetch_source": "requests",
+      "gastos_comunes": null,
+      "html_path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scraper_toctoc\\html_dumps\\toctoc_scrape_20260714_181457_36db\\020ab664098935991b29dd52e0fbfa9a.html",
+      "html_sha256": "7d2a993d120feda98472fd96ba3a5d1021b32d65ad29d2055b43ea919f6bcc2c",
+      "html_validation_reason": "valid_html",
+      "html_validation_status": "OK",
+      "image_urls": [
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026061126012448439.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344437221052.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052345272082392.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052345020133642.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344588169293.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344587743751.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344434858721.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344547767481.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344568134995.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344460135779.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344567694746.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344516590494.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344481257082.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344459712854.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344516595657.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026052344548205261.jpg"
+      ],
+      "image_urls_count": 16,
+      "listing_id_source": "next_data",
+      "m2_construidos": 78.0,
+      "m2_totales": 78.0,
+      "main_image_url": "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260523/4181850/n_wm_2026061126012448439.jpg",
+      "manual_review": {
+        "status": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "operacion": "venta",
+      "precio_clp": 102520423,
+      "precio_clp_raw": "$102.520.423",
+      "precio_conversion_source": "toctoc_explicit_both_currencies",
+      "precio_moneda_original": "UF",
+      "precio_original_num": 2510.0,
+      "precio_raw": "UF 2.510 / $ 102.520.423",
+      "precio_uf": 2510.0,
+      "precio_uf_raw": "UF 2.510",
+      "precio_validacion": "OK",
+      "price": "UF 2.510 / $102.520.423",
+      "processed_at": "2026-07-14T22:15:10.593170+00:00",
+      "publicador_visible": "Particular",
+      "publisher_activity": {},
+      "publisher_identity_candidates": [
+        {
+          "source": "info_anunciante",
+          "value": "Particular"
+        },
+        {
+          "source": "seller_type",
+          "value": "PARTICULAR"
+        },
+        {
+          "source": "seller_type_evidence",
+          "value": "Anunciante - Particular"
+        }
+      ],
+      "raw_attributes": {},
+      "region": "Maule",
+      "run_id": "toctoc_scrape_20260714_181457_36db",
+      "schema_version": "crm_v1",
+      "scrape_stage": "classification_done",
+      "seller_avatar_alt": "",
+      "seller_is_pro": false,
+      "seller_name": "Particular",
+      "seller_profile_id": "",
+      "seller_text": "Anunciante - Particular",
+      "seller_type": "PARTICULAR",
+      "seller_type_evidence": "Anunciante - Particular",
+      "seller_type_source": "info-anunciante",
+      "source": "owner_hunt",
+      "source_metadata": {
+        "portal": "toctoc",
+        "url_format": "compraparticularsr",
+        "listing_id_source": "next_data",
+        "parse_source": "requests",
+        "discovery_page": 1,
+        "publisher_extraction_status": "FOUND",
+        "dormitorios_min": null,
+        "dormitorios_max": null,
+        "dormitorios_raw": "",
+        "banos_min": null,
+        "banos_max": null,
+        "banos_raw": "",
+        "superficie_total_min": null,
+        "superficie_total_max": null,
+        "superficie_total_raw": "",
+        "superficie_util_min": null,
+        "superficie_util_max": null,
+        "superficie_util_raw": "",
+        "seller_type_source": "info-anunciante",
+        "seller_type_evidence": "Anunciante - Particular",
+        "comuna_source": "detail_html",
+        "region_source": "detail_html",
+        "location_validation": {
+          "status": "VALID",
+          "reason": ""
+        },
+        "precio_uf_source": "requests",
+        "precio_clp_source": "requests",
+        "dormitorios_source": "requests",
+        "banos_source": "requests",
+        "surface_source": "requests",
+        "title_source": "requests"
+      },
+      "source_portal": "toctoc",
+      "source_signals": {
+        "seller_type": "PARTICULAR",
+        "seller_is_pro": false,
+        "company_name": "",
+        "broker_brand": "",
+        "publisher_activity": {},
+        "classifier_original_signals": {}
+      },
+      "tipo_propiedad": "departamento",
+      "title": "Se Vende Depto 3D 2B en Condominio Cumbres II",
+      "uf_fecha": "2026-07-08",
+      "uf_valor_usado": 40842.07,
+      "updated_at": "2026-07-14T22:15:10.650729+00:00",
+      "url": "https://www.toctoc.com/propiedades/compraparticularsr/departamento/linares/arriendo-depto-3d-2b-en-condominio-cumbres-ii/4181850"
+    },
+    {
+      "_id": {
+        "$oid": "6a56b501b2af2a5f7e048c30"
+      },
+      "listing_id": "4220323",
+      "origen": "toctoc",
+      "banos": 2,
+      "broker_brand": "",
+      "canonical_url": "https://www.toctoc.com/propiedades/arriendoparticularsr/departamento/linares/departamento-krupp-678/4220323",
+      "classification": {
+        "state": "INCIERTO",
+        "final_state": "INCIERTO",
+        "confidence": 0.6,
+        "score": 0.6,
+        "rule_state": "INCONCLUSIVE",
+        "signals": {},
+        "evidence": [
+          "seller_type=PARTICULAR",
+          "descripcion impersonal"
+        ],
+        "reason": "Aunque seller_type es PARTICULAR, no hay evidencia positiva explícita de que el anunciante sea propietario (sin primera persona posesiva como 'mi departamento'). La descripción es impersonal.",
+        "decision_source": "deepseek",
+        "decision_pattern": "",
+        "state_source": "deepseek",
+        "deepseek_status": "VALID",
+        "deepseek_state": "",
+        "deepseek_confidence": 0.0,
+        "deepseek_reason": "",
+        "deepseek_evidence": [],
+        "deepseek_model": "deepseek-v4-flash",
+        "deepseek_finish_reason": "stop",
+        "deepseek_prompt_tokens": 848,
+        "deepseek_completion_tokens": 207,
+        "deepseek_reasoning_tokens": 124,
+        "deepseek_provider": "",
+        "version": "toctoc-v1",
+        "ai_used": true,
+        "ai_model": "deepseek-v4-flash",
+        "ai_owner_score": 0.0,
+        "ai_broker_score": 0.0,
+        "ai_reason": "Aunque seller_type es PARTICULAR, no hay evidencia positiva explícita de que el anunciante sea propietario (sin primera persona posesiva como 'mi departamento'). La descripción es impersonal.",
+        "ai_disabled_reason": "",
+        "rules_version": "toctoc-owner-rules-v2",
+        "prompt_version": "toctoc-deepseek-owner-v2",
+        "analysis_at": "2026-07-14T22:15:27.237290+00:00",
+        "deepseek_payload": {
+          "model": "deepseek-v4-flash",
+          "messages": [
+            {
+              "role": "system",
+              "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+            },
+            {
+              "role": "user",
+              "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"3\", \"banos\": \"2\", \"superficie\": \"65\", \"descripcion_para_llm\": \"Se arrienda departamento ubicado en Calle Krupp. El departamento se encuentra en el tercer piso de la torre B. Cuenta con: - 3 habitaciones, - 2 baños - Cocina americana - Logia - Amplio balcón - Living comedor - Estacionamiento. Incluye gastos comunes\", \"llm_description_original_len\": 252, \"llm_description_sent_len\": 252, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+            }
+          ],
+          "max_tokens": 500,
+          "temperature": 0,
+          "extra_body": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "response_format": {
+            "type": "json_object"
+          }
+        },
+        "deepseek_message_content": "{\"state\": \"INCIERTO\", \"confidence\": 0.6, \"reason\": \"Aunque seller_type es PARTICULAR, no hay evidencia positiva explícita de que el anunciante sea propietario (sin primera persona posesiva como 'mi departamento'). La descripción es impersonal.\", \"signals\": [\"seller_type=PARTICULAR\", \"descripcion impersonal\"]}",
+        "deepseek_reasoning_content": "We need to classify based on the given data. The input has seller_type=\"PARTICULAR\", and owner_signal_evidence includes \"particular\". But rule says seller_type='PARTICULAR' alone is not enough for DUEÑO_SEGURO. Also, description does not contain any first-person possessive like \"mi departamento\" or \"soy dueño\". It says \"Se arrienda departamento\" which is impersonal. No evidence of corredor. So state is INCIERTO. Confidence moderate. Signals: \"seller_type=PARTICULAR\" but no explicit owner statement.",
+        "deepseek_raw": {
+          "id": "7d4a11c0-98e7-4db8-b4da-7dc06656aaa8",
+          "object": "chat.completion",
+          "created": 1784067326,
+          "model": "deepseek-v4-flash",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"state\": \"INCIERTO\", \"confidence\": 0.6, \"reason\": \"Aunque seller_type es PARTICULAR, no hay evidencia positiva explícita de que el anunciante sea propietario (sin primera persona posesiva como 'mi departamento'). La descripción es impersonal.\", \"signals\": [\"seller_type=PARTICULAR\", \"descripcion impersonal\"]}",
+                "reasoning_content": "We need to classify based on the given data. The input has seller_type=\"PARTICULAR\", and owner_signal_evidence includes \"particular\". But rule says seller_type='PARTICULAR' alone is not enough for DUEÑO_SEGURO. Also, description does not contain any first-person possessive like \"mi departamento\" or \"soy dueño\". It says \"Se arrienda departamento\" which is impersonal. No evidence of corredor. So state is INCIERTO. Confidence moderate. Signals: \"seller_type=PARTICULAR\" but no explicit owner statement."
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 848,
+            "completion_tokens": 207,
+            "total_tokens": 1055,
+            "prompt_tokens_details": {
+              "cached_tokens": 640
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 124
+            },
+            "prompt_cache_hit_tokens": 640,
+            "prompt_cache_miss_tokens": 208
+          },
+          "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+        },
+        "trace": {
+          "rule_state": "INCONCLUSIVE",
+          "final_state": "INCIERTO",
+          "deepseek_payload": {
+            "model": "deepseek-v4-flash",
+            "messages": [
+              {
+                "role": "system",
+                "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+              },
+              {
+                "role": "user",
+                "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"3\", \"banos\": \"2\", \"superficie\": \"65\", \"descripcion_para_llm\": \"Se arrienda departamento ubicado en Calle Krupp. El departamento se encuentra en el tercer piso de la torre B. Cuenta con: - 3 habitaciones, - 2 baños - Cocina americana - Logia - Amplio balcón - Living comedor - Estacionamiento. Incluye gastos comunes\", \"llm_description_original_len\": 252, \"llm_description_sent_len\": 252, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+              }
+            ],
+            "max_tokens": 500,
+            "temperature": 0,
+            "extra_body": {
+              "thinking": {
+                "type": "disabled"
+              }
+            },
+            "response_format": {
+              "type": "json_object"
+            }
+          },
+          "deepseek_message_content": "{\"state\": \"INCIERTO\", \"confidence\": 0.6, \"reason\": \"Aunque seller_type es PARTICULAR, no hay evidencia positiva explícita de que el anunciante sea propietario (sin primera persona posesiva como 'mi departamento'). La descripción es impersonal.\", \"signals\": [\"seller_type=PARTICULAR\", \"descripcion impersonal\"]}",
+          "deepseek_reasoning_content": "We need to classify based on the given data. The input has seller_type=\"PARTICULAR\", and owner_signal_evidence includes \"particular\". But rule says seller_type='PARTICULAR' alone is not enough for DUEÑO_SEGURO. Also, description does not contain any first-person possessive like \"mi departamento\" or \"soy dueño\". It says \"Se arrienda departamento\" which is impersonal. No evidence of corredor. So state is INCIERTO. Confidence moderate. Signals: \"seller_type=PARTICULAR\" but no explicit owner statement.",
+          "deepseek_raw": {
+            "id": "7d4a11c0-98e7-4db8-b4da-7dc06656aaa8",
+            "object": "chat.completion",
+            "created": 1784067326,
+            "model": "deepseek-v4-flash",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "role": "assistant",
+                  "content": "{\"state\": \"INCIERTO\", \"confidence\": 0.6, \"reason\": \"Aunque seller_type es PARTICULAR, no hay evidencia positiva explícita de que el anunciante sea propietario (sin primera persona posesiva como 'mi departamento'). La descripción es impersonal.\", \"signals\": [\"seller_type=PARTICULAR\", \"descripcion impersonal\"]}",
+                  "reasoning_content": "We need to classify based on the given data. The input has seller_type=\"PARTICULAR\", and owner_signal_evidence includes \"particular\". But rule says seller_type='PARTICULAR' alone is not enough for DUEÑO_SEGURO. Also, description does not contain any first-person possessive like \"mi departamento\" or \"soy dueño\". It says \"Se arrienda departamento\" which is impersonal. No evidence of corredor. So state is INCIERTO. Confidence moderate. Signals: \"seller_type=PARTICULAR\" but no explicit owner statement."
+                },
+                "logprobs": null,
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 848,
+              "completion_tokens": 207,
+              "total_tokens": 1055,
+              "prompt_tokens_details": {
+                "cached_tokens": 640
+              },
+              "completion_tokens_details": {
+                "reasoning_tokens": 124
+              },
+              "prompt_cache_hit_tokens": 640,
+              "prompt_cache_miss_tokens": 208
+            },
+            "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+          },
+          "rules_version": "toctoc-owner-rules-v2",
+          "prompt_version": "toctoc-deepseek-owner-v2",
+          "analysis_at": "2026-07-14T22:15:27.237290+00:00"
+        },
+        "assignment_ready": true,
+        "assignment_gate_version": "assignment-gate-v2"
+      },
+      "company_name": "",
+      "comuna": "Linares",
+      "description": "Se arrienda departamento ubicado en Calle Krupp. El departamento se encuentra en el tercer piso de la torre B. Cuenta con: - 3 habitaciones, - 2 baños - Cocina americana - Logia - Amplio balcón - Living comedor - Estacionamiento. Incluye gastos comunes",
+      "description_available": true,
+      "description_is_truncated": false,
+      "description_length": 252,
+      "direccion_exacta": "Linares",
+      "dormitorios": 3,
+      "estacionamientos": null,
+      "fecha_publicacion": "",
+      "fecha_publicacion_raw": "",
+      "fetch_source": "requests",
+      "gastos_comunes": null,
+      "html_path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scraper_toctoc\\html_dumps\\toctoc_scrape_20260714_181511_0b97\\4d0d1c73c7932c96b5571aa8187c8626.html",
+      "html_sha256": "f154e89e3e4b23d1f7debab8c091e30e4c1a2abbe0cb0c04ad2753a1e314363f",
+      "html_validation_reason": "valid_html",
+      "html_validation_status": "OK",
+      "image_urls": [
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260616/4220323/n_wm_2026061634289200775.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260616/4220323/n_wm_2026061634284233077.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260616/4220323/n_wm_2026061634390218144.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260616/4220323/n_wm_2026061634477345569.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260616/4220323/n_wm_2026061635146382438.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260616/4220323/n_wm_2026061635197375800.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260616/4220323/n_wm_2026061640243248311.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260616/4220323/n_wm_2026061640235166503.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260616/4220323/n_wm_2026061640382250348.jpg"
+      ],
+      "image_urls_count": 9,
+      "listing_id_source": "next_data",
+      "m2_construidos": 65.0,
+      "m2_totales": 65.0,
+      "main_image_url": "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260616/4220323/n_wm_2026061634289200775.jpg",
+      "manual_review": {
+        "status": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "operacion": "arriendo",
+      "precio_clp": 430000,
+      "precio_clp_raw": "$430.000",
+      "precio_conversion_source": "toctoc_explicit_both_currencies",
+      "precio_moneda_original": "UF",
+      "precio_original_num": 10.53,
+      "precio_raw": "$ 430.000 / UF 10,53",
+      "precio_uf": 10.53,
+      "precio_uf_raw": "UF 10,53",
+      "precio_validacion": "OK",
+      "price": "UF 10,53 / $430.000",
+      "processed_at": "2026-07-14T22:15:27.238292+00:00",
+      "publicador_visible": "Particular",
+      "publisher_activity": {},
+      "publisher_identity_candidates": [
+        {
+          "source": "info_anunciante",
+          "value": "Particular"
+        },
+        {
+          "source": "seller_type",
+          "value": "PARTICULAR"
+        },
+        {
+          "source": "seller_type_evidence",
+          "value": "Anunciante - Particular"
+        }
+      ],
+      "raw_attributes": {},
+      "region": "Maule",
+      "run_id": "toctoc_scrape_20260714_181511_0b97",
+      "schema_version": "crm_v1",
+      "scrape_stage": "classification_done",
+      "seller_avatar_alt": "",
+      "seller_is_pro": false,
+      "seller_name": "Particular",
+      "seller_profile_id": "",
+      "seller_text": "Anunciante - Particular",
+      "seller_type": "PARTICULAR",
+      "seller_type_evidence": "Anunciante - Particular",
+      "seller_type_source": "info-anunciante",
+      "source": "owner_hunt",
+      "source_metadata": {
+        "portal": "toctoc",
+        "url_format": "arriendoparticularsr",
+        "listing_id_source": "next_data",
+        "parse_source": "requests",
+        "discovery_page": 1,
+        "publisher_extraction_status": "FOUND",
+        "dormitorios_min": null,
+        "dormitorios_max": null,
+        "dormitorios_raw": "",
+        "banos_min": null,
+        "banos_max": null,
+        "banos_raw": "",
+        "superficie_total_min": null,
+        "superficie_total_max": null,
+        "superficie_total_raw": "",
+        "superficie_util_min": null,
+        "superficie_util_max": null,
+        "superficie_util_raw": "",
+        "seller_type_source": "info-anunciante",
+        "seller_type_evidence": "Anunciante - Particular",
+        "comuna_source": "detail_html",
+        "region_source": "detail_html",
+        "location_validation": {
+          "status": "VALID",
+          "reason": ""
+        },
+        "precio_uf_source": "requests",
+        "precio_clp_source": "requests",
+        "dormitorios_source": "requests",
+        "banos_source": "requests",
+        "surface_source": "requests",
+        "title_source": "requests"
+      },
+      "source_portal": "toctoc",
+      "source_signals": {
+        "seller_type": "PARTICULAR",
+        "seller_is_pro": false,
+        "company_name": "",
+        "broker_brand": "",
+        "publisher_activity": {},
+        "classifier_original_signals": {}
+      },
+      "tipo_propiedad": "departamento",
+      "title": "Departamento, Krupp  678",
+      "uf_fecha": "2026-07-08",
+      "uf_valor_usado": 40842.07,
+      "updated_at": "2026-07-14T22:15:27.294591+00:00",
+      "url": "https://www.toctoc.com/propiedades/arriendoparticularsr/departamento/linares/departamento-krupp-678/4220323"
+    },
+    {
+      "_id": {
+        "$oid": "6a56b4d2b2af2a5f7e048c2e"
+      },
+      "listing_id": "4240288",
+      "origen": "toctoc",
+      "banos": 1,
+      "broker_brand": "",
+      "canonical_url": "https://www.toctoc.com/propiedades/arriendoparticularsr/casa/villa-alegre/casas-don-diego-a-gonzalez-496/4240288",
+      "classification": {
+        "state": "INCIERTO",
+        "final_state": "INCIERTO",
+        "confidence": 0.5,
+        "score": 0.5,
+        "rule_state": "INCONCLUSIVE",
+        "signals": {},
+        "evidence": [
+          "seller_type=PARTICULAR",
+          "descripción sin indicios de dueño"
+        ],
+        "reason": "No hay evidencia positiva de que el anunciante sea el propietario; solo se indica 'Particular' sin declaración explícita en primera persona.",
+        "decision_source": "deepseek",
+        "decision_pattern": "",
+        "state_source": "deepseek",
+        "deepseek_status": "VALID",
+        "deepseek_state": "",
+        "deepseek_confidence": 0.0,
+        "deepseek_reason": "",
+        "deepseek_evidence": [],
+        "deepseek_model": "deepseek-v4-flash",
+        "deepseek_finish_reason": "stop",
+        "deepseek_prompt_tokens": 838,
+        "deepseek_completion_tokens": 157,
+        "deepseek_reasoning_tokens": 79,
+        "deepseek_provider": "",
+        "version": "toctoc-v1",
+        "ai_used": true,
+        "ai_model": "deepseek-v4-flash",
+        "ai_owner_score": 0.0,
+        "ai_broker_score": 0.0,
+        "ai_reason": "No hay evidencia positiva de que el anunciante sea el propietario; solo se indica 'Particular' sin declaración explícita en primera persona.",
+        "ai_disabled_reason": "",
+        "rules_version": "toctoc-owner-rules-v2",
+        "prompt_version": "toctoc-deepseek-owner-v2",
+        "analysis_at": "2026-07-14T22:14:40.450507+00:00",
+        "deepseek_payload": {
+          "model": "deepseek-v4-flash",
+          "messages": [
+            {
+              "role": "system",
+              "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+            },
+            {
+              "role": "user",
+              "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"3\", \"banos\": \"1\", \"superficie\": \"140\", \"descripcion_para_llm\": \"La casa se ubica en la intersección de la calle Ruta L 186 con calle Don Diego A. Gonzalez en la Villa Valles de Villa Alegre. El sector es muy tranquilo para vivir en familia. Existe la opción de arriendo con promesa de compraventa.\", \"llm_description_original_len\": 233, \"llm_description_sent_len\": 233, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+            }
+          ],
+          "max_tokens": 500,
+          "temperature": 0,
+          "extra_body": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "response_format": {
+            "type": "json_object"
+          }
+        },
+        "deepseek_message_content": "{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia positiva de que el anunciante sea el propietario; solo se indica 'Particular' sin declaración explícita en primera persona.\", \"signals\": [\"seller_type=PARTICULAR\", \"descripción sin indicios de dueño\"]}",
+        "deepseek_reasoning_content": "We need to classify based on the given data. The seller_type is \"PARTICULAR\", but that alone is not sufficient for DUEÑO_SEGURO. The description mentions \"arriendo con promesa de compraventa\" but does not say \"vendo mi casa\" or similar first-person ownership. No evidence of corredor. So INCIERTO.",
+        "deepseek_raw": {
+          "id": "b7af12b5-b201-4175-9d4d-2dc0508fbf62",
+          "object": "chat.completion",
+          "created": 1784067280,
+          "model": "deepseek-v4-flash",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia positiva de que el anunciante sea el propietario; solo se indica 'Particular' sin declaración explícita en primera persona.\", \"signals\": [\"seller_type=PARTICULAR\", \"descripción sin indicios de dueño\"]}",
+                "reasoning_content": "We need to classify based on the given data. The seller_type is \"PARTICULAR\", but that alone is not sufficient for DUEÑO_SEGURO. The description mentions \"arriendo con promesa de compraventa\" but does not say \"vendo mi casa\" or similar first-person ownership. No evidence of corredor. So INCIERTO."
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 838,
+            "completion_tokens": 157,
+            "total_tokens": 995,
+            "prompt_tokens_details": {
+              "cached_tokens": 640
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 79
+            },
+            "prompt_cache_hit_tokens": 640,
+            "prompt_cache_miss_tokens": 198
+          },
+          "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+        },
+        "trace": {
+          "rule_state": "INCONCLUSIVE",
+          "final_state": "INCIERTO",
+          "deepseek_payload": {
+            "model": "deepseek-v4-flash",
+            "messages": [
+              {
+                "role": "system",
+                "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+              },
+              {
+                "role": "user",
+                "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"3\", \"banos\": \"1\", \"superficie\": \"140\", \"descripcion_para_llm\": \"La casa se ubica en la intersección de la calle Ruta L 186 con calle Don Diego A. Gonzalez en la Villa Valles de Villa Alegre. El sector es muy tranquilo para vivir en familia. Existe la opción de arriendo con promesa de compraventa.\", \"llm_description_original_len\": 233, \"llm_description_sent_len\": 233, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+              }
+            ],
+            "max_tokens": 500,
+            "temperature": 0,
+            "extra_body": {
+              "thinking": {
+                "type": "disabled"
+              }
+            },
+            "response_format": {
+              "type": "json_object"
+            }
+          },
+          "deepseek_message_content": "{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia positiva de que el anunciante sea el propietario; solo se indica 'Particular' sin declaración explícita en primera persona.\", \"signals\": [\"seller_type=PARTICULAR\", \"descripción sin indicios de dueño\"]}",
+          "deepseek_reasoning_content": "We need to classify based on the given data. The seller_type is \"PARTICULAR\", but that alone is not sufficient for DUEÑO_SEGURO. The description mentions \"arriendo con promesa de compraventa\" but does not say \"vendo mi casa\" or similar first-person ownership. No evidence of corredor. So INCIERTO.",
+          "deepseek_raw": {
+            "id": "b7af12b5-b201-4175-9d4d-2dc0508fbf62",
+            "object": "chat.completion",
+            "created": 1784067280,
+            "model": "deepseek-v4-flash",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "role": "assistant",
+                  "content": "{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia positiva de que el anunciante sea el propietario; solo se indica 'Particular' sin declaración explícita en primera persona.\", \"signals\": [\"seller_type=PARTICULAR\", \"descripción sin indicios de dueño\"]}",
+                  "reasoning_content": "We need to classify based on the given data. The seller_type is \"PARTICULAR\", but that alone is not sufficient for DUEÑO_SEGURO. The description mentions \"arriendo con promesa de compraventa\" but does not say \"vendo mi casa\" or similar first-person ownership. No evidence of corredor. So INCIERTO."
+                },
+                "logprobs": null,
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 838,
+              "completion_tokens": 157,
+              "total_tokens": 995,
+              "prompt_tokens_details": {
+                "cached_tokens": 640
+              },
+              "completion_tokens_details": {
+                "reasoning_tokens": 79
+              },
+              "prompt_cache_hit_tokens": 640,
+              "prompt_cache_miss_tokens": 198
+            },
+            "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+          },
+          "rules_version": "toctoc-owner-rules-v2",
+          "prompt_version": "toctoc-deepseek-owner-v2",
+          "analysis_at": "2026-07-14T22:14:40.450507+00:00"
+        },
+        "assignment_ready": true,
+        "assignment_gate_version": "assignment-gate-v2"
+      },
+      "company_name": "",
+      "comuna": "Villa Alegre",
+      "description": "La casa se ubica en la intersección de la calle Ruta L 186 con calle Don Diego A. Gonzalez en la Villa Valles de Villa Alegre. El sector es muy tranquilo para vivir en familia. Existe la opción de arriendo con promesa de compraventa.",
+      "description_available": true,
+      "description_is_truncated": false,
+      "description_length": 233,
+      "direccion_exacta": "Villa Alegre",
+      "dormitorios": 3,
+      "estacionamientos": null,
+      "fecha_publicacion": "",
+      "fecha_publicacion_raw": "",
+      "fetch_source": "requests",
+      "gastos_comunes": null,
+      "html_path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scraper_toctoc\\html_dumps\\toctoc_scrape_20260714_181427_0beb\\7390922bdf5017299789e1360248e7c8.html",
+      "html_sha256": "45f1346bf8dd573318de2bf773b6eef83259226b46899cde7b1c76756e2616e9",
+      "html_validation_reason": "valid_html",
+      "html_validation_status": "OK",
+      "image_urls": [
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026070217233834447.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026070217231753461.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026071438036595682.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026071438044646477.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026071440258954953.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026071440265814678.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026071442242689857.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026071442257676722.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026071445529709797.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026071445527003336.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026071448447899429.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026071448477986089.jpg"
+      ],
+      "image_urls_count": 12,
+      "listing_id_source": "next_data",
+      "m2_construidos": null,
+      "m2_totales": 140.0,
+      "main_image_url": "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260702/4240288/n_wm_2026070217233834447.jpg",
+      "manual_review": {
+        "status": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "operacion": "arriendo",
+      "precio_clp": 350000,
+      "precio_clp_raw": "$350.000",
+      "precio_conversion_source": "toctoc_explicit_both_currencies",
+      "precio_moneda_original": "UF",
+      "precio_original_num": 8.57,
+      "precio_raw": "$ 350.000 / UF 8,57",
+      "precio_uf": 8.57,
+      "precio_uf_raw": "UF 8,57",
+      "precio_validacion": "OK",
+      "price": "UF 8,57 / $350.000",
+      "processed_at": "2026-07-14T22:14:40.451508+00:00",
+      "publicador_visible": "Particular",
+      "publisher_activity": {},
+      "publisher_identity_candidates": [
+        {
+          "source": "info_anunciante",
+          "value": "Particular"
+        },
+        {
+          "source": "seller_type",
+          "value": "PARTICULAR"
+        },
+        {
+          "source": "seller_type_evidence",
+          "value": "Anunciante - Particular"
+        }
+      ],
+      "raw_attributes": {},
+      "region": "Maule",
+      "run_id": "toctoc_scrape_20260714_181427_0beb",
+      "schema_version": "crm_v1",
+      "scrape_stage": "classification_done",
+      "seller_avatar_alt": "",
+      "seller_is_pro": false,
+      "seller_name": "Particular",
+      "seller_profile_id": "",
+      "seller_text": "Anunciante - Particular",
+      "seller_type": "PARTICULAR",
+      "seller_type_evidence": "Anunciante - Particular",
+      "seller_type_source": "info-anunciante",
+      "source": "owner_hunt",
+      "source_metadata": {
+        "portal": "toctoc",
+        "url_format": "arriendoparticularsr",
+        "listing_id_source": "next_data",
+        "parse_source": "requests",
+        "discovery_page": 1,
+        "publisher_extraction_status": "FOUND",
+        "dormitorios_min": null,
+        "dormitorios_max": null,
+        "dormitorios_raw": "",
+        "banos_min": null,
+        "banos_max": null,
+        "banos_raw": "",
+        "superficie_total_min": null,
+        "superficie_total_max": null,
+        "superficie_total_raw": "",
+        "superficie_util_min": null,
+        "superficie_util_max": null,
+        "superficie_util_raw": "",
+        "seller_type_source": "info-anunciante",
+        "seller_type_evidence": "Anunciante - Particular",
+        "comuna_source": "detail_html",
+        "region_source": "detail_html",
+        "location_validation": {
+          "status": "VALID",
+          "reason": ""
+        },
+        "precio_uf_source": "requests",
+        "precio_clp_source": "requests",
+        "dormitorios_source": "requests",
+        "banos_source": "requests",
+        "surface_source": "requests",
+        "title_source": "requests"
+      },
+      "source_portal": "toctoc",
+      "source_signals": {
+        "seller_type": "PARTICULAR",
+        "seller_is_pro": false,
+        "company_name": "",
+        "broker_brand": "",
+        "publisher_activity": {},
+        "classifier_original_signals": {}
+      },
+      "tipo_propiedad": "casas",
+      "title": "Casas, Don Diego A. Gonzalez 496",
+      "uf_fecha": "2026-07-08",
+      "uf_valor_usado": 40842.07,
+      "updated_at": "2026-07-14T22:14:40.506584+00:00",
+      "url": "https://www.toctoc.com/propiedades/arriendoparticularsr/casa/villa-alegre/casas-don-diego-a-gonzalez-496/4240288"
+    },
+    {
+      "_id": {
+        "$oid": "6a56b488b2af2a5f7e048c29"
+      },
+      "origen": "toctoc",
+      "listing_id": "4244544",
+      "banos": 2,
+      "broker_brand": "",
+      "canonical_url": "https://www.toctoc.com/propiedades/arriendoparticularsr/casa/linares/casas-eduardo-anguita-1076/4244544",
+      "classification": {
+        "state": "DUEÑO_SEGURO",
+        "final_state": "DUEÑO_SEGURO",
+        "confidence": 0.95,
+        "score": 0.95,
+        "rule_state": "INCONCLUSIVE",
+        "signals": {},
+        "evidence": [
+          "owner_signal_evidence: particular",
+          "descripcion_para_llm: Dueña arrienda casa"
+        ],
+        "reason": "El texto 'Dueña arrienda casa' indica claramente que el anunciante es la propietaria en primera persona.",
+        "decision_source": "deepseek",
+        "decision_pattern": "",
+        "state_source": "deepseek",
+        "deepseek_status": "VALID",
+        "deepseek_state": "",
+        "deepseek_confidence": 0.0,
+        "deepseek_reason": "",
+        "deepseek_evidence": [],
+        "deepseek_model": "deepseek-v4-flash",
+        "deepseek_finish_reason": "stop",
+        "deepseek_prompt_tokens": 925,
+        "deepseek_completion_tokens": 134,
+        "deepseek_reasoning_tokens": 52,
+        "deepseek_provider": "",
+        "version": "toctoc-v1",
+        "ai_used": true,
+        "ai_model": "deepseek-v4-flash",
+        "ai_owner_score": 0.0,
+        "ai_broker_score": 0.0,
+        "ai_reason": "El texto 'Dueña arrienda casa' indica claramente que el anunciante es la propietaria en primera persona.",
+        "ai_disabled_reason": "",
+        "rules_version": "toctoc-owner-rules-v2",
+        "prompt_version": "toctoc-deepseek-owner-v2",
+        "analysis_at": "2026-07-14T22:13:26.874875+00:00",
+        "deepseek_payload": {
+          "model": "deepseek-v4-flash",
+          "messages": [
+            {
+              "role": "system",
+              "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+            },
+            {
+              "role": "user",
+              "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"4\", \"banos\": \"2\", \"superficie\": \"200\", \"descripcion_para_llm\": \"Dueña arrienda casa grande totalmente amoblada, para turistas, empresas, instituciones, Profesionales y/o Fuerzas Armadas en sector Quiñipeumo, Linares, Chile. Ésta posee living, comedor para 8 personas, cocina equipada con comedor de diario para 4 personas, 4 dormitorios amplios, 2 baños, 1 estacionamiento, patio grande con césped y terraza. Segura, con protecciones de fierro en todas sus ventanas, portero electrónico y alarma. Valor $600.000 con 5 camas, $700.000 mensual con 6 camas; diario $65.000.\", \"llm_description_original_len\": 506, \"llm_description_sent_len\": 506, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+            }
+          ],
+          "max_tokens": 500,
+          "temperature": 0,
+          "extra_body": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "response_format": {
+            "type": "json_object"
+          }
+        },
+        "deepseek_message_content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"El texto 'Dueña arrienda casa' indica claramente que el anunciante es la propietaria en primera persona.\", \"signals\": [\"owner_signal_evidence: particular\", \"descripcion_para_llm: Dueña arrienda casa\"]}",
+        "deepseek_reasoning_content": "We need to classify based on the given information. The description says \"Dueña arrienda casa\" which means \"Owner rents out house\". This is a clear first-person possessive statement indicating the owner. So it's DUEÑO_SEGURO.",
+        "deepseek_raw": {
+          "id": "467ad2fd-f355-46c8-baaf-e8b4dccc6243",
+          "object": "chat.completion",
+          "created": 1784067207,
+          "model": "deepseek-v4-flash",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"El texto 'Dueña arrienda casa' indica claramente que el anunciante es la propietaria en primera persona.\", \"signals\": [\"owner_signal_evidence: particular\", \"descripcion_para_llm: Dueña arrienda casa\"]}",
+                "reasoning_content": "We need to classify based on the given information. The description says \"Dueña arrienda casa\" which means \"Owner rents out house\". This is a clear first-person possessive statement indicating the owner. So it's DUEÑO_SEGURO."
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 925,
+            "completion_tokens": 134,
+            "total_tokens": 1059,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 52
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 925
+          },
+          "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+        },
+        "trace": {
+          "rule_state": "INCONCLUSIVE",
+          "final_state": "DUEÑO_SEGURO",
+          "deepseek_payload": {
+            "model": "deepseek-v4-flash",
+            "messages": [
+              {
+                "role": "system",
+                "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+              },
+              {
+                "role": "user",
+                "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"4\", \"banos\": \"2\", \"superficie\": \"200\", \"descripcion_para_llm\": \"Dueña arrienda casa grande totalmente amoblada, para turistas, empresas, instituciones, Profesionales y/o Fuerzas Armadas en sector Quiñipeumo, Linares, Chile. Ésta posee living, comedor para 8 personas, cocina equipada con comedor de diario para 4 personas, 4 dormitorios amplios, 2 baños, 1 estacionamiento, patio grande con césped y terraza. Segura, con protecciones de fierro en todas sus ventanas, portero electrónico y alarma. Valor $600.000 con 5 camas, $700.000 mensual con 6 camas; diario $65.000.\", \"llm_description_original_len\": 506, \"llm_description_sent_len\": 506, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+              }
+            ],
+            "max_tokens": 500,
+            "temperature": 0,
+            "extra_body": {
+              "thinking": {
+                "type": "disabled"
+              }
+            },
+            "response_format": {
+              "type": "json_object"
+            }
+          },
+          "deepseek_message_content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"El texto 'Dueña arrienda casa' indica claramente que el anunciante es la propietaria en primera persona.\", \"signals\": [\"owner_signal_evidence: particular\", \"descripcion_para_llm: Dueña arrienda casa\"]}",
+          "deepseek_reasoning_content": "We need to classify based on the given information. The description says \"Dueña arrienda casa\" which means \"Owner rents out house\". This is a clear first-person possessive statement indicating the owner. So it's DUEÑO_SEGURO.",
+          "deepseek_raw": {
+            "id": "467ad2fd-f355-46c8-baaf-e8b4dccc6243",
+            "object": "chat.completion",
+            "created": 1784067207,
+            "model": "deepseek-v4-flash",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "role": "assistant",
+                  "content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"El texto 'Dueña arrienda casa' indica claramente que el anunciante es la propietaria en primera persona.\", \"signals\": [\"owner_signal_evidence: particular\", \"descripcion_para_llm: Dueña arrienda casa\"]}",
+                  "reasoning_content": "We need to classify based on the given information. The description says \"Dueña arrienda casa\" which means \"Owner rents out house\". This is a clear first-person possessive statement indicating the owner. So it's DUEÑO_SEGURO."
+                },
+                "logprobs": null,
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 925,
+              "completion_tokens": 134,
+              "total_tokens": 1059,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              },
+              "completion_tokens_details": {
+                "reasoning_tokens": 52
+              },
+              "prompt_cache_hit_tokens": 0,
+              "prompt_cache_miss_tokens": 925
+            },
+            "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+          },
+          "rules_version": "toctoc-owner-rules-v2",
+          "prompt_version": "toctoc-deepseek-owner-v2",
+          "analysis_at": "2026-07-14T22:13:26.874875+00:00"
+        },
+        "assignment_ready": false,
+        "assignment_gate_version": "assignment-gate-v2"
+      },
+      "company_name": "",
+      "comuna": "Linares",
+      "description": "Dueña arrienda casa grande totalmente amoblada, para turistas, empresas, instituciones, Profesionales y/o Fuerzas Armadas en sector Quiñipeumo, Linares, Chile. Ésta posee living, comedor para 8 personas, cocina equipada con comedor de diario para 4 personas, 4 dormitorios amplios, 2 baños, 1 estacionamiento, patio grande con césped y terraza. Segura, con protecciones de fierro en todas sus ventanas, portero electrónico y alarma. Valor $600.000 con 5 camas, $700.000 mensual con 6 camas; diario $65.000.",
+      "description_available": true,
+      "description_is_truncated": false,
+      "description_length": 506,
+      "direccion_exacta": "Linares",
+      "dormitorios": 4,
+      "estacionamientos": null,
+      "fecha_publicacion": "",
+      "fecha_publicacion_raw": "",
+      "fetch_source": "requests",
+      "gastos_comunes": null,
+      "html_path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scraper_toctoc\\html_dumps\\toctoc_scrape_20260714_181308_d02d\\6ed77b56c6d71b8a78a8da4003892522.html",
+      "html_sha256": "28a8c9740fcb4a427b7aab09162ac0082c8d810b680dc17803a5257498d6e910",
+      "html_validation_reason": "valid_html",
+      "html_validation_status": "OK",
+      "image_urls": [
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244544/n_wm_2026070623174211694.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244544/n_wm_2026070623245377111.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244544/n_wm_2026070623312173217.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244544/n_wm_2026070623386125045.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244544/n_wm_2026070623506241496.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244544/n_wm_2026070624032172082.jpg"
+      ],
+      "image_urls_count": 6,
+      "listing_id_source": "next_data",
+      "m2_construidos": null,
+      "m2_totales": 200.0,
+      "main_image_url": "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244544/n_wm_2026070623174211694.jpg",
+      "manual_review": {
+        "status": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "operacion": "arriendo",
+      "precio_clp": 600000,
+      "precio_clp_raw": "$600.000",
+      "precio_conversion_source": "toctoc_explicit_both_currencies",
+      "precio_moneda_original": "UF",
+      "precio_original_num": 14.69,
+      "precio_raw": "$ 600.000 / UF 14,69",
+      "precio_uf": 14.69,
+      "precio_uf_raw": "UF 14,69",
+      "precio_validacion": "OK",
+      "price": "UF 14,69 / $600.000",
+      "processed_at": "2026-07-14T22:13:26.876870+00:00",
+      "publicador_visible": "Particular",
+      "publisher_activity": {},
+      "publisher_identity_candidates": [
+        {
+          "source": "info_anunciante",
+          "value": "Particular"
+        },
+        {
+          "source": "seller_type",
+          "value": "PARTICULAR"
+        },
+        {
+          "source": "seller_type_evidence",
+          "value": "Anunciante - Particular"
+        }
+      ],
+      "raw_attributes": {},
+      "region": "Maule",
+      "run_id": "toctoc_scrape_20260714_181308_d02d",
+      "schema_version": "crm_v1",
+      "scrape_stage": "classification_done",
+      "seller_avatar_alt": "",
+      "seller_is_pro": false,
+      "seller_name": "Particular",
+      "seller_profile_id": "",
+      "seller_text": "Anunciante - Particular",
+      "seller_type": "PARTICULAR",
+      "seller_type_evidence": "Anunciante - Particular",
+      "seller_type_source": "info-anunciante",
+      "source": "owner_hunt",
+      "source_metadata": {
+        "portal": "toctoc",
+        "url_format": "arriendoparticularsr",
+        "listing_id_source": "next_data",
+        "parse_source": "requests",
+        "discovery_page": 1,
+        "publisher_extraction_status": "FOUND",
+        "dormitorios_min": null,
+        "dormitorios_max": null,
+        "dormitorios_raw": "",
+        "banos_min": null,
+        "banos_max": null,
+        "banos_raw": "",
+        "superficie_total_min": null,
+        "superficie_total_max": null,
+        "superficie_total_raw": "",
+        "superficie_util_min": null,
+        "superficie_util_max": null,
+        "superficie_util_raw": "",
+        "seller_type_source": "info-anunciante",
+        "seller_type_evidence": "Anunciante - Particular",
+        "comuna_source": "detail_html",
+        "region_source": "detail_html",
+        "location_validation": {
+          "status": "VALID",
+          "reason": ""
+        },
+        "precio_uf_source": "requests",
+        "precio_clp_source": "requests",
+        "dormitorios_source": "requests",
+        "banos_source": "requests",
+        "surface_source": "requests",
+        "title_source": "requests"
+      },
+      "source_portal": "toctoc",
+      "source_signals": {
+        "seller_type": "PARTICULAR",
+        "seller_is_pro": false,
+        "company_name": "",
+        "broker_brand": "",
+        "publisher_activity": {},
+        "classifier_original_signals": {}
+      },
+      "tipo_propiedad": "casas",
+      "title": "Se arrienda casa amplia, amoblada, en Linares",
+      "uf_fecha": "2026-07-08",
+      "uf_valor_usado": 40842.07,
+      "updated_at": "2026-07-14T22:13:26.932761+00:00",
+      "url": "https://www.toctoc.com/propiedades/arriendoparticularsr/casa/linares/casas-eduardo-anguita-1076/4244544"
+    },
+    {
+      "_id": {
+        "$oid": "6a56b492b2af2a5f7e048c2a"
+      },
+      "origen": "toctoc",
+      "listing_id": "4244553",
+      "banos": 2,
+      "broker_brand": "",
+      "canonical_url": "https://www.toctoc.com/propiedades/arriendoparticularsr/casa/linares/arriendo-casa-amoblada-en-linares/4244553",
+      "classification": {
+        "state": "DUEÑO_SEGURO",
+        "final_state": "DUEÑO_SEGURO",
+        "confidence": 0.95,
+        "score": 0.95,
+        "rule_state": "INCONCLUSIVE",
+        "signals": {},
+        "evidence": [
+          "Dueña arrienda",
+          "particular"
+        ],
+        "reason": "La descripción dice 'Dueña arrienda', evidencia explícita de que el anunciante es la propietaria.",
+        "decision_source": "deepseek",
+        "decision_pattern": "",
+        "state_source": "deepseek",
+        "deepseek_status": "VALID",
+        "deepseek_state": "",
+        "deepseek_confidence": 0.0,
+        "deepseek_reason": "",
+        "deepseek_evidence": [],
+        "deepseek_model": "deepseek-v4-flash",
+        "deepseek_finish_reason": "stop",
+        "deepseek_prompt_tokens": 901,
+        "deepseek_completion_tokens": 184,
+        "deepseek_reasoning_tokens": 117,
+        "deepseek_provider": "",
+        "version": "toctoc-v1",
+        "ai_used": true,
+        "ai_model": "deepseek-v4-flash",
+        "ai_owner_score": 0.0,
+        "ai_broker_score": 0.0,
+        "ai_reason": "La descripción dice 'Dueña arrienda', evidencia explícita de que el anunciante es la propietaria.",
+        "ai_disabled_reason": "",
+        "rules_version": "toctoc-owner-rules-v2",
+        "prompt_version": "toctoc-deepseek-owner-v2",
+        "analysis_at": "2026-07-14T22:13:36.255172+00:00",
+        "deepseek_payload": {
+          "model": "deepseek-v4-flash",
+          "messages": [
+            {
+              "role": "system",
+              "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+            },
+            {
+              "role": "user",
+              "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"3\", \"banos\": \"2\", \"superficie\": \"85\", \"descripcion_para_llm\": \"Dueña arrienda casa totalmente amoblada, para turistas, empresas, Instituciones, Profesionales y/o Fuerzas Armadas en sector Parque los Cipreses, Quiñipeumo, Linares, Chile. Ésta posee living, comedor para 6 personas, cocina equipada, lavadora, 3 dormitorios amplios, 2 baños, 1 entrada de vehículo, patio amplio. Segura. Valor $500.000 con 5 camas, $700.000 mensual con 6 camas ; diario $50.000.\", \"llm_description_original_len\": 396, \"llm_description_sent_len\": 396, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+            }
+          ],
+          "max_tokens": 500,
+          "temperature": 0,
+          "extra_body": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "response_format": {
+            "type": "json_object"
+          }
+        },
+        "deepseek_message_content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"La descripción dice 'Dueña arrienda', evidencia explícita de que el anunciante es la propietaria.\", \"signals\": [\"Dueña arrienda\", \"particular\"]}",
+        "deepseek_reasoning_content": "We need to classify the publisher based on the input. The input includes seller_type = \"PARTICULAR\" and description mentions \"Dueña arrienda casa\" which is in first person (\"Dueña\" means owner, female). The description says \"Dueña arrienda\" which indicates the owner is renting. This is positive evidence that the publisher is the owner. So state = DUEÑO_SEGURO. Confidence high. Reason: explicit mention of \"Dueña\" (owner) in first person. Signals: [\"Dueña arrienda\", \"particular\"].",
+        "deepseek_raw": {
+          "id": "fcde6bb9-d41f-406c-b60d-346b59370a5b",
+          "object": "chat.completion",
+          "created": 1784067215,
+          "model": "deepseek-v4-flash",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"La descripción dice 'Dueña arrienda', evidencia explícita de que el anunciante es la propietaria.\", \"signals\": [\"Dueña arrienda\", \"particular\"]}",
+                "reasoning_content": "We need to classify the publisher based on the input. The input includes seller_type = \"PARTICULAR\" and description mentions \"Dueña arrienda casa\" which is in first person (\"Dueña\" means owner, female). The description says \"Dueña arrienda\" which indicates the owner is renting. This is positive evidence that the publisher is the owner. So state = DUEÑO_SEGURO. Confidence high. Reason: explicit mention of \"Dueña\" (owner) in first person. Signals: [\"Dueña arrienda\", \"particular\"]."
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 901,
+            "completion_tokens": 184,
+            "total_tokens": 1085,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 117
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 901
+          },
+          "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+        },
+        "trace": {
+          "rule_state": "INCONCLUSIVE",
+          "final_state": "DUEÑO_SEGURO",
+          "deepseek_payload": {
+            "model": "deepseek-v4-flash",
+            "messages": [
+              {
+                "role": "system",
+                "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+              },
+              {
+                "role": "user",
+                "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"3\", \"banos\": \"2\", \"superficie\": \"85\", \"descripcion_para_llm\": \"Dueña arrienda casa totalmente amoblada, para turistas, empresas, Instituciones, Profesionales y/o Fuerzas Armadas en sector Parque los Cipreses, Quiñipeumo, Linares, Chile. Ésta posee living, comedor para 6 personas, cocina equipada, lavadora, 3 dormitorios amplios, 2 baños, 1 entrada de vehículo, patio amplio. Segura. Valor $500.000 con 5 camas, $700.000 mensual con 6 camas ; diario $50.000.\", \"llm_description_original_len\": 396, \"llm_description_sent_len\": 396, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+              }
+            ],
+            "max_tokens": 500,
+            "temperature": 0,
+            "extra_body": {
+              "thinking": {
+                "type": "disabled"
+              }
+            },
+            "response_format": {
+              "type": "json_object"
+            }
+          },
+          "deepseek_message_content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"La descripción dice 'Dueña arrienda', evidencia explícita de que el anunciante es la propietaria.\", \"signals\": [\"Dueña arrienda\", \"particular\"]}",
+          "deepseek_reasoning_content": "We need to classify the publisher based on the input. The input includes seller_type = \"PARTICULAR\" and description mentions \"Dueña arrienda casa\" which is in first person (\"Dueña\" means owner, female). The description says \"Dueña arrienda\" which indicates the owner is renting. This is positive evidence that the publisher is the owner. So state = DUEÑO_SEGURO. Confidence high. Reason: explicit mention of \"Dueña\" (owner) in first person. Signals: [\"Dueña arrienda\", \"particular\"].",
+          "deepseek_raw": {
+            "id": "fcde6bb9-d41f-406c-b60d-346b59370a5b",
+            "object": "chat.completion",
+            "created": 1784067215,
+            "model": "deepseek-v4-flash",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "role": "assistant",
+                  "content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"La descripción dice 'Dueña arrienda', evidencia explícita de que el anunciante es la propietaria.\", \"signals\": [\"Dueña arrienda\", \"particular\"]}",
+                  "reasoning_content": "We need to classify the publisher based on the input. The input includes seller_type = \"PARTICULAR\" and description mentions \"Dueña arrienda casa\" which is in first person (\"Dueña\" means owner, female). The description says \"Dueña arrienda\" which indicates the owner is renting. This is positive evidence that the publisher is the owner. So state = DUEÑO_SEGURO. Confidence high. Reason: explicit mention of \"Dueña\" (owner) in first person. Signals: [\"Dueña arrienda\", \"particular\"]."
+                },
+                "logprobs": null,
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 901,
+              "completion_tokens": 184,
+              "total_tokens": 1085,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              },
+              "completion_tokens_details": {
+                "reasoning_tokens": 117
+              },
+              "prompt_cache_hit_tokens": 0,
+              "prompt_cache_miss_tokens": 901
+            },
+            "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+          },
+          "rules_version": "toctoc-owner-rules-v2",
+          "prompt_version": "toctoc-deepseek-owner-v2",
+          "analysis_at": "2026-07-14T22:13:36.255172+00:00"
+        },
+        "assignment_ready": false,
+        "assignment_gate_version": "assignment-gate-v2"
+      },
+      "company_name": "",
+      "comuna": "Linares",
+      "description": "Dueña arrienda casa totalmente amoblada, para turistas, empresas, Instituciones, Profesionales y/o Fuerzas Armadas en sector Parque los Cipreses, Quiñipeumo, Linares, Chile. Ésta posee living, comedor para 6 personas, cocina equipada, lavadora, 3 dormitorios amplios, 2 baños, 1 entrada de vehículo, patio amplio. Segura. Valor $500.000 con 5 camas, $700.000 mensual con 6 camas ; diario $50.000.",
+      "description_available": true,
+      "description_is_truncated": false,
+      "description_length": 396,
+      "direccion_exacta": "Linares",
+      "dormitorios": 3,
+      "estacionamientos": null,
+      "fecha_publicacion": "",
+      "fecha_publicacion_raw": "",
+      "fetch_source": "requests",
+      "gastos_comunes": null,
+      "html_path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scraper_toctoc\\html_dumps\\toctoc_scrape_20260714_181308_d02d\\e2a5a3d3c4e93782502c8079c0088a16.html",
+      "html_sha256": "7fac63a32287727d00186fc49b72face06d4edfb47671a994a5e323da3bc78ff",
+      "html_validation_reason": "valid_html",
+      "html_validation_status": "OK",
+      "image_urls": [
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244553/n_wm_2026070628356181692.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244553/n_wm_2026070628440208058.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244553/n_wm_2026070629007396029.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244553/n_wm_2026070629065241360.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244553/n_wm_2026070629132230564.jpg"
+      ],
+      "image_urls_count": 5,
+      "listing_id_source": "next_data",
+      "m2_construidos": null,
+      "m2_totales": 85.0,
+      "main_image_url": "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244553/n_wm_2026070628356181692.jpg",
+      "manual_review": {
+        "status": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "operacion": "arriendo",
+      "precio_clp": 500000,
+      "precio_clp_raw": "$500.000",
+      "precio_conversion_source": "toctoc_explicit_both_currencies",
+      "precio_moneda_original": "UF",
+      "precio_original_num": 12.24,
+      "precio_raw": "$ 500.000 / UF 12,24",
+      "precio_uf": 12.24,
+      "precio_uf_raw": "UF 12,24",
+      "precio_validacion": "OK",
+      "price": "UF 12,24 / $500.000",
+      "processed_at": "2026-07-14T22:13:36.257179+00:00",
+      "publicador_visible": "Particular",
+      "publisher_activity": {},
+      "publisher_identity_candidates": [
+        {
+          "source": "info_anunciante",
+          "value": "Particular"
+        },
+        {
+          "source": "seller_type",
+          "value": "PARTICULAR"
+        },
+        {
+          "source": "seller_type_evidence",
+          "value": "Anunciante - Particular"
+        }
+      ],
+      "raw_attributes": {},
+      "region": "Maule",
+      "run_id": "toctoc_scrape_20260714_181308_d02d",
+      "schema_version": "crm_v1",
+      "scrape_stage": "classification_done",
+      "seller_avatar_alt": "",
+      "seller_is_pro": false,
+      "seller_name": "Particular",
+      "seller_profile_id": "",
+      "seller_text": "Anunciante - Particular",
+      "seller_type": "PARTICULAR",
+      "seller_type_evidence": "Anunciante - Particular",
+      "seller_type_source": "info-anunciante",
+      "source": "owner_hunt",
+      "source_metadata": {
+        "portal": "toctoc",
+        "url_format": "arriendoparticularsr",
+        "listing_id_source": "next_data",
+        "parse_source": "requests",
+        "discovery_page": 1,
+        "publisher_extraction_status": "FOUND",
+        "dormitorios_min": null,
+        "dormitorios_max": null,
+        "dormitorios_raw": "",
+        "banos_min": null,
+        "banos_max": null,
+        "banos_raw": "",
+        "superficie_total_min": null,
+        "superficie_total_max": null,
+        "superficie_total_raw": "",
+        "superficie_util_min": null,
+        "superficie_util_max": null,
+        "superficie_util_raw": "",
+        "seller_type_source": "info-anunciante",
+        "seller_type_evidence": "Anunciante - Particular",
+        "comuna_source": "detail_html",
+        "region_source": "detail_html",
+        "location_validation": {
+          "status": "VALID",
+          "reason": ""
+        },
+        "precio_uf_source": "requests",
+        "precio_clp_source": "requests",
+        "dormitorios_source": "requests",
+        "banos_source": "requests",
+        "surface_source": "requests",
+        "title_source": "requests"
+      },
+      "source_portal": "toctoc",
+      "source_signals": {
+        "seller_type": "PARTICULAR",
+        "seller_is_pro": false,
+        "company_name": "",
+        "broker_brand": "",
+        "publisher_activity": {},
+        "classifier_original_signals": {}
+      },
+      "tipo_propiedad": "casas",
+      "title": "Arriendo casa amoblada en Linares",
+      "uf_fecha": "2026-07-08",
+      "uf_valor_usado": 40842.07,
+      "updated_at": "2026-07-14T22:13:36.316974+00:00",
+      "url": "https://www.toctoc.com/propiedades/arriendoparticularsr/casa/linares/arriendo-casa-amoblada-en-linares/4244553"
+    },
+    {
+      "_id": {
+        "$oid": "6a56b49ab2af2a5f7e048c2b"
+      },
+      "listing_id": "4244565",
+      "origen": "toctoc",
+      "banos": 2,
+      "broker_brand": "",
+      "canonical_url": "https://www.toctoc.com/propiedades/arriendoparticularsr/casa/linares/se-arrienda-casa-nueva-y-amoblada-en-linares/4244565",
+      "classification": {
+        "state": "DUEÑO_SEGURO",
+        "final_state": "DUEÑO_SEGURO",
+        "confidence": 1.0,
+        "score": 1.0,
+        "rule_state": "INCONCLUSIVE",
+        "signals": {},
+        "evidence": [
+          "owner_signal_evidence: particular",
+          "descripcion contiene 'dueña'"
+        ],
+        "reason": "La descripción menciona explícitamente 'Dueña arrienda', indicando que quien publica es la propietaria.",
+        "decision_source": "deepseek",
+        "decision_pattern": "",
+        "state_source": "deepseek",
+        "deepseek_status": "VALID",
+        "deepseek_state": "",
+        "deepseek_confidence": 0.0,
+        "deepseek_reason": "",
+        "deepseek_evidence": [],
+        "deepseek_model": "deepseek-v4-flash",
+        "deepseek_finish_reason": "stop",
+        "deepseek_prompt_tokens": 918,
+        "deepseek_completion_tokens": 166,
+        "deepseek_reasoning_tokens": 89,
+        "deepseek_provider": "",
+        "version": "toctoc-v1",
+        "ai_used": true,
+        "ai_model": "deepseek-v4-flash",
+        "ai_owner_score": 0.0,
+        "ai_broker_score": 0.0,
+        "ai_reason": "La descripción menciona explícitamente 'Dueña arrienda', indicando que quien publica es la propietaria.",
+        "ai_disabled_reason": "",
+        "rules_version": "toctoc-owner-rules-v2",
+        "prompt_version": "toctoc-deepseek-owner-v2",
+        "analysis_at": "2026-07-14T22:13:44.720918+00:00",
+        "deepseek_payload": {
+          "model": "deepseek-v4-flash",
+          "messages": [
+            {
+              "role": "system",
+              "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+            },
+            {
+              "role": "user",
+              "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"3\", \"banos\": \"2\", \"superficie\": \"150\", \"descripcion_para_llm\": \"Dueña arrienda casa nueva totalmente amoblada, para turistas, empresas, Instituciones, Profesionales y/o Fuerzas Armadas en avenida Presidente Ibañez, Linares, Chile. Ésta posee living, comedor para 6 personas, cocina equipada, lavadora, 3 dormitorios amplios, 2 baños, 1 entrada de vehículo, patio amplio. Segura. Todo funcionando en perfectas condiciones, completamente equipada para 6 personas. Valor $600.000 con 5 camas, $700.000 mensual con 6 camas; diario $60.000.Llamar al .\", \"llm_description_original_len\": 482, \"llm_description_sent_len\": 482, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+            }
+          ],
+          "max_tokens": 500,
+          "temperature": 0,
+          "extra_body": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "response_format": {
+            "type": "json_object"
+          }
+        },
+        "deepseek_message_content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 1.0, \"reason\": \"La descripción menciona explícitamente 'Dueña arrienda', indicando que quien publica es la propietaria.\", \"signals\": [\"owner_signal_evidence: particular\", \"descripcion contiene 'dueña'\"]}",
+        "deepseek_reasoning_content": "We need to classify the publicador based on the given data. The description says \"Dueña arrienda casa nueva...\" This is a clear positive evidence that the person is the owner (dueña). So state should be DUEÑO_SEGURO. Confidence high. Reason: explicit mention of \"dueña\" indicating owner. Signals: [\"owner_signal_evidence: particular\", \"descripcion contains 'dueña'\"]",
+        "deepseek_raw": {
+          "id": "cdff53d7-a3af-48f1-965f-c55b6d7344d3",
+          "object": "chat.completion",
+          "created": 1784067225,
+          "model": "deepseek-v4-flash",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 1.0, \"reason\": \"La descripción menciona explícitamente 'Dueña arrienda', indicando que quien publica es la propietaria.\", \"signals\": [\"owner_signal_evidence: particular\", \"descripcion contiene 'dueña'\"]}",
+                "reasoning_content": "We need to classify the publicador based on the given data. The description says \"Dueña arrienda casa nueva...\" This is a clear positive evidence that the person is the owner (dueña). So state should be DUEÑO_SEGURO. Confidence high. Reason: explicit mention of \"dueña\" indicating owner. Signals: [\"owner_signal_evidence: particular\", \"descripcion contains 'dueña'\"]"
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 918,
+            "completion_tokens": 166,
+            "total_tokens": 1084,
+            "prompt_tokens_details": {
+              "cached_tokens": 640
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 89
+            },
+            "prompt_cache_hit_tokens": 640,
+            "prompt_cache_miss_tokens": 278
+          },
+          "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+        },
+        "trace": {
+          "rule_state": "INCONCLUSIVE",
+          "final_state": "DUEÑO_SEGURO",
+          "deepseek_payload": {
+            "model": "deepseek-v4-flash",
+            "messages": [
+              {
+                "role": "system",
+                "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+              },
+              {
+                "role": "user",
+                "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"3\", \"banos\": \"2\", \"superficie\": \"150\", \"descripcion_para_llm\": \"Dueña arrienda casa nueva totalmente amoblada, para turistas, empresas, Instituciones, Profesionales y/o Fuerzas Armadas en avenida Presidente Ibañez, Linares, Chile. Ésta posee living, comedor para 6 personas, cocina equipada, lavadora, 3 dormitorios amplios, 2 baños, 1 entrada de vehículo, patio amplio. Segura. Todo funcionando en perfectas condiciones, completamente equipada para 6 personas. Valor $600.000 con 5 camas, $700.000 mensual con 6 camas; diario $60.000.Llamar al .\", \"llm_description_original_len\": 482, \"llm_description_sent_len\": 482, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+              }
+            ],
+            "max_tokens": 500,
+            "temperature": 0,
+            "extra_body": {
+              "thinking": {
+                "type": "disabled"
+              }
+            },
+            "response_format": {
+              "type": "json_object"
+            }
+          },
+          "deepseek_message_content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 1.0, \"reason\": \"La descripción menciona explícitamente 'Dueña arrienda', indicando que quien publica es la propietaria.\", \"signals\": [\"owner_signal_evidence: particular\", \"descripcion contiene 'dueña'\"]}",
+          "deepseek_reasoning_content": "We need to classify the publicador based on the given data. The description says \"Dueña arrienda casa nueva...\" This is a clear positive evidence that the person is the owner (dueña). So state should be DUEÑO_SEGURO. Confidence high. Reason: explicit mention of \"dueña\" indicating owner. Signals: [\"owner_signal_evidence: particular\", \"descripcion contains 'dueña'\"]",
+          "deepseek_raw": {
+            "id": "cdff53d7-a3af-48f1-965f-c55b6d7344d3",
+            "object": "chat.completion",
+            "created": 1784067225,
+            "model": "deepseek-v4-flash",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "role": "assistant",
+                  "content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 1.0, \"reason\": \"La descripción menciona explícitamente 'Dueña arrienda', indicando que quien publica es la propietaria.\", \"signals\": [\"owner_signal_evidence: particular\", \"descripcion contiene 'dueña'\"]}",
+                  "reasoning_content": "We need to classify the publicador based on the given data. The description says \"Dueña arrienda casa nueva...\" This is a clear positive evidence that the person is the owner (dueña). So state should be DUEÑO_SEGURO. Confidence high. Reason: explicit mention of \"dueña\" indicating owner. Signals: [\"owner_signal_evidence: particular\", \"descripcion contains 'dueña'\"]"
+                },
+                "logprobs": null,
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 918,
+              "completion_tokens": 166,
+              "total_tokens": 1084,
+              "prompt_tokens_details": {
+                "cached_tokens": 640
+              },
+              "completion_tokens_details": {
+                "reasoning_tokens": 89
+              },
+              "prompt_cache_hit_tokens": 640,
+              "prompt_cache_miss_tokens": 278
+            },
+            "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+          },
+          "rules_version": "toctoc-owner-rules-v2",
+          "prompt_version": "toctoc-deepseek-owner-v2",
+          "analysis_at": "2026-07-14T22:13:44.720918+00:00"
+        },
+        "assignment_ready": false,
+        "assignment_gate_version": "assignment-gate-v2"
+      },
+      "company_name": "",
+      "comuna": "Linares",
+      "description": "Dueña arrienda casa nueva totalmente amoblada, para turistas, empresas, Instituciones, Profesionales y/o Fuerzas Armadas en avenida Presidente Ibañez, Linares, Chile. Ésta posee living, comedor para 6 personas, cocina equipada, lavadora, 3 dormitorios amplios, 2 baños, 1 entrada de vehículo, patio amplio. Segura. Todo funcionando en perfectas condiciones, completamente equipada para 6 personas. Valor $600.000 con 5 camas, $700.000 mensual con 6 camas; diario $60.000.Llamar al 976568814.",
+      "description_available": true,
+      "description_is_truncated": false,
+      "description_length": 491,
+      "direccion_exacta": "Linares",
+      "dormitorios": 3,
+      "estacionamientos": null,
+      "fecha_publicacion": "",
+      "fecha_publicacion_raw": "",
+      "fetch_source": "requests",
+      "gastos_comunes": null,
+      "html_path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scraper_toctoc\\html_dumps\\toctoc_scrape_20260714_181308_d02d\\0ac7ede33b795f4b53de51c5a92c592a.html",
+      "html_sha256": "25f1269f88e61a89d3e8a6c0899f61d06d57521c43039f4d260808e4b2efb4ce",
+      "html_validation_reason": "valid_html",
+      "html_validation_status": "OK",
+      "image_urls": [
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244565/n_wm_2026070633378309616.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244565/n_wm_2026070633426339629.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244565/n_wm_2026070633473118079.jpg"
+      ],
+      "image_urls_count": 3,
+      "listing_id_source": "next_data",
+      "m2_construidos": null,
+      "m2_totales": 150.0,
+      "main_image_url": "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260706/4244565/n_wm_2026070633378309616.jpg",
+      "manual_review": {
+        "status": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "operacion": "arriendo",
+      "precio_clp": 600000,
+      "precio_clp_raw": "$600.000",
+      "precio_conversion_source": "toctoc_explicit_both_currencies",
+      "precio_moneda_original": "UF",
+      "precio_original_num": 14.69,
+      "precio_raw": "$ 600.000 / UF 14,69",
+      "precio_uf": 14.69,
+      "precio_uf_raw": "UF 14,69",
+      "precio_validacion": "OK",
+      "price": "UF 14,69 / $600.000",
+      "processed_at": "2026-07-14T22:13:44.723437+00:00",
+      "publicador_visible": "Particular",
+      "publisher_activity": {},
+      "publisher_identity_candidates": [
+        {
+          "source": "info_anunciante",
+          "value": "Particular"
+        },
+        {
+          "source": "seller_type",
+          "value": "PARTICULAR"
+        },
+        {
+          "source": "seller_type_evidence",
+          "value": "Anunciante - Particular"
+        }
+      ],
+      "raw_attributes": {},
+      "region": "Maule",
+      "run_id": "toctoc_scrape_20260714_181308_d02d",
+      "schema_version": "crm_v1",
+      "scrape_stage": "classification_done",
+      "seller_avatar_alt": "",
+      "seller_is_pro": false,
+      "seller_name": "Particular",
+      "seller_profile_id": "",
+      "seller_text": "Anunciante - Particular",
+      "seller_type": "PARTICULAR",
+      "seller_type_evidence": "Anunciante - Particular",
+      "seller_type_source": "info-anunciante",
+      "source": "owner_hunt",
+      "source_metadata": {
+        "portal": "toctoc",
+        "url_format": "arriendoparticularsr",
+        "listing_id_source": "next_data",
+        "parse_source": "requests",
+        "discovery_page": 1,
+        "publisher_extraction_status": "FOUND",
+        "dormitorios_min": null,
+        "dormitorios_max": null,
+        "dormitorios_raw": "",
+        "banos_min": null,
+        "banos_max": null,
+        "banos_raw": "",
+        "superficie_total_min": null,
+        "superficie_total_max": null,
+        "superficie_total_raw": "",
+        "superficie_util_min": null,
+        "superficie_util_max": null,
+        "superficie_util_raw": "",
+        "seller_type_source": "info-anunciante",
+        "seller_type_evidence": "Anunciante - Particular",
+        "comuna_source": "detail_html",
+        "region_source": "detail_html",
+        "location_validation": {
+          "status": "VALID",
+          "reason": ""
+        },
+        "precio_uf_source": "requests",
+        "precio_clp_source": "requests",
+        "dormitorios_source": "requests",
+        "banos_source": "requests",
+        "surface_source": "requests",
+        "title_source": "requests"
+      },
+      "source_portal": "toctoc",
+      "source_signals": {
+        "seller_type": "PARTICULAR",
+        "seller_is_pro": false,
+        "company_name": "",
+        "broker_brand": "",
+        "publisher_activity": {},
+        "classifier_original_signals": {}
+      },
+      "tipo_propiedad": "casas",
+      "title": "Se arrienda casa nueva y amoblada en Linares",
+      "uf_fecha": "2026-07-08",
+      "uf_valor_usado": 40842.07,
+      "updated_at": "2026-07-14T22:13:44.781215+00:00",
+      "url": "https://www.toctoc.com/propiedades/arriendoparticularsr/casa/linares/se-arrienda-casa-nueva-y-amoblada-en-linares/4244565"
+    },
+    {
+      "_id": {
+        "$oid": "6a56b4a3b2af2a5f7e048c2c"
+      },
+      "listing_id": "4254937",
+      "origen": "toctoc",
+      "banos": 1,
+      "broker_brand": "",
+      "canonical_url": "https://www.toctoc.com/propiedades/arriendoparticularsr/casa/linares/casas-manuel-astica-0915/4254937",
+      "classification": {
+        "state": "INCIERTO",
+        "final_state": "INCIERTO",
+        "confidence": 0.7,
+        "score": 0.7,
+        "rule_state": "INCONCLUSIVE",
+        "signals": {},
+        "evidence": [
+          "seller_type es PARTICULAR pero no hay evidencia de dueño"
+        ],
+        "reason": "No evidencia positiva de que el anunciante sea el propietario; solo se indica 'Particular' sin declaración explícita de propiedad.",
+        "decision_source": "deepseek",
+        "decision_pattern": "",
+        "state_source": "deepseek",
+        "deepseek_status": "VALID",
+        "deepseek_state": "",
+        "deepseek_confidence": 0.0,
+        "deepseek_reason": "",
+        "deepseek_evidence": [],
+        "deepseek_model": "deepseek-v4-flash",
+        "deepseek_finish_reason": "stop",
+        "deepseek_prompt_tokens": 921,
+        "deepseek_completion_tokens": 229,
+        "deepseek_reasoning_tokens": 157,
+        "deepseek_provider": "",
+        "version": "toctoc-v1",
+        "ai_used": true,
+        "ai_model": "deepseek-v4-flash",
+        "ai_owner_score": 0.0,
+        "ai_broker_score": 0.0,
+        "ai_reason": "No evidencia positiva de que el anunciante sea el propietario; solo se indica 'Particular' sin declaración explícita de propiedad.",
+        "ai_disabled_reason": "",
+        "rules_version": "toctoc-owner-rules-v2",
+        "prompt_version": "toctoc-deepseek-owner-v2",
+        "analysis_at": "2026-07-14T22:13:53.507598+00:00",
+        "deepseek_payload": {
+          "model": "deepseek-v4-flash",
+          "messages": [
+            {
+              "role": "system",
+              "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+            },
+            {
+              "role": "user",
+              "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"2\", \"banos\": \"1\", \"superficie\": \"60\", \"descripcion_para_llm\": \"Pasaje Manuel Astica – Sector Nuevo Amanecer Se arrienda acogedora casa en excelente ubicación, cercana a todo lo necesario para la vida diaria: ? Cerca de colegios ? A minutos del CESFAM ? Locomoción colectiva cercana ? Próxima a Carabineros La propiedad cuenta con: ??? 2 habitaciones ??? Living ??? Comedor ?? Cocina americana con medio punto ?? 1 baño ?? Patio techado con espacio para vehículo ?? Valor arriendo: $280.000 mensuales ?? Se solicita además un mes de garantía. ?? Interesados consultar por mensaje interno o al teléfono de contacto.\", \"llm_description_original_len\": 550, \"llm_description_sent_len\": 550, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+            }
+          ],
+          "max_tokens": 500,
+          "temperature": 0,
+          "extra_body": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "response_format": {
+            "type": "json_object"
+          }
+        },
+        "deepseek_message_content": "{\"state\": \"INCIERTO\", \"confidence\": 0.7, \"reason\": \"No evidencia positiva de que el anunciante sea el propietario; solo se indica 'Particular' sin declaración explícita de propiedad.\", \"signals\": [\"seller_type es PARTICULAR pero no hay evidencia de dueño\"]}",
+        "deepseek_reasoning_content": "We are given a JSON with data about a real estate ad. The seller_type is \"PARTICULAR\", but according to the rules, this alone is not enough for DUEÑO_SEGURO. The description says \"Se arrienda acogedora casa\" but does not indicate that the advertiser is the owner. There is no evidence of \"vendo mi casa\" or \"arriendo mi departamento\" etc. The contact name is \"Particular\", no company name. No owner signal evidence beyond \"particular\", but that's just a label. So no positive evidence of owner. Also no evidence of broker. So state should be INCIERTO. Confidence moderate. Reason: No explicit owner declaration. Signals: [\"particular seller type only\"].",
+        "deepseek_raw": {
+          "id": "7a23be08-1380-4dab-b588-c5946dc8d79d",
+          "object": "chat.completion",
+          "created": 1784067233,
+          "model": "deepseek-v4-flash",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"state\": \"INCIERTO\", \"confidence\": 0.7, \"reason\": \"No evidencia positiva de que el anunciante sea el propietario; solo se indica 'Particular' sin declaración explícita de propiedad.\", \"signals\": [\"seller_type es PARTICULAR pero no hay evidencia de dueño\"]}",
+                "reasoning_content": "We are given a JSON with data about a real estate ad. The seller_type is \"PARTICULAR\", but according to the rules, this alone is not enough for DUEÑO_SEGURO. The description says \"Se arrienda acogedora casa\" but does not indicate that the advertiser is the owner. There is no evidence of \"vendo mi casa\" or \"arriendo mi departamento\" etc. The contact name is \"Particular\", no company name. No owner signal evidence beyond \"particular\", but that's just a label. So no positive evidence of owner. Also no evidence of broker. So state should be INCIERTO. Confidence moderate. Reason: No explicit owner declaration. Signals: [\"particular seller type only\"]."
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 921,
+            "completion_tokens": 229,
+            "total_tokens": 1150,
+            "prompt_tokens_details": {
+              "cached_tokens": 640
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 157
+            },
+            "prompt_cache_hit_tokens": 640,
+            "prompt_cache_miss_tokens": 281
+          },
+          "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+        },
+        "trace": {
+          "rule_state": "INCONCLUSIVE",
+          "final_state": "INCIERTO",
+          "deepseek_payload": {
+            "model": "deepseek-v4-flash",
+            "messages": [
+              {
+                "role": "system",
+                "content": "Eres un clasificador de anuncios inmobiliarios chilenos. Clasifica el publicador del anuncio en uno de estos estados: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO. Usa estas reglas:\n1. CORREDOR_SEGURO: Evidencia clara de corredora, inmobiliaria, agente profesional.\n2. CORREDOR_PROBABLE: Senales de actividad comercial sin confirmacion clara.\n3. DUEÑO_SEGURO: Requiere EVIDENCIA POSITIVA EXPLICITA de que el anunciante es el propietario. Ejemplos validos: \"vendo mi casa\", \"arriendo mi departamento\", \"soy dueno\", \"soy propietario\". Solo sirven declaraciones inequívocas EN PRIMERA PERSONA. Referencias como \"propiedad de un solo dueno\", \"documentacion de los propietarios\", \"trato directo con dueno\" o \"vendida por sus duenos\" NO identifican a quien publica.\n4. INCIERTO: No hay evidencia suficiente para determinar. Es el estado por defecto.\nREGLAS ESTRICTAS:\n- seller_type='PARTICULAR' NUNCA es suficiente por si solo para DUEÑO_SEGURO.\n- \"vende directamente\", \"venta directa\" o \"arriendo directo\" SIN mencion explicita del dueno NO son suficientes.\n- Solo la primera persona posesiva ligada a propiedad (por ejemplo, \"vendo mi casa\") demuestra propiedad; invitaciones a contactar o visitar son neutrales.\n- Frases como \"contáctame\", \"escríbeme\", \"agenda una visita\", \"coordinar visita\" son NEUTRALES.\n- La ausencia de una empresa NO implica dueno. Busca siempre evidencia positiva.\n- Si no hay evidencia positiva clara, responde INCIERTO.\nResponde SOLO en JSON compacto con este formato exacto:\n{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No hay evidencia suficiente.\", \"signals\": []}\nLos estados permitidos son: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO."
+              },
+              {
+                "role": "user",
+                "content": "{\"publicador_visible\": \"Particular\", \"contact_name\": \"Particular\", \"contact_logo_alt\": \"\", \"listing_advertiser\": \"\", \"seller_jsonld_name\": \"\", \"contact_badges_text\": \"\", \"company_name\": \"\", \"broker_brand\": \"\", \"seller_is_pro\": \"\", \"seller_profile_id\": \"\", \"company_like_suspected\": false, \"company_like_evidence\": [], \"known_brand_evidence\": [], \"hard_broker_evidence\": [], \"owner_signal_evidence\": [\"particular\"], \"weak_broker_evidence\": [], \"seller_type\": \"PARTICULAR\", \"seller_type_source\": \"info-anunciante\", \"seller_type_evidence\": \"Anunciante - Particular\", \"dormitorios\": \"2\", \"banos\": \"1\", \"superficie\": \"60\", \"descripcion_para_llm\": \"Pasaje Manuel Astica – Sector Nuevo Amanecer Se arrienda acogedora casa en excelente ubicación, cercana a todo lo necesario para la vida diaria: ? Cerca de colegios ? A minutos del CESFAM ? Locomoción colectiva cercana ? Próxima a Carabineros La propiedad cuenta con: ??? 2 habitaciones ??? Living ??? Comedor ?? Cocina americana con medio punto ?? 1 baño ?? Patio techado con espacio para vehículo ?? Valor arriendo: $280.000 mensuales ?? Se solicita además un mes de garantía. ?? Interesados consultar por mensaje interno o al teléfono de contacto.\", \"llm_description_original_len\": 550, \"llm_description_sent_len\": 550, \"llm_description_truncated\": false, \"llm_description_strategy\": \"full_text\"}"
+              }
+            ],
+            "max_tokens": 500,
+            "temperature": 0,
+            "extra_body": {
+              "thinking": {
+                "type": "disabled"
+              }
+            },
+            "response_format": {
+              "type": "json_object"
+            }
+          },
+          "deepseek_message_content": "{\"state\": \"INCIERTO\", \"confidence\": 0.7, \"reason\": \"No evidencia positiva de que el anunciante sea el propietario; solo se indica 'Particular' sin declaración explícita de propiedad.\", \"signals\": [\"seller_type es PARTICULAR pero no hay evidencia de dueño\"]}",
+          "deepseek_reasoning_content": "We are given a JSON with data about a real estate ad. The seller_type is \"PARTICULAR\", but according to the rules, this alone is not enough for DUEÑO_SEGURO. The description says \"Se arrienda acogedora casa\" but does not indicate that the advertiser is the owner. There is no evidence of \"vendo mi casa\" or \"arriendo mi departamento\" etc. The contact name is \"Particular\", no company name. No owner signal evidence beyond \"particular\", but that's just a label. So no positive evidence of owner. Also no evidence of broker. So state should be INCIERTO. Confidence moderate. Reason: No explicit owner declaration. Signals: [\"particular seller type only\"].",
+          "deepseek_raw": {
+            "id": "7a23be08-1380-4dab-b588-c5946dc8d79d",
+            "object": "chat.completion",
+            "created": 1784067233,
+            "model": "deepseek-v4-flash",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "role": "assistant",
+                  "content": "{\"state\": \"INCIERTO\", \"confidence\": 0.7, \"reason\": \"No evidencia positiva de que el anunciante sea el propietario; solo se indica 'Particular' sin declaración explícita de propiedad.\", \"signals\": [\"seller_type es PARTICULAR pero no hay evidencia de dueño\"]}",
+                  "reasoning_content": "We are given a JSON with data about a real estate ad. The seller_type is \"PARTICULAR\", but according to the rules, this alone is not enough for DUEÑO_SEGURO. The description says \"Se arrienda acogedora casa\" but does not indicate that the advertiser is the owner. There is no evidence of \"vendo mi casa\" or \"arriendo mi departamento\" etc. The contact name is \"Particular\", no company name. No owner signal evidence beyond \"particular\", but that's just a label. So no positive evidence of owner. Also no evidence of broker. So state should be INCIERTO. Confidence moderate. Reason: No explicit owner declaration. Signals: [\"particular seller type only\"]."
+                },
+                "logprobs": null,
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 921,
+              "completion_tokens": 229,
+              "total_tokens": 1150,
+              "prompt_tokens_details": {
+                "cached_tokens": 640
+              },
+              "completion_tokens_details": {
+                "reasoning_tokens": 157
+              },
+              "prompt_cache_hit_tokens": 640,
+              "prompt_cache_miss_tokens": 281
+            },
+            "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+          },
+          "rules_version": "toctoc-owner-rules-v2",
+          "prompt_version": "toctoc-deepseek-owner-v2",
+          "analysis_at": "2026-07-14T22:13:53.507598+00:00"
+        },
+        "assignment_ready": true,
+        "assignment_gate_version": "assignment-gate-v2"
+      },
+      "company_name": "",
+      "comuna": "Linares",
+      "description": "Pasaje Manuel Astica – Sector Nuevo Amanecer Se arrienda acogedora casa en excelente ubicación, cercana a todo lo necesario para la vida diaria: ? Cerca de colegios ? A minutos del CESFAM ? Locomoción colectiva cercana ? Próxima a Carabineros La propiedad cuenta con: ??? 2 habitaciones ??? Living ??? Comedor ?? Cocina americana con medio punto ?? 1 baño ?? Patio techado con espacio para vehículo ?? Valor arriendo: $280.000 mensuales ?? Se solicita además un mes de garantía. ?? Interesados consultar por mensaje interno o al teléfono de contacto. +56 9 6 6 6 7 9 0 2 3",
+      "description_available": true,
+      "description_is_truncated": false,
+      "description_length": 572,
+      "direccion_exacta": "Linares",
+      "dormitorios": 2,
+      "estacionamientos": null,
+      "fecha_publicacion": "",
+      "fecha_publicacion_raw": "",
+      "fetch_source": "requests",
+      "gastos_comunes": null,
+      "html_path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scraper_toctoc\\html_dumps\\toctoc_scrape_20260714_181308_d02d\\f4860ac93a49edc00018057cda7ae024.html",
+      "html_sha256": "fe6007b9a77b1027cf2adbd8f1dc392e4be864e6d78852dd3e88cabaa239cc3e",
+      "html_validation_reason": "valid_html",
+      "html_validation_status": "OK",
+      "image_urls": [
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260713/4254937/n_wm_2026071357564931741.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260713/4254937/n_wm_2026071357564146530.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260713/4254937/n_wm_2026071358010652952.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260713/4254937/n_wm_2026071358014876347.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260713/4254937/n_wm_2026071358059743857.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260713/4254937/n_wm_2026071358064928306.jpg"
+      ],
+      "image_urls_count": 6,
+      "listing_id_source": "next_data",
+      "m2_construidos": null,
+      "m2_totales": 60.0,
+      "main_image_url": "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260713/4254937/n_wm_2026071357564931741.jpg",
+      "manual_review": {
+        "status": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "operacion": "arriendo",
+      "precio_clp": 280000,
+      "precio_clp_raw": "$280.000",
+      "precio_conversion_source": "toctoc_explicit_both_currencies",
+      "precio_moneda_original": "UF",
+      "precio_original_num": 6.86,
+      "precio_raw": "$ 280.000 / UF 6,86",
+      "precio_uf": 6.86,
+      "precio_uf_raw": "UF 6,86",
+      "precio_validacion": "OK",
+      "price": "UF 6,86 / $280.000",
+      "processed_at": "2026-07-14T22:13:53.514830+00:00",
+      "publicador_visible": "Particular",
+      "publisher_activity": {},
+      "publisher_identity_candidates": [
+        {
+          "source": "info_anunciante",
+          "value": "Particular"
+        },
+        {
+          "source": "seller_type",
+          "value": "PARTICULAR"
+        },
+        {
+          "source": "seller_type_evidence",
+          "value": "Anunciante - Particular"
+        }
+      ],
+      "raw_attributes": {},
+      "region": "Maule",
+      "run_id": "toctoc_scrape_20260714_181308_d02d",
+      "schema_version": "crm_v1",
+      "scrape_stage": "classification_done",
+      "seller_avatar_alt": "",
+      "seller_is_pro": false,
+      "seller_name": "Particular",
+      "seller_profile_id": "",
+      "seller_text": "Anunciante - Particular",
+      "seller_type": "PARTICULAR",
+      "seller_type_evidence": "Anunciante - Particular",
+      "seller_type_source": "info-anunciante",
+      "source": "owner_hunt",
+      "source_metadata": {
+        "portal": "toctoc",
+        "url_format": "arriendoparticularsr",
+        "listing_id_source": "next_data",
+        "parse_source": "requests",
+        "discovery_page": 1,
+        "publisher_extraction_status": "FOUND",
+        "dormitorios_min": null,
+        "dormitorios_max": null,
+        "dormitorios_raw": "",
+        "banos_min": null,
+        "banos_max": null,
+        "banos_raw": "",
+        "superficie_total_min": null,
+        "superficie_total_max": null,
+        "superficie_total_raw": "",
+        "superficie_util_min": null,
+        "superficie_util_max": null,
+        "superficie_util_raw": "",
+        "seller_type_source": "info-anunciante",
+        "seller_type_evidence": "Anunciante - Particular",
+        "comuna_source": "detail_html",
+        "region_source": "detail_html",
+        "location_validation": {
+          "status": "VALID",
+          "reason": ""
+        },
+        "precio_uf_source": "requests",
+        "precio_clp_source": "requests",
+        "dormitorios_source": "requests",
+        "banos_source": "requests",
+        "surface_source": "requests",
+        "title_source": "requests"
+      },
+      "source_portal": "toctoc",
+      "source_signals": {
+        "seller_type": "PARTICULAR",
+        "seller_is_pro": false,
+        "company_name": "",
+        "broker_brand": "",
+        "publisher_activity": {},
+        "classifier_original_signals": {}
+      },
+      "tipo_propiedad": "casas",
+      "title": "Casas, MANUEL  ASTICA 0915",
+      "uf_fecha": "2026-07-08",
+      "uf_valor_usado": 40842.07,
+      "updated_at": "2026-07-14T22:13:53.571478+00:00",
+      "url": "https://www.toctoc.com/propiedades/arriendoparticularsr/casa/linares/casas-manuel-astica-0915/4254937"
+    }
+  ]
+}

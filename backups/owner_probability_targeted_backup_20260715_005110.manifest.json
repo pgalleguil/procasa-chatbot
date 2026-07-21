@@ -1,0 +1,14 @@
+{
+  "created_at": "2026-07-15T00:51:11.643142+00:00",
+  "documents": 545,
+  "sha256": "8f756cd69f4c952fb2e6453d366b88d8db7000adaa88243180c1d88af3058c94",
+  "source": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\backups\\owner_probability_targeted_backup_20260715_005110.json",
+  "round_trip_verified": true,
+  "fields_protected": [
+    "classification",
+    "gestion",
+    "assignment",
+    "previous_state",
+    "previous_scores"
+  ]
+}

@@ -21,6 +21,8 @@ from .leads_queries import (
     query_property_ranking,
     query_executive_load_detail,
     query_source_performance,
+    query_entry_pulse,
+    query_entry_forecast,
 )
 
 L1_CACHE: dict[str, tuple[float, dict]] = {}
@@ -221,7 +223,7 @@ def get_field_coverage(
     return data
 
 
-def get_dashboard(
+def _get_dashboard_legacy(
     period_start: str = None,
     period_end: str = None,
     executive: str = None,
@@ -364,12 +366,7 @@ def get_dashboard(
     return result
 
 
-# =============================================================================
-# COMMERCIAL DASHBOARD SERVICE
-# =============================================================================
-
-
-def get_commercial_dashboard(
+def get_dashboard(
     period_start: str = None,
     period_end: str = None,
     executive: str = None,
@@ -377,90 +374,188 @@ def get_commercial_dashboard(
     user_name: str = None,
     filters: dict = None,
 ) -> dict:
-    """Consolidated commercial dashboard data.
-
-    Returns all data needed for the commercial dashboard in one call.
-    Strictly read-only, never modifies commercial data.
-    """
+    """Payload definitivo, consolidado y estrictamente read-only."""
     exec_filter = executive if role in ("admin", "supervisor") else user_name
-    ef = {"ejecutivo_asignado": exec_filter} if exec_filter else None
-    merged_filters = {**(filters or {})}
-    if ef:
-        merged_filters.update(ef)
-    key = _cache_key("commercial-dashboard-v1", ps=period_start, pe=period_end,
-                     exec=exec_filter, role=role, filters=repr(sorted((merged_filters or {}).items())))
+    key = _cache_key("dashboard-v2", ps=period_start, pe=period_end, exec=exec_filter,
+                     role=role, filters=repr(sorted((filters or {}).items())))
     cached = _cache_get(key)
     if cached:
         return cached
 
-    from .leads_queries import (
-        query_commercial_kpis,
-        query_commercial_funnel,
-        query_sla_risk_panel,
-        query_demand_by_price_ranges,
-        query_commercial_executive_matrix,
-        query_commercial_property_ranking,
-        query_commercial_insights,
-        query_source_performance,
-        query_comparative_trends,
-        query_field_coverage,
-        query_executive_load_detail,
-    )
+    kwargs = {"period_start": period_start, "period_end": period_end,
+              "executive": exec_filter or None, "filters": filters}
+    summary = query_summary(**kwargs)
+    comparison = query_comparative_trends(**kwargs)
+    cohort = query_funnel(**kwargs)
+    priorities = query_priorities(executive=exec_filter or None, filters=filters)
+    executive_load = query_executive_load_detail(executive=exec_filter or None, filters=filters)
+    sources = query_source_performance(**kwargs)
+    properties = query_property_ranking(**kwargs)
+    demand = query_distributions(**kwargs, universe="received_in_period")
+    coverage = query_field_coverage(executive=exec_filter or None, filters=filters)
+    management = query_management_metrics(executive=exec_filter or None)
 
-    kwargs = {"period_start": period_start, "period_end": period_end, "filters": merged_filters or None}
-    kwargs_no_filters = {"period_start": period_start, "period_end": period_end}
-    period_label = f"{period_start or ''} - {period_end or ''}"
+    received = summary["flow"]["received_in_period"]
+    previous = comparison["previous"]["total"]
+    variation = round((received - previous) / previous * 100, 1) if previous else None
+    variation_direction = "up" if variation is not None and variation >= 0 else "down" if variation is not None else "none"
 
-    # Period comparison
-    period_info = {
-        "type": "custom_vs_previous",
-        "timezone": "America/Santiago",
-        "current": {"start": period_start or "", "end": period_end or "", "label": period_label},
-        "previous": {"start": "", "end": "", "label": "Per\u00edodo anterior (igual duraci\u00f3n)"},
+    # Las fuentes con muestra pequeña se agregan antes de llegar al frontend.
+    comparable = [row for row in sources if row["received"] >= 15]
+    small = [row for row in sources if row["received"] < 15]
+    grouped_sources = list(comparable)
+    if small:
+        total = sum(row["received"] for row in small)
+        def weighted(field):
+            return round(sum(row[field] * row["received"] for row in small) / total, 1) if total else 0
+        grouped_sources.append({
+            "source": "Otras fuentes — bajo volumen", "received": total,
+            "pct_of_total": round(sum(row["pct_of_total"] for row in small), 1),
+            "hot_pct": weighted("hot_pct"), "assigned_pct": weighted("assigned_pct"),
+            "advanced_pct": weighted("advanced_pct"), "variation_pct": None,
+            "comparable": False,
+        })
+    for row in grouped_sources:
+        row.setdefault("comparable", row["source"] != "Otras fuentes — bajo volumen")
+        row["is_highest_volume"] = False
+        row["is_best_profile"] = False
+    if grouped_sources:
+        max(grouped_sources, key=lambda row: row["received"])["is_highest_volume"] = True
+    if comparable:
+        max(comparable, key=lambda row: row["advanced_pct"])["is_best_profile"] = True
+
+    field_labels = {
+        "prospecto.nombre": "Nombre", "prospecto.origen": "Origen",
+        "prospecto.operacion": "Operación", "prospecto.tipo": "Tipo de propiedad",
+        "prospecto.comuna": "Comuna", "prospecto.codigo": "Código de propiedad",
+        "ejecutivo_asignado": "Ejecutivo", "pipeline_stage": "Etapa",
+        "lead_temperature_effective": "Temperatura", "created_at": "Fecha válida",
+        "stage_conflict": "Sin conflictos de etapas",
     }
+    coverage_rows = []
+    for key_name, label in field_labels.items():
+        row = coverage.get(key_name, {})
+        coverage_rows.append({"key": key_name, "label": label,
+                              "populated": row.get("populated", row.get("total", 0) - row.get("conflict_count", 0)),
+                              "total": row.get("total", 0), "coverage_pct": row.get("coverage_pct", 0),
+                              "conflict_count": row.get("conflict_count")})
 
-    kpis = query_commercial_kpis(**kwargs)
-    funnel = query_commercial_funnel(**kwargs)
-    sla = query_sla_risk_panel(**kwargs)
-    demand_price = query_demand_by_price_ranges(**kwargs)
-    executives = query_commercial_executive_matrix(**kwargs)
-    properties = query_commercial_property_ranking(**kwargs)
-    sources = query_source_performance(**kwargs_no_filters)
-    trends = query_comparative_trends(**kwargs_no_filters)
-    try:
-        insights = query_commercial_insights(
-            kpis=kpis, funnel=funnel, sla=sla,
-            sources=sources, demand=demand_price,
-            executives=executives,
-        )
-    except Exception as e:
-        logger.warning(f"Insights engine error: {e}")
-        insights = []
+    management_total = management.get("total_assigned", 0)
+    management_covered = management.get("total_with_evidence", 0)
+    management_pct = round(management_covered / management_total * 100, 1) if management_total else 0
+    unavailable = [
+        {"metric": "Primera respuesta", "status": "Disponible" if management_pct >= 60 else "No disponible",
+         "reason": "La cobertura de timestamps verificables es inferior a 60%." if management_pct < 60 else "Cobertura suficiente para análisis secundario.",
+         "coverage": {"populated": management_covered, "total": management_total, "pct": management_pct},
+         "requirement": "Cobertura verificable igual o superior a 60%."},
+        {"metric": "SLA", "status": "No disponible", "reason": "No hay medición canónica completa.", "coverage": None,
+         "requirement": "Definición e instrumentación canónica de SLA."},
+        {"metric": "Conversión histórica", "status": "No disponible", "reason": "El estado disponible es una fotografía actual.", "coverage": None,
+         "requirement": "Historial completo y fechado de etapas."},
+        {"metric": "Productividad por ejecutivo", "status": "No disponible", "reason": "La carga actual no demuestra desempeño.", "coverage": None,
+         "requirement": "Historial completo de gestiones atribuibles."},
+        {"metric": "Costo por lead", "status": "No disponible", "reason": "No existe inversión atribuida por fuente.", "coverage": None,
+         "requirement": "Costos de campaña enlazados a cada lead."},
+    ]
 
-    meta = {
-        "period": period_info,
-        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "read_only": True,
-        "unit": "lead._id",
-        "sla_policy": {
-            "type": "calendar_minutes",
-            "threshold_minutes": 180,
-            "display_label": "SLA actual: 3 horas corridas",
-            "timezone": "America/Santiago",
+    pulse = query_entry_pulse(executive=exec_filter or None, filters=filters)
+    forecast = query_entry_forecast(executive=exec_filter or None, filters=filters)
+
+    top_alerts_raw = priorities.get("alerts", [])
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    top_alerts = sorted(top_alerts_raw, key=lambda a: severity_order.get(a.get("severity", "low"), 99))[:3]
+
+    cohort_steps = cohort
+    largest_drop = {}
+    if cohort_steps and len(cohort_steps) > 1:
+        best_loss = -1
+        for i in range(1, len(cohort_steps)):
+            loss = Number(cohort_steps[i - 1].get("count", 0)) - Number(cohort_steps[i].get("count", 0))
+            if loss > best_loss:
+                best_loss = loss
+                largest_drop = {
+                    "from": cohort_steps[i - 1].get("label", "").replace(" actualmente", ""),
+                    "to": cohort_steps[i].get("label", "").replace("Cerrados ganados actualmente", "Ganados").replace(" actualmente", ""),
+                    "loss": loss,
+                }
+    received_count = cohort_steps[0].get("count", 0) if cohort_steps else 0
+
+    comparable_sources = [s for s in grouped_sources if s.get("comparable", False)]
+    dominant = max(grouped_sources, key=lambda s: s.get("received", 0)) if grouped_sources else {}
+    best = max(comparable_sources, key=lambda s: s.get("advanced_pct", 0)) if comparable_sources else {}
+
+    anomaly = None
+    # Check for source drop
+    for src in comparable_sources:
+        var = src.get("variation_pct")
+        if var is not None and var < -30 and src.get("received", 0) >= 10:
+            anomaly = {"type": "source_drop", "title": f"Caída en {src['source']}", "detail": f"La fuente {src['source']} presenta una caída de {abs(var):.1f}% frente al periodo anterior.", "severity": "warning", "action_label": "Ver fuentes", "action_target": "sources"}
+            break
+    # Check for property with high interest low advance
+    if not anomaly:
+        prop_ranking = properties.get("ranking", [])
+        if prop_ranking:
+            max_count = max(p.get("count", 0) for p in prop_ranking)
+            threshold_count = max_count * 0.8
+            candidates = [p for p in prop_ranking if p.get("count", 0) >= threshold_count and p.get("advanced_pct", 100) < 30 and p.get("count", 0) >= 5]
+            if candidates:
+                p = candidates[0]
+                anomaly = {"type": "property_stalled", "title": f"Propiedad {p['code']} con interés sin avance", "detail": f"{p['count']} leads, solo {p['advanced_pct']}% avanzados.", "severity": "info", "action_label": "Ver propiedades", "action_target": "properties"}
+    # Check for general entry drop
+    if not anomaly and variation is not None and variation < -30:
+        anomaly = {"type": "entry_drop", "title": "Caída general de entrada", "detail": f"El volumen de entrada disminuyó {abs(variation):.1f}% frente al periodo anterior.", "severity": "warning", "action_label": "Ver tendencias", "action_target": "trends"}
+
+    # Build headline
+    headline = _build_headline(priorities_raw=priorities.get("alerts", []), pulse=pulse, anomaly=anomaly, comparison_variation=variation, grouped_sources=grouped_sources)
+
+    home_section = {
+        "generated_at": result_meta["generated_at"],
+        "headline": headline,
+        "entry_pulse": {
+            "today": pulse.get("today", 0),
+            "yesterday_same_cut": pulse.get("yesterday_same_cut", 0),
+            "daily_variation_pct": pulse.get("daily_variation_pct"),
+            "current_week": pulse.get("current_week", 0),
+            "previous_week_same_cut": pulse.get("previous_week_same_cut", 0),
+            "weekly_variation_pct": pulse.get("weekly_variation_pct"),
+            "current_month": pulse.get("current_month", 0),
+            "previous_month_same_cut": pulse.get("previous_month_same_cut", 0),
+            "monthly_variation_pct": pulse.get("monthly_variation_pct"),
         },
+        "top_alerts": top_alerts,
+        "cohort_summary": {
+            "received": received_count,
+            "assigned": cohort_steps[1].get("count", 0) if len(cohort_steps) > 1 else 0,
+            "assigned_pct": round((cohort_steps[1].get("count", 0) / received_count * 100), 1) if received_count and len(cohort_steps) > 1 else 0,
+            "advanced": cohort_steps[2].get("count", 0) if len(cohort_steps) > 2 else 0,
+            "advanced_pct": round((cohort_steps[2].get("count", 0) / received_count * 100), 1) if received_count and len(cohort_steps) > 2 else 0,
+            "won": cohort_steps[3].get("count", 0) if len(cohort_steps) > 3 else 0,
+            "won_pct": round((cohort_steps[3].get("count", 0) / received_count * 100), 1) if received_count and len(cohort_steps) > 3 else 0,
+            "largest_drop": largest_drop,
+        },
+        "source_summary": {
+            "dominant": {"source": dominant.get("source"), "received": dominant.get("received", 0)} if dominant else {},
+            "best_profile": {"source": best.get("source"), "advanced_pct": best.get("advanced_pct", 0)} if best else {},
+        },
+        "weekly_anomaly": anomaly,
+        "entry_forecast": forecast,
     }
 
     result = {
-        "meta": meta,
-        "kpis": kpis,
-        "funnel": funnel,
-        "sla_risk": sla,
-        "demand_by_price": demand_price,
-        "executives": executives,
-        "properties": properties,
-        "sources": sources,
-        "trends": trends,
-        "insights": insights,
+        "meta": result_meta,
+        "home": home_section,
+        "status_strip": {"received": received, "previous_received": previous,
+                         "variation_pct": variation, "variation_direction": variation_direction,
+                         "active_current": summary["stock"]["total_active"]},
+        "priorities": priorities.get("alerts", []),
+        "cohort_status": {"steps": cohort},
+        "executive_load": executive_load,
+        "source_performance": grouped_sources,
+        "demand": {"operations": demand.get("operations", []), "types": demand.get("types", []),
+                   "communes": demand.get("communes", [])},
+        "property_ranking": properties.get("ranking", []),
+        "coverage": {"fields": coverage_rows},
+        "unavailable_metrics": unavailable,
     }
     _cache_set(key, result)
     return result

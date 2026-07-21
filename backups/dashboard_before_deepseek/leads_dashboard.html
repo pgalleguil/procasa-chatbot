@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PROCASA | Gestión de Leads</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/static/css/crm_module_shell.css">
+  <link rel="stylesheet" href="/static/css/analytics-dashboard.css">
+</head>
+<body class="analytics-page">
+  <nav class="sidebar" id="sidebar">
+    <div class="brand"><img src="/static/logo.png?v=1.0.1" alt="PROCASA" onerror="this.style.display='none'"><span>MENÚ</span></div>
+    <div class="sidebar-main-nav">
+      {% if user_role in ['supervisor','admin'] %}<a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i><span>Dashboard</span></a>{% endif %}
+      {% if user_role in ['supervisor','admin'] %}<a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i><span>Ingreso Manual</span></a>{% endif %}
+      <a href="/analytics/leads" class="nav-link active"><i class="fa-solid fa-chart-simple"></i><span>Gestión de Leads</span></a>
+      <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i><span>Listado Leads</span></a>
+      <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i><span>Captaciones</span></a>
+      <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i><span>Convenios</span></a>
+      <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i><span>Órdenes de Visita</span></a>
+    </div>
+    <div class="sidebar-footer">
+      <a href="#" class="nav-link theme-toggle" aria-label="Cambiar tema" onclick="toggleTheme();return false"><i class="fa-solid fa-sun" id="themeIcon"></i><span>Tema</span></a>
+      <a href="/logout" class="nav-link logout"><i class="fa-solid fa-power-off"></i><span>Cerrar Sesión</span></a>
+    </div>
+  </nav>
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+  <main class="analytics-leads-dashboard">
+    <header class="dashboard-header">
+      <button class="mobile-menu" type="button" aria-label="Abrir menú" aria-controls="sidebar" aria-expanded="false" onclick="toggleMobileMenu()"><i class="fa-solid fa-bars"></i></button>
+      <div class="header-copy"><h1>Gestión de Leads</h1><p>Visión ejecutiva de prioridades, cartera y fuentes comerciales</p></div>
+      <div class="primary-filters">
+        <label class="period-filter"><span>Periodo</span><input type="date" id="periodStart" aria-label="Periodo inicial"><input type="date" id="periodEnd" aria-label="Periodo final"></label>
+        <label><span>Ejecutivo</span><select id="filterExecutive"><option value="">Todos</option></select></label>
+        <button class="filter-button" id="moreFilters" type="button"><i class="fa-solid fa-sliders"></i><span>Más filtros</span></button>
+        <button class="clear-button" id="clearFilters" type="button">Limpiar</button>
+      </div>
+      <div class="filter-drawer" id="filterDrawer" hidden>
+        <label>Fuente<select id="filterSource"><option value="">Todas</option></select></label>
+        <label>Operación<select id="filterOperation"><option value="">Todas</option></select></label>
+        <label>Tipo de propiedad<select id="filterType"><option value="">Todos</option></select></label>
+        <label>Comuna<select id="filterCommune"><option value="">Todas</option></select></label>
+        <label>Temperatura<select id="filterTemperature"><option value="">Todas</option><option value="HOT">Hot</option><option value="COLD">Cold</option></select></label>
+        <label>Etapa<select id="filterStage"><option value="">Todas</option></select></label>
+      </div>
+    </header>
+
+    <nav class="dashboard-view-navigation" aria-label="Vistas del dashboard">
+      <button class="active" data-view="operation">Operación</button>
+      <button data-view="demand">Demanda y propiedades</button>
+      <button data-view="quality">Calidad de datos</button>
+    </nav>
+
+    <section class="dashboard-view active" id="operation-view">
+      <section class="status-layer" id="statusLayer" aria-live="polite"><span class="loading">Cargando datos…</span></section>
+
+      <section class="priority-layer layer-surface">
+        <div class="layer-heading"><div><span class="eyebrow">ACCIÓN INMEDIATA</span><h2>Prioridades de hoy</h2></div><a href="/crm" class="crm-link">Abrir CRM <i class="fa-solid fa-arrow-up-right-from-square"></i></a></div>
+        <div class="priority-list" id="priorityList"></div>
+      </section>
+
+      <section class="cohort-layer layer-surface">
+        <div class="layer-heading"><div><span class="eyebrow">SALUD DEL PERIODO</span><h2>Estado actual de la cohorte del periodo</h2><p>Situación actual de los leads que ingresaron durante las fechas seleccionadas</p></div></div>
+        <div class="cohort-flow" id="cohortFlow"></div>
+      </section>
+
+      <section class="executive-layer">
+        <article class="executive-portfolio layer-surface">
+          <div class="layer-heading"><div><span class="eyebrow">DISTRIBUCIÓN OPERATIVA</span><h2>Carga de cartera por ejecutivo</h2></div><label class="sort-control">Ordenar por<select id="executiveSort"><option value="active">Activos</option><option value="hot">Hot</option><option value="initial_stage">Etapa inicial</option><option value="critical">Críticos</option><option value="median_age_days">Antigüedad</option></select></label></div>
+          <div class="executive-table" id="executivePortfolio"></div>
+        </article>
+        <aside class="team-summary layer-surface">
+          <span class="eyebrow">RESUMEN AGREGADO</span><h2>Composición del equipo</h2><div id="teamSummary"></div>
+        </aside>
+      </section>
+
+      <section class="source-layer layer-surface">
+        <div class="layer-heading"><div><span class="eyebrow">ORIGEN DEL NEGOCIO</span><h2>Rendimiento de fuentes</h2><p>Leads ingresados durante el periodo · % avanzados es un proxy de la etapa actual · muestra mínima: 15</p></div></div>
+        <div class="source-insights" id="sourceInsights"></div>
+        <div class="source-visual"><div class="bubble-matrix" id="sourceMatrix"></div><div class="source-ranking" id="sourceRanking"></div></div>
+      </section>
+    </section>
+
+    <section class="dashboard-view" id="demand-view">
+      <section class="layer-surface property-layer"><div class="layer-heading"><div><span class="eyebrow">INTERÉS POR ACTIVO</span><h2>Propiedades con mayor interés</h2></div></div><div id="propertyRanking"></div></section>
+      <section class="layer-surface demand-layer"><div class="layer-heading"><div><span class="eyebrow">CONCENTRACIÓN DE DEMANDA</span><h2>Perfil de demanda</h2></div><div class="demand-selector"><button class="active" data-demand="operations">Operación</button><button data-demand="types">Tipo de propiedad</button><button data-demand="communes">Comuna</button></div></div><div id="demandProfile"></div></section>
+    </section>
+
+    <section class="dashboard-view" id="data-quality-view">
+      <section class="layer-surface"><div class="layer-heading"><div><span class="eyebrow">COBERTURA ACTUAL</span><h2>Calidad de datos</h2></div></div><div class="coverage-grid" id="coverageGrid"></div></section>
+      <section class="quality-columns"><article class="layer-surface"><span class="eyebrow">MEDICIÓN PARCIAL</span><h2>Primera respuesta</h2><div id="responseCoverage"></div></article><article class="layer-surface"><span class="eyebrow">CONTROL DE CONSISTENCIA</span><h2>Ausencias y conflictos</h2><div id="qualityIssues"></div></article></section>
+      <section class="layer-surface"><div class="layer-heading"><div><span class="eyebrow">ROADMAP DE DATOS</span><h2>Métricas futuras no habilitadas</h2></div></div><div id="futureMetrics"></div></section>
+    </section>
+
+    <div class="dashboard-error" id="dashboardError" hidden><strong>No fue posible cargar el dashboard.</strong><button id="retryButton" type="button">Reintentar</button></div>
+  </main>
+  <script src="/static/js/leads-dashboard.js"></script>
+</body>
+</html>

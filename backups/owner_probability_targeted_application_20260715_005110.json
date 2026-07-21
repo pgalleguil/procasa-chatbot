@@ -1,0 +1,13 @@
+{
+  "updated": 545,
+  "pending": 12,
+  "removed": 7,
+  "desassigned_broker": 7,
+  "skipped_idempotent": 0,
+  "errors": [],
+  "run_id": "owner_probability_targeted_20260715_005110",
+  "backup": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\backups\\owner_probability_targeted_backup_20260715_005110.json",
+  "manifest": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\backups\\owner_probability_targeted_backup_20260715_005110.manifest.json",
+  "report": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\reports\\owner_probability_targeted_dry_run_20260715_004216.json",
+  "traces": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\reports\\owner_probability_targeted_deepseek_traces_20260715_004216.jsonl"
+}

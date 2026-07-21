@@ -1,0 +1,912 @@
+{
+  "format": "paula-six-pre-correction-v1",
+  "created_at": {
+    "$date": "2026-07-14T21:33:42.171Z"
+  },
+  "count": 6,
+  "listing_ids": [
+    "32387250",
+    "32387259",
+    "32391134",
+    "32400056",
+    "4092056",
+    "4248794"
+  ],
+  "documents": [
+    {
+      "_id": {
+        "$oid": "6a566f84b2af2a5f7e048991"
+      },
+      "listing_id": "4248794",
+      "origen": "toctoc",
+      "banos": 1,
+      "canonical_url": "https://www.toctoc.com/propiedades/compraparticularsr/casa/san-javier/casa-de-1-piso-en-conjunto-don-sebastian-san-javier-excelente-conectividad/4248794",
+      "classification": {
+        "state": "DUEÑO_SEGURO",
+        "final_state": "DUEÑO_SEGURO",
+        "confidence": 0.95,
+        "score": 0.95,
+        "rule_state": "DUEÑO_SEGURO",
+        "signals": {},
+        "evidence": [
+          "dueño",
+          "dueno",
+          "particular",
+          "Propiedad vendida directamente por sus dueños"
+        ],
+        "reason": "Descripción indica explícitamente que la propiedad es vendida directamente por sus dueños.",
+        "decision_source": "deepseek",
+        "decision_pattern": "",
+        "state_source": "deepseek",
+        "deepseek_status": "VALID",
+        "deepseek_state": "",
+        "deepseek_confidence": 0.0,
+        "deepseek_reason": "",
+        "deepseek_evidence": [],
+        "deepseek_model": "deepseek-v4-flash",
+        "deepseek_finish_reason": "stop",
+        "deepseek_prompt_tokens": 1035,
+        "deepseek_completion_tokens": 346,
+        "deepseek_reasoning_tokens": 275,
+        "deepseek_provider": "",
+        "version": "toctoc-v1",
+        "ai_used": true,
+        "ai_model": "deepseek-v4-flash",
+        "ai_owner_score": 0.0,
+        "ai_broker_score": 0.0,
+        "ai_reason": "Descripción indica explícitamente que la propiedad es vendida directamente por sus dueños.",
+        "ai_disabled_reason": "",
+        "semantic_check": {
+          "status": "SKIPPED_EXPLICIT_OWNER"
+        },
+        "owner_probability": 0.95,
+        "owner_probability_source": "explicit_owner_classifier_v1"
+      },
+      "comuna": "san-javier",
+      "description": "Se vende excelente casa de un piso ubicada entranquilo sector residencial del Conjunto Habitacional Don Sebastián, comuna de San Javier. Superficies y Datos Legales: -Superficie Terreno: 99 m² (Información oficial SII) -Superficie Construida: 40 m² (Albañilería sólida, año 2007) ----Contribuciones: Propiedad 100% EXENTA (paga $0 contribuciones) Situación Legal: Papeles al día, inscrita en el Conservador de Bienes Raíces de San Javier. Lista para transferencia inmediata sin deudas. ? Características de la Propiedad: Distribución funcional con cómodos espacios comunes y dormitorios con piso cerámico de alto brillo. Antejardín adaptado con una cómoda rampa de acceso, ideal para personas con movilidad reducida o de la tercera edad. Pasillo lateral con capacidad para estacionamiento de vehículos. Rejas exteriores altas y protecciones de fierro instaladas en las ventanas. Patio trasero delimitado con cierres de pandereta, ideal para ampliaciones o terraza. Cocina con salida lateral y calefón Splendid funcionando . ?? Información de Contacto y Visitas: Propiedad vendida directamente por sus dueños. Para coordinar visitas en terreno de forma rápida, contactar a: Yuly): +56 9 9171 5919",
+      "description_available": true,
+      "description_is_truncated": false,
+      "description_length": 1195,
+      "direccion_exacta": "san-javier",
+      "dormitorios": 2,
+      "estacionamientos": null,
+      "fecha_publicacion": "",
+      "fecha_publicacion_raw": "",
+      "fetch_source": "",
+      "gastos_comunes": null,
+      "html_path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scraper_toctoc\\html_dumps\\sitemap_scoped_20260714_171804\\fe66868d724e02361794b9a383c5b754.html",
+      "html_sha256": "4365b2f4f2fa8a5db1e9277258a6f164555ca22f890aa1db91afb0bcc41d5d6a",
+      "html_validation_reason": "",
+      "html_validation_status": "",
+      "image_urls": [
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854089423754.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854093188891.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854146048143.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854142114223.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854190464380.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854191035628.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854246112597.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854248013182.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854305124017.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854343118407.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854334459899.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854372090808.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854378543785.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854408450869.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854419021909.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854455020995.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854461476701.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070803504031055.jpg"
+      ],
+      "image_urls_count": 18,
+      "listing_id_source": "discovery",
+      "m2_construidos": null,
+      "m2_totales": 99.0,
+      "main_image_url": "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260708/4248794/n_wm_2026070854089423754.jpg",
+      "manual_review": {
+        "status": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "operacion": "venta",
+      "precio_clp": 45000000,
+      "precio_clp_raw": "$45.000.000",
+      "precio_conversion_source": "toctoc_explicit_both_currencies",
+      "precio_moneda_original": "UF",
+      "precio_original_num": 1101.73,
+      "precio_raw": "$ 45.000.000 / UF 1.101,73",
+      "precio_uf": 1101.73,
+      "precio_uf_raw": "UF 1.101,73",
+      "precio_validacion": "OK",
+      "price": "UF 1.101,73 / $45.000.000",
+      "processed_at": "2026-07-14T17:18:58.558442+00:00",
+      "publisher_identity_candidates": [
+        {
+          "source": "info_anunciante",
+          "value": "Particular"
+        },
+        {
+          "source": "seller_type",
+          "value": "PARTICULAR"
+        },
+        {
+          "source": "seller_type_evidence",
+          "value": "Anunciante - Particular"
+        }
+      ],
+      "raw_attributes": {},
+      "region": "maule",
+      "run_id": "sitemap_scoped_20260714_171804",
+      "schema_version": "crm_v1",
+      "scrape_stage": "classification_done",
+      "seller_avatar_alt": "",
+      "seller_name": "Particular",
+      "seller_text": "Anunciante - Particular",
+      "seller_type": "PARTICULAR",
+      "seller_type_evidence": "Anunciante - Particular",
+      "seller_type_source": "info-anunciante",
+      "source": "owner_hunt",
+      "source_metadata": {
+        "portal": "toctoc",
+        "url_format": "",
+        "listing_id_source": "discovery",
+        "parse_source": "",
+        "discovery_page": 0,
+        "publisher_extraction_status": "FOUND",
+        "dormitorios_min": null,
+        "dormitorios_max": null,
+        "dormitorios_raw": "",
+        "banos_min": null,
+        "banos_max": null,
+        "banos_raw": "",
+        "superficie_total_min": null,
+        "superficie_total_max": null,
+        "superficie_total_raw": "",
+        "superficie_util_min": null,
+        "superficie_util_max": null,
+        "superficie_util_raw": "",
+        "seller_type_source": "info-anunciante",
+        "seller_type_evidence": "Anunciante - Particular",
+        "comuna_source": "detail_html",
+        "region_source": "detail_html",
+        "location_validation": {
+          "status": "VALID",
+          "reason": ""
+        },
+        "precio_uf_source": "detail_html",
+        "precio_clp_source": "detail_html",
+        "dormitorios_source": "detail_html",
+        "banos_source": "detail_html",
+        "surface_source": "detail_html",
+        "title_source": "detail_html"
+      },
+      "source_portal": "toctoc",
+      "tipo_propiedad": "casa",
+      "title": "Casas Venta Usado en San Javier",
+      "uf_fecha": "2026-07-08",
+      "uf_valor_usado": 40842.07,
+      "updated_at": "2026-07-14T17:18:58.614775+00:00",
+      "url": "https://www.toctoc.com/propiedades/compraparticularsr/casa/san-javier/casa-de-1-piso-en-conjunto-don-sebastian-san-javier-excelente-conectividad/4248794",
+      "gestion": {
+        "asignacion_comuna_slug": "san-javier",
+        "asignacion_version": "v1_targeted_maule",
+        "assignment_weight": 1.0,
+        "classification_at_assignment": "DUEÑO_SEGURO",
+        "ejecutivo_asignado": "Paula Morales",
+        "ejecutivo_email": "pmorales@procasa.cl",
+        "ejecutivo_id": "699653a96a099d6e9612d519",
+        "ejecutivo_nombre": "Paula Morales",
+        "estado": "NUEVO",
+        "fecha_asignacion": {
+          "$date": "2026-07-14T17:21:55.411Z"
+        },
+        "historial_asignaciones": [
+          {
+            "ejecutivo_id": "699653a96a099d6e9612d519",
+            "ejecutivo_nombre": "Paula Morales",
+            "comuna_slug": "san-javier",
+            "classification_state": "DUEÑO_SEGURO",
+            "assigned_at": {
+              "$date": "2026-07-14T17:21:55.411Z"
+            },
+            "assignment_version": "v1_targeted_maule"
+          }
+        ]
+      },
+      "comuna_slug": "san-javier"
+    },
+    {
+      "_id": {
+        "$oid": "6a566faab2af2a5f7e048995"
+      },
+      "listing_id": "4092056",
+      "origen": "toctoc",
+      "banos": 1,
+      "canonical_url": "https://www.toctoc.com/propiedades/compraparticularsr/casa/san-javier/casas-parque-del-sol-1840/4092056",
+      "classification": {
+        "state": "DUEÑO_SEGURO",
+        "final_state": "DUEÑO_SEGURO",
+        "confidence": 0.95,
+        "score": 0.95,
+        "rule_state": "DUEÑO_SEGURO",
+        "signals": {},
+        "evidence": [
+          "dueño",
+          "dueno",
+          "particular",
+          "trato directo con sus dueños"
+        ],
+        "reason": "La frase 'Trato directo con sus dueños' es evidencia explícita de que el anunciante es el propietario.",
+        "decision_source": "deepseek",
+        "decision_pattern": "",
+        "state_source": "deepseek",
+        "deepseek_status": "VALID",
+        "deepseek_state": "",
+        "deepseek_confidence": 0.0,
+        "deepseek_reason": "",
+        "deepseek_evidence": [],
+        "deepseek_model": "deepseek-v4-flash",
+        "deepseek_finish_reason": "stop",
+        "deepseek_prompt_tokens": 964,
+        "deepseek_completion_tokens": 250,
+        "deepseek_reasoning_tokens": 170,
+        "deepseek_provider": "",
+        "version": "toctoc-v1",
+        "ai_used": true,
+        "ai_model": "deepseek-v4-flash",
+        "ai_owner_score": 0.0,
+        "ai_broker_score": 0.0,
+        "ai_reason": "La frase 'Trato directo con sus dueños' es evidencia explícita de que el anunciante es el propietario.",
+        "ai_disabled_reason": "",
+        "semantic_check": {
+          "status": "SKIPPED_EXPLICIT_OWNER"
+        },
+        "owner_probability": 0.95,
+        "owner_probability_source": "explicit_owner_classifier_v1"
+      },
+      "comuna": "san-javier",
+      "description": "Linda casa en venta en comuna de San Javier de Loncomilla, región del Maule. Casa de 2 pisos semi nueva, consta de 3 habitaciones con closet, espacios con excelente iluminación, baño con tina y cerámica, extractor de aire en cocina y baño, eficiencia energética con termopanel solar, primer piso con cerámicas, amplio patio delantero y trasero, ideal para personalizar a gusto y ampliaciones. Calefont nuevo, se ofrece venta semi amoblada. Dimensiones 61 m2 construidos y 118 m2 totales. Espacio para estacionamiento 2 autos. Villa nueva y de entorno familiar y tranquilo a pasos de Cesfam de San Javier, supermercado Líder y Ferretería Mimbral. Plazas con juegos, canchas y áreas verdes a metros de la propiedad. Trato directo con sus dueños, se acepta PAGO CON SUBSIDIO . Sólo verdaderos interesados. Llamar a 927217967 o 958049598. Precio: 1.880 UF (conversable) ¡Gran oportunidad!",
+      "description_available": true,
+      "description_is_truncated": false,
+      "description_length": 884,
+      "direccion_exacta": "san-javier",
+      "dormitorios": 3,
+      "estacionamientos": null,
+      "fecha_publicacion": "",
+      "fecha_publicacion_raw": "",
+      "fetch_source": "",
+      "gastos_comunes": null,
+      "html_path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scraper_toctoc\\html_dumps\\sitemap_scoped_20260714_171804\\03f2feba41c02772354e965a46d8664d.html",
+      "html_sha256": "e3c0bdafa71dac91220817e18253c2ee7120783f79f1b00d711ca56b87f65ed6",
+      "html_validation_reason": "",
+      "html_validation_status": "",
+      "image_urls": [
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260227/4092056/n_wm_2026022707502220074.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260227/4092056/n_wm_2026022707504602637.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260227/4092056/n_wm_2026022708042922244.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260227/4092056/n_wm_2026022708021533614.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260227/4092056/n_wm_2026022708182974889.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260227/4092056/n_wm_2026022708171954817.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260227/4092056/n_wm_2026022708340968557.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260227/4092056/n_wm_2026022708326117838.jpg",
+        "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260227/4092056/n_wm_2026022708474158853.jpg"
+      ],
+      "image_urls_count": 9,
+      "listing_id_source": "discovery",
+      "m2_construidos": null,
+      "m2_totales": 118.0,
+      "main_image_url": "https://d1cfu8v5n1wsm.cloudfront.net/toctoc/fotos/20260227/4092056/n_wm_2026022707502220074.jpg",
+      "manual_review": {
+        "status": "",
+        "notes": "",
+        "reviewed_at": null
+      },
+      "operacion": "venta",
+      "precio_clp": 76788205,
+      "precio_clp_raw": "$76.788.205",
+      "precio_conversion_source": "toctoc_explicit_both_currencies",
+      "precio_moneda_original": "UF",
+      "precio_original_num": 1880.0,
+      "precio_raw": "UF 1.880 / $ 76.788.205",
+      "precio_uf": 1880.0,
+      "precio_uf_raw": "UF 1.880",
+      "precio_validacion": "OK",
+      "price": "UF 1.880 / $76.788.205",
+      "processed_at": "2026-07-14T17:19:36.629503+00:00",
+      "publisher_identity_candidates": [
+        {
+          "source": "info_anunciante",
+          "value": "Particular"
+        },
+        {
+          "source": "seller_type",
+          "value": "PARTICULAR"
+        },
+        {
+          "source": "seller_type_evidence",
+          "value": "Anunciante - Particular"
+        }
+      ],
+      "raw_attributes": {},
+      "region": "maule",
+      "run_id": "sitemap_scoped_20260714_171804",
+      "schema_version": "crm_v1",
+      "scrape_stage": "classification_done",
+      "seller_avatar_alt": "",
+      "seller_name": "Particular",
+      "seller_text": "Anunciante - Particular",
+      "seller_type": "PARTICULAR",
+      "seller_type_evidence": "Anunciante - Particular",
+      "seller_type_source": "info-anunciante",
+      "source": "owner_hunt",
+      "source_metadata": {
+        "portal": "toctoc",
+        "url_format": "",
+        "listing_id_source": "discovery",
+        "parse_source": "",
+        "discovery_page": 0,
+        "publisher_extraction_status": "FOUND",
+        "dormitorios_min": null,
+        "dormitorios_max": null,
+        "dormitorios_raw": "",
+        "banos_min": null,
+        "banos_max": null,
+        "banos_raw": "",
+        "superficie_total_min": null,
+        "superficie_total_max": null,
+        "superficie_total_raw": "",
+        "superficie_util_min": null,
+        "superficie_util_max": null,
+        "superficie_util_raw": "",
+        "seller_type_source": "info-anunciante",
+        "seller_type_evidence": "Anunciante - Particular",
+        "comuna_source": "detail_html",
+        "region_source": "detail_html",
+        "location_validation": {
+          "status": "VALID",
+          "reason": ""
+        },
+        "precio_uf_source": "detail_html",
+        "precio_clp_source": "detail_html",
+        "dormitorios_source": "detail_html",
+        "banos_source": "detail_html",
+        "surface_source": "detail_html",
+        "title_source": "detail_html"
+      },
+      "source_portal": "toctoc",
+      "tipo_propiedad": "casa",
+      "title": "Casas Venta Usado en San Javier",
+      "uf_fecha": "2026-07-08",
+      "uf_valor_usado": 40842.07,
+      "updated_at": "2026-07-14T17:19:36.685450+00:00",
+      "url": "https://www.toctoc.com/propiedades/compraparticularsr/casa/san-javier/casas-parque-del-sol-1840/4092056",
+      "gestion": {
+        "asignacion_comuna_slug": "san-javier",
+        "asignacion_version": "v1_targeted_maule",
+        "assignment_weight": 1.0,
+        "classification_at_assignment": "DUEÑO_SEGURO",
+        "ejecutivo_asignado": "Paula Morales",
+        "ejecutivo_email": "pmorales@procasa.cl",
+        "ejecutivo_id": "699653a96a099d6e9612d519",
+        "ejecutivo_nombre": "Paula Morales",
+        "estado": "NUEVO",
+        "fecha_asignacion": {
+          "$date": "2026-07-14T17:21:55.411Z"
+        },
+        "historial_asignaciones": [
+          {
+            "ejecutivo_id": "699653a96a099d6e9612d519",
+            "ejecutivo_nombre": "Paula Morales",
+            "comuna_slug": "san-javier",
+            "classification_state": "DUEÑO_SEGURO",
+            "assigned_at": {
+              "$date": "2026-07-14T17:21:55.411Z"
+            },
+            "assignment_version": "v1_targeted_maule"
+          }
+        ]
+      },
+      "comuna_slug": "san-javier"
+    },
+    {
+      "_id": {
+        "$oid": "6a5672b3b2af2a5f7e048a5b"
+      },
+      "origen": "yapo",
+      "listing_id": "32387250",
+      "banos": 3.0,
+      "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-en-brisas-de-san-miguel-en-talca/32387250",
+      "classification": {
+        "state": "INCIERTO",
+        "final_state": "INCIERTO",
+        "confidence": 0.3,
+        "score": 0.3,
+        "reason": "No hay evidencia positiva de que el anunciante sea el propietario ni señales claras de corredor profesional. El seller_type 'PARTICULAR' no es suficiente para determinar propiedad directa.",
+        "evidence": [],
+        "version": "yapo-v5-deepseek",
+        "decision_source": "deepseek",
+        "deepseek_status": "VALID",
+        "semantic_check": {
+          "status": "VALID"
+        },
+        "ai_used": true,
+        "deepseek_raw": {
+          "id": "6dd36e1b-73da-4fa6-835a-815487832b86",
+          "object": "chat.completion",
+          "created": 1784050789,
+          "model": "deepseek-v4-flash",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"state\": \"INCIERTO\", \"confidence\": 0.3, \"reason\": \"No hay evidencia positiva de que el anunciante sea el propietario ni señales claras de corredor profesional. El seller_type 'PARTICULAR' no es suficiente para determinar propiedad directa.\", \"signals\": []}",
+                "reasoning_content": "We need to classify this ad. The publicador_visible is \"Lucía Eugenia Luengo\", contact_name same. No company logo, no badges. seller_type is \"PARTICULAR\". But recall that seller_type='PARTICULAR' is not enough for dueño seguro. There is no explicit owner signal like \"soy dueño\", \"vendo mi casa\", etc. The description is about an arriendo (rental) of a casa individual. It says \"Se arrienda casa individual\" which is third person. No mention of being the owner. There is no strong broker evidence either; no brand, no hard broker evidence. So it's likely INCIERTO. But check: there is owner_signal_evidence: [\"particular\"] - but that's from seller_type, not a positive owner statement. So no. Confidence low. Signals: no positive owner signals, no broker signals. So state INCIERTO."
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 870,
+            "completion_tokens": 266,
+            "total_tokens": 1136,
+            "prompt_tokens_details": {
+              "cached_tokens": 384
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 195
+            },
+            "prompt_cache_hit_tokens": 384,
+            "prompt_cache_miss_tokens": 486
+          },
+          "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+        },
+        "owner_probability": 0.5,
+        "owner_probability_source": "uncertain_neutral_policy_v1"
+      },
+      "comuna": "Talca",
+      "comuna_slug": "talca",
+      "descripcion": "Arriendo Casa Individual – Sector Villa Brisas de San MiguelSe arrienda casa individual de 2 pisos, cómoda y funcional, ubicada en el sector residencial consolidado.Características:- 3 dormitorios (principal en primer piso)- 3 baños (uno en el quincho)- Living y comedor piso cerámico Casa amoblada- Cocina amoblada y equipada- Entrada de autos- Protecciones en ventanas- Portón de accesoEntorno cercano:Avenida San Miguel, 8 Sur, Universidad de Talca campus Pehuenche, Supermercado Líder, Mall, Universidad Católica del Maule e INACAP.",
+      "description": "Arriendo Casa Individual – Sector Villa Brisas de San MiguelSe arrienda casa individual de 2 pisos, cómoda y funcional, ubicada en el sector residencial consolidado.Características:- 3 dormitorios (principal en primer piso)- 3 baños (uno en el quincho)- Living y comedor piso cerámico Casa amoblada- Cocina amoblada y equipada- Entrada de autos- Protecciones en ventanas- Portón de accesoEntorno cercano:Avenida San Miguel, 8 Sur, Universidad de Talca campus Pehuenche, Supermercado Líder, Mall, Universidad Católica del Maule e INACAP.",
+      "dormitorios": 3.0,
+      "enlaces_fotos": [
+        "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/72/50/32387250_d945b1"
+      ],
+      "estacionamientos": null,
+      "fecha_scraping": {
+        "$date": "2026-07-14T17:32:33.569Z"
+      },
+      "gestion": {
+        "ejecutivo_id": "699653a96a099d6e9612d519",
+        "ejecutivo_nombre": "Paula Morales",
+        "ejecutivo_email": "pmorales@procasa.cl",
+        "ejecutivo_asignado": "Paula Morales",
+        "fecha_asignacion": {
+          "$date": "2026-07-14T17:32:33.569Z"
+        },
+        "asignacion_version": "v1_targeted_yapo",
+        "asignacion_comuna_slug": "talca",
+        "classification_at_assignment": "INCIERTO",
+        "assignment_weight": 1.0,
+        "estado": "NUEVO",
+        "historial_asignaciones": [
+          {
+            "ejecutivo_id": "699653a96a099d6e9612d519",
+            "ejecutivo_nombre": "Paula Morales",
+            "comuna_slug": "talca",
+            "classification_state": "INCIERTO",
+            "assigned_at": {
+              "$date": "2026-07-14T17:32:33.569Z"
+            },
+            "assignment_version": "v1_targeted_yapo"
+          }
+        ]
+      },
+      "html_path": "html_dumps/bfa25d5668351e549bfd52b32e976b87.html",
+      "images": [
+        "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/72/50/32387250_d945b1"
+      ],
+      "operacion": "arriendo",
+      "precio_clp": 600000,
+      "precio_raw": "$600.000",
+      "precio_uf": null,
+      "price": "$600.000",
+      "processed_at": {
+        "$date": "2026-07-14T17:32:33.569Z"
+      },
+      "publicador": "Lucía Eugenia Luengo",
+      "region": "Maule",
+      "run_id": "yapo_paula_20260714",
+      "schema_version": "crm_v1",
+      "seller_profile_id": "17631803",
+      "source": "targeted_owner_hunt",
+      "source_portal": "yapo",
+      "superficie_total": 1500.0,
+      "superficie_util": null,
+      "tipo_propiedad": "casa",
+      "title": "Casa en arriendo en Brisas de San Miguel en Talca",
+      "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-en-brisas-de-san-miguel-en-talca/32387250",
+      "updated_at": {
+        "$date": "2026-07-14T17:40:12.293Z"
+      }
+    },
+    {
+      "_id": {
+        "$oid": "6a5672cbb2af2a5f7e048a67"
+      },
+      "listing_id": "32387259",
+      "origen": "yapo",
+      "banos": 5.0,
+      "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-5d-5b-loteo-las-rastras/32387259",
+      "classification": {
+        "state": "INCIERTO",
+        "final_state": "INCIERTO",
+        "confidence": 0.5,
+        "score": 0.5,
+        "reason": "No explicit evidence of owner or broker. Description uses impersonal language. Only signal is seller type 'PARTICULAR' which is insufficient for owner classification.",
+        "evidence": [
+          "seller_type: PARTICULAR",
+          "owner_signal_evidence: particular",
+          "description: impersonal"
+        ],
+        "version": "yapo-v5-deepseek",
+        "decision_source": "deepseek",
+        "deepseek_status": "VALID",
+        "semantic_check": {
+          "status": "VALID"
+        },
+        "ai_used": true,
+        "deepseek_raw": {
+          "id": "0159ec6c-3791-44ca-b5d8-d70de2468ea8",
+          "object": "chat.completion",
+          "created": 1784050795,
+          "model": "deepseek-v4-flash",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"state\": \"INCIERTO\", \"confidence\": 0.5, \"reason\": \"No explicit evidence of owner or broker. Description uses impersonal language. Only signal is seller type 'PARTICULAR' which is insufficient for owner classification.\", \"signals\": [\"seller_type: PARTICULAR\", \"owner_signal_evidence: particular\", \"description: impersonal\"]}",
+                "reasoning_content": "We are given an input JSON with various fields about a real estate listing. We need to classify the publisher as one of: CORREDOR_SEGURO, CORREDOR_PROBABLE, DUEÑO_SEGURO, INCIERTO.\n\nKey observations:\n- publicador_visible: \"María Patricia Cepeda\" (a person's name)\n- contact_name: same\n- seller_jsonld_name: empty\n- listing_advertiser: empty\n- contact_badges_text: empty\n- company_like_suspected: false\n- hard_broker_evidence: empty\n- owner_signal_evidence: [\"particular\"]\n- weak_broker_evidence: empty\n- seller_type: \"PARTICULAR\"\n- seller_type_source: \"yapo\"\n- seller_type_evidence: \"Publicación Yapo sin badge profesional\"\n- Description mentions \"Se vende o arrienda\" (It is sold or rented) - third person, not first person like \"vendo mi casa\".\n\nThe rules state that seller_type='PARTICULAR' is NOT sufficient for DUEÑO_SEGURO. Also, \"owner_signal_evidence\" includes \"particular\", but that is just an indicator from the platform. We need positive explicit evidence of ownership. The description does not say \"vendo mi casa\" or \"soy dueño\". It says \"Se vende o arrienda\" which is impersonal.\n\nNo known brand evidence, no company-like evidence. No hard broker evidence. No weak broker evidence except maybe the name is a person.\n\nThus, no evidence of broker or owner. So default is INCIERTO.\n\nConfidence: 0.5 (medium)\n\nSignals: list of relevant signals: [\"seller_type: PARTICULAR\", \"owner_signal_evidence: particular\", \"description: impersonal\"]\n\nReason: \"No explicit evidence of owner or broker. Description uses impersonal language. Only signal is seller type 'PARTICULAR' which is insufficient for owner classification.\"\n\nOutput JSON."
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 928,
+            "completion_tokens": 494,
+            "total_tokens": 1422,
+            "prompt_tokens_details": {
+              "cached_tokens": 384
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 417
+            },
+            "prompt_cache_hit_tokens": 384,
+            "prompt_cache_miss_tokens": 544
+          },
+          "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+        },
+        "owner_probability": 0.5,
+        "owner_probability_source": "uncertain_neutral_policy_v1"
+      },
+      "comuna": "Talca",
+      "comuna_slug": "talca",
+      "descripcion": "&amp;#55356;� Se vende o arrienda gran y preciosa casa en exclusivo condominio en Las Rastras, Km 5&amp;#55356;� Terreno urbanizado de 5.000 m², con caminos asfaltados hasta la misma casa.Características principales:• 🛏️ 5 dormitorios &amp;#43; un escritorio junto a la cocina.• 🚿 5 baños en total, incluyendo baño de servicio y baño de visitas.• 🔥 Calefacción por loza radiante con caldera a petróleo, ideal para el invierno.• 💧 Agua potable y pozo .• &amp;#55356;� Riego automático en todo el terreno, facilitando el mantenimiento.• 📐 345 m² construidos. • 🚗 Acceso directo con caminos pavimentados.$2.400.000UF 15.000",
+      "description": "&amp;#55356;� Se vende o arrienda gran y preciosa casa en exclusivo condominio en Las Rastras, Km 5&amp;#55356;� Terreno urbanizado de 5.000 m², con caminos asfaltados hasta la misma casa.Características principales:• 🛏️ 5 dormitorios &amp;#43; un escritorio junto a la cocina.• 🚿 5 baños en total, incluyendo baño de servicio y baño de visitas.• 🔥 Calefacción por loza radiante con caldera a petróleo, ideal para el invierno.• 💧 Agua potable y pozo .• &amp;#55356;� Riego automático en todo el terreno, facilitando el mantenimiento.• 📐 345 m² construidos. • 🚗 Acceso directo con caminos pavimentados.$2.400.000UF 15.000",
+      "dormitorios": 5.0,
+      "enlaces_fotos": [
+        "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/72/59/32387259_fa79c8"
+      ],
+      "estacionamientos": null,
+      "fecha_scraping": {
+        "$date": "2026-07-14T17:32:57.861Z"
+      },
+      "gestion": {
+        "ejecutivo_id": "699653a96a099d6e9612d519",
+        "ejecutivo_nombre": "Paula Morales",
+        "ejecutivo_email": "pmorales@procasa.cl",
+        "ejecutivo_asignado": "Paula Morales",
+        "fecha_asignacion": {
+          "$date": "2026-07-14T17:32:57.861Z"
+        },
+        "asignacion_version": "v1_targeted_yapo",
+        "asignacion_comuna_slug": "talca",
+        "classification_at_assignment": "INCIERTO",
+        "assignment_weight": 1.0,
+        "estado": "NUEVO",
+        "historial_asignaciones": [
+          {
+            "ejecutivo_id": "699653a96a099d6e9612d519",
+            "ejecutivo_nombre": "Paula Morales",
+            "comuna_slug": "talca",
+            "classification_state": "INCIERTO",
+            "assigned_at": {
+              "$date": "2026-07-14T17:32:57.861Z"
+            },
+            "assignment_version": "v1_targeted_yapo"
+          }
+        ]
+      },
+      "html_path": "html_dumps/514e515ebc964e45c995ffb7f40c5075.html",
+      "images": [
+        "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/72/59/32387259_fa79c8"
+      ],
+      "operacion": "arriendo",
+      "precio_clp": 2500000,
+      "precio_raw": "$2.500.000",
+      "precio_uf": null,
+      "price": "$2.500.000",
+      "processed_at": {
+        "$date": "2026-07-14T17:32:57.861Z"
+      },
+      "publicador": "María Patricia Cepeda",
+      "region": "Maule",
+      "run_id": "yapo_paula_20260714",
+      "schema_version": "crm_v1",
+      "seller_profile_id": "17631803",
+      "source": "targeted_owner_hunt",
+      "source_portal": "yapo",
+      "superficie_total": 50000.0,
+      "superficie_util": null,
+      "tipo_propiedad": "casa",
+      "title": "Casa en arriendo de 5D 5B Loteo Las Rastras",
+      "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-5d-5b-loteo-las-rastras/32387259",
+      "updated_at": {
+        "$date": "2026-07-14T17:40:12.293Z"
+      }
+    },
+    {
+      "_id": {
+        "$oid": "6a5672d5b2af2a5f7e048a6b"
+      },
+      "listing_id": "32391134",
+      "origen": "yapo",
+      "banos": 3.0,
+      "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-4-dorm-sector-oriente-en-talca/32391134",
+      "classification": {
+        "state": "INCIERTO",
+        "final_state": "INCIERTO",
+        "confidence": 0.3,
+        "score": 0.3,
+        "reason": "No hay evidencia clara de que el anunciante sea el dueño ni de que sea un corredor profesional. El seller_type es 'PARTICULAR' pero eso no es suficiente para determinar propiedad.",
+        "evidence": [
+          "seller_type=PARTICULAR"
+        ],
+        "version": "yapo-v5-deepseek",
+        "decision_source": "deepseek",
+        "deepseek_status": "VALID",
+        "semantic_check": {
+          "status": "VALID"
+        },
+        "ai_used": true,
+        "deepseek_raw": {
+          "id": "a443ba31-77e7-4d67-8753-5793e986c545",
+          "object": "chat.completion",
+          "created": 1784050800,
+          "model": "deepseek-v4-flash",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"state\": \"INCIERTO\", \"confidence\": 0.3, \"reason\": \"No hay evidencia clara de que el anunciante sea el dueño ni de que sea un corredor profesional. El seller_type es 'PARTICULAR' pero eso no es suficiente para determinar propiedad.\", \"signals\": [\"seller_type=PARTICULAR\"]}",
+                "reasoning_content": "We need to classify based on the given information. The seller_type is \"PARTICULAR\", but that alone is not enough for dueño seguro. There is no explicit evidence of owner (no \"vendo mi casa\", etc.). There are no broker signals. The description is about renting a house, with no mention of being the owner. So likely INCIERTO.\n\nConfidence: low because no evidence either way. Reason: No clear evidence of owner or broker. Signals: [\"seller_type=PARTICULAR\"] but that's not strong."
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 890,
+            "completion_tokens": 190,
+            "total_tokens": 1080,
+            "prompt_tokens_details": {
+              "cached_tokens": 384
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 112
+            },
+            "prompt_cache_hit_tokens": 384,
+            "prompt_cache_miss_tokens": 506
+          },
+          "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+        },
+        "owner_probability": 0.5,
+        "owner_probability_source": "uncertain_neutral_policy_v1"
+      },
+      "comuna": "Talca",
+      "comuna_slug": "talca",
+      "descripcion": "Se arrienda amplia casa en Villa San Miguel – TalcaUbicada en excelente sector residencial, a pasos de la Universidad Católica del Maule, con acceso por Parque Universitario. Conectividad privilegiada entre Av. San Miguel y 2 Norte.La propiedad cuenta con:* 180 m² construidos* 4 dormitorios* 3 baños* Pieza de servicio con baño* Amplia terraza* Piscina* Estacionamiento* BodegaAdemás, dispone de calefacción central a petróleo, ideal para el invierno.💰 Valor arriendo: $1.000.000Propiedad ideal para familias que buscan comodidad, espacios amplios y una excelente ubicación cercana a servicios, áreas verdes y conectividad.",
+      "description": "Se arrienda amplia casa en Villa San Miguel – TalcaUbicada en excelente sector residencial, a pasos de la Universidad Católica del Maule, con acceso por Parque Universitario. Conectividad privilegiada entre Av. San Miguel y 2 Norte.La propiedad cuenta con:* 180 m² construidos* 4 dormitorios* 3 baños* Pieza de servicio con baño* Amplia terraza* Piscina* Estacionamiento* BodegaAdemás, dispone de calefacción central a petróleo, ideal para el invierno.💰 Valor arriendo: $1.000.000Propiedad ideal para familias que buscan comodidad, espacios amplios y una excelente ubicación cercana a servicios, áreas verdes y conectividad.",
+      "dormitorios": 4.0,
+      "enlaces_fotos": [
+        "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/39/11/34/32391134_3f7fae"
+      ],
+      "estacionamientos": null,
+      "fecha_scraping": {
+        "$date": "2026-07-14T17:33:07.517Z"
+      },
+      "gestion": {
+        "ejecutivo_id": "699653a96a099d6e9612d519",
+        "ejecutivo_nombre": "Paula Morales",
+        "ejecutivo_email": "pmorales@procasa.cl",
+        "ejecutivo_asignado": "Paula Morales",
+        "fecha_asignacion": {
+          "$date": "2026-07-14T17:33:07.517Z"
+        },
+        "asignacion_version": "v1_targeted_yapo",
+        "asignacion_comuna_slug": "talca",
+        "classification_at_assignment": "INCIERTO",
+        "assignment_weight": 1.0,
+        "estado": "NUEVO",
+        "historial_asignaciones": [
+          {
+            "ejecutivo_id": "699653a96a099d6e9612d519",
+            "ejecutivo_nombre": "Paula Morales",
+            "comuna_slug": "talca",
+            "classification_state": "INCIERTO",
+            "assigned_at": {
+              "$date": "2026-07-14T17:33:07.517Z"
+            },
+            "assignment_version": "v1_targeted_yapo"
+          }
+        ]
+      },
+      "html_path": "html_dumps/055c295590be1c67d5c1e368c8225589.html",
+      "images": [
+        "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/39/11/34/32391134_3f7fae"
+      ],
+      "operacion": "arriendo",
+      "precio_clp": 1000000,
+      "precio_raw": "$1.000.000",
+      "precio_uf": null,
+      "price": "$1.000.000",
+      "processed_at": {
+        "$date": "2026-07-14T17:33:07.517Z"
+      },
+      "publicador": "María Patricia Cepeda",
+      "region": "Maule",
+      "run_id": "yapo_paula_20260714",
+      "schema_version": "crm_v1",
+      "seller_profile_id": "17631803",
+      "source": "targeted_owner_hunt",
+      "source_portal": "yapo",
+      "superficie_total": 4500.0,
+      "superficie_util": null,
+      "tipo_propiedad": "casa",
+      "title": "Casa en arriendo de 4 dorm. sector oriente en Talca",
+      "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-4-dorm-sector-oriente-en-talca/32391134",
+      "updated_at": {
+        "$date": "2026-07-14T17:40:12.293Z"
+      }
+    },
+    {
+      "_id": {
+        "$oid": "6a5672f9b2af2a5f7e048a78"
+      },
+      "listing_id": "32400056",
+      "origen": "yapo",
+      "banos": 2.0,
+      "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento-edificio-abel-bravo-centro/32400056",
+      "classification": {
+        "state": "INCIERTO",
+        "final_state": "INCIERTO",
+        "confidence": 0.6,
+        "score": 0.6,
+        "reason": "No evidencia explicita de que el anunciante sea el propietario; 'particular' no es suficiente.",
+        "evidence": [
+          "owner_signal_evidence=['particular']"
+        ],
+        "version": "yapo-v5-deepseek",
+        "decision_source": "deepseek",
+        "deepseek_status": "VALID",
+        "semantic_check": {
+          "status": "VALID"
+        },
+        "ai_used": true,
+        "deepseek_raw": {
+          "id": "a91ba053-8d20-4c62-92a2-49d88e4276c4",
+          "object": "chat.completion",
+          "created": 1784050804,
+          "model": "deepseek-v4-flash",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\"state\": \"INCIERTO\", \"confidence\": 0.6, \"reason\": \"No evidencia explicita de que el anunciante sea el propietario; 'particular' no es suficiente.\", \"signals\": [\"owner_signal_evidence=['particular']\"]}",
+                "reasoning_content": "We are given a JSON object with various fields. The task is to classify the publisher of the real estate ad. The rules: DUEÑO_SEGURO requires explicit positive evidence that the advertiser is the owner. Examples: \"vendo mi casa\", \"vendo mi departamento\", \"soy dueño\", \"soy propietario\", \"vende directamente su dueño\", \"dueño directo\", \"propietario directo\", \"trato directo con dueño\". In the input, we have owner_signal_evidence: [\"particular\"]. That is not enough. The seller_type is \"PARTICULAR\" but that alone is not sufficient. The description does not contain any explicit ownership language. It says \"Se arrienda acogedor departamento\" (third person, passive). No mention of \"vendo\", \"mi\", \"soy dueño\", etc. So there is no evidence for DUEÑO_SEGURO. There is no evidence for broker either. So it is INCIERTO. Confidence moderate, reason: No explicit owner signals. Signals: owner_signal_evidence includes \"particular\" but that is not enough. So output JSON."
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 928,
+            "completion_tokens": 307,
+            "total_tokens": 1235,
+            "prompt_tokens_details": {
+              "cached_tokens": 384
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 247
+            },
+            "prompt_cache_hit_tokens": 384,
+            "prompt_cache_miss_tokens": 544
+          },
+          "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+        },
+        "owner_probability": 0.5,
+        "owner_probability_source": "uncertain_neutral_policy_v1"
+      },
+      "comuna": "Talca",
+      "comuna_slug": "talca",
+      "descripcion": "Se arrienda acogedor departamento en Dos oriente 1059, en el centro de Talca. Este inmueble cuenta con 1 dormitorio, ideal para una persona soltera o una pareja. Dispone de 2 baños, lo que brinda mayor comodidad a los residentes. Con una superficie construida de 60 m2, ofrece un espacio compacto y funcional.La orientación del departamento es hacia el Oriente, permitiendo la entrada de luz natural durante la mañana y una agradable atmósfera luminosa. Se trata de un departamento tipo un ambiente, que brinda flexibilidad para adaptar diferentes ambientes según las necesidades de sus ocupantes.Con una ubicación céntrica, este departamento en arriendo se encuentra en una zona conveniente de Talca, cercano a comercios, servicios y transporte público. Una excelente opción para quienes buscan comodidad y practicidad en su estilo de vida.",
+      "description": "Se arrienda acogedor departamento en Dos oriente 1059, en el centro de Talca. Este inmueble cuenta con 1 dormitorio, ideal para una persona soltera o una pareja. Dispone de 2 baños, lo que brinda mayor comodidad a los residentes. Con una superficie construida de 60 m2, ofrece un espacio compacto y funcional.La orientación del departamento es hacia el Oriente, permitiendo la entrada de luz natural durante la mañana y una agradable atmósfera luminosa. Se trata de un departamento tipo un ambiente, que brinda flexibilidad para adaptar diferentes ambientes según las necesidades de sus ocupantes.Con una ubicación céntrica, este departamento en arriendo se encuentra en una zona conveniente de Talca, cercano a comercios, servicios y transporte público. Una excelente opción para quienes buscan comodidad y practicidad en su estilo de vida.",
+      "dormitorios": 1.0,
+      "enlaces_fotos": [
+        "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/40/00/56/32400056_8fb0ec"
+      ],
+      "estacionamientos": null,
+      "fecha_scraping": {
+        "$date": "2026-07-14T17:33:43.189Z"
+      },
+      "gestion": {
+        "ejecutivo_id": "699653a96a099d6e9612d519",
+        "ejecutivo_nombre": "Paula Morales",
+        "ejecutivo_email": "pmorales@procasa.cl",
+        "ejecutivo_asignado": "Paula Morales",
+        "fecha_asignacion": {
+          "$date": "2026-07-14T17:33:43.189Z"
+        },
+        "asignacion_version": "v1_targeted_yapo",
+        "asignacion_comuna_slug": "talca",
+        "classification_at_assignment": "INCIERTO",
+        "assignment_weight": 1.0,
+        "estado": "NUEVO",
+        "historial_asignaciones": [
+          {
+            "ejecutivo_id": "699653a96a099d6e9612d519",
+            "ejecutivo_nombre": "Paula Morales",
+            "comuna_slug": "talca",
+            "classification_state": "INCIERTO",
+            "assigned_at": {
+              "$date": "2026-07-14T17:33:43.189Z"
+            },
+            "assignment_version": "v1_targeted_yapo"
+          }
+        ]
+      },
+      "html_path": "html_dumps/b63bb726a2bf9fda174c9df8e7b5cc03.html",
+      "images": [
+        "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/40/00/56/32400056_8fb0ec"
+      ],
+      "operacion": "arriendo",
+      "precio_clp": 370000,
+      "precio_raw": "$370.000",
+      "precio_uf": null,
+      "price": "$370.000",
+      "processed_at": {
+        "$date": "2026-07-14T17:33:43.189Z"
+      },
+      "publicador": "Tatiana Tamara tapia",
+      "region": "Maule",
+      "run_id": "yapo_paula_20260714",
+      "schema_version": "crm_v1",
+      "seller_profile_id": "17631803",
+      "source": "targeted_owner_hunt",
+      "source_portal": "yapo",
+      "superficie_total": 600.0,
+      "superficie_util": null,
+      "tipo_propiedad": "departamento",
+      "title": "Arriendo departamento Edificio Abel Bravo centro",
+      "url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento-edificio-abel-bravo-centro/32400056",
+      "updated_at": {
+        "$date": "2026-07-14T17:40:12.293Z"
+      }
+    }
+  ]
+}

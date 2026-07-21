@@ -1,0 +1,250 @@
+[
+  {
+    "_id": {
+      "$oid": "6a567329b2af2a5f7e048a8f"
+    },
+    "origen": "yapo",
+    "listing_id": "32405203",
+    "banos": 3.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-amoblado-en-arriendo-de-2-dorm-en-talca/32405203",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.3,
+      "score": 0.3,
+      "reason": "No hay evidencia suficiente. El anunciante es particular pero no hay indicación explícita de ser dueño.",
+      "evidence": [],
+      "version": "yapo-v5-deepseek",
+      "decision_source": "deepseek",
+      "deepseek_status": "VALID",
+      "semantic_check": {
+        "status": "VALID"
+      },
+      "ai_used": true,
+      "deepseek_raw": {
+        "id": "319a2a06-92b8-4753-ad1f-632f6875ae98",
+        "object": "chat.completion",
+        "created": 1784050809,
+        "model": "deepseek-v4-flash",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"state\": \"INCIERTO\", \"confidence\": 0.3, \"reason\": \"No hay evidencia suficiente. El anunciante es particular pero no hay indicación explícita de ser dueño.\", \"signals\": []}",
+              "reasoning_content": "We need to classify based on rules. seller_type='PARTICULAR' is not enough for DUEÑO_SEGURO. No explicit owner signal like \"vendo mi casa\" etc. The description says \"Se arrienda\" which is impersonal. No evidence of broker or owner. So INCIERTO. Confidence low because no signals."
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 840,
+          "completion_tokens": 124,
+          "total_tokens": 964,
+          "prompt_tokens_details": {
+            "cached_tokens": 512
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 72
+          },
+          "prompt_cache_hit_tokens": 512,
+          "prompt_cache_miss_tokens": 328
+        },
+        "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+      },
+      "owner_probability": 0.5,
+      "owner_probability_source": "uncertain_neutral_policy_v1"
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Se arrienda precioso departamento full amoblado, recientemente remodelado casi en su totalidad, ubicado en piso 14.Cuenta con:• 2 dormitorios• 2 baños• Cocina separada• Living-comedor• Balcón• 1 estacionamiento subterráneo en nivel -1Departamento muy cómodo, luminoso y en excelente estado, ideal para quienes buscan comodidad y una propiedad lista para habitar.$650.000 valor arriendo mensual Gastos comunes aproximados: $80.000.-",
+    "description": "Se arrienda precioso departamento full amoblado, recientemente remodelado casi en su totalidad, ubicado en piso 14.Cuenta con:• 2 dormitorios• 2 baños• Cocina separada• Living-comedor• Balcón• 1 estacionamiento subterráneo en nivel -1Departamento muy cómodo, luminoso y en excelente estado, ideal para quienes buscan comodidad y una propiedad lista para habitar.$650.000 valor arriendo mensual Gastos comunes aproximados: $80.000.-",
+    "dormitorios": 2.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/40/52/03/32405203_28e941"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:34:31.470Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:34:31.470Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:34:31.470Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/217da66be1e28c7b8ef8bd2b6388640c.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/40/52/03/32405203_28e941"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 600000,
+    "precio_raw": "$600.000",
+    "precio_uf": null,
+    "price": "$600.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:34:31.470Z"
+    },
+    "publicador": "María Patricia Cepeda",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": null,
+    "superficie_util": null,
+    "tipo_propiedad": "departamento",
+    "title": "Departamento amoblado en arriendo de 2 dorm. en Talca",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-amoblado-en-arriendo-de-2-dorm-en-talca/32405203",
+    "updated_at": {
+      "$date": "2026-07-14T17:40:12.293Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a567255b2af2a5f7e048a32"
+    },
+    "listing_id": "32419703",
+    "origen": "yapo",
+    "banos": 2.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-7-dormitorios-en-talca-barrio-norte/32419703",
+    "classification": {
+      "state": "DUEÑO_SEGURO",
+      "final_state": "DUEÑO_SEGURO",
+      "confidence": 0.95,
+      "score": 0.95,
+      "reason": "El anuncio menciona explícitamente 'Propiedad de un solo dueño' y contiene señales de dueño en los datos.",
+      "evidence": [
+        "owner_signal_evidence"
+      ],
+      "version": "yapo-v5-deepseek",
+      "decision_source": "deepseek",
+      "deepseek_status": "VALID",
+      "semantic_check": {
+        "status": "SKIPPED_EXPLICIT_OWNER"
+      },
+      "ai_used": true,
+      "deepseek_raw": {
+        "id": "25c89914-f444-4ac5-a180-7aeb24d15b77",
+        "object": "chat.completion",
+        "created": 1784050784,
+        "model": "deepseek-v4-flash",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "{\"state\": \"DUEÑO_SEGURO\", \"confidence\": 0.95, \"reason\": \"El anuncio menciona explícitamente 'Propiedad de un solo dueño' y contiene señales de dueño en los datos.\", \"signals\": [\"owner_signal_evidence\"]}",
+              "reasoning_content": "We need to classify the publisher based on the given data. The user provides a JSON with various fields. Key points: publicador_visible is \"Lucía Eugenia Luengo\", contact_name same, company_like_suspected false, no company evidence, no hard broker evidence, owner_signal_evidence includes [\"dueño\", \"dueno\", \"particular\"], seller_type is \"PARTICULAR\", seller_type_source \"yapo\". Description says \"Propiedad de un solo dueño\". This is explicit owner signal: \"dueño\" appears in owner_signal_evidence and description says \"un solo dueño\". That is strong evidence of owner. So classification should be DUEÑO_SEGURO. Confidence high, reason includes explicit mention. Signals: owner_signal_evidence. Output JSON."
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 938,
+          "completion_tokens": 231,
+          "total_tokens": 1169,
+          "prompt_tokens_details": {
+            "cached_tokens": 384
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 165
+          },
+          "prompt_cache_hit_tokens": 384,
+          "prompt_cache_miss_tokens": 554
+        },
+        "system_fingerprint": "fp_8b330d02d0_prod0820_fp8_kvcache_20260402"
+      },
+      "owner_probability": 0.95,
+      "owner_probability_source": "explicit_owner_classifier_v1"
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "SE VENDE CASA EN TALCA – Sector NorteAmplia propiedad de 2 pisos, ideal para familias grandes o inversión. Cercana a colegios, locomoción y carabineros.Características:- 108 m² construidos en 2 pisos - 140 m² de terreno- 7 dormitorios- 2 baños- Living / comedor- Cocina- Patio techado, quincho - Antejardín techado- Estacionamiento para 2 vehículos- Ventanas de aluminio con protecciones.- Losa entre pisos-Segundo piso construido en panel SIPDistribución:- Primer piso: 4 dormitorios, 1 baño, cocina, estar-comedor y patio.- Segundo piso: 3 dormitorios y 1 baño.• Propiedad de un solo dueño• Sin deudas• Venta contado, lista para transferir Consultas y coordinación de visitas por interno.",
+    "description": "SE VENDE CASA EN TALCA – Sector NorteAmplia propiedad de 2 pisos, ideal para familias grandes o inversión. Cercana a colegios, locomoción y carabineros.Características:- 108 m² construidos en 2 pisos - 140 m² de terreno- 7 dormitorios- 2 baños- Living / comedor- Cocina- Patio techado, quincho - Antejardín techado- Estacionamiento para 2 vehículos- Ventanas de aluminio con protecciones.- Losa entre pisos-Segundo piso construido en panel SIPDistribución:- Primer piso: 4 dormitorios, 1 baño, cocina, estar-comedor y patio.- Segundo piso: 3 dormitorios y 1 baño.• Propiedad de un solo dueño• Sin deudas• Venta contado, lista para transferir Consultas y coordinación de visitas por interno.",
+    "dormitorios": 7.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/41/97/03/32419703_e5ffbc"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:30:59.111Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:30:59.111Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "DUEÑO_SEGURO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:30:59.111Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/9cb0d99b6a613e17ef08f5b815973f67.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/41/97/03/32419703_e5ffbc"
+    ],
+    "operacion": "venta",
+    "precio_clp": 55000000,
+    "precio_raw": "$55.000.000",
+    "precio_uf": null,
+    "price": "$55.000.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:30:59.111Z"
+    },
+    "publicador": "Lucía Eugenia Luengo",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 1400.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Casa en venta 7 dormitorios en Talca, barrio norte",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-7-dormitorios-en-talca-barrio-norte/32419703",
+    "updated_at": {
+      "$date": "2026-07-14T17:40:12.293Z"
+    }
+  }
+]

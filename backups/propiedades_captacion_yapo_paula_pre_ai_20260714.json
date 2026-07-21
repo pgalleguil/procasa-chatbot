@@ -1,0 +1,2723 @@
+[
+  {
+    "_id": {
+      "$oid": "6a567233b2af2a5f7e048a1e"
+    },
+    "listing_id": "31897034",
+    "origen": "yapo",
+    "banos": 1.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/se-vende-casa-en-molina/31897034",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Molina",
+    "comuna_slug": "molina",
+    "descripcion": "Se vende casa en molina ubicada en VILLA SA HILARIO, muy amplia consta de 3 dormitorios, un baño, amplia cocina, living comedor , estacionamiento y patio lateral, llegar y habitar, inserta en barrio tranquilo, muy cerca de hospital , centros comerciales, y una excelente locomoción. SE ACEPTA SUBSIDIO.",
+    "description": "Se vende casa en molina ubicada en VILLA SA HILARIO, muy amplia consta de 3 dormitorios, un baño, amplia cocina, living comedor , estacionamiento y patio lateral, llegar y habitar, inserta en barrio tranquilo, muy cerca de hospital , centros comerciales, y una excelente locomoción. SE ACEPTA SUBSIDIO.",
+    "dormitorios": 3.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/31/89/70/34/31897034_182bd5"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:30:25.262Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:30:25.262Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "molina",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "molina",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:30:25.262Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/6df3c396b133b6cf7d5cdb3ee73b86f6.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/31/89/70/34/31897034_182bd5"
+    ],
+    "operacion": "venta",
+    "precio_clp": 63500000,
+    "precio_raw": "$63.500.000",
+    "precio_uf": null,
+    "price": "$63.500.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:30:25.262Z"
+    },
+    "publicador": "Enrique ceballos",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "13727750",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 800.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "SE VENDE CASA EN MOLINA",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/se-vende-casa-en-molina/31897034"
+  },
+  {
+    "_id": {
+      "$oid": "6a567233b2af2a5f7e048a1f"
+    },
+    "listing_id": "31902324",
+    "origen": "yapo",
+    "banos": 1.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/se-vende-departamento-en-talca/31902324",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Se vende departamento muy cerca de universidad de Talca ,en 4 piso ubicado en villa quinta los ángeles, conta de dos dormitorios, un baño, cocina , living comedor, logia. el edificio cuenta con áreas verdes con juegos para niños, estacionamientos comunes. con acceso a locomoción, cercano a centros comerciales con salida directo a carretera 5 sur.",
+    "description": "Se vende departamento muy cerca de universidad de Talca ,en 4 piso ubicado en villa quinta los ángeles, conta de dos dormitorios, un baño, cocina , living comedor, logia. el edificio cuenta con áreas verdes con juegos para niños, estacionamientos comunes. con acceso a locomoción, cercano a centros comerciales con salida directo a carretera 5 sur.",
+    "dormitorios": 2.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/31/90/23/24/31902324_3442a9"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:30:25.352Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:30:25.352Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:30:25.352Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/458fbce1b0c00275c6d0daa2b0164e85.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/31/90/23/24/31902324_3442a9"
+    ],
+    "operacion": "venta",
+    "precio_clp": 54500000,
+    "precio_raw": "$54.500.000",
+    "precio_uf": null,
+    "price": "$54.500.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:30:25.352Z"
+    },
+    "publicador": "Enrique ceballos",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "13727750",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 540.0,
+    "superficie_util": null,
+    "tipo_propiedad": "departamento",
+    "title": "SE VENDE DEPARTAMENTO EN TALCA",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/se-vende-departamento-en-talca/31902324"
+  },
+  {
+    "_id": {
+      "$oid": "6a567233b2af2a5f7e048a20"
+    },
+    "listing_id": "30727724",
+    "origen": "yapo",
+    "banos": 1.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/se-vende-casa-en-linares/30727724",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Linares",
+    "comuna_slug": "linares",
+    "descripcion": "Se vende casa individual en linares ubicada en villa Nemesio Antúnez pasaje ríos del sur, consta de 3 dormitorios , un baño, cocina , living comedor estacionamiento techado , bodega o leñera, amplio patio y ante jardín. inserta en un muy buen barrio cercano a nuevo hospital, a pasos de locomoción, casa no pareada. se acepta subsidio.",
+    "description": "Se vende casa individual en linares ubicada en villa Nemesio Antúnez pasaje ríos del sur, consta de 3 dormitorios , un baño, cocina , living comedor estacionamiento techado , bodega o leñera, amplio patio y ante jardín. inserta en un muy buen barrio cercano a nuevo hospital, a pasos de locomoción, casa no pareada. se acepta subsidio.",
+    "dormitorios": 3.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/30/72/77/24/30727724_c0b9dd"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:30:25.476Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:30:25.476Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "linares",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "linares",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:30:25.476Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/97f30442db9c8fd33a313218b17c6106.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/30/72/77/24/30727724_c0b9dd"
+    ],
+    "operacion": "venta",
+    "precio_clp": 63500000,
+    "precio_raw": "$63.500.000",
+    "precio_uf": null,
+    "price": "$63.500.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:30:25.476Z"
+    },
+    "publicador": "Enrique ceballos",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "13727750",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 750.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "SE VENDE CASA EN LINARES",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/se-vende-casa-en-linares/30727724"
+  },
+  {
+    "_id": {
+      "$oid": "6a567233b2af2a5f7e048a21"
+    },
+    "origen": "yapo",
+    "listing_id": "32149681",
+    "banos": 1.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-54-mts2/32149681",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Vendo hermoso departamento a 6 cuadras del Mall Go Florida y Centro Comercial SODIMAC, TOTTUS y mucho mas. Cuenta con 3 dormitorios con closet y piso flotante, living comedor que incluye lámparas en el techo, baño, cocina, logia y estacionamiento propio. Dormitorio principal incluye calefacción eléctrica, además de aire acondicionado en pasillo central. Todas las dependencias están en perfectas condiciones.",
+    "description": "Vendo hermoso departamento a 6 cuadras del Mall Go Florida y Centro Comercial SODIMAC, TOTTUS y mucho mas. Cuenta con 3 dormitorios con closet y piso flotante, living comedor que incluye lámparas en el techo, baño, cocina, logia y estacionamiento propio. Dormitorio principal incluye calefacción eléctrica, además de aire acondicionado en pasillo central. Todas las dependencias están en perfectas condiciones.",
+    "dormitorios": 3.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/14/96/81/32149681_e6e32e6c95724beaaa5f48794eab154b-34b9b7b"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:30:25.506Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:30:25.506Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:30:25.506Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/63c750fee1a1975ffe176c7665d7d129.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/14/96/81/32149681_e6e32e6c95724beaaa5f48794eab154b-34b9b7b"
+    ],
+    "operacion": "venta",
+    "precio_clp": 57000000,
+    "precio_raw": "$57.000.000",
+    "precio_uf": null,
+    "price": "$57.000.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:30:25.506Z"
+    },
+    "publicador": "Carlos Michaud",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "14842945",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 540.0,
+    "superficie_util": null,
+    "tipo_propiedad": "departamento",
+    "title": "Departamento 54 mts2",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/departamento-54-mts2/32149681"
+  },
+  {
+    "_id": {
+      "$oid": "6a567255b2af2a5f7e048a32"
+    },
+    "listing_id": "32419703",
+    "origen": "yapo",
+    "banos": 2.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-7-dormitorios-en-talca-barrio-norte/32419703",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "SE VENDE CASA EN TALCA – Sector NorteAmplia propiedad de 2 pisos, ideal para familias grandes o inversión. Cercana a colegios, locomoción y carabineros.Características:- 108 m² construidos en 2 pisos - 140 m² de terreno- 7 dormitorios- 2 baños- Living / comedor- Cocina- Patio techado, quincho - Antejardín techado- Estacionamiento para 2 vehículos- Ventanas de aluminio con protecciones.- Losa entre pisos-Segundo piso construido en panel SIPDistribución:- Primer piso: 4 dormitorios, 1 baño, cocina, estar-comedor y patio.- Segundo piso: 3 dormitorios y 1 baño.• Propiedad de un solo dueño• Sin deudas• Venta contado, lista para transferir Consultas y coordinación de visitas por interno.",
+    "description": "SE VENDE CASA EN TALCA – Sector NorteAmplia propiedad de 2 pisos, ideal para familias grandes o inversión. Cercana a colegios, locomoción y carabineros.Características:- 108 m² construidos en 2 pisos - 140 m² de terreno- 7 dormitorios- 2 baños- Living / comedor- Cocina- Patio techado, quincho - Antejardín techado- Estacionamiento para 2 vehículos- Ventanas de aluminio con protecciones.- Losa entre pisos-Segundo piso construido en panel SIPDistribución:- Primer piso: 4 dormitorios, 1 baño, cocina, estar-comedor y patio.- Segundo piso: 3 dormitorios y 1 baño.• Propiedad de un solo dueño• Sin deudas• Venta contado, lista para transferir Consultas y coordinación de visitas por interno.",
+    "dormitorios": 7.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/41/97/03/32419703_e5ffbc"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:30:59.111Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:30:59.111Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:30:59.111Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/9cb0d99b6a613e17ef08f5b815973f67.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/41/97/03/32419703_e5ffbc"
+    ],
+    "operacion": "venta",
+    "precio_clp": 55000000,
+    "precio_raw": "$55.000.000",
+    "precio_uf": null,
+    "price": "$55.000.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:30:59.111Z"
+    },
+    "publicador": "Lucía Eugenia Luengo",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 1400.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Casa en venta 7 dormitorios en Talca, barrio norte",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-7-dormitorios-en-talca-barrio-norte/32419703"
+  },
+  {
+    "_id": {
+      "$oid": "6a56726bb2af2a5f7e048a38"
+    },
+    "origen": "yapo",
+    "listing_id": "32386995",
+    "banos": 2.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/vendemos-centrica-casa-en-sector-el-arenal-talca/32386995",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Vendemos amplia casa en El Arenal, sur poniente de Talca.Consta de:* 4 Dormitorios* ⁠2 Baños* ⁠Living comedor* ⁠Cocina* ⁠Estacionamiento* ⁠Patio interior* ⁠Reja exterior Precio de Venta $80.000.000 &amp;#43; 2% de comisión por servicio de corretaje Ubicada en sector residencial en sur poniente de Talca. Cercana a Bancos, centros de salud, Mall Go Florida, Universidad Santo Tomás, Supermercado Jumbo e Easy, con excelente movilización y conectividad.Agenda tu visita al &amp;#43;&amp;#43;CIMA PROPIEDADESSomos tu mejor opción de corredora de propiedades en Talca y Buin.",
+    "description": "Vendemos amplia casa en El Arenal, sur poniente de Talca.Consta de:* 4 Dormitorios* ⁠2 Baños* ⁠Living comedor* ⁠Cocina* ⁠Estacionamiento* ⁠Patio interior* ⁠Reja exterior Precio de Venta $80.000.000 &amp;#43; 2% de comisión por servicio de corretaje Ubicada en sector residencial en sur poniente de Talca. Cercana a Bancos, centros de salud, Mall Go Florida, Universidad Santo Tomás, Supermercado Jumbo e Easy, con excelente movilización y conectividad.Agenda tu visita al &amp;#43;&amp;#43;CIMA PROPIEDADESSomos tu mejor opción de corredora de propiedades en Talca y Buin.",
+    "dormitorios": 4.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/69/95/32386995_2925eb"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:31:20.948Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:31:20.948Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:31:20.948Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/627cdb0eb77f357e12a9d2a9e47543c5.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/69/95/32386995_2925eb"
+    ],
+    "operacion": "venta",
+    "precio_clp": 80000000,
+    "precio_raw": "$80.000.000",
+    "precio_uf": null,
+    "price": "$80.000.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:31:20.948Z"
+    },
+    "publicador": "Cima Propiedades",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": null,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "VENDEMOS CENTRICA CASA EN SECTOR EL ARENAL TALCA",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/vendemos-centrica-casa-en-sector-el-arenal-talca/32386995"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672b3b2af2a5f7e048a5a"
+    },
+    "listing_id": "32432078",
+    "origen": "yapo",
+    "banos": 2.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-3d-2b-2e-sector-oriente-en-talca/32432078",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Casa en Venta o ArriendoSector Las Rastras, Sector San Valentin TalcaUbicación: 44 ½ OrienteBarrio muy tranquilo y seguro, ideal para disfrutar en familia.Excelente conectividad:locomoción líneas D y 3B pasan por la esquina.Cercano a:• Jardines infantiles• Colegio Las Rastras• Restaurante Toro Bayo• Mall Plaza Maule• Casino Talca• Clínicas y serviciosCaracterísticas de la Propiedad• Superficie construida: 77 m²Terreno 240 m2 • Dormitorios: 3 (1 en suite)• Baños: 2• Living – comedor• Cocina• Piso cerámica• Estacionamiento para 2 vehículos • Terraza techada• Living con estufa a gas empotrada• Cortinas roller y luminarias incluidas• Recién pintada interior completaDisponibilidaD InmediataValores• Venta: Valor Oferta Pago Contado o Hipotecario Aprobado ( también se acepta opción de Arriendo Con Compromiso de Compra) Corretaje 2% Venta Opción de Arriendo $580.000.Contacto para coordinar visita WhatsApp FDB Propiedades",
+    "description": "Casa en Venta o ArriendoSector Las Rastras, Sector San Valentin TalcaUbicación: 44 ½ OrienteBarrio muy tranquilo y seguro, ideal para disfrutar en familia.Excelente conectividad:locomoción líneas D y 3B pasan por la esquina.Cercano a:• Jardines infantiles• Colegio Las Rastras• Restaurante Toro Bayo• Mall Plaza Maule• Casino Talca• Clínicas y serviciosCaracterísticas de la Propiedad• Superficie construida: 77 m²Terreno 240 m2 • Dormitorios: 3 (1 en suite)• Baños: 2• Living – comedor• Cocina• Piso cerámica• Estacionamiento para 2 vehículos • Terraza techada• Living con estufa a gas empotrada• Cortinas roller y luminarias incluidas• Recién pintada interior completaDisponibilidaD InmediataValores• Venta: Valor Oferta Pago Contado o Hipotecario Aprobado ( también se acepta opción de Arriendo Con Compromiso de Compra) Corretaje 2% Venta Opción de Arriendo $580.000.Contacto para coordinar visita WhatsApp FDB Propiedades",
+    "dormitorios": 3.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/43/20/78/32432078_72a892"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:32:33.225Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:32:33.225Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:32:33.225Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/562033edfb97a3dc6828045d62fa741f.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/43/20/78/32432078_72a892"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 580000,
+    "precio_raw": "$580.000",
+    "precio_uf": null,
+    "price": "$580.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:32:33.225Z"
+    },
+    "publicador": "FDB Propiedades",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 2400.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Casa en Arriendo de 3D 2B 2E Sector Oriente en Talca",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-3d-2b-2e-sector-oriente-en-talca/32432078"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672b3b2af2a5f7e048a5b"
+    },
+    "origen": "yapo",
+    "listing_id": "32387250",
+    "banos": 3.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-en-brisas-de-san-miguel-en-talca/32387250",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Arriendo Casa Individual – Sector Villa Brisas de San MiguelSe arrienda casa individual de 2 pisos, cómoda y funcional, ubicada en el sector residencial consolidado.Características:- 3 dormitorios (principal en primer piso)- 3 baños (uno en el quincho)- Living y comedor piso cerámico Casa amoblada- Cocina amoblada y equipada- Entrada de autos- Protecciones en ventanas- Portón de accesoEntorno cercano:Avenida San Miguel, 8 Sur, Universidad de Talca campus Pehuenche, Supermercado Líder, Mall, Universidad Católica del Maule e INACAP.",
+    "description": "Arriendo Casa Individual – Sector Villa Brisas de San MiguelSe arrienda casa individual de 2 pisos, cómoda y funcional, ubicada en el sector residencial consolidado.Características:- 3 dormitorios (principal en primer piso)- 3 baños (uno en el quincho)- Living y comedor piso cerámico Casa amoblada- Cocina amoblada y equipada- Entrada de autos- Protecciones en ventanas- Portón de accesoEntorno cercano:Avenida San Miguel, 8 Sur, Universidad de Talca campus Pehuenche, Supermercado Líder, Mall, Universidad Católica del Maule e INACAP.",
+    "dormitorios": 3.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/72/50/32387250_d945b1"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:32:33.569Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:32:33.569Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:32:33.569Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/bfa25d5668351e549bfd52b32e976b87.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/72/50/32387250_d945b1"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 600000,
+    "precio_raw": "$600.000",
+    "precio_uf": null,
+    "price": "$600.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:32:33.569Z"
+    },
+    "publicador": "Lucía Eugenia Luengo",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 1500.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Casa en arriendo en Brisas de San Miguel en Talca",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-en-brisas-de-san-miguel-en-talca/32387250"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672b3b2af2a5f7e048a5c"
+    },
+    "origen": "yapo",
+    "listing_id": "32387155",
+    "banos": 5.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/ubicacion-privilegiada-amplia-casa-para-instituciones/32387155",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Se ofrece en arriendo excepcional propiedad de uso comercial, ubicada en pleno corazón de Talca, frente a la Plaza de Armas y a pasos de la Municipalidad y la Gobernación.La propiedad cuenta con un terreno de 880 m² y una superficie construida de 550 m², distribuidos en dos niveles, ideales para instituciones Públicas, empresas, centros médicos, estudios profesionales o entidades educacionales.En el primer piso destaca su amplia distribución de espacios, incluyendo elegante living, comedor, sala de recepción, biblioteca y múltiples ambientes habilitables como oficinas o salas de trabajo.El segundo piso dispone de 4 dormitorios, una acogedora sala de estar con chimenea y una gran terraza cerrada, lo que permite ampliar aún más su funcionalidad.Cuenta con pozo, Caldera a Petróleo.La propiedad combina ubicación estratégica, amplitud y versatilidad, convirtiéndose en una excelente oportunidad para proyectos comerciales de alto nivel.",
+    "description": "Se ofrece en arriendo excepcional propiedad de uso comercial, ubicada en pleno corazón de Talca, frente a la Plaza de Armas y a pasos de la Municipalidad y la Gobernación.La propiedad cuenta con un terreno de 880 m² y una superficie construida de 550 m², distribuidos en dos niveles, ideales para instituciones Públicas, empresas, centros médicos, estudios profesionales o entidades educacionales.En el primer piso destaca su amplia distribución de espacios, incluyendo elegante living, comedor, sala de recepción, biblioteca y múltiples ambientes habilitables como oficinas o salas de trabajo.El segundo piso dispone de 4 dormitorios, una acogedora sala de estar con chimenea y una gran terraza cerrada, lo que permite ampliar aún más su funcionalidad.Cuenta con pozo, Caldera a Petróleo.La propiedad combina ubicación estratégica, amplitud y versatilidad, convirtiéndose en una excelente oportunidad para proyectos comerciales de alto nivel.",
+    "dormitorios": 6.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/71/55/32387155_3b0415"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:32:33.622Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:32:33.622Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:32:33.622Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/7c5b1e5f3b947e170b226fb8dffa5a58.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/71/55/32387155_3b0415"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 4000000,
+    "precio_raw": "$4.000.000",
+    "precio_uf": null,
+    "price": "$4.000.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:32:33.622Z"
+    },
+    "publicador": "Corredores del Maule.",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 8800.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Ubicación Privilegiada: Amplia Casa para Instituciones",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/ubicacion-privilegiada-amplia-casa-para-instituciones/32387155"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672bdb2af2a5f7e048a5e"
+    },
+    "listing_id": "32387297",
+    "origen": "yapo",
+    "banos": 2.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/se-arrienda-casa-villa-los-huertos-de-linares/32387297",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Linares",
+    "comuna_slug": "linares",
+    "descripcion": "Se arrienda casa nueva Villa los huertos de Linares La vivienda está nueva sin uso excelente conectividad barrio residencial, tranquilo 💎Características - Primer piso: - Cocina - Living comedor - 1 baño de visita - Sala de estar - Segundo piso: - Home office - 1 dormitorio principal en suite con walk in closet- 2 dormitorios con clóset - 1 baño 💰 Valor arriendo $500.000 &amp;#43; mes de garantía &amp;#43; 50% comisión de corretaje por única vez 📌 Arrienda: Presencia Propiedades📞 Agenda tu visita personalizada",
+    "description": "Se arrienda casa nueva Villa los huertos de Linares La vivienda está nueva sin uso excelente conectividad barrio residencial, tranquilo 💎Características - Primer piso: - Cocina - Living comedor - 1 baño de visita - Sala de estar - Segundo piso: - Home office - 1 dormitorio principal en suite con walk in closet- 2 dormitorios con clóset - 1 baño 💰 Valor arriendo $500.000 &amp;#43; mes de garantía &amp;#43; 50% comisión de corretaje por única vez 📌 Arrienda: Presencia Propiedades📞 Agenda tu visita personalizada",
+    "dormitorios": 3.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/72/97/32387297_28fd7e"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:32:43.548Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:32:43.548Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "linares",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "linares",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:32:43.548Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/12978fbab7d66ca22913e20920fad2d0.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/72/97/32387297_28fd7e"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 500000,
+    "precio_raw": "$500.000",
+    "precio_uf": null,
+    "price": "$500.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:32:43.548Z"
+    },
+    "publicador": "Presencia Propiedades",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": null,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "SE ARRIENDA CASA VILLA LOS HUERTOS DE LINARES",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/se-arrienda-casa-villa-los-huertos-de-linares/32387297"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672beb2af2a5f7e048a60"
+    },
+    "listing_id": "32388270",
+    "origen": "yapo",
+    "banos": 4.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/arrendamos-casa-y-local-con-excelente-ubicacion-comercial/32388270",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Arrendamos amplia casa y local con excelente ubicación comercial en Altos del Parque II5 Norte frente a Copec Las Rastras.139 m2 construidos (local incluido)279 m2 totalesConsta de:4 Dormitorios4 bañosSala de estarLiving ComedorCocina2 aire acondicionadoEstufa a combustión lentaLocal comercial CON DERECHO A LLAVES La propiedad se encuentra en la esquina de Copec Las Rastras 5 norte, ideal para desarrollar tu proyecto comercial y potenciarlo por el alto tránsito vehicular y flujo de habitantes.Precio de Arriendo $2.500.000 &amp;#43; mes de garantía &amp;#43; comisión corretaje.&amp;#43;&amp;#43;CIMA PROPIEDADESObtén respuestas más inteligentes, carga archivos e imágenes, y más.",
+    "description": "Arrendamos amplia casa y local con excelente ubicación comercial en Altos del Parque II5 Norte frente a Copec Las Rastras.139 m2 construidos (local incluido)279 m2 totalesConsta de:4 Dormitorios4 bañosSala de estarLiving ComedorCocina2 aire acondicionadoEstufa a combustión lentaLocal comercial CON DERECHO A LLAVES La propiedad se encuentra en la esquina de Copec Las Rastras 5 norte, ideal para desarrollar tu proyecto comercial y potenciarlo por el alto tránsito vehicular y flujo de habitantes.Precio de Arriendo $2.500.000 &amp;#43; mes de garantía &amp;#43; comisión corretaje.&amp;#43;&amp;#43;CIMA PROPIEDADESObtén respuestas más inteligentes, carga archivos e imágenes, y más.",
+    "dormitorios": 4.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/82/70/32388270_0ee5ed"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:32:44.215Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:32:44.215Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:32:44.215Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/4f9ae2284ab7dc0f9a34f3a3db5755b3.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/82/70/32388270_0ee5ed"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 2500000,
+    "precio_raw": "$2.500.000",
+    "precio_uf": null,
+    "price": "$2.500.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:32:44.215Z"
+    },
+    "publicador": "Cima Propiedades",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 2790.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "ARRENDAMOS CASA Y LOCAL CON EXCELENTE UBICACION COMERCIAL",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/arrendamos-casa-y-local-con-excelente-ubicacion-comercial/32388270"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672bfb2af2a5f7e048a61"
+    },
+    "listing_id": "32390192",
+    "origen": "yapo",
+    "banos": 2.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-en-talca/32390192",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Excelente propiedad en VENTA ubicada a pasos de la Alameda en calle 4 poniente a metros del colegio San Ignacio, San Jorge, U autónoma, Estadio fiscal. Etc.Propiedad de 160 mtsAmplio living comedor03 terrazas.02 bañosAire acondicionadoBoscaSistema de caldera ( opcional)03 amplios dormitorios en 2do piso01 sala de estar01 Walking ClósetCasa totalmente remodelada, llegar y habitar.Venta 4.117 U.F. ($ &amp;#43;2% comisión de corretaje).Casa con gran potencial comercial por la excelente ubicación.Opción de arriendo 25 UFAgenda tu visita hoy mismoDiazpropiedades&amp;#43;",
+    "description": "Excelente propiedad en VENTA ubicada a pasos de la Alameda en calle 4 poniente a metros del colegio San Ignacio, San Jorge, U autónoma, Estadio fiscal. Etc.Propiedad de 160 mtsAmplio living comedor03 terrazas.02 bañosAire acondicionadoBoscaSistema de caldera ( opcional)03 amplios dormitorios en 2do piso01 sala de estar01 Walking ClósetCasa totalmente remodelada, llegar y habitar.Venta 4.117 U.F. ($ &amp;#43;2% comisión de corretaje).Casa con gran potencial comercial por la excelente ubicación.Opción de arriendo 25 UFAgenda tu visita hoy mismoDiazpropiedades&amp;#43;",
+    "dormitorios": 4.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/39/01/92/32390192_ab2f12"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:32:45.094Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:32:45.094Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:32:45.094Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/d60f0f1069a9cf3d851eaac469176c42.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/39/01/92/32390192_ab2f12"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": null,
+    "precio_raw": "UF 25.0",
+    "precio_uf": 25.0,
+    "price": "UF 25.0",
+    "processed_at": {
+      "$date": "2026-07-14T17:32:45.094Z"
+    },
+    "publicador": "Jacqueline Diaz",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 1600.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Casa en Arriendo en Talca",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-en-talca/32390192"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672c0b2af2a5f7e048a62"
+    },
+    "origen": "yapo",
+    "listing_id": "32393867",
+    "banos": 3.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-parcela-de-2-000-mts-sector-mercedes-talca/32393867",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "¡No te pierdas esta increíble oportunidad de arriendo en el sector Mercedes, a 10 min de Talca! Esta espaciosa casa cuenta con 4 dormitorios y 3 baños, perfecta para una familia que busca comodidad y tranquilidad. Con un terreno de 2000 m2 y 160 m2 totales de construcción, tendrás espacio más que suficiente para disfrutar en un entorno natural y acogedor.Ubicada en el hermoso sector de Mercedes, esta propiedad ofrece la combinación perfecta entre naturaleza y modernidad, ideal para quienes buscan escapar del bullicio de la ciudad sin alejarse demasiado de las comodidades urbanas. Además, su amplio terreno te permitirá disfrutar de jardines, piscina, áreas verdes y mucho más.No pierdas la oportunidad de vivir en un lugar único y especial. Contáctanos hoy mismo para agendar una visita y conocer más detalles sobre esta maravillosa casa en arriendo por tan solo Pesos 1.000.000. mesnual.detalles -Casa de ladrillo muy sólida y fresca-160 m² construidos aprox.-Terreno de 2.000 m² con árboles y áreas verdes-3 dormitorios &amp;#43; 1 dormitorio en suite con walking closet-3 baños-Amplio living-Comedor independiente-Amplia cocina con comedor de diario y combustión lenta y excelente iluminación-Chimenea-4 aires acondicionadosagenda tu visita hoy mismo con DIAZPROPIEDADES",
+    "description": "¡No te pierdas esta increíble oportunidad de arriendo en el sector Mercedes, a 10 min de Talca! Esta espaciosa casa cuenta con 4 dormitorios y 3 baños, perfecta para una familia que busca comodidad y tranquilidad. Con un terreno de 2000 m2 y 160 m2 totales de construcción, tendrás espacio más que suficiente para disfrutar en un entorno natural y acogedor.Ubicada en el hermoso sector de Mercedes, esta propiedad ofrece la combinación perfecta entre naturaleza y modernidad, ideal para quienes buscan escapar del bullicio de la ciudad sin alejarse demasiado de las comodidades urbanas. Además, su amplio terreno te permitirá disfrutar de jardines, piscina, áreas verdes y mucho más.No pierdas la oportunidad de vivir en un lugar único y especial. Contáctanos hoy mismo para agendar una visita y conocer más detalles sobre esta maravillosa casa en arriendo por tan solo Pesos 1.000.000. mesnual.detalles -Casa de ladrillo muy sólida y fresca-160 m² construidos aprox.-Terreno de 2.000 m² con árboles y áreas verdes-3 dormitorios &amp;#43; 1 dormitorio en suite con walking closet-3 baños-Amplio living-Comedor independiente-Amplia cocina con comedor de diario y combustión lenta y excelente iluminación-Chimenea-4 aires acondicionadosagenda tu visita hoy mismo con DIAZPROPIEDADES",
+    "dormitorios": 4.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/39/38/67/32393867_c397c2"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:32:46.132Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:32:46.132Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:32:46.132Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/b7bad487279bcd0dccfe7143d396691c.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/39/38/67/32393867_c397c2"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 1000000,
+    "precio_raw": "$1.000.000",
+    "precio_uf": null,
+    "price": "$1.000.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:32:46.132Z"
+    },
+    "publicador": "Jacqueline Diaz",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 20000.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "CASA EN PARCELA DE 2.000 MTS SECTOR MERCEDES TALCA",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-parcela-de-2-000-mts-sector-mercedes-talca/32393867"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672cab2af2a5f7e048a66"
+    },
+    "listing_id": "32387170",
+    "origen": "yapo",
+    "banos": 1.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-de-1-dorm-en-talca/32387170",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "---**Arriendo Departamento 1D/1B – Plaza Independencia 3**Se arrienda acogedor y funcional departamento ubicado en el edificio Plaza Independencia 3, ideal para una o dos personas.La propiedad cuenta con:* 1 dormitorio* 1 baño* Estacionamiento* BodegaSe entrega **semi amoblado**, incluyendo:* Cama* Comedor* Mesa de centro* Cocina completamente equipada para dos personasEl departamento destaca por su buena distribución y comodidad, listo para habitar. Ubicado en un entorno central y con excelente conectividad, cercano a servicios, comercio y áreas de interés.**Ideal para quienes buscan comodidad, ubicación y practicidad en un solo lugar.**---",
+    "description": "---**Arriendo Departamento 1D/1B – Plaza Independencia 3**Se arrienda acogedor y funcional departamento ubicado en el edificio Plaza Independencia 3, ideal para una o dos personas.La propiedad cuenta con:* 1 dormitorio* 1 baño* Estacionamiento* BodegaSe entrega **semi amoblado**, incluyendo:* Cama* Comedor* Mesa de centro* Cocina completamente equipada para dos personasEl departamento destaca por su buena distribución y comodidad, listo para habitar. Ubicado en un entorno central y con excelente conectividad, cercano a servicios, comercio y áreas de interés.**Ideal para quienes buscan comodidad, ubicación y practicidad en un solo lugar.**---",
+    "dormitorios": 1.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/71/70/32387170_90297a"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:32:56.589Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:32:56.589Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:32:56.589Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/f95151eeb033f847bd55fdcc8ad78d69.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/71/70/32387170_90297a"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 470000,
+    "precio_raw": "$470.000",
+    "precio_uf": null,
+    "price": "$470.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:32:56.589Z"
+    },
+    "publicador": "Tatiana Tapia Propiedades",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 380.0,
+    "superficie_util": null,
+    "tipo_propiedad": "departamento",
+    "title": "Departamento en arriendo de 1 dorm. en Talca",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-de-1-dorm-en-talca/32387170"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672cbb2af2a5f7e048a67"
+    },
+    "listing_id": "32387259",
+    "origen": "yapo",
+    "banos": 5.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-5d-5b-loteo-las-rastras/32387259",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "&amp;#55356;� Se vende o arrienda gran y preciosa casa en exclusivo condominio en Las Rastras, Km 5&amp;#55356;� Terreno urbanizado de 5.000 m², con caminos asfaltados hasta la misma casa.Características principales:• 🛏️ 5 dormitorios &amp;#43; un escritorio junto a la cocina.• 🚿 5 baños en total, incluyendo baño de servicio y baño de visitas.• 🔥 Calefacción por loza radiante con caldera a petróleo, ideal para el invierno.• 💧 Agua potable y pozo .• &amp;#55356;� Riego automático en todo el terreno, facilitando el mantenimiento.• 📐 345 m² construidos. • 🚗 Acceso directo con caminos pavimentados.$2.400.000UF 15.000",
+    "description": "&amp;#55356;� Se vende o arrienda gran y preciosa casa en exclusivo condominio en Las Rastras, Km 5&amp;#55356;� Terreno urbanizado de 5.000 m², con caminos asfaltados hasta la misma casa.Características principales:• 🛏️ 5 dormitorios &amp;#43; un escritorio junto a la cocina.• 🚿 5 baños en total, incluyendo baño de servicio y baño de visitas.• 🔥 Calefacción por loza radiante con caldera a petróleo, ideal para el invierno.• 💧 Agua potable y pozo .• &amp;#55356;� Riego automático en todo el terreno, facilitando el mantenimiento.• 📐 345 m² construidos. • 🚗 Acceso directo con caminos pavimentados.$2.400.000UF 15.000",
+    "dormitorios": 5.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/72/59/32387259_fa79c8"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:32:57.861Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:32:57.861Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:32:57.861Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/514e515ebc964e45c995ffb7f40c5075.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/72/59/32387259_fa79c8"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 2500000,
+    "precio_raw": "$2.500.000",
+    "precio_uf": null,
+    "price": "$2.500.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:32:57.861Z"
+    },
+    "publicador": "María Patricia Cepeda",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 50000.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Casa en arriendo de 5D 5B Loteo Las Rastras",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-5d-5b-loteo-las-rastras/32387259"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672d2b2af2a5f7e048a68"
+    },
+    "origen": "yapo",
+    "listing_id": "32387316",
+    "banos": 1.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-disponible-para-arriendo-o-venta-en-linares/32387316",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Linares",
+    "comuna_slug": "linares",
+    "descripcion": "CASA DISPONIBLE PARA ARRIENDO O VENTA EN LINARESCómoda y acogedora casa aislada, ubicada en un barrio seguro y tranquilo de Linares. La propiedad se encuentra recientemente remodelada y lista para habitar.Cuenta con un amplio terreno de 360 m², ideal para quienes buscan espacio, comodidad y tranquilidad. Dispone de área para jardín, patio extenso, estacionamiento para 3 o más vehículos y una terraza posterior techada, perfecta para disfrutar en familia durante todo el año.Distribución:Living – comedorCocina2 dormitorios1 bañoTerraza posterior techadaConexión para lavadoraPiso cerámico en la mayor parte de la viviendaSuperficie:Terreno: 360 m²Construcción: 80 m²Excelente ubicación y conectividad:Cercana a colegiosIglesiaBomberosComercio y CESFAMA 5 minutos del Hospital de LinaresA 8 minutos del centro y Plaza de ArmasValor de arriendo: $450.000 mensualesPrecio de venta: $80.000.000Una excelente oportunidad tanto para quienes buscan arrendar una vivienda cómoda y bien ubicada, como para quienes desean invertir o adquirir su hogar propio.Contáctame para más información o para coordinar una visita.Flor PerazaCorredora de Propiedades Disponible para arriendo o venta. Se evaluarán ambas alternativas.REQUISITO DE ARRIENDORequisitos para ArriendoPERSONA NATURAL DEPENDIENTE:- Acreditar renta superior a 3 veces el valor del arriendo- Fotocopia CI- 3 últimas liquidaciones de sueldo- Copia contrato de trabajo- Certificado de últimas 12 cotizaciones- Certificado de antecedentes- Certificado DicomCancelar lo siguiente:Mes de Arriendo (proporcional en base a la fecha de firma del contrato) &amp;#43; Mes de Garantía &amp;#43; 1/2 mes&amp;#43; IVA de arriendo por comisión CorredoraPERSONA NATURAL INDEPENDIENTE- Fotocopia CI- 3 últimas liquidaciones de Renta anual (formulario 22)- Certificado cuenta corriente bancaria- DicomSi no cuenta con algunos de los requisitos, puede presentar un Aval, para este caso, se solicitan los mismos antecedentes, además de Certificado de Residencia.",
+    "description": "CASA DISPONIBLE PARA ARRIENDO O VENTA EN LINARESCómoda y acogedora casa aislada, ubicada en un barrio seguro y tranquilo de Linares. La propiedad se encuentra recientemente remodelada y lista para habitar.Cuenta con un amplio terreno de 360 m², ideal para quienes buscan espacio, comodidad y tranquilidad. Dispone de área para jardín, patio extenso, estacionamiento para 3 o más vehículos y una terraza posterior techada, perfecta para disfrutar en familia durante todo el año.Distribución:Living – comedorCocina2 dormitorios1 bañoTerraza posterior techadaConexión para lavadoraPiso cerámico en la mayor parte de la viviendaSuperficie:Terreno: 360 m²Construcción: 80 m²Excelente ubicación y conectividad:Cercana a colegiosIglesiaBomberosComercio y CESFAMA 5 minutos del Hospital de LinaresA 8 minutos del centro y Plaza de ArmasValor de arriendo: $450.000 mensualesPrecio de venta: $80.000.000Una excelente oportunidad tanto para quienes buscan arrendar una vivienda cómoda y bien ubicada, como para quienes desean invertir o adquirir su hogar propio.Contáctame para más información o para coordinar una visita.Flor PerazaCorredora de Propiedades Disponible para arriendo o venta. Se evaluarán ambas alternativas.REQUISITO DE ARRIENDORequisitos para ArriendoPERSONA NATURAL DEPENDIENTE:- Acreditar renta superior a 3 veces el valor del arriendo- Fotocopia CI- 3 últimas liquidaciones de sueldo- Copia contrato de trabajo- Certificado de últimas 12 cotizaciones- Certificado de antecedentes- Certificado DicomCancelar lo siguiente:Mes de Arriendo (proporcional en base a la fecha de firma del contrato) &amp;#43; Mes de Garantía &amp;#43; 1/2 mes&amp;#43; IVA de arriendo por comisión CorredoraPERSONA NATURAL INDEPENDIENTE- Fotocopia CI- 3 últimas liquidaciones de Renta anual (formulario 22)- Certificado cuenta corriente bancaria- DicomSi no cuenta con algunos de los requisitos, puede presentar un Aval, para este caso, se solicitan los mismos antecedentes, además de Certificado de Residencia.",
+    "dormitorios": 2.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/73/16/32387316_2f40c2"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:33:04.790Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:33:04.790Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "linares",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "linares",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:33:04.790Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/a5ab4c0477789cbd4a375b0c22de99c9.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/73/16/32387316_2f40c2"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 450000,
+    "precio_raw": "$450.000",
+    "precio_uf": null,
+    "price": "$450.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:33:04.790Z"
+    },
+    "publicador": "Flor de los Santos Peraza",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 3600.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "CASA DISPONIBLE PARA ARRIENDO O VENTA EN LINARES",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-disponible-para-arriendo-o-venta-en-linares/32387316"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672d3b2af2a5f7e048a69"
+    },
+    "listing_id": "32387333",
+    "origen": "yapo",
+    "banos": 3.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/arrendamos-moderna-y-equipada-casa-en-las-rastras-talca/32387333",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Arrendamos moderna Casa en Exclusivo condominio de 10 propiedades en Las Rastras. Condominio camino al cerro 200 m2 total 140 m2 construidosCada casa cuenta con:* 3 Dormitorios, principal en suite con walking closet. * ⁠Sala de estar.* ⁠Living comedor. * ⁠3 baños completos.- Ventanas termopanel. - ⁠Cocina completamente equipada; horno eléctrico, campana, encimera, lavavajillas, horno microondas, muebles con cubierta de cuarzo.- ⁠Logia- ⁠2 estacionamientos.- ⁠Terrazas. - ⁠Áreas comunes con piscina, quincho, área verde. - ⁠Además cada casa cuenta con una bodega de 6 m2 (ubicadas en un área específica del condominio).- ⁠7 Estacionamientos de visita. - ⁠GGCC $65.000 aprox Ubicado en 20 Norte esquina 37 Oriente. Precio de Arriendo $1.000.000 (ggcc aparte) &amp;#43; mes de garantía &amp;#43; 50% de comisión de corretaje (por única vez)Agenda tu visita al &amp;#43;&amp;#43;CIMA PROPIEDADES",
+    "description": "Arrendamos moderna Casa en Exclusivo condominio de 10 propiedades en Las Rastras. Condominio camino al cerro 200 m2 total 140 m2 construidosCada casa cuenta con:* 3 Dormitorios, principal en suite con walking closet. * ⁠Sala de estar.* ⁠Living comedor. * ⁠3 baños completos.- Ventanas termopanel. - ⁠Cocina completamente equipada; horno eléctrico, campana, encimera, lavavajillas, horno microondas, muebles con cubierta de cuarzo.- ⁠Logia- ⁠2 estacionamientos.- ⁠Terrazas. - ⁠Áreas comunes con piscina, quincho, área verde. - ⁠Además cada casa cuenta con una bodega de 6 m2 (ubicadas en un área específica del condominio).- ⁠7 Estacionamientos de visita. - ⁠GGCC $65.000 aprox Ubicado en 20 Norte esquina 37 Oriente. Precio de Arriendo $1.000.000 (ggcc aparte) &amp;#43; mes de garantía &amp;#43; 50% de comisión de corretaje (por única vez)Agenda tu visita al &amp;#43;&amp;#43;CIMA PROPIEDADES",
+    "dormitorios": 3.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/73/33/32387333_488f7c"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:33:05.640Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:33:05.640Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:33:05.640Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/5fea28d704a4155aa3b108efc3509c91.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/73/33/32387333_488f7c"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 1000000,
+    "precio_raw": "$1.000.000",
+    "precio_uf": null,
+    "price": "$1.000.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:33:05.640Z"
+    },
+    "publicador": "Cima Propiedades",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 2000.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "ARRENDAMOS MODERNA Y EQUIPADA CASA EN LAS RASTRAS TALCA",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/arrendamos-moderna-y-equipada-casa-en-las-rastras-talca/32387333"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672d4b2af2a5f7e048a6a"
+    },
+    "listing_id": "32388239",
+    "origen": "yapo",
+    "banos": 5.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-7-dorm-en-talca/32388239",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "En venta - moderna y espectacular casa mediterránea, ubicada en Condominio Junquillar, kilómetro 6,5 del Camino Las Rastras. 7D &amp;#43; 5B Superficie: 5.000 m2 Construcción: 450 m2 Distribución:Primera planta: -Luminoso hall de acceso con vista a patio de luz. -Living y comedor con espectacular doble altura con conexión a terraza. -Cocina completamente amoblada y equipada con isla central, familyroom y despensa independiente. -Dormitorio de servicio con baño. -Logia techada y exterior. -Dormitorio principal en suite con walking clóset.-2 dormitorios con clóset. -Baño. -Sala de estar.-Baño de visita. Segunda planta: -Amplia y luminosa sala de estar. -3 dormitorios con clóset. -Baño. Equipamientos: -Piscina -Paisajismo (imagen referencial)-Riego automático Portón de acceso automático. -Terraza techada conectada con quincho. -Calefacción central. -Aires acondicionados en primer y segundo piso. -Estacionamientos techados. -Bodega/ sala de máquinas. -Ventanas termopanel PVC. Casa moderna con terminaciones de alto estándar, excelente iluminación y diseño, ubicada en el sector oriente de la comuna de Talca, en un entorno seguro, tranquilo y exclusivo, a una distancia de 5,5 kilómetros del Barrio Las Rastras. UF 17.500.¿Más información sobre esta propiedad? ¡Contáctanos! Ostoich &amp;amp; Manríquez Propiedades",
+    "description": "En venta - moderna y espectacular casa mediterránea, ubicada en Condominio Junquillar, kilómetro 6,5 del Camino Las Rastras. 7D &amp;#43; 5B Superficie: 5.000 m2 Construcción: 450 m2 Distribución:Primera planta: -Luminoso hall de acceso con vista a patio de luz. -Living y comedor con espectacular doble altura con conexión a terraza. -Cocina completamente amoblada y equipada con isla central, familyroom y despensa independiente. -Dormitorio de servicio con baño. -Logia techada y exterior. -Dormitorio principal en suite con walking clóset.-2 dormitorios con clóset. -Baño. -Sala de estar.-Baño de visita. Segunda planta: -Amplia y luminosa sala de estar. -3 dormitorios con clóset. -Baño. Equipamientos: -Piscina -Paisajismo (imagen referencial)-Riego automático Portón de acceso automático. -Terraza techada conectada con quincho. -Calefacción central. -Aires acondicionados en primer y segundo piso. -Estacionamientos techados. -Bodega/ sala de máquinas. -Ventanas termopanel PVC. Casa moderna con terminaciones de alto estándar, excelente iluminación y diseño, ubicada en el sector oriente de la comuna de Talca, en un entorno seguro, tranquilo y exclusivo, a una distancia de 5,5 kilómetros del Barrio Las Rastras. UF 17.500.¿Más información sobre esta propiedad? ¡Contáctanos! Ostoich &amp;amp; Manríquez Propiedades",
+    "dormitorios": 7.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/82/39/32388239_5c50e7"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:33:06.403Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:33:06.403Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:33:06.403Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/399b6b1c951ea3d41fd9aa02d55d96f1.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/82/39/32388239_5c50e7"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": null,
+    "precio_raw": "UF 50.0",
+    "precio_uf": 50.0,
+    "price": "UF 50.0",
+    "processed_at": {
+      "$date": "2026-07-14T17:33:06.403Z"
+    },
+    "publicador": "María Pia Muñoz",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 50000.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Casa en arriendo de 7 dorm. en Talca",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-7-dorm-en-talca/32388239"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672d5b2af2a5f7e048a6b"
+    },
+    "listing_id": "32391134",
+    "origen": "yapo",
+    "banos": 3.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-4-dorm-sector-oriente-en-talca/32391134",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Se arrienda amplia casa en Villa San Miguel – TalcaUbicada en excelente sector residencial, a pasos de la Universidad Católica del Maule, con acceso por Parque Universitario. Conectividad privilegiada entre Av. San Miguel y 2 Norte.La propiedad cuenta con:* 180 m² construidos* 4 dormitorios* 3 baños* Pieza de servicio con baño* Amplia terraza* Piscina* Estacionamiento* BodegaAdemás, dispone de calefacción central a petróleo, ideal para el invierno.💰 Valor arriendo: $1.000.000Propiedad ideal para familias que buscan comodidad, espacios amplios y una excelente ubicación cercana a servicios, áreas verdes y conectividad.",
+    "description": "Se arrienda amplia casa en Villa San Miguel – TalcaUbicada en excelente sector residencial, a pasos de la Universidad Católica del Maule, con acceso por Parque Universitario. Conectividad privilegiada entre Av. San Miguel y 2 Norte.La propiedad cuenta con:* 180 m² construidos* 4 dormitorios* 3 baños* Pieza de servicio con baño* Amplia terraza* Piscina* Estacionamiento* BodegaAdemás, dispone de calefacción central a petróleo, ideal para el invierno.💰 Valor arriendo: $1.000.000Propiedad ideal para familias que buscan comodidad, espacios amplios y una excelente ubicación cercana a servicios, áreas verdes y conectividad.",
+    "dormitorios": 4.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/39/11/34/32391134_3f7fae"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:33:07.517Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:33:07.517Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:33:07.517Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/055c295590be1c67d5c1e368c8225589.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/39/11/34/32391134_3f7fae"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 1000000,
+    "precio_raw": "$1.000.000",
+    "precio_uf": null,
+    "price": "$1.000.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:33:07.517Z"
+    },
+    "publicador": "María Patricia Cepeda",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 4500.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Casa en arriendo de 4 dorm. sector oriente en Talca",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-de-4-dorm-sector-oriente-en-talca/32391134"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672e2b2af2a5f7e048a6e"
+    },
+    "origen": "yapo",
+    "listing_id": "32644406",
+    "banos": 2.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento-cumbres-de-las-rastras/32644406",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Departamento ubicado en Condominio Cumbres de Las Rastras, localizado en un sector privilegiado (a pasos de la UCM) y de alta plusvalía en la ciudad de Talca, en un entorno amplio, a escasos minutos del centro de la ciudad, supermercados Jumbo Las Rastras, Lider, colegios, servicentros, a pasos de la Universidad Católica del Maule, Inacap. 3 dormitorios disponibles 2 baños. 1 estacionamiento. 3 Dormitorios 2 Baños",
+    "description": "Departamento ubicado en Condominio Cumbres de Las Rastras, localizado en un sector privilegiado (a pasos de la UCM) y de alta plusvalía en la ciudad de Talca, en un entorno amplio, a escasos minutos del centro de la ciudad, supermercados Jumbo Las Rastras, Lider, colegios, servicentros, a pasos de la Universidad Católica del Maule, Inacap. 3 dormitorios disponibles 2 baños. 1 estacionamiento. 3 Dormitorios 2 Baños",
+    "dormitorios": 3.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/64/44/06/32644406_13d09a4"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:33:20.387Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:33:20.387Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:33:20.387Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/74ef03ec5f0bfe92d700053787ea4fcf.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/64/44/06/32644406_13d09a4"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 400000,
+    "precio_raw": "$400.000",
+    "precio_uf": null,
+    "price": "$400.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:33:20.387Z"
+    },
+    "publicador": "Tomás Verdugo",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "16098241",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": null,
+    "superficie_util": null,
+    "tipo_propiedad": "departamento",
+    "title": "Arriendo Departamento – Cumbres de Las Rastras",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento-cumbres-de-las-rastras/32644406"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672e2b2af2a5f7e048a6f"
+    },
+    "origen": "yapo",
+    "listing_id": "32645282",
+    "banos": 1.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/se-arrienda-casa-amoblada-a-pasos-de-la-universidad-de-talca/32645282",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Se arrienda casa completamente amoblada para estudiantes, a pasos de la Universidad de TALCA. 11 1/2 Oriente C Lomas de Lircay Consta de cuatro dormitorios Un baño Living comedor Entrada de vehículo Amplio patio",
+    "description": "Se arrienda casa completamente amoblada para estudiantes, a pasos de la Universidad de TALCA. 11 1/2 Oriente C Lomas de Lircay Consta de cuatro dormitorios Un baño Living comedor Entrada de vehículo Amplio patio",
+    "dormitorios": 4.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/64/52/82/32645282_6daeba2"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:33:20.459Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:33:20.459Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:33:20.459Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/ef6b7f31524532a3490357b7e8ccca5e.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/64/52/82/32645282_6daeba2"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 500000,
+    "precio_raw": "$500.000",
+    "precio_uf": null,
+    "price": "$500.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:33:20.459Z"
+    },
+    "publicador": "Tomás Verdugo",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "16098241",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": null,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Arriendo de Casas en Talca | Se Arrienda Casa Amoblada a Pasos de la Universidad de Talca 4 Dormitorios por CLP 500000.00",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/se-arrienda-casa-amoblada-a-pasos-de-la-universidad-de-talca/32645282"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672e2b2af2a5f7e048a71"
+    },
+    "origen": "yapo",
+    "listing_id": "32645311",
+    "banos": 1.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-casa-amoblada-a-pasos-ucm-inacap/32645311",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Se arrienda casa completamente amoblada para estudiantes, a pasos de la Universidad Católica e Inacap 6 Sur 32 Oriente Consta de cuatro dormitorios Un baño Living comedor Sala de estudios Amplio patio Valor 450.000.-",
+    "description": "Se arrienda casa completamente amoblada para estudiantes, a pasos de la Universidad Católica e Inacap 6 Sur 32 Oriente Consta de cuatro dormitorios Un baño Living comedor Sala de estudios Amplio patio Valor 450.000.-",
+    "dormitorios": 4.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/64/53/11/32645311_04f9f42"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:33:20.685Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:33:20.685Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:33:20.685Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/03f468a089bf1c12254c1f1604d8912d.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/64/53/11/32645311_04f9f42"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 450000,
+    "precio_raw": "$450.000",
+    "precio_uf": null,
+    "price": "$450.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:33:20.685Z"
+    },
+    "publicador": "Tomás Verdugo",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "16098241",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": null,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Arriendo Casa Amoblada a pasos UCM - INACAP",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-casa-amoblada-a-pasos-ucm-inacap/32645311"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672edb2af2a5f7e048a75"
+    },
+    "listing_id": "32457735",
+    "origen": "yapo",
+    "banos": 1.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-de-1d-1b-1e-1b-centro-en-talca/32457735",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "ARRIENDO DISPONIBLE | CENTRO DE TALCA Departamento en Edificio San FranciscoUbicado en pleno centro de Talca, a pasos de Plaza de Armas, comercio, servicios y locomoción.Características del departamento:1 dormitorio1 bañoPiso flotanteCocina americana equipada con:Horno eléctricoEncimera eléctricaCampanaLiving comedorIncluye estacionamiento y bodegaÁreas comunes del edificio:PiscinaQuinchoSalón multiusoSala de cineSalón de poolSala de taca-taca y ping-pongGimnasioLavanderíaEstacionamientos de visitaValor arriendo: $390.000 Gastos comunes aproximados: $75.000Ideal para quienes buscan comodidad, excelente conectividad y espacios comunes para disfrutar.Consultas y visitas: WhatsApp",
+    "description": "ARRIENDO DISPONIBLE | CENTRO DE TALCA Departamento en Edificio San FranciscoUbicado en pleno centro de Talca, a pasos de Plaza de Armas, comercio, servicios y locomoción.Características del departamento:1 dormitorio1 bañoPiso flotanteCocina americana equipada con:Horno eléctricoEncimera eléctricaCampanaLiving comedorIncluye estacionamiento y bodegaÁreas comunes del edificio:PiscinaQuinchoSalón multiusoSala de cineSalón de poolSala de taca-taca y ping-pongGimnasioLavanderíaEstacionamientos de visitaValor arriendo: $390.000 Gastos comunes aproximados: $75.000Ideal para quienes buscan comodidad, excelente conectividad y espacios comunes para disfrutar.Consultas y visitas: WhatsApp",
+    "dormitorios": 1.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/45/77/35/32457735_3dd735"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:33:31.834Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:33:31.834Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:33:31.834Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/b1df7585d384e8a117f68ca253395b9e.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/45/77/35/32457735_3dd735"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 390000,
+    "precio_raw": "$390.000",
+    "precio_uf": null,
+    "price": "$390.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:33:31.834Z"
+    },
+    "publicador": "FDB Propiedades",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 450.0,
+    "superficie_util": null,
+    "tipo_propiedad": "departamento",
+    "title": "Departamento en Arriendo de 1D 1B 1E 1B Centro en Talca",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-de-1d-1b-1e-1b-centro-en-talca/32457735"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672eeb2af2a5f7e048a76"
+    },
+    "origen": "yapo",
+    "listing_id": "32526913",
+    "banos": 2.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-casa-3-hab-villa-bicentenario/32526913",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Te presentamos esta casa en arriendo ubicada en la comuna de Talca, específicamente en el sector de Villa Bicentenario. Con una superficie total de 84 m2 y un terreno de 132 m2, esta propiedad cuenta con 3 dormitorios y 2 baños, perfecta para una familia que busca comodidad y amplitud.La casa, de 2 pisos, ofrece un ambiente acogedor y funcional, ideal para disfrutar en cada rincón. Además, cuenta con calefacción de aire caliente/acondicionado, asegurando un clima agradable durante todo el año. Su ubicación en 31 oriente A 3589 te brinda la tranquilidad de un barrio residencial, cercano a comercios, colegios y áreas verdes.No pierdas la oportunidad de vivir en este hogar que reúne todas las características que buscas. Contáctanos para más información y agenda una visita para conocer este lugar que puede ser tu próximo hogar.",
+    "description": "Te presentamos esta casa en arriendo ubicada en la comuna de Talca, específicamente en el sector de Villa Bicentenario. Con una superficie total de 84 m2 y un terreno de 132 m2, esta propiedad cuenta con 3 dormitorios y 2 baños, perfecta para una familia que busca comodidad y amplitud.La casa, de 2 pisos, ofrece un ambiente acogedor y funcional, ideal para disfrutar en cada rincón. Además, cuenta con calefacción de aire caliente/acondicionado, asegurando un clima agradable durante todo el año. Su ubicación en 31 oriente A 3589 te brinda la tranquilidad de un barrio residencial, cercano a comercios, colegios y áreas verdes.No pierdas la oportunidad de vivir en este hogar que reúne todas las características que buscas. Contáctanos para más información y agenda una visita para conocer este lugar que puede ser tu próximo hogar.",
+    "dormitorios": 3.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/52/69/13/32526913_8263f1"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:33:32.773Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:33:32.773Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:33:32.773Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/58400edbf0a7a3f1f2cc0016eab04261.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/52/69/13/32526913_8263f1"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 420000,
+    "precio_raw": "$420.000",
+    "precio_uf": null,
+    "price": "$420.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:33:32.773Z"
+    },
+    "publicador": "Ramiro Inversiones SpA",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 1320.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Arriendo casa 3 hab. Villa Bicentenario",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/arriendo-casa-3-hab-villa-bicentenario/32526913"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672f9b2af2a5f7e048a78"
+    },
+    "listing_id": "32400056",
+    "origen": "yapo",
+    "banos": 2.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento-edificio-abel-bravo-centro/32400056",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Se arrienda acogedor departamento en Dos oriente 1059, en el centro de Talca. Este inmueble cuenta con 1 dormitorio, ideal para una persona soltera o una pareja. Dispone de 2 baños, lo que brinda mayor comodidad a los residentes. Con una superficie construida de 60 m2, ofrece un espacio compacto y funcional.La orientación del departamento es hacia el Oriente, permitiendo la entrada de luz natural durante la mañana y una agradable atmósfera luminosa. Se trata de un departamento tipo un ambiente, que brinda flexibilidad para adaptar diferentes ambientes según las necesidades de sus ocupantes.Con una ubicación céntrica, este departamento en arriendo se encuentra en una zona conveniente de Talca, cercano a comercios, servicios y transporte público. Una excelente opción para quienes buscan comodidad y practicidad en su estilo de vida.",
+    "description": "Se arrienda acogedor departamento en Dos oriente 1059, en el centro de Talca. Este inmueble cuenta con 1 dormitorio, ideal para una persona soltera o una pareja. Dispone de 2 baños, lo que brinda mayor comodidad a los residentes. Con una superficie construida de 60 m2, ofrece un espacio compacto y funcional.La orientación del departamento es hacia el Oriente, permitiendo la entrada de luz natural durante la mañana y una agradable atmósfera luminosa. Se trata de un departamento tipo un ambiente, que brinda flexibilidad para adaptar diferentes ambientes según las necesidades de sus ocupantes.Con una ubicación céntrica, este departamento en arriendo se encuentra en una zona conveniente de Talca, cercano a comercios, servicios y transporte público. Una excelente opción para quienes buscan comodidad y practicidad en su estilo de vida.",
+    "dormitorios": 1.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/40/00/56/32400056_8fb0ec"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:33:43.189Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:33:43.189Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:33:43.189Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/b63bb726a2bf9fda174c9df8e7b5cc03.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/40/00/56/32400056_8fb0ec"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 370000,
+    "precio_raw": "$370.000",
+    "precio_uf": null,
+    "price": "$370.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:33:43.189Z"
+    },
+    "publicador": "Tatiana Tamara tapia",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 600.0,
+    "superficie_util": null,
+    "tipo_propiedad": "departamento",
+    "title": "Arriendo departamento Edificio Abel Bravo centro",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/arriendo-departamento-edificio-abel-bravo-centro/32400056"
+  },
+  {
+    "_id": {
+      "$oid": "6a5672f9b2af2a5f7e048a7a"
+    },
+    "listing_id": "32387142",
+    "origen": "yapo",
+    "banos": 2.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-uno-norte-ideal-para-instituciones-y-hospedajes/32387142",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Casa disponible en arriendo, ubicada en un entorno residencial consolidado. Con una superficie total de 445 m² y una superficie útil de 163 m², esta propiedad ofrece amplios espacios distribuidos en dos niveles.El diseño contempla siete dormitorios, lo que permite una gran versatilidad para familias numerosas o quienes requieran áreas de trabajo o estudio. Cuenta con dos baños completos, ambos con bañera y ventilación natural, además de dos bodegas que facilitan el almacenamiento y organización.La cocina presenta mobiliario funcional y acceso directo a las áreas comunes. El living y comedor se conectan con el exterior mediante ventanales, permitiendo una integración con el jardín y patio. La casa admite mascotas, lo que la convierte en una opción adecuada para quienes buscan un hogar que contemple este aspecto.El acceso principal está rodeado de vegetación y el patio ofrece espacios para actividades al aire libre.Habilitada para uso de oficinas, cuenta con permiso municipal de cambio de destino. Ubicada a 15mts de esquina alameda con 1 oriente.El sector presenta una urbanización normal, con tendido eléctrico aéreo, dotación de agua potable, alcantarillado, tv cable yteléfono. Accesos pavimentados.Buen equipamiento cercano de todo tipo y escala. El sector cuenta con buena conectividadLa principal vía de acceso al sector céntrico es la 4 Norte a 20m de la propiedad. Alto tráfico de transporte público en Calle4 Norte a metros de la propiedad",
+    "description": "Casa disponible en arriendo, ubicada en un entorno residencial consolidado. Con una superficie total de 445 m² y una superficie útil de 163 m², esta propiedad ofrece amplios espacios distribuidos en dos niveles.El diseño contempla siete dormitorios, lo que permite una gran versatilidad para familias numerosas o quienes requieran áreas de trabajo o estudio. Cuenta con dos baños completos, ambos con bañera y ventilación natural, además de dos bodegas que facilitan el almacenamiento y organización.La cocina presenta mobiliario funcional y acceso directo a las áreas comunes. El living y comedor se conectan con el exterior mediante ventanales, permitiendo una integración con el jardín y patio. La casa admite mascotas, lo que la convierte en una opción adecuada para quienes buscan un hogar que contemple este aspecto.El acceso principal está rodeado de vegetación y el patio ofrece espacios para actividades al aire libre.Habilitada para uso de oficinas, cuenta con permiso municipal de cambio de destino. Ubicada a 15mts de esquina alameda con 1 oriente.El sector presenta una urbanización normal, con tendido eléctrico aéreo, dotación de agua potable, alcantarillado, tv cable yteléfono. Accesos pavimentados.Buen equipamiento cercano de todo tipo y escala. El sector cuenta con buena conectividadLa principal vía de acceso al sector céntrico es la 4 Norte a 20m de la propiedad. Alto tráfico de transporte público en Calle4 Norte a metros de la propiedad",
+    "dormitorios": 7.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/71/42/32387142_7545a2"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:33:43.499Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:33:43.499Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:33:43.499Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/82cda19578cbe8b0970db41055c676c2.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/38/71/42/32387142_7545a2"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 1500000,
+    "precio_raw": "$1.500.000",
+    "precio_uf": null,
+    "price": "$1.500.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:33:43.499Z"
+    },
+    "publicador": "Díaz y Asociados Ltda.",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 4450.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "Casa En Uno Norte, Ideal Para Instituciones Y Hospedajes.",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-uno-norte-ideal-para-instituciones-y-hospedajes/32387142"
+  },
+  {
+    "_id": {
+      "$oid": "6a567304b2af2a5f7e048a7f"
+    },
+    "listing_id": "32636927",
+    "origen": "yapo",
+    "banos": 2.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-sector-montegrande-villa-alegre/32636927",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Villa Alegre",
+    "comuna_slug": "villa-alegre",
+    "descripcion": "Se arrienda excelente casa ubicada en el sector Montegrande de Villa Alegre, en un entorno tranquilo y familiar, ideal para quienes buscan comodidad y buena distribución de espacios. Distribución: 3 dormitorios 2 baños Living comedor Cocina Logia Estacionamiento techado Valor de arriendo: $580.000 Requisitos: Mes de garantía Mes de arriendo por adelantado Aval Estación de Villa Alegre, montegrande Contáctanos para más información o coordinar una visita. Danilo Aravena",
+    "description": "Se arrienda excelente casa ubicada en el sector Montegrande de Villa Alegre, en un entorno tranquilo y familiar, ideal para quienes buscan comodidad y buena distribución de espacios. Distribución: 3 dormitorios 2 baños Living comedor Cocina Logia Estacionamiento techado Valor de arriendo: $580.000 Requisitos: Mes de garantía Mes de arriendo por adelantado Aval Estación de Villa Alegre, montegrande Contáctanos para más información o coordinar una visita. Danilo Aravena",
+    "dormitorios": 3.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/63/69/27/32636927_a118a10"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:33:54.563Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:33:54.563Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "villa-alegre",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "villa-alegre",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:33:54.563Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/40819535589d17e5d0782ad5d8d1502c.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/63/69/27/32636927_a118a10"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 580000,
+    "precio_raw": "$580.000",
+    "precio_uf": null,
+    "price": "$580.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:33:54.563Z"
+    },
+    "publicador": "Danilo Aravena",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17780921",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 10000.0,
+    "superficie_util": null,
+    "tipo_propiedad": "casa",
+    "title": "CASA EN ARRIENDO SECTOR MONTEGRANDE, VILLA ALEGRE",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-casas/casa-en-arriendo-sector-montegrande-villa-alegre/32636927"
+  },
+  {
+    "_id": {
+      "$oid": "6a567329b2af2a5f7e048a8e"
+    },
+    "listing_id": "32666492",
+    "origen": "yapo",
+    "banos": 1.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/comodo-departamento-cercano-a-mall-go-florida/32666492",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "SE ARRIENDA DEPARTAMENTO – VALLES DE LA FLORIDACómodo y práctico | Bien distribuido | Buena ubicación * 3 dormitorios * 1 baño completo* Living‑comedor amplio* Cocina funcional* 1 estacionamiento * El condominio cuenta con piscinaValor: $420.000 mensuales &amp;#43; honorarios corretaje Gastos comunes incluidosIdeal para vivir tranquilo, disfrutar instalaciones y cerca de todo.Consultas y visitasPresencia Propiedades",
+    "description": "SE ARRIENDA DEPARTAMENTO – VALLES DE LA FLORIDACómodo y práctico | Bien distribuido | Buena ubicación * 3 dormitorios * 1 baño completo* Living‑comedor amplio* Cocina funcional* 1 estacionamiento * El condominio cuenta con piscinaValor: $420.000 mensuales &amp;#43; honorarios corretaje Gastos comunes incluidosIdeal para vivir tranquilo, disfrutar instalaciones y cerca de todo.Consultas y visitasPresencia Propiedades",
+    "dormitorios": 3.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/66/64/92/32666492_20b7c8"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:34:31.269Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:34:31.269Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:34:31.269Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/5f7cd247ad0f65f720a01ac0ecc4b344.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/66/64/92/32666492_20b7c8"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 420000,
+    "precio_raw": "$420.000",
+    "precio_uf": null,
+    "price": "$420.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:34:31.269Z"
+    },
+    "publicador": "Presencia Propiedades",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": null,
+    "superficie_util": null,
+    "tipo_propiedad": "departamento",
+    "title": "COMODO DEPARTAMENTO CERCANO A MALL GO FLORIDA",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/comodo-departamento-cercano-a-mall-go-florida/32666492"
+  },
+  {
+    "_id": {
+      "$oid": "6a567329b2af2a5f7e048a8f"
+    },
+    "origen": "yapo",
+    "listing_id": "32405203",
+    "banos": 3.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-amoblado-en-arriendo-de-2-dorm-en-talca/32405203",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "Se arrienda precioso departamento full amoblado, recientemente remodelado casi en su totalidad, ubicado en piso 14.Cuenta con:• 2 dormitorios• 2 baños• Cocina separada• Living-comedor• Balcón• 1 estacionamiento subterráneo en nivel -1Departamento muy cómodo, luminoso y en excelente estado, ideal para quienes buscan comodidad y una propiedad lista para habitar.$650.000 valor arriendo mensual Gastos comunes aproximados: $80.000.-",
+    "description": "Se arrienda precioso departamento full amoblado, recientemente remodelado casi en su totalidad, ubicado en piso 14.Cuenta con:• 2 dormitorios• 2 baños• Cocina separada• Living-comedor• Balcón• 1 estacionamiento subterráneo en nivel -1Departamento muy cómodo, luminoso y en excelente estado, ideal para quienes buscan comodidad y una propiedad lista para habitar.$650.000 valor arriendo mensual Gastos comunes aproximados: $80.000.-",
+    "dormitorios": 2.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/40/52/03/32405203_28e941"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:34:31.470Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:34:31.470Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:34:31.470Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/217da66be1e28c7b8ef8bd2b6388640c.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/40/52/03/32405203_28e941"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 600000,
+    "precio_raw": "$600.000",
+    "precio_uf": null,
+    "price": "$600.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:34:31.470Z"
+    },
+    "publicador": "María Patricia Cepeda",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": null,
+    "superficie_util": null,
+    "tipo_propiedad": "departamento",
+    "title": "Departamento amoblado en arriendo de 2 dorm. en Talca",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-amoblado-en-arriendo-de-2-dorm-en-talca/32405203"
+  },
+  {
+    "_id": {
+      "$oid": "6a567332b2af2a5f7e048a91"
+    },
+    "listing_id": "32405246",
+    "origen": "yapo",
+    "banos": 1.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-de-1d-1b-1e-1b-centro-en-talca/32405246",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "ARRIENDO DISPONIBLE | CENTRO DE TALCA Departamento en Edificio San FranciscoUbicado en pleno centro de Talca, a pasos de Plaza de Armas, comercio, servicios y locomoción.Características del departamento:1 dormitorio amplio1 bañoWalking closetPiso flotanteCocina americana equipada con:Horno eléctricoEncimera eléctrica•CampanaMicroondasLiving comedorCortinas instaladas en living y dormitorioTerraza con malla de protecciónIncluye estacionamiento y bodegaÁreas comunes del edificio:PiscinaQuinchoSalón multiusoSala de cineSalón de poolSala de taca-taca y ping-pongGimnasioLavanderíaEstacionamientos de visitaValor arriendo: $400.000 contrato en uf &amp;#43; Gastos comunes aproximados: $75.000Ideal para quienes buscan comodidad, excelente conectividad y espacios comunes para disfrutar.Consultas y visitas: whatsApp",
+    "description": "ARRIENDO DISPONIBLE | CENTRO DE TALCA Departamento en Edificio San FranciscoUbicado en pleno centro de Talca, a pasos de Plaza de Armas, comercio, servicios y locomoción.Características del departamento:1 dormitorio amplio1 bañoWalking closetPiso flotanteCocina americana equipada con:Horno eléctricoEncimera eléctrica•CampanaMicroondasLiving comedorCortinas instaladas en living y dormitorioTerraza con malla de protecciónIncluye estacionamiento y bodegaÁreas comunes del edificio:PiscinaQuinchoSalón multiusoSala de cineSalón de poolSala de taca-taca y ping-pongGimnasioLavanderíaEstacionamientos de visitaValor arriendo: $400.000 contrato en uf &amp;#43; Gastos comunes aproximados: $75.000Ideal para quienes buscan comodidad, excelente conectividad y espacios comunes para disfrutar.Consultas y visitas: whatsApp",
+    "dormitorios": 1.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/40/52/46/32405246_f4bbd1"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:34:40.387Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:34:40.387Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:34:40.387Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/7aeb2d796c4cc552e400e1413321bf4c.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/40/52/46/32405246_f4bbd1"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 400000,
+    "precio_raw": "$400.000",
+    "precio_uf": null,
+    "price": "$400.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:34:40.387Z"
+    },
+    "publicador": "FDB Propiedades",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 480.0,
+    "superficie_util": null,
+    "tipo_propiedad": "departamento",
+    "title": "Departamento en Arriendo de 1D 1B 1E 1B Centro en Talca",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/departamento-en-arriendo-de-1d-1b-1e-1b-centro-en-talca/32405246"
+  },
+  {
+    "_id": {
+      "$oid": "6a567333b2af2a5f7e048a92"
+    },
+    "listing_id": "32405292",
+    "origen": "yapo",
+    "banos": 3.0,
+    "canonical_url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/depto-en-arriendo-de-3d-3b-1e-1b-centro-en-alameda-talca/32405292",
+    "classification": {
+      "state": "INCIERTO",
+      "final_state": "INCIERTO",
+      "confidence": 0.5,
+      "score": 0.5,
+      "reason": "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}; {'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}",
+      "evidence": [
+        "{'señal': 'broker_brand', 'peso': 4, 'motivo': 'broker_brand detectado en HTML'}",
+        "{'señal': 'heuristica_broker', 'peso': 2, 'motivo': 'heurística local de corredor'}"
+      ],
+      "version": "yapo-v5-targeted",
+      "decision_source": "rules_v5",
+      "deepseek_status": "NOT_NEEDED",
+      "semantic_check": {
+        "status": "VALID"
+      }
+    },
+    "comuna": "Talca",
+    "comuna_slug": "talca",
+    "descripcion": "DEPARTAMENTO EN ARRIENDO | EDIFICIO MARBELLA – TALCA Oferta Antes $750.000 , Hoy Sólo por $650.000 más gastos comunesExcelente oportunidad de arriendo en un exclusivo sector residencial de Talca, ubicado en Alameda, 4 Oriente con 4 Norte, con conectividad directa al centro de la ciudad y cercano a servicios, comercio y áreas verdes.Características del departamento:Orientación norte y orienteAmplio living comedorCocina central independiente y totalmente equipadaBaño de visitas3 habitacionesDormitorio principal en suite con walking closet1 baño adicional para dormitorios2 terrazasTerraza integrada y completamente cerradaSegunda terraza abiertaEstacionamientoBodegaÁreas comunes:PiscinaQuincho en azoteaConserjería 24 horasIdeal para quienes buscan vivir en un entorno residencial, tranquilo, seguro y con excelente ubicación.Contacto WhatsApp",
+    "description": "DEPARTAMENTO EN ARRIENDO | EDIFICIO MARBELLA – TALCA Oferta Antes $750.000 , Hoy Sólo por $650.000 más gastos comunesExcelente oportunidad de arriendo en un exclusivo sector residencial de Talca, ubicado en Alameda, 4 Oriente con 4 Norte, con conectividad directa al centro de la ciudad y cercano a servicios, comercio y áreas verdes.Características del departamento:Orientación norte y orienteAmplio living comedorCocina central independiente y totalmente equipadaBaño de visitas3 habitacionesDormitorio principal en suite con walking closet1 baño adicional para dormitorios2 terrazasTerraza integrada y completamente cerradaSegunda terraza abiertaEstacionamientoBodegaÁreas comunes:PiscinaQuincho en azoteaConserjería 24 horasIdeal para quienes buscan vivir en un entorno residencial, tranquilo, seguro y con excelente ubicación.Contacto WhatsApp",
+    "dormitorios": 3.0,
+    "enlaces_fotos": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/40/52/92/32405292_b1aff3"
+    ],
+    "estacionamientos": null,
+    "fecha_scraping": {
+      "$date": "2026-07-14T17:34:41.682Z"
+    },
+    "gestion": {
+      "ejecutivo_id": "699653a96a099d6e9612d519",
+      "ejecutivo_nombre": "Paula Morales",
+      "ejecutivo_email": "pmorales@procasa.cl",
+      "ejecutivo_asignado": "Paula Morales",
+      "fecha_asignacion": {
+        "$date": "2026-07-14T17:34:41.682Z"
+      },
+      "asignacion_version": "v1_targeted_yapo",
+      "asignacion_comuna_slug": "talca",
+      "classification_at_assignment": "INCIERTO",
+      "assignment_weight": 1.0,
+      "estado": "NUEVO",
+      "historial_asignaciones": [
+        {
+          "ejecutivo_id": "699653a96a099d6e9612d519",
+          "ejecutivo_nombre": "Paula Morales",
+          "comuna_slug": "talca",
+          "classification_state": "INCIERTO",
+          "assigned_at": {
+            "$date": "2026-07-14T17:34:41.682Z"
+          },
+          "assignment_version": "v1_targeted_yapo"
+        }
+      ]
+    },
+    "html_path": "html_dumps/a09d3e7050a4465774e99c0a712c0240.html",
+    "images": [
+      "https://photos.encuentra24.com/t_or_fh_l/f_auto/v1/cl/32/40/52/92/32405292_b1aff3"
+    ],
+    "operacion": "arriendo",
+    "precio_clp": 650000,
+    "precio_raw": "$650.000",
+    "precio_uf": null,
+    "price": "$650.000",
+    "processed_at": {
+      "$date": "2026-07-14T17:34:41.682Z"
+    },
+    "publicador": "FDB Propiedades",
+    "region": "Maule",
+    "run_id": "yapo_paula_20260714",
+    "schema_version": "crm_v1",
+    "seller_profile_id": "17631803",
+    "source": "targeted_owner_hunt",
+    "source_portal": "yapo",
+    "superficie_total": 1450.0,
+    "superficie_util": null,
+    "tipo_propiedad": "departamento",
+    "title": "Depto en Arriendo de 3D 3B 1E 1B Centro, en Alameda Talca",
+    "url": "https://www.yapo.cl/bienes-raices-alquiler-apartamentos/depto-en-arriendo-de-3d-3b-1e-1b-centro-en-alameda-talca/32405292"
+  }
+]

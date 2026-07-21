@@ -1,0 +1,24 @@
+[
+  {
+    "_id": "6a5cdd73c9eccc5013ed3873",
+    "source_event_id": "legacy:2a896b7c446e1c16005bc46febedcb0f097be2540dd659cdf932bf039b9cd09d",
+    "action": "message_sent",
+    "actor_email_snapshot": "sensignia@procasa.cl",
+    "actor_name_snapshot": "Susana Ensignia",
+    "actor_user_id": "6989c6309dd2ba54e478196b",
+    "channel": "wa",
+    "contact_effective": false,
+    "credited": false,
+    "event_id": "migration-2a896b7c446e1c16005bc46febedcb0f",
+    "event_type": "legacy_observation",
+    "legacy_inferred": true,
+    "local_date": "2026-07-16",
+    "migrated_at": "2026-07-19 14:21:39.457000",
+    "migration_version": "captacion_legacy_v1",
+    "occurred_at": "2026-07-16 19:27:40.446000",
+    "property_id": "6a54fd6cb2af2a5f7e048446",
+    "result": "opened_app",
+    "source_system": "gestion.actividades",
+    "timezone": "America/Santiago"
+  }
+]

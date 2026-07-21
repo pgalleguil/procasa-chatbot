@@ -616,6 +616,62 @@ def query_filters(
     }
 
 
+def query_commercial_filter_options() -> dict:
+    """Complete filter options for commercial dashboard selectors.
+    Returns options for: offices, executives, sources, operations, property_types,
+    communes, properties, temperatures, assignment states.
+    Reads from active leads universe. No sensitive data exposed.
+    """
+    db = get_db()
+    active = build_active_filter()
+
+    def _values_from_field(field_expr: str, null_label: str = "Sin informacion") -> list:
+        pipeline = [
+            {"$match": active},
+            {"$addFields": {"_val": field_expr}},
+            {"$group": {"_id": {"$ifNull": ["$_val", null_label]}, "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$project": {"value": "$_id", "label": "$_id", "count": 1, "_id": 0}},
+        ]
+        return list(db["leads"].aggregate(pipeline))
+
+    def _executives_from_active() -> list:
+        pipeline = [
+            {"$match": active},
+            {"$addFields": {"_ex": {"$ifNull": ["$ejecutivo_asignado", "Sin Asignar"]}}},
+            {"$group": {"_id": "$_ex", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$project": {"value": "$_id", "label": "$_id", "count": 1, "_id": 0}},
+        ]
+        return list(db["leads"].aggregate(pipeline))
+
+    def _properties_from_active() -> list:
+        pipeline = [
+            {"$match": active},
+            {"$addFields": {"_code": {"$ifNull": ["$prospecto.codigo", ""]}}},
+            {"$match": {"_code": {"$ne": ""}}},
+            {"$group": {"_id": "$_code", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$project": {"value": "$_id", "label": "$_id", "count": 1, "_id": 0}},
+        ]
+        return list(db["leads"].aggregate(pipeline))
+
+    return {
+        "executives": _executives_from_active(),
+        "sources": _values_from_field({"$ifNull": ["$prospecto.origen", "Sin informacion"]}),
+        "operations": _values_from_field({"$ifNull": ["$prospecto.operacion", "Sin informacion"]}),
+        "property_types": _values_from_field({"$ifNull": ["$prospecto.tipo", "Sin informacion"]}),
+        "communes": _values_from_field({"$ifNull": ["$prospecto.comuna", "Sin informacion"]}),
+        "properties": _properties_from_active(),
+        "temperatures": _values_from_field({"$ifNull": ["$lead_temperature_effective", "Sin temp"]}),
+        "assignment_states": [
+            {"value": "", "label": "Todos", "count": 0},
+            {"value": "assigned", "label": "Asignados", "count": 0},
+            {"value": "unassigned", "label": "Sin asignar", "count": 0},
+        ],
+    }
+
+
 def query_field_coverage(
     executive: Optional[str] = None,
     universe: str = "current_active",
@@ -755,7 +811,7 @@ def _build_user_filter(executive: Optional[str]) -> dict:
 
 
 def _build_extra_filter(filters: Optional[dict]) -> dict:
-    """Filtros adicionales: stage, temperature, source, operation, type, commune, code, assignment."""
+    """Filtros adicionales: stage, temperature, source, operation, type, commune, code, assignment, executive."""
     conditions = {}
     if not filters:
         return conditions
@@ -773,6 +829,8 @@ def _build_extra_filter(filters: Optional[dict]) -> dict:
         conditions["prospecto.comuna"] = str(filters["commune"])
     if filters.get("property_code"):
         conditions["prospecto.codigo"] = str(filters["property_code"])
+    if filters.get("ejecutivo_asignado"):
+        conditions["ejecutivo_asignado"] = str(filters["ejecutivo_asignado"])
     if filters.get("assignment") == "1":
         conditions["ejecutivo_asignado"] = {"$nin": ["Sin Asignar", "No Asignado", None, ""]}
     elif filters.get("assignment") == "0":
@@ -2060,6 +2118,18 @@ def build_conversion_table(minutes_dist):
 # 5. DEMANDA POR PRECIO (CORREGIDO)
 # =============================================================================
 
+def _type_distribution(raw_leads: list) -> list:
+    """Extrae distribuci\u00f3n real de tipos de propiedad."""
+    from collections import Counter
+    counts = Counter()
+    for lead in raw_leads:
+        t = str(lead.get("_tipo") or lead.get("prospecto", {}).get("tipo") or "Sin informacion").strip()
+        if not t or t.lower() in ("sin informacion", "sin informaci\u00f3n", "none", "", "n/a"):
+            t = "S/I"
+        counts[t] += 1
+    return [{"value": k, "count": v} for k, v in counts.most_common(10)]
+
+
 def query_demand_by_price_ranges(period_start=None, period_end=None, filters=None):
     """Demand by price ranges, separated by operation (Venta=UF, Arriendo=CLP). Reports coverage."""
     db = get_db()
@@ -2076,6 +2146,7 @@ def query_demand_by_price_ranges(period_start=None, period_end=None, filters=Non
             "_operacion": {"$ifNull": ["$prospecto.operacion", "Sin informacion"]},
             "_precio_uf": {"$ifNull": ["$prospecto.precio_uf", None]},
             "_precio_clp": {"$ifNull": ["$prospecto.precio_clp", None]},
+            "_tipo": {"$ifNull": ["$prospecto.tipo", "Sin informacion"]},
         }},
     ]
     raw = list(db["leads"].aggregate(pipeline))
@@ -2138,6 +2209,7 @@ def query_demand_by_price_ranges(period_start=None, period_end=None, filters=Non
 
     return {
         "price_ranges": [{"operation": k, **v} for k, v in ops.items()],
+        "_types": _type_distribution(raw),
         "coverage": {
             "operacion": _coverage_pct(has_op, total),
             "tipo_propiedad": _coverage_pct(has_tipo, total),

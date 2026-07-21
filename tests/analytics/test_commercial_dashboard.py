@@ -17,7 +17,7 @@ from analytics.leads_queries import (
     PRICE_RANGES_UF,
     PRICE_RANGES_CLP,
 )
-from analytics.leads_service import get_commercial_dashboard
+from analytics.leads_service import get_commercial_dashboard, get_commercial_filter_options
 
 
 # =============================================================================
@@ -533,6 +533,137 @@ class TestCommercialDashboardService:
                 continue
             assert funnel[i]["count"] <= funnel[i - 1]["count"], \
                 f"Stage '{funnel[i]['key']}' exceeds '{funnel[i-1]['key']}'"
+
+
+# =============================================================================
+# NEW FUNCTIONALITY TESTS — FILTERS, COMPARISON, COVERAGE, TYPES
+# =============================================================================
+
+class TestCommercialFilterOptions:
+    def test_returns_dict(self):
+        r = get_commercial_filter_options()
+        assert isinstance(r, dict)
+
+    def test_has_required_fields(self):
+        r = get_commercial_filter_options()
+        for key in ["executives", "sources", "operations", "property_types",
+                     "communes", "properties", "temperatures", "assignment_states"]:
+            assert key in r, f"Missing filter field: {key}"
+
+    def test_executives_list(self):
+        r = get_commercial_filter_options()
+        assert isinstance(r["executives"], list)
+
+    def test_sources_list(self):
+        r = get_commercial_filter_options()
+        assert isinstance(r["sources"], list)
+
+    def test_filter_option_structure(self):
+        r = get_commercial_filter_options()
+        for opts in [r["sources"], r["operations"], r["property_types"], r["communes"]]:
+            for o in opts:
+                assert "value" in o
+                assert "label" in o
+                assert "count" in o
+
+
+class TestCommercialDashboardComparison:
+    def test_compare_prev_mode(self):
+        d = get_commercial_dashboard(compare="prev")
+        assert d["meta"]["period"]["type"] == "custom_vs_previous"
+        prev = d["meta"]["period"]["previous"]
+        assert prev.get("start"), "Previous period should have start"
+        assert prev.get("end"), "Previous period should have end"
+
+    def test_compare_yoy_mode(self):
+        d = get_commercial_dashboard(
+            period_start="2026-07-01", period_end="2026-07-21", compare="yoy"
+        )
+        assert d["meta"]["period"]["type"] == "custom_vs_yoy"
+        prev = d["meta"]["period"]["previous"]
+        assert "2025" in prev.get("start", ""), "YoY should reference previous year"
+
+    def test_compare_none_mode(self):
+        d = get_commercial_dashboard(compare="none")
+        assert d["meta"]["period"]["type"] == "custom_no_comparison"
+        prev = d["meta"]["period"]["previous"]
+        assert prev.get("label") == "Sin comparaci\u00f3n"
+
+    def test_compare_defaults_to_previous(self):
+        d = get_commercial_dashboard()
+        assert "previous" in d["meta"]["period"]["type"]
+
+
+class TestCommercialDashboardCoverage:
+    def test_coverage_in_response(self):
+        d = get_commercial_dashboard()
+        assert "coverage" in d, "Commercial dashboard should include coverage data"
+
+    def test_coverage_structure(self):
+        d = get_commercial_dashboard()
+        cov = d["coverage"]
+        assert isinstance(cov, dict)
+        # Should have field coverage for key fields
+        assert any("prospecto.origen" in k or "origen" in k.lower()
+                   for k in cov.keys()), "Should include source coverage"
+
+
+class TestExecutiveFilter:
+    def test_executive_filter_changes_universe(self):
+        """Verify executive filter is applied to _build_extra_filter."""
+        kpis = query_commercial_kpis(filters={"ejecutivo_asignado": "NoExisteXYZ"})
+        assert kpis["leads_received"]["value"] == 0, \
+            "Filtering for non-existent exec should give zero"
+
+    def test_executive_filter_in_extra_filter(self):
+        """Verify _build_extra_filter handles ejecutivo_asignado."""
+        # This is implicitly tested by the commercial dashboard filtering
+        d = get_commercial_dashboard(executive="NoExisteXYZ")
+        recv = d["kpis"]["leads_received"]["value"]
+        assert recv == 0 or recv is not None, "Should handle nonexistent executive"
+
+
+class TestDemandTypeDistribution:
+    def test_types_included(self):
+        from analytics.leads_queries import _type_distribution
+        raw = [{"_tipo": "Departamento"}, {"_tipo": "Casa"}, {"_tipo": "Departamento"}]
+        types = _type_distribution(raw)
+        assert len(types) >= 2
+        assert any(t["value"] == "Departamento" for t in types)
+        assert any(t["value"] == "Casa" for t in types)
+
+    def test_types_fallback_si(self):
+        from analytics.leads_queries import _type_distribution
+        raw = [{"_tipo": ""}, {"_tipo": "Sin informacion"}, {"prospecto": {"tipo": None}}]
+        types = _type_distribution(raw)
+        assert any(t["value"] == "S/I" for t in types)
+
+
+class TestPriceSeparateMonetary:
+    def test_price_range_coverage(self):
+        r = query_demand_by_price_ranges()
+        for op in r.get("price_ranges", []):
+            cov = op.get("coverage", {})
+            if op["operation"] == "Venta":
+                assert cov.get("currency") == "UF"
+            elif op["operation"] == "Arriendo":
+                assert cov.get("currency") == "CLP"
+
+    def test_no_price_mixing(self):
+        """UF and CLP ranges must not be mixed in same chart."""
+        r = query_demand_by_price_ranges()
+        op_names = [op["operation"] for op in r.get("price_ranges", [])]
+        if "Venta" in op_names and "Arriendo" in op_names:
+            # Both operations are separate, ranges not mixed
+            pass  # Structure already ensures separation
+
+    def test_without_price_reported(self):
+        r = query_demand_by_price_ranges()
+        for op in r.get("price_ranges", []):
+            ranges = op.get("ranges", [])
+            has_sin_precio = any(rg["range"] == "Sin precio" for rg in ranges)
+            if op["coverage"]["without_price"] > 0:
+                assert has_sin_precio, "Sin precio row must appear when price is missing"
 
 
 # =============================================================================

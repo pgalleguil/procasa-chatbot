@@ -1,8 +1,11 @@
 """Read-only analytics service for the Leads Dashboard."""
 from __future__ import annotations
 
+import logging
 import time
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from .leads_queries import (
     query_summary,
@@ -376,6 +379,7 @@ def get_commercial_dashboard(
     role: str = None,
     user_name: str = None,
     filters: dict = None,
+    compare: str = None,
 ) -> dict:
     """Consolidated commercial dashboard data.
 
@@ -387,8 +391,8 @@ def get_commercial_dashboard(
     merged_filters = {**(filters or {})}
     if ef:
         merged_filters.update(ef)
-    key = _cache_key("commercial-dashboard-v1", ps=period_start, pe=period_end,
-                     exec=exec_filter, role=role, filters=repr(sorted((merged_filters or {}).items())))
+    key = _cache_key("commercial-dashboard-v2", ps=period_start, pe=period_end,
+                     exec=exec_filter, role=role, cmp=compare, filters=repr(sorted((merged_filters or {}).items())))
     cached = _cache_get(key)
     if cached:
         return cached
@@ -411,12 +415,40 @@ def get_commercial_dashboard(
     kwargs_no_filters = {"period_start": period_start, "period_end": period_end}
     period_label = f"{period_start or ''} - {period_end or ''}"
 
-    # Period comparison
+    # Period comparison — compute previous period based on mode
+    from datetime import datetime as dt, timedelta as td
+    try:
+        ps_dt = dt.strptime(period_start, "%Y-%m-%d") if period_start else dt.now() - td(days=30)
+        pe_dt = dt.strptime(period_end, "%Y-%m-%d") if period_end else dt.now()
+    except (ValueError, TypeError):
+        ps_dt = dt.now() - td(days=30)
+        pe_dt = dt.now()
+    duration = (pe_dt - ps_dt).days + 1
+
+    prev_start = ""
+    prev_end = ""
+    prev_label = ""
+    comp_type = "custom_vs_previous"
+
+    if compare == "none":
+        prev_label = "Sin comparaci\u00f3n"
+        comp_type = "custom_no_comparison"
+    elif compare == "yoy":
+        prev_start = (ps_dt.replace(year=ps_dt.year - 1)).strftime("%Y-%m-%d")
+        prev_end = (pe_dt.replace(year=pe_dt.year - 1)).strftime("%Y-%m-%d")
+        prev_label = f"{prev_start} - {prev_end} (mismo per\u00edodo a\u00f1o anterior)"
+        comp_type = "custom_vs_yoy"
+    else:
+        prev_end = (ps_dt - td(days=1)).strftime("%Y-%m-%d")
+        prev_start = (ps_dt - td(days=duration)).strftime("%Y-%m-%d")
+        prev_label = f"{prev_start} - {prev_end} (per\u00edodo anterior)"
+        comp_type = "custom_vs_previous"
+
     period_info = {
-        "type": "custom_vs_previous",
+        "type": comp_type,
         "timezone": "America/Santiago",
         "current": {"start": period_start or "", "end": period_end or "", "label": period_label},
-        "previous": {"start": "", "end": "", "label": "Per\u00edodo anterior (igual duraci\u00f3n)"},
+        "previous": {"start": prev_start, "end": prev_end, "label": prev_label},
     }
 
     kpis = query_commercial_kpis(**kwargs)
@@ -427,6 +459,10 @@ def get_commercial_dashboard(
     properties = query_commercial_property_ranking(**kwargs)
     sources = query_source_performance(**kwargs_no_filters)
     trends = query_comparative_trends(**kwargs_no_filters)
+    coverage = query_field_coverage(
+        executive=exec_filter if exec_filter else None,
+        universe="current_active",
+    )
     try:
         insights = query_commercial_insights(
             kpis=kpis, funnel=funnel, sla=sla,
@@ -461,6 +497,19 @@ def get_commercial_dashboard(
         "sources": sources,
         "trends": trends,
         "insights": insights,
+        "coverage": coverage,
     }
     _cache_set(key, result)
     return result
+
+
+def get_commercial_filter_options() -> dict:
+    """Public filter options for commercial dashboard selectors. No sensitive data."""
+    from .leads_queries import query_commercial_filter_options
+    key = _cache_key("commercial-filters", v="2")
+    cached = _cache_get(key)
+    if cached:
+        return cached
+    data = query_commercial_filter_options()
+    _cache_set(key, data)
+    return data

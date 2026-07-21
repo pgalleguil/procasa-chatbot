@@ -55,7 +55,7 @@ from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_da
 from analytics.leads_service import (
     get_summary, get_trends, get_distributions, get_table as analytics_get_table,
     get_detail as analytics_get_detail, get_filters, get_field_coverage,
-    get_dashboard, get_commercial_dashboard,
+    get_dashboard, get_commercial_dashboard, get_commercial_filter_options,
 )
 
 from api_captacion import (
@@ -752,6 +752,7 @@ async def api_commercial_dashboard(
     temperature: str = Query(None),
     property_code: str = Query(None),
     assignment: str = Query(None),
+    compare: str = Query(None),
 ):
     # TEMP: public access for testing — remove after validation
     filters = {}
@@ -773,6 +774,7 @@ async def api_commercial_dashboard(
             role="admin",
             user_name="Test",
             filters=filters or None,
+            compare=compare,
         ),
     )
 
@@ -938,6 +940,15 @@ async def api_analytics_leads_filters(
             role=user.get("rol"),
             user_name=user.get("nombre"),
         ),
+    )
+
+
+@app.get("/api/analytics/commercial/filters")
+async def api_commercial_filters():
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_commercial_filter_options(),
     )
 
 

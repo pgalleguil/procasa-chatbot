@@ -563,6 +563,31 @@ def log_event(phone: str, event_type: str, actor: str = "system", meta: dict = N
                 {"_id": cycle["_id"], "first_valid_management_at": {"$exists": False}},
                 {"$set": {"first_valid_management_at": event_at, "first_valid_management_actor": actor}},
             )
+        # Operational rule: opening the lead's WhatsApp from the CRM is a
+        # human contact attempt. Any canonical management evidence must stop
+        # the lead from remaining unattended, even when the event originated
+        # outside the manual-management form.
+        db[COLLECTION_CONVERSATIONS].update_one(
+            {
+                "_id": lead["_id"],
+                "$or": [
+                    {"pipeline_stage": {"$in": ["NEW", "new", "nuevo", ""]}},
+                    {
+                        "pipeline_stage": {"$exists": False},
+                        "stage": {"$in": ["NEW", "new", "nuevo", "", None]},
+                    },
+                    {
+                        "pipeline_stage": None,
+                        "stage": {"$in": ["NEW", "new", "nuevo", "", None]},
+                    },
+                ],
+            },
+            {"$set": {
+                "pipeline_stage": "CONTACTED",
+                "stage": "CONTACTED",
+                "last_crm_update": event_at,
+            }},
+        )
     
     # Precomputación SaaS: Actualizar métricas del lead atómicamente
     try:

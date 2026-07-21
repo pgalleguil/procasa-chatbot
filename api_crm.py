@@ -625,7 +625,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     events_list = await events_cursor.to_list(length=200)
     events_map = {}
     recognized_management_map = {}
-    recognized_management_types = {"SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD"}
+    recognized_management_types = {
+        "CLICK_WHATSAPP_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD"
+    }
     for ev in events_list:
         phone_ev = ev.get("phone", "").replace("+", "").strip()
         if phone_ev not in events_map:
@@ -719,7 +721,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             recognized_management_ev,
             assigned_at=assigned_for_cycle,
             assignment_cycle_id=(lead.get("lifecycle") or {}).get("assignment_cycle_id"),
-            allow_historical_for_presentation=True,
+            # Previous-cycle outreach may remain visible in the timeline, but
+            # it must not mark the current assignment as managed.
+            allow_historical_for_presentation=False,
         )
         if not outreach["recognized"]:
             recognized_management_ev = None

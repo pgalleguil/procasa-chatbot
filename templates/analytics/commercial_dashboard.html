@@ -71,12 +71,13 @@ body{margin:0;background:var(--bg-body);color:var(--txt);font-family:'Outfit',sy
 .d .tab-nav{display:flex;gap:0;margin-bottom:8px;border-bottom:1px solid var(--bar)}
 .d .tab-nav button{padding:7px 18px;border:0;border-bottom:2px solid transparent;background:0;color:var(--txt2);cursor:pointer;font:.78rem Outfit,sans-serif;font-weight:500;transition:all .18s}
 .d .tab-nav button:hover{color:var(--txt)}.d .tab-nav button.active{color:var(--brand);border-bottom-color:var(--brand)}
-.d .tab-panel{display:none}.d .tab-panel.active{display:block}
+.d .tab-panel{display:none}.d .tab-panel.active,.d .tab-panel.show{display:block!important}
 .d .card{background:var(--bg-card);border:1px solid var(--bar);border-radius:var(--radius);padding:14px 16px;margin-bottom:8px}
 .d .card h2{font-size:.9rem;font-weight:600;margin-bottom:8px;color:var(--txt)}
 .d .card h2 small{font-weight:400;color:var(--txt3);font-size:.68rem}
-.d .chart-wrap{position:relative;min-height:260px}
-.d .chart-wrap-sm{min-height:140px}
+.d .chart-wrap{position:relative;min-height:260px;display:block}
+.d .chart-wrap-sm{min-height:140px;display:block}
+.d .chart-wrap canvas{width:100%!important;height:100%!important}
 .d .chart-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--txt3);font-size:.75rem;pointer-events:none}.d .chart-loading.done{display:none}
 .d .insight{padding:10px 12px;border-radius:6px;border-left:3px solid;background:var(--bg-elevated);margin-bottom:6px}
 .d .insight.crit{border-color:var(--red)}.d .insight.high{border-color:var(--amber)}.d .insight.med{border-color:var(--brand)}.d .insight.info{border-color:var(--cyan)}
@@ -168,7 +169,7 @@ body{margin:0;background:var(--bg-body);color:var(--txt);font-family:'Outfit',sy
 </div>
 
 <!-- TAB exec -->
-<div class="tab-panel active" id="tab-exec">
+<div class="tab-panel active" id="tab-exec" style="display:block !important">
   <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:8px;margin-bottom:8px">
     <div class="card"><h2>Evoluci&oacute;n Comercial</h2><div class="chart-wrap"><canvas id="evChart"></canvas><div class="chart-loading" id="evLoad">Cargando...</div></div></div>
     <div class="card"><h2>Riesgo SLA</h2><div class="row g-2 mb-2" id="slaStrip"></div><div class="chart-wrap-sm"><canvas id="slaChart"></canvas><div class="chart-loading" id="slaLoad">Cargando...</div></div></div>

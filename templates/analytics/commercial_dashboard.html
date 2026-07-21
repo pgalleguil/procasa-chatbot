@@ -220,8 +220,8 @@ const P=v=>v!=null?Number(v).toLocaleString('es-CL',{maximumFractionDigits:0})+'
 const TC=()=>document.documentElement.dataset.theme==='dark'?'#e8edf4':'#1a2235';
 const TM=()=>document.documentElement.dataset.theme==='dark'?'#8e9bb5':'#5a6885';
 const C={blue:'#6d6af0',red:'#f05050',amber:'#f0a040',green:'#30c070',cyan:'#30b8d0',gray:'#94a0ba'};
-const TC=()=>document.documentElement.dataset.theme==='dark'?'#e8edf4':'#1a2235';
-const TM=()=>document.documentElement.dataset.theme==='dark'?'#94a0ba':'#5a6885';
+const TCOLOR=()=>document.documentElement.dataset.theme==='dark'?'#e8edf4':'#1a2235';
+const TMUTED=()=>document.documentElement.dataset.theme==='dark'?'#94a0ba':'#5a6885';
 let D=null,CH={},FILTERS={};
 
 function dCharts(){Object.values(CH).forEach(c=>{try{c.destroy()}catch(e){}});CH={}}
@@ -346,7 +346,7 @@ function rev(){
   CH.ev=new Chart(el,{type:'line',data:{labels,datasets:[
     {label:'Actual',data:curData,borderColor:C.blue,backgroundColor:C.blue+'18',fill:true,tension:.3,pointRadius:0,pointHoverRadius:5,borderWidth:2.5,_dates:curDates},
     {label:'Anterior',data:prevData,borderColor:C.gray,borderDash:[5,5],tension:.3,pointRadius:0,pointHoverRadius:4,borderWidth:2,fill:false,_dates:prevDates}
-  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:TC(),font:{size:10},boxWidth:12,usePointStyle:true}},tooltip:{mode:'index',intersect:false,callbacks:{label:function(ctx){var ds=ctx.dataset;return ds.label+': '+F(ctx.raw)+' leads ('+(ds._dates?ds._dates[ctx.dataIndex]||'':'')+')'}}}},scales:{x:{ticks:{color:TM(),font:{size:9}},grid:{display:false}},y:{ticks:{color:TM(),font:{size:9}},grid:{color:TM()+'14'},beginAtZero:true}}}});
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:TCOLOR(),font:{size:10},boxWidth:12,usePointStyle:true}},tooltip:{mode:'index',intersect:false,callbacks:{label:function(ctx){var ds=ctx.dataset;return ds.label+': '+F(ctx.raw)+' leads ('+(ds._dates?ds._dates[ctx.dataIndex]||'':'')+')'}}}},scales:{x:{ticks:{color:TMUTED(),font:{size:9}},grid:{display:false}},y:{ticks:{color:TMUTED(),font:{size:9}},grid:{color:TMUTED()+'14'},beginAtZero:true}}}});
 }
 
 function rfun(){
@@ -355,7 +355,7 @@ function rfun(){
   if(!f.length){ld.textContent='Sin datos';return}
   const colors=[C.blue,C.red,C.amber,C.cyan,C.green,'#22c55e','#8b5cf6','#d97706'];
   if(CH.fn)CH.fn.destroy();ld.classList.add('done');
-  CH.fn=new Chart(el,{type:'bar',data:{labels:f.map(s=>s.label),datasets:[{data:f.map(s=>s.count),backgroundColor:colors,borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:TM(),font:{size:8}},grid:{display:false}},y:{display:false}}}});
+  CH.fn=new Chart(el,{type:'bar',data:{labels:f.map(s=>s.label),datasets:[{data:f.map(s=>s.count),backgroundColor:colors,borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:TMUTED(),font:{size:8}},grid:{display:false}},y:{display:false}}}});
   let mx=0,bn=null;
   for(let i=1;i<f.length;i++){const l=f[i-1].count-f[i].count;if(l>mx){mx=l;bn={from:f[i-1].label,to:f[i].label}}}
   $('funBN').innerHTML=bn&&mx>0?'<span style="color:'+C.amber+'">Mayor fuga:</span> '+E(bn.from)+' \u2192 '+E(bn.to)+' <strong>'+F(mx)+'</strong> leads':'<span style="color:'+C.green+'">Sin fugas</span>';
@@ -368,7 +368,7 @@ function rsla(){
   const dist=sla.distribution||[];
   if(!dist.length){ld.textContent='Sin datos';return}
   if(CH.sl)CH.sl.destroy();ld.classList.add('done');
-  CH.sl=new Chart(el,{type:'bar',data:{labels:dist.map(d=>d.label),datasets:[{data:dist.map(d=>d.count),backgroundColor:['#22c55e','#16a34a',C.amber,C.red,C.gray],borderRadius:3}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{ticks:{color:TM(),font:{size:9}}}}}});
+  CH.sl=new Chart(el,{type:'bar',data:{labels:dist.map(d=>d.label),datasets:[{data:dist.map(d=>d.count),backgroundColor:['#22c55e','#16a34a',C.amber,C.red,C.gray],borderRadius:3}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{ticks:{color:TMUTED(),font:{size:9}}}}}});
 }
 
 function rInsights(){
@@ -398,20 +398,20 @@ function rDemand(){
   const opEl=$('dmOp'),opLd=$('dmOpLd');
   if(ops.length && opEl){
     if(CH.dop)CH.dop.destroy();if(opLd)opLd.classList.add('done');
-    CH.dop=new Chart(opEl,{type:'bar',data:{labels:ops.map(o=>o.operation),datasets:[{data:ops.map(o=>o.total),backgroundColor:[C.blue,C.amber,C.green],borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:TM(),font:{size:9}},grid:{display:false}},y:{ticks:{color:TM(),font:{size:9}},grid:{color:TM()+'14'},beginAtZero:true}}}});
+    CH.dop=new Chart(opEl,{type:'bar',data:{labels:ops.map(o=>o.operation),datasets:[{data:ops.map(o=>o.total),backgroundColor:[C.blue,C.amber,C.green],borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:TMUTED(),font:{size:9}},grid:{display:false}},y:{ticks:{color:TMUTED(),font:{size:9}},grid:{color:TMUTED()+'14'},beginAtZero:true}}}});
   }else if(opLd){opLd.textContent='Sin datos'}
   // Type chart: use coverage data from API (real available data)
   const cov=dm.coverage||{},tpEl=$('dmTp'),tpLd=$('dmTpLd');
   if(tpEl){
     const labels=['Operacion','Tipo prop.','Comuna','Precio'], values=[cov.operacion||0,cov.tipo_propiedad||0,cov.comuna||0,cov.precio||0];
     if(Math.max.apply(null,values)>0){if(CH.dtp)CH.dtp.destroy();if(tpLd)tpLd.classList.add('done');
-    CH.dtp=new Chart(tpEl,{type:'bar',data:{labels,datasets:[{label:'Cobertura %',data:values,backgroundColor:[C.blue,C.amber,C.green,C.cyan],barPercentage:.7,borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.raw+'%'}}},scales:{y:{ticks:{color:TM(),font:{size:9},callback:v=>v+'%'},grid:{color:TM()+'14'},min:0,max:100},x:{ticks:{color:TM(),font:{size:9}},grid:{display:false}}}}});
+    CH.dtp=new Chart(tpEl,{type:'bar',data:{labels,datasets:[{label:'Cobertura %',data:values,backgroundColor:[C.blue,C.amber,C.green,C.cyan],barPercentage:.7,borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.raw+'%'}}},scales:{y:{ticks:{color:TMUTED(),font:{size:9},callback:v=>v+'%'},grid:{color:TMUTED()+'14'},min:0,max:100},x:{ticks:{color:TMUTED(),font:{size:9}},grid:{display:false}}}}});
     }else{if(tpLd)tpLd.textContent='Cobertura no disponible'}}
   // Price chart
   const pxEl=$('dmPx'),pxLd=$('dmPxLd'),ranges=ops[0]?.ranges||[];
   if(ranges.length && pxEl){
     if(CH.dpx)CH.dpx.destroy();if(pxLd)pxLd.classList.add('done');
-    CH.dpx=new Chart(pxEl,{type:'bar',data:{labels:ranges.map(r=>r.range),datasets:[{data:ranges.map(r=>r.count),backgroundColor:C.amber,borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:TM(),font:{size:8}},grid:{display:false}},y:{ticks:{color:TM(),font:{size:8}},grid:{color:TM()+'14'},beginAtZero:true}}}});
+    CH.dpx=new Chart(pxEl,{type:'bar',data:{labels:ranges.map(r=>r.range),datasets:[{data:ranges.map(r=>r.count),backgroundColor:C.amber,borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:TMUTED(),font:{size:8}},grid:{display:false}},y:{ticks:{color:TMUTED(),font:{size:8}},grid:{color:TMUTED()+'14'},beginAtZero:true}}}});
   }else if(pxLd){pxLd.textContent='Sin datos'}
 }
 

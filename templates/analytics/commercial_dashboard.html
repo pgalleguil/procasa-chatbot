@@ -218,7 +218,9 @@ const F=v=>new Intl.NumberFormat('es-CL').format(Number(v??0));
 const P=v=>v!=null?Number(v).toLocaleString('es-CL',{maximumFractionDigits:0})+'%':'S/I';
 const TC=()=>document.documentElement.dataset.theme==='dark'?'#e8edf4':'#1a2235';
 const TM=()=>document.documentElement.dataset.theme==='dark'?'#8e9bb5':'#5a6885';
-const C={blue:'#6d6af0',red:'#f05050',amber:'#f0a040',green:'#30c070',cyan:'#30b8d0',gray:'#8e9bb5'};
+const C={blue:'#6d6af0',red:'#f05050',amber:'#f0a040',green:'#30c070',cyan:'#30b8d0',gray:'#94a0ba'};
+const TC=()=>document.documentElement.dataset.theme==='dark'?'#e8edf4':'#1a2235';
+const TM=()=>document.documentElement.dataset.theme==='dark'?'#94a0ba':'#5a6885';
 let D=null,CH={},FILTERS={};
 
 function dCharts(){Object.values(CH).forEach(c=>{try{c.destroy()}catch(e){}});CH={}}

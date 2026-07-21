@@ -389,6 +389,7 @@ app.include_router(crm_weekly_router)
 
 from chatbot.lead_router import should_send_now, format_whatsapp_template
 from chatbot.storage import (
+    get_db,
     get_pending_notifications, 
     mark_notification_sent, 
     save_pending_notification,

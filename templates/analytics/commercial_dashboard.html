@@ -209,141 +209,195 @@ body{margin:0;background:var(--bg-body);color:var(--txt);font-family:'Outfit',sy
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
-const $=id=>document.getElementById(id);const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const F=v=>new Intl.NumberFormat('es-CL').format(Number(v??0));const P=v=>v!=null?Number(v).toLocaleString('es-CL',{maximumFractionDigits:0})+'%':'S/I';const TC=()=>document.documentElement.dataset.theme==='dark'?'#e8edf4':'#1a2235';const TM=()=>document.documentElement.dataset.theme==='dark'?'#8e9bb5':'#5a6885';const C={blue:'#6d6af0',red:'#f05050',amber:'#f0a040',green:'#30c070',cyan:'#30b8d0',gray:'#8e9bb5',purple:'#8b5cf6'};if(document.documentElement.dataset.theme==='light'){C.blue='#5248e0';C.red='#d82a2a';C.amber='#c87820';C.green='#1a8040';C.cyan='#1a8a98';C.purple='#6d4af0'}
-let D=null,CH={},FILTERS={},ACTIVE_PERIOD='30d';
+const $=id=>document.getElementById(id);
+const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const F=v=>new Intl.NumberFormat('es-CL').format(Number(v??0));
+const P=v=>v!=null?Number(v).toLocaleString('es-CL',{maximumFractionDigits:0})+'%':'S/I';
+const TC=()=>document.documentElement.dataset.theme==='dark'?'#e8edf4':'#1a2235';
+const TM=()=>document.documentElement.dataset.theme==='dark'?'#8e9bb5':'#5a6885';
+const C={blue:'#6d6af0',red:'#f05050',amber:'#f0a040',green:'#30c070',cyan:'#30b8d0',gray:'#8e9bb5'};
+let D=null,CH={},FILTERS={};
 
 function dCharts(){Object.values(CH).forEach(c=>{try{c.destroy()}catch(e){}});CH={}}
-function cs(){FILTERS._cs=Date.now();return FILTERS}
+
 function setPeriod(preset){
-  ACTIVE_PERIOD=preset;
   const now=new Date(),s=new Date();
-  if(preset==='today'){s.setHours(0,0,0,0);FILTERS.period_start=s.toISOString().slice(0,10);FILTERS.period_end=now.toISOString().slice(0,10)}
-  else if(preset==='week'){const d=now.getDay();s.setDate(now.getDate()-d+(d===0?-6:1));s.setHours(0,0,0,0);FILTERS.period_start=s.toISOString().slice(0,10);FILTERS.period_end=now.toISOString().slice(0,10)}
-  else if(preset==='month'){s.setDate(1);s.setHours(0,0,0,0);FILTERS.period_start=s.toISOString().slice(0,10);FILTERS.period_end=now.toISOString().slice(0,10)}
-  else if(preset==='custom'){document.getElementById('periodCustom').style.display='flex';const pstart=$('pStart').value||now.toISOString().slice(0,10);const pend=$('pEnd').value||now.toISOString().slice(0,10);FILTERS.period_start=pstart;FILTERS.period_end=pend}
-  else{s.setDate(now.getDate()-30);FILTERS.period_start=s.toISOString().slice(0,10);FILTERS.period_end=now.toISOString().slice(0,10)}
+  if(preset==='today'){s.setHours(0,0,0,0)}
+  else if(preset==='week'){const d=now.getDay();s.setDate(now.getDate()-d+(d===0?-6:1));s.setHours(0,0,0,0)}
+  else if(preset==='month'){s.setDate(1);s.setHours(0,0,0,0)}
+  else{s.setDate(now.getDate()-30)}
+  FILTERS.period_start=s.toISOString().slice(0,10);
+  FILTERS.period_end=now.toISOString().slice(0,10);
   document.querySelectorAll('.period-preset').forEach(b=>b.classList.toggle('active',b.dataset.p===preset));
-  if(preset!=='custom')document.getElementById('periodCustom').style.display='none';
+}
+
+async function loadData(){
+  $('errBox').hidden=true;$('statusText').textContent='Cargando datos...';dCharts();
+  try{
+    const p=new URLSearchParams();
+    if(FILTERS.period_start)p.set('period_start',FILTERS.period_start);
+    if(FILTERS.period_end)p.set('period_end',FILTERS.period_end);
+    const r=await fetch('/api/analytics/commercial-dashboard?'+p,{headers:{Accept:'application/json'}});
+    if(!r.ok)throw new Error('Error '+r.status);
+    D=await r.json();render();
+  }catch(e){$('statusText').textContent='Error al cargar';$('errBox').hidden=false;$('errDetail').textContent=e.message||String(e)}
 }
 
 function applyFilters(){
-  const f=FILTERS;
-  ['fExec','fSource','fOp','fType','fCommune','fTemp','fProp'].forEach(id=>{const v=$(id)?.value;if(v)f[id.replace('f','')]=v;else delete f[id.replace('f','')]});
-  renderChips();
-  init();
+  ['fExec','fSource','fOp','fType','fCommune','fTemp'].forEach(id=>{
+    const v=$(id)?.value;const key=id.replace('f','').toLowerCase();
+    if(v){FILTERS[key]=v}else{delete FILTERS[key]}
+  });
+  const chips=$('fltChips'),items=[];
+  if(FILTERS.period_start)items.push(FILTERS.period_start+' a '+FILTERS.period_end);
+  ['exec','source','op','type','commune','temp'].forEach(k=>{if(FILTERS[k])items.push(FILTERS[k])});
+  chips.innerHTML=items.length?items.map(i=>'<span class="flt-chip" onclick="this.remove()">'+E(i)+' <i class="fa-solid fa-times"></i></span>').join('')+' <button class="btn-sm danger" style="font-size:.62rem;padding:2px 6px" onclick="resetFilters()">Limpiar</button>':'';
+  loadData();
 }
 
-function renderChips(){
-  const c=$('fltChips'),chips=[];
-  if(FILTERS.period_start)chips.push({label:FILTERS.period_start+' a '+FILTERS.period_end,key:'period'});
-  ['Exec','Source','Op','Type','Commune','Temp','Prop'].forEach(k=>{const v=FILTERS[k.toLowerCase()];if(v)chips.push({label:v,key:k.toLowerCase()})});
-  c.innerHTML=chips.length?chips.map(ch=>'<span class="flt-chip" onclick="delete FILTERS[\''+ch.key+'\'];if(ch.key===\'period\'){delete FILTERS.period_start;delete FILTERS.period_end};renderChips();init()">'+E(ch.label)+' <i class="fa-solid fa-times"></i></span>').join('')+' <button class="btn-sm danger" style="font-size:.62rem;padding:2px 6px" onclick="resetFilters()">Limpiar todo</button>':'';}
+function resetFilters(){
+  FILTERS={};setPeriod('30d');
+  document.querySelectorAll('.d select').forEach(s=>s.value='');
+  $('fltChips').innerHTML='';loadData();
+}
 
-function resetFilters(){FILTERS={};setPeriod('30d');document.querySelectorAll('.d select').forEach(s=>s.value='');renderChips();init()}
-
-async function init(){
-  $('errBox').hidden=true;$('statusText').textContent='Cargando...';dCharts();
-  try{
-    const p=new URLSearchParams();if(FILTERS.period_start)p.set('period_start',FILTERS.period_start);if(FILTERS.period_end)p.set('period_end',FILTERS.period_end);if(FILTERS.exec)p.set('executive',FILTERS.exec);
-    const r=await fetch('/api/analytics/commercial-dashboard?'+p,{credentials:'same-origin',headers:{Accept:'application/json'}});
-    if(!r.ok)throw new Error('HTTP '+r.status);D=await r.json();render();
-  }catch(e){console.error(e);$('statusText').textContent='Error';$('errBox').hidden=false;$('errDetail').textContent=e.message||String(e)}
+function actTab(name){
+  document.querySelectorAll('.d .tab-panel').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.tab-nav button').forEach(b=>b.classList.remove('active'));
+  const t=$('tab-'+name);if(t)t.classList.add('active');
+  document.querySelector('.tab-nav button[data-tab='+name+']')?.classList.add('active');
 }
 
 function render(){
-  if(!D)return;$('statusText').innerHTML='<i class="fa-solid fa-circle-check" style="color:'+C.green+'"></i> Actualizado: '+(D.meta.generated_at||'').replace('T',' ').replace('Z',' UTC');$('statusSLA').textContent=(D.meta?.sla_policy?.display_label||'SLA: 3h corridas');
-  const p=D.meta?.period||{},cur=p.current||{},prv=p.previous||{};
-  $('periodInfo').innerHTML='<strong>Periodo actual</strong> '+(cur.label||FILTERS.period_start+' a '+FILTERS.period_end||'Sin definir')+' <span class="period-divider">|</span> Comparaci&oacute;n: '+(prv.label||'Periodo anterior');
-  rKPI();rExec();setTimeout(()=>actTab('exec'),50);
+  if(!D)return;
+  $('statusText').innerHTML='<i class="fa-solid fa-circle-check" style="color:'+C.green+'"></i> Datos cargados | '+(D.meta?.sla_policy?.display_label||'SLA 3h corridas');
+  const cur=D.meta?.period?.current||{},prv=D.meta?.period?.previous||{};
+  $('periodInfo').innerHTML='<strong>Actual:</strong> '+(cur.label||FILTERS.period_start+' a '+FILTERS.period_end||'')+' | <strong>Comparacion:</strong> '+(prv.label||'Periodo anterior');
+  rKPI();rCharts();rInsights();
 }
 
 function rKPI(){
-  const k=D.kpis||{},map=[['leads','Leads Recibidos','users','','Leads creados en el periodo. Unidad: lead._id.'],['hot','Leads Hot','fire','hot','Temperatura historica (temperature_history).'],['visit','Intencion Visita','location-dot','intent','RESULTADO_CHAT, last_intent o pipeline_stage.'],['visits','Visitas Coord.','calendar-check','coord','Pipeline_stage = VISIT_SCHEDULED.'],['closed','Cierres','trophy','closed','Pipeline_stage = CLOSED_WON.']];
+  const k=D.kpis||{};
+  const defs=[['L','leads_received','Leads','users',''],['H','leads_hot_history','Hot','fire','hot'],['V','visit_intent','Int.Visita','location-dot','intent'],['S','visits_scheduled','Visitas','calendar-check','coord'],['C','closed_won','Cierres','trophy','closed']];
   let h='';
-  map.forEach(([id,name,icon,bar,tt])=>{
-    const v=k[id==='leads'?'leads_received':id==='hot'?'leads_hot_history':id==='visit'?'visit_intent':id==='visits'?'visits_scheduled':id==='closed'?'closed_won']||{},vv=v.variation_pct;
-    const vr=vv!=null?('<div class="kpi-var '+(vv>0?'up':vv<0?'down':'neutral')+'">'+(vv>0?'<i class="fa-solid fa-caret-up"></i> ':'<i class="fa-solid fa-caret-down"></i> ')+(vv>=0?'+':'')+vv.toFixed(1)+'%</div><div class="kpi-vs">vs. anterior</div>'):'<div class="kpi-var neutral">S/I</div>';
-    h+='<div class="kpi-card"><div class="kpi-bar '+bar+'"></div><div class="kpi-head"><div class="kpi-icon '+bar+'"><i class="fa-solid fa-'+icon+'"></i></div><div class="kpi-name">'+name+'</div></div><div class="kpi-val">'+(v.value!=null?F(v.value):'S/I')+'</div><div class="kpi-sub">'+vr+'</div><div class="kpi-spark" style="position:absolute;bottom:8px;right:12px">&#x2581;&#x2583;&#x2585;&#x2584;&#x2586;&#x2587;&#x2588;</div></div>';
+  defs.forEach(([_,key,name,icon,bar])=>{
+    const v=k[key]||{},vv=v.variation_pct;
+    const vr=vv!=null?(''+(vv>0?'<i class="fa-solid fa-caret-up"></i> ':'<i class="fa-solid fa-caret-down"></i> ')+(vv>=0?'+':'')+vv.toFixed(1)+'%'):'S/I';
+    const cls=vv!=null?(vv>0?'up':vv<0?'down':'neutral'):'neutral';
+    h+='<div class="kpi-card"><div class="kpi-bar '+bar+'"></div><div class="kpi-head"><div class="kpi-icon '+bar+'"><i class="fa-solid fa-'+icon+'"></i></div><div class="kpi-name">'+name+'</div></div><div class="kpi-val">'+(v.value!=null?F(v.value):'S/I')+'</div><div class="kpi-sub"><span class="kpi-var '+cls+'">'+vr+'</span></div></div>';
   });
-  const sla=k.sla_compliance||{},sv=sla.value!=null?P(sla.value):'S/I';
-  h+='<div class="kpi-card"><div class="kpi-bar"></div><div class="kpi-head"><div class="kpi-icon"><i class="fa-solid fa-gauge-high"></i></div><div class="kpi-name">SLA Hot</div></div><div class="kpi-val">'+sv+'</div><div class="kpi-sub"><span class="kpi-vs">SLA: 3h corridas</span></div></div>';
+  const sla=k.sla_compliance||{};
+  h+='<div class="kpi-card"><div class="kpi-bar"></div><div class="kpi-head"><div class="kpi-icon"><i class="fa-solid fa-gauge-high"></i></div><div class="kpi-name">SLA Hot</div></div><div class="kpi-val">'+P(sla.value)+'</div><div class="kpi-sub"><span class="kpi-vs">3h corridas</span></div></div>';
   $('kpiRow').innerHTML=h;
 }
 
-function rExec(){rev();rfn();rsla();rinsights();}
-function actTab(name){document.querySelectorAll('.d .tab-panel').forEach(x=>x.classList.remove('active'));const t=$('tab-'+name);if(t)t.classList.add('active');document.querySelectorAll('.tab-nav button[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===name))}
+function rCharts(){rev();rfun();rsla()}
 
 function rev(){
-  const t=D.trends||{},cur=t.current?.daily||[],prev=t.previous?.daily||[],el=$('evChart'),ld=$('evLoad');
-  if(!cur.length){ld.textContent='Sin datos';return}const dates=[...new Set([...cur.map(d=>d.date),...prev.map(d=>d.date)])].sort();const cm=Object.fromEntries(cur.map(d=>[d.date,d.received])),pm=Object.fromEntries(prev.map(d=>[d.date,d.received]));
+  const t=D.trends||{},cur=(t.current||{}).daily||[],prev=(t.previous||{}).daily||[],el=$('evChart'),ld=$('evLoad');
+  if(!el||!ld)return;
+  if(!cur.length){ld.textContent='Sin datos';return}
+  const dates=[...new Set([...cur.map(d=>d.date),...prev.map(d=>d.date)])].sort();
+  const cm={};cur.forEach(d=>cm[d.date]=d.received);
+  const pm={};prev.forEach(d=>pm[d.date]=d.received);
   if(CH.ev)CH.ev.destroy();ld.classList.add('done');
-  CH.ev=new Chart(el,{type:'line',data:{labels:dates,datasets:[{label:'Actual',data:dates.map(d=>cm[d]||0),borderColor:C.blue,backgroundColor:C.blue+'18',fill:true,tension:.35,pointRadius:0,pointHoverRadius:5,borderWidth:2.5},{label:'Anterior',data:dates.map(d=>pm[d]||0),borderColor:C.gray,backgroundColor:'transparent',borderDash:[5,5],tension:.35,pointRadius:0,pointHoverRadius:4,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:TC(),font:{size:10},boxWidth:12,usePointStyle:true}},tooltip:{mode:'index',intersect:false,backgroundColor:'var(--bg-elevated)',titleColor:TC(),bodyColor:TC(),borderColor:'var(--bar)',borderWidth:1,cornerRadius:6,padding:10,callbacks:{label:ctx=>ctx.dataset.label+': '+F(ctx.raw)+' leads'}}},scales:{x:{ticks:{color:TM(),font:{size:9}},grid:{color:TM()+'14',lineWidth:.5}},y:{ticks:{color:TM(),font:{size:9}},grid:{color:TM()+'14',lineWidth:.5},beginAtZero:true}}}});
+  CH.ev=new Chart(el,{type:'line',data:{labels:dates,datasets:[
+    {label:'Actual',data:dates.map(d=>cm[d]||0),borderColor:C.blue,backgroundColor:C.blue+'18',fill:true,tension:.3,pointRadius:0,pointHoverRadius:5,borderWidth:2.5},
+    {label:'Anterior',data:dates.map(d=>pm[d]||0),borderColor:C.gray,borderDash:[5,5],tension:.3,pointRadius:0,pointHoverRadius:4,borderWidth:2,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:TC(),font:{size:10},boxWidth:12,usePointStyle:true}}},scales:{x:{ticks:{color:TM(),font:{size:9}},grid:{display:false}},y:{ticks:{color:TM(),font:{size:9}},grid:{color:TM()+'14'},beginAtZero:true}}}});
 }
 
-function rfn(){
-  const f=D.funnel||[],el=$('funChart'),ld=$('funLoad');if(!f.length){ld.textContent='Sin datos';return}
-  const colors=[C.blue,C.red,C.amber,C.cyan,C.green,'#22c55e',C.purple,'#d97706'];if(CH.fn)CH.fn.destroy();ld.classList.add('done');
-  CH.fn=new Chart(el,{type:'bar',data:{labels:f.map(s=>s.label),datasets:[{data:f.map(s=>s.count),backgroundColor:colors,barPercentage:.8,borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'var(--bg-elevated)',titleColor:TC(),bodyColor:TC(),borderColor:'var(--bar)',borderWidth:1,cornerRadius:6,padding:10,callbacks:{label:ctx=>F(ctx.raw)+' leads'}}},scales:{x:{ticks:{color:TM(),font:{size:8}},grid:{display:false}},y:{display:false}}}});
-  let mx=0,bn=null;for(let i=1;i<f.length;i++){const l=f[i-1].count-f[i].count;if(l>mx){mx=l;bn={from:f[i-1].label,to:f[i].label}}}
-  $('funBN').innerHTML=bn&&mx>0?'<span style="color:'+C.amber+'">Mayor fuga:</span> '+E(bn.from)+' <b style="font-size:.8rem">\u2192</b> '+E(bn.to)+' <strong>'+F(mx)+'</strong> leads':'<span style="color:'+C.green+'">Sin fugas significativas</span>';
+function rfun(){
+  const f=D.funnel||[],el=$('funChart'),ld=$('funLoad');
+  if(!el||!ld)return;
+  if(!f.length){ld.textContent='Sin datos';return}
+  const colors=[C.blue,C.red,C.amber,C.cyan,C.green,'#22c55e',C.purple,'#d97706'];
+  if(CH.fn)CH.fn.destroy();ld.classList.add('done');
+  CH.fn=new Chart(el,{type:'bar',data:{labels:f.map(s=>s.label),datasets:[{data:f.map(s=>s.count),backgroundColor:colors,borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:TM(),font:{size:8}},grid:{display:false}},y:{display:false}}}});
+  let mx=0,bn=null;
+  for(let i=1;i<f.length;i++){const l=f[i-1].count-f[i].count;if(l>mx){mx=l;bn={from:f[i-1].label,to:f[i].label}}}
+  $('funBN').innerHTML=bn&&mx>0?'<span style="color:'+C.amber+'">Mayor fuga:</span> '+E(bn.from)+' \u2192 '+E(bn.to)+' <strong>'+F(mx)+'</strong> leads':'<span style="color:'+C.green+'">Sin fugas</span>';
 }
 
 function rsla(){
   const sla=D.sla_risk||{},s=$('slaStrip'),el=$('slaChart'),ld=$('slaLoad');
-  s.innerHTML='<div class="col-4"><div class="sla-box ok"><strong>'+P(sla.within_sla_pct)+'</strong><span>Dentro SLA</span></div></div><div class="col-4"><div class="sla-box crit"><strong>'+F(sla.critical_open||0)+'</strong><span>Criticos</span></div></div><div class="col-4"><div class="sla-box warn"><strong>'+F(sla.breached_during_period||0)+'</strong><span>Incumplidos</span></div></div>';
-  const dist=sla.distribution||[];if(!dist.length){ld.textContent='Sin datos';return}if(CH.sl)CH.sl.destroy();ld.classList.add('done');
-  CH.sl=new Chart(el,{type:'bar',data:{labels:dist.map(d=>d.label),datasets:[{data:dist.map(d=>d.count),backgroundColor:['#22c55e','#16a34a',C.amber,C.red,C.gray],barPercentage:.8,borderRadius:3}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'var(--bg-elevated)',titleColor:TC(),bodyColor:TC(),borderColor:'var(--bar)',borderWidth:1,cornerRadius:6,padding:10,callbacks:{label:ctx=>F(ctx.raw)+' leads'}}},scales:{x:{display:false},y:{ticks:{color:TM(),font:{size:9}}}}}});
+  if(!s||!el||!ld)return;
+  s.innerHTML='<div class="col-4"><div class="sla-box ok"><strong>'+P(sla.within_sla_pct)+'</strong><span>Dentro SLA</span></div></div><div class="col-4"><div class="sla-box crit"><strong>'+F(sla.critical_open||0)+'</strong><span>Criticos</span></div></div><div class="col-4"><div class="sla-box warn"><strong>'+F(sla.breached_during_period||0)+'</strong><span>Incumpl.</span></div></div>';
+  const dist=sla.distribution||[];
+  if(!dist.length){ld.textContent='Sin datos';return}
+  if(CH.sl)CH.sl.destroy();ld.classList.add('done');
+  CH.sl=new Chart(el,{type:'bar',data:{labels:dist.map(d=>d.label),datasets:[{data:dist.map(d=>d.count),backgroundColor:['#22c55e','#16a34a',C.amber,C.red,C.gray],borderRadius:3}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{ticks:{color:TM(),font:{size:9}}}}}});
 }
 
-function rinsights(){
-  const ins=D.insights||[];$('insights').innerHTML=ins.length?ins.map(i=>{const c={critical:'crit',high:'high',medium:'med',info:'info'}[i.priority||'info']||'info';const l={critical:'CRITICO',high:'ALTO',medium:'MEDIO',info:'INFO'}[i.priority||'info']||'INFO';return'<div class="insight '+c+'"><span class="pri">'+l+'</span><div class="title">'+E(i.title)+'</div><div class="body">'+E(i.finding||'')+'</div>'+(i.impact?'<div class="body" style="color:'+C.amber+'">'+E(i.impact)+'</div>':'')+(i.recommended_action?'<div class="act"><i class="fa-solid fa-arrow-right"></i> '+E(i.recommended_action)+'</div>':'')+'</div>'}).join(''):'<div class="insight info"><span class="pri">INFO</span><div class="title">Sin hallazgos</div></div>';
+function rInsights(){
+  const ins=D.insights||[];
+  $('insights').innerHTML=ins.length?ins.map(i=>{
+    const p=i.priority||'info',cls={critical:'crit',high:'high',medium:'med'}[p]||'info';
+    return'<div class="insight '+cls+'"><span class="pri">'+(p==='critical'?'CRITICO':p==='high'?'ALTO':p==='medium'?'MEDIO':'INFO')+'</span><div class="title">'+E(i.title)+'</div><div class="body">'+E(i.finding||'')+'</div><div class="act"><i class="fa-solid fa-arrow-right"></i> '+(i.recommended_action||'Revisar')+'</div></div>';
+  }).join(''):'<div class="insight info"><span class="pri">INFO</span><div class="title">Sin hallazgos relevantes</div></div>';
 }
 
-function rDemand(){
-  const dm=D.demand_by_price||{};['dmOp','dmTp','dmPx'].forEach(id=>{const e=$(id),l=$(id+'Ld');if(!l)return});
-  const ops=dm.price_ranges||[];
-  ['dmOp','dmOpLd'].forEach(id=>{const e=$(id);if(!e)return});const opEl=$('dmOp'),opLd=$('dmOpLd');
-  if(ops.length){if(CH.dop)CH.dop.destroy();opLd.classList.add('done');CH.dop=new Chart(opEl,{type:'bar',data:{labels:ops.map(o=>o.operation),datasets:[{data:ops.map(o=>o.total),backgroundColor:[C.blue,C.amber,C.green],borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>F(ctx.raw)+' leads'}}},scales:{x:{ticks:{color:TM(),font:{size:9}},grid:{display:false}},y:{ticks:{color:TM(),font:{size:9}},grid:{color:TM()+'14',lineWidth:.5},beginAtZero:true}}}})}else{opLd.textContent='Sin datos'}
-  const src=D.sources||[],tpEl=$('dmTp'),tpLd=$('dmTpLd');
-  if(src.length){if(CH.dtp)CH.dtp.destroy();tpLd.classList.add('done');CH.dtp=new Chart(tpEl,{type:'bar',data:{labels:src.map(s=>s.source),datasets:[{data:src.map(s=>s.received),backgroundColor:C.blue+'AA',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>F(ctx.raw)+' leads ('+P(src[ctx.dataIndex]?.advanced_pct)+' avanzados)'}}},scales:{x:{ticks:{color:TM(),font:{size:8}},grid:{display:false}},y:{ticks:{color:TM(),font:{size:8}}}}}})}else{tpLd.textContent='Sin datos'}
-  const pxEl=$('dmPx'),pxLd=$('dmPxLd');const firstOp=ops[0],ranges=firstOp?.ranges||[];
-  if(ranges.length){if(CH.dpx)CH.dpx.destroy();pxLd.classList.add('done');CH.dpx=new Chart(pxEl,{type:'bar',data:{labels:ranges.map(r=>r.range),datasets:[{data:ranges.map(r=>r.count),backgroundColor:C.amber+'AA',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>F(ctx.raw)+' leads'}}},scales:{x:{ticks:{color:TM(),font:{size:8}},grid:{display:false}},y:{ticks:{color:TM(),font:{size:8}},grid:{color:TM()+'14',lineWidth:.5},beginAtZero:true}}}})}else{pxLd.textContent='Sin datos'}
-}
-
-function rSources(){
-  const src=D.sources||[];$('srcTbl').innerHTML=src.length?'<table><thead><tr><th>Fuente</th><th>Leads</th><th>Hot%</th><th>Avanz%</th><th>Var.</th></tr></thead><tbody>'+src.map(s=>'<tr><td><strong>'+E(s.source)+'</strong></td><td>'+F(s.received)+'</td><td>'+P(s.hot_pct)+'</td><td>'+P(s.advanced_pct)+'</td><td>'+(s.variation_pct!=null?(s.variation_pct>=0?'+':'')+s.variation_pct.toFixed(1)+'%':'S/I')+'</td></tr>').join('')+'</tbody></table>':'<p style="color:var(--txt3);padding:12px">Sin datos</p>';
-  rProps();
-}
-function rProps(){
-  const p=D.properties||{},tab=window._propTab||'opportunity',rows=tab==='opportunity'?(p.opportunity||[]):(p.leakage||[]);$('propTbl').innerHTML=rows.length?(tab==='opportunity'?'<table><thead><tr><th>Codigo</th><th>Leads</th><th>Hot</th><th>Visitas</th><th>Conv.</th></tr></thead><tbody>'+rows.slice(0,8).map(r=>'<tr><td><strong>'+E(r.code)+'</strong></td><td>'+F(r.leads)+'</td><td>'+F(r.hot)+'</td><td>'+(r.ever_visit_scheduled||0)+'</td><td>'+P(r.conversion_pct)+'</td></tr>').join('')+'</tbody></table>':'<table><thead><tr><th>Codigo</th><th>Int.visita</th><th class="r">Sin coord.</th><th class="a">Sin gest.</th></tr></thead><tbody>'+rows.slice(0,8).map(r=>'<tr><td><strong>'+E(r.code)+'</strong></td><td>'+F(r.ever_visit_intent||0)+'</td><td class="r">'+F(r.uncoordinated||0)+'</td><td class="a">'+F(r.unmanaged||0)+'</td></tr>').join('')+'</tbody></table>'):'<p style="color:var(--txt3);padding:12px">Sin datos</p>';
-}
-function rTeam(){
-  const ex=D.executives||[];$('execTbl').innerHTML=ex.length?'<table><thead><tr><th>Ejecutiva</th><th>Asig.</th><th class="r">Hot</th><th>SLA%</th><th>Visitas</th><th class="g">Gan.</th><th>Conv.Vis</th><th>Conv.Cie</th></tr></thead><tbody>'+ex.map(e=>'<tr><td><strong>'+E(e.executive)+'</strong></td><td>'+F(e.assigned)+'</td><td class="r">'+F(e.hot)+'</td><td>'+P(e.sla_fulfilled)+'</td><td>'+(e.ever_visit_scheduled||0)+'</td><td class="g"><strong>'+F(e.ever_closed_won||0)+'</strong></td><td>'+P(e.conversion_to_visit_pct)+'</td><td>'+P(e.conversion_to_close_pct)+'</td></tr>').join('')+'</tbody></table>':'<p style="color:var(--txt3);padding:12px">Sin datos</p>';
-  const cov=D.kpis?._meta?.temperature_coverage||{};$('covGrid').innerHTML='<div class="cov-card"><strong>'+(cov.total||0)+'</strong><span>Total leads</span></div><div class="cov-card"><strong>'+(cov.with_history||0)+'</strong><span>Hist. temp.</span></div><div class="cov-card"><strong>'+P(cov.history_coverage_pct)+'</strong><span>Cob. temp.</span><div class="meter"><span style="width:'+(cov.history_coverage_pct||0)+'%"></span></div></div>';
-}
-
+// Tab lazy-loading
 document.getElementById('tabNav').addEventListener('click',e=>{
   const b=e.target.closest('[data-tab]');if(!b)return;actTab(b.dataset.tab);
-  const t=b.dataset.tab;if(t==='demand')rDemand();if(t==='sources')rSources();if(t==='team')rTeam();
+  if(b.dataset.tab==='demand'&&!window._demandLoaded){rDemand();window._demandLoaded=true}
+  if(b.dataset.tab==='sources'&&!window._srcLoaded){rSrc();window._srcLoaded=true}
+  if(b.dataset.tab==='team'&&!window._teamLoaded){rTeam();window._teamLoaded=true}
 });
 document.getElementById('propSub')?.addEventListener('click',e=>{
   const b=e.target.closest('[data-ps]');if(!b)return;
-  document.querySelectorAll('[data-ps]').forEach(x=>x.classList.toggle('primary',x.dataset.ps===b.dataset.ps));
-  b.classList.add('primary');window._propTab=b.dataset.ps;rProps();
+  document.querySelectorAll('[data-ps]').forEach(x=>x.classList.toggle('primary',x===b));
+  window._propTab=b.dataset.ps;rProps();
 });
-document.querySelectorAll('.period-preset').forEach(b=>b.addEventListener('click',()=>{setPeriod(b.dataset.p);applyFilters()}));
+document.querySelectorAll('.period-preset').forEach(b=>b.addEventListener('click',()=>{setPeriod(b.dataset.p);loadData()}));
 
-window.toggleTheme=()=>{const h=document.documentElement;h.dataset.theme=h.dataset.theme==='light'?'dark':'light';localStorage.setItem('theme',h.dataset.theme);$('themeIcon').className=h.dataset.theme==='light'?'fa-solid fa-moon':'fa-solid fa-sun';if(D){dCharts();render()}}
+function rDemand(){
+  const dm=D.demand_by_price||{},ops=dm.price_ranges||[];
+  const opEl=$('dmOp'),opLd=$('dmOpLd');
+  if(ops.length && opEl){
+    if(CH.dop)CH.dop.destroy();if(opLd)opLd.classList.add('done');
+    CH.dop=new Chart(opEl,{type:'bar',data:{labels:ops.map(o=>o.operation),datasets:[{data:ops.map(o=>o.total),backgroundColor:[C.blue,C.amber,C.green],borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:TM(),font:{size:9}},grid:{display:false}},y:{ticks:{color:TM(),font:{size:9}},grid:{color:TM()+'14'},beginAtZero:true}}}});
+  }else if(opLd){opLd.textContent='Sin datos'}
+  // Type chart: use sources as proxy for property types
+  const src=D.sources||[],tpEl=$('dmTp'),tpLd=$('dmTpLd');
+  if(src.length && tpEl){
+    if(CH.dtp)CH.dtp.destroy();if(tpLd)tpLd.classList.add('done');
+    CH.dtp=new Chart(tpEl,{type:'bar',data:{labels:src.map(s=>s.source),datasets:[{data:src.map(s=>s.received),backgroundColor:C.blue,barPercentage:.7,borderRadius:3}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:TM(),font:{size:8}},grid:{display:false}},y:{ticks:{color:TM(),font:{size:8}}}}}});
+  }else if(tpLd){tpLd.textContent='Sin datos'}
+  // Price chart
+  const pxEl=$('dmPx'),pxLd=$('dmPxLd'),ranges=ops[0]?.ranges||[];
+  if(ranges.length && pxEl){
+    if(CH.dpx)CH.dpx.destroy();if(pxLd)pxLd.classList.add('done');
+    CH.dpx=new Chart(pxEl,{type:'bar',data:{labels:ranges.map(r=>r.range),datasets:[{data:ranges.map(r=>r.count),backgroundColor:C.amber,borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:TM(),font:{size:8}},grid:{display:false}},y:{ticks:{color:TM(),font:{size:8}},grid:{color:TM()+'14'},beginAtZero:true}}}});
+  }else if(pxLd){pxLd.textContent='Sin datos'}
+}
+
+function rSrc(){
+  const src=D.sources||[];$('srcTbl').innerHTML=src.length?'<table><thead><tr><th>Fuente</th><th>Leads</th><th>Hot%</th><th>Avanz%</th><th>Var.</th></tr></thead><tbody>'+src.map(s=>'<tr><td><strong>'+E(s.source||'?')+'</strong></td><td>'+F(s.received||0)+'</td><td>'+P(s.hot_pct)+'</td><td>'+P(s.advanced_pct)+'</td><td>'+(s.variation_pct!=null?(s.variation_pct>=0?'+':'')+s.variation_pct.toFixed(1)+'%':'S/I')+'</td></tr>').join('')+'</tbody></table>':'<p style="color:var(--txt3);padding:12px">Sin datos de fuentes</p>';
+  rProps();
+}
+function rProps(){
+  const p=D.properties||{},tab=window._propTab||'opportunity',rows=tab==='opportunity'?(p.opportunity||[]):(p.leakage||[]);
+  $('propTbl').innerHTML=rows.length?(tab==='opportunity'?'<table><thead><tr><th>Codigo</th><th>Leads</th><th>Hot</th><th>Visitas</th><th>Conv.</th></tr></thead><tbody>'+rows.slice(0,10).map(r=>'<tr><td><strong>'+E(r.code||'?')+'</strong></td><td>'+F(r.leads||0)+'</td><td>'+F(r.hot||0)+'</td><td>'+(r.ever_visit_scheduled||0)+'</td><td>'+P(r.conversion_pct)+'</td></tr>').join('')+'</tbody></table>':'<table><thead><tr><th>Codigo</th><th>Int.visita</th><th class="r">Sin coord.</th><th class="a">Sin gest.</th></tr></thead><tbody>'+rows.slice(0,10).map(r=>'<tr><td><strong>'+E(r.code||'?')+'</strong></td><td>'+F(r.ever_visit_intent||0)+'</td><td class="r">'+F(r.uncoordinated||0)+'</td><td class="a">'+F(r.unmanaged||0)+'</td></tr>').join('')+'</tbody></table>'):'<p style="color:var(--txt3);padding:12px">Sin datos</p>';
+}
+function rTeam(){
+  const ex=D.executives||[];$('execTbl').innerHTML=ex.length?'<table><thead><tr><th>Ejecutiva</th><th>Asig.</th><th class="r">Hot</th><th>SLA%</th><th>Visitas</th><th class="g">Gan.</th><th>Conv.Vis</th></tr></thead><tbody>'+ex.map(e=>'<tr><td><strong>'+E(e.executive||'?')+'</strong></td><td>'+F(e.assigned||0)+'</td><td class="r">'+F(e.hot||0)+'</td><td>'+P(e.sla_fulfilled)+'</td><td>'+(e.ever_visit_scheduled||0)+'</td><td class="g"><strong>'+F(e.ever_closed_won||0)+'</strong></td><td>'+P(e.conversion_to_visit_pct)+'</td></tr>').join('')+'</tbody></table>':'<p style="color:var(--txt3);padding:12px">Sin datos</p>';
+  const cov=D.kpis?._meta?.temperature_coverage||{};$('covGrid').innerHTML='<div class="cov-card"><strong>'+(cov.total||0)+'</strong><span>Total</span></div><div class="cov-card"><strong>'+(cov.with_history||0)+'</strong><span>Hist. temp.</span></div><div class="cov-card"><strong>'+P(cov.history_coverage_pct)+'</strong><span>Cob. temp.</span></div>';
+}
+
+window.toggleTheme=()=>{document.documentElement.dataset.theme=document.documentElement.dataset.theme==='light'?'dark':'light';localStorage.setItem('theme',document.documentElement.dataset.theme);$('themeIcon').className=document.documentElement.dataset.theme==='light'?'fa-solid fa-moon':'fa-solid fa-sun';if(D){dCharts();render()}}
 window.closeSidebar=()=>{$('sidebar').classList.remove('mobile-open');$('sidebarOverlay').classList.remove('open')};
 
-(()=>{const s=localStorage.getItem('theme')||'dark';document.documentElement.dataset.theme=s;$('themeIcon').className=s==='light'?'fa-solid fa-moon':'fa-solid fa-sun';
+// Init
+document.addEventListener('DOMContentLoaded',()=>{
+  const s=localStorage.getItem('theme')||'dark';document.documentElement.dataset.theme=s;$('themeIcon').className=s==='light'?'fa-solid fa-moon':'fa-solid fa-sun';
   setPeriod('30d');
-  fetch('/api/analytics/leads/filters',{credentials:'same-origin'}).then(r=>r.json()).then(f=>{
+  fetch('/api/analytics/leads/filters',{headers:{Accept:'application/json'}}).then(r=>r.json()).then(f=>{
     if(f.executives)$('fExec').innerHTML='<option value="">Ejecutiva</option>'+f.executives.map(x=>'<option value="'+E(x.value||x.executive||x)+'">'+E(x.value||x.executive||x)+'</option>').join('');
     if(f.sources)$('fSource').innerHTML='<option value="">Fuente</option>'+f.sources.map(x=>'<option value="'+E(x.value||x.source||x)+'">'+E(x.value||x.source||x)+'</option>').join('');
-  }).catch(console.error);
-  init();
-})();
+  }).catch(e=>console.warn('Filter options unavailable:',e));
+  loadData();
+});
 </script>
 </body>
 </html>

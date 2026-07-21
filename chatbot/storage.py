@@ -468,13 +468,17 @@ def _reconcile_missing_hot_notifications(db):
     projection = {
         "_id": 1, "phone": 1, "created_at": 1, "ejecutivo_asignado": 1,
         "lead_temperature_effective": 1, "pipeline_stage": 1, "stage": 1,
-        "prospecto": 1, "last_message_preview": 1,
+        "prospecto": 1, "last_message_preview": 1, "lifecycle.first_valid_management_at": 1,
     }
     for lead in db["leads"].find({"lead_temperature_effective": "HOT"}, projection):
         created_at = coerce_utc_datetime(lead.get("created_at"))
         if not created_at or created_at < cutover:
             continue
         if str(lead.get("pipeline_stage") or lead.get("stage") or "").upper() in closed:
+            continue
+        # Do not send a delayed assignment alert after an executive has
+        # already managed the lead through another CRM action.
+        if (lead.get("lifecycle") or {}).get("first_valid_management_at"):
             continue
         executive = lead.get("ejecutivo_asignado")
         if not executive:

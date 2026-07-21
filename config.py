@@ -46,8 +46,10 @@ class Config:
     CRM_WEEKLY_SCHEDULE_HOUR = 8
     CRM_WEEKLY_SCHEDULE_MINUTE = 15
     # Fail closed until the canonical assignment -> delivery flow is deployed and verified.
-    LEAD_HOT_NOTIFICATIONS_ENABLED = os.getenv("LEAD_HOT_NOTIFICATIONS_ENABLED", "false").lower() == "true"
-    LEAD_HOT_RECONCILIATION_ENABLED = os.getenv("LEAD_HOT_RECONCILIATION_ENABLED", "false").lower() == "true"
+    # Operational notifications are enabled by default. Deployments can still
+    # use the environment variables as emergency kill switches.
+    LEAD_HOT_NOTIFICATIONS_ENABLED = os.getenv("LEAD_HOT_NOTIFICATIONS_ENABLED", "true").lower() == "true"
+    LEAD_HOT_RECONCILIATION_ENABLED = os.getenv("LEAD_HOT_RECONCILIATION_ENABLED", "true").lower() == "true"
     LEAD_COLD_DIGEST_ENABLED = os.getenv("LEAD_COLD_DIGEST_ENABLED", "false").lower() == "true"
     CRM_SLA_SHADOW_ENABLED = os.getenv("CRM_SLA_SHADOW_ENABLED", "false").lower() == "true"
     CRM_SLA_ALERTS_ENABLED = os.getenv("CRM_SLA_ALERTS_ENABLED", "false").lower() == "true"

@@ -1122,6 +1122,7 @@ def update_lead_crm_data(phone, data):
     interaction_type = data.get("interaction_type")
     result = data.get("resultado_gestion")
     next_date = data.get("next_action_date")
+    actor_name = str(data.get("_actor_name") or "").strip()
     
     # Regla: Si hablé, OBLIGATORIO definir siguiente paso o cerrar
     if interaction_type == "hable" and result != "lead_cerrado":
@@ -1152,8 +1153,35 @@ def update_lead_crm_data(phone, data):
         elif new_state == "cerrado": valid_stage = PipelineStage.CLOSED_WON
         elif new_state == "gestion": valid_stage = PipelineStage.CONTACTED
         
-        CrmService.update_stage(phone_clean, valid_stage, actor="agent", notes=data.get("notas"))
-        new_state = valid_stage 
+        stage_updated = CrmService.update_stage(
+            phone_clean, valid_stage, actor=actor_name or "agent", notes=data.get("notas")
+        )
+
+        # A valid human management must never remain as NEW just because a
+        # more advanced milestone (for example VISIT_SCHEDULED) is missing a
+        # required field.  Preserve the milestone validation, but fall back to
+        # CONTACTED so the list and KPIs reflect that the lead was managed.
+        if not stage_updated and (
+            old_state == PipelineStage.NEW
+            or str(old_state).lower() in {"nuevo", "new", "pipelinestage.new"}
+        ):
+            stage_updated = CrmService.update_stage(
+                phone_clean,
+                PipelineStage.CONTACTED,
+                actor=actor_name or "agent",
+                notes=data.get("notas"),
+            )
+
+        if not stage_updated:
+            logger.error(
+                "CRM management saved without a valid stage transition: phone=%s target=%s",
+                phone_clean,
+                valid_stage,
+            )
+            return False
+
+        refreshed_lead = db["leads"].find_one({"_id": current_lead["_id"]}, {"pipeline_stage": 1})
+        new_state = (refreshed_lead or {}).get("pipeline_stage") or valid_stage
 
     # Agendar tarea solo si hay fecha válida
     if next_date:
@@ -1166,7 +1194,6 @@ def update_lead_crm_data(phone, data):
         )
 
     # Log de gestión comercial (Acción User) -> Usamos el log centralizado
-    actor_name = str(data.get("_actor_name") or "").strip()
     log_event(phone_clean, InteractionType.HUMAN_NOTE, actor_name or "unresolved_actor", {
         "interaction_type": interaction_type,
         "result": result,

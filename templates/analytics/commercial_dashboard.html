@@ -275,11 +275,21 @@ function applyFilters(){
 
 function renderChips(){
   const chips=$('fltChips'),items=[];
-  const labels={period:'Periodo',exec:'Ejecutiva',source:'Fuente',op:'Operacion',type:'Tipo',commune:'Comuna',temp:'Temperatura'};
-  const selectMap={exec:'fExec',source:'fSource',op:'fOp',type:'fType',commune:'fCommune',temp:'fTemp'};
-  if(FILTERS.period_start)items.push({label:FILTERS.period_start+' a '+FILTERS.period_end,key:'period'});
-  ['exec','source','op','type','commune','temp'].forEach(k=>{if(FILTERS[k])items.push({label:labels[k]+': '+FILTERS[k],key:k})});
-  chips.innerHTML=items.length?items.map(item=>'<span class="flt-chip" onclick="delete FILTERS[\''+item.key+'\'];if(item.key===\'period\'){delete FILTERS.period_start;delete FILTERS.period_end}const sel=selectMap[item.key];if(sel&&$('+sel+'))$('+sel+').value=\\'\\';renderChips();loadData()">'+E(item.label)+' <i class="fa-solid fa-times"></i></span>').join('')+' <button class="btn-sm danger" style="font-size:.62rem;padding:2px 6px" onclick="resetFilters()">Limpiar</button>':'';
+  const labels={period:'Periodo',exec:'Ejecutiva',source:'Fuente',op:'Operacion',type:'Tipo',commune:'Comuna',temp:'Temp'};
+  const selMap={exec:'fExec',source:'fSource',op:'fOp',type:'fType',commune:'fCommune',temp:'fTemp'};
+  if(FILTERS.period_start)items.push({k:'period',v:FILTERS.period_start+' a '+FILTERS.period_end});
+  ['exec','source','op','type','commune','temp'].forEach(k=>{if(FILTERS[k])items.push({k,v:labels[k]+': '+FILTERS[k]})});
+  let h=items.length?items.map(i=>'<span class="flt-chip" data-key="'+E(i.k)+'">'+E(i.v)+' <i class="fa-solid fa-times"></i></span>').join('')+' <button class="btn-sm danger" style="font-size:.62rem;padding:2px 6px" id="btnClearAll">Limpiar</button>':'';
+  chips.innerHTML=h;
+  // Event delegation instead of inline onclick
+  chips.querySelectorAll('.flt-chip').forEach(el=>{el.onclick=()=>{
+    const k=el.dataset.key;
+    delete FILTERS[k];
+    if(k==='period'){delete FILTERS.period_start;delete FILTERS.period_end}
+    const s=selMap[k];if(s&&$(s))$(s).value='';
+    renderChips();loadData();
+  }});
+  const btn=document.getElementById('btnClearAll');if(btn)btn.onclick=resetFilters;
 }
 
 function resetFilters(){

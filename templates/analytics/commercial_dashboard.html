@@ -210,8 +210,9 @@ body{margin:0;background:var(--bg-body);color:var(--txt);font-family:'Outfit',sy
 
 </div></main>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js?t=2"></script>
 <script>
+console.log('[DASH] Chart.js loaded, Chart defined:', typeof Chart !== 'undefined');
 const $=id=>document.getElementById(id);
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const F=v=>new Intl.NumberFormat('es-CL').format(Number(v??0));
@@ -301,6 +302,7 @@ function actTab(name){
 }
 
 function render(){
+  console.log('[DASH] render() called, D:',D?'data present':'null');
   if(!D)return;
   $('statusText').innerHTML='<i class="fa-solid fa-circle-check" style="color:'+C.green+'"></i> Datos cargados | '+(D.meta?.sla_policy?.display_label||'SLA 3h corridas');
   const cur=D.meta?.period?.current||{},prv=D.meta?.period?.previous||{};
@@ -323,7 +325,12 @@ function rKPI(){
   $('kpiRow').innerHTML=h;
 }
 
-function rCharts(){rev();rfun();rsla()}
+function rCharts(){
+  console.log('[DASH] rCharts() called, Chart available:', typeof Chart !== 'undefined');
+  try{rev()}catch(e){console.error('[DASH] rev error:',e)}
+  try{rfun()}catch(e){console.error('[DASH] rfun error:',e)}
+  try{rsla()}catch(e){console.error('[DASH] rsla error:',e)}
+}
 
 function rev(){
   const t=D.trends||{},cur=(t.current||{}).daily||[],prev=(t.previous||{}).daily||[],el=$('evChart'),ld=$('evLoad');

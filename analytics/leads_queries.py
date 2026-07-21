@@ -755,7 +755,7 @@ def _build_user_filter(executive: Optional[str]) -> dict:
 
 
 def _build_extra_filter(filters: Optional[dict]) -> dict:
-    """Filtros adicionales: stage, temperature, source."""
+    """Filtros adicionales: stage, temperature, source, operation, type, commune, code, assignment."""
     conditions = {}
     if not filters:
         return conditions
@@ -765,6 +765,18 @@ def _build_extra_filter(filters: Optional[dict]) -> dict:
         conditions["lead_temperature_effective"] = str(filters["temperature"])
     if filters.get("source"):
         conditions["prospecto.origen"] = str(filters["source"])
+    if filters.get("operation"):
+        conditions["prospecto.operacion"] = str(filters["operation"])
+    if filters.get("property_type"):
+        conditions["prospecto.tipo"] = str(filters["property_type"])
+    if filters.get("commune"):
+        conditions["prospecto.comuna"] = str(filters["commune"])
+    if filters.get("property_code"):
+        conditions["prospecto.codigo"] = str(filters["property_code"])
+    if filters.get("assignment") == "1":
+        conditions["ejecutivo_asignado"] = {"$nin": ["Sin Asignar", "No Asignado", None, ""]}
+    elif filters.get("assignment") == "0":
+        conditions["ejecutivo_asignado"] = {"$in": ["Sin Asignar", "No Asignado", None, ""]}
     return conditions
 
 

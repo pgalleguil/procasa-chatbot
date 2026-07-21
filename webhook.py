@@ -744,8 +744,24 @@ async def api_commercial_dashboard(
     period_start: str = Query(None),
     period_end: str = Query(None),
     executive: str = Query(None),
+    source: str = Query(None),
+    operation: str = Query(None),
+    property_type: str = Query(None),
+    commune: str = Query(None),
+    temperature: str = Query(None),
+    property_code: str = Query(None),
+    assignment: str = Query(None),
 ):
     # TEMP: public access for testing — remove after validation
+    filters = {}
+    if source: filters["source"] = source
+    if operation: filters["operation"] = operation
+    if property_type: filters["property_type"] = property_type
+    if commune: filters["commune"] = commune
+    if temperature: filters["temperature"] = temperature
+    if property_code: filters["property_code"] = property_code
+    if assignment: filters["assignment"] = assignment
+
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         _WEB_THREAD_POOL,
@@ -755,6 +771,7 @@ async def api_commercial_dashboard(
             executive=executive,
             role="admin",
             user_name="Test",
+            filters=filters or None,
         ),
     )
 

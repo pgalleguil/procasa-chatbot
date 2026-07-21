@@ -7,98 +7,102 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
   <style>
-    :root{--bg-body:#0b1220;--bg-card:#182235;--bg-elevated:#202d43;--bg-sidebar:#081426;--sidebar-glass-bg:rgba(8,20,38,0.82);--sidebar-glass-highlight:linear-gradient(145deg,rgba(255,255,255,0.055),rgba(99,102,241,0.025) 48%,rgba(8,20,38,0.02));--sidebar-border:rgba(148,163,184,0.20);--sidebar-shadow:inset -1px 0 rgba(255,255,255,0.04),8px 0 24px rgba(2,6,23,0.16);--sidebar-shadow-expanded:inset -1px 0 rgba(255,255,255,0.055),10px 0 28px rgba(2,6,23,0.18);--sidebar-hover-bg:rgba(148,163,184,0.11);--sidebar-active-bg:rgba(99,102,241,0.20);--sidebar-active-color:#a5b4fc;--sidebar-danger:#ef4444;--text-primary:#f8fafc;--text-secondary:#aab8ca;--sidebar-text:#edf4ff;--sidebar-muted:#b9c6d8;--accent:#6366f1;--accent-hover:#4f46e5;--border-color:rgba(148,163,184,0.18);--shadow-soft:0 10px 30px rgba(0,0,0,0.18);--shadow-card:0 4px 16px rgba(0,0,0,0.16);--sidebar-width:240px;--sidebar-width-collapsed:80px;--transition-speed:.3s;--input-bg:#243249;--input-border:#52627a;--input-text:#f8fafc;--placeholder-color:#aab8ca;--state-unattended:#f87171;--state-management:#fbbf24;--state-visits:#34d399;--state-closed:#64748b;--lead-cold:#22d3ee;--led-red:#ef4444;--led-yellow:#f59e0b;--led-green:#10b981;--led-orange:#f97316;--led-gray:#64748b}
-    [data-theme="light"]{--bg-body:#eaf0f6;--bg-card:#f8fafc;--bg-elevated:#f1f5f9;--bg-sidebar:#f4f7fc;--sidebar-glass-bg:rgba(244,247,252,0.84);--sidebar-glass-highlight:linear-gradient(145deg,rgba(255,255,255,0.52),rgba(79,70,229,0.035) 50%,rgba(226,232,240,0.08));--sidebar-border:rgba(100,116,139,0.24);--sidebar-shadow:inset -1px 0 rgba(255,255,255,0.72),8px 0 24px rgba(51,65,85,0.10);--sidebar-shadow-expanded:inset -1px 0 rgba(255,255,255,0.82),10px 0 28px rgba(51,65,85,0.13);--sidebar-hover-bg:rgba(79,70,229,0.08);--sidebar-active-bg:rgba(79,70,229,0.13);--sidebar-active-color:#4338ca;--sidebar-danger:#b91c1c;--text-primary:#172033;--text-secondary:#526178;--sidebar-text:#1e293b;--sidebar-muted:#526178;--border-color:#cbd5e1;--accent:#4f46e5;--accent-hover:#4338ca;--shadow-soft:0 12px 32px rgba(51,65,85,0.12);--shadow-card:0 4px 14px rgba(51,65,85,0.10);--input-bg:#f8fafc;--input-border:#aebdd0;--input-text:#172033;--placeholder-color:#64748b;--state-unattended:#e85d68;--state-management:#d99a08;--state-visits:#168a68;--state-closed:#64748b;--lead-cold:#22b8d6}
-    body{background:var(--bg-body);color:var(--text-primary);font-family:'Outfit',sans-serif;overflow-x:hidden;transition:background .3s,color .3s;min-height:100dvh;margin:0}
+    :root{--bg-body:#0b1220;--bg-card:#182235;--bg-elevated:#202d43;--bg-sidebar:#081426;--sidebar-glass-bg:rgba(8,20,38,0.82);--sidebar-glass-highlight:linear-gradient(145deg,rgba(255,255,255,0.055),rgba(99,102,241,0.025) 48%,rgba(8,20,38,0.02));--sidebar-border:rgba(148,163,184,0.20);--sidebar-shadow:inset -1px 0 rgba(255,255,255,0.04),8px 0 24px rgba(2,6,23,0.16);--sidebar-shadow-expanded:inset -1px 0 rgba(255,255,255,0.055),10px 0 28px rgba(2,6,23,0.18);--sidebar-hover-bg:rgba(148,163,184,0.11);--sidebar-active-bg:rgba(99,102,241,0.20);--sidebar-active-color:#a5b4fc;--sidebar-danger:#ef4444;--text-primary:#f8fafc;--text-secondary:#aab8ca;--sidebar-text:#edf4ff;--sidebar-muted:#b9c6d8;--accent:#6366f1;--accent-hover:#4f46e5;--border-color:rgba(148,163,184,0.18);--shadow-soft:0 10px 30px rgba(0,0,0,0.18);--shadow-card:0 4px 16px rgba(0,0,0,0.16);--sidebar-width:240px;--sidebar-width-collapsed:80px;--input-bg:#243249;--input-border:#52627a;--input-text:#f8fafc;--led-red:#ef4444;--led-yellow:#f59e0b;--led-green:#10b981;--led-blue:#3b82f6;--led-cyan:#06b6d4;--chart-blue:#6366f1;--chart-red:#ef4444;--chart-amber:#f59e0b;--chart-green:#10b981;--chart-cyan:#06b6d4;--chart-purple:#8b5cf6;--chart-gray:#64748b}
+    [data-theme="light"]{--bg-body:#eaf0f6;--bg-card:#f8fafc;--bg-elevated:#f1f5f9;--bg-sidebar:#f4f7fc;--sidebar-glass-bg:rgba(244,247,252,0.84);--sidebar-glass-highlight:linear-gradient(145deg,rgba(255,255,255,0.52),rgba(79,70,229,0.035) 50%,rgba(226,232,240,0.08));--sidebar-border:rgba(100,116,139,0.24);--sidebar-shadow:inset -1px 0 rgba(255,255,255,0.72),8px 0 24px rgba(51,65,85,0.10);--sidebar-shadow-expanded:inset -1px 0 rgba(255,255,255,0.82),10px 0 28px rgba(51,65,85,0.13);--sidebar-hover-bg:rgba(79,70,229,0.08);--sidebar-active-bg:rgba(79,70,229,0.13);--sidebar-active-color:#4338ca;--sidebar-danger:#b91c1c;--text-primary:#172033;--text-secondary:#526178;--sidebar-text:#1e293b;--sidebar-muted:#526178;--border-color:#cbd5e1;--accent:#4f46e5;--accent-hover:#4338ca;--shadow-soft:0 12px 32px rgba(51,65,85,0.12);--shadow-card:0 4px 14px rgba(51,65,85,0.10);--input-bg:#f8fafc;--input-border:#aebdd0;--input-text:#172033;--chart-blue:#4f46e5;--chart-red:#dc2626;--chart-amber:#d97706;--chart-green:#16a34a;--chart-cyan:#0891b2;--chart-purple:#7c3aed;--chart-gray:#64748b}
+    body{background:var(--bg-body);color:var(--text-primary);font-family:'Outfit',sans-serif;overflow-x:hidden;min-height:100dvh;margin:0}
     .sidebar{width:var(--sidebar-width-collapsed);height:100dvh;max-height:100dvh;box-sizing:border-box;position:fixed;left:0;top:0;padding:14px 0 12px;color:var(--sidebar-text);background:var(--bg-sidebar);border-right:1px solid var(--sidebar-border);z-index:1050;transition:width .4s cubic-bezier(0.4,0,0.2,1);overflow:hidden;display:flex;flex-direction:column;white-space:nowrap;box-shadow:var(--sidebar-shadow)}
     @supports((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){.sidebar{background:var(--sidebar-glass-highlight),var(--sidebar-glass-bg);-webkit-backdrop-filter:blur(14px) saturate(120%);backdrop-filter:blur(14px) saturate(120%)}}
     .sidebar:hover{width:var(--sidebar-width);box-shadow:var(--sidebar-shadow-expanded)}
-    .main-content{margin-left:var(--sidebar-width-collapsed);padding:30px;transition:margin-left var(--transition-speed)}
+    .main-content{margin-left:var(--sidebar-width-collapsed);padding:24px 28px;transition:margin-left .3s}
     .brand{font-size:1.5rem;font-weight:800;color:var(--sidebar-text);margin-bottom:10px;display:flex;align-items:center;height:64px;min-height:64px;flex:0 0 auto;padding:0}
     .brand img{width:80px;height:50px;flex-shrink:0;object-fit:contain;object-position:center;padding:0 12px}
-    .brand span{margin-left:0;opacity:0;transition:opacity .3s}
+    .brand span{opacity:0;transition:opacity .3s}
     .sidebar:hover .brand span{opacity:1}
     .sidebar-nav{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:4px}
-    .nav-link{color:var(--sidebar-muted);padding:12px 0;display:flex;align-items:center;text-decoration:none;border-radius:0;margin:0;height:48px;overflow:hidden;width:100%;border-left:3px solid transparent;transition:all .3s;cursor:pointer}
+    .nav-link{color:var(--sidebar-muted);padding:12px 0;display:flex;align-items:center;text-decoration:none;margin:0;height:48px;overflow:hidden;width:100%;border-left:3px solid transparent;transition:all .3s;cursor:pointer}
     .nav-link i{min-width:calc(var(--sidebar-width-collapsed) - 3px);text-align:center;font-size:1.2rem;flex-shrink:0}
     .nav-link span{margin-left:4px;opacity:0;transform:translateX(-10px);transition:all .3s;font-weight:500;font-size:.9rem}
     .sidebar:hover .nav-link span{opacity:1;transform:translateX(0)}
     .nav-link:hover{background:var(--sidebar-hover-bg);color:var(--text-primary)}
     .nav-link.active{background:var(--sidebar-active-bg);color:var(--sidebar-active-color)!important;border-left-color:#818cf8}
     .sidebar-footer{margin-top:auto;flex:0 0 auto;padding-top:8px;border-top:1px solid var(--sidebar-border)}
-    .sidebar-footer .theme-toggle{background:0;border:0;color:var(--sidebar-muted);padding:12px 0;display:flex;align-items:center;width:100%;font-family:'Outfit',sans-serif;font-size:.9rem;cursor:pointer}
-    .sidebar-footer .theme-toggle:hover{background:var(--sidebar-hover-bg);color:var(--text-primary)}
+    .sidebar-footer button,.sidebar-footer a{background:0;border:0;color:var(--sidebar-muted);padding:12px 0;display:flex;align-items:center;width:100%;font-family:'Outfit',sans-serif;text-decoration:none;cursor:pointer;height:48px;overflow:hidden}
+    .sidebar-footer button i,.sidebar-footer a i{min-width:calc(var(--sidebar-width-collapsed) - 3px);text-align:center;font-size:1.2rem;flex-shrink:0}
+    .sidebar-footer button span,.sidebar-footer a span{margin-left:4px;opacity:0;transform:translateX(-10px);transition:all .3s;font-weight:500;font-size:.9rem}
+    .sidebar:hover .sidebar-footer button span,.sidebar:hover .sidebar-footer a span{opacity:1;transform:translateX(0)}
     .nav-link.logout:hover{background:rgba(239,68,68,0.1);color:var(--sidebar-danger)!important}
-    @media(max-width:991.98px){.sidebar{position:fixed;transform:translateX(-105%);width:280px!important;z-index:1200}.sidebar.mobile-open{transform:translateX(0)}.main-content{margin-left:0!important;padding:15px!important}.sidebar .brand span,.sidebar .nav-link span{opacity:1!important;transform:none!important}.sidebar-overlay.open{display:block;position:fixed;inset:0;z-index:1100;background:rgba(2,6,23,.66)}.sidebar-overlay{display:none}}
-    /* Commercial dashboard */
-    .commercial-dashboard h1{font-size:1.5rem;font-weight:700;margin:0}
-    .commercial-dashboard .header-meta{font-size:.8rem;color:var(--text-secondary);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .commercial-dashboard .kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
-    @media(min-width:992px){.commercial-dashboard .kpi-row{grid-template-columns:repeat(6,1fr)}}
-    .commercial-dashboard .kpi-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:10px;padding:14px 16px;position:relative;cursor:help;display:flex;gap:12px;align-items:flex-start;min-height:80px}
-    .commercial-dashboard .kpi-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.15)}
-    .commercial-dashboard .kpi-icon{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;background:rgba(99,102,241,.12);color:var(--accent);font-size:15px;flex:none}
-    .commercial-dashboard .kpi-icon.hot{background:rgba(239,68,68,.12);color:var(--led-red)}
-    .commercial-dashboard .kpi-icon.intent{background:rgba(245,158,11,.12);color:var(--led-yellow)}
-    .commercial-dashboard .kpi-icon.coord{background:rgba(16,185,129,.12);color:var(--led-green)}
-    .commercial-dashboard .kpi-icon.closed{background:rgba(16,185,129,.12);color:var(--led-green)}
-    .commercial-dashboard .kpi-label{font-size:.7rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em}
-    .commercial-dashboard .kpi-value{font-size:1.5rem;font-weight:700;line-height:1.15;color:var(--text-primary)}
-    .commercial-dashboard .kpi-var{font-size:.7rem;margin-top:1px;font-weight:500}
-    .commercial-dashboard .kpi-var.up{color:var(--led-green)}.commercial-dashboard .kpi-var.down{color:var(--led-red)}.commercial-dashboard .kpi-var.neutral{color:var(--text-secondary)}
-    .commercial-dashboard .kpi-tooltip{display:none;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);width:220px;padding:8px 10px;background:var(--bg-elevated);border:1px solid var(--border-color);border-radius:6px;font-size:.7rem;line-height:1.4;color:var(--text-secondary);z-index:20;pointer-events:none}
-    .commercial-dashboard .kpi-card:hover .kpi-tooltip{display:block}
-    .commercial-dashboard .section-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:10px;padding:16px 18px;margin-bottom:16px}
-    .commercial-dashboard .section-title{font-size:.9rem;font-weight:600;margin-bottom:12px;color:var(--text-primary)}
-    .commercial-dashboard .section-title small{font-weight:400;color:var(--text-secondary);font-size:.75rem}
-    .commercial-dashboard .chart-box{min-height:260px;position:relative}
-    .commercial-dashboard .chart-box-sm{min-height:140px}
-    .commercial-dashboard .sla-stat{text-align:center;padding:10px;background:rgba(16,185,129,.08);border-radius:8px;height:100%}
-    .commercial-dashboard .sla-stat.critical{background:rgba(239,68,68,.08)}
-    .commercial-dashboard .sla-stat.warning{background:rgba(245,158,11,.08)}
-    .commercial-dashboard .sla-stat strong{display:block;font-size:1.2rem;font-weight:700;color:var(--text-primary)}
-    .commercial-dashboard .sla-stat span{font-size:.65rem;color:var(--text-secondary);display:block}
-    .commercial-dashboard .loading{color:var(--text-secondary);padding:40px;text-align:center}
-    .commercial-dashboard .tab-group{display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap}
-    .commercial-dashboard .tab-group button{padding:5px 12px;border:1px solid var(--border-color);border-radius:6px;background:transparent;color:var(--text-secondary);cursor:pointer;font:.7rem Outfit,sans-serif;font-weight:500}
-    .commercial-dashboard .tab-group button.active{background:var(--accent);border-color:var(--accent);color:#fff}
-    .commercial-dashboard .table-wrap{overflow:auto;font-size:.75rem}
-    .commercial-dashboard .table-wrap table{width:100%;border-collapse:collapse}
-    .commercial-dashboard .table-wrap th{color:var(--text-secondary);text-transform:uppercase;font-size:.65rem;font-weight:600;letter-spacing:.04em;padding:6px 8px;border-bottom:1px solid var(--border-color);text-align:left;white-space:nowrap}
-    .commercial-dashboard .table-wrap td{padding:6px 8px;border-bottom:1px solid var(--border-color);color:var(--text-primary)}
-    .commercial-dashboard .table-wrap tr:hover td{background:rgba(99,102,241,.05)}
-    .commercial-dashboard .coverage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
-    .commercial-dashboard .coverage-card{padding:10px;background:var(--bg-elevated);border-radius:8px}
-    .commercial-dashboard .coverage-card strong{display:block;font-size:.95rem;font-weight:700;color:var(--text-primary)}
-    .commercial-dashboard .coverage-card span{font-size:.65rem;color:var(--text-secondary);display:block}
-    .commercial-dashboard .coverage-card .meter{height:4px;border-radius:3px;background:var(--bg-body);margin-top:5px;overflow:hidden}
-    .commercial-dashboard .coverage-card .meter span{display:block;height:100%;border-radius:3px;background:var(--accent)}
-    .commercial-dashboard .insight-card{padding:10px 12px;border-radius:8px;border-left:3px solid;background:var(--bg-elevated);margin-bottom:8px}
-    .commercial-dashboard .insight-card.critical{border-color:var(--led-red)}
-    .commercial-dashboard .insight-card.high{border-color:var(--led-yellow)}
-    .commercial-dashboard .insight-card.medium{border-color:var(--accent)}
-    .commercial-dashboard .insight-card.info{border-color:var(--lead-cold)}
-    .commercial-dashboard .insight-priority{font-size:.55rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)}
-    .commercial-dashboard .insight-title{font-weight:600;font-size:.8rem;margin:2px 0;color:var(--text-primary)}
-    .commercial-dashboard .insight-finding{font-size:.7rem;color:var(--text-secondary)}
-    .commercial-dashboard .error-box{background:rgba(239,68,68,.1);border:1px solid var(--led-red);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px}
-    .commercial-dashboard .error-box[hidden]{display:none}
-    .commercial-dashboard .error-box button{padding:6px 14px;background:var(--led-red);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:600;font-size:.75rem;font-family:'Outfit',sans-serif}
-    .commercial-dashboard .status-bar{background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:8px 14px;font-size:.8rem;color:var(--text-secondary);margin-bottom:16px;display:flex;align-items:center;gap:12px;min-height:36px}
-    .commercial-dashboard .btn-icon{width:34px;height:34px;padding:0;display:grid;place-items:center;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-card);color:var(--text-secondary);cursor:pointer;font-size:.8rem}
-    .commercial-dashboard .btn-icon:hover{border-color:var(--accent);color:var(--accent)}
-    .commercial-dashboard .filter-group{display:flex;flex-direction:column;gap:2px}
-    .commercial-dashboard .filter-group label{font-size:.65rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em}
-    .commercial-dashboard .filter-group select,.commercial-dashboard .filter-group input{height:32px;border:1px solid var(--border-color);border-radius:6px;padding:0 8px;background:var(--input-bg);color:var(--input-text);font:.75rem Outfit,sans-serif;outline:none;width:120px}
-    .commercial-dashboard .filter-group select:focus,.commercial-dashboard .filter-group input:focus{border-color:var(--accent)}
-    .commercial-dashboard .filter-drawer{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;padding:12px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:10px;margin-top:4px}
-    .commercial-dashboard .filter-drawer[hidden]{display:none}
-    .commercial-dashboard .filter-drawer label{display:flex;flex-direction:column;gap:3px;font-size:.7rem;color:var(--text-secondary)}
-    .commercial-dashboard .filter-drawer select{height:30px;border:1px solid var(--border-color);border-radius:5px;padding:0 6px;background:var(--input-bg);color:var(--input-text);font:.7rem Outfit,sans-serif}
-    @media(max-width:768px){.commercial-dashboard .kpi-row{grid-template-columns:repeat(2,1fr);gap:8px}.commercial-dashboard .kpi-card{padding:10px 12px;min-height:70px}.commercial-dashboard .kpi-icon{width:30px;height:30px;font-size:13px}.commercial-dashboard .kpi-value{font-size:1.2rem}.commercial-dashboard .filter-drawer{grid-template-columns:repeat(3,1fr)}}
-    @media(max-width:520px){.commercial-dashboard .kpi-row{grid-template-columns:1fr 1fr;gap:6px}.commercial-dashboard .filter-drawer{grid-template-columns:1fr;position:fixed;inset:auto 10px 10px;z-index:1300;max-height:60vh;overflow:auto}}
+    @media(max-width:991.98px){.sidebar{transform:translateX(-105%);width:280px!important;z-index:1200}.sidebar.mobile-open{transform:translateX(0)}.main-content{margin-left:0!important;padding:14px!important}.sidebar .brand span,.sidebar .nav-link span{opacity:1!important;transform:none!important}.sidebar-overlay.open{display:block;position:fixed;inset:0;z-index:1100;background:rgba(2,6,23,.66)}.sidebar-overlay{display:none}}
+    /* Dashboard */
+    .dash{max-width:1920px}.dash h1{font-size:1.5rem;font-weight:700;margin:0}.dash h2{font-size:1.05rem;font-weight:600;margin:0;color:var(--text-primary)}
+    .dash .header-row{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:12px}
+    .dash .header-meta{font-size:.75rem;color:var(--text-secondary);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .dash .filter-row{display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px}
+    .dash .flt{display:flex;flex-direction:column;gap:2px}
+    .dash .flt label{font-size:.6rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em}
+    .dash .flt select,.dash .flt input{height:30px;border:1px solid var(--border-color);border-radius:5px;padding:0 7px;background:var(--input-bg);color:var(--input-text);font:.72rem Outfit,sans-serif;outline:none;width:105px}
+    .dash .flt select:focus,.dash .flt input:focus{border-color:var(--accent)}
+    .dash .flt-drawer{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;padding:10px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;margin-bottom:8px}
+    .dash .flt-drawer[hidden]{display:none}
+    .dash .flt-drawer label{display:flex;flex-direction:column;gap:2px;font-size:.65rem;color:var(--text-secondary)}
+    .dash .flt-drawer select{height:28px;border:1px solid var(--border-color);border-radius:4px;padding:0 5px;background:var(--input-bg);color:var(--input-text);font:.65rem Outfit,sans-serif}
+    .dash .btn-sm{height:30px;padding:0 10px;border:1px solid var(--border-color);border-radius:5px;background:var(--bg-card);color:var(--text-secondary);cursor:pointer;font:.72rem Outfit,sans-serif;display:grid;place-items:center}
+    .dash .btn-sm:hover{border-color:var(--accent);color:var(--accent)}
+    .dash .status-bar{background:var(--bg-card);border:1px solid var(--border-color);border-radius:7px;padding:6px 12px;font-size:.75rem;color:var(--text-secondary);margin-bottom:10px;display:flex;align-items:center;gap:10px;min-height:32px}
+    .dash .kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+    @media(min-width:992px){.dash .kpi-row{grid-template-columns:repeat(6,1fr)}}
+    .dash .kpi-card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:12px 14px;cursor:help;display:flex;gap:10px;align-items:flex-start;min-height:72px;position:relative}
+    .dash .kpi-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.15)}
+    .dash .kpi-card .kpi-bar{position:absolute;top:0;left:0;right:0;height:3px;border-radius:8px 8px 0 0;background:var(--chart-blue)}
+    .dash .kpi-card .kpi-bar.hot{background:var(--chart-red)}
+    .dash .kpi-card .kpi-bar.intent{background:var(--chart-amber)}
+    .dash .kpi-card .kpi-bar.coord{background:var(--chart-green)}
+    .dash .kpi-card .kpi-bar.closed{background:var(--chart-green)}
+    .dash .kpi-icon{width:32px;height:32px;border-radius:7px;display:grid;place-items:center;background:rgba(99,102,241,.10);color:var(--accent);font-size:14px;flex:none}
+    .dash .kpi-icon.hot{background:rgba(239,68,68,.10);color:var(--chart-red)}
+    .dash .kpi-icon.intent{background:rgba(245,158,11,.10);color:var(--chart-amber)}
+    .dash .kpi-icon.coord{background:rgba(16,185,129,.10);color:var(--chart-green)}
+    .dash .kpi-icon.closed{background:rgba(16,185,129,.10);color:var(--chart-green)}
+    .dash .kpi-label{font-size:.62rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em}
+    .dash .kpi-val{font-size:1.35rem;font-weight:700;line-height:1.15;color:var(--text-primary)}
+    .dash .kpi-var{font-size:.68rem;margin-top:1px;font-weight:500}
+    .dash .kpi-var.up{color:var(--chart-green)}.dash .kpi-var.down{color:var(--chart-red)}.dash .kpi-var.neutral{color:var(--text-secondary)}
+    .dash .kpi-tt{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);width:200px;padding:7px 9px;background:var(--bg-elevated);border:1px solid var(--border-color);border-radius:5px;font-size:.65rem;line-height:1.4;color:var(--text-secondary);z-index:20;pointer-events:none}
+    .dash .kpi-card:hover .kpi-tt{display:block}
+    .dash .tab-nav{display:flex;gap:2px;margin-bottom:10px}
+    .dash .tab-nav button{padding:6px 16px;border:1px solid transparent;border-bottom:2px solid transparent;background:transparent;color:var(--text-secondary);cursor:pointer;font:.75rem Outfit,sans-serif;font-weight:500;border-radius:0}
+    .dash .tab-nav button.active{color:var(--accent);border-bottom-color:var(--accent)}
+    .dash .tab-nav button:hover{color:var(--text-primary)}
+    .dash .tab-panel{display:none}.dash .tab-panel.active{display:block}
+    .dash .card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:14px 16px;margin-bottom:10px}
+    .dash .card h2{font-size:.9rem;font-weight:600;margin-bottom:8px;color:var(--text-primary)}
+    .dash .card h2 small{font-weight:400;color:var(--text-secondary);font-size:.7rem}
+    .dash .chart-box{min-height:250px;position:relative}
+    .dash .chart-box-sm{min-height:130px}
+    .dash .chart-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:.8rem}
+    .dash .chart-loading.done{display:none}
+    .dash .sla-box{text-align:center;padding:8px;border-radius:6px;height:100%}
+    .dash .sla-box.ok{background:rgba(16,185,129,.06)}.dash .sla-box.crit{background:rgba(239,68,68,.06)}.dash .sla-box.warn{background:rgba(245,158,11,.06)}
+    .dash .sla-box strong{display:block;font-size:1.1rem;font-weight:700;color:var(--text-primary)}
+    .dash .sla-box span{font-size:.6rem;color:var(--text-secondary);display:block;line-height:1.2}
+    .dash .tbl{overflow:auto;font-size:.7rem}.dash .tbl table{width:100%;border-collapse:collapse}.dash .tbl th{color:var(--text-secondary);text-transform:uppercase;font-size:.6rem;font-weight:600;letter-spacing:.04em;padding:5px 7px;border-bottom:1px solid var(--border-color);text-align:left;white-space:nowrap}.dash .tbl td{padding:5px 7px;border-bottom:1px solid var(--border-color);color:var(--text-primary)}.dash .tbl tr:hover td{background:rgba(99,102,241,.04)}
+    .dash .tbl .red{color:var(--chart-red)}.dash .tbl .green{color:var(--chart-green)}.dash .tbl .amber{color:var(--chart-amber)}
+    .dash .insight{padding:10px 12px;border-radius:6px;border-left:3px solid;background:var(--bg-elevated);margin-bottom:6px}
+    .dash .insight.crit{border-color:var(--chart-red)}
+    .dash .insight.high{border-color:var(--chart-amber)}
+    .dash .insight.med{border-color:var(--accent)}
+    .dash .insight.info{border-color:var(--chart-cyan)}
+    .dash .insight .pri{font-size:.5rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)}
+    .dash .insight .title{font-weight:600;font-size:.78rem;margin:2px 0;color:var(--text-primary)}
+    .dash .insight .body{font-size:.68rem;color:var(--text-secondary);margin-bottom:3px}
+    .dash .insight .act{font-size:.62rem;color:var(--accent);margin-top:1px}
+    .dash .err-box{background:rgba(239,68,68,.08);border:1px solid var(--chart-red);border-radius:7px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px}
+    .dash .err-box[hidden]{display:none}.dash .err-box button{padding:4px 12px;background:var(--chart-red);color:#fff;border:0;border-radius:4px;cursor:pointer;font-weight:600;font-size:.7rem;font-family:'Outfit',sans-serif}
+    .dash .cov-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:7px}
+    .dash .cov-card{padding:9px;background:var(--bg-elevated);border-radius:6px}
+    .dash .cov-card strong{display:block;font-size:.9rem;font-weight:700;color:var(--text-primary)}.dash .cov-card span{font-size:.6rem;color:var(--text-secondary)}.dash .cov-card .meter{height:3px;border-radius:2px;background:var(--bg-body);margin-top:4px;overflow:hidden}.dash .cov-card .meter span{display:block;height:100%;border-radius:2px;background:var(--accent)}
+    @media(max-width:768px){.dash .kpi-row{grid-template-columns:repeat(2,1fr);gap:6px}.dash .kpi-card{padding:10px;min-height:64px}.dash .kpi-val{font-size:1.1rem}.dash .flt-drawer{grid-template-columns:repeat(3,1fr)}}
+    @media(max-width:520px){.dash .kpi-row{grid-template-columns:1fr 1fr;gap:5px}.dash .flt-drawer{grid-template-columns:1fr;position:fixed;inset:auto 8px 8px;z-index:1300;max-height:55vh;overflow:auto}}
   </style>
 </head>
 <body>
@@ -113,273 +117,287 @@
       <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i><span>&Oacute;rdenes de Visita</span></a>
     </div>
     <div class="sidebar-footer">
-      <button class="theme-toggle" onclick="toggleTheme();return false"><i class="fa-solid fa-sun" id="themeIcon"></i><span>Tema</span></button>
+      <button onclick="toggleTheme();return false"><i class="fa-solid fa-sun" id="themeIcon"></i><span>Tema</span></button>
       <a href="/logout" class="nav-link logout"><i class="fa-solid fa-power-off"></i><span>Cerrar Sesi&oacute;n</span></a>
     </div>
   </nav>
   <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
   <main class="main-content">
-    <div class="commercial-dashboard">
+    <div class="dash">
 
       <!-- HEADER -->
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+      <div class="header-row">
         <div>
           <h1>Dashboard Comercial de Leads</h1>
-          <div class="header-meta">
-            <span id="metaPeriod">Cargando per&iacute;odo...</span>
-            <span>|</span>
-            <span id="metaUpdated">Actualizando...</span>
-          </div>
+          <div class="header-meta"><span id="metaPeriod"></span><span>|</span><span id="metaUpdated"></span></div>
         </div>
-        <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap">
-          <div class="filter-group"><label>Per&iacute;odo</label><div style="display:flex;gap:4px"><input type="date" id="periodStart" style="width:110px"><input type="date" id="periodEnd" style="width:110px"></div></div>
-          <div class="filter-group"><label>Ejecutiva</label><select id="filterExecutive"><option value="">Todas</option></select></div>
-          <div class="filter-group"><label>Fuente</label><select id="filterSource"><option value="">Todas</option></select></div>
-          <button class="btn-icon" onclick="document.getElementById('filterDrawer').hidden=!document.getElementById('filterDrawer').hidden" title="M&aacute;s filtros"><i class="fa-solid fa-sliders"></i></button>
-          <button class="btn-icon" onclick="resetFilters()" title="Restablecer"><i class="fa-solid fa-rotate"></i></button>
+        <div class="filter-row">
+          <div class="flt"><label>Per&iacute;odo</label><div style="display:flex;gap:3px"><input type="date" id="periodStart" style="width:100px"><input type="date" id="periodEnd" style="width:100px"></div></div>
+          <div class="flt"><label>Ejecutiva</label><select id="filterExecutive"><option value="">Todas</option></select></div>
+          <button class="btn-sm" onclick="document.getElementById('filterDrawer').hidden=!document.getElementById('filterDrawer').hidden" title="M&aacute;s filtros">&vellip;</button>
+          <button class="btn-sm" onclick="resetFilters()" title="Restablecer"><i class="fa-solid fa-rotate"></i></button>
         </div>
-      </div>
-      <div class="filter-drawer" id="filterDrawer" hidden>
-        <label>Operaci&oacute;n<select id="filterOperation"><option value="">Todas</option></select></label>
-        <label>Tipo propiedad<select id="filterType"><option value="">Todos</option></select></label>
-        <label>Comuna<select id="filterCommune"><option value="">Todas</option></select></label>
-        <label>Temperatura<select id="filterTemperature"><option value="">Todas</option><option value="HOT">Hot</option><option value="COLD">Cold</option></select></label>
+        <div class="flt-drawer" id="filterDrawer" hidden>
+          <label>Operaci&oacute;n<select id="filterOperation"><option value="">Todas</option></select></label>
+          <label>Tipo prop.<select id="filterType"><option value="">Todos</option></select></label>
+          <label>Comuna<select id="filterCommune"><option value="">Todas</option></select></label>
+          <label>Temp.<select id="filterTemperature"><option value="">Todas</option><option value="HOT">Hot</option><option value="COLD">Cold</option></select></label>
+          <label>Fuente<select id="filterSource"><option value="">Todas</option></select></label>
+          <label>Asignado<select id="filterAssigned"><option value="">Todos</option><option value="1">Asignados</option><option value="0">Sin asignar</option></select></label>
+        </div>
       </div>
 
       <!-- ERROR -->
-      <div class="error-box" id="errorBox" hidden>
-        <strong style="color:var(--led-red)">Error al cargar datos.</strong>
-        <span id="errorDetail"></span>
-        <button onclick="loadData()">Reintentar</button>
-      </div>
+      <div class="err-box" id="errBox" hidden><strong style="color:var(--chart-red)">Error al cargar.</strong><span id="errDetail"></span><button onclick="init()">Reintentar</button></div>
 
       <!-- STATUS -->
-      <div class="status-bar" id="statusBar"><span class="loading" id="statusText">Cargando dashboard comercial...</span></div>
+      <div class="status-bar"><span id="statusText">Cargando dashboard...</span></div>
 
-      <!-- KPI ROW -->
-      <div class="kpi-row" id="kpiRow">
-        <div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-users"></i></div><div><div class="kpi-label">Leads Recibidos</div><div class="kpi-value" id="kpi-leads">--</div><div class="kpi-var" id="kpi-leads-var"></div><div class="kpi-period" id="kpi-leads-period"></div></div><div class="kpi-tooltip">Leads creados en el per&iacute;odo. Unidad: lead._id.</div></div>
-        <div class="kpi-card"><div class="kpi-icon hot"><i class="fa-solid fa-fire"></i></div><div><div class="kpi-label">Leads Hot</div><div class="kpi-value" id="kpi-hot">--</div><div class="kpi-var" id="kpi-hot-var"></div><div class="kpi-period" id="kpi-hot-period"></div></div><div class="kpi-tooltip">Temperatura hist&oacute;rica (temperature_history).</div></div>
-        <div class="kpi-card"><div class="kpi-icon intent"><i class="fa-solid fa-location-dot"></i></div><div><div class="kpi-label">Intenci&oacute;n Visita</div><div class="kpi-value" id="kpi-visit">--</div><div class="kpi-var" id="kpi-visit-var"></div><div class="kpi-period" id="kpi-visit-period"></div></div><div class="kpi-tooltip">RESULTADO_CHAT, last_intent o pipeline_stage.</div></div>
-        <div class="kpi-card"><div class="kpi-icon coord"><i class="fa-solid fa-calendar-check"></i></div><div><div class="kpi-label">Visitas</div><div class="kpi-value" id="kpi-visits">--</div><div class="kpi-var" id="kpi-visits-var"></div><div class="kpi-period" id="kpi-visits-period"></div></div><div class="kpi-tooltip">Pipeline_stage = VISIT_SCHEDULED.</div></div>
-        <div class="kpi-card"><div class="kpi-icon"><i class="fa-solid fa-gauge-high"></i></div><div><div class="kpi-label">SLA Hot</div><div class="kpi-value" id="kpi-sla">--</div><div class="kpi-var" id="kpi-sla-var"></div><div class="kpi-period" id="kpi-sla-period"></div></div><div class="kpi-tooltip">% Hot gestionados en &lt;3h. SLA: 3h corridas.</div></div>
-        <div class="kpi-card"><div class="kpi-icon closed"><i class="fa-solid fa-trophy"></i></div><div><div class="kpi-label">Cierres</div><div class="kpi-value" id="kpi-closed">--</div><div class="kpi-var" id="kpi-closed-var"></div><div class="kpi-period" id="kpi-closed-period"></div></div><div class="kpi-tooltip">Pipeline_stage = CLOSED_WON.</div></div>
+      <!-- KPI ROW - always visible -->
+      <div class="kpi-row" id="kpiRow"></div>
+
+      <!-- TAB NAVIGATION -->
+      <div class="tab-nav" id="tabNav">
+        <button class="active" data-tab="exec">Resumen</button>
+        <button data-tab="demand">Demanda</button>
+        <button data-tab="sources">Fuentes y Propiedades</button>
+        <button data-tab="team">Equipo</button>
       </div>
 
-      <!-- FUNNEL + INSIGHTS -->
-      <div class="row g-3 mb-3">
-        <div class="col-lg-8">
-          <div class="section-card">
-            <div class="section-title">Embudo Comercial <small>Leads que alcanzaron cada etapa</small></div>
-            <div class="chart-box" id="funnelChart"><div class="loading">Cargando...</div></div>
-            <div id="funnelBottleneck" style="margin-top:8px;font-size:.8rem;color:var(--text-secondary)"></div>
+      <!-- TAB: EXECUTIVE SUMMARY -->
+      <div class="tab-panel active" id="tab-exec">
+        <div class="row g-2 mb-2">
+          <div class="col-lg-7">
+            <div class="card"><h2>Evoluci&oacute;n Comercial <small>Actual vs anterior</small></h2><div class="chart-box"><canvas id="evChart"></canvas><div class="chart-loading" id="evLoading">Cargando...</div></div></div>
           </div>
-        </div>
-        <div class="col-lg-4">
-          <div class="section-card">
-            <div class="section-title"><i class="fa-solid fa-lightbulb me-1"></i> Insights</div>
-            <div id="insightsList"><div class="loading">Cargando...</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- EVOLUTION + SLA -->
-      <div class="row g-3 mb-3">
-        <div class="col-lg-7">
-          <div class="section-card">
-            <div class="section-title">Evoluci&oacute;n <small>Actual vs per&iacute;odo anterior</small></div>
-            <div class="chart-box" id="evolutionChart"><div class="loading">Cargando...</div></div>
-          </div>
-        </div>
-        <div class="col-lg-5">
-          <div class="section-card">
-            <div class="section-title"><i class="fa-solid fa-clock me-1"></i> Riesgo SLA <small>Distribuci&oacute;n Hot</small></div>
-            <div class="row g-2 mb-2" id="slaKpiStrip"></div>
-            <div class="chart-box-sm" id="slaChart"><div class="loading">Cargando...</div></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- DEMAND -->
-      <div class="section-card mb-3">
-        <div class="section-title">Demanda <small>Qu&eacute; buscan los clientes</small></div>
-        <div class="tab-group" id="demandTabs">
-          <button class="active" data-tab="types">Tipo propiedad</button>
-          <button data-tab="communes">Comuna</button>
-          <button data-tab="price">Precio</button>
-        </div>
-        <div class="chart-box" id="demandChart"><div class="loading">Seleccione una vista...</div></div>
-      </div>
-
-      <!-- SOURCES -->
-      <div class="row g-3 mb-3">
-        <div class="col-lg-7">
-          <div class="section-card">
-            <div class="section-title">Fuentes <small>Volumen y conversi&oacute;n</small></div>
-            <div class="chart-box-sm" id="sourcesChart"><div class="loading">Cargando...</div></div>
-            <div class="table-wrap" id="sourcesTable"></div>
-          </div>
-        </div>
-        <div class="col-lg-5">
-          <div class="section-card">
-            <div class="section-title">Propiedades</div>
-            <div class="tab-group" id="propTabs">
-              <button class="active" data-p="opportunity">Oportunidad</button>
-              <button data-p="leakage">Fuga</button>
+          <div class="col-lg-5">
+            <div class="card"><h2><i class="fa-solid fa-clock me-1"></i> Riesgo SLA</h2>
+              <div class="row g-2 mb-2" id="slaStrip"></div>
+              <div class="chart-box-sm"><canvas id="slaChart"></canvas><div class="chart-loading" id="slaLoading">Cargando...</div></div>
             </div>
-            <div class="table-wrap" id="propTable"></div>
+          </div>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-lg-7">
+            <div class="card"><h2>Embudo Comercial <small>Leads que alcanzaron cada etapa</small></h2><div class="chart-box"><canvas id="funChart"></canvas><div class="chart-loading" id="funLoading">Cargando...</div></div><div id="funBottleneck" style="margin-top:6px;font-size:.75rem;color:var(--text-secondary)"></div></div>
+          </div>
+          <div class="col-lg-5">
+            <div class="card"><h2><i class="fa-solid fa-lightbulb me-1"></i> Insights</h2><div id="insights"></div></div>
           </div>
         </div>
       </div>
 
-      <!-- EXECUTIVES -->
-      <div class="section-card mb-3">
-        <div class="section-title">Desempe&ntilde;o por Ejecutiva</div>
-        <div class="table-wrap"><table class="w-100" id="execTable" style="min-width:700px"></table></div>
+      <!-- TAB: DEMAND -->
+      <div class="tab-panel" id="tab-demand">
+        <div class="row g-2 mb-2">
+          <div class="col-lg-6">
+            <div class="card"><h2>Por Operaci&oacute;n</h2><div class="chart-box"><canvas id="demOpChart"></canvas><div class="chart-loading" id="demOpLoading">Cargando...</div></div></div>
+          </div>
+          <div class="col-lg-6">
+            <div class="card"><h2>Por Tipo de Propiedad</h2><div class="chart-box"><canvas id="demTpChart"></canvas><div class="chart-loading" id="demTpLoading">Cargando...</div></div></div>
+          </div>
+        </div>
+        <div class="card"><h2>Por Precio</h2><div class="chart-box"><canvas id="demPxChart"></canvas><div class="chart-loading" id="demPxLoading">Cargando...</div></div></div>
       </div>
 
-      <!-- COVERAGE -->
-      <div class="section-card">
-        <div class="section-title">Cobertura de Datos</div>
-        <div class="coverage-grid" id="coverageGrid"></div>
+      <!-- TAB: SOURCES & PROPERTIES -->
+      <div class="tab-panel" id="tab-sources">
+        <div class="row g-2 mb-2">
+          <div class="col-lg-6">
+            <div class="card"><h2>Calidad por Fuente</h2><div id="srcTbl" class="tbl"></div></div>
+          </div>
+          <div class="col-lg-6">
+            <div class="card"><h2>Propiedades</h2>
+              <div class="dash tab-nav" style="margin-bottom:6px" id="propSub">
+                <button class="active" data-ps="opportunity">Oportunidad</button>
+                <button data-ps="leakage">Fuga</button>
+              </div>
+              <div id="propTbl" class="tbl"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: TEAM -->
+      <div class="tab-panel" id="tab-team">
+        <div class="card"><h2>Desempe&ntilde;o por Ejecutiva</h2><div id="execTbl" class="tbl"></div></div>
+        <div class="card"><h2>Cobertura de Datos</h2><div class="cov-grid" id="covGrid"></div></div>
       </div>
     </div>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script>
-    const $ = id => document.getElementById(id);
-    const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    const fmt = v => new Intl.NumberFormat('es-CL').format(Number(v??0));
-    const pct = v => v!=null ? Number(v).toLocaleString('es-CL',{maximumFractionDigits:1})+'%' : 'S/I';
-    const isDark = () => document.documentElement.dataset.theme === 'dark';
-    const textColor = () => isDark() ? '#f8fafc' : '#172033';
-    const mutedColor = () => isDark() ? '#aab8ca' : '#526178';
+    const $=id=>document.getElementById(id);
+    const e$=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const F=v=>new Intl.NumberFormat('es-CL').format(Number(v??0));
+    const P=v=>v!=null?Number(v).toLocaleString('es-CL',{maximumFractionDigits:0})+'%':'S/I';
+    const P1=v=>v!=null?Number(v).toLocaleString('es-CL',{maximumFractionDigits:1})+'%':'S/I';
+    const TC=()=>document.documentElement.dataset.theme==='dark'?'#f8fafc':'#172033';
+    const TM=()=>document.documentElement.dataset.theme==='dark'?'#aab8ca':'#526178';
+    const C={blue:'#6366f1',red:'#ef4444',amber:'#f59e0b',green:'#10b981',cyan:'#06b6d4',purple:'#8b5cf6',gray:'#94a3b8'};
+    if(document.documentElement.dataset.theme==='light'){C.red='#dc2626';C.amber='#d97706';C.green='#16a34a';C.cyan='#0891b2';C.purple='#7c3aed';C.blue='#4f46e5'}
+    let D=null,CH={};
 
-    let DATA = null, charts = {};
+    function dCharts(){Object.values(CH).forEach(c=>{try{c.destroy()}catch(e){}});CH={}}
+    function sPeriod(){const e=new Date(),s=new Date();s.setDate(e.getDate()-29);$('periodStart').value=s.toISOString().slice(0,10);$('periodEnd').value=e.toISOString().slice(0,10)}
+    function qs(){const p=new URLSearchParams();if($('periodStart').value)p.set('period_start',$('periodStart').value);if($('periodEnd').value)p.set('period_end',$('periodEnd').value);if($('filterExecutive').value)p.set('executive',$('filterExecutive').value);return p.toString()}
+    function actTab(name){document.querySelectorAll('.dash .tab-panel').forEach(x=>x.classList.remove('active'));const t=$('tab-'+name);if(t)t.classList.add('active');document.querySelectorAll('.dash .tab-nav button[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===name))}
 
-    function setPeriod(){const e=new Date(),s=new Date();s.setDate(e.getDate()-29);$('periodStart').value=s.toISOString().slice(0,10);$('periodEnd').value=e.toISOString().slice(0,10)}
-    function params(){const p=new URLSearchParams();if($('periodStart').value)p.set('period_start',$('periodStart').value);if($('periodEnd').value)p.set('period_end',$('periodEnd').value);if($('filterExecutive').value)p.set('executive',$('filterExecutive').value);return p.toString()}
-
-    function destroyCharts(){Object.values(charts).forEach(c=>{try{c.destroy()}catch(e){}});charts={}}
-
-    async function loadData(){
-      $('errorBox').hidden=true;$('statusText').textContent='Cargando...';destroyCharts();
+    async function init(){
+      $('errBox').hidden=true;$('statusText').textContent='Cargando...';dCharts();
       try{
-        const r=await fetch('/api/analytics/commercial-dashboard?'+params(),{credentials:'same-origin',headers:{Accept:'application/json'}});
+        const r=await fetch('/api/analytics/commercial-dashboard?'+qs(),{credentials:'same-origin',headers:{Accept:'application/json'}});
         if(!r.ok)throw new Error('HTTP '+r.status);
-        DATA=await r.json();render();
-      }catch(e){console.error(e);$('statusText').textContent='Error';$('errorBox').hidden=false;$('errorDetail').textContent=e.message||String(e)}
+        D=await r.json();render();
+      }catch(e){console.error(e);$('statusText').textContent='Error';$('errBox').hidden=false;$('errDetail').textContent=e.message||String(e)}
     }
 
     function render(){
-      if(!DATA)return;
-      const d=DATA;
-      $('statusText').innerHTML='<i class="fa-solid fa-circle-check" style="color:var(--led-green)"></i> Actualizado: '+(d.meta.generated_at||'').replace('T',' ').replace('Z',' UTC');
-      const p=d.meta.period||{};$('metaPeriod').textContent=(p.current?.label||'')+' | '+(p.previous?.label||'');
-      $('metaUpdated').textContent=d.meta.generated_at?'\u00daltima actualizaci\u00f3n: '+d.meta.generated_at.replace('T',' ').replace('Z',' UTC'):'';
-      renderKPIs();renderFunnel();renderInsights();renderEvolution();renderSLA();
-      setTimeout(()=>{renderDemand();renderSources();renderProperties();renderExecutives();renderCoverage();},100);
+      if(!D)return;
+      $('statusText').innerHTML='<i class="fa-solid fa-circle-check" style="color:'+C.green+'"></i> Actualizado: '+(D.meta.generated_at||'').replace('T',' ').replace('Z',' UTC');
+      const p=D.meta.period||{};$('metaPeriod').textContent=(p.current?.label||'')+' | '+(p.previous?.label||'');
+      $('metaUpdated').textContent=D.meta.generated_at?'Ult. actualizacion: '+D.meta.generated_at.replace('T',' ').replace('Z',' UTC'):'';
+      rkpi();rExec();setTimeout(()=>actTab('exec'),50);
     }
 
-    function renderKPIs(){
-      const k=DATA.kpis||{};const kpiMap={leads:'leads_received',hot:'leads_hot_history',visit:'visit_intent',visits:'visits_scheduled',closed:'closed_won'};
-      Object.entries(kpiMap).forEach(([id,key]) => {
-        const v=k[key]||{},valEl=$('kpi-'+id),varEl=$('kpi-'+id+'-var'),perEl=$('kpi-'+id+'-period');
-        if(valEl)valEl.textContent=v.value!=null?fmt(v.value):'S/I';
-        if(perEl)perEl.textContent='vs. anterior';
-        if(varEl){const vv=v.variation_pct;if(vv!=null){varEl.className='kpi-var '+(vv>0?'up':vv<0?'down':'neutral');varEl.innerHTML=(vv>0?'<i class="fa-solid fa-caret-up"></i> ':'<i class="fa-solid fa-caret-down"></i> ')+(vv>=0?'+':'')+vv.toFixed(1)+'%'}else{varEl.className='kpi-var neutral';varEl.textContent='S/I'}}
+    function rkpi(){
+      const k=D.kpis||{},map={leads:'leads_received',hot:'leads_hot_history',visit:'visit_intent',visits:'visits_scheduled',closed:'closed_won'};
+      const icons={leads:'users',hot:'fire',visit:'location-dot',visits:'calendar-check',closed:'trophy'};
+      const bars={leads:'',hot:'hot',visit:'intent',visits:'coord',closed:'closed'};
+      let h='';
+      Object.entries(map).forEach(([id,key])=>{
+        const v=k[key]||{},vv=v.variation_pct,cls=vv!=null?(vv>0?'up':vv<0?'down':'neutral'):'neutral';
+        const varHtml=vv!=null?'<span class="kpi-var '+cls+'">'+(vv>0?'<i class="fa-solid fa-caret-up"></i> ':'<i class="fa-solid fa-caret-down"></i> ')+(vv>=0?'+':'')+vv.toFixed(1)+'%</span>':'<span class="kpi-var neutral">S/I</span>';
+        h+='<div class="kpi-card"><div class="kpi-bar '+bars[id]+'"></div><div class="kpi-icon '+bars[id]+'"><i class="fa-solid fa-'+icons[id]+'"></i></div><div><div class="kpi-label">'+{leads:'Leads Recibidos',hot:'Leads Hot',visit:'Intencion Visita',visits:'Visitas Coord.',closed:'Cierres'}[id]+'</div><div class="kpi-val">'+(v.value!=null?F(v.value):'S/I')+'</div>'+varHtml+'</div><div class="kpi-tt">'+{leads:'Leads creados en el periodo. Unidad: lead._id. Universo: cohorte.',hot:'Leads con entrada HOT en temperature_history.',visit:'RESULTADO_CHAT, last_intent o pipeline_stage con intencion de visita.',visits:'Pipeline_stage = VISIT_SCHEDULED.',closed:'Pipeline_stage = CLOSED_WON.'}[id]+'</div></div>';
       });
-      const sla=k.sla_compliance||{};const slaVal=document.querySelector('#kpi-sla .kpi-value');if(slaVal)slaVal.textContent=sla.value!=null?pct(sla.value):'S/I';
+      const sla=k.sla_compliance||{},slaVal=sla.value!=null?P(sla.value):'S/I';h+='<div class="kpi-card"><div class="kpi-bar"></div><div class="kpi-icon"><i class="fa-solid fa-gauge-high"></i></div><div><div class="kpi-label">SLA Hot</div><div class="kpi-val">'+slaVal+'</div><span class="kpi-var neutral">SLA: 3h corridas</span></div><div class="kpi-tt">% Hot gestionados en &lt;3h. SLA policy: 3h corridas.</div></div>';
+      $('kpiRow').innerHTML=h;
     }
 
-    function renderFunnel(){
-      const f=DATA.funnel||[],el=$('funnelChart');
-      if(!f.length){el.innerHTML='<div class="loading">Sin datos</div>';return}
-      const labels=f.map(s=>s.label),values=f.map(s=>s.count);
-      const colors=['#6366f1','#ef4444','#f59e0b','#0891b2','#16a34a','#22c55e','#8b5cf6','#d97706'];
-      if(charts.funnel)charts.funnel.destroy();
-      charts.funnel=new Chart(el,{type:'bar',data:{labels,datasets:[{data:values,backgroundColor:colors.slice(0,labels.length),borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>fmt(ctx.raw)+' leads'}}},scales:{x:{ticks:{color:mutedColor(),font:{size:10}},grid:{display:false}},y:{display:false}}}});
-      let mx=0,bn=null;
-      for(let i=1;i<f.length;i++){const l=f[i-1].count-f[i].count;if(l>mx){mx=l;bn={from:f[i-1].label,to:f[i].label}}}
-      $('funnelBottleneck').innerHTML=bn&&mx>0?'<span style="color:var(--led-yellow)">Mayor fuga:</span> '+esc(bn.from)+' \u2192 '+esc(bn.to)+' <strong>'+fmt(mx)+'</strong> leads':'<span style="color:var(--led-green)">Sin fugas significativas</span>';
-    }
+    function rExec(){if(!CH.ev){revo();rfunnel();rsla()}else{revo();rfunnel();rsla()}rinsights();}
 
-    function renderInsights(){
-      const ins=DATA.insights||[],el=$('insightsList');
-      el.innerHTML=ins.length?ins.map(i=>'<div class="insight-card '+(i.priority||'info')+'"><span class="insight-priority">'+(i.priority||'INFO').toUpperCase()+'</span><div class="insight-title">'+esc(i.title)+'</div><div class="insight-finding">'+esc(i.finding||'')+'</div>'+(i.recommended_action?'<div class="insight-action" style="font-size:.65rem;color:var(--accent);margin-top:3px"><i class="fa-solid fa-arrow-right"></i> '+esc(i.recommended_action)+'</div>':'')+'</div>').join(''):'<div class="insight-card info"><span class="insight-priority">INFO</span><div class="insight-title">Sin hallazgos relevantes</div></div>';
-    }
-
-    function renderEvolution(){
-      const t=DATA.trends||{},cur=t.current?.daily||[],prev=t.previous?.daily||[],el=$('evolutionChart');
-      if(!cur.length&&!prev.length){el.innerHTML='<div class="loading">Sin datos de tendencia</div>';$('statusText').innerHTML+=' | Sin datos de evoluci\u00f3n';return}
+    function revo(){
+      const t=D.trends||{},cur=t.current?.daily||[],prev=t.previous?.daily||[],el=$('evChart'),ld=$('evLoading');
+      if(!cur.length&&!prev.length){ld.textContent='Sin datos';return}
       const dates=[...new Set([...cur.map(d=>d.date),...prev.map(d=>d.date)])].sort();
       const cm=Object.fromEntries(cur.map(d=>[d.date,d.received])),pm=Object.fromEntries(prev.map(d=>[d.date,d.received]));
-      if(charts.evolution)charts.evolution.destroy();
-      charts.evolution=new Chart(el,{type:'line',data:{labels:dates,datasets:[{label:'Actual',data:dates.map(d=>cm[d]||0),borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,0.1)',fill:true,tension:.3,pointRadius:0,pointHoverRadius:5,borderWidth:2.5},{label:'Anterior',data:dates.map(d=>pm[d]||0),borderColor:'#94a3b8',backgroundColor:'transparent',borderDash:[5,5],tension:.3,pointRadius:0,pointHoverRadius:4,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:textColor(),font:{size:10},boxWidth:12,usePointStyle:true}},tooltip:{mode:'index',intersect:false,callbacks:{label:ctx=>ctx.dataset.label+': '+fmt(ctx.raw)+' leads'}}},scales:{x:{ticks:{color:mutedColor(),font:{size:9},maxTicksLimit:15},grid:{color:'rgba(148,163,184,0.1)'}},y:{ticks:{color:mutedColor(),font:{size:9}},grid:{color:'rgba(148,163,184,0.1)'},beginAtZero:true}}}});
+      if(CH.ev)CH.ev.destroy();ld.classList.add('done');
+      CH.ev=new Chart(el,{type:'line',data:{labels:dates,datasets:[{label:'Actual',data:dates.map(d=>cm[d]||0),borderColor:C.blue,backgroundColor:C.blue+'18',fill:true,tension:.3,pointRadius:0,pointHoverRadius:5,borderWidth:2.5},{label:'Anterior',data:dates.map(d=>pm[d]||0),borderColor:C.gray,backgroundColor:'transparent',borderDash:[5,5],tension:.3,pointRadius:0,pointHoverRadius:4,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:TC(),font:{size:10},boxWidth:12,usePointStyle:true}},tooltip:{mode:'index',intersect:false}},scales:{x:{ticks:{color:TM(),font:{size:9},maxTicksLimit:14},grid:{color:TM()+'18'}},y:{ticks:{color:TM(),font:{size:9}},grid:{color:TM()+'18'},beginAtZero:true}}}});
     }
 
-    function renderSLA(){
-      const sla=DATA.sla_risk||{},strip=$('slaKpiStrip');
-      strip.innerHTML='<div class="col-4"><div class="sla-stat"><strong>'+pct(sla.within_sla_pct)+'</strong><span>Dentro SLA</span></div></div><div class="col-4"><div class="sla-stat critical"><strong>'+fmt(sla.critical_open)+'</strong><span>Cr\u00edticos</span></div></div><div class="col-4"><div class="sla-stat warning"><strong>'+fmt(sla.breached_during_period||0)+'</strong><span>Incumplidos</span></div></div>';
-      const dist=sla.distribution||[],el=$('slaChart');
-      if(!dist.length){el.innerHTML='<div class="loading">Sin datos</div>';return}
-      const dlabels=dist.map(d=>d.label),dvals=dist.map(d=>d.count),dcolors=['#22c55e','#16a34a','#f59e0b','#ef4444','#64748b'];
-      if(charts.sla)charts.sla.destroy();
-      charts.sla=new Chart(el,{type:'bar',data:{labels:dlabels,datasets:[{data:dvals,backgroundColor:dcolors.slice(0,dlabels.length),borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>fmt(ctx.raw)+' leads'}}},scales:{x:{display:false},y:{ticks:{color:mutedColor(),font:{size:10}}}}}});
+    function rfunnel(){
+      const f=D.funnel||[],el=$('funChart'),ld=$('funLoading');
+      if(!f.length){ld.textContent='Sin datos';return}
+      const labels=f.map(s=>s.label),values=f.map(s=>s.count);
+      const colors=[C.blue,C.red,C.amber,C.cyan,C.green,'#22c55e',C.purple,'#d97706'];
+      if(CH.fn)CH.fn.destroy();ld.classList.add('done');
+      CH.fn=new Chart(el,{type:'bar',data:{labels,datasets:[{data:values,backgroundColor:colors.slice(0,labels.length),borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>F(ctx.raw)+' leads'}}},scales:{x:{ticks:{color:TM(),font:{size:9},maxRotation:40},grid:{display:false}},y:{display:false}}}});
+      let mx=0,bn=null;
+      for(let i=1;i<f.length;i++){const l=f[i-1].count-f[i].count;if(l>mx){mx=l;bn={from:f[i-1].label,to:f[i].label}}}
+      $('funBottleneck').innerHTML=bn&&mx>0?'<span style="color:'+C.amber+'">Mayor fuga:</span> '+e$(bn.from)+' \u2192 '+e$(bn.to)+' <strong>'+F(mx)+'</strong> leads':'<span style="color:'+C.green+'">Sin fugas significativas</span>';
     }
 
-    function renderDemand(){
-      const el=$('demandChart');
-      if(charts.demand)charts.demand.destroy();
-      // Simple placeholder for now - shows D3-like bars
-      const types=DATA.demand_by_price?.coverage||{};
-      charts.demand=new Chart(el,{type:'bar',data:{labels:['Operaci\u00f3n','Tipo','Comuna','Precio'],datasets:[{label:'Cobertura',data:[types.operacion||0,types.tipo_propiedad||0,types.comuna||0,types.precio||0],backgroundColor:['#6366f1','#f59e0b','#16a34a','#0891b2'],borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>pct(ctx.raw)}}},scales:{x:{ticks:{color:mutedColor(),font:{size:9}},grid:{display:false}},y:{beginAtZero:true,max:100,ticks:{color:mutedColor(),font:{size:9},callback:v=>v+'%'},grid:{color:'rgba(148,163,184,0.1)'}}}}});
+    function rsla(){
+      const sla=D.sla_risk||{},strip=$('slaStrip'),el=$('slaChart'),ld=$('slaLoading');
+      strip.innerHTML='<div class="col-4"><div class="sla-box ok"><strong>'+P(sla.within_sla_pct)+'</strong><span>Dentro SLA</span></div></div><div class="col-4"><div class="sla-box crit"><strong>'+F(sla.critical_open||0)+'</strong><span>Criticos abiertos</span></div></div><div class="col-4"><div class="sla-box warn"><strong>'+F(sla.breached_during_period||0)+'</strong><span>Incumplidos</span></div></div>';
+      const dist=sla.distribution||[];
+      if(!dist.length){ld.textContent='Sin datos';return}
+      if(CH.sl)CH.sl.destroy();ld.classList.add('done');
+      CH.sl=new Chart(el,{type:'bar',data:{labels:dist.map(d=>d.label),datasets:[{data:dist.map(d=>d.count),backgroundColor:['#22c55e','#16a34a',C.amber,C.red,C.gray],borderRadius:3}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>F(ctx.raw)+' leads'}}},scales:{x:{display:false},y:{ticks:{color:TM(),font:{size:9}}}}}});
     }
 
-    function renderSources(){
-      const src=DATA.sources||[],el=$('sourcesChart');
-      if(charts.sources)charts.sources.destroy();
-      if(!src.length){el.innerHTML='<div class="loading">Sin datos de fuentes</div>';$('sourcesTable').innerHTML='';return}
-      const labels=src.map(s=>s.source),vol=src.map(s=>s.received),adv=src.map(s=>s.advanced_pct||0);
-      const colors=src.map(s=>(s.advanced_pct||0)>30?'#16a34a':(s.advanced_pct||0)>15?'#f59e0b':'#ef4444');
-      charts.sources=new Chart(el,{type:'bar',data:{labels,datasets:[{label:'Volumen',data:vol,backgroundColor:colors,borderRadius:4,yAxisID:'y'},{label:'% Avanzados',data:adv,backgroundColor:'rgba(99,102,241,0.3)',borderRadius:4,yAxisID:'y1'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:textColor(),font:{size:9},boxWidth:10,usePointStyle:true}},tooltip:{mode:'index',intersect:false}},scales:{x:{ticks:{color:mutedColor(),font:{size:8}},grid:{display:false}},y:{position:'left',ticks:{color:mutedColor(),font:{size:8}},grid:{color:'rgba(148,163,184,0.1)'},beginAtZero:true},y1:{position:'right',ticks:{color:mutedColor(),font:{size:8},callback:v=>v+'%'},grid:{display:false},beginAtZero:true,max:100}}}});
-      $('sourcesTable').innerHTML='<table><thead><tr><th>Fuente</th><th>Leads</th><th>Hot%</th><th>Avanz%</th><th>Var.</th></tr></thead><tbody>'+src.map(s=>'<tr><td><strong>'+esc(s.source)+'</strong></td><td>'+fmt(s.received)+'</td><td>'+pct(s.hot_pct)+'</td><td>'+pct(s.advanced_pct)+'</td><td>'+(s.variation_pct!=null?(s.variation_pct>=0?'+':'')+s.variation_pct.toFixed(1)+'%':'S/I')+'</td></tr>').join('')+'</tbody></table>';
+    function rinsights(){
+      const ins=D.insights||[],el=$('insights');
+      el.innerHTML=ins.length?ins.map(i=>{
+        const priCls={critical:'crit',high:'high',medium:'med',info:'info'}[i.priority||'info']||'info';
+        const priLabel={critical:'CRITICO',high:'ALTO',medium:'MEDIO',info:'INFO'}[i.priority||'info']||'INFO';
+        return'<div class="insight '+priCls+'"><span class="pri">'+priLabel+'</span><div class="title">'+e$(i.title)+'</div><div class="body">'+e$(i.finding||'')+'</div>'+(i.impact?'<div class="body" style="color:'+C.amber+'">Impacto: '+e$(i.impact)+'</div>':'')+(i.recommended_action?'<div class="act"><i class="fa-solid fa-arrow-right"></i> '+e$(i.recommended_action)+'</div>':'')+'</div>';
+      }).join(''):'<div class="insight info"><span class="pri">INFO</span><div class="title">Sin hallazgos relevantes</div></div>';
     }
 
-    function renderProperties(){
-      const p=DATA.properties||{},tab=window.propTab||'opportunity',rows=tab==='opportunity'?(p.opportunity||[]):(p.leakage||[]),el=$('propTable');
-      if(!rows.length){el.innerHTML='<table><tr><td style="color:var(--text-secondary);padding:12px">Sin datos de propiedades</td></tr></table>';return}
-      if(tab==='opportunity'){
-        el.innerHTML='<table><thead><tr><th>C\u00f3digo</th><th>Leads</th><th>Hot</th><th>Visitas</th><th>Conv.</th></tr></thead><tbody>'+rows.slice(0,8).map(r=>'<tr><td>'+esc(r.code)+'</td><td>'+fmt(r.leads)+'</td><td>'+fmt(r.hot)+'</td><td>'+(r.ever_visit_scheduled||0)+'</td><td>'+(r.conversion_pct!=null?pct(r.conversion_pct):'S/I')+'</td></tr>').join('')+'</tbody></table>';
-      }else{
-        el.innerHTML='<table><thead><tr><th>C\u00f3digo</th><th>Int.visita</th><th>Sin coord.</th><th>Sin gest.</th></tr></thead><tbody>'+rows.slice(0,8).map(r=>'<tr><td>'+esc(r.code)+'</td><td>'+fmt(r.ever_visit_intent||0)+'</td><td style="color:var(--led-red)">'+fmt(r.uncoordinated||0)+'</td><td style="color:var(--led-yellow)">'+fmt(r.unmanaged||0)+'</td></tr>').join('')+'</tbody></table>';
-      }
+    function rdemand(){
+      const dm=D.demand_by_price||{},{opCoverage=$('demOpChart'),tpCoverage=$('demTpChart'),pxCoverage=$('demPxChart'),opLoad=$('demOpLoading'),tpLoad=$('demTpLoading'),pxLoad=$('demPxLoading')}=document;
+      const cov=dm.coverage||{};
+      // Operations chart
+      const ops=dm.price_ranges||[];
+      if(ops.length){
+        if(CH.dop)CH.dop.destroy();opLoad.classList.add('done');
+        CH.dop=new Chart(opCoverage,{type:'bar',data:{labels:ops.map(o=>o.operation),datasets:[{data:ops.map(o=>o.total),backgroundColor:[C.blue,C.amber,C.green],borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>F(ctx.raw)+' leads'}}},scales:{x:{ticks:{color:TM(),font:{size:9}},grid:{display:false}},y:{ticks:{color:TM(),font:{size:9}},grid:{color:TM()+'18'},beginAtZero:true}}}});}else{opLoad.textContent='Sin datos'}
+      // Types - from sources
+      const src=D.sources||[];
+      if(src.length&&(tpCoverage)){
+        if(CH.dtp)CH.dtp.destroy();tpLoad.classList.add('done');
+        CH.dtp=new Chart(tpCoverage,{type:'bar',data:{labels:src.map(s=>s.source),datasets:[{label:'Volumen',data:src.map(s=>s.received),backgroundColor:C.blue+'AA',borderRadius:3,yAxisID:'y'},{label:'% Avanzados',data:src.map(s=>s.advanced_pct||0),backgroundColor:C.green+'44',borderRadius:3,yAxisID:'y1'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:TC(),font:{size:9},boxWidth:10,usePointStyle:true}}},scales:{x:{ticks:{color:TM(),font:{size:8}},grid:{display:false}},y:{ticks:{color:TM(),font:{size:8}},grid:{color:TM()+'18'},beginAtZero:true},y1:{position:'right',ticks:{color:TM(),font:{size:8},callback:v=>v+'%'},grid:{display:false},beginAtZero:true,max:100}}}});}else{tpLoad.textContent='Sin datos'}
+      // Price ranges
+      const prOps=dm.price_ranges||[];
+      if(prOps.length&&(pxCoverage)){
+        const firstOp=prOps[0],ranges=firstOp.ranges||[];
+        if(ranges.length){
+          if(CH.dpx)CH.dpx.destroy();pxLoad.classList.add('done');
+          CH.dpx=new Chart(pxCoverage,{type:'bar',data:{labels:ranges.map(r=>r.range),datasets:[{data:ranges.map(r=>r.count),backgroundColor:C.amber+'AA',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>F(ctx.raw)+' leads ('+P1(ranges[ctx.dataIndex]?.pct_of_op)+')'}}},scales:{x:{ticks:{color:TM(),font:{size:8},maxRotation:30},grid:{display:false}},y:{ticks:{color:TM(),font:{size:8}},grid:{color:TM()+'18'},beginAtZero:true}}}});}else{pxLoad.textContent='Sin datos'}
+      }else{pxLoad.textContent='Sin datos'}
     }
 
-    function renderExecutives(){
-      const ex=DATA.executives||[],el=$('execTable');
-      if(!ex.length){el.innerHTML='<tr><td style="color:var(--text-secondary);padding:12px">Sin datos de ejecutivas</td></tr>';return}
-      el.innerHTML='<thead><tr><th>Ejecutiva</th><th>Asig.</th><th>Hot</th><th>SLA%</th><th>Visitas</th><th>Gan.</th><th>Conv.Vis</th><th>Conv.Cie</th></tr></thead><tbody>'+ex.map(e=>'<tr><td><strong>'+esc(e.executive)+'</strong></td><td>'+fmt(e.assigned)+'</td><td style="color:var(--led-red)">'+fmt(e.hot)+'</td><td>'+(e.sla_fulfilled!=null?pct(e.sla_fulfilled):'S/I')+'</td><td>'+(e.ever_visit_scheduled||0)+'</td><td style="color:var(--led-green)"><strong>'+fmt(e.ever_closed_won||0)+'</strong></td><td>'+(e.conversion_to_visit_pct!=null?pct(e.conversion_to_visit_pct):'S/I')+'</td><td>'+(e.conversion_to_close_pct!=null?pct(e.conversion_to_close_pct):'S/I')+'</td></tr>').join('')+'</tbody>';
+    function rsources(){
+      const src=D.sources||[];
+      $('srcTbl').innerHTML=src.length
+        ?'<table><thead><tr><th>Fuente</th><th>Leads</th><th>%Hot</th><th>%Avanz</th><th>Var.</th></tr></thead><tbody>'+src.map(s=>'<tr><td><strong>'+e$(s.source)+'</strong></td><td>'+F(s.received)+'</td><td>'+P(s.hot_pct)+'</td><td>'+P(s.advanced_pct)+'</td><td>'+(s.variation_pct!=null?(s.variation_pct>=0?'+':'')+s.variation_pct.toFixed(1)+'%':'S/I')+'</td></tr>').join('')+'</tbody></table>'
+        :'<p style="color:var(--text-secondary);padding:12px">Sin datos de fuentes</p>';
+      rprops();
     }
 
-    function renderCoverage(){
-      const cov=DATA.kpis?._meta?.temperature_coverage||{},el=$('coverageGrid');
-      el.innerHTML='<div class="coverage-card"><strong>'+(cov.total||0)+'</strong><span>Total leads</span></div><div class="coverage-card"><strong>'+(cov.with_history||0)+'</strong><span>Con hist. temp.</span></div><div class="coverage-card"><strong>'+(cov.history_coverage_pct!=null?pct(cov.history_coverage_pct):'S/I')+'</strong><span>Cobertura temp.</span><div class="meter"><span style="width:'+(cov.history_coverage_pct||0)+'%"></span></div></div>';
+    function rprops(){
+      const p=D.properties||{},tab=window._propTab||'opportunity',rows=tab==='opportunity'?(p.opportunity||[]):(p.leakage||[]);
+      $('propTbl').innerHTML=rows.length
+        ?(tab==='opportunity'
+          ?'<table><thead><tr><th>Codigo</th><th>Leads</th><th>Hot</th><th>Visitas</th><th>Conv.</th></tr></thead><tbody>'+rows.slice(0,8).map(r=>'<tr><td><strong>'+e$(r.code)+'</strong></td><td>'+F(r.leads)+'</td><td>'+F(r.hot)+'</td><td>'+(r.ever_visit_scheduled||0)+'</td><td>'+(r.conversion_pct!=null?P(r.conversion_pct):'S/I')+'</td></tr>').join('')+'</tbody></table>'
+          :'<table><thead><tr><th>Codigo</th><th>Int.visita</th><th class="red">Sin coord.</th><th class="amber">Sin gest.</th></tr></thead><tbody>'+rows.slice(0,8).map(r=>'<tr><td><strong>'+e$(r.code)+'</strong></td><td>'+F(r.ever_visit_intent||0)+'</td><td class="red">'+F(r.uncoordinated||0)+'</td><td class="amber">'+F(r.unmanaged||0)+'</td></tr>').join('')+'</tbody></table>')
+        :'<p style="color:var(--text-secondary);padding:12px">Sin datos de propiedades</p>';
     }
 
-    function resetFilters(){document.querySelectorAll('select').forEach(s=>s.value='');setPeriod();document.getElementById('filterDrawer').hidden=true;loadData()}
-    window.toggleTheme=()=>{const h=document.documentElement;h.dataset.theme=h.dataset.theme==='light'?'dark':'light';localStorage.setItem('theme',h.dataset.theme);const icon=document.getElementById('themeIcon');if(icon)icon.className=h.dataset.theme==='light'?'fa-solid fa-moon':'fa-solid fa-sun';if(DATA){render()}};
-    window.closeSidebar=()=>{document.getElementById('sidebar').classList.remove('mobile-open');document.getElementById('sidebarOverlay').classList.remove('open')};
-    document.getElementById('demandTabs')?.addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(!b)return;document.querySelectorAll('[data-tab]').forEach(x=>x.classList.remove('active'));b.classList.add('active')});
-    document.getElementById('propTabs')?.addEventListener('click',e=>{const b=e.target.closest('[data-p]');if(!b)return;document.querySelectorAll('[data-p]').forEach(x=>x.classList.remove('active'));b.classList.add('active');window.propTab=b.dataset.p;renderProperties()});
-    document.querySelectorAll('.filter-group select,.filter-group input').forEach(c=>c.addEventListener('change',loadData));
+    function rexecutives(){
+      const ex=D.executives||[];
+      $('execTbl').innerHTML=ex.length
+        ?'<table><thead><tr><th>Ejecutiva</th><th>Asig.</th><th class="red">Hot</th><th>SLA%</th><th>Visitas</th><th class="green">Gan.</th><th>Conv.Vis</th><th>Conv.Cie</th></tr></thead><tbody>'+ex.map(e=>'<tr><td><strong>'+e$(e.executive)+'</strong></td><td>'+F(e.assigned)+'</td><td class="red">'+F(e.hot)+'</td><td>'+P(e.sla_fulfilled)+'</td><td>'+(e.ever_visit_scheduled||0)+'</td><td class="green"><strong>'+F(e.ever_closed_won||0)+'</strong></td><td>'+P(e.conversion_to_visit_pct)+'</td><td>'+P(e.conversion_to_close_pct)+'</td></tr>').join('')+'</tbody></table>'
+        :'<p style="color:var(--text-secondary);padding:12px">Sin datos de ejecutivas</p>';
+      rcove();
+    }
 
-    // Mobile sidebar toggle
-    document.querySelector('.hamburger-mobile')?.addEventListener('click',()=>{document.getElementById('sidebar').classList.toggle('mobile-open');document.getElementById('sidebarOverlay').classList.toggle('open')});
+    function rcove(){
+      const cov=D.kpis?._meta?.temperature_coverage||{};
+      $('covGrid').innerHTML='<div class="cov-card"><strong>'+(cov.total||0)+'</strong><span>Total leads</span></div><div class="cov-card"><strong>'+(cov.with_history||0)+'</strong><span>Con hist. temp.</span></div><div class="cov-card"><strong>'+(cov.history_coverage_pct!=null?P(cov.history_coverage_pct):'S/I')+'</strong><span>Cob. temp.</span><div class="meter"><span style="width:'+(cov.history_coverage_pct||0)+'%"></span></div></div>';
+    }
 
-    // Init
-    (()=>{const saved=localStorage.getItem('theme')||'dark';document.documentElement.dataset.theme=saved;const icon=document.getElementById('themeIcon');if(icon)icon.className=saved==='light'?'fa-solid fa-moon':'fa-solid fa-sun';setPeriod();loadData()})();
+    function resetFilters(){document.querySelectorAll('.dash select').forEach(s=>s.value='');sPeriod();$('filterDrawer').hidden=true;init()}
+
+    // Tab clicks
+    document.getElementById('tabNav').addEventListener('click',e=>{
+      const b=e.target.closest('[data-tab]');if(!b)return;
+      actTab(b.dataset.tab);
+      const t=b.dataset.tab;
+      if(t==='demand')rdemand();
+      if(t==='sources')rsources();
+      if(t==='team'){rexecutives()}
+    });
+    document.getElementById('propSub')?.addEventListener('click',e=>{
+      const b=e.target.closest('[data-ps]');if(!b)return;
+      document.querySelectorAll('[data-ps]').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');window._propTab=b.dataset.ps;rprops();
+    });
+    document.querySelectorAll('.dash .flt select,.dash .flt input').forEach(c=>c.addEventListener('change',init));
+
+    window.toggleTheme=()=>{const h=document.documentElement;h.dataset.theme=h.dataset.theme==='light'?'dark':'light';localStorage.setItem('theme',h.dataset.theme);$('themeIcon').className=h.dataset.theme==='light'?'fa-solid fa-moon':'fa-solid fa-sun';if(D){dCharts();render()}}
+    window.closeSidebar=()=>{$('sidebar').classList.remove('mobile-open');$('sidebarOverlay').classList.remove('open')};
+
+    (()=>{const s=localStorage.getItem('theme')||'dark';document.documentElement.dataset.theme=s;$('themeIcon').className=s==='light'?'fa-solid fa-moon':'fa-solid fa-sun';sPeriod();init();
+      // Load filter options
+      fetch('/api/analytics/leads/filters',{credentials:'same-origin'}).then(r=>r.json()).then(f=>{
+        if(f.executives)$('filterExecutive').innerHTML='<option value="">Todas</option>'+f.executives.map(x=>'<option value="'+e$(x.value||x.executive||x)+'">'+e$(x.value||x.executive||x)+'</option>').join('');
+        if(f.sources)$('filterSource').innerHTML='<option value="">Todas</option>'+f.sources.map(x=>'<option value="'+e$(x.value||x.source||x)+'">'+e$(x.value||x.source||x)+'</option>').join('');
+      }).catch(console.error);
+    })();
   </script>
 </body>
 </html>

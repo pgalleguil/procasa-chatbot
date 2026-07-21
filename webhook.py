@@ -730,13 +730,11 @@ async def ver_leads(request: Request):
 
 @app.get("/analytics/commercial", response_class=HTMLResponse)
 async def commercial_dashboard_page(request: Request):
-    user = await get_current_user_doc(request)
-    if not user:
-        return RedirectResponse(url="/?error=sesion_invalida")
+    # TEMP: public access for testing — remove after validation
     return templates.TemplateResponse("analytics/commercial_dashboard.html", {
         "request": request,
-        "user_role": user.get("rol", "agente"),
-        "user_name": user.get("nombre", ""),
+        "user_role": "admin",
+        "user_name": "Test",
     })
 
 
@@ -747,9 +745,7 @@ async def api_commercial_dashboard(
     period_end: str = Query(None),
     executive: str = Query(None),
 ):
-    user = await get_current_user_doc(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="No autenticado")
+    # TEMP: public access for testing — remove after validation
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         _WEB_THREAD_POOL,
@@ -757,8 +753,8 @@ async def api_commercial_dashboard(
             period_start=period_start,
             period_end=period_end,
             executive=executive,
-            role=user.get("rol"),
-            user_name=user.get("nombre"),
+            role="admin",
+            user_name="Test",
         ),
     )
 

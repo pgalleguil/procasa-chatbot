@@ -2060,18 +2060,22 @@ async def view_captaciones(
     }, headers={"Content-Type": "text/html; charset=utf-8"})
 
     _perf["render"] = time.perf_counter()
-    _perf_ms = {
-        key: round((_perf[key] - _perf.get(prev, _perf["start"])) * 1000, 1)
-        for prev, key in (("start", "auth"), ("auth", "list_submit"),
-                           ("list_submit", "list_done"), ("list_done", "kpi_done"),
-                           ("kpi_done", "goal_done"), ("goal_done", "render"))
-    }
-    _perf_ms["total"] = round((_perf["render"] - _perf["start"]) * 1000, 1)
+    _t0 = _perf["start"]
+    _stages = [
+        ("auth",     _perf["auth"]),
+        ("list",     _perf["list_done"]),
+        ("kpi",      _perf["kpi_done"]),
+        ("goal",     _perf["goal_done"]),
+        ("render",   _perf["render"]),
+    ]
+    _deltas = []
+    _prev_t = _t0
+    for _name, _t in _stages:
+        _deltas.append(f"{_name}={(_t - _prev_t) * 1000:.0f}")
+        _prev_t = _t
+    _deltas.append(f"total={(_perf['render'] - _t0) * 1000:.0f}")
     logger.info(
-        f"[CAPTACION_PERF] total={_perf_ms['total']:.0f}ms "
-        f"auth={_perf_ms['auth']:.0f} list={_perf_ms['list_submit']:.0f} "
-        f"kpi={_perf_ms['kpi_done']:.0f} goal={_perf_ms['goal_done']:.0f} "
-        f"render={_perf_ms['render']:.0f}ms "
+        f"[CAPTACION_PERF] {' '.join(_deltas)}ms "
         f"role={user_role} page={page} sort={sort_by or 'def'} "
         f"ejec={current_ejecutivo or '-'} comuna={current_comuna or '-'} "
         f"items={len(items)} total={total_count}"

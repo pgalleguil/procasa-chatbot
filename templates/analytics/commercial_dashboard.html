@@ -343,7 +343,8 @@ body.cd-page{background:var(--cd-bg);color:var(--cd-txt);font-family:'Outfit',sy
     <div class="cd-cmp-wrap">
       <label for="pCompare">Comparar</label>
       <select id="pCompare" class="cd-sel" aria-label="Modo de comparación">
-        <option value="prev">vs. periodo anterior</option>
+        <option value="auto">vs. periodo comparable</option>
+        <option value="prev">vs. periodo anterior equivalente</option>
         <option value="yoy">vs. mismo periodo a&ntilde;o anterior</option>
         <option value="none">Sin comparaci&oacute;n</option>
       </select>
@@ -491,6 +492,7 @@ body.cd-page{background:var(--cd-bg);color:var(--cd-txt);font-family:'Outfit',sy
 <div id="cdTip" role="tooltip"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="/static/js/commercial-periods.js"></script>
 <script>
 /* ================= HELPERS ================= */
 const $=id=>document.getElementById(id);
@@ -503,7 +505,7 @@ const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','
 const FD=v=>{if(!v)return'S/I';try{const d=new Date(String(v).split('T')[0]+'T00:00:00');return d.getDate()+' de '+MESES[d.getMonth()]+' de '+d.getFullYear()}catch(e){return v}};
 const FDC=(a,b)=>{if(!a||!b)return'S/I';try{const d1=new Date(String(a).split('T')[0]+'T00:00:00'),d2=new Date(String(b).split('T')[0]+'T00:00:00');const r1=d1.getDate()+' de '+MESES[d1.getMonth()],r2=d2.getDate()+' de '+MESES[d2.getMonth()];return d1.getFullYear()===d2.getFullYear()?r1+' \u2013 '+r2+' de '+d2.getFullYear():r1+' de '+d1.getFullYear()+' \u2013 '+r2+' de '+d2.getFullYear()}catch(e){return FD(a)+' \u2013 '+FD(b)}};
 const RM=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-let D=null,CH={},FILTERS={},COMPARE='prev',CUR_PRICE_OP='Venta',FIRST_KPI=true,PROP_SORT={k:'leads',dir:-1};
+let D=null,CH={},FILTERS={},COMPARE='auto',CUR_PRICE_OP='Venta',FIRST_KPI=true,PROP_SORT={k:'leads',dir:-1};
 
 const isDark=()=>document.documentElement.dataset.theme==='dark';
 const PAL=()=>isDark()?{brand:'#8b89f7',cmp:'#7c8aa5',ok:'#3ecf8e',warn:'#f5b14c',bad:'#f66',info:'#4cc3e0',gray:'#8b97b1',txt:'#e9edf5',mut:'#8b97b1',grid:'rgba(148,163,205,.08)',line:'rgba(148,163,205,.18)'}
@@ -557,20 +559,16 @@ function setPeriod(preset){
     $('periodCustom').classList.add('open');
     document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('active',b.dataset.p==='custom'));
     if(!FILTERS.period_start){
-      const now=new Date(),s=new Date();s.setDate(now.getDate()-30);
-      $('pStart').value=s.toISOString().slice(0,10);
-      $('pEnd').value=now.toISOString().slice(0,10);
+      const range=CommercialPeriods.presetRange('30d');
+      $('pStart').value=range.start;
+      $('pEnd').value=range.end;
     }
     return;
   }
   $('periodCustom').classList.remove('open');
-  const now=new Date(),s=new Date();
-  if(preset==='today'){s.setHours(0,0,0,0)}
-  else if(preset==='week'){const d=now.getDay();s.setDate(now.getDate()-d+(d===0?-6:1));s.setHours(0,0,0,0)}
-  else if(preset==='month'){s.setDate(1);s.setHours(0,0,0,0)}
-  else{s.setDate(now.getDate()-30)}
-  FILTERS.period_start=s.toISOString().slice(0,10);
-  FILTERS.period_end=now.toISOString().slice(0,10);
+  const range=CommercialPeriods.presetRange(preset);
+  FILTERS.period_start=range.start;
+  FILTERS.period_end=range.end;
   FILTERS.period_preset=preset;
   document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('active',b.dataset.p===preset));
 }
@@ -603,8 +601,9 @@ async function loadData(){
     if(FILTERS.temp)p.set('temperature',FILTERS.temp);
     if(FILTERS.prop)p.set('property_code',FILTERS.prop);
     if(FILTERS.asgn)p.set('assignment',FILTERS.asgn==='assigned'?'1':'0');
-    COMPARE=$('pCompare')?.value||'prev';
-    if(COMPARE&&COMPARE!=='prev')p.set('compare',COMPARE);
+    COMPARE=$('pCompare')?.value||'auto';
+    if(COMPARE)p.set('compare',COMPARE);
+    if(FILTERS.period_preset)p.set('period_preset',FILTERS.period_preset);
     FILTERS.period_preset=FILTERS.period_preset||'30d';
     const url=new URL(location);url.search=p.toString();history.replaceState(null,'',url);
     const r=await fetch('/api/analytics/commercial-dashboard?'+p,{headers:{Accept:'application/json'}});
@@ -658,9 +657,9 @@ function renderChips(){
   const btn=$('btnClearAll');if(btn)btn.onclick=resetFilters;
 }
 function resetFilters(){
-  FILTERS={};setPeriod('30d');COMPARE='prev';CUR_PRICE_OP='Venta';PROP_SORT={k:'leads',dir:-1};
+  FILTERS={};setPeriod('30d');COMPARE='auto';CUR_PRICE_OP='Venta';PROP_SORT={k:'leads',dir:-1};
   document.querySelectorAll('.cd-filters select').forEach(s=>s.value='');
-  $('pCompare').value='prev';
+  $('pCompare').value='auto';
   $('fltChips').innerHTML='';$('fltChips').classList.remove('has');$('fltCount').hidden=true;
   history.replaceState(null,'',location.pathname);
   renderChips();loadData();
@@ -1165,7 +1164,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     fill('fProp',f.properties,'Propiedad');
     setTimeout(()=>{Object.entries(FKEY).forEach(([id,k])=>{if(FILTERS[k]&&$(id))$(id).value=FILTERS[k]})},300);
   }).catch(()=>{});
-  COMPARE=$('pCompare')?.value||'prev';
+  COMPARE=$('pCompare')?.value||'auto';
   renderChips();
   loadData();
   /* eventos */

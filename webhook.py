@@ -753,6 +753,7 @@ async def api_commercial_dashboard(
     property_code: str = Query(None),
     assignment: str = Query(None),
     compare: str = Query(None),
+    period_preset: str = Query(None),
 ):
     # TEMP: public access for testing — remove after validation
     filters = {}
@@ -773,6 +774,7 @@ async def api_commercial_dashboard(
             executive=executive,
             role="admin",
             user_name="Test",
+            period_preset=period_preset,
             filters=filters or None,
             compare=compare,
         ),

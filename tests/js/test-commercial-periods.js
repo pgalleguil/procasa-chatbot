@@ -1,0 +1,10 @@
+const assert = require('assert');
+const periods = require('../../static/js/commercial-periods.js');
+
+assert.deepStrictEqual(periods.presetRange('today', new Date('2026-07-22T01:30:00Z')), {start:'2026-07-21', end:'2026-07-21'});
+assert.deepStrictEqual(periods.presetRange('week', new Date('2026-07-22T01:30:00Z')), {start:'2026-07-20', end:'2026-07-21'});
+assert.deepStrictEqual(periods.presetRange('month', new Date('2026-07-22T01:30:00Z')), {start:'2026-07-01', end:'2026-07-21'});
+assert.deepStrictEqual(periods.presetRange('30d', new Date('2026-07-22T01:30:00Z')), {start:'2026-06-22', end:'2026-07-21'});
+assert.deepStrictEqual(periods.presetRange('30d', new Date('2027-01-01T02:30:00Z')), {start:'2026-12-02', end:'2026-12-31'});
+assert.deepStrictEqual(periods.presetRange('month', new Date('2024-03-01T02:30:00Z')), {start:'2024-02-01', end:'2024-02-29'});
+console.log('commercial period tests passed');

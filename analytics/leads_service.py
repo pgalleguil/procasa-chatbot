@@ -380,6 +380,7 @@ def get_commercial_dashboard(
     user_name: str = None,
     filters: dict = None,
     compare: str = None,
+    period_preset: str = None,
 ) -> dict:
     """Consolidated commercial dashboard data.
 
@@ -392,7 +393,7 @@ def get_commercial_dashboard(
     if ef:
         merged_filters.update(ef)
     key = _cache_key("commercial-dashboard-v2", ps=period_start, pe=period_end,
-                     exec=exec_filter, role=role, cmp=compare, filters=repr(sorted((merged_filters or {}).items())))
+                     exec=exec_filter, role=role, cmp=compare, preset=period_preset, filters=repr(sorted((merged_filters or {}).items())))
     cached = _cache_get(key)
     if cached:
         return cached
@@ -417,32 +418,33 @@ def get_commercial_dashboard(
 
     # Period comparison — compute previous period based on mode
     from datetime import datetime as dt, timedelta as td
+    from .commercial_periods import comparison_period, local_today
     try:
-        ps_dt = dt.strptime(period_start, "%Y-%m-%d") if period_start else dt.now() - td(days=30)
-        pe_dt = dt.strptime(period_end, "%Y-%m-%d") if period_end else dt.now()
+        today = local_today()
+        ps_dt = dt.strptime(period_start, "%Y-%m-%d").date() if period_start else today - td(days=29)
+        pe_dt = dt.strptime(period_end, "%Y-%m-%d").date() if period_end else today
     except (ValueError, TypeError):
-        ps_dt = dt.now() - td(days=30)
-        pe_dt = dt.now()
-    duration = (pe_dt - ps_dt).days + 1
+        pe_dt = local_today()
+        ps_dt = pe_dt - td(days=29)
 
     prev_start = ""
     prev_end = ""
     prev_label = ""
     comp_type = "custom_vs_previous"
 
-    if compare == "none":
+    mode = compare or "auto"
+    comp_start, comp_end, comp_type = comparison_period(ps_dt, pe_dt, mode, period_preset)
+    if mode == "none":
         prev_label = "Sin comparaci\u00f3n"
         comp_type = "custom_no_comparison"
-    elif compare == "yoy":
-        prev_start = (ps_dt.replace(year=ps_dt.year - 1)).strftime("%Y-%m-%d")
-        prev_end = (pe_dt.replace(year=pe_dt.year - 1)).strftime("%Y-%m-%d")
+    elif mode == "yoy":
+        prev_start = comp_start.strftime("%Y-%m-%d")
+        prev_end = comp_end.strftime("%Y-%m-%d")
         prev_label = f"{prev_start} - {prev_end} (mismo per\u00edodo a\u00f1o anterior)"
-        comp_type = "custom_vs_yoy"
     else:
-        prev_end = (ps_dt - td(days=1)).strftime("%Y-%m-%d")
-        prev_start = (ps_dt - td(days=duration)).strftime("%Y-%m-%d")
+        prev_start = comp_start.strftime("%Y-%m-%d")
+        prev_end = comp_end.strftime("%Y-%m-%d")
         prev_label = f"{prev_start} - {prev_end} (per\u00edodo anterior)"
-        comp_type = "custom_vs_previous"
 
     period_info = {
         "type": comp_type,
@@ -451,14 +453,16 @@ def get_commercial_dashboard(
         "previous": {"start": prev_start, "end": prev_end, "label": prev_label},
     }
 
-    kpis = query_commercial_kpis(**kwargs)
+    comparison_kwargs = ({"comparison_start": prev_start, "comparison_end": prev_end}
+                         if prev_start and prev_end else {})
+    kpis = query_commercial_kpis(**kwargs, **comparison_kwargs)
     funnel = query_commercial_funnel(**kwargs)
     sla = query_sla_risk_panel(**kwargs)
     demand_price = query_demand_by_price_ranges(**kwargs)
     executives = query_commercial_executive_matrix(**kwargs)
     properties = query_commercial_property_ranking(**kwargs)
-    sources = query_source_performance(**kwargs_no_filters)
-    trends = query_comparative_trends(**kwargs_no_filters)
+    sources = query_source_performance(**kwargs_no_filters, **comparison_kwargs)
+    trends = query_comparative_trends(**kwargs_no_filters, **comparison_kwargs)
     coverage = query_field_coverage(
         executive=exec_filter if exec_filter else None,
         universe="current_active",

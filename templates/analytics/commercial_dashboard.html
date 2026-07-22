@@ -616,7 +616,17 @@ async function loadData(){
     const url=new URL(location);url.search=p.toString();history.replaceState(null,'',url);
     const r=await fetch('/api/analytics/commercial-dashboard?'+p,{headers:{Accept:'application/json'}});
     if(!r.ok)throw new Error('Error '+r.status);
-    D=await r.json();render();
+    D=await r.json();
+    const current=D.meta?.period?.current||{};
+    if(current.start&&current.end){
+      FILTERS.period_start=current.start;FILTERS.period_end=current.end;
+      FILTERS.period_preset=D.meta?.period?.preset||FILTERS.period_preset;
+      document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('active',b.dataset.p===FILTERS.period_preset));
+      p.set('period_start',current.start);p.set('period_end',current.end);
+      p.set('period_preset',FILTERS.period_preset);
+      const syncedUrl=new URL(location);syncedUrl.search=p.toString();history.replaceState(null,'',syncedUrl);
+    }
+    render();
     const activeTab=document.querySelector('.cd-tabs button[aria-selected="true"]')?.dataset.tab||'exec';
     if(activeTab==='demand')rDemand();
     if(activeTab==='sources')rSrc();
@@ -679,7 +689,8 @@ function closeFilterSheet(){$('filters').classList.remove('open');$('filterOverl
 function render(){
   if(!D)return;
   const prv=D.meta?.period?.previous||{};
-  $('perCur').textContent=FDC(FILTERS.period_start,FILTERS.period_end);
+  const cur=D.meta?.period?.current||{};
+  $('perCur').textContent=FDC(cur.start||FILTERS.period_start,cur.end||FILTERS.period_end);
   let cmpTxt='';
   if(COMPARE==='none')cmpTxt='Sin comparaci\u00f3n';
   else cmpTxt='vs. '+FDC(prv.start,prv.end)+(COMPARE==='yoy'?' (a\u00f1o anterior)':'');
@@ -1146,11 +1157,13 @@ function restoreFromURL(){
   const map={executive:'exec',source:'source',operation:'op',property_type:'type',commune:'commune',temperature:'temp',property_code:'prop',assignment:'asgn'};
   Object.entries(map).forEach(([param,key])=>{const v=params.get(param);if(v)FILTERS[key]=v});
   const ps=params.get('period_start'),pe=params.get('period_end');
-  if(ps&&pe){const safe=CommercialPeriods.clampRange(ps,pe);FILTERS.period_start=safe.start;FILTERS.period_end=safe.end;FILTERS.period_preset='custom'}
+  const urlPreset=CommercialPeriods.validPreset(params.get('period_preset'));
+  if(ps&&pe){const safe=CommercialPeriods.clampRange(ps,pe);FILTERS.period_start=safe.start;FILTERS.period_end=safe.end;FILTERS.period_preset=urlPreset||'custom'}
   else setPeriod('30d');
   const cmp=params.get('compare');
   if(cmp){COMPARE=cmp;$('pCompare').value=cmp}
   Object.entries(FKEY).forEach(([id,k])=>{if(FILTERS[k]&&$(id))$(id).value=FILTERS[k]});
+  document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('active',b.dataset.p===FILTERS.period_preset));
   if(FILTERS.period_preset==='custom'&&ps&&pe){
     $('pStart').value=FILTERS.period_start;$('pEnd').value=FILTERS.period_end;
     document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('active',b.dataset.p==='custom'));

@@ -1128,11 +1128,14 @@ def query_source_performance(
     executive: Optional[str] = None,
     comparison_start: Optional[str] = None,
     comparison_end: Optional[str] = None,
+    include_comparison: bool = True,
 ) -> list:
     """Rendimiento de fuentes en el periodo: volumen, %hot, %asignados, %avanzados, variacion."""
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
-    if comparison_start and comparison_end:
+    if not include_comparison:
+        prev_start = prev_end = None
+    elif comparison_start and comparison_end:
         prev_start, prev_end = _build_chile_period_bounds(comparison_start, comparison_end)
     else:
         prev_end = start_utc
@@ -1163,7 +1166,8 @@ def query_source_performance(
         return list(db["leads"].aggregate(pipeline))
 
     current_rows = {r["_id"]: r for r in _per_source(start_utc, end_utc)}
-    previous_rows = {r["_id"]: r for r in _per_source(prev_start, prev_end)}
+    previous_rows = ({r["_id"]: r for r in _per_source(prev_start, prev_end)}
+                     if include_comparison else {})
 
     total_cur = sum(r["received"] for r in current_rows.values())
     total_prev = sum(r["received"] for r in previous_rows.values())
@@ -1396,12 +1400,15 @@ def query_comparative_trends(
     period_end: Optional[str] = None,
     comparison_start: Optional[str] = None,
     comparison_end: Optional[str] = None,
+    include_comparison: bool = True,
 ) -> dict:
     """Tendencia comparativa: periodo actual vs periodo anterior de igual duracion."""
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
 
-    if comparison_start and comparison_end:
+    if not include_comparison:
+        prev_start = prev_end = None
+    elif comparison_start and comparison_end:
         prev_start, prev_end = _build_chile_period_bounds(comparison_start, comparison_end)
     else:
         duration = end_utc - start_utc
@@ -1419,16 +1426,16 @@ def query_comparative_trends(
         return list(db["leads"].aggregate(pipeline))
 
     current_daily = _daily(start_utc, end_utc)
-    previous_daily = _daily(prev_start, prev_end)
+    previous_daily = _daily(prev_start, prev_end) if include_comparison else []
 
     current_total = sum(d["received"] for d in current_daily)
-    previous_total = sum(d["received"] for d in previous_daily)
+    previous_total = sum(d["received"] for d in previous_daily) if include_comparison else None
     pct_var = round(
         ((current_total - previous_total) / previous_total * 100), 1
-    ) if previous_total else 0
+    ) if previous_total else None
 
     current_avg = round(current_total / max(len(current_daily), 1), 1)
-    previous_avg = round(previous_total / max(len(previous_daily), 1), 1)
+    previous_avg = round(previous_total / max(len(previous_daily), 1), 1) if include_comparison else None
 
     return {
         "current": {
@@ -1692,7 +1699,8 @@ def query_temperature_coverage(period_start=None, period_end=None, filters=None)
 # =============================================================================
 
 def query_commercial_kpis(period_start=None, period_end=None, filters=None,
-                          comparison_start=None, comparison_end=None):
+                          comparison_start=None, comparison_end=None,
+                          include_comparison=True):
     """
     Six main KPIs with period-over-period comparison.
     
@@ -1704,7 +1712,9 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None,
     """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
-    if comparison_start and comparison_end:
+    if not include_comparison:
+        prev_start = prev_end = None
+    elif comparison_start and comparison_end:
         prev_start, prev_end = _build_chile_period_bounds(comparison_start, comparison_end)
     else:
         duration = end_utc - start_utc
@@ -1740,13 +1750,13 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None,
 
     # KPI 1: Leads recibidos
     received = _cohort_count(extra)
-    received_prev = _cohort_count(extra, prev_start, prev_end)
+    received_prev = _cohort_count(extra, prev_start, prev_end) if include_comparison else None
 
     # KPI 2: temperatura histórica demostrable al cierre (SOLO temperature_history)
     temp_cov = query_temperature_coverage(period_start, period_end, filters)
-    previous_temp = query_temperature_coverage(
+    previous_temp = (query_temperature_coverage(
         prev_start.date().isoformat(), (prev_end - timedelta(days=1)).date().isoformat(), filters
-    )
+    ) if include_comparison else {"hot": None})
     hot = temp_cov["hot"]
     hot_prev = previous_temp["hot"]
 
@@ -1796,11 +1806,11 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None,
         return r[0]["c"] if r else 0
 
     visit_intent = _visit_intent(start_utc, end_utc)
-    visit_intent_prev = _visit_intent(prev_start, prev_end)
+    visit_intent_prev = _visit_intent(prev_start, prev_end) if include_comparison else None
 
     # KPI 4: Visitas coordinadas (pipeline_stage actual)
     visit_scheduled = _stage_count("VISIT_SCHEDULED", start_utc, end_utc)
-    visit_scheduled_prev = _stage_count("VISIT_SCHEDULED", prev_start, prev_end)
+    visit_scheduled_prev = _stage_count("VISIT_SCHEDULED", prev_start, prev_end) if include_comparison else None
 
     # KPI 5: SLA
     sla_parts = [
@@ -1834,7 +1844,7 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None,
 
     # KPI 6: Cierres (pipeline_stage actual)
     closed_won = _stage_count("CLOSED_WON", start_utc, end_utc)
-    closed_won_prev = _stage_count("CLOSED_WON", prev_start, prev_end)
+    closed_won_prev = _stage_count("CLOSED_WON", prev_start, prev_end) if include_comparison else None
 
     def _var(cur, prev):
         if cur is not None and prev is not None and prev > 0:

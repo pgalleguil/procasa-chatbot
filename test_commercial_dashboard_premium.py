@@ -1,4 +1,5 @@
 import unittest
+import re
 from pathlib import Path
 from analytics.leads_queries import _build_extra_filter, _commune_distribution
 
@@ -59,6 +60,25 @@ class CommercialDashboardPremiumTests(unittest.TestCase):
     def test_stage_filter_uses_canonical_pipeline_stage(self):
         self.assertEqual(_build_extra_filter({"stage": "CONTACTED"}), {"pipeline_stage": "CONTACTED"})
         self.assertIn('id="fStage"', self.html)
+
+    def test_visual_system_v2_contract(self):
+        for token in (
+            "--font-ui:", "--bg-canvas:#f6f7f9", "--bg-surface:#fff",
+            "--text-primary:#101828", "--brand-primary:#203b8f",
+            "--radius-card:14px", "--shadow-card:", "--motion-fast:140ms",
+            '[data-theme="dark"]', "--bg-canvas:#0b0d12",
+        ):
+            self.assertIn(token, self.html)
+        for title in ("Leads recibidos", "Hot actuales", "Intención de visita", "Cumplimiento SLA"):
+            self.assertIn(title, self.html)
+        for rejected in ("LEADS RECIBIDOS", "INT. DE VISITA", "VISITAS COORD.", "ErrorReintentar", "Filtros 0"):
+            self.assertNotIn(rejected, self.html)
+
+    def test_ids_are_unique_and_header_theme_is_accessible(self):
+        ids = re.findall(r'\bid="([^"]+)"', self.html)
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertIn('id="btnThemeHeader" type="button" aria-label="Cambiar tema"', self.html)
+        self.assertIn("localStorage.getItem('theme')", self.html.split("</head>", 1)[0])
 
 
 if __name__ == "__main__":

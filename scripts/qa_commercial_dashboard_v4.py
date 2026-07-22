@@ -21,7 +21,7 @@ ADVANCED_PARAMS = {
 
 
 def wait_ready(page: Page) -> None:
-    page.locator("#kpiRow[aria-busy='false']").wait_for(state="visible", timeout=90_000)
+    page.wait_for_function("document.querySelector('#kpiRow')?.getAttribute('aria-busy') === 'false'", timeout=90_000)
     page.wait_for_timeout(750)
 
 
@@ -47,7 +47,9 @@ def install_local_template(page: Page, production_origin: str) -> str:
             route.continue_()
             return
         suffix = url[len(local_origin):]
-        if suffix.startswith("/api/") or suffix.startswith("/static/"):
+        if suffix.startswith("/static/logo"):
+            route.abort()
+        elif suffix.startswith("/api/") or suffix.startswith("/static/"):
             response = page.context.request.get(production_origin + suffix, timeout=90_000)
             route.fulfill(status=response.status, headers=response.headers, body=response.body())
         elif suffix.startswith("/analytics/commercial"):
@@ -57,6 +59,12 @@ def install_local_template(page: Page, production_origin: str) -> str:
 
     page.route("**/*", handler)
     return local_origin
+
+
+def close_context(page: Page, context, local: bool) -> None:
+    if local:
+        page.unroute_all(behavior="ignoreErrors")
+    context.close()
 
 
 def state(page: Page) -> dict:
@@ -116,14 +124,14 @@ def assert_p0(browser, url: str, local: bool) -> dict:
     assert reset["filterLabel"] == "Filtros" and reset["chips"] == [], reset
     assert "temperature=" not in reset["url"], reset
     assert reset["leadsKpi"] == "5" and "5 leads" in reset["leadsStatus"], reset
-    context.close()
+    close_context(page, context, local)
     return {"initial": initial, "filtered": filtered, "reloaded": reloaded, "reset": reset}
 
 
 def capture_matrix(browser, url: str, out: Path, local: bool) -> list[dict]:
     out.mkdir(parents=True, exist_ok=True)
     results = []
-    sizes = ((1440, 900), (1366, 768), (1024, 768), (390, 844), (360, 800))
+    sizes = ((1440, 900), (1366, 768), (1024, 768), (768, 1024), (430, 932), (390, 844), (360, 800))
     origin = f"{urlsplit(url).scheme}://{urlsplit(url).netloc}"
     for theme in ("light", "dark"):
         for width, height in sizes:
@@ -142,7 +150,44 @@ def capture_matrix(browser, url: str, out: Path, local: bool) -> list[dict]:
             page.evaluate("window.scrollTo(0,0)")
             page.screenshot(path=out / f"{theme}-{width}-summary.png", full_page=True)
             results.append({"theme": theme, "viewport": [width, height], "state": snapshot, "errors": errors})
-            context.close()
+            close_context(page, context, local)
+    return results
+
+
+def capture_sections(browser, url: str, out: Path, local: bool) -> list[dict]:
+    origin = f"{urlsplit(url).scheme}://{urlsplit(url).netloc}"
+    results = []
+    for theme in ("light", "dark"):
+        for section, suffix in (("demand", "demand-container"), ("team", "team-table")):
+            context = clean_context(browser, theme, (1440, 900))
+            page = context.new_page()
+            destination = url + f"&section={section}"
+            if local:
+                destination = install_local_template(page, origin) + urlsplit(destination).path + "?" + urlsplit(destination).query
+            page.goto(destination, wait_until="domcontentloaded", timeout=90_000)
+            wait_ready(page)
+            page.locator(f"#tab-{section}.active").wait_for(state="visible", timeout=30_000)
+            page.screenshot(path=out / f"{theme}-1440-{suffix}.png", full_page=True)
+            results.append({"theme": theme, "section": section, "state": state(page)})
+            close_context(page, context, local)
+    return results
+
+
+def axe_scan(browser, url: str, local: bool) -> list[dict]:
+    origin = f"{urlsplit(url).scheme}://{urlsplit(url).netloc}"
+    results = []
+    for theme in ("light", "dark"):
+        context = clean_context(browser, theme, (1440, 900))
+        page = context.new_page()
+        destination = url
+        if local:
+            destination = install_local_template(page, origin) + urlsplit(url).path + "?" + urlsplit(url).query
+        page.goto(destination, wait_until="domcontentloaded", timeout=90_000)
+        wait_ready(page)
+        page.add_script_tag(url="https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.10.2/axe.min.js")
+        audit = page.evaluate("async()=>{const r=await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}});return r.violations.map(v=>({id:v.id,impact:v.impact,nodes:v.nodes.length}))}")
+        results.append({"theme": theme, "violations": audit})
+        close_context(page, context, local)
     return results
 
 
@@ -157,8 +202,12 @@ def main() -> None:
         report = {
             "p0": assert_p0(browser, args.url, args.local_template),
             "matrix": capture_matrix(browser, args.url, Path(args.output), args.local_template),
+            "sections": capture_sections(browser, args.url, Path(args.output), args.local_template),
+            "axe": axe_scan(browser, args.url, args.local_template),
         }
         browser.close()
+    Path(args.output).mkdir(parents=True, exist_ok=True)
+    (Path(args.output) / "qa-result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 

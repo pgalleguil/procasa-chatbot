@@ -341,7 +341,7 @@ body.cd-page{font-family:Inter,'Outfit',ui-sans-serif,system-ui,-apple-system,"S
 @media(max-width:600px){.cd h1{font-size:21px}.cd-periods{display:grid;gap:2px}.cd-per-sep{display:none}.cd-head-r{gap:7px}.cd-cmp-wrap{min-width:210px}.cd-seg button{padding:5px 10px}.cd-kpis{gap:10px;margin-bottom:18px}.cd-team-kpis{grid-template-columns:repeat(2,1fr);gap:10px}.cd-team-stat{min-height:88px}.cd-kpi,.cd-skeleton-kpi{padding:15px;min-height:118px;height:auto}.cd-kpi-val{font-size:27px}.cd-tabs{margin-right:-14px}.cd-tabs::after{content:"";position:sticky;right:0;min-width:28px;background:linear-gradient(90deg,transparent,var(--dashboard-canvas))}.cd-card{padding:18px 16px}.cd-priority{grid-template-columns:42px minmax(0,1fr) 72px;padding:0 14px}.cd-priority-copy span{white-space:normal}.cd-grid.cd-g-2{grid-template-columns:1fr}.cd-action-grid{grid-template-columns:1fr}.cd-team-toolbar{align-items:stretch;flex-direction:column}.cd-market-label{display:none}.cd-market{border-radius:8px}.cd-chart{min-width:560px}.cd-card:has(.cd-chart){overflow-x:auto}.cd-chart.sm,.cd-chart.xs{min-width:460px}.cd-covrow{grid-template-columns:112px 1fr;}.cd-covrow .n{grid-column:2}.cd-metaline{max-width:250px}}
 </style>
 </head>
-<body class="cd-page">
+<body class="cd-page" data-portfolio="{{ 'true' if portfolio_mode else 'false' }}">
 <nav class="sidebar" id="sidebar" aria-label="Navegación principal">
   <div class="brand"><img src="/static/logo.png?v=1.0.1" alt="PROCASA" onerror="this.style.display='none'"><span>MEN&Uacute;</span></div>
   <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:2px">
@@ -374,6 +374,7 @@ body.cd-page{font-family:Inter,'Outfit',ui-sans-serif,system-ui,-apple-system,"S
       <span class="cd-per-cmp" id="perCmp"></span>
     </div>
     <div class="cd-metaline" id="metaLine" aria-live="polite"><span class="dot" style="background:var(--cd-warn)"></span><span id="metaTxt">Cargando datos&hellip;</span></div>
+    {% if portfolio_mode %}<div class="cd-metaline"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><span>Vista portafolio &middot; identidades protegidas</span></div>{% endif %}
   </div>
   <div class="cd-head-r">
     <div class="cd-seg" id="presetSeg" role="group" aria-label="Periodo">
@@ -401,7 +402,7 @@ body.cd-page{font-family:Inter,'Outfit',ui-sans-serif,system-ui,-apple-system,"S
   <div class="cd-filters" id="filters">
     <div class="cd-sheet-h">Filtros <button class="cd-btn ghost" id="btnCloseFilters" aria-label="Cerrar filtros"><i class="fa-solid fa-xmark"></i></button></div>
     <label for="fExec" class="cd-fhide">Ejecutivo</label>
-    <select id="fExec" aria-label="Filtrar por ejecutiva"><option value="">Ejecutiva</option></select>
+    <select id="fExec" aria-label="Filtrar por ejecutiva"{% if portfolio_mode %} hidden{% endif %}><option value="">Ejecutiva</option></select>
     <label for="fSource" class="cd-fhide">Fuente</label>
     <select id="fSource" data-advanced aria-label="Filtrar por fuente"><option value="">Fuente</option></select>
     <label for="fOp" class="cd-fhide">Operación</label>

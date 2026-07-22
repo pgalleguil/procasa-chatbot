@@ -44,6 +44,15 @@ Los cambios son de presentación, acceso interno y eliminación del ticker. No s
 | 390×844 | No | 0 | Ausente |
 | 360×800 | No | 0 | Ausente |
 
+La misma matriz se repitió sobre la URL productiva después del despliegue. El bottom sheet terminó exactamente en el borde inferior del viewport (`844/844` y `800/800`).
+
+## Rendimiento observado en producción
+
+- Estructura visible: 441–634 ms en la corrida final.
+- KPI visibles: 688–967 ms en cuatro viewports con caché caliente.
+- Primera medición fría de KPI: 3.575 ms.
+- La interfaz mostró estructura y estado de carga durante la espera; no quedó en blanco.
+
 ## Cambios correctivos
 
 - Se eliminó completamente el ticker macroeconómico, su endpoint, parser, caché y carga asíncrona.

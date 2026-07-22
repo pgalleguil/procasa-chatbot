@@ -57,6 +57,7 @@ from analytics.leads_service import (
     get_detail as analytics_get_detail, get_filters, get_field_coverage,
     get_dashboard, get_commercial_dashboard, get_commercial_filter_options,
 )
+from analytics.market_indicators import get_market_indicators
 
 from api_captacion import (
     get_captacion_list, get_captacion_detail, update_captacion_status, update_contact_info,
@@ -779,6 +780,14 @@ async def api_commercial_dashboard(
             compare=compare,
         ),
     )
+
+
+@app.get("/api/analytics/commercial/market-indicators")
+async def api_commercial_market_indicators():
+    """Optional official market context; failure never blocks the dashboard."""
+    loop = asyncio.get_running_loop()
+    payload = await loop.run_in_executor(_WEB_THREAD_POOL, get_market_indicators)
+    return JSONResponse(payload, headers={"Cache-Control": "public, max-age=3600, stale-if-error=86400"})
 
 # ========================= ANALYTICS DASHBOARD (READ-ONLY) =========================
 

@@ -1126,12 +1126,17 @@ def query_source_performance(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
     executive: Optional[str] = None,
+    comparison_start: Optional[str] = None,
+    comparison_end: Optional[str] = None,
 ) -> list:
     """Rendimiento de fuentes en el periodo: volumen, %hot, %asignados, %avanzados, variacion."""
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
-    prev_end = start_utc
-    prev_start = prev_end - (end_utc - start_utc)
+    if comparison_start and comparison_end:
+        prev_start, prev_end = _build_chile_period_bounds(comparison_start, comparison_end)
+    else:
+        prev_end = start_utc
+        prev_start = prev_end - (end_utc - start_utc)
     user_filter = _build_user_filter(executive)
 
     eff = _effective_stage_expr()
@@ -1389,14 +1394,19 @@ def query_priorities(
 def query_comparative_trends(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
+    comparison_start: Optional[str] = None,
+    comparison_end: Optional[str] = None,
 ) -> dict:
     """Tendencia comparativa: periodo actual vs periodo anterior de igual duracion."""
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
 
-    duration = end_utc - start_utc
-    prev_end = start_utc
-    prev_start = prev_end - duration
+    if comparison_start and comparison_end:
+        prev_start, prev_end = _build_chile_period_bounds(comparison_start, comparison_end)
+    else:
+        duration = end_utc - start_utc
+        prev_end = start_utc
+        prev_start = prev_end - duration
 
     def _daily(ps_utc, pe_utc):
         pipeline = [
@@ -1619,7 +1629,8 @@ def query_temperature_coverage(period_start=None, period_end=None):
 # 2. COMMERCIAL KPIs (CORRECTED)
 # =============================================================================
 
-def query_commercial_kpis(period_start=None, period_end=None, filters=None):
+def query_commercial_kpis(period_start=None, period_end=None, filters=None,
+                          comparison_start=None, comparison_end=None):
     """
     Six main KPIs with period-over-period comparison.
     
@@ -1631,9 +1642,12 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None):
     """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
-    duration = end_utc - start_utc
-    prev_end = start_utc
-    prev_start = prev_end - duration
+    if comparison_start and comparison_end:
+        prev_start, prev_end = _build_chile_period_bounds(comparison_start, comparison_end)
+    else:
+        duration = end_utc - start_utc
+        prev_end = start_utc
+        prev_start = prev_end - duration
 
     extra = _build_extra_filter(filters) or {}
 

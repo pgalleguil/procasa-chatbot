@@ -1072,9 +1072,6 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         update_params
     )
     if user_doc and manual_decision.get("eligible"):
-        # Resolver ejecutivo acreditado: el responsable de la propiedad
-        gestion = current_doc.get("gestion") or {}
-        credited_executive_id = gestion.get("ejecutivo_id") or None
         record_manual_management_decision(
             db,
             property_doc=current_doc,
@@ -1084,7 +1081,6 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
             notes=notes,
             outcome=outcome,
             now=now,
-            credited_to_user_id=credited_executive_id,
         )
     _invalidate_detail_cache(obj_id)
     

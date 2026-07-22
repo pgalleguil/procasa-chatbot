@@ -204,11 +204,26 @@ async def lifespan(app: FastAPI):
     # Preconectar DB para reducir latencia del primer login/request.
     try:
         from chatbot.storage import get_db, get_async_db
+        import time as _ping_time
+        _p0 = _ping_time.perf_counter()
         get_db().command("ping")
+        _p1 = _ping_time.perf_counter()
+        logger.info(f"MongoDB ping: {(_p1-_p0)*1000:.0f}ms preconnect OK")
         await get_async_db().command("ping")
         logger.info("MongoDB preconnect: OK")
     except Exception as e:
         logger.warning(f"MongoDB preconnect warning: {e}")
+
+    # Pre-crear índices de captación para evitar que se ejecuten dentro de requests
+    try:
+        from api_captacion import ensure_leads_indexes
+        ensure_leads_indexes()
+        from captacion_goals import ensure_captacion_goal_indexes
+        from chatbot.storage import get_db
+        ensure_captacion_goal_indexes(get_db())
+        logger.info("Captacion indexes: OK")
+    except Exception as e:
+        logger.warning(f"Captacion indexes warning: {e}")
 
     # Cliente HTTP compartido para OAuth (evita crear conexión por callback).
     _OAUTH_HTTP_CLIENT = httpx.AsyncClient(timeout=10.0)
@@ -1918,21 +1933,9 @@ async def view_captaciones(
         }.items() if value
     }
     pagination_base_url = "?" + urlencode(pagination_query, doseq=True) + ("&" if pagination_query else "")
-    
-    # Diagnóstico temporal
     from chatbot.storage import get_db as get_sync_db
     sync_db = get_sync_db()
-    base_eligible = Config.get_captacion_collection(sync_db).count_documents({
-        "origen": {"$in": ["toctoc", "yapo"]},
-        "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}
-    })
     _perf["diag_done"] = time.perf_counter()
-    logger.info(
-        f"[CAPTACION] collection={Config.CAPTACION_COLLECTION_NAME} "
-        f"user_id={user_id[:8]}... role={user_role} "
-        f"base_eligible={base_eligible} rbac_count={total_count} "
-        f"items_returned={len(items)} page={page}"
-    )
     
     # KPIs de todos los portales soportados.
     base_query = {
@@ -1982,14 +1985,24 @@ async def view_captaciones(
         available_count = cache_store[cache_key]['available_count']
         comunas_clean = cache_store[cache_key]['comunas_clean']
     else:
-        kpi_queries = build_kpi_queries(base_query)
-        available_count, in_gestion_count, captados_count, descartados_count, comunas_list = await asyncio.gather(
-            adb[Config.CAPTACION_COLLECTION_NAME].count_documents(kpi_queries["available"]),
-            adb[Config.CAPTACION_COLLECTION_NAME].count_documents(kpi_queries["management"]),
-            adb[Config.CAPTACION_COLLECTION_NAME].count_documents(kpi_queries["captured"]),
-            adb[Config.CAPTACION_COLLECTION_NAME].count_documents(kpi_queries["discarded"]),
-            adb[Config.CAPTACION_COLLECTION_NAME].distinct("comuna", base_query)
-        )
+        from captacion_kpis import AVAILABLE_STATES, MANAGEMENT_STATES, CAPTURED_STATES, DISCARDED_STATES
+        kpi_facet = [
+            {"$match": base_query},
+            {"$facet": {
+                "available": [{"$match": {"gestion.estado": {"$in": list(AVAILABLE_STATES)}}}, {"$count": "count"}],
+                "management": [{"$match": {"gestion.estado": {"$in": list(MANAGEMENT_STATES)}}}, {"$count": "count"}],
+                "captured": [{"$match": {"gestion.estado": {"$in": list(CAPTURED_STATES)}}}, {"$count": "count"}],
+                "discarded": [{"$match": {"gestion.estado": {"$in": list(DISCARDED_STATES)}}}, {"$count": "count"}],
+            }}
+        ]
+        kpi_task = adb[Config.CAPTACION_COLLECTION_NAME].aggregate(kpi_facet).to_list(1)
+        comuna_task = adb[Config.CAPTACION_COLLECTION_NAME].distinct("comuna", base_query)
+        kpi_result, comunas_list = await asyncio.gather(kpi_task, comuna_task)
+        counts = (kpi_result[0] if kpi_result else {})
+        available_count = (counts.get("available", [{}])[0] or {}).get("count", 0)
+        in_gestion_count = (counts.get("management", [{}])[0] or {}).get("count", 0)
+        captados_count = (counts.get("captured", [{}])[0] or {}).get("count", 0)
+        descartados_count = (counts.get("discarded", [{}])[0] or {}).get("count", 0)
         comunas_clean = sorted(
             {str(c).strip() for c in comunas_list if c and str(c).strip()},
             key=lambda value: value.casefold(),

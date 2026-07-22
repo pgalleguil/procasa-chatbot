@@ -766,7 +766,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         f"total={_l_total:.0f}ms items={len(items_paginated)}"
     )
     
-    set_cached_value(response_cache_key, {"items": items_paginated, "total_count": total_count, "available_ops": available_ops}, expire_seconds=45)
+    _l1_set(response_cache_key, {"items": items_paginated, "total_count": total_count, "available_ops": available_ops}, expire_seconds=45)
     return items_paginated, total_count, available_ops
 
 def get_captacion_detail(obj_id):

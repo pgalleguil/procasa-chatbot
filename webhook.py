@@ -1953,26 +1953,6 @@ async def view_captaciones(
                 ]},
             ]},
         ]
-    elif ejecutivo and ejecutivo != "Todos":
-        selected_exec_doc = await adb["usuarios"].find_one(
-            {"nombre": ejecutivo}, {"email": 1}
-        )
-        selected_exec_ids = [ejecutivo]
-        selected_exec_emails = [ejecutivo]
-        if selected_exec_doc:
-            selected_exec_ids.append(str(selected_exec_doc["_id"]))
-            if selected_exec_doc.get("email"):
-                selected_exec_emails.append(selected_exec_doc["email"])
-        base_query["$or"] = [
-            {"gestion.ejecutivo_asignado": ejecutivo},
-            {"$and": [
-                {"gestion.ejecutivo_asignado": {"$in": [None, ""]}},
-                {"$or": [
-                    {"gestion.ejecutivo_id": {"$in": selected_exec_ids}},
-                    {"gestion.ejecutivo_email": {"$in": selected_exec_emails}},
-                ]},
-            ]},
-        ]
 
     cache_key = f"stats_v7_{user_role}_{user_id}_{ejecutivo}"
     cache_store = getattr(app.state, 'captacion_stats_cache', {})
@@ -1985,6 +1965,26 @@ async def view_captaciones(
         available_count = cache_store[cache_key]['available_count']
         comunas_clean = cache_store[cache_key]['comunas_clean']
     else:
+        if ejecutivo and ejecutivo != "Todos" and user_role in CAPTACION_PRIVILEGED_ROLES:
+            selected_exec_doc = await adb["usuarios"].find_one(
+                {"nombre": ejecutivo}, {"email": 1}
+            )
+            selected_exec_ids = [ejecutivo]
+            selected_exec_emails = [ejecutivo]
+            if selected_exec_doc:
+                selected_exec_ids.append(str(selected_exec_doc["_id"]))
+                if selected_exec_doc.get("email"):
+                    selected_exec_emails.append(selected_exec_doc["email"])
+            base_query["$or"] = [
+                {"gestion.ejecutivo_asignado": ejecutivo},
+                {"$and": [
+                    {"gestion.ejecutivo_asignado": {"$in": [None, ""]}},
+                    {"$or": [
+                        {"gestion.ejecutivo_id": {"$in": selected_exec_ids}},
+                        {"gestion.ejecutivo_email": {"$in": selected_exec_emails}},
+                    ]},
+                ]},
+            ]
         from captacion_kpis import AVAILABLE_STATES, MANAGEMENT_STATES, CAPTURED_STATES, DISCARDED_STATES
         kpi_facet = [
             {"$match": base_query},

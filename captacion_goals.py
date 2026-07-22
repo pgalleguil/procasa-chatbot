@@ -45,6 +45,22 @@ CAPTACION_PRIVILEGED_ROLES = {"admin", "supervisor", "jefatura"}
 # feriados confiable más adelante sin dispersar reglas por el proyecto.
 CAPTACION_HOLIDAYS: frozenset[str] = frozenset()
 _INDEXES_READY = False
+_history_count_cache = {}  # {key: (timestamp, value)}
+
+
+def _get_history_event_count(db, start_local, end_local):
+    cache_key = f"{start_local.isoformat()}_{end_local.isoformat()}"
+    entry = _history_count_cache.get(cache_key)
+    if entry and (_perf_time.time() - entry[0]) < 300:
+        return entry[1]
+    count = db[CAPTACION_GOAL_COLLECTION].count_documents({
+        "occurred_at": {
+            "$gte": start_local.astimezone(timezone.utc),
+            "$lt": end_local.astimezone(timezone.utc),
+        }
+    })
+    _history_count_cache[cache_key] = (_perf_time.time(), count)
+    return count
 LEDGER_CUTOVER_DATE = os.getenv("CAPTACION_LEDGER_CUTOVER_DATE", "2026-07-20")
 LEGACY_DUAL_READ_UNTIL = os.getenv("CAPTACION_LEGACY_DUAL_READ_UNTIL", "2026-08-02")
 LEGACY_CONFIRMED_RESULTS = {
@@ -459,12 +475,7 @@ def get_captacion_goal_dashboard(db, selected_executive=None, now=None) -> dict:
 
     start_local = CAPTACION_TIMEZONE.localize(datetime.combine(monday, time.min))
     end_local = start_local + timedelta(days=5)
-    result["history_event_count"] = db[CAPTACION_GOAL_COLLECTION].count_documents({
-        "occurred_at": {
-            "$gte": start_local.astimezone(timezone.utc),
-            "$lt": end_local.astimezone(timezone.utc),
-        }
-    })
+    result["history_event_count"] = _get_history_event_count(db, start_local, end_local)
     _g5 = _perf_time.perf_counter()
 
     logger.info(

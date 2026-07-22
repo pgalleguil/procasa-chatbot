@@ -1,10 +1,12 @@
 import asyncio
+import threading
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from chatbot.constants import CHILE_TZ
 from chatbot.crm_cold_digest import simulate_cold_digests
 from chatbot.crm_hot_delivery import assign_and_enqueue_hot, process_one_hot
-from chatbot.crm_notifications import COLLECTION
+from chatbot.crm_notifications import COLLECTION, claim_next, finalize_attempt
 from chatbot.crm_reconciliation import reconcile_shadow
 from chatbot.crm_sla_shadow import evaluate_sla_shadow
 from tests.test_crm_notification_containment import Collection, DB, local
@@ -98,3 +100,54 @@ def test_provider_acceptance_without_message_id_is_quarantined_not_retried():
     assert result["status"] == "quarantined"
     assert asyncio.run(process_one_hot(db, sender=accepted_without_evidence,
                                        worker_id="restart", now=local(20, 11), enabled=True))["status"] == "idle"
+
+
+def test_claim_and_finalize_offloaded_from_event_loop_and_main_thread():
+    """Regression: claim_next/finalize_attempt must not run on MainThread or event loop.
+
+    Verifies:
+    1. Thread identity: functions execute on a threadpool worker, not MainThread.
+    2. Event-loop absence: asyncio.get_running_loop() raises RuntimeError inside
+       the thread — proving no event loop is active on that thread.
+       (If the sync function ran on the event-loop thread, get_running_loop()
+       would return the loop instead of raising.)
+    """
+    db, lead = setup_db()
+    assign_and_enqueue_hot(db, lead=lead, recipient_user_id="u1", recipient_phone="+56911111111",
+                           payload={"target_name": "u1"}, assigned_at=local(20, 9), send_after=local(20, 9))
+
+    main_thread_id = threading.get_ident()
+    call_sites = []  # (function_name, thread_id, thread_name, event_loop_active)
+
+    def _track(name, fn):
+        def _wrapped(*args, **kwargs):
+            try:
+                asyncio.get_running_loop()
+                loop_active = True
+            except RuntimeError:
+                loop_active = False
+            call_sites.append((name, threading.get_ident(), threading.current_thread().name, loop_active))
+            return fn(*args, **kwargs)
+        return _wrapped
+
+    # Instrument the actual functions used by process_one_hot
+    with patch("chatbot.crm_hot_delivery.claim_next", _track("claim_next", claim_next)), \
+         patch("chatbot.crm_hot_delivery.finalize_attempt", _track("finalize_attempt", finalize_attempt)):
+        result = asyncio.run(process_one_hot(db, sender=fake_sender, worker_id="w1", now=local(20, 10), enabled=True))
+
+    assert result["status"] == "sent"
+    assert len(call_sites) >= 2, f"Expected at least claim_next + finalize_attempt, got {call_sites}"
+
+    for func_name, thread_id, thread_name, loop_active in call_sites:
+        assert thread_id != main_thread_id, (
+            f"{func_name} ran on MainThread (id={thread_id}, name='{thread_name}') — "
+            f"not offloaded via asyncio.to_thread()"
+        )
+        assert "MainThread" not in thread_name, (
+            f"{func_name} thread name contains 'MainThread': '{thread_name}'"
+        )
+        assert not loop_active, (
+            f"{func_name} has an active event loop on thread '{thread_name}' (id={thread_id}) — "
+            f"asyncio.get_running_loop() did NOT raise RuntimeError. "
+            f"Function is still executing on an event-loop thread, not a worker thread."
+        )

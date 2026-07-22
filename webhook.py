@@ -2164,10 +2164,12 @@ async def api_get_matching_leads(request: Request, obj_id: str):
             del PENDING_MATCHING_REQUESTS[obj_id]
 @app.post("/api/captacion/update")
 async def api_update_captacion(request: Request):
+    _up0 = time.perf_counter()
     try:
         username_str = await get_current_user(request)
         user_doc = await get_current_user_doc(request)
         data = await request.json()
+        _up1 = time.perf_counter()
         obj_id = data.get("id")
         status = data.get("status")
         notes = data.get("notes")
@@ -2186,6 +2188,7 @@ async def api_update_captacion(request: Request):
             raise HTTPException(status_code=404, detail="Propiedad no encontrada")
         if not user_doc or not can_manage_captacion(user_doc, captacion_doc):
             raise HTTPException(status_code=403, detail="No autorizado para gestionar esta captación")
+        _up2 = time.perf_counter()
             
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
@@ -2202,10 +2205,17 @@ async def api_update_captacion(request: Request):
             )
         )
         if result:
+            _up3 = time.perf_counter()
             app.state.captacion_stats_cache = {}
             goal_cache = getattr(app.state, 'captacion_goal_cache', None)
             if goal_cache is not None:
                 goal_cache.clear()
+            _elapsed = (_up3 - _up0) * 1000
+            logger.info(
+                f"[CAPTACION_PERF] POST update auth={(_up1-_up0)*1000:.0f} "
+                f"detail={(_up2-_up1)*1000:.0f} update={(_up3-_up2)*1000:.0f} "
+                f"total={_elapsed:.0f}ms status={status}"
+            )
             return {"status": "ok"}
         return {"status": "error", "message": "Operación retornó falso"}
     except HTTPException:

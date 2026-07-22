@@ -746,6 +746,12 @@ def _sanitize_commercial_portfolio(payload: dict) -> dict:
         for row in properties.get(group, []):
             if "dominant_executive" in row:
                 row["dominant_executive"] = aliases.get(str(row.get("dominant_executive")), "S/I")
+    for insight in safe.get("insights", []):
+        for field, value in list(insight.items()):
+            if isinstance(value, str):
+                for name, alias in aliases.items():
+                    value = value.replace(name, alias)
+                insight[field] = value
     safe.setdefault("meta", {})["portfolio_mode"] = True
     return safe
 
@@ -784,6 +790,7 @@ async def api_commercial_dashboard(
     temperature: str = Query(None),
     property_code: str = Query(None),
     assignment: str = Query(None),
+    stage: str = Query(None),
     compare: str = Query(None),
     period_preset: str = Query(None),
 ):
@@ -797,6 +804,7 @@ async def api_commercial_dashboard(
     if temperature: filters["temperature"] = temperature
     if property_code: filters["property_code"] = property_code
     if assignment: filters["assignment"] = assignment
+    if stage: filters["stage"] = stage
 
     loop = asyncio.get_running_loop()
     payload = await loop.run_in_executor(

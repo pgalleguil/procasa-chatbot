@@ -681,10 +681,11 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         mongo_sort = ([(sort_fields[key], direction) for key, direction in sort_specs] + [("_id", -1)]
                       if sort_specs else [("updated_at", -1), ("_id", -1)])
         cursor = coll.find(query, projection).sort(mongo_sort).skip(skip).limit(limit)
+    _raw_docs = list(cursor)
     _l_cursor = _perf_time.perf_counter()
     
     items_paginated = []
-    for doc in cursor:
+    for doc in _raw_docs:
         norm = normalize_captacion_document(doc)
         gestion = norm["gestion"]
         fecha_ref = get_captacion_capture_datetime(doc)

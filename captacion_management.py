@@ -111,6 +111,8 @@ def ensure_management_indexes(db) -> None:
     global _INDEXES_READY
     if _INDEXES_READY:
         return
+    import time as _idx_time
+    _idx0 = _idx_time.perf_counter()
     db[ATTEMPT_COLLECTION].create_index("attempt_id", unique=True, name="captacion_attempt_id")
     db[ATTEMPT_COLLECTION].create_index(
         [("actor_user_id", 1), ("status", 1), ("initiated_at", -1)], name="captacion_attempt_actor_status"
@@ -135,6 +137,10 @@ def ensure_management_indexes(db) -> None:
     )
     db[ASSIGNMENT_CYCLE_COLLECTION].create_index("assignment_cycle_id", unique=True, name="captacion_assignment_cycle")
     _INDEXES_READY = True
+    import logging
+    logging.getLogger(__name__).info(
+        f"[CAPTACION_GOAL_PERF] team: ensure_indexes={(_idx_time.perf_counter() - _idx0) * 1000:.0f}ms"
+    )
 
 
 def normalize_started_action(action, channel) -> tuple[str, str]:

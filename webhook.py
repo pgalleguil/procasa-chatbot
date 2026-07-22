@@ -1926,6 +1926,7 @@ async def view_captaciones(
         "origen": {"$in": ["toctoc", "yapo"]},
         "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}
     })
+    _perf["diag_done"] = time.perf_counter()
     logger.info(
         f"[CAPTACION] collection={Config.CAPTACION_COLLECTION_NAME} "
         f"user_id={user_id[:8]}... role={user_role} "
@@ -2076,6 +2077,7 @@ async def view_captaciones(
         _deltas.append(f"{_name}={(_t - _prev_t) * 1000:.0f}")
         _prev_t = _t
     _deltas.append(f"total={(_perf['render'] - _t0) * 1000:.0f}")
+    _deltas.append(f"diag={(_perf['diag_done'] - _perf['list_done']) * 1000:.0f}")
     logger.info(
         f"[CAPTACION_PERF] {' '.join(_deltas)}ms "
         f"role={user_role} page={page} sort={sort_by or 'def'} "

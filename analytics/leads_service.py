@@ -436,8 +436,9 @@ def get_commercial_dashboard(
     prev_label = ""
     comp_type = "custom_vs_previous"
 
-    mode = compare or "auto"
-    comp_start, comp_end, comp_type = comparison_period(ps_dt, pe_dt, mode, period_preset)
+    mode = compare if compare in ("auto", "prev", "yoy", "none") else "auto"
+    preset = period_preset if period_preset in ("today", "week", "month", "30d", "custom") else "custom"
+    comp_start, comp_end, comp_type = comparison_period(ps_dt, pe_dt, mode, preset)
     if mode == "none":
         prev_label = "Sin comparaci\u00f3n"
         comp_type = "custom_no_comparison"
@@ -453,12 +454,14 @@ def get_commercial_dashboard(
     period_info = {
         "type": comp_type,
         "timezone": "America/Santiago",
+        "preset": preset,
+        "comparison_mode": mode,
         "current": {"start": period_start or "", "end": period_end or "", "label": period_label},
         "previous": {"start": prev_start, "end": prev_end, "label": prev_label},
     }
 
     comparison_kwargs = ({"comparison_start": prev_start, "comparison_end": prev_end}
-                         if prev_start and prev_end else {})
+                         if prev_start and prev_end else {"include_comparison": False})
     kpis = query_commercial_kpis(**kwargs, **comparison_kwargs)
     funnel = query_commercial_funnel(**kwargs)
     sla = query_sla_risk_panel(**kwargs)

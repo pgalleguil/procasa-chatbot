@@ -588,6 +588,14 @@ class TestCommercialDashboardComparison:
         assert d["meta"]["period"]["type"] == "custom_no_comparison"
         prev = d["meta"]["period"]["previous"]
         assert prev.get("label") == "Sin comparaci\u00f3n"
+        assert prev.get("start") == ""
+        assert prev.get("end") == ""
+        assert d["trends"]["previous"]["daily"] == []
+        assert d["trends"]["previous"]["total"] is None
+        for key in ["leads_received", "leads_hot_history", "visit_intent", "visits_scheduled", "closed_won"]:
+            assert d["kpis"][key]["previous"] is None
+            assert d["kpis"][key]["variation_pct"] is None
+        assert all(source["variation_pct"] is None for source in d["sources"])
 
     def test_compare_defaults_to_previous(self):
         d = get_commercial_dashboard()

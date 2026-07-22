@@ -40,5 +40,9 @@
     return { start: start > safeEnd ? safeEnd : start, end: safeEnd };
   }
 
-  return { TIME_ZONE, parts, iso, addDays, presetRange, clampRange };
+  function validPreset(value) {
+    return ['today', 'week', 'month', '30d', 'custom'].includes(value) ? value : null;
+  }
+
+  return { TIME_ZONE, parts, iso, addDays, presetRange, clampRange, validPreset };
 });

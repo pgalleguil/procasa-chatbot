@@ -15,7 +15,7 @@ class CommercialDashboardPremiumTests(unittest.TestCase):
     def test_information_architecture_is_preserved(self):
         for label in (
             "Resumen Ejecutivo",
-            "Gesti&oacute;n Comercial",
+            "Equipo y Cobertura",
             "Demanda Inmobiliaria",
             "Fuentes y Propiedades",
             "Calidad de Datos",

@@ -612,21 +612,27 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     total_count = coll.count_documents(query)
     
-    # Available ops
-    pipeline_ops = [
-        {"$match": {"origen": {"$in": ["toctoc", "yapo"]}, "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}}},
-        {"$group": {"_id": None, "ops": {"$addToSet": "$operacion"}}}
-    ]
-    ops_result = list(coll.aggregate(pipeline_ops))
-    raw_ops = ops_result[0]["ops"] if ops_result else []
-    available_ops = []
-    for o in raw_ops:
-        if o and "venta" in str(o).lower():
-            available_ops.append("venta")
-        if o and "arriend" in str(o).lower():
-            available_ops.append("arriendo")
-    if not available_ops:
-        available_ops = ["venta", "arriendo"]
+    # Available ops: resultado estático por colección, cache global 120s.
+    # No depende de RBAC ni filtros, así que no debe recalcularse por request.
+    _global_ops_cache = getattr(get_captacion_list, '_ops_cache', None)
+    if _global_ops_cache and (get_chile_now() - _global_ops_cache[0]).total_seconds() < 120:
+        available_ops = _global_ops_cache[1]
+    else:
+        pipeline_ops = [
+            {"$match": {"origen": {"$in": ["toctoc", "yapo"]}, "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}}},
+            {"$group": {"_id": None, "ops": {"$addToSet": "$operacion"}}}
+        ]
+        ops_result = list(coll.aggregate(pipeline_ops))
+        raw_ops = ops_result[0]["ops"] if ops_result else []
+        available_ops = []
+        for o in raw_ops:
+            if o and "venta" in str(o).lower():
+                available_ops.append("venta")
+            if o and "arr" in str(o).lower():
+                available_ops.append("arriendo")
+        if not available_ops:
+            available_ops = ["venta", "arriendo"]
+        get_captacion_list._ops_cache = (get_chile_now(), available_ops)
     
     skip = (page - 1) * limit
     sort_fields = {
@@ -1016,11 +1022,11 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         update_fields["gestion.last_contact"] = now
         if channel: update_fields["gestion.last_channel"] = channel
 
-    # 3. Empujar nota estructurada y estado
+    # 3. Empujar nota estructurada solo si hay contenido
     push_fields = {}
-    if notes or status:
+    if notes:
         push_fields["gestion.notas"] = {
-            "content": notes or f"Cambio de estado a {status}",
+            "content": notes,
             "timestamp": now,
             "usuario": user_name,
             "canal": channel or "Manual",
@@ -1517,6 +1523,17 @@ def ensure_leads_indexes():
                 ("classification.owner_probability", -1),
                 ("_id", -1),
             ], name="idx_captacion_owner_probability")
+        except Exception:
+            pass
+
+        # 6. Índice para orden por defecto (updated_at DESC) con filtros base
+        try:
+            coll.create_index([
+                ("origen", 1),
+                ("classification.state", 1),
+                ("updated_at", -1),
+                ("_id", -1),
+            ], name="idx_captacion_default_sort")
         except Exception:
             pass
 

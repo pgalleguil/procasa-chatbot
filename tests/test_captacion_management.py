@@ -161,9 +161,10 @@ def test_capture_is_a_managed_property():
 
 
 @pytest.mark.parametrize("status", ["Corredor", "Descartado"])
-def test_conclusions_requiring_evidence_reject_an_empty_reason(status):
-    with pytest.raises(ValueError, match="motivo"):
-        management.evaluate_manual_decision(status=status, previous_status="Por contactar", notes="")
+def test_conclusions_requiring_evidence_return_ineligible_without_blocking(status):
+    decision = management.evaluate_manual_decision(status=status, previous_status="Por contactar", notes="")
+    assert decision["eligible"] is False
+    assert decision["reason"] == "evidence_required"
 
 
 def test_non_commercial_and_automatic_changes_never_credit():

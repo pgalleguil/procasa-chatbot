@@ -184,7 +184,7 @@ def evaluate_manual_decision(*, status, previous_status=None, notes=None, outcom
     if not rule:
         return {"eligible": False, "reason": "status_not_creditable", "status": normalized_status}
     if rule.get("requires_evidence") and len(evidence) < MIN_MANUAL_EVIDENCE_LENGTH:
-        raise ValueError(f"Debes registrar un motivo de al menos {MIN_MANUAL_EVIDENCE_LENGTH} caracteres")
+        return {"eligible": False, "reason": "evidence_required", "status": normalized_status}
     if rule.get("requires_transition") and not changed:
         return {"eligible": False, "reason": "real_transition_required", "status": normalized_status}
     if rule.get("requires_context") and not evidence:

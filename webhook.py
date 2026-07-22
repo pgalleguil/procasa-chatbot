@@ -2023,29 +2023,7 @@ async def view_captaciones(
         app.state.captacion_goal_cache = goal_cache
     _perf["goal_done"] = time.perf_counter()
 
-    _perf["render"] = time.perf_counter()
-    _t0 = _perf["start"]
-    _stages = [
-        ("auth",     _perf["auth"]),
-        ("list",     _perf["list_done"]),
-        ("kpi",      _perf["kpi_done"]),
-        ("goal",     _perf["goal_done"]),
-        ("render",   _perf["render"]),
-    ]
-    _deltas = []
-    _prev_t = _t0
-    for _name, _t in _stages:
-        _deltas.append(f"{_name}={(_t - _prev_t) * 1000:.0f}")
-        _prev_t = _t
-    _deltas.append(f"total={(_perf['render'] - _t0) * 1000:.0f}")
-    logger.info(
-        f"[CAPTACION_PERF] {' '.join(_deltas)}ms "
-        f"role={user_role} page={page} sort={sort_by or 'def'} "
-        f"ejec={current_ejecutivo or '-'} comuna={current_comuna or '-'} "
-        f"items={len(items)} total={total_count}"
-    )
-
-    return templates.TemplateResponse("captacion_list.html", {
+    response = templates.TemplateResponse("captacion_list.html", {
         "request": request,
         "items": items,
         "total_count": total_count,
@@ -2080,6 +2058,30 @@ async def view_captaciones(
             "has_prev": page > 1
         }
     }, headers={"Content-Type": "text/html; charset=utf-8"})
+
+    _perf["render"] = time.perf_counter()
+    _t0 = _perf["start"]
+    _stages = [
+        ("auth",     _perf["auth"]),
+        ("list",     _perf["list_done"]),
+        ("kpi",      _perf["kpi_done"]),
+        ("goal",     _perf["goal_done"]),
+        ("render",   _perf["render"]),
+    ]
+    _deltas = []
+    _prev_t = _t0
+    for _name, _t in _stages:
+        _deltas.append(f"{_name}={(_t - _prev_t) * 1000:.0f}")
+        _prev_t = _t
+    _deltas.append(f"total={(_perf['render'] - _t0) * 1000:.0f}")
+    logger.info(
+        f"[CAPTACION_PERF] {' '.join(_deltas)}ms "
+        f"role={user_role} page={page} sort={sort_by or 'def'} "
+        f"ejec={current_ejecutivo or '-'} comuna={current_comuna or '-'} "
+        f"items={len(items)} total={total_count}"
+    )
+
+    return response
 
 @app.get("/captacion/{obj_id}", response_class=HTMLResponse)
 async def view_captacion_detail_route(request: Request, obj_id: str):

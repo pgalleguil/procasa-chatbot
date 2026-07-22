@@ -884,9 +884,11 @@ def get_captacion_detail(obj_id):
     historial = []
     status_log = gestion.get("status_history", [])
     if isinstance(status_log, list):
-        for entry in status_log[-50:]:
+        for entry in status_log:
+            ts = entry.get("timestamp")
             historial.append({
-                "fecha": format_relative_time(entry.get("timestamp")),
+                "_sort_ts": ts,
+                "fecha": format_relative_time(ts),
                 "nota": f"Cambio de estado: {entry.get('from_state', '?')} → {entry.get('to_state', '?')}",
                 "usuario": entry.get("user", "Sistema"),
                 "canal": "estado",
@@ -894,15 +896,22 @@ def get_captacion_detail(obj_id):
             })
     notas_raw = gestion.get("notas", [])
     if isinstance(notas_raw, list):
-        for n in notas_raw[-50:]:
+        for n in notas_raw:
+            ts = n.get("timestamp")
             historial.append({
-                "fecha": format_relative_time(n.get("timestamp")),
+                "_sort_ts": ts,
+                "fecha": format_relative_time(ts),
                 "nota": n.get("content", ""),
                 "usuario": n.get("usuario", "Sistema"),
                 "canal": n.get("canal", "Desconocido"),
                 "is_status_change": False,
             })
-    historial.sort(key=lambda item: item.get("fecha", ""), reverse=True)
+    historial.sort(
+        key=lambda item: (item.get("_sort_ts") or datetime(2000, 1, 1)),
+        reverse=True,
+    )
+    for item in historial:
+        item.pop("_sort_ts", None)
     historial = historial[:50]
     
     _result = dict(norm)

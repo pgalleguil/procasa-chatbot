@@ -880,8 +880,18 @@ def get_captacion_detail(obj_id):
         {"id": "respuesta_suave", "label": "💬 Respuesta Suave", "text": "Buenísimo 👍\n\nPara entender bien, ¿estás buscando vender ahora o solo evaluando opciones?"}
     ]
     
-    # Historial
+    # Historial: merge structured status_history + free-text notas
     historial = []
+    status_log = gestion.get("status_history", [])
+    if isinstance(status_log, list):
+        for entry in status_log[-50:]:
+            historial.append({
+                "fecha": format_relative_time(entry.get("timestamp")),
+                "nota": f"Cambio de estado: {entry.get('from_state', '?')} → {entry.get('to_state', '?')}",
+                "usuario": entry.get("user", "Sistema"),
+                "canal": "estado",
+                "is_status_change": True,
+            })
     notas_raw = gestion.get("notas", [])
     if isinstance(notas_raw, list):
         for n in notas_raw[-50:]:
@@ -889,9 +899,11 @@ def get_captacion_detail(obj_id):
                 "fecha": format_relative_time(n.get("timestamp")),
                 "nota": n.get("content", ""),
                 "usuario": n.get("usuario", "Sistema"),
-                "canal": n.get("canal", "Desconocido")
+                "canal": n.get("canal", "Desconocido"),
+                "is_status_change": False,
             })
-        historial.reverse()
+    historial.sort(key=lambda item: item.get("fecha", ""), reverse=True)
+    historial = historial[:50]
     
     _result = dict(norm)
     _result.update({

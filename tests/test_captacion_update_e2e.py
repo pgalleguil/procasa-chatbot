@@ -41,7 +41,10 @@ class _FakeCollection:
         for doc in self._docs:
             ok = True
             for k, v in query.items():
-                if doc.get(k) != v:
+                if isinstance(v, dict) and "$lte" in v:
+                    if not (doc.get(k) is not None and doc.get(k) <= v["$lte"]):
+                        ok = False
+                elif doc.get(k) != v:
                     ok = False
             if ok:
                 if "$set" in update:
@@ -52,13 +55,12 @@ class _FakeCollection:
                         _deep_set(doc, k, (_deep_get(doc, k) or 0) + val)
                 if "$push" in update:
                     for k, val in update["$push"].items():
-                        container = _list_at(doc, k)
-                        container.append(copy.deepcopy(val))
+                        _list_at(doc, k).append(copy.deepcopy(val))
                 if "$setOnInsert" in update and upsert:
                     for k, val in update["$setOnInsert"].items():
                         if _deep_get(doc, k) is None:
                             _deep_set(doc, k, val)
-                return self
+                return _FakeResult(mod_count=1)
         if upsert:
             doc = dict(query)
             if "$set" in update:
@@ -67,8 +69,10 @@ class _FakeCollection:
             if "$setOnInsert" in update:
                 for k, val in update["$setOnInsert"].items():
                     _deep_set(doc, k, val)
+            if "_id" not in doc:
+                doc["_id"] = ObjectId()
             self._docs.append(doc)
-            return self
+            return _FakeResult(upserted_id=doc.get("_id"))
         return _FakeEmptyResult()
 
     def update_many(self, query, update):
@@ -94,7 +98,14 @@ class _FakeCollection:
         return []
 
 
+class _FakeResult:
+    def __init__(self, upserted_id=None, mod_count=0):
+        self.upserted_id = upserted_id
+        self.modified_count = mod_count
+
+
 class _FakeEmptyResult:
+    upserted_id = None
     modified_count = 0
     matched_count = 0
 
@@ -105,6 +116,9 @@ class _FakeDb:
 
     def __getitem__(self, name):
         return self._cols.setdefault(name, _FakeCollection())
+
+    def __setitem__(self, name, col):
+        self._cols[name] = col
 
     def command(self, *args, **kwargs):
         return {"ok": 1}
@@ -273,3 +287,43 @@ def test_repeated_state_change_no_duplicate_history(_patch_env):
     history = db["propiedades_captacion"].find_one(
         {"_id": prop["_id"]})["gestion"].get("status_history", [])
     assert len(history) == 1
+
+
+def test_status_history_written_and_notas_empty(_patch_env):
+    """status_history tiene entrada; notas vacio con Bitacora vacia."""
+    db = _patch_env
+    prop = _property_doc(estado="En gestion")
+    db["propiedades_captacion"].insert_one(prop)
+
+    update_captacion_status(str(prop["_id"]), "Corredor", notes="",
+                            user_name="Ana", user_doc=_user_doc())
+
+    g = db["propiedades_captacion"].find_one({"_id": prop["_id"]})["gestion"]
+    hist = g.get("status_history", [])
+    assert len(hist) == 1
+    assert hist[0]["from_state"] == "En gestion"
+    assert hist[0]["to_state"] == "Corredor"
+    # Sin nota vacia
+    assert len(g.get("notas", [])) == 0
+
+
+def test_ledger_event_written_after_state_change(_patch_env):
+    """captacion_management_events recibe evento credited=True tras cambio."""
+    db = _patch_env
+    # Setup a real record_manual_management_decision that writes to our fake DB
+    import captacion_management as _cm
+
+    prop = _property_doc()
+    db["propiedades_captacion"].insert_one(prop)
+    db["captacion_management_events"] = _FakeCollection()
+
+    result = update_captacion_status(str(prop["_id"]), "Corredor", notes="",
+                                     user_name="Ana", user_doc=_user_doc())
+    assert result is True
+
+    events = db["captacion_management_events"]._docs
+    credited = [e for e in events if e.get("credited")]
+    assert len(credited) >= 1, f"No credited event found in: {events}"
+    assert credited[0]["event_type"] in ("manual_decision_confirmed", "capture_confirmed")
+    assert credited[0]["result"] == "broker_identified"
+    assert credited[0]["actor_name_snapshot"] == "Ana"

@@ -2178,9 +2178,8 @@ async def api_update_captacion(request: Request):
             )
         )
         if result:
-            # La respuesta ya cambió: las tarjetas no deben conservar hasta cinco
-            # minutos el conteo anterior.
             app.state.captacion_stats_cache = {}
+            app.state.captacion_goal_cache = {}
             return {"status": "ok"}
         return {"status": "error", "message": "Operación retornó falso"}
     except HTTPException:

@@ -418,8 +418,13 @@ def record_manual_management_decision(
     outcome=None,
     is_automatic=False,
     now=None,
+    credited_to_user_id=None,
 ) -> dict:
-    """Acredita una conclusiÃ³n comercial manual usando la misma deduplicaciÃ³n diaria."""
+    """Acredita una conclusiÃ³n comercial manual usando la misma deduplicaciÃ³n diaria.
+    
+    Si se provee credited_to_user_id, el crÃ©dito se atribuye a ese ejecutivo
+    (responsable de la propiedad). actor_user se conserva como performed_by.
+    """
     decision = evaluate_manual_decision(
         status=status,
         previous_status=previous_status,
@@ -431,22 +436,23 @@ def record_manual_management_decision(
         return {"status": "not_credited", "credited": False, "reason": decision["reason"]}
 
     ensure_management_indexes(db)
-    actor_user_id = clean_id(actor_user.get("_id"))
+    performer_user_id = clean_id(actor_user.get("_id"))
+    credited_user_id = clean_id(credited_to_user_id) or performer_user_id
     property_id = clean_id(property_doc.get("_id"))
-    if not actor_user_id or not property_id:
+    if not credited_user_id or not property_id:
         raise ValueError("La gestiÃ³n requiere una propiedad y un user_id identificables")
     occurred_at = now or datetime.now(timezone.utc)
     if occurred_at.tzinfo is None:
         occurred_at = occurred_at.replace(tzinfo=timezone.utc)
     local = localize(occurred_at, DEFAULT_TIMEZONE)
-    dedup_key = management_dedup_key(property_id, actor_user_id, occurred_at)
+    dedup_key = management_dedup_key(property_id, credited_user_id, occurred_at)
     event_id = str(uuid.uuid4())
     event_type = "capture_confirmed" if decision["capture"] else "manual_decision_confirmed"
     cycle_id = ensure_assignment_cycle(db, property_doc)
     rule = MANUAL_DECISION_RULES[decision["status"]]
     if rule.get("once_per_assignment_cycle") and db[LEDGER_COLLECTION].find_one({
         "property_id": property_id,
-        "actor_user_id": actor_user_id,
+        "actor_user_id": credited_user_id,
         "assignment_cycle_id": cycle_id,
         "result": decision["result"],
         "event_type": "manual_decision_confirmed",
@@ -459,7 +465,7 @@ def record_manual_management_decision(
             "commercially_valid": True,
             "property_id": property_id,
             "assignment_cycle_id": cycle_id,
-            "actor_user_id": actor_user_id,
+            "actor_user_id": credited_user_id,
             "actor_name_snapshot": actor_user.get("nombre") or actor_user.get("username") or "",
             "actor_email_snapshot": actor_user.get("email") or "",
             "action": "manual_decision",
@@ -492,7 +498,7 @@ def record_manual_management_decision(
         "dedup_key": dedup_key,
         "property_id": property_id,
         "assignment_cycle_id": cycle_id,
-        "actor_user_id": actor_user_id,
+        "actor_user_id": credited_user_id,
         "actor_name_snapshot": actor_user.get("nombre") or actor_user.get("username") or "",
         "actor_email_snapshot": actor_user.get("email") or "",
         "action": "manual_decision",
@@ -511,12 +517,13 @@ def record_manual_management_decision(
         "migration_version": LEDGER_VERSION,
         "legacy_inferred": False,
         "commercially_valid": True,
+        "performed_by_user_id": performer_user_id,
         "created_at": occurred_at.astimezone(timezone.utc),
     }
     credited, resolved_event_id = _write_credited_event_or_observation(db, event)
     if credited:
         _record_first_action_for_cycle(db, event)
-        recalculate_daily_metric(db, actor_user_id, local.date(), now=occurred_at)
+        recalculate_daily_metric(db, credited_user_id, local.date(), now=occurred_at)
         audit_management_patterns(db, event)
     return {
         "status": "confirmed",

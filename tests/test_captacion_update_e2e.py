@@ -308,11 +308,8 @@ def test_status_history_written_and_notas_empty(_patch_env):
 
 
 def test_ledger_event_written_after_state_change(_patch_env):
-    """captacion_management_events recibe evento credited=True tras cambio."""
+    """captacion_management_events: credited=True, actor=assigned executive."""
     db = _patch_env
-    # Setup a real record_manual_management_decision that writes to our fake DB
-    import captacion_management as _cm
-
     prop = _property_doc()
     db["propiedades_captacion"].insert_one(prop)
     db["captacion_management_events"] = _FakeCollection()
@@ -326,7 +323,51 @@ def test_ledger_event_written_after_state_change(_patch_env):
     assert len(credited) >= 1, f"No credited event found in: {events}"
     assert credited[0]["event_type"] in ("manual_decision_confirmed", "capture_confirmed")
     assert credited[0]["result"] == "broker_identified"
-    assert credited[0]["actor_name_snapshot"] == "Ana"
+    # Credited to the assigned executive (ejecutivo_id = "u1"), not the performer
+    assert credited[0]["actor_user_id"] == "u1"
+    # Performer tracked separately
+    assert credited[0].get("performed_by_user_id") == "u1"
+
+
+def test_supervisor_credits_assigned_executive_not_performer(_patch_env):
+    """Supervisor actualiza propiedad de Erika → credito para Erika."""
+    db = _patch_env
+    prop = _property_doc()
+    prop["gestion"]["ejecutivo_id"] = "erika-id"
+    prop["gestion"]["ejecutivo_asignado"] = "Erika Garrido"
+    db["propiedades_captacion"].insert_one(prop)
+    db["captacion_management_events"] = _FakeCollection()
+
+    supervisor = {"_id": "supervisor-id", "nombre": "Pablo", "email": "pablo@test.cl", "rol": "admin"}
+    result = update_captacion_status(str(prop["_id"]), "En gestion", notes="",
+                                     user_name="Pablo", user_doc=supervisor)
+    assert result is True
+
+    credited = [e for e in db["captacion_management_events"]._docs if e.get("credited")]
+    assert len(credited) >= 1
+    # Credited to Erika (assigned executive)
+    assert credited[0]["actor_user_id"] == "erika-id"
+    # Performer is Pablo (supervisor)
+    assert credited[0].get("performed_by_user_id") == "supervisor-id"
+
+
+def test_property_without_assigned_executive_falls_back_to_performer(_patch_env):
+    """Propiedad sin ejecutivo asignado → credito al performer."""
+    db = _patch_env
+    prop = _property_doc()
+    prop["gestion"]["ejecutivo_id"] = None
+    prop["gestion"]["ejecutivo_asignado"] = None
+    db["propiedades_captacion"].insert_one(prop)
+    db["captacion_management_events"] = _FakeCollection()
+
+    result = update_captacion_status(str(prop["_id"]), "En gestion", notes="",
+                                     user_name="Ana", user_doc=_user_doc())
+    assert result is True
+
+    credited = [e for e in db["captacion_management_events"]._docs if e.get("credited")]
+    assert len(credited) >= 1
+    assert credited[0]["actor_user_id"] == "u1"
+    assert credited[0].get("performed_by_user_id") == "u1"
 
 
 def test_second_identical_request_no_duplicate_ledger(_patch_env):

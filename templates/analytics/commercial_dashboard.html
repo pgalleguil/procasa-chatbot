@@ -713,7 +713,7 @@ const PERIOD_TYPE_LABELS={
 function getPeriodContext(data){
   const period=data?.meta?.period||{};
   const current=period.current||{},previous=period.comparison||period.previous||{};
-  const type=period.type||period.compare_resolved&&period.compare_resolved!=='none'?'custom_vs_previous':'custom_no_comparison';
+  const type=period.type||(period.compare_resolved&&period.compare_resolved!=='none'?'custom_vs_previous':'custom_no_comparison');
   return{
     type,currentStart:current.start||'',currentEnd:current.end||'',
     previousStart:previous.start||'',previousEnd:previous.end||'',

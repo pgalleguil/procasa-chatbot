@@ -732,11 +732,13 @@ async def ver_leads(request: Request):
 
 @app.get("/analytics/commercial", response_class=HTMLResponse)
 async def commercial_dashboard_page(request: Request):
-    # TEMP: public access for testing — remove after validation
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ("admin", "supervisor"):
+        return RedirectResponse(url="/?error=acceso_denegado")
     return templates.TemplateResponse("analytics/commercial_dashboard.html", {
         "request": request,
-        "user_role": "admin",
-        "user_name": "Test",
+        "user_role": user.get("rol", "agente"),
+        "user_name": user.get("nombre", ""),
     })
 
 
@@ -756,7 +758,9 @@ async def api_commercial_dashboard(
     compare: str = Query(None),
     period_preset: str = Query(None),
 ):
-    # TEMP: public access for testing — remove after validation
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ("admin", "supervisor"):
+        raise HTTPException(status_code=401, detail="No autorizado")
     filters = {}
     if source: filters["source"] = source
     if operation: filters["operation"] = operation
@@ -773,8 +777,8 @@ async def api_commercial_dashboard(
             period_start=period_start,
             period_end=period_end,
             executive=executive,
-            role="admin",
-            user_name="Test",
+            role=user.get("rol"),
+            user_name=user.get("nombre", ""),
             period_preset=period_preset,
             filters=filters or None,
             compare=compare,
@@ -955,7 +959,10 @@ async def api_analytics_leads_filters(
 
 
 @app.get("/api/analytics/commercial/filters")
-async def api_commercial_filters():
+async def api_commercial_filters(request: Request):
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ("admin", "supervisor"):
+        raise HTTPException(status_code=401, detail="No autorizado")
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         _WEB_THREAD_POOL,

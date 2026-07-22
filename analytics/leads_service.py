@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ from .leads_queries import (
 L1_CACHE: dict[str, tuple[float, dict]] = {}
 CACHE_TTL = 120
 MAX_CACHE_ENTRIES = 200
+_COMMERCIAL_QUERY_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="commercial_analytics")
 
 
 def _cache_key(prefix: str, **params) -> str:
@@ -463,18 +465,33 @@ def get_commercial_dashboard(
 
     comparison_kwargs = ({"comparison_start": prev_start, "comparison_end": prev_end}
                          if prev_start and prev_end else {"include_comparison": False})
-    kpis = query_commercial_kpis(**kwargs, **comparison_kwargs)
-    funnel = query_commercial_funnel(**kwargs)
-    sla = query_sla_risk_panel(**kwargs)
-    demand_price = query_demand_by_price_ranges(**kwargs)
-    executives = query_commercial_executive_matrix(**kwargs)
-    properties = query_commercial_property_ranking(**kwargs)
-    sources = query_source_performance(**kwargs_no_filters, **comparison_kwargs)
-    trends = query_comparative_trends(**kwargs_no_filters, **comparison_kwargs)
-    coverage = query_field_coverage(
-        executive=exec_filter if exec_filter else None,
-        universe="current_active",
-    )
+    # Independent read-only aggregations run concurrently. PyMongo clients are
+    # thread-safe and the response contract remains identical; this only
+    # reduces cold-load wall time.
+    futures = {
+        "kpis": _COMMERCIAL_QUERY_POOL.submit(query_commercial_kpis, **kwargs, **comparison_kwargs),
+        "funnel": _COMMERCIAL_QUERY_POOL.submit(query_commercial_funnel, **kwargs),
+        "sla": _COMMERCIAL_QUERY_POOL.submit(query_sla_risk_panel, **kwargs),
+        "demand": _COMMERCIAL_QUERY_POOL.submit(query_demand_by_price_ranges, **kwargs),
+        "executives": _COMMERCIAL_QUERY_POOL.submit(query_commercial_executive_matrix, **kwargs),
+        "properties": _COMMERCIAL_QUERY_POOL.submit(query_commercial_property_ranking, **kwargs),
+        "sources": _COMMERCIAL_QUERY_POOL.submit(query_source_performance, **kwargs_no_filters, **comparison_kwargs),
+        "trends": _COMMERCIAL_QUERY_POOL.submit(query_comparative_trends, **kwargs_no_filters, **comparison_kwargs),
+        "coverage": _COMMERCIAL_QUERY_POOL.submit(
+            query_field_coverage,
+            executive=exec_filter if exec_filter else None,
+            universe="current_active",
+        ),
+    }
+    kpis = futures["kpis"].result()
+    funnel = futures["funnel"].result()
+    sla = futures["sla"].result()
+    demand_price = futures["demand"].result()
+    executives = futures["executives"].result()
+    properties = futures["properties"].result()
+    sources = futures["sources"].result()
+    trends = futures["trends"].result()
+    coverage = futures["coverage"].result()
     try:
         insights = query_commercial_insights(
             kpis=kpis, funnel=funnel, sla=sla,

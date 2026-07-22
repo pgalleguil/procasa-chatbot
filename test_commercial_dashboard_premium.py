@@ -74,10 +74,11 @@ class CommercialDashboardPremiumTests(unittest.TestCase):
         for rejected in ("LEADS RECIBIDOS", "INT. DE VISITA", "VISITAS COORD.", "ErrorReintentar", "Filtros 0"):
             self.assertNotIn(rejected, self.html)
 
-    def test_ids_are_unique_and_header_theme_is_accessible(self):
+    def test_ids_are_unique_and_sidebar_theme_is_accessible(self):
         ids = re.findall(r'\bid="([^"]+)"', self.html)
         self.assertEqual(len(ids), len(set(ids)))
-        self.assertIn('id="btnThemeHeader" type="button" aria-label="Cambiar tema"', self.html)
+        self.assertIn('id="btnTheme" aria-label="Cambiar tema"', self.html)
+        self.assertNotIn('id="btnThemeHeader"', self.html)
         self.assertIn("localStorage.getItem('theme')", self.html.split("</head>", 1)[0])
 
     def test_temporal_context_uses_backend_metadata(self):

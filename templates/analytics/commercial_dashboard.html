@@ -475,7 +475,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 <div class="cd-command">
 <header class="cd-head">
   <div class="cd-head-l">
-    <div class="cd-title-row"><h1>Dashboard Comercial</h1><div class="cd-head-actions"><button class="cd-icon-btn" id="btnThemeHeader" type="button" aria-label="Cambiar tema"><i class="fa-solid fa-moon" id="themeIconHeader"></i></button><button class="cd-icon-btn cd-refresh-btn" id="btnRefreshHeader" type="button" aria-label="Actualizar resultados"><i class="fa-solid fa-rotate"></i><span>Actualizar</span></button></div></div>
+    <div class="cd-title-row"><h1>Dashboard Comercial</h1><div class="cd-head-actions"><button class="cd-icon-btn cd-refresh-btn" id="btnRefreshHeader" type="button" aria-label="Actualizar resultados"><i class="fa-solid fa-rotate"></i><span>Actualizar</span></button></div></div>
     <div class="cd-temporal-context" id="temporalContext" aria-busy="true">
       <span class="cd-temporal-item"><i class="fa-regular fa-calendar" aria-hidden="true"></i><span><small>Periodo analizado</small><strong id="perCur" class="cd-temporal-skeleton"><span class="cd-sr-only">Cargando periodo</span></strong></span></span>
       <span class="cd-temporal-sep" aria-hidden="true"></span>
@@ -1431,7 +1431,6 @@ function toggleTheme(){
   document.documentElement.dataset.theme=isDark()?'light':'dark';
   localStorage.setItem('theme',document.documentElement.dataset.theme);
   $('themeIcon').className=isDark()?'fa-solid fa-sun':'fa-solid fa-moon';
-  $('themeIconHeader').className=isDark()?'fa-solid fa-sun':'fa-solid fa-moon';
   if(D){
     dCharts();
     FIRST_KPI=false;rKPI();rev();rsla();rfun();
@@ -1472,7 +1471,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   const s=document.documentElement.dataset.theme||'light';
   document.documentElement.dataset.theme=s;
   $('themeIcon').className=s==='light'?'fa-solid fa-moon':'fa-solid fa-sun';
-  $('themeIconHeader').className=s==='light'?'fa-solid fa-moon':'fa-solid fa-sun';
   restoreFromURL();
   /* poblar selectores (endpoint público, lógica intacta) */
   fetch('/api/analytics/commercial/filters',{headers:{Accept:'application/json'}}).then(r=>r.json()).then(f=>{
@@ -1517,7 +1515,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
   });
   $('btnTheme').addEventListener('click',toggleTheme);
-  $('btnThemeHeader').addEventListener('click',toggleTheme);
   $('btnRefreshHeader').addEventListener('click',loadData);
   $('btnHamb').addEventListener('click',toggleMobileMenu);
   $('sidebarOverlay').addEventListener('click',closeSidebar);

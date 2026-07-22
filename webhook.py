@@ -1825,10 +1825,12 @@ async def view_captaciones(
     sort_dir: str = Query("desc"),
     page: int = Query(1, ge=1)
 ):
-    _t0 = time.perf_counter()
+    _perf = {}  # {stage: perf_counter_ns}
+    _perf["start"] = time.perf_counter()
     from chatbot.storage import get_async_db
     adb = get_async_db()
     user = await get_current_user_doc(request)
+    _perf["auth"] = time.perf_counter()
     
     if not user:
         return RedirectResponse(url="/?error=sesion_invalida")
@@ -1840,6 +1842,7 @@ async def view_captaciones(
     
     limit = 10
     loop = asyncio.get_running_loop()
+    _perf["list_submit"] = time.perf_counter()
     list_task = loop.run_in_executor(
         _WEB_THREAD_POOL,
         lambda: get_captacion_list(
@@ -1878,6 +1881,7 @@ async def view_captaciones(
         items_total = await list_task
         executives = []
     items, total_count, available_ops = items_total
+    _perf["list_done"] = time.perf_counter()
     
     # Alinear con nombre de variables del template original
     current_comunas = [c for c in (comuna or []) if c]
@@ -2000,6 +2004,7 @@ async def view_captaciones(
         
     total_pages = (total_count + limit - 1) // limit
     worked_count = in_gestion_count + captados_count + descartados_count
+    _perf["kpi_done"] = time.perf_counter()
 
     goal_executive = current_ejecutivo if user_role in CAPTACION_PRIVILEGED_ROLES else user_name
     goal_cache_key = f"goal_v1_{goal_executive or '_none'}"
@@ -2016,6 +2021,7 @@ async def view_captaciones(
         )
         goal_cache[goal_cache_key] = {'time': time.time(), 'data': captacion_goal}
         app.state.captacion_goal_cache = goal_cache
+    _perf["goal_done"] = time.perf_counter()
 
     return templates.TemplateResponse("captacion_list.html", {
         "request": request,
@@ -2053,9 +2059,23 @@ async def view_captaciones(
         }
     }, headers={"Content-Type": "text/html; charset=utf-8"})
 
-    _elapsed = (time.perf_counter() - _t0) * 1000
-    if _elapsed > 2000:
-        logger.warning(f"[CAPTACION_PERF] GET /captacion tardo {_elapsed:.0f}ms user={user_role}:{user_name[:8] if user_name else '?'} page={page}")
+    _perf["render"] = time.perf_counter()
+    _perf_ms = {
+        key: round((_perf[key] - _perf.get(prev, _perf["start"])) * 1000, 1)
+        for prev, key in (("start", "auth"), ("auth", "list_submit"),
+                           ("list_submit", "list_done"), ("list_done", "kpi_done"),
+                           ("kpi_done", "goal_done"), ("goal_done", "render"))
+    }
+    _perf_ms["total"] = round((_perf["render"] - _perf["start"]) * 1000, 1)
+    logger.info(
+        f"[CAPTACION_PERF] total={_perf_ms['total']:.0f}ms "
+        f"auth={_perf_ms['auth']:.0f} list={_perf_ms['list_submit']:.0f} "
+        f"kpi={_perf_ms['kpi_done']:.0f} goal={_perf_ms['goal_done']:.0f} "
+        f"render={_perf_ms['render']:.0f}ms "
+        f"role={user_role} page={page} sort={sort_by or 'def'} "
+        f"ejec={current_ejecutivo or '-'} comuna={current_comuna or '-'} "
+        f"items={len(items)} total={total_count}"
+    )
 
 @app.get("/captacion/{obj_id}", response_class=HTMLResponse)
 async def view_captacion_detail_route(request: Request, obj_id: str):

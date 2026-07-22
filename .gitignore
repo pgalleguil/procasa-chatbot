@@ -60,6 +60,9 @@ scraping_convecta/
 scripts/
 scripts_legacy/
 tests/
+!tests/
+tests/*
+!tests/test_document_message_guard.py
 scraper*/
 reports/
 

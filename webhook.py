@@ -75,6 +75,7 @@ from captacion_goals import (
 from captacion_workforce import create_work_exception, upsert_calendar_day, upsert_membership
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate, resolve_property_code
 from chatbot.processing_service import LeadProcessingService
+from chatbot.document_message_guard import find_active_document_guard
 from chatbot.crm_permissions import (
     can_administer_leads,
     lead_is_assigned_to_user,
@@ -1565,10 +1566,39 @@ async def process_with_debounce(phone: str, full_text: str, is_from_me: bool = F
             if not final_message:
                 return
 
+            # El equipo pudo enviar un documento durante el debounce. Volvemos a
+            # validar por ESTE teléfono antes de registrar o procesar como lead.
+            if not from_me:
+                from chatbot.storage import get_db
+                loop = asyncio.get_running_loop()
+                document_guard = await loop.run_in_executor(
+                    _WEB_THREAD_POOL,
+                    lambda: find_active_document_guard(get_db(), phone),
+                )
+                if document_guard:
+                    logger.info(
+                        "[DOCUMENT_GUARD] Mensaje descartado antes del chatbot "
+                        f"phone={phone} type={document_guard['document_type']} "
+                        f"code={document_guard['document_code']} "
+                        f"expires_at={document_guard['expires_at']}"
+                    )
+                    return
+
             logger.info(f"[PROCESS] Procesando mensaje {'HUMANO' if from_me else 'CLIENTE'} de {phone}")
             
             capture_time = last_message_time.get(phone, 0)
             bot_response = await process_user_message(phone, final_message, is_from_me=from_me)
+
+            # Si el documento se envió mientras respondía la IA, nunca mandar esa
+            # respuesta fuera de contexto al cliente.
+            if not from_me:
+                document_guard = await loop.run_in_executor(
+                    _WEB_THREAD_POOL,
+                    lambda: find_active_document_guard(get_db(), phone),
+                )
+                if document_guard:
+                    logger.info(f"[DOCUMENT_GUARD] Respuesta suprimida para phone={phone}")
+                    return
 
             # Verificación 2: ¿llegó un mensaje nuevo MIENTRAS el LLM procesaba?
             if last_message_time.get(phone, 0) > capture_time:
@@ -1705,21 +1735,23 @@ async def webhook(
             logger.info(f"[FILTER] Mensaje de EJECUTIVO ({user_found.get('nombre')}) detectado. Forzando modo manual.")
             from_me = True
 
-    # --- FILTRO PROPIETARIOS CON CONTRATO ---
+    # --- GUARDA DE FIRMA DIGITAL: SOLO EL TELÉFONO DEL DOCUMENTO VIGENTE ---
     from chatbot.storage import get_db
     _db = await loop.run_in_executor(_WEB_THREAD_POOL, get_db)
     phone_digits_check = "".join(filter(str.isdigit, phone))
     if phone_digits_check and len(phone_digits_check) >= 8:
-        contract_active = await loop.run_in_executor(
+        document_guard = await loop.run_in_executor(
             _WEB_THREAD_POOL,
-            lambda: _db.contracts.find_one({
-                "phone": {"$regex": phone_digits_check[-8:] + "$"},
-                "status": {"$in": ["created", "viewed", "accepted"]}
-            })
+            lambda: find_active_document_guard(_db, phone),
         )
-        if contract_active:
-            logger.info(f"[WHATSAPP] Ignorando mensaje de {phone} porque tiene un contrato en proceso.")
-            return JSONResponse({"status": "contract owner ignored"}, status_code=200)
+        if document_guard:
+            logger.info(
+                "[DOCUMENT_GUARD] Mensaje ignorado antes de lectura/procesamiento "
+                f"phone={phone} type={document_guard['document_type']} "
+                f"code={document_guard['document_code']} "
+                f"expires_at={document_guard['expires_at']}"
+            )
+            return JSONResponse({"status": "active document chat suppressed"}, status_code=200)
 
     # Si detectamos que es un grupo (@g.us), lo ignoramos
     if "@g.us" in (key.get("remoteJid") or ""):

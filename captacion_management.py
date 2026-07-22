@@ -44,7 +44,6 @@ VALID_RESULTS = {
 CONTACT_EFFECTIVE_RESULTS = {"contacted", "callback_requested"}
 CANCEL_RESULT = "cancel"
 ATTEMPT_TTL_HOURS = 24
-MIN_MANUAL_EVIDENCE_LENGTH = 5
 VALID_CREDIT_EVENT_TYPES = {
     "management_confirmed",
     "manual_decision_confirmed",
@@ -183,9 +182,8 @@ def evaluate_manual_decision(*, status, previous_status=None, notes=None, outcom
         return {"eligible": False, "reason": "automatic_change", "status": normalized_status}
     if not rule:
         return {"eligible": False, "reason": "status_not_creditable", "status": normalized_status}
-    if rule.get("requires_evidence") and len(evidence) < MIN_MANUAL_EVIDENCE_LENGTH:
-        return {"eligible": False, "reason": "evidence_required", "status": normalized_status}
     if rule.get("requires_transition") and not changed:
+        return {"eligible": False, "reason": "real_transition_required", "status": normalized_status}
         return {"eligible": False, "reason": "real_transition_required", "status": normalized_status}
     if rule.get("requires_context") and not evidence:
         return {"eligible": False, "reason": "context_required", "status": normalized_status}

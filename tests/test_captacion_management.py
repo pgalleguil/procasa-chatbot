@@ -160,11 +160,26 @@ def test_capture_is_a_managed_property():
     assert db[management.LEDGER_COLLECTION].rows[0]["event_type"] == "capture_confirmed"
 
 
-@pytest.mark.parametrize("status", ["Corredor", "Descartado"])
-def test_conclusions_requiring_evidence_return_ineligible_without_blocking(status):
-    decision = management.evaluate_manual_decision(status=status, previous_status="Por contactar", notes="")
-    assert decision["eligible"] is False
-    assert decision["reason"] == "evidence_required"
+@pytest.mark.parametrize("status,notes,previous,expected_eligible,expected_reason", [
+    # State change alone credits — Bitácora is optional
+    ("Corredor", "", "Por contactar", True, None),
+    ("Descartado", "", "Por contactar", True, None),
+    # Short notes (1-4 chars) also credit when state changes
+    ("Corredor", "OK", "Por contactar", True, None),
+    ("Descartado", "N/A", "Por contactar", True, None),
+    # Full notes credit normally
+    ("Corredor", "Es corredor confirmado", "Por contactar", True, None),
+    # Same state + notes alone still credits
+    ("Corredor", "OK", "Corredor", True, None),
+    # Same state + empty notes → no meaningful change
+    ("Corredor", "", "Corredor", False, "no_meaningful_change"),
+])
+def test_state_change_credits_and_bitacora_is_optional(status, notes, previous, expected_eligible, expected_reason):
+    decision = management.evaluate_manual_decision(
+        status=status, previous_status=previous, notes=notes,
+    )
+    assert decision["eligible"] == expected_eligible
+    assert decision["reason"] == expected_reason
 
 
 def test_non_commercial_and_automatic_changes_never_credit():

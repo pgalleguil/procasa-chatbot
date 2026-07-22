@@ -684,6 +684,65 @@ const compareResolvedLabel=p=>(p?.compare_resolved==='yoy'?'Mismo periodo del a\
 const FDC=(a,b)=>{if(!a||!b)return'S/I';try{const d1=new Date(String(a).split('T')[0]+'T00:00:00'),d2=new Date(String(b).split('T')[0]+'T00:00:00');const r1=d1.getDate()+' de '+MESES[d1.getMonth()],r2=d2.getDate()+' de '+MESES[d2.getMonth()];return d1.getFullYear()===d2.getFullYear()?r1+' \u2013 '+r2+' de '+d2.getFullYear():r1+' de '+d1.getFullYear()+' \u2013 '+r2+' de '+d2.getFullYear()}catch(e){return FD(a)+' \u2013 '+FD(b)}};
 const FPS=(a,b)=>a===b?FD(a):FDC(a,b);
 const RM=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* ================= SAFE DATE PARSER ================= */
+const MONTHS_SHORT_ES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function parseIsoDateOnly(value){
+  const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value||''));
+  if(!match)return null;
+  return{year:Number(match[1]),month:Number(match[2]),day:Number(match[3])};
+}
+function formatDateRangeEs(start,end){
+  const first=parseIsoDateOnly(start),last=parseIsoDateOnly(end);
+  if(!first||!last)return'S/I';
+  const fm=MONTHS_SHORT_ES[first.month-1],lm=MONTHS_SHORT_ES[last.month-1];
+  if(start===end)return first.day+' '+fm+' '+first.year;
+  if(first.year===last.year&&first.month===last.month)return first.day+'\u2013'+last.day+' '+lm+' '+last.year;
+  if(first.year===last.year)return first.day+' '+fm+'\u2013'+last.day+' '+lm+' '+last.year;
+  return first.day+' '+fm+' '+first.year+'\u2013'+last.day+' '+lm+' '+last.year;
+}
+/* ================= PERIOD CONTEXT CANONICAL ================= */
+const PERIOD_TYPE_LABELS={
+  month_vs_previous_month:'mes anterior equivalente',
+  custom_vs_previous:'periodo anterior equivalente',
+  custom_vs_yoy:'mismo periodo del año anterior',
+  custom_no_comparison:'sin comparación',
+  today_vs_previous_week:'semana anterior equivalente',
+  today_vs_previous_day:'día anterior equivalente',
+  week_vs_previous_week:'semana anterior equivalente'
+};
+function getPeriodContext(data){
+  const period=data?.meta?.period||{};
+  const current=period.current||{},previous=period.comparison||period.previous||{};
+  const type=period.type||period.compare_resolved&&period.compare_resolved!=='none'?'custom_vs_previous':'custom_no_comparison';
+  return{
+    type,currentStart:current.start||'',currentEnd:current.end||'',
+    previousStart:previous.start||'',previousEnd:previous.end||'',
+    currentLabel:formatDateRangeEs(current.start,current.end),
+    previousLabel:previous.start&&previous.end?formatDateRangeEs(previous.start,previous.end):'',
+    typeLabel:PERIOD_TYPE_LABELS[type]||'periodo comparable',
+    hasComparison:type!=='custom_no_comparison'&&Boolean(previous.start&&previous.end)
+  };
+}
+function renderPeriodContext(data){
+  const ctx=getPeriodContext(data);
+  const curEl=$('perCur'),cmpEl=$('perCmp'),modeEl=$('cmpMode'),tc=$('temporalContext');
+  if(curEl)curEl.textContent=ctx.currentLabel;
+  if(modeEl)modeEl.textContent=ctx.typeLabel;
+  if(cmpEl){
+    if(ctx.hasComparison){cmpEl.textContent='vs. '+ctx.previousLabel+' · '+ctx.typeLabel}
+    else{cmpEl.textContent='Sin comparación'}
+  }
+  if(tc)tc.setAttribute('aria-busy','false');
+  return ctx;
+}
+/* ================= SECTION STATE ================= */
+const VALID_SECTIONS=new Set(['exec','demand','sources','team','quality']);
+let activeSection='exec';
+function readSectionFromUrl(){
+  const requested=new URLSearchParams(location.search).get('section');
+  activeSection=VALID_SECTIONS.has(requested)?requested:'exec';
+  return activeSection;
+}
 let D=null,CH={},FILTERS={},COMPARE='auto',CUR_PRICE_OP='Venta',FIRST_KPI=true,PROP_SORT={k:'leads',dir:-1};
 let REQUEST_CTRL=null,REQUEST_SEQ=0,TEAM_MODE='team',EXEC_DETAIL='';
 let PUSH_HISTORY=false;
@@ -734,7 +793,7 @@ function bindTips(root){
 }
 document.addEventListener('click',()=>{document.querySelectorAll('[data-tt]').forEach(el=>el._ttOpen=false);tipHide()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')tipHide()});
-window.addEventListener('popstate',()=>location.reload());
+
 
 /* ================= PERIODO ================= */
 function setPeriod(preset){
@@ -769,7 +828,7 @@ function applyCustomPeriod(){
 }
 
 /* ================= DATA LOAD (lógica intacta) ================= */
-async function loadData(){
+async function loadData({historyMode=null}={}){
   const seq=++REQUEST_SEQ;
   if(REQUEST_CTRL)REQUEST_CTRL.abort();
   REQUEST_CTRL=new AbortController();
@@ -802,7 +861,8 @@ async function loadData(){
     const cacheKey=p.toString();
     const currentUrl=new URL(location);
     ['section','view','selected_executive'].forEach(key=>{const value=currentUrl.searchParams.get(key);if(value)p.set(key,value)});
-    const url=new URL(location);url.search=p.toString();history[PUSH_HISTORY?'pushState':'replaceState'](null,'',url);PUSH_HISTORY=false;
+    const usePush=historyMode==='push'?true:historyMode==='replace'?false:PUSH_HISTORY;
+    const url=new URL(location);url.search=p.toString();history[usePush?'pushState':'replaceState'](null,'',url);PUSH_HISTORY=false;
     if(RESPONSE_CACHE.has(cacheKey)){
       D=RESPONSE_CACHE.get(cacheKey);render();
     }
@@ -900,15 +960,9 @@ function closeFilterSheet(returnFocus=false){const wasOpen=$('filters').classLis
 /* ================= RENDER GENERAL ================= */
 function render(){
   if(!D)return;
-  const period=D.meta?.period||{},prv=period.comparison||period.previous||{},cur=period.current||{};
   const compact=matchMedia('(max-width:600px)').matches;
-  const currentLabel=FHR(cur.start,cur.end),comparisonOff=period.compare_resolved==='none'||period.compare_requested==='none';
-  const comparisonRange=comparisonOff?'Sin comparaci\u00f3n':FHR(prv.start,prv.end);
-  $('perCur').textContent=currentLabel;$('perCur').classList.remove('cd-temporal-skeleton');
-  $('cmpMode').textContent=compareModeLabel(period);
-  const compactMode=period.compare_requested==='auto'?'comparaci\u00f3n autom\u00e1tica · '+compareResolvedLabel(period).toLocaleLowerCase('es-CL'):compareResolvedLabel(period).toLocaleLowerCase('es-CL');
-  $('perCmp').textContent=comparisonOff?'Sin comparaci\u00f3n':(compact?'vs. '+comparisonRange+' \u00b7 '+compactMode:comparisonRange+(period.compare_requested==='auto'?' \u00b7 '+compareResolvedLabel(period).toLocaleLowerCase('es-CL'):''));
-  $('perCmp').classList.remove('cd-temporal-skeleton');$('temporalContext').setAttribute('aria-busy','false');
+  /* canonical period context from backend metadata */
+  renderPeriodContext(D);
   const totalLeads=D.kpis?.leads_received?.value??null,totalLabel=totalLeads==null?'S/I':F(totalLeads);
   let upd='';
   if(D.meta?.generated_at){
@@ -966,7 +1020,8 @@ function rKPI(){
   const hotCov=k._meta?.temperature_coverage||{};
   const daily=(D.trends?.current?.daily||[]).map(d=>d.received);
   const comparative=D.meta?.period?.comparison||D.meta?.period?.previous||{};
-  const comparisonLabel=comparative.end?FHR(comparative.start,comparative.end):'periodo comparable';
+  const kpiCtx=getPeriodContext(D);
+  const comparisonLabel=kpiCtx.hasComparison?kpiCtx.previousLabel:'periodo comparable';
   const defs=[
     ['leads_received','Leads recibidos','Leads creados en el periodo (universo: cohorte).','users',true],
     ['leads_hot_current','Hot actuales','Leads con temperatura efectiva Hot hoy (lead_temperature_effective).','fire-flame-curved',false],
@@ -988,7 +1043,7 @@ function rKPI(){
       const cls=vv>0?'up':vv<0?'down':'flat';
       const ic=vv>0?'fa-arrow-trend-up':vv<0?'fa-arrow-trend-down':'fa-minus';
       const abs=cur-prv;
-      varHtml='<span class="cd-kpi-var '+cls+'"><i class="fa-solid '+ic+'"></i> '+(abs>=0?'+':'')+F(abs)+' <span class="cd-kpi-vs">vs. '+E(FDS(comparative.end))+'</span></span><span class="cd-kpi-vs">'+PV(vv)+'</span>';
+      varHtml='<span class="cd-kpi-var '+cls+'"><i class="fa-solid '+ic+'"></i> '+(abs>=0?'+':'')+F(abs)+' <span class="cd-kpi-vs">vs. '+E(kpiCtx.previousLabel||'periodo comparable')+'</span></span><span class="cd-kpi-vs">'+PV(vv)+'</span>';
     }else if(prv===0&&cur!=null){
       varHtml='<span class="cd-kpi-var '+(cur>0?'up':'flat')+'">'+(cur>0?'+':'')+F(cur)+' leads</span><span class="cd-kpi-vs">Sin base porcentual comparable</span>';
     }
@@ -996,7 +1051,7 @@ function rKPI(){
     if(isLeads&&daily.length){foot='<canvas class="cd-spark" width="120" height="26" data-spark="1" aria-hidden="true"></canvas>'}
     else if(prv!=null&&cur!=null){
       const mx=Math.max(cur,prv,1);
-      foot='<div class="cd-cmpbars" aria-hidden="true"><div class="cd-cmpbar cur"><span style="width:'+(cur/mx*100)+'%"></span></div><div class="cd-cmpbar prv"><span style="width:'+(prv/mx*100)+'%"></span></div><div class="cd-cmpbar-lbl"><span>Actual</span><span>Anterior</span></div></div>';
+      foot='<div class="cd-cmpbars" aria-hidden="true"><div class="cd-cmpbar cur"><span style="width:'+(cur/mx*100)+'%"></span></div><div class="cd-cmpbar prv"><span style="width:'+(prv/mx*100)+'%"></span></div><div class="cd-cmpbar-lbl"><span>'+E(kpiCtx.currentLabel||'Actual')+'</span><span>'+E(kpiCtx.previousLabel||'Anterior')+'</span></div></div>';
     }else if(key==='leads_hot_current'){
       const hist=k.temperature_at_close||hotCov;
       foot='<span class="cd-kpi-meta">Temperatura al cierre: '+((hist.with_history||0)>0?F(hist.hot||0):'S/I')+'</span>';
@@ -1046,8 +1101,8 @@ function rInsights(){
 /* ================= EVOLUCIÓN ================= */
 function rev(){
   const t=D.trends||{},cur=(t.current||{}).daily||[],prev=(t.previous||{}).daily||[],el=$('evChart'),ld=$('evLoad');
-  const period=D.meta?.period||{},currentPeriod=period.current||{},comparisonPeriod=period.comparison||period.previous||{};
-  const currentChartLabel=FHR(currentPeriod.start,currentPeriod.end,false),comparisonChartLabel=FHR(comparisonPeriod.start,comparisonPeriod.end,false);
+  const periodCtx=getPeriodContext(D);
+  const currentChartLabel=periodCtx.currentLabel,comparisonChartLabel=periodCtx.hasComparison?periodCtx.previousLabel:'';
   if(!el||!ld)return;
   if(!cur.length){ld.textContent='Sin datos para el periodo';ld.classList.remove('done');return}
   const pal=PAL();
@@ -1055,11 +1110,10 @@ function rev(){
   const labels=Array.from({length:maxLen},(_,i)=>'D\u00eda '+(i+1));
   const curData=cur.map(d=>d.received),prevData=prev.map(d=>d.received);
   const curDates=cur.map(d=>d.date),prevDates=prev.map(d=>d.date);
-  /* variación contextual */
   const tc=curData.reduce((a,b)=>a+b,0),tp=prevData.reduce((a,b)=>a+b,0);
   if(COMPARE!=='none'&&tp>0){
     const dv=tc-tp,pctv=(tc-tp)/tp*100;
-    $('evVar').innerHTML='<span style="color:'+(dv>=0?pal.ok:pal.bad)+';font-weight:600">'+(dv>=0?'+':'')+F(dv)+' leads \u00b7 '+PV(pctv)+'</span> vs. periodo comparable';
+    $('evVar').innerHTML='<span style="color:'+(dv>=0?pal.ok:pal.bad)+';font-weight:600">'+(dv>=0?'+':'')+F(dv)+' leads \u00b7 '+PV(pctv)+'</span> vs. '+E(comparisonChartLabel||'periodo comparable');
   }else $('evVar').textContent='';
   ld.classList.add('done');
   const guide={id:'guide',afterDraw(c){
@@ -1083,9 +1137,9 @@ function rev(){
       tooltip:{enabled:false,external:makeExtTip(tt=>{
         const i=tt.dataPoints?.[0]?.dataIndex;if(i==null)return'';
         let h='<div class="tt-t">D\u00eda '+(i+1)+'</div>';
-        h+='<div class="tt-sec">Periodo actual · '+E(currentChartLabel)+'</div><div class="tt-row"><span>'+E(FD(curDates[i]))+'</span><b>'+F(curData[i])+' leads</b></div>';
+        h+='<div class="tt-sec">'+E(currentChartLabel)+'</div><div class="tt-row"><span>'+E(FD(curDates[i]))+'</span><b>'+F(curData[i])+' leads</b></div>';
         if(showCmp){
-          h+='<div class="tt-sec">Comparable · '+E(comparisonChartLabel)+'</div><div class="tt-row"><span>'+E(prevDates[i]?FD(prevDates[i]):'S/I')+'</span><b>'+(prevData[i]!=null?F(prevData[i])+' leads':'S/I')+'</b></div>';
+          h+='<div class="tt-sec">'+E(comparisonChartLabel)+'</div><div class="tt-row"><span>'+E(prevDates[i]?FD(prevDates[i]):'S/I')+'</span><b>'+(prevData[i]!=null?F(prevData[i])+' leads':'S/I')+'</b></div>';
           if(curData[i]!=null&&prevData[i]!=null){
             const dv=curData[i]-prevData[i],pc=prevData[i]>0?(dv/prevData[i]*100):null;
             h+='<div class="tt-var '+(dv>0?'up':dv<0?'down':'m')+'">Variaci\u00f3n: '+(dv>=0?'+':'')+F(dv)+' leads'+(pc!=null?' \u00b7 '+PV(pc):'')+'</div>';
@@ -1408,6 +1462,8 @@ function showTeam(){TEAM_MODE='team';EXEC_DETAIL='';$('teamView').hidden=false;$
 
 /* ================= TABS / THEME / SHELL ================= */
 function actTab(name,pushHistory=false){
+  if(!VALID_SECTIONS.has(name))return;
+  activeSection=name;
   document.querySelectorAll('.cd-panel').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.cd-tabs button').forEach(b=>{b.classList.remove('active');b.setAttribute('aria-selected','false')});
   const t=$('tab-'+name);if(t)t.classList.add('active');
@@ -1440,7 +1496,7 @@ function toggleTheme(){
     if(activeTab==='team')rTeam();
   }
 }
-function restoreFromURL(){
+function readFiltersAndPeriodFromUrl(){
   const params=new URLSearchParams(location.search);
   const map={executive:'exec',source:'source',operation:'op',property_type:'type',commune:'commune',temperature:'temp',property_code:'prop',assignment:'asgn',stage:'stage'};
   Object.entries(map).forEach(([param,key])=>{const v=params.get(param);if(v)FILTERS[key]=v});
@@ -1461,6 +1517,10 @@ function restoreFromURL(){
   }else{
     $('periodCustom').hidden=true;$('periodCustom').inert=true;$('periodCustom').setAttribute('aria-hidden','true');
   }
+}
+function restoreFromURL(){
+  readFiltersAndPeriodFromUrl();
+  const params=new URLSearchParams(location.search);
   const section=params.get('section');
   if(['exec','demand','sources','team','quality'].includes(section))actTab(section,false);
   EXEC_DETAIL=params.get('selected_executive')||'';
@@ -1542,7 +1602,12 @@ document.addEventListener('DOMContentLoaded',()=>{
     document.querySelectorAll('#propSub button').forEach(x=>x.classList.toggle('active',x===b));
     window._propTab=b.dataset.ps;rProps();
   });
-  window.addEventListener('popstate',()=>{const section=new URLSearchParams(location.search).get('section')||'exec';actTab(section,false);if(section==='demand')rDemand();if(section==='sources')rSrc();if(section==='team'||section==='quality')rTeam()});
+  window.addEventListener('popstate',()=>{
+    readFiltersAndPeriodFromUrl();
+    readSectionFromUrl();
+    actTab(activeSection,false);
+    loadData({historyMode:'replace'});
+  });
   $('teamMode').addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(!b)return;b.dataset.mode==='team'?showTeam():(EXEC_DETAIL?openExecutive(EXEC_DETAIL):($('execDetailSelect').hidden=false))});
   $('execDetailSelect').addEventListener('change',e=>{if(e.target.value)openExecutive(e.target.value)});
   $('btnBackTeam').addEventListener('click',showTeam);

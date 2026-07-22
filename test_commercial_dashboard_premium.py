@@ -86,9 +86,9 @@ class CommercialDashboardPremiumTests(unittest.TestCase):
             'id="temporalContext" aria-busy="true"',
             'id="cmpMode"',
             "period.comparison||period.previous",
-            "period.compare_requested",
-            "period.compare_resolved",
-            "FHR(currentPeriod.start,currentPeriod.end,false)",
+            "getPeriodContext(",
+            "renderPeriodContext(",
+            "PERIOD_TYPE_LABELS",
         ):
             self.assertIn(contract, self.html)
         self.assertNotIn('id="perCur">&mdash;', self.html)

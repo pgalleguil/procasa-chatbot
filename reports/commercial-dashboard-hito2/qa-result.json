@@ -1,0 +1,480 @@
+{
+  "p0": {
+    "initial": {
+      "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+      "executive": "",
+      "filterLabel": "Filtros",
+      "chips": [],
+      "leadsStatus": "Actualizado hace instantes · 5 leads",
+      "leadsKpi": "5",
+      "comparison": "· vs. 20 jul 2026",
+      "ariaBusy": "false",
+      "updating": 0,
+      "disabledActiveControls": [],
+      "overflow": false,
+      "headerAndTabsBottom": 271,
+      "theme": "light"
+    },
+    "filtered": {
+      "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&temperature=HOT&compare=prev&period_preset=today",
+      "executive": "",
+      "filterLabel": "Filtros · 1",
+      "chips": [
+        "Temp. actual: Hot"
+      ],
+      "leadsStatus": "Actualizado hace instantes · 2 leads",
+      "leadsKpi": "2",
+      "comparison": "· vs. 20 jul 2026",
+      "ariaBusy": "false",
+      "updating": 0,
+      "disabledActiveControls": [],
+      "overflow": false,
+      "headerAndTabsBottom": 271,
+      "theme": "light"
+    },
+    "reloaded": {
+      "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&temperature=HOT&compare=prev&period_preset=today",
+      "executive": "",
+      "filterLabel": "Filtros · 1",
+      "chips": [
+        "Temp. actual: Hot"
+      ],
+      "leadsStatus": "Actualizado hace instantes · 2 leads",
+      "leadsKpi": "2",
+      "comparison": "· vs. 20 jul 2026",
+      "ariaBusy": "false",
+      "updating": 0,
+      "disabledActiveControls": [],
+      "overflow": false,
+      "headerAndTabsBottom": 271,
+      "theme": "light"
+    },
+    "reset": {
+      "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+      "executive": "",
+      "filterLabel": "Filtros",
+      "chips": [],
+      "leadsStatus": "Actualizado hace instantes · 5 leads",
+      "leadsKpi": "5",
+      "comparison": "· vs. 20 jul 2026",
+      "ariaBusy": "false",
+      "updating": 0,
+      "disabledActiveControls": [],
+      "overflow": false,
+      "headerAndTabsBottom": 271,
+      "theme": "light"
+    }
+  },
+  "matrix": [
+    {
+      "theme": "light",
+      "viewport": [
+        1440,
+        900
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "5 leads analizados · Hoy · actualizado hace instantes",
+        "leadsKpi": "5",
+        "comparison": "Comparación: 20 de julio de 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 259,
+        "theme": "light"
+      },
+      "errors": []
+    },
+    {
+      "theme": "light",
+      "viewport": [
+        1366,
+        768
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "5 leads analizados · Hoy · actualizado hace instantes",
+        "leadsKpi": "5",
+        "comparison": "Comparación: 20 de julio de 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 259,
+        "theme": "light"
+      },
+      "errors": []
+    },
+    {
+      "theme": "light",
+      "viewport": [
+        1024,
+        768
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "5 leads analizados · Hoy · actualizado hace instantes",
+        "leadsKpi": "5",
+        "comparison": "Comparación: 20 de julio de 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 309,
+        "theme": "light"
+      },
+      "errors": []
+    },
+    {
+      "theme": "light",
+      "viewport": [
+        768,
+        1024
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "5 leads analizados · Hoy · actualizado hace instantes",
+        "leadsKpi": "5",
+        "comparison": "Comparación: 20 de julio de 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 291,
+        "theme": "light"
+      },
+      "errors": []
+    },
+    {
+      "theme": "light",
+      "viewport": [
+        430,
+        932
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "Actualizado hace instantes · 5 leads",
+        "leadsKpi": "5",
+        "comparison": "· vs. 20 jul 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 271,
+        "theme": "light"
+      },
+      "errors": []
+    },
+    {
+      "theme": "light",
+      "viewport": [
+        390,
+        844
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "Actualizado hace instantes · 5 leads",
+        "leadsKpi": "5",
+        "comparison": "· vs. 20 jul 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 271,
+        "theme": "light"
+      },
+      "errors": []
+    },
+    {
+      "theme": "light",
+      "viewport": [
+        360,
+        800
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "Actualizado hace instantes · 5 leads",
+        "leadsKpi": "5",
+        "comparison": "· vs. 20 jul 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 271,
+        "theme": "light"
+      },
+      "errors": []
+    },
+    {
+      "theme": "dark",
+      "viewport": [
+        1440,
+        900
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "5 leads analizados · Hoy · actualizado hace instantes",
+        "leadsKpi": "5",
+        "comparison": "Comparación: 20 de julio de 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 259,
+        "theme": "dark"
+      },
+      "errors": []
+    },
+    {
+      "theme": "dark",
+      "viewport": [
+        1366,
+        768
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "5 leads analizados · Hoy · actualizado hace instantes",
+        "leadsKpi": "5",
+        "comparison": "Comparación: 20 de julio de 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 259,
+        "theme": "dark"
+      },
+      "errors": []
+    },
+    {
+      "theme": "dark",
+      "viewport": [
+        1024,
+        768
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "5 leads analizados · Hoy · actualizado hace instantes",
+        "leadsKpi": "5",
+        "comparison": "Comparación: 20 de julio de 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 309,
+        "theme": "dark"
+      },
+      "errors": []
+    },
+    {
+      "theme": "dark",
+      "viewport": [
+        768,
+        1024
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "5 leads analizados · Hoy · actualizado hace 1 min",
+        "leadsKpi": "5",
+        "comparison": "Comparación: 20 de julio de 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 291,
+        "theme": "dark"
+      },
+      "errors": []
+    },
+    {
+      "theme": "dark",
+      "viewport": [
+        430,
+        932
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "Actualizado hace 1 min · 5 leads",
+        "leadsKpi": "5",
+        "comparison": "· vs. 20 jul 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 271,
+        "theme": "dark"
+      },
+      "errors": []
+    },
+    {
+      "theme": "dark",
+      "viewport": [
+        390,
+        844
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "Actualizado hace 1 min · 5 leads",
+        "leadsKpi": "5",
+        "comparison": "· vs. 20 jul 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 271,
+        "theme": "dark"
+      },
+      "errors": []
+    },
+    {
+      "theme": "dark",
+      "viewport": [
+        360,
+        800
+      ],
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "Actualizado hace 1 min · 5 leads",
+        "leadsKpi": "5",
+        "comparison": "· vs. 20 jul 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 271,
+        "theme": "dark"
+      },
+      "errors": []
+    }
+  ],
+  "sections": [
+    {
+      "theme": "light",
+      "section": "demand",
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today&section=demand",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "5 leads analizados · Hoy · actualizado hace 1 min",
+        "leadsKpi": "5",
+        "comparison": "Comparación: 20 de julio de 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 259,
+        "theme": "light"
+      }
+    },
+    {
+      "theme": "light",
+      "section": "team",
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today&section=team",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "5 leads analizados · Hoy · actualizado hace 1 min",
+        "leadsKpi": "5",
+        "comparison": "Comparación: 20 de julio de 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 259,
+        "theme": "light"
+      }
+    },
+    {
+      "theme": "dark",
+      "section": "demand",
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today&section=demand",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "5 leads analizados · Hoy · actualizado hace 1 min",
+        "leadsKpi": "5",
+        "comparison": "Comparación: 20 de julio de 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 259,
+        "theme": "dark"
+      }
+    },
+    {
+      "theme": "dark",
+      "section": "team",
+      "state": {
+        "url": "https://procasa-chatbot-yr8d.onrender.com/analytics/commercial?period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today&section=team",
+        "executive": "",
+        "filterLabel": "Filtros",
+        "chips": [],
+        "leadsStatus": "5 leads analizados · Hoy · actualizado hace 1 min",
+        "leadsKpi": "5",
+        "comparison": "Comparación: 20 de julio de 2026",
+        "ariaBusy": "false",
+        "updating": 0,
+        "disabledActiveControls": [],
+        "overflow": false,
+        "headerAndTabsBottom": 259,
+        "theme": "dark"
+      }
+    }
+  ],
+  "axe": [
+    {
+      "theme": "light",
+      "violations": []
+    },
+    {
+      "theme": "dark",
+      "violations": []
+    }
+  ]
+}

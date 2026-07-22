@@ -285,6 +285,10 @@ body.cd-page{background:var(--cd-bg);color:var(--cd-txt);font-family:'Outfit',sy
   .cd-chips.has{display:none}
 }
 @media(max-width:768px){
+  .cd-head-r .cd-seg{flex:0 0 100%;width:100%;overflow-x:auto;scrollbar-width:none}
+  .cd-head-r .cd-seg::-webkit-scrollbar{display:none}
+  .cd-cmp-wrap{flex:1;min-width:0}
+  .cd-cmp-wrap .cd-sel{min-width:0;width:100%}
   .cd-kpis{grid-template-columns:repeat(2,1fr);gap:8px}
   .cd-kpi{min-height:104px;padding:10px 12px}
   .cd-kpi-val{font-size:1.4rem}

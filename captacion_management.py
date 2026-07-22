@@ -187,7 +187,7 @@ def evaluate_manual_decision(*, status, previous_status=None, notes=None, outcom
         return {"eligible": False, "reason": "real_transition_required", "status": normalized_status}
     if rule.get("requires_context") and not evidence:
         return {"eligible": False, "reason": "context_required", "status": normalized_status}
-    if not changed and not evidence:
+    if not changed:
         return {"eligible": False, "reason": "no_meaningful_change", "status": normalized_status}
     return {
         "eligible": True,

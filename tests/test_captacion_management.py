@@ -164,17 +164,17 @@ def test_capture_is_a_managed_property():
     # State change alone credits — Bitácora is optional
     ("Corredor", "", "Por contactar", True, None),
     ("Descartado", "", "Por contactar", True, None),
-    # Short notes (1-4 chars) also credit when state changes
+    # Short notes (1-4 chars) credit when state changes
     ("Corredor", "OK", "Por contactar", True, None),
     ("Descartado", "N/A", "Por contactar", True, None),
-    # Full notes credit normally
+    # Full notes credit when state changes
     ("Corredor", "Es corredor confirmado", "Por contactar", True, None),
-    # Same state + notes alone still credits
-    ("Corredor", "OK", "Corredor", True, None),
-    # Same state + empty notes → no meaningful change
+    # Same state + notes → does NOT credit (requires real transition)
+    ("Corredor", "OK", "Corredor", False, "no_meaningful_change"),
+    # Same state + empty notes → no credit
     ("Corredor", "", "Corredor", False, "no_meaningful_change"),
 ])
-def test_state_change_credits_and_bitacora_is_optional(status, notes, previous, expected_eligible, expected_reason):
+def test_state_change_credits_and_same_state_does_not(status, notes, previous, expected_eligible, expected_reason):
     decision = management.evaluate_manual_decision(
         status=status, previous_status=previous, notes=notes,
     )

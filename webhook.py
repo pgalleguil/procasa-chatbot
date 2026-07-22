@@ -1825,7 +1825,7 @@ async def view_captaciones(
     sort_dir: str = Query("desc"),
     page: int = Query(1, ge=1)
 ):
-    _t0 = time.time()
+    _t0 = time.perf_counter()
     from chatbot.storage import get_async_db
     adb = get_async_db()
     user = await get_current_user_doc(request)
@@ -1966,11 +1966,10 @@ async def view_captaciones(
             ]},
         ]
 
-    import time
     cache_key = f"stats_v7_{user_role}_{user_id}_{ejecutivo}"
     cache_store = getattr(app.state, 'captacion_stats_cache', {})
-    now = time.time()
-    if cache_key in cache_store and now - cache_store[cache_key]['time'] < 300:
+    _cache_now = time.time()
+    if cache_key in cache_store and _cache_now - cache_store[cache_key]['time'] < 300:
         in_gestion_count = cache_store[cache_key]['in_gestion_count']
         captados_count = cache_store[cache_key]['captados_count']
         descartados_count = cache_store[cache_key]['descartados_count']
@@ -1990,7 +1989,7 @@ async def view_captaciones(
             key=lambda value: value.casefold(),
         )
         cache_store[cache_key] = {
-            'time': now,
+            'time': _cache_now,
             'in_gestion_count': in_gestion_count,
             'captados_count': captados_count,
             'descartados_count': descartados_count,
@@ -2005,7 +2004,7 @@ async def view_captaciones(
     goal_executive = current_ejecutivo if user_role in CAPTACION_PRIVILEGED_ROLES else user_name
     goal_cache_key = f"goal_v1_{goal_executive or '_none'}"
     goal_cache = getattr(app.state, 'captacion_goal_cache', {})
-    if goal_cache_key in goal_cache and now - goal_cache[goal_cache_key]['time'] < 60:
+    if goal_cache_key in goal_cache and time.time() - goal_cache[goal_cache_key]['time'] < 60:
         captacion_goal = goal_cache[goal_cache_key]['data']
     else:
         captacion_goal = await loop.run_in_executor(
@@ -2015,7 +2014,7 @@ async def view_captaciones(
                 selected_executive=goal_executive or None,
             ),
         )
-        goal_cache[goal_cache_key] = {'time': now, 'data': captacion_goal}
+        goal_cache[goal_cache_key] = {'time': time.time(), 'data': captacion_goal}
         app.state.captacion_goal_cache = goal_cache
 
     return templates.TemplateResponse("captacion_list.html", {
@@ -2054,7 +2053,7 @@ async def view_captaciones(
         }
     }, headers={"Content-Type": "text/html; charset=utf-8"})
 
-    _elapsed = (time.time() - _t0) * 1000
+    _elapsed = (time.perf_counter() - _t0) * 1000
     if _elapsed > 2000:
         logger.warning(f"[CAPTACION_PERF] GET /captacion tardo {_elapsed:.0f}ms user={user_role}:{user_name[:8] if user_name else '?'} page={page}")
 

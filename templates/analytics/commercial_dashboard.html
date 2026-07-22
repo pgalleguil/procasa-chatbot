@@ -133,7 +133,7 @@ body.cd-page{background:var(--cd-bg);color:var(--cd-txt);font-family:'Outfit',sy
 .cd-kpi-var.up{color:var(--cd-ok)}.cd-kpi-var.down{color:var(--cd-bad)}.cd-kpi-var.flat{color:var(--cd-txt3)}
 .cd-kpi-vs{font-size:.64rem;color:var(--cd-txt3);font-weight:400}
 .cd-kpi-foot{margin-top:auto;display:flex;align-items:flex-end;gap:8px;min-height:26px}
-.cd-spark{flex:1;min-width:0}
+.cd-spark{display:block;flex:1;min-width:0;width:100%;height:28px}
 .cd-cmpbars{flex:1;display:flex;flex-direction:column;gap:3px}
 .cd-cmpbar{height:5px;border-radius:3px;background:var(--cd-el);position:relative;overflow:hidden}
 .cd-cmpbar span{position:absolute;inset:0 auto 0 0;border-radius:3px}
@@ -865,7 +865,8 @@ function renderChips(){
   chips.classList.toggle('has',items.length>0);
   const n=items.filter(i=>i.k!=='period').length;
   $('fltCount').hidden=true;$('fltCount').textContent=n;
-  $('filterButtonLabel').textContent=n?'Filtros · '+n:'Filtros';
+  const baseLabel=matchMedia('(max-width:600px)').matches?'Filtros':'M\u00e1s filtros';
+  $('filterButtonLabel').textContent=n?baseLabel+' · '+n:baseLabel;
   chips.querySelectorAll('.cd-chip').forEach(el=>{
     const rm=()=>{const k=el.dataset.key;delete FILTERS[k];
       if(k==='period'){delete FILTERS.period_start;delete FILTERS.period_end;delete FILTERS.period_preset}
@@ -943,13 +944,15 @@ function animVal(el,target,fmt){
   requestAnimationFrame(step);
 }
 function sparkline(cv,data,color){
-  const ctx=cv.getContext('2d'),w=cv.width,h=cv.height;
+  const rect=cv.getBoundingClientRect(),ratio=Math.min(window.devicePixelRatio||1,3),w=Math.max(1,Math.round(rect.width)),h=Math.max(1,Math.round(rect.height));
+  cv.width=Math.round(w*ratio);cv.height=Math.round(h*ratio);
+  const ctx=cv.getContext('2d');ctx.setTransform(ratio,0,0,ratio,0,0);
   ctx.clearRect(0,0,w,h);
   if(!data||!data.length)return;
   const mx=Math.max.apply(null,data.concat([1]));
   const pts=data.map((v,i)=>[i/(Math.max(1,data.length-1))*(w-4)+2,h-3-(v/mx)*(h-8)]);
   ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));
-  ctx.strokeStyle=color;ctx.lineWidth=1.6;ctx.lineJoin='round';ctx.stroke();
+  ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();
   const g=ctx.createLinearGradient(0,0,0,h);g.addColorStop(0,color+'33');g.addColorStop(1,color+'00');
   ctx.lineTo(pts[pts.length-1][0],h);ctx.lineTo(pts[0][0],h);ctx.closePath();ctx.fillStyle=g;ctx.fill();
 }

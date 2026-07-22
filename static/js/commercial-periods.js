@@ -44,5 +44,10 @@
     return ['today', 'week', 'month', '30d', 'custom'].includes(value) ? value : null;
   }
 
-  return { TIME_ZONE, parts, iso, addDays, presetRange, clampRange, validPreset };
+  function comparisonLabel(mode, formattedRange) {
+    if (mode === 'none') return '';
+    return 'vs. ' + formattedRange + (mode === 'yoy' ? ' (año anterior)' : '');
+  }
+
+  return { TIME_ZONE, parts, iso, addDays, presetRange, clampRange, validPreset, comparisonLabel };
 });

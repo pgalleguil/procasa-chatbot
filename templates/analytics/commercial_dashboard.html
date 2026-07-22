@@ -693,10 +693,7 @@ function render(){
   const prv=D.meta?.period?.previous||{};
   const cur=D.meta?.period?.current||{};
   $('perCur').textContent=FDC(cur.start||FILTERS.period_start,cur.end||FILTERS.period_end);
-  let cmpTxt='';
-  if(COMPARE==='none')cmpTxt='Sin comparaci\u00f3n';
-  else cmpTxt='vs. '+FDC(prv.start,prv.end)+(COMPARE==='yoy'?' (a\u00f1o anterior)':'');
-  $('perCmp').textContent=cmpTxt;
+  $('perCmp').textContent=window.CommercialPeriods.comparisonLabel(COMPARE,FDC(prv.start,prv.end));
   const totalLeads=D.kpis?.leads_received?.value||0;
   let upd='';
   if(D.meta?.generated_at){

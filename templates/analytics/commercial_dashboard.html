@@ -263,7 +263,7 @@ body.cd-page{background:var(--cd-bg);color:var(--cd-txt);font-family:'Outfit',sy
 /* ============ RESPONSIVE ============ */
 @media(max-width:1500px){.cd-kpis{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:1200px){.cd-g-exec{grid-template-columns:1fr}.cd-insights{grid-template-columns:1fr 1fr}}
-@media(max-width:1100px){.cd-kpis{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:1100px){.cd-kpis{grid-template-columns:repeat(3,1fr)}.cd-kpi-sla{grid-column:1/-1;min-height:0}}
 @media(max-width:991px){
   .cd{padding:14px 14px 90px}
   .cd-hamb{display:flex}
@@ -772,7 +772,7 @@ function rKPI(){
   const slaCol=slaPct==null?pal.gray:slaPct>=85?pal.ok:slaPct>=50?pal.warn:pal.bad;
   const gap=slaPct!=null?(slaPct-90):null;
   const slaTip=(D.meta?.sla_policy?.display_label||'SLA')+'. Universo: cohorte Hot con inicio SLA determinable.';
-  h+='<div class="cd-kpi" style="--d:'+(FIRST_KPI?6*45:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">Cumplimiento SLA</span><button class="cd-info" data-tt="'+E(slaTip)+'" aria-label="Definici\u00f3n de SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-kpi-val" style="color:'+slaCol+'" data-sla="1">'+(slaPct!=null?P1(slaPct):'S/I')+'</div><div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span class="cd-kpi-meta">Meta <b>90 %</b></span>'+(gap!=null?'<span class="cd-kpi-var '+slaCls+'">'+(gap>=0?'+':'')+P1(gap).replace(' %',' pp')+'</span>':'')+'</div><div class="cd-kpi-foot"><span class="cd-kpi-meta">'+(sla.critical_open!=null?F(sla.critical_open)+' cr\u00edticos abiertos':'')+'</span></div></div>';
+  h+='<div class="cd-kpi cd-kpi-sla" style="--d:'+(FIRST_KPI?6*45:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">Cumplimiento SLA</span><button class="cd-info" data-tt="'+E(slaTip)+'" aria-label="Definici\u00f3n de SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-kpi-val" style="color:'+slaCol+'" data-sla="1">'+(slaPct!=null?P1(slaPct):'S/I')+'</div><div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span class="cd-kpi-meta">Meta <b>90 %</b></span>'+(gap!=null?'<span class="cd-kpi-var '+slaCls+'">'+(gap>=0?'+':'')+P1(gap).replace(' %',' pp')+'</span>':'')+'</div><div class="cd-kpi-foot"><span class="cd-kpi-meta">'+(sla.critical_open!=null?F(sla.critical_open)+' cr\u00edticos abiertos':'')+'</span></div></div>';
   $('kpiRow').innerHTML=h;
   /* animación de valores solo en primera carga */
   document.querySelectorAll('.cd-kpi-val').forEach(el=>{

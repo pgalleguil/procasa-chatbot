@@ -2204,10 +2204,12 @@ async def api_update_captacion(request: Request):
             )
         )
         if result:
+            _up3 = time.perf_counter()
             app.state.captacion_stats_cache = {}
             goal_cache = getattr(app.state, 'captacion_goal_cache', None)
             if goal_cache is not None:
-                goal_cache.clear()
+                goal_cache.pop(f"goal_v1_{user_name}", None)
+                goal_cache.pop("goal_v1__none", None)
             return {"status": "ok"}
         return {"status": "error", "message": "Operación retornó falso"}
     except HTTPException:

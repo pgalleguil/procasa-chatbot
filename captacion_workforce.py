@@ -141,7 +141,7 @@ def get_user_exception(db, user_id, local_day: date) -> dict | None:
     )
 
 
-def applicable_target(db, membership: dict, local_day: date) -> dict:
+def applicable_target(db, membership: dict, local_day: date, calendar_days=None, exceptions=None) -> dict:
     timezone_name = membership.get("timezone") or DEFAULT_TIMEZONE
     base_target = int(membership.get("daily_target") or DEFAULT_DAILY_TARGET)
     if not membership_is_active(membership, local_day):
@@ -156,8 +156,17 @@ def applicable_target(db, membership: dict, local_day: date) -> dict:
             "exception_id": None,
         }
     workdays = tuple(int(day) for day in membership.get("workdays") or DEFAULT_WORKDAYS)
-    calendar_day = get_calendar_day(db, local_day, timezone_name)
-    exception = get_user_exception(db, membership.get("user_id"), local_day)
+    calendar_day = None
+    if calendar_days is not None:
+        calendar_day = calendar_days.get((local_day.isoformat(), timezone_name))
+    else:
+        calendar_day = get_calendar_day(db, local_day, timezone_name)
+    exception = None
+    if exceptions is not None:
+        user_id = clean_id(membership.get("user_id"))
+        exception = exceptions.get((user_id, local_day.isoformat()))
+    else:
+        exception = get_user_exception(db, membership.get("user_id"), local_day)
 
     scheduled = local_day.weekday() in workdays
     target = base_target if scheduled else 0
@@ -296,3 +305,24 @@ def upsert_calendar_day(db, payload: dict, actor_user_id) -> dict:
         {"type": "calendar_day_upserted", "local_date": local_day.isoformat(), "actor_user_id": clean_id(actor_user_id), "snapshot": document, "created_at": now}
     )
     return document
+
+
+def preload_calendar_days(db, dates: list[str]) -> dict:
+    result = {}
+    for row in db[CALENDAR_COLLECTION].find(
+        {"local_date": {"$in": dates}, "enabled": {"$ne": False}}
+    ):
+        result[(row["local_date"], row.get("timezone", DEFAULT_TIMEZONE))] = row
+    return result
+
+
+def preload_user_exceptions(db, user_ids: list[str], dates: list[str]) -> dict:
+    result = {}
+    for row in db[EXCEPTION_COLLECTION].find({
+        "user_id": {"$in": user_ids},
+        "local_date": {"$in": dates},
+        "approved": True,
+        "voided_at": {"$exists": False},
+    }):
+        result[(row["user_id"], row["local_date"])] = row
+    return result

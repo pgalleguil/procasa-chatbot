@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
+import logging
 import os
+import time as _perf_time
 from typing import Iterable
 
 import pytz
+
+logger = logging.getLogger(__name__)
 
 from config import Config
 from captacion_workforce import (
@@ -15,6 +19,8 @@ from captacion_workforce import (
     applicable_target,
     compliance_status,
     get_active_captacion_team as get_explicit_captacion_team,
+    preload_calendar_days,
+    preload_user_exceptions,
 )
 from captacion_management import (
     ANOMALY_COLLECTION,
@@ -408,20 +414,32 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
 
 
 def get_captacion_goal_dashboard(db, selected_executive=None, now=None) -> dict:
+    _g0 = _perf_time.perf_counter()
     ensure_captacion_goal_indexes(db)
     local_now = _as_chile_datetime(now)
     monday = local_now.date() - timedelta(days=local_now.weekday())
+    week_dates = [(monday + timedelta(days=index)).isoformat() for index in CAPTACION_WORKDAYS]
+
     team = get_explicit_captacion_team(db, local_now.date())
+    _g1 = _perf_time.perf_counter()
+
+    # Preload calendar + exceptions en 2 consultas (elimina 10N find_one)
+    member_ids = [member["id"] for member in team]
+    calendar_days = preload_calendar_days(db, week_dates)
+    exceptions = preload_user_exceptions(db, member_ids, week_dates)
+    _g2 = _perf_time.perf_counter()
+
     for member in team:
         membership = member.get("membership") or {}
         member["day_targets"] = {
             (monday + timedelta(days=index)).isoformat(): applicable_target(
-                db, membership, monday + timedelta(days=index)
+                db, membership, monday + timedelta(days=index),
+                calendar_days=calendar_days, exceptions=exceptions,
             )
             for index in CAPTACION_WORKDAYS
         }
-    member_ids = [member["id"] for member in team]
-    week_dates = [(monday + timedelta(days=index)).isoformat() for index in CAPTACION_WORKDAYS]
+    _g3 = _perf_time.perf_counter()
+
     metrics = list(db[DAILY_METRICS_COLLECTION].find(
         {"user_id": {"$in": member_ids}, "local_date": {"$in": week_dates}}
     ))
@@ -435,7 +453,10 @@ def get_captacion_goal_dashboard(db, selected_executive=None, now=None) -> dict:
         }
         member["anomaly_count"] = sum(1 for row in anomalies if row.get("actor_user_id") == member["id"])
     rows = get_captacion_management_rows(db, now=now)
+    _g4 = _perf_time.perf_counter()
+
     result = build_captacion_goal_dashboard(team, rows, selected_executive=selected_executive, now=now)
+
     start_local = CAPTACION_TIMEZONE.localize(datetime.combine(monday, time.min))
     end_local = start_local + timedelta(days=5)
     result["history_event_count"] = db[CAPTACION_GOAL_COLLECTION].count_documents({
@@ -444,4 +465,12 @@ def get_captacion_goal_dashboard(db, selected_executive=None, now=None) -> dict:
             "$lt": end_local.astimezone(timezone.utc),
         }
     })
+    _g5 = _perf_time.perf_counter()
+
+    logger.info(
+        f"[CAPTACION_GOAL_PERF] team={(_g1-_g0)*1000:.0f} "
+        f"preload={(_g2-_g1)*1000:.0f} targets={(_g3-_g2)*1000:.0f} "
+        f"metrics_rows={(_g4-_g3)*1000:.0f} build={(_g5-_g4)*1000:.0f} "
+        f"total={(_g5-_g0)*1000:.0f}ms members={len(team)}"
+    )
     return result

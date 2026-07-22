@@ -28,7 +28,7 @@
   --cd-sh:0 1px 2px rgba(16,24,40,.06);--cd-sh2:0 8px 24px rgba(16,24,40,.1);
 }
 /* ============ SHELL (sidebar, igual comportamiento) ============ */
-html,body{margin:0;padding:0}
+html,body{margin:0;padding:0}html{overflow-x:clip}
 body.cd-page{background:var(--cd-bg);color:var(--cd-txt);font-family:'Outfit',system-ui,sans-serif;min-height:100dvh;overflow-x:hidden;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
 .cd-page .sidebar{width:var(--side-wc);height:100dvh;position:fixed;left:0;top:0;z-index:1050;background:color-mix(in srgb,var(--cd-bg) 88%,transparent);backdrop-filter:blur(16px) saturate(130%);-webkit-backdrop-filter:blur(16px) saturate(130%);border-right:1px solid var(--cd-line);display:flex;flex-direction:column;overflow:hidden;white-space:nowrap;transition:width .35s cubic-bezier(.4,0,.2,1);padding:12px 0 10px;box-sizing:border-box}
 .cd-page .sidebar:hover{width:var(--side-w);box-shadow:8px 0 28px rgba(0,0,0,.22)}

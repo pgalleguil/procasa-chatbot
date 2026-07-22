@@ -10,7 +10,7 @@ import re
 import threading
 import time
 from html.parser import HTMLParser
-from urllib.request import Request, urlopen
+import requests
 
 
 SOURCE_URL = "https://si3.bcentral.cl/Bdemovil/BDE/IndicadoresDiarios"
@@ -34,6 +34,10 @@ class _IndicatorParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         classes = dict(attrs).get("class", "")
         if tag == "tr":
+            # The official mobile page omits closing </tr> tags; finalize the
+            # previous row when the next one begins.
+            if self.in_row and self.row:
+                self.rows.append(self.row)
             self.in_row, self.row = True, []
         elif tag == "td" and self.in_row:
             self.in_cell, self.cell = True, []
@@ -58,12 +62,18 @@ class _IndicatorParser(HTMLParser):
         if self.in_h3:
             self.heading.append(data)
 
+    def finish(self):
+        if self.in_row and self.row:
+            self.rows.append(self.row)
+            self.in_row = False
+
 
 def _fetch_official_indicators() -> dict:
-    request = Request(SOURCE_URL, headers={"User-Agent": "PROCASA-Analytics/2.0"})
-    with urlopen(request, timeout=8) as response:
-        parser = _IndicatorParser()
-        parser.feed(response.read().decode("utf-8", errors="replace"))
+    response = requests.get(SOURCE_URL, headers={"User-Agent": "PROCASA-Analytics/2.0"}, timeout=8)
+    response.raise_for_status()
+    parser = _IndicatorParser()
+    parser.feed(response.text)
+    parser.finish()
 
     heading = " ".join("".join(parser.heading).split())
     date_match = re.search(r"(\d{2})-(\w{3})-(\d{4})", heading, re.I)

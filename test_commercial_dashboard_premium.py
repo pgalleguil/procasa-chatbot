@@ -1,8 +1,5 @@
 import unittest
 from pathlib import Path
-from jinja2 import Environment, FileSystemLoader
-
-from analytics.market_indicators import _IndicatorParser
 from analytics.leads_queries import _build_extra_filter, _commune_distribution
 
 
@@ -25,11 +22,9 @@ class CommercialDashboardPremiumTests(unittest.TestCase):
         ):
             self.assertIn(label, self.html)
 
-    def test_template_renders_portfolio_mode(self):
-        env = Environment(loader=FileSystemLoader(str(ROOT / "templates")))
-        rendered = env.get_template("analytics/commercial_dashboard.html").render(portfolio_mode=True)
-        self.assertIn("Vista portafolio", rendered)
-        self.assertIn('data-portfolio="true"', rendered)
+    def test_macro_ticker_is_fully_removed(self):
+        for obsolete in ("marketStrip", "marketTrack", "loadMarketIndicators", "market-indicators"):
+            self.assertNotIn(obsolete, self.html)
 
     def test_required_loading_and_accessibility_states_exist(self):
         for contract in (
@@ -46,16 +41,6 @@ class CommercialDashboardPremiumTests(unittest.TestCase):
     def test_executive_mode_and_separate_quality_panel_exist(self):
         for contract in ('id="teamMode"', 'id="executiveView"', 'id="tab-quality"'):
             self.assertIn(contract, self.html)
-
-    def test_market_parser_reads_only_named_official_rows(self):
-        parser = _IndicatorParser()
-        parser.feed("""
-            <h3>Indicadores diarios (22-jul-2026)</h3>
-            <table><tr><td><p>Unidad de Fomento (UF)</p></td><td><p>40.844,79</p></td><td>Pesos</td></tr></table>
-        """)
-        self.assertEqual(parser.rows[0][0], "Unidad de Fomento (UF)")
-        self.assertEqual(parser.rows[0][1], "40.844,79")
-        self.assertIn("22-jul-2026", "".join(parser.heading))
 
     def test_commune_distribution_keeps_missing_values_as_si(self):
         rows = _commune_distribution([

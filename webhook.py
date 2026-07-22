@@ -15,7 +15,6 @@ import threading
 import subprocess
 import concurrent.futures
 import inspect
-import copy
 from concurrent.futures import ThreadPoolExecutor
 from pymongo import MongoClient
 from pymongo import ReturnDocument
@@ -58,7 +57,6 @@ from analytics.leads_service import (
     get_detail as analytics_get_detail, get_filters, get_field_coverage,
     get_dashboard, get_commercial_dashboard, get_commercial_filter_options,
 )
-from analytics.market_indicators import get_market_indicators
 
 from api_captacion import (
     get_captacion_list, get_captacion_detail, update_captacion_status, update_contact_info,
@@ -732,31 +730,6 @@ async def ver_leads(request: Request):
 
 # ========================= COMMERCIAL DASHBOARD (READ-ONLY) =========================
 
-def _sanitize_commercial_portfolio(payload: dict) -> dict:
-    """Remove staff identity from the public portfolio representation."""
-    safe = copy.deepcopy(payload)
-    names = sorted({
-        str(row.get("executive")) for row in safe.get("executives", [])
-        if row.get("executive")
-    })
-    aliases = {name: f"Ejecutivo {index:02d}" for index, name in enumerate(names, 1)}
-    for row in safe.get("executives", []):
-        row["executive"] = aliases.get(str(row.get("executive")), "Ejecutivo")
-    properties = safe.get("properties") or {}
-    for group in ("opportunity", "leakage"):
-        for row in properties.get(group, []):
-            if "dominant_executive" in row:
-                row["dominant_executive"] = aliases.get(str(row.get("dominant_executive")), "S/I")
-    for insight in safe.get("insights", []):
-        for field, value in list(insight.items()):
-            if isinstance(value, str):
-                for name, alias in aliases.items():
-                    value = value.replace(name, alias)
-                insight[field] = value
-    safe.setdefault("meta", {})["portfolio_mode"] = True
-    return safe
-
-
 async def _optional_commercial_user(request: Request):
     try:
         return await get_current_user_doc(request)
@@ -771,9 +744,8 @@ async def commercial_dashboard_page(request: Request):
         request=request,
         name="analytics/commercial_dashboard.html",
         context={
-            "user_role": user.get("rol", "portfolio") if privileged else "portfolio",
+            "user_role": user.get("rol", "admin") if privileged else "admin",
             "user_name": user.get("nombre", "") if privileged else "",
-            "portfolio_mode": not privileged,
         },
     )
 
@@ -821,15 +793,7 @@ async def api_commercial_dashboard(
             compare=compare,
         ),
     )
-    return payload if privileged else _sanitize_commercial_portfolio(payload)
-
-
-@app.get("/api/analytics/commercial/market-indicators")
-async def api_commercial_market_indicators():
-    """Optional official market context; failure never blocks the dashboard."""
-    loop = asyncio.get_running_loop()
-    payload = await loop.run_in_executor(_WEB_THREAD_POOL, get_market_indicators)
-    return JSONResponse(payload, headers={"Cache-Control": "public, max-age=3600, stale-if-error=86400"})
+    return payload
 
 # ========================= ANALYTICS DASHBOARD (READ-ONLY) =========================
 
@@ -998,15 +962,11 @@ async def api_analytics_leads_filters(
 
 @app.get("/api/analytics/commercial/filters")
 async def api_commercial_filters(request: Request):
-    user = await _optional_commercial_user(request)
-    privileged = bool(user and user.get("rol") in ("admin", "supervisor"))
     loop = asyncio.get_running_loop()
     payload = await loop.run_in_executor(
         _WEB_THREAD_POOL,
         lambda: get_commercial_filter_options(),
     )
-    if not privileged:
-        payload = {**payload, "executives": []}
     return payload
 
 

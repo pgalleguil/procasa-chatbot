@@ -1,22 +1,25 @@
-# Dashboard Comercial PROCASA — validación Premium V2
+# Dashboard Comercial PROCASA — validación correctiva V3
 
-Fecha: 2026-07-22  
-Rama de trabajo: `feature/commercial-dashboard-premium-v2`  
-Commit base: `3f243e10128de7b9b74fdc2df5ed6275edbad925`
+Fecha: 2026-07-22
+Commit base visual: `3f243e10128de7b9b74fdc2df5ed6275edbad925`
+Versión rechazada: `bf4a7b75d5b30fbc6ad1464fd9085e0dc30a1a64`
 
-## Resguardo
+## Evidencia visual
 
-- Rama: `backup/commercial-dashboard-pre-premium-20260722`
-- Tag: `commercial-dashboard-pre-premium-2026-07-22`
-- La rama y el tag apuntan al commit base y se publicaron antes de modificar archivos.
+- `reports/commercial-dashboard/before-original-1440.png`
+- `reports/commercial-dashboard/rejected-v2-1440.png`
+- `reports/commercial-dashboard/corrected-v3-1440.png`
+- `reports/commercial-dashboard/corrected-v3-390.png`
+
+Las capturas fueron generadas con Chromium/Playwright y la consulta canónica. La versión corregida también se verificó realmente a 1366×768, 1024×768, 390×844 y 360×800.
 
 ## Paridad canónica
 
-Consulta validada:
+Consulta:
 
 `period_start=2026-07-21&period_end=2026-07-21&compare=prev&period_preset=today`
 
-| Campo | Antes | Premium V2 | Resultado |
+| Campo | Base | V3 | Resultado |
 |---|---:|---:|---|
 | Periodo actual | 2026-07-21 | 2026-07-21 | Igual |
 | Periodo comparable | 2026-07-20 | 2026-07-20 | Igual |
@@ -28,46 +31,30 @@ Consulta validada:
 | Cierres | 0 | 0 | Igual |
 | SLA | 100,0 % | 100,0 % | Igual |
 | Temperatura histórica | S/I | S/I | Igual |
-| Cobertura temperatura histórica | 0 % | 0 % | Igual |
 
-El modo sin datos (`1990-01-01`) conserva SLA como `null`/S/I; no lo convierte en cero.
+Los cambios son de presentación, acceso interno y eliminación del ticker. No se alteraron las consultas ni las definiciones canónicas.
 
-## Rendimiento medido
+## Validación responsive local previa al despliegue
 
-Medición local contra la misma base y consulta, sin modificar definiciones:
+| Viewport | Overflow general | Errores de consola | Ticker |
+|---|---|---|---|
+| 1440×900 | No | 0 | Ausente |
+| 1366×768 | No | 0 | Ausente |
+| 1024×768 | No | 0 | Ausente |
+| 390×844 | No | 0 | Ausente |
+| 360×800 | No | 0 | Ausente |
 
-| Medición | Antes | Premium V2 |
-|---|---:|---:|
-| API consolidada, caché fría | 2.756 ms | 1.668 ms |
-| API consolidada, caché caliente | no registrado de forma comparable | 25 ms |
-| Solicitudes principales iniciales | 3 | 3 |
-| Solicitudes duplicadas del dashboard | 0 observadas | 0 observadas |
+## Cambios correctivos
 
-La reducción fría proviene de ejecutar en paralelo agregaciones MongoDB independientes y de solo lectura. El frontend añade caché por combinación de filtros, `AbortController`, protección contra respuestas fuera de orden y conservación del último resultado válido.
+- Se eliminó completamente el ticker macroeconómico, su endpoint, parser, caché y carga asíncrona.
+- Se redujo el resumen a seis KPI primarios.
+- Se recuperó una composición sobria: cabecera compacta, filtros secundarios en drawer, secciones espaciadas y superficies sin decoración excesiva.
+- Las comparaciones de KPI muestran la fecha real del periodo anterior.
+- La vista interna utiliza los nombres reales retornados por el backend.
+- Se conservaron cancelación de solicitudes, caché del frontend, actualización no bloqueante y consultas analíticas paralelas.
 
-## Estados y accesibilidad
+## Limitaciones funcionales reales
 
-- Skeleton inicial de KPI y gráficos sin vaciar la estructura.
-- Estado de actualización con datos anteriores visibles.
-- Barra superior de progreso y `aria-busy`.
-- Error parcial con último resultado válido y botón Reintentar.
-- Estado vacío, S/I y sin cobertura diferenciados.
-- Drawer de filtros en escritorio y bottom sheet móvil.
-- Navegación por teclado en tabs, filas de ejecutivos y orden de tablas.
-- `aria-expanded`, `aria-selected`, `aria-live` y foco visible.
-- `prefers-reduced-motion` desactiva transiciones y ticker.
-
-## Contexto macroeconómico
-
-Se muestran únicamente UF, USD/CLP y TPM desde la página oficial de indicadores diarios del Banco Central de Chile. La consulta es diferida, tiene caché horaria y falla de forma cerrada: si la fuente no responde, la franja se oculta. IPC anual y tasa hipotecaria se omiten hasta disponer de una interfaz oficial estable y comprobable.
-
-## Privacidad
-
-La vista pública funciona en modo portafolio: reemplaza identidades por alias deterministas y omite el selector nominal. Usuarios admin/supervisor autenticados conservan la vista interna. No se exponen teléfonos, correos, RUT ni identificadores personales.
-
-## Limitaciones explícitas
-
-- Seguimientos vencidos, estancamiento y resultado faltante se muestran S/I cuando el contrato actual no entrega evidencia suficiente.
-- Las propiedades sin leads no forman parte del payload actual; por ello no se afirma demanda nula.
-- Dormitorios, baños, superficie y estacionamientos permanecen S/I por falta de cobertura demostrable.
-- La tasa hipotecaria y el IPC anual no se muestran sin fuente oficial estable disponible para consumo automático.
+- Seguimientos vencidos, estancamiento y resultado faltante permanecen S/I cuando el contrato no aporta evidencia.
+- Las propiedades sin leads no forman parte del payload actual; no se infiere demanda nula.
+- Dormitorios, baños, superficie y estacionamientos permanecen S/I si su cobertura no es demostrable.

@@ -464,3 +464,47 @@ def test_assigned_executive_receives_credit_for_own_action(_patch_env):
     # Erika performed AND is the assigned executive → Erika gets credit
     assert credited[0]["actor_user_id"] == "erika-id"
     assert credited[0]["actor_name_snapshot"] == "Erika Garrido"
+
+
+class TestFacetCount:
+    def _fc(self, counts, key):
+        rows = counts.get(key) or []
+        if not rows:
+            return 0
+        return int((rows[0] or {}).get("count") or 0)
+
+    def test_all_branches_with_results(self):
+        counts = {
+            "available": [{"count": 100}],
+            "management": [{"count": 50}],
+            "captured": [{"count": 5}],
+            "discarded": [{"count": 10}],
+        }
+        assert self._fc(counts, "available") == 100
+        assert self._fc(counts, "management") == 50
+        assert self._fc(counts, "captured") == 5
+        assert self._fc(counts, "discarded") == 10
+
+    def test_one_branch_empty(self):
+        counts = {"available": [], "management": [{"count": 3}]}
+        assert self._fc(counts, "available") == 0
+        assert self._fc(counts, "management") == 3
+
+    def test_all_branches_empty(self):
+        counts = {"available": [], "management": [], "captured": [], "discarded": []}
+        assert self._fc(counts, "available") == 0
+        assert self._fc(counts, "management") == 0
+        assert self._fc(counts, "captured") == 0
+        assert self._fc(counts, "discarded") == 0
+
+    def test_key_missing(self):
+        assert self._fc({}, "captured") == 0
+        assert self._fc({"available": [{"count": 1}]}, "captured") == 0
+
+    def test_row_without_count_field(self):
+        counts = {"available": [{"other": 1}]}
+        assert self._fc(counts, "available") == 0
+
+    def test_row_is_none(self):
+        counts = {"available": [None]}
+        assert self._fc(counts, "available") == 0

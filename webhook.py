@@ -1999,10 +1999,15 @@ async def view_captaciones(
         comuna_task = adb[Config.CAPTACION_COLLECTION_NAME].distinct("comuna", base_query)
         kpi_result, comunas_list = await asyncio.gather(kpi_task, comuna_task)
         counts = (kpi_result[0] if kpi_result else {})
-        available_count = (counts.get("available", [{}])[0] or {}).get("count", 0)
-        in_gestion_count = (counts.get("management", [{}])[0] or {}).get("count", 0)
-        captados_count = (counts.get("captured", [{}])[0] or {}).get("count", 0)
-        descartados_count = (counts.get("discarded", [{}])[0] or {}).get("count", 0)
+        def _fc(key):
+            rows = counts.get(key) or []
+            if not rows:
+                return 0
+            return int((rows[0] or {}).get("count") or 0)
+        available_count = _fc("available")
+        in_gestion_count = _fc("management")
+        captados_count = _fc("captured")
+        descartados_count = _fc("discarded")
         comunas_clean = sorted(
             {str(c).strip() for c in comunas_list if c and str(c).strip()},
             key=lambda value: value.casefold(),

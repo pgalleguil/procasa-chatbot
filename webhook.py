@@ -2096,14 +2096,16 @@ async def view_captaciones(
         _prev_t = _t
     _deltas.append(f"total={(_perf['render'] - _t0) * 1000:.0f}")
     _deltas.append(f"diag={(_perf['diag_done'] - _perf['list_done']) * 1000:.0f}")
-    logger.info(
-        f"[CAPTACION_PERF] {' '.join(_deltas)}ms "
-        f"role={user_role} page={page} sort={sort_by or 'def'} "
-        f"ejec={current_ejecutivo or '-'} comuna={current_comuna or '-'} "
-        f"items={len(items)} total={total_count} "
-        f"kpi_cache={'HIT' if _kpi_hit else 'MISS'} "
-        f"goal_cache={'HIT' if _goal_hit else 'MISS'}"
-    )
+    _total_ms = (_perf['render'] - _t0) * 1000
+    if _total_ms > 2000:
+        logger.warning(
+            f"[CAPTACION_PERF] {' '.join(_deltas)}ms "
+            f"role={user_role} page={page} sort={sort_by or 'def'} "
+            f"ejec={current_ejecutivo or '-'} comuna={current_comuna or '-'} "
+            f"items={len(items)} total={total_count} "
+            f"kpi_cache={'HIT' if _kpi_hit else 'MISS'} "
+            f"goal_cache={'HIT' if _goal_hit else 'MISS'}"
+        )
 
     return response
 

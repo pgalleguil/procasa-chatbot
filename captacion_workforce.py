@@ -130,7 +130,7 @@ def get_active_captacion_team(db, local_day: date | str) -> list[dict]:
     _t1 = _perf_time.perf_counter()
     result = resolve_membership_users(db, memberships)
     _t2 = _perf_time.perf_counter()
-    logger.info(
+    logger.debug(
         f"[CAPTACION_GOAL_PERF] team: memberships={(_t1-_t0)*1000:.0f}ms "
         f"resolve_users={(_t2-_t1)*1000:.0f}ms members={len(result)}"
     )

@@ -1613,8 +1613,9 @@ async def delete_contract(contract_code: str):
 
 @router.get("/verify/{contract_code}", response_class=HTMLResponse)
 async def verify_contract(contract_code: str, request: Request):
-    db = get_db()
-    contract = db["contracts"].find_one({
+    from chatbot.storage import get_async_db
+    db = get_async_db()
+    contract = await db["contracts"].find_one({
         "$or": [
             {"contract_code": contract_code},
             {"security.verify_token": contract_code}

@@ -478,7 +478,7 @@ def get_captacion_goal_dashboard(db, selected_executive=None, now=None) -> dict:
     result["history_event_count"] = _get_history_event_count(db, start_local, end_local)
     _g5 = _perf_time.perf_counter()
 
-    logger.info(
+    logger.debug(
         f"[CAPTACION_GOAL_PERF] team={(_g1-_g0)*1000:.0f} "
         f"preload={(_g2-_g1)*1000:.0f} targets={(_g3-_g2)*1000:.0f} "
         f"metrics_rows={(_g4-_g3)*1000:.0f} build={(_g5-_g4)*1000:.0f} "

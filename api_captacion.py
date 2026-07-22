@@ -758,7 +758,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     _l_enrich = _perf_time.perf_counter()
     _l_total = (_perf_time.perf_counter() - _l_start) * 1000
-    logger.info(
+    logger.debug(
         f"[CAPTACION_LIST_PERF] count={(_l_count - _l_start)*1000:.0f} "
         f"ops={(_l_ops - _l_count)*1000:.0f} "
         f"query_sort={(_l_cursor - _l_ops)*1000:.0f} "

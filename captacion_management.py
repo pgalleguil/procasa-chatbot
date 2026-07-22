@@ -138,7 +138,7 @@ def ensure_management_indexes(db) -> None:
     db[ASSIGNMENT_CYCLE_COLLECTION].create_index("assignment_cycle_id", unique=True, name="captacion_assignment_cycle")
     _INDEXES_READY = True
     import logging
-    logging.getLogger(__name__).info(
+    logging.getLogger(__name__).debug(
         f"[CAPTACION_GOAL_PERF] team: ensure_indexes={(_idx_time.perf_counter() - _idx0) * 1000:.0f}ms"
     )
 

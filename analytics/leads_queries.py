@@ -2189,6 +2189,18 @@ def _type_distribution(raw_leads: list) -> list:
     return [{"value": k, "count": v} for k, v in counts.most_common(10)]
 
 
+def _commune_distribution(raw_leads: list) -> list:
+    """Distribución declarada de comunas, sin inferir ni completar faltantes."""
+    from collections import Counter
+    counts = Counter()
+    for lead in raw_leads:
+        value = str((lead.get("prospecto") or {}).get("comuna") or "S/I").strip()
+        if not value or value.lower() in ("sin informacion", "sin información", "none", "n/a"):
+            value = "S/I"
+        counts[value] += 1
+    return [{"value": key, "count": count} for key, count in counts.most_common(10)]
+
+
 def query_demand_by_price_ranges(period_start=None, period_end=None, filters=None):
     """Demand by price ranges, separated by operation (Venta=UF, Arriendo=CLP). Reports coverage."""
     db = get_db()
@@ -2269,6 +2281,7 @@ def query_demand_by_price_ranges(period_start=None, period_end=None, filters=Non
     return {
         "price_ranges": [{"operation": k, **v} for k, v in ops.items()],
         "_types": _type_distribution(raw),
+        "_communes": _commune_distribution(raw),
         "coverage": {
             "operacion": _coverage_pct(has_op, total),
             "tipo_propiedad": _coverage_pct(has_tipo, total),

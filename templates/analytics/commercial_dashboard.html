@@ -573,9 +573,11 @@ function setPeriod(preset){
   document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('active',b.dataset.p===preset));
 }
 function applyCustomPeriod(){
-  const sVal=$('pStart').value,eVal=$('pEnd').value;
+  let sVal=$('pStart').value,eVal=$('pEnd').value;
   if(!sVal||!eVal)return;
   if(sVal>eVal){$('metaTxt').textContent='Error: fecha inicial posterior a fecha final';return}
+  const safe=CommercialPeriods.clampRange(sVal,eVal);sVal=safe.start;eVal=safe.end;
+  $('pStart').value=sVal;$('pEnd').value=eVal;
   FILTERS.period_start=sVal;FILTERS.period_end=eVal;FILTERS.period_preset='custom';
   loadData();
 }
@@ -1135,13 +1137,13 @@ function restoreFromURL(){
   const map={executive:'exec',source:'source',operation:'op',property_type:'type',commune:'commune',temperature:'temp',property_code:'prop',assignment:'asgn'};
   Object.entries(map).forEach(([param,key])=>{const v=params.get(param);if(v)FILTERS[key]=v});
   const ps=params.get('period_start'),pe=params.get('period_end');
-  if(ps&&pe){FILTERS.period_start=ps;FILTERS.period_end=pe;FILTERS.period_preset='custom'}
+  if(ps&&pe){const safe=CommercialPeriods.clampRange(ps,pe);FILTERS.period_start=safe.start;FILTERS.period_end=safe.end;FILTERS.period_preset='custom'}
   else setPeriod('30d');
   const cmp=params.get('compare');
   if(cmp){COMPARE=cmp;$('pCompare').value=cmp}
   Object.entries(FKEY).forEach(([id,k])=>{if(FILTERS[k]&&$(id))$(id).value=FILTERS[k]});
   if(FILTERS.period_preset==='custom'&&ps&&pe){
-    $('pStart').value=ps;$('pEnd').value=pe;
+    $('pStart').value=FILTERS.period_start;$('pEnd').value=FILTERS.period_end;
     document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('active',b.dataset.p==='custom'));
     $('periodCustom').classList.add('open');
   }

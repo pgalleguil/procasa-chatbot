@@ -412,10 +412,6 @@ def get_commercial_dashboard(
         query_executive_load_detail,
     )
 
-    kwargs = {"period_start": period_start, "period_end": period_end, "filters": merged_filters or None}
-    kwargs_no_filters = {"period_start": period_start, "period_end": period_end}
-    period_label = f"{period_start or ''} - {period_end or ''}"
-
     # Period comparison — compute previous period based on mode
     from datetime import datetime as dt, timedelta as td
     from .commercial_periods import comparison_period, local_today
@@ -423,9 +419,17 @@ def get_commercial_dashboard(
         today = local_today()
         ps_dt = dt.strptime(period_start, "%Y-%m-%d").date() if period_start else today - td(days=29)
         pe_dt = dt.strptime(period_end, "%Y-%m-%d").date() if period_end else today
+        pe_dt = min(pe_dt, today)
+        ps_dt = min(ps_dt, pe_dt)
     except (ValueError, TypeError):
         pe_dt = local_today()
         ps_dt = pe_dt - td(days=29)
+
+    period_start = ps_dt.strftime("%Y-%m-%d")
+    period_end = pe_dt.strftime("%Y-%m-%d")
+    kwargs = {"period_start": period_start, "period_end": period_end, "filters": merged_filters or None}
+    kwargs_no_filters = {"period_start": period_start, "period_end": period_end}
+    period_label = f"{period_start} - {period_end}"
 
     prev_start = ""
     prev_end = ""

@@ -34,5 +34,11 @@
     return { start: iso(start), end: iso(end) };
   }
 
-  return { TIME_ZONE, parts, iso, addDays, presetRange };
+  function clampRange(start, end, now) {
+    const today = iso(parts(now));
+    const safeEnd = end > today ? today : end;
+    return { start: start > safeEnd ? safeEnd : start, end: safeEnd };
+  }
+
+  return { TIME_ZONE, parts, iso, addDays, presetRange, clampRange };
 });

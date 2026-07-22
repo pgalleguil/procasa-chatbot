@@ -12,4 +12,7 @@ assert.deepStrictEqual(periods.clampRange('2026-07-22', '2026-07-21', new Date('
 assert.strictEqual(periods.validPreset('today'), 'today');
 assert.strictEqual(periods.validPreset('week'), 'week');
 assert.strictEqual(periods.validPreset('invalid'), null);
+assert.strictEqual(periods.comparisonLabel('none', 'S/I'), '');
+assert.strictEqual(periods.comparisonLabel('prev', '20 de julio de 2026'), 'vs. 20 de julio de 2026');
+assert.strictEqual(periods.comparisonLabel('yoy', '21 de julio de 2025'), 'vs. 21 de julio de 2025 (año anterior)');
 console.log('commercial period tests passed');

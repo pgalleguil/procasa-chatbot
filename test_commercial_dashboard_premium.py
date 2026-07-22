@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 
 from analytics.market_indicators import _IndicatorParser
+from analytics.leads_queries import _commune_distribution
 
 
 ROOT = Path(__file__).resolve().parent
@@ -48,6 +49,15 @@ class CommercialDashboardPremiumTests(unittest.TestCase):
         self.assertEqual(parser.rows[0][0], "Unidad de Fomento (UF)")
         self.assertEqual(parser.rows[0][1], "40.844,79")
         self.assertIn("22-jul-2026", "".join(parser.heading))
+
+    def test_commune_distribution_keeps_missing_values_as_si(self):
+        rows = _commune_distribution([
+            {"prospecto": {"comuna": "Providencia"}},
+            {"prospecto": {"comuna": "Providencia"}},
+            {"prospecto": {}},
+        ])
+        self.assertEqual(rows[0], {"value": "Providencia", "count": 2})
+        self.assertIn({"value": "S/I", "count": 1}, rows)
 
 
 if __name__ == "__main__":

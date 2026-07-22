@@ -15,6 +15,7 @@ import threading
 import subprocess
 import concurrent.futures
 import inspect
+import copy
 from concurrent.futures import ThreadPoolExecutor
 from pymongo import MongoClient
 from pymongo import ReturnDocument
@@ -730,16 +731,44 @@ async def ver_leads(request: Request):
 
 # ========================= COMMERCIAL DASHBOARD (READ-ONLY) =========================
 
+def _sanitize_commercial_portfolio(payload: dict) -> dict:
+    """Remove staff identity from the public portfolio representation."""
+    safe = copy.deepcopy(payload)
+    names = sorted({
+        str(row.get("executive")) for row in safe.get("executives", [])
+        if row.get("executive")
+    })
+    aliases = {name: f"Ejecutivo {index:02d}" for index, name in enumerate(names, 1)}
+    for row in safe.get("executives", []):
+        row["executive"] = aliases.get(str(row.get("executive")), "Ejecutivo")
+    properties = safe.get("properties") or {}
+    for group in ("opportunity", "leakage"):
+        for row in properties.get(group, []):
+            if "dominant_executive" in row:
+                row["dominant_executive"] = aliases.get(str(row.get("dominant_executive")), "S/I")
+    safe.setdefault("meta", {})["portfolio_mode"] = True
+    return safe
+
+
+async def _optional_commercial_user(request: Request):
+    try:
+        return await get_current_user_doc(request)
+    except HTTPException:
+        return None
+
 @app.get("/analytics/commercial", response_class=HTMLResponse)
 async def commercial_dashboard_page(request: Request):
-    user = await get_current_user_doc(request)
-    if not user or user.get("rol") not in ("admin", "supervisor"):
-        return RedirectResponse(url="/?error=acceso_denegado")
-    return templates.TemplateResponse("analytics/commercial_dashboard.html", {
-        "request": request,
-        "user_role": user.get("rol", "agente"),
-        "user_name": user.get("nombre", ""),
-    })
+    user = await _optional_commercial_user(request)
+    privileged = bool(user and user.get("rol") in ("admin", "supervisor"))
+    return templates.TemplateResponse(
+        request=request,
+        name="analytics/commercial_dashboard.html",
+        context={
+            "user_role": user.get("rol", "portfolio") if privileged else "portfolio",
+            "user_name": user.get("nombre", "") if privileged else "",
+            "portfolio_mode": not privileged,
+        },
+    )
 
 
 @app.get("/api/analytics/commercial-dashboard")
@@ -758,9 +787,8 @@ async def api_commercial_dashboard(
     compare: str = Query(None),
     period_preset: str = Query(None),
 ):
-    user = await get_current_user_doc(request)
-    if not user or user.get("rol") not in ("admin", "supervisor"):
-        raise HTTPException(status_code=401, detail="No autorizado")
+    user = await _optional_commercial_user(request)
+    privileged = bool(user and user.get("rol") in ("admin", "supervisor"))
     filters = {}
     if source: filters["source"] = source
     if operation: filters["operation"] = operation
@@ -771,19 +799,20 @@ async def api_commercial_dashboard(
     if assignment: filters["assignment"] = assignment
 
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
+    payload = await loop.run_in_executor(
         _WEB_THREAD_POOL,
         lambda: get_commercial_dashboard(
             period_start=period_start,
             period_end=period_end,
             executive=executive,
-            role=user.get("rol"),
-            user_name=user.get("nombre", ""),
+            role=user.get("rol") if privileged else "admin",
+            user_name=user.get("nombre", "") if privileged else "",
             period_preset=period_preset,
             filters=filters or None,
             compare=compare,
         ),
     )
+    return payload if privileged else _sanitize_commercial_portfolio(payload)
 
 
 @app.get("/api/analytics/commercial/market-indicators")
@@ -960,14 +989,16 @@ async def api_analytics_leads_filters(
 
 @app.get("/api/analytics/commercial/filters")
 async def api_commercial_filters(request: Request):
-    user = await get_current_user_doc(request)
-    if not user or user.get("rol") not in ("admin", "supervisor"):
-        raise HTTPException(status_code=401, detail="No autorizado")
+    user = await _optional_commercial_user(request)
+    privileged = bool(user and user.get("rol") in ("admin", "supervisor"))
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
+    payload = await loop.run_in_executor(
         _WEB_THREAD_POOL,
         lambda: get_commercial_filter_options(),
     )
+    if not privileged:
+        payload = {**payload, "executives": []}
+    return payload
 
 
 @app.get("/api/analytics/leads/coverage")

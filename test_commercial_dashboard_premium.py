@@ -80,6 +80,24 @@ class CommercialDashboardPremiumTests(unittest.TestCase):
         self.assertIn('id="btnThemeHeader" type="button" aria-label="Cambiar tema"', self.html)
         self.assertIn("localStorage.getItem('theme')", self.html.split("</head>", 1)[0])
 
+    def test_temporal_context_uses_backend_metadata(self):
+        for contract in (
+            'id="temporalContext" aria-busy="true"',
+            'id="cmpMode"',
+            "period.comparison||period.previous",
+            "period.compare_requested",
+            "period.compare_resolved",
+            "FHR(currentPeriod.start,currentPeriod.end,false)",
+        ):
+            self.assertIn(contract, self.html)
+        self.assertNotIn('id="perCur">&mdash;', self.html)
+        self.assertNotIn('hidden>0</span>', self.html)
+
+    def test_advanced_filters_have_one_accessible_name(self):
+        for control_id in ("fExecPrimary", "fExec", "fSource", "fOp", "fType", "fCommune", "fTemp", "fProp", "fAsgn", "fStage"):
+            self.assertNotIn(f'<label for="{control_id}" class="cd-fhide">', self.html)
+            self.assertRegex(self.html, rf'id="{control_id}"[^>]*aria-label="[^"]+"')
+
 
 if __name__ == "__main__":
     unittest.main()

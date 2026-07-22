@@ -427,6 +427,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 .cd-head{display:flex;flex-wrap:wrap;align-items:flex-start;gap:14px}.cd-head-l{width:100%;flex:0 0 100%;white-space:normal}.cd-title-row{display:flex;align-items:center;justify-content:space-between;gap:20px}.cd h1{font-size:28px;line-height:1.15;font-weight:650;letter-spacing:-.025em}.cd h2{font-size:16px;line-height:1.3;font-weight:600;letter-spacing:-.01em}.cd h2 small{font-size:13px;color:var(--text-muted)}
 .cd-head-actions{display:flex;align-items:center;gap:8px}.cd-icon-btn{min-width:42px;height:42px;padding:0 12px;border:1px solid var(--border-default);border-radius:var(--radius-control);background:var(--bg-surface);color:var(--text-secondary);display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:600;cursor:pointer;transition:color var(--motion-fast),background-color var(--motion-fast),border-color var(--motion-fast),box-shadow var(--motion-fast)}.cd-icon-btn:hover{color:var(--text-primary);background:var(--bg-surface-hover);border-color:var(--border-hover)}.cd-icon-btn:active{background:var(--bg-surface-subtle)}.cd-refresh-btn{min-width:108px}
 .cd-periods{font-size:13px;color:var(--text-secondary);margin-top:8px}.cd-periods strong{color:var(--text-primary)}.cd-per-lbl{display:none}.cd-per-cmp{font-size:13px;color:var(--text-secondary)}.cd-metaline{font-size:12px;color:var(--text-muted);margin-top:5px}
+.cd-temporal-context{display:flex;align-items:center;gap:14px;min-height:44px;margin-top:7px;color:var(--text-secondary)}.cd-temporal-item{display:flex;align-items:center;gap:8px;min-width:0}.cd-temporal-item>i{width:16px;color:var(--text-muted);text-align:center}.cd-temporal-item>span{display:flex;flex-direction:column;gap:1px;min-width:0}.cd-temporal-item small{font-size:11px;line-height:1.2;color:var(--text-muted)}.cd-temporal-item strong{font-size:13px;line-height:1.35;font-weight:600;color:var(--text-primary);white-space:nowrap}.cd-temporal-sep{width:1px;height:30px;background:var(--border-subtle)}.cd-temporal-updated strong{font-weight:500;color:var(--text-secondary)}.cd-temporal-skeleton{display:block;width:132px;height:16px;border-radius:5px;background:color-mix(in srgb,var(--text-muted) 13%,transparent)}.cd-sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
 .cd-head-r{width:100%;display:flex;align-items:center;gap:10px}.cd-seg{flex-shrink:0;background:var(--bg-surface-subtle);border-color:var(--border-subtle);border-radius:var(--radius-control);padding:3px}.cd-seg button{min-height:36px;padding:0 14px;font-size:13px;color:var(--text-secondary);transition:color var(--motion-fast),background-color var(--motion-fast),box-shadow var(--motion-fast)}.cd-seg button:hover{color:var(--text-primary)}.cd-seg button.active{background:var(--bg-surface);color:var(--brand-primary);box-shadow:var(--shadow-card)}
 .cd select.cd-sel,.cd-filters select,.cd-custom input,.cd-btn{height:40px;border:1px solid var(--border-default);border-radius:var(--radius-control);background:var(--bg-surface);color:var(--text-primary);font-size:13px;transition:color var(--motion-fast),background-color var(--motion-fast),border-color var(--motion-fast),box-shadow var(--motion-fast)}.cd-btn{min-height:40px}.cd-btn:not(.primary):hover{background:var(--bg-surface-hover);border-color:var(--border-hover);color:var(--text-primary)}.cd :where(button,select,input,a):focus-visible{outline:0;box-shadow:var(--focus-ring)}
 .cd-tabs{min-height:44px;margin-bottom:28px;background:transparent;border-color:var(--border-subtle)}.cd-tabs button{min-height:44px;padding:0 18px;color:var(--text-secondary);font-size:13px;transition:color var(--motion-base),border-color var(--motion-base),background-color var(--motion-base)}.cd-tabs button:hover{color:var(--text-primary)}.cd-tabs button.active{color:var(--brand-primary);border-bottom-color:var(--brand-primary)}
@@ -441,7 +442,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 *{scrollbar-color:var(--border-hover) transparent}.cd :where(button,select,input,.cd-card,.cd-kpi,.cd-tabs){transition-property:color,background-color,border-color,box-shadow;transition-duration:var(--motion-base);transition-timing-function:var(--ease-standard)}
 @media(max-width:1200px){.cd-head-r{flex-wrap:wrap}.cd-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cd-g-exec{grid-template-columns:1fr}}
 @media(max-width:991px){.cd{padding:0 24px 56px}.cd-command{margin:0 -24px 20px;padding:14px 24px 12px}.cd-head{padding-left:46px}.cd-tabs{margin-left:-24px;margin-right:-24px;padding:0 24px}.cd-card{padding:20px}.cd-priority-copy{display:block}.cd-head-actions{position:absolute;right:24px;top:12px}.cd-title-row{padding-right:54px}.cd-refresh-btn{display:none}}
-@media(max-width:600px){.cd{padding:0 16px 44px}.cd-command{margin:0 -16px;padding:6px 16px 4px}.cd-head{padding-left:42px;gap:6px}.cd-title-row{padding-right:42px}.cd-head-actions{right:12px;top:4px}.cd-icon-btn{min-width:44px;height:44px;padding:0}.cd h1{font-size:23px}.cd-periods,.cd-per-cmp{font-size:13px}.cd-periods{margin-top:2px}.cd-metaline{margin-top:0}.cd-head-r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;margin-top:4px}.cd-head-r .cd-seg{grid-column:1/-1}.cd-seg button{min-height:40px}.cd-cmp-wrap{grid-column:1/-1;display:grid;grid-template-columns:1fr}.cd-cmp-wrap label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.cd-cmp-wrap select{height:40px!important}.cd-head-r>#fExecPrimary{grid-column:1;width:100%;height:40px}.cd-head-r>#btnFilters{grid-column:2;min-height:40px}.cd-tabs{margin-left:-16px;margin-right:-16px;padding:0 16px;margin-bottom:18px}.cd-tabs button{min-height:44px}.cd-priorities{margin-bottom:16px!important}.cd-priority-head{min-height:44px;padding:0 16px}.cd-priority{grid-template-columns:28px minmax(0,1fr) 72px;min-height:58px;padding:8px 12px}.cd-priority::before{left:12px}.cd-priority-copy strong{font-size:12px}.cd-priority-copy span{font-size:12px;line-height:1.25}.cd-priority-action{min-width:68px;font-size:12px}.cd-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:24px}.cd-kpi,.cd-kpi-sla{grid-column:auto;height:168px;min-height:0;padding:16px}.cd-kpi-val{font-size:32px}.cd-kpi-vs,.cd-kpi-meta{font-size:12px}.cd-card{padding:18px 16px}.cd-chart{min-width:520px}}
+@media(max-width:600px){.cd{padding:0 16px 44px}.cd-command{margin:0 -16px;padding:6px 16px 4px}.cd-head{padding-left:42px;gap:6px}.cd-title-row{padding-right:42px}.cd-head-actions{right:12px;top:4px}.cd-icon-btn{min-width:44px;height:44px;padding:0}.cd h1{font-size:23px}.cd-temporal-context{display:grid;grid-template-columns:1fr;margin-top:3px;gap:1px;min-height:54px}.cd-temporal-item{gap:0}.cd-temporal-item>i,.cd-temporal-item small,.cd-temporal-sep{display:none}.cd-temporal-item strong{font-size:13px;white-space:normal}.cd-temporal-comparison strong{color:var(--text-secondary);font-weight:500}.cd-temporal-updated strong{font-size:12px;color:var(--text-muted)}.cd-temporal-updated .dot{display:none}.cd-head-r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;margin-top:4px}.cd-head-r .cd-seg{grid-column:1/-1}.cd-seg button{min-height:40px}.cd-cmp-wrap{grid-column:1/-1;display:grid;grid-template-columns:1fr}.cd-cmp-wrap label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.cd-cmp-wrap select{height:40px!important}.cd-head-r>#fExecPrimary{grid-column:1;width:100%;height:40px}.cd-head-r>#btnFilters{grid-column:2;min-height:40px}.cd-tabs{margin-left:-16px;margin-right:-16px;padding:0 16px;margin-bottom:18px}.cd-tabs button{min-height:44px}.cd-priorities{margin-bottom:16px!important}.cd-priority-head{min-height:44px;padding:0 16px}.cd-priority{grid-template-columns:28px minmax(0,1fr) 72px;min-height:58px;padding:8px 12px}.cd-priority::before{left:12px}.cd-priority-copy strong{font-size:12px}.cd-priority-copy span{font-size:12px;line-height:1.25}.cd-priority-action{min-width:68px;font-size:12px}.cd-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:24px}.cd-kpi,.cd-kpi-sla{grid-column:auto;height:168px;min-height:0;padding:16px}.cd-kpi-val{font-size:32px}.cd-kpi-vs,.cd-kpi-meta{font-size:12px}.cd-card{padding:18px 16px}.cd-chart{min-width:520px}}
 @media(max-width:370px){.cd-kpi{min-height:164px;padding:15px}.cd-kpi-label{font-size:12px}.cd-kpi-val{font-size:30px}}
 </style>
 </head>
@@ -472,12 +473,13 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 <header class="cd-head">
   <div class="cd-head-l">
     <div class="cd-title-row"><h1>Dashboard Comercial</h1><div class="cd-head-actions"><button class="cd-icon-btn" id="btnThemeHeader" type="button" aria-label="Cambiar tema"><i class="fa-solid fa-moon" id="themeIconHeader"></i></button><button class="cd-icon-btn cd-refresh-btn" id="btnRefreshHeader" type="button" aria-label="Actualizar resultados"><i class="fa-solid fa-rotate"></i><span>Actualizar</span></button></div></div>
-    <div class="cd-periods">
-      <span><span class="cd-per-lbl">Periodo</span> <strong id="perCur">&mdash;</strong></span>
-      <span class="cd-per-sep">&middot;</span>
-      <span class="cd-per-cmp" id="perCmp"></span>
+    <div class="cd-temporal-context" id="temporalContext" aria-busy="true">
+      <span class="cd-temporal-item"><i class="fa-regular fa-calendar" aria-hidden="true"></i><span><small>Periodo analizado</small><strong id="perCur" class="cd-temporal-skeleton"><span class="cd-sr-only">Cargando periodo</span></strong></span></span>
+      <span class="cd-temporal-sep" aria-hidden="true"></span>
+      <span class="cd-temporal-item cd-temporal-comparison"><i class="fa-solid fa-code-compare" aria-hidden="true"></i><span><small id="cmpMode">Comparaci&oacute;n</small><strong id="perCmp" class="cd-temporal-skeleton"><span class="cd-sr-only">Cargando comparaci&oacute;n</span></strong></span></span>
+      <span class="cd-temporal-sep" aria-hidden="true"></span>
+      <span class="cd-temporal-item cd-temporal-updated" id="metaLine" aria-live="polite"><span class="dot" style="background:var(--cd-warn)"></span><span><small>Actualizado</small><strong id="metaTxt">Cargando informaci&oacute;n comercial&hellip;</strong></span></span>
     </div>
-    <div class="cd-metaline" id="metaLine" aria-live="polite"><span class="dot" style="background:var(--cd-warn)"></span><span id="metaTxt">Cargando informaci&oacute;n comercial&hellip;</span></div>
   </div>
   <div class="cd-head-r">
     <div class="cd-seg" id="presetSeg" role="group" aria-label="Periodo">
@@ -496,9 +498,9 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
         <option value="none">Sin comparaci&oacute;n</option>
       </select>
     </div>
-    <label for="fExecPrimary" class="cd-fhide">Equipo</label><select id="fExecPrimary" class="cd-sel" aria-label="Equipo"><option value="">Todo el equipo</option></select>
+    <select id="fExecPrimary" class="cd-sel" aria-label="Equipo"><option value="">Todo el equipo</option></select>
     <button class="cd-btn cd-edit-dates" id="btnEditDates" type="button"><i class="fa-regular fa-calendar"></i> Editar fechas</button>
-    <button class="cd-btn" id="btnFilters" aria-expanded="false" aria-controls="filters"><i class="fa-solid fa-sliders"></i> <span id="filterButtonLabel">Filtros</span> <span class="badge" id="fltCount" hidden>0</span></button>
+    <button class="cd-btn" id="btnFilters" aria-expanded="false" aria-controls="filters"><i class="fa-solid fa-sliders"></i> <span id="filterButtonLabel">Filtros</span> <span class="badge" id="fltCount" hidden></span></button>
   </div>
 </header>
 
@@ -506,24 +508,15 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 <div class="cd-filterbar" id="filterBar">
   <div class="cd-filters" id="filters" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="filtersTitle">
     <div class="cd-sheet-h"><span id="filtersTitle">Filtros avanzados</span><button class="cd-btn ghost" id="btnCloseFilters" aria-label="Cerrar filtros"><i class="fa-solid fa-xmark"></i></button></div>
-    <label for="fExec" class="cd-fhide">Ejecutivo</label>
     <select id="fExec" aria-label="Filtrar por ejecutiva"><option value="">Ejecutiva</option></select>
-    <label for="fSource" class="cd-fhide">Fuente</label>
     <select id="fSource" data-advanced aria-label="Filtrar por fuente"><option value="">Fuente</option></select>
-    <label for="fOp" class="cd-fhide">Operación</label>
     <select id="fOp" data-advanced aria-label="Filtrar por operación"><option value="">Operaci&oacute;n</option></select>
-    <label for="fType" class="cd-fhide">Tipo propiedad</label>
     <select id="fType" data-advanced aria-label="Filtrar por tipo de propiedad"><option value="">Tipo propiedad</option></select>
-    <label for="fCommune" class="cd-fhide">Comuna</label>
     <select id="fCommune" data-advanced aria-label="Filtrar por comuna"><option value="">Comuna</option></select>
     <span id="moreFilters" style="display:contents">
-      <label for="fTemp" class="cd-fhide">Temperatura actual</label>
       <select id="fTemp" data-more aria-label="Filtrar por temperatura actual"><option value="">Temp. actual</option><option value="HOT">Hot</option><option value="COLD">Cold</option><option value="UNKNOWN">S/I</option></select>
-      <label for="fProp" class="cd-fhide">Propiedad</label>
       <select id="fProp" data-more aria-label="Filtrar por propiedad"><option value="">Propiedad</option></select>
-      <label for="fAsgn" class="cd-fhide">Asignación</label>
       <select id="fAsgn" data-more aria-label="Filtrar por estado de asignación"><option value="">Asignaci&oacute;n</option><option value="assigned">Asignados</option><option value="unassigned">Sin asignar</option></select>
-      <label for="fStage" class="cd-fhide">Etapa</label>
       <select id="fStage" data-more aria-label="Filtrar por etapa"><option value="">Etapa</option></select>
     </span>
     <button class="cd-btn primary" id="btnApply"><i class="fa-solid fa-check"></i> <span>Aplicar</span></button>
@@ -682,6 +675,9 @@ const PV=v=>v==null?'S/I':(v>0?'+':v<0?'':'')+Number(v).toLocaleString('es-CL',{
 const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const FD=v=>{if(!v)return'S/I';try{const d=new Date(String(v).split('T')[0]+'T00:00:00');return d.getDate()+' de '+MESES[d.getMonth()]+' de '+d.getFullYear()}catch(e){return v}};
 const FDS=v=>{if(!v)return'S/I';try{const d=new Date(String(v).split('T')[0]+'T00:00:00');return d.getDate()+' '+MESES[d.getMonth()].slice(0,3)+' '+d.getFullYear()}catch(e){return v}};
+const FHR=(a,b,year=true)=>{if(!a||!b)return'S/I';try{const d1=new Date(String(a).split('T')[0]+'T00:00:00'),d2=new Date(String(b).split('T')[0]+'T00:00:00'),m1=MESES[d1.getMonth()].slice(0,3),m2=MESES[d2.getMonth()].slice(0,3),y1=d1.getFullYear(),y2=d2.getFullYear();if(a===b)return d1.getDate()+' '+m1+(year?' '+y1:'');if(y1===y2&&d1.getMonth()===d2.getMonth())return d1.getDate()+'\u2013'+d2.getDate()+' '+m2+(year?' '+y2:'');if(y1===y2)return d1.getDate()+' '+m1+'\u2013'+d2.getDate()+' '+m2+(year?' '+y2:'');return d1.getDate()+' '+m1+' '+y1+'\u2013'+d2.getDate()+' '+m2+' '+y2}catch(e){return FPS(a,b)}};
+const compareModeLabel=p=>{const req=p?.compare_requested||p?.comparison_mode||COMPARE,res=p?.compare_resolved;if(req==='none'||res==='none')return'Sin comparaci\u00f3n';if(req==='auto')return'Comparaci\u00f3n autom\u00e1tica';if(res==='yoy'||req==='yoy')return'Mismo periodo del a\u00f1o anterior';return'Periodo anterior equivalente'};
+const compareResolvedLabel=p=>(p?.compare_resolved==='yoy'?'Mismo periodo del a\u00f1o anterior':p?.compare_resolved==='none'?'Sin comparaci\u00f3n':'Periodo anterior equivalente');
 const FDC=(a,b)=>{if(!a||!b)return'S/I';try{const d1=new Date(String(a).split('T')[0]+'T00:00:00'),d2=new Date(String(b).split('T')[0]+'T00:00:00');const r1=d1.getDate()+' de '+MESES[d1.getMonth()],r2=d2.getDate()+' de '+MESES[d2.getMonth()];return d1.getFullYear()===d2.getFullYear()?r1+' \u2013 '+r2+' de '+d2.getFullYear():r1+' de '+d1.getFullYear()+' \u2013 '+r2+' de '+d2.getFullYear()}catch(e){return FD(a)+' \u2013 '+FD(b)}};
 const FPS=(a,b)=>a===b?FD(a):FDC(a,b);
 const RM=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -898,19 +894,22 @@ function closeFilterSheet(returnFocus=false){const wasOpen=$('filters').classLis
 /* ================= RENDER GENERAL ================= */
 function render(){
   if(!D)return;
-  const prv=D.meta?.period?.previous||{};
-  const cur=D.meta?.period?.current||{};
+  const period=D.meta?.period||{},prv=period.comparison||period.previous||{},cur=period.current||{};
   const compact=matchMedia('(max-width:600px)').matches;
-  $('perCur').textContent=compact?FDS(cur.end||FILTERS.period_end):FPS(cur.start||FILTERS.period_start,cur.end||FILTERS.period_end);
-  $('perCmp').textContent=COMPARE==='none'?(compact?'· sin comparación':'Comparación: sin comparación'):(compact?'· vs. '+FDS(prv.end):'Comparación: '+FPS(prv.start,prv.end));
+  const currentLabel=FHR(cur.start,cur.end),comparisonOff=period.compare_resolved==='none'||period.compare_requested==='none';
+  const comparisonRange=comparisonOff?'Sin comparaci\u00f3n':FHR(prv.start,prv.end);
+  $('perCur').textContent=currentLabel;$('perCur').classList.remove('cd-temporal-skeleton');
+  $('cmpMode').textContent=compareModeLabel(period);
+  const compactMode=period.compare_requested==='auto'?'comparaci\u00f3n autom\u00e1tica · '+compareResolvedLabel(period).toLocaleLowerCase('es-CL'):compareResolvedLabel(period).toLocaleLowerCase('es-CL');
+  $('perCmp').textContent=comparisonOff?'Sin comparaci\u00f3n':(compact?'vs. '+comparisonRange+' \u00b7 '+compactMode:comparisonRange+(period.compare_requested==='auto'?' \u00b7 '+compareResolvedLabel(period).toLocaleLowerCase('es-CL'):''));
+  $('perCmp').classList.remove('cd-temporal-skeleton');$('temporalContext').setAttribute('aria-busy','false');
   const totalLeads=D.kpis?.leads_received?.value??null,totalLabel=totalLeads==null?'S/I':F(totalLeads);
   let upd='';
   if(D.meta?.generated_at){
     const mins=Math.max(0,Math.round((Date.now()-new Date(D.meta.generated_at).getTime())/60000));
     upd=mins<1?' \u00b7 actualizado hace instantes':mins<60?' \u00b7 actualizado hace '+mins+' min':' \u00b7 actualizado hace '+Math.round(mins/60)+' h';
   }
-  const presetLabels={today:'Hoy',week:'Semana',month:'Mes','30d':'\u00daltimos 30 d\u00edas',custom:'Personalizado'};
-  $('metaTxt').textContent=(compact?'Actualizado'+upd.replace(' \u00b7 actualizado','')+' \u00b7 '+totalLabel+' leads':totalLabel+' leads analizados \u00b7 '+(presetLabels[FILTERS.period_preset]||'Personalizado')+upd);
+  $('metaTxt').textContent=(compact?(upd?upd.replace(' \u00b7 actualizado ',''):'hace instantes')+' \u00b7 '+totalLabel+' leads':totalLabel+' leads analizados'+upd);
   document.querySelector('#metaLine .dot').style.background='var(--cd-ok)';
   rKPI();rPriorities();rInsights();rev();rsla();rfun();
   FIRST_KPI=false;
@@ -958,8 +957,8 @@ function rKPI(){
   const k=D.kpis||{},sla=D.sla_risk||{},pal=PAL();
   const hotCov=k._meta?.temperature_coverage||{};
   const daily=(D.trends?.current?.daily||[]).map(d=>d.received);
-  const comparative=D.meta?.period?.previous||{};
-  const comparisonLabel=comparative.end?FD(comparative.end):'periodo comparable';
+  const comparative=D.meta?.period?.comparison||D.meta?.period?.previous||{};
+  const comparisonLabel=comparative.end?FHR(comparative.start,comparative.end):'periodo comparable';
   const defs=[
     ['leads_received','Leads recibidos','Leads creados en el periodo (universo: cohorte).','users',true],
     ['leads_hot_current','Hot actuales','Leads con temperatura efectiva Hot hoy (lead_temperature_effective).','fire-flame-curved',false],
@@ -1039,6 +1038,8 @@ function rInsights(){
 /* ================= EVOLUCIÓN ================= */
 function rev(){
   const t=D.trends||{},cur=(t.current||{}).daily||[],prev=(t.previous||{}).daily||[],el=$('evChart'),ld=$('evLoad');
+  const period=D.meta?.period||{},currentPeriod=period.current||{},comparisonPeriod=period.comparison||period.previous||{};
+  const currentChartLabel=FHR(currentPeriod.start,currentPeriod.end,false),comparisonChartLabel=FHR(comparisonPeriod.start,comparisonPeriod.end,false);
   if(!el||!ld)return;
   if(!cur.length){ld.textContent='Sin datos para el periodo';ld.classList.remove('done');return}
   const pal=PAL();
@@ -1060,8 +1061,9 @@ function rev(){
     c.ctx.beginPath();c.ctx.moveTo(x,yy.top);c.ctx.lineTo(x,yy.bottom);c.ctx.stroke();c.ctx.restore();
   }};
   const showCmp=COMPARE!=='none';
-  const ds=[{label:'Periodo actual',data:curData,borderColor:pal.brand,backgroundColor:pal.brand+'14',fill:true,tension:.32,pointRadius:0,pointHoverRadius:5,pointHoverBackgroundColor:pal.brand,pointHoverBorderColor:'#fff',borderWidth:2.5,_dates:curDates}];
-  if(showCmp)ds.push({label:'Periodo comparable',data:prevData,borderColor:pal.cmp,borderDash:[5,5],tension:.32,pointRadius:0,pointHoverRadius:4,pointHoverBackgroundColor:pal.cmp,borderWidth:1.8,fill:false,_dates:prevDates});
+  el.dataset.currentLabel=currentChartLabel;el.dataset.comparisonLabel=showCmp?comparisonChartLabel:'';
+  const ds=[{label:currentChartLabel,data:curData,borderColor:pal.brand,backgroundColor:pal.brand+'14',fill:true,tension:.32,pointRadius:0,pointHoverRadius:5,pointHoverBackgroundColor:pal.brand,pointHoverBorderColor:'#fff',borderWidth:2.5,_dates:curDates}];
+  if(showCmp)ds.push({label:comparisonChartLabel,data:prevData,borderColor:pal.cmp,borderDash:[5,5],tension:.32,pointRadius:0,pointHoverRadius:4,pointHoverBackgroundColor:pal.cmp,borderWidth:1.8,fill:false,_dates:prevDates});
   const evConfig={type:'line',data:{labels,datasets:ds},plugins:[guide],options:{
     responsive:true,maintainAspectRatio:false,
     interaction:{mode:'index',intersect:false},
@@ -1073,9 +1075,9 @@ function rev(){
       tooltip:{enabled:false,external:makeExtTip(tt=>{
         const i=tt.dataPoints?.[0]?.dataIndex;if(i==null)return'';
         let h='<div class="tt-t">D\u00eda '+(i+1)+'</div>';
-        h+='<div class="tt-sec">Periodo actual</div><div class="tt-row"><span>'+E(FD(curDates[i]))+'</span><b>'+F(curData[i])+' leads</b></div>';
+        h+='<div class="tt-sec">Periodo actual · '+E(currentChartLabel)+'</div><div class="tt-row"><span>'+E(FD(curDates[i]))+'</span><b>'+F(curData[i])+' leads</b></div>';
         if(showCmp){
-          h+='<div class="tt-sec">Periodo comparable</div><div class="tt-row"><span>'+E(prevDates[i]?FD(prevDates[i]):'S/I')+'</span><b>'+(prevData[i]!=null?F(prevData[i])+' leads':'S/I')+'</b></div>';
+          h+='<div class="tt-sec">Comparable · '+E(comparisonChartLabel)+'</div><div class="tt-row"><span>'+E(prevDates[i]?FD(prevDates[i]):'S/I')+'</span><b>'+(prevData[i]!=null?F(prevData[i])+' leads':'S/I')+'</b></div>';
           if(curData[i]!=null&&prevData[i]!=null){
             const dv=curData[i]-prevData[i],pc=prevData[i]>0?(dv/prevData[i]*100):null;
             h+='<div class="tt-var '+(dv>0?'up':dv<0?'down':'m')+'">Variaci\u00f3n: '+(dv>=0?'+':'')+F(dv)+' leads'+(pc!=null?' \u00b7 '+PV(pc):'')+'</div>';

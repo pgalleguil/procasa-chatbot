@@ -452,8 +452,12 @@ def get_commercial_dashboard(
         "timezone": "America/Santiago",
         "preset": preset,
         "comparison_mode": mode,
+        "compare_requested": mode,
+        "compare_resolved": "none" if mode == "none" else ("yoy" if mode == "yoy" else "prev"),
+        "comparison_rule": comp_type,
         "current": {"start": period_start or "", "end": period_end or "", "label": period_label},
         "previous": {"start": prev_start, "end": prev_end, "label": prev_label},
+        "comparison": {"start": prev_start, "end": prev_end, "label": prev_label},
     }
 
     comparison_kwargs = ({"comparison_start": prev_start, "comparison_end": prev_end}

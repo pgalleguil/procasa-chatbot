@@ -663,6 +663,7 @@ def query_commercial_filter_options() -> dict:
         "property_types": _values_from_field({"$ifNull": ["$prospecto.tipo", "Sin informacion"]}),
         "communes": _values_from_field({"$ifNull": ["$prospecto.comuna", "Sin informacion"]}),
         "properties": _properties_from_active(),
+        "stages": _values_from_field({"$ifNull": ["$pipeline_stage", "Sin etapa"]}),
         "temperatures": _values_from_field({"$ifNull": ["$lead_temperature_effective", "Sin temp"]}),
         "assignment_states": [
             {"value": "", "label": "Todos", "count": 0},

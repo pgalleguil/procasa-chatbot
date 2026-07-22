@@ -1,8 +1,9 @@
 import unittest
 from pathlib import Path
+from jinja2 import Environment, FileSystemLoader
 
 from analytics.market_indicators import _IndicatorParser
-from analytics.leads_queries import _commune_distribution
+from analytics.leads_queries import _build_extra_filter, _commune_distribution
 
 
 ROOT = Path(__file__).resolve().parent
@@ -23,6 +24,12 @@ class CommercialDashboardPremiumTests(unittest.TestCase):
             "Calidad de Datos",
         ):
             self.assertIn(label, self.html)
+
+    def test_template_renders_portfolio_mode(self):
+        env = Environment(loader=FileSystemLoader(str(ROOT / "templates")))
+        rendered = env.get_template("analytics/commercial_dashboard.html").render(portfolio_mode=True)
+        self.assertIn("Vista portafolio", rendered)
+        self.assertIn('data-portfolio="true"', rendered)
 
     def test_required_loading_and_accessibility_states_exist(self):
         for contract in (
@@ -58,6 +65,10 @@ class CommercialDashboardPremiumTests(unittest.TestCase):
         ])
         self.assertEqual(rows[0], {"value": "Providencia", "count": 2})
         self.assertIn({"value": "S/I", "count": 1}, rows)
+
+    def test_stage_filter_uses_canonical_pipeline_stage(self):
+        self.assertEqual(_build_extra_filter({"stage": "CONTACTED"}), {"pipeline_stage": "CONTACTED"})
+        self.assertIn('id="fStage"', self.html)
 
 
 if __name__ == "__main__":

@@ -321,8 +321,7 @@ body.cd-page{font-family:Inter,'Outfit',ui-sans-serif,system-ui,-apple-system,"S
 .cd-head{align-items:center;margin:0;flex-wrap:nowrap}.cd h1{font-size:26px;line-height:1.12;font-weight:700;letter-spacing:-.035em}.cd-periods{font-size:13px}.cd-per-lbl{font-size:12px;letter-spacing:0;text-transform:none}.cd-metaline{font-size:12px}
 .cd-head-r{margin-left:auto;flex-wrap:nowrap}.cd-seg{background:#f1f3f5;border-color:var(--dashboard-border-subtle);border-radius:9px;padding:2px}.cd-seg button{min-height:34px;padding:6px 12px;font-size:12px}.cd-seg button.active{background:#fff;color:var(--dashboard-text);box-shadow:0 1px 2px rgba(15,23,42,.07)}
 .cd select.cd-sel,.cd-filters select,.cd-custom input{height:36px;background:#fff;color:var(--dashboard-text);font-size:13px;border-color:var(--dashboard-border-default)}
-.cd-filterbar{position:static;background:transparent;backdrop-filter:none;margin:9px 0 0;padding:0;border:0}.cd-filters{display:flex;flex-wrap:nowrap}.cd-btn{height:36px;font-size:13px;border-color:var(--dashboard-border-default);background:#fff}.cd-btn:hover{transform:translateY(-1px);border-color:var(--dashboard-border-hover);box-shadow:0 2px 6px rgba(15,23,42,.05)}.cd-btn.primary{background:var(--dashboard-text);border-color:var(--dashboard-text)}
-.cd-filters [data-advanced]{display:none}.cd-filters.advanced-open [data-advanced]{display:block}
+.cd-filterbar{position:static;background:transparent;backdrop-filter:none;margin:9px 0 0;padding:0;border:0}.cd-filters{position:fixed;z-index:1250;right:0;top:0;bottom:0;width:min(390px,92vw);padding:22px;box-sizing:border-box;background:#fff;border-left:1px solid var(--dashboard-border-default);box-shadow:-16px 0 44px rgba(15,23,42,.08);display:flex;flex-direction:column;align-items:stretch;gap:11px;overflow-y:auto;transform:translateX(102%);visibility:hidden;transition:transform .22s ease,visibility .22s}.cd-filters.open{transform:translateX(0);visibility:visible}.cd-filters select{width:100%}.cd-filters [data-advanced]{display:block}.cd-sheet-h{display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:650}.cd-filter-overlay{display:none;position:fixed;inset:0;z-index:1200;background:rgba(15,23,42,.14)}.cd-filter-overlay.open{display:block}.cd-btn{height:36px;font-size:13px;border-color:var(--dashboard-border-default);background:#fff}.cd-btn:hover{transform:translateY(-1px);border-color:var(--dashboard-border-hover);box-shadow:0 2px 6px rgba(15,23,42,.05)}.cd-btn.primary{background:var(--dashboard-text);border-color:var(--dashboard-text)}
 .cd-custom{display:flex;margin-top:8px}.cd-custom label{font-size:12px;text-transform:none;letter-spacing:0}.cd-custom input{min-width:132px}
 .cd-chips{padding-top:7px}.cd-chip{border-radius:7px;background:#fff;border:1px solid var(--dashboard-border-default);color:#334155;font-size:12px;padding:5px 9px}
 .cd-kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:24px}.cd-kpi{padding:20px;min-height:132px;gap:8px;opacity:1;transform:none;animation:none;border-color:var(--dashboard-border-subtle);box-shadow:var(--dashboard-shadow)}.cd-kpi:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(15,23,42,.055);border-color:var(--dashboard-border-hover)}.cd-kpi-label{font-size:12px;letter-spacing:.035em}.cd-kpi-val{font-size:32px;font-weight:700;letter-spacing:-.04em}.cd-kpi-var{font-size:12px}.cd-kpi-meta{font-size:12px}.cd-temp-grid{font-size:12px;gap:5px 10px}.cd-temp-grid b{font-size:13px}
@@ -336,9 +335,10 @@ body.cd-page{font-family:Inter,'Outfit',ui-sans-serif,system-ui,-apple-system,"S
 .cd-team-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:16px}.cd-team-stat{padding:16px 17px;min-height:96px}.cd-team-stat .v{display:block;font-size:25px;font-weight:700;letter-spacing:-.035em;margin:6px 0}.cd-team-stat .m{font-size:11px;color:var(--dashboard-text-secondary)}
 .cd-tbl{overflow:auto;max-width:100%;border:1px solid var(--dashboard-border-subtle);border-radius:10px}.cd-tbl table{min-width:720px}.cd-tbl thead th{position:sticky;top:0;background:#fafbfc;z-index:1}.cd-tbl tr[data-exec]{cursor:pointer}.cd-tbl tr[data-exec]:hover{background:#f8fafc}.cd-tbl td,.cd-tbl th{font-size:12px}
 .cd-quality-intro{display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;padding:12px 14px;background:#f8fafc;border:1px solid var(--dashboard-border-subtle);border-radius:9px;color:#475569;font-size:13px}.cd-empty{font-size:13px}.cd-err{background:#fff;border-color:rgba(220,38,38,.25);box-shadow:var(--dashboard-shadow);font-size:13px}
+.cd-covrow.st-baja .n b{color:#64748b}.cd-cov-note{color:#64748b}
 @media(max-width:1200px){.cd-command{padding-left:18px;padding-right:18px;margin-left:-18px;margin-right:-18px}.cd{padding-left:18px;padding-right:18px}.cd-head{flex-wrap:wrap}.cd-head-r{width:100%;margin-left:0}.cd-kpis{grid-template-columns:repeat(3,1fr)}.cd-team-kpis{grid-template-columns:repeat(3,1fr)}.cd-g-exec{grid-template-columns:1fr}}
 @media(max-width:991px){.cd{padding-top:0}.cd-command{margin:0 -14px 14px;padding:12px 14px 10px}.cd-head{padding-left:46px}.cd-head-r{overflow-x:auto;scrollbar-width:none}.cd-filterbar{margin-top:8px}.cd-filters{display:none}.cd-filters.open{display:flex}.cd-market{margin-bottom:14px}.cd-market-track{animation:none;overflow-x:auto;scroll-snap-type:x mandatory}.cd-market-item{scroll-snap-align:start}.cd-kpis{grid-template-columns:repeat(2,1fr)}.cd-exec-summary{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:600px){.cd h1{font-size:21px}.cd-periods{display:grid;gap:2px}.cd-per-sep{display:none}.cd-head-r{gap:7px}.cd-cmp-wrap{min-width:210px}.cd-seg button{padding:5px 10px}.cd-kpis{gap:10px;margin-bottom:18px}.cd-team-kpis{grid-template-columns:repeat(2,1fr);gap:10px}.cd-team-stat{min-height:88px}.cd-kpi,.cd-skeleton-kpi{padding:15px;min-height:118px;height:auto}.cd-kpi-val{font-size:27px}.cd-tabs{margin-right:-14px}.cd-tabs::after{content:"";position:sticky;right:0;min-width:28px;background:linear-gradient(90deg,transparent,var(--dashboard-canvas))}.cd-card{padding:18px 16px}.cd-priority{grid-template-columns:42px minmax(0,1fr) 72px;padding:0 14px}.cd-priority-copy span{white-space:normal}.cd-grid.cd-g-2{grid-template-columns:1fr}.cd-action-grid{grid-template-columns:1fr}.cd-team-toolbar{align-items:stretch;flex-direction:column}.cd-market-label{display:none}.cd-market{border-radius:8px}.cd-chart{min-width:560px}.cd-card:has(.cd-chart){overflow-x:auto}.cd-chart.sm,.cd-chart.xs{min-width:460px}.cd-covrow{grid-template-columns:112px 1fr;}.cd-covrow .n{grid-column:2}.cd-metaline{max-width:250px}}
+@media(max-width:600px){.cd h1{font-size:21px}.cd-periods{display:grid;gap:2px}.cd-per-sep{display:none}.cd-head-r{gap:7px}.cd-cmp-wrap{min-width:210px}.cd-btn,.cd select.cd-sel{min-height:40px}.cd-seg button{padding:5px 10px;min-height:40px}.cd-kpis{gap:10px;margin-bottom:18px}.cd-team-kpis{grid-template-columns:repeat(2,1fr);gap:10px}.cd-team-stat{min-height:88px}.cd-kpi,.cd-skeleton-kpi{padding:15px;min-height:118px;height:auto}.cd-kpi-val{font-size:27px}.cd-tabs{margin-right:-14px}.cd-tabs::after{content:"";position:sticky;right:0;min-width:28px;background:linear-gradient(90deg,transparent,var(--dashboard-canvas))}.cd-card{padding:18px 16px}.cd-priority{grid-template-columns:42px minmax(0,1fr) 72px;padding:0 14px}.cd-priority-copy span{white-space:normal}.cd-grid.cd-g-2{grid-template-columns:1fr}.cd-action-grid{grid-template-columns:1fr}.cd-team-toolbar{align-items:stretch;flex-direction:column}.cd-market-label{display:none}.cd-market{border-radius:8px}.cd-chart{min-width:560px}.cd-card:has(.cd-chart){overflow-x:auto}.cd-chart.sm,.cd-chart.xs{min-width:460px}.cd-covrow{grid-template-columns:112px 1fr;}.cd-covrow .n{grid-column:2}.cd-metaline{max-width:250px}}
 </style>
 </head>
 <body class="cd-page" data-portfolio="{{ 'true' if portfolio_mode else 'false' }}">
@@ -393,7 +393,8 @@ body.cd-page{font-family:Inter,'Outfit',ui-sans-serif,system-ui,-apple-system,"S
         <option value="none">Sin comparaci&oacute;n</option>
       </select>
     </div>
-    <button class="cd-btn" id="btnFilters" aria-expanded="false" aria-controls="filters"><i class="fa-solid fa-sliders"></i> M&aacute;s filtros <span class="badge" id="fltCount" hidden>0</span></button>
+    <label for="fExecPrimary" class="cd-fhide">Ejecutivo</label><select id="fExecPrimary" class="cd-sel" aria-label="Ejecutivo"{% if portfolio_mode %} hidden{% endif %}><option value="">Todo el equipo</option></select>
+    <button class="cd-btn" id="btnFilters" aria-expanded="false" aria-controls="filters"><i class="fa-solid fa-sliders"></i> <span id="filterButtonLabel">M&aacute;s filtros</span> <span class="badge" id="fltCount" hidden>0</span></button>
   </div>
 </header>
 
@@ -418,6 +419,8 @@ body.cd-page{font-family:Inter,'Outfit',ui-sans-serif,system-ui,-apple-system,"S
       <select id="fProp" data-more aria-label="Filtrar por propiedad"><option value="">Propiedad</option></select>
       <label for="fAsgn" class="cd-fhide">Asignación</label>
       <select id="fAsgn" data-more aria-label="Filtrar por estado de asignación"><option value="">Asignaci&oacute;n</option><option value="assigned">Asignados</option><option value="unassigned">Sin asignar</option></select>
+      <label for="fStage" class="cd-fhide">Etapa</label>
+      <select id="fStage" data-more aria-label="Filtrar por etapa"><option value="">Etapa</option></select>
     </span>
     <button class="cd-btn ghost" id="btnMore" aria-expanded="false"><i class="fa-solid fa-chevron-down"></i> Filtros adicionales</button>
     <button class="cd-btn primary" id="btnApply"><i class="fa-solid fa-check"></i> <span>Aplicar</span></button>
@@ -515,6 +518,7 @@ body.cd-page{font-family:Inter,'Outfit',ui-sans-serif,system-ui,-apple-system,"S
 
 <!-- TAB sources -->
 <div class="cd-panel" id="tab-sources" role="tabpanel" aria-labelledby="tab-btn-sources">
+  <div class="cd-demand-note" id="sourceConclusion"><strong>Lectura accionable</strong><p>Evaluando volumen, calidad y avance por fuente&hellip;</p></div>
   <div class="cd-card" style="margin-bottom:12px">
     <div class="cd-card-h"><h2>Mapa de Fuentes <small>eje X: avance comercial &middot; eje Y: % Hot &middot; tama&ntilde;o: volumen</small></h2></div>
     <div class="cd-chart"><canvas id="srcChart"></canvas><div class="cd-loading" id="srcLd"></div></div>
@@ -532,6 +536,7 @@ body.cd-page{font-family:Inter,'Outfit',ui-sans-serif,system-ui,-apple-system,"S
         </div>
       </div>
       <div class="cd-tbl" id="propTbl"></div>
+      <p class="cd-kpi-meta">Las propiedades sin leads no están incluidas en el contrato analítico actual; por ello, la demanda nula se informa como S/I y no se infiere como cero.</p>
     </div>
   </div>
 </div>
@@ -674,7 +679,7 @@ async function loadData(){
   const ab=$('btnApply');ab.disabled=true;ab.querySelector('span').textContent='Aplicando\u2026';ab.querySelector('i').className='fa-solid fa-circle-notch fa-spin';
   $('cdProgress').className='cd-progress on';
   $('refreshState').classList.toggle('on',refreshing);
-  document.querySelector('.cd-main').classList.toggle('cd-updating',refreshing);
+  document.querySelectorAll('.cd-kpis,.cd-panel.active').forEach(el=>el.classList.toggle('cd-updating',refreshing));
   $('kpiRow').setAttribute('aria-busy','true');
   try{
     const p=new URLSearchParams();
@@ -688,6 +693,7 @@ async function loadData(){
     if(FILTERS.temp)p.set('temperature',FILTERS.temp);
     if(FILTERS.prop)p.set('property_code',FILTERS.prop);
     if(FILTERS.asgn)p.set('assignment',FILTERS.asgn==='assigned'?'1':'0');
+    if(FILTERS.stage)p.set('stage',FILTERS.stage);
     COMPARE=$('pCompare')?.value||'auto';
     if(COMPARE)p.set('compare',COMPARE);
     if(FILTERS.period_preset)p.set('period_preset',FILTERS.period_preset);
@@ -729,14 +735,14 @@ async function loadData(){
     ab.disabled=false;ab.querySelector('span').textContent='Aplicar';ab.querySelector('i').className='fa-solid fa-check';
     $('kpiRow').setAttribute('aria-busy','false');
     $('refreshState').classList.remove('on');
-    document.querySelector('.cd-main').classList.remove('cd-updating');
+    document.querySelectorAll('.cd-updating').forEach(el=>el.classList.remove('cd-updating'));
     $('cdProgress').className='cd-progress done';
     closeFilterSheet();
   }
 }
 
 /* ================= FILTROS ================= */
-const FKEY={fExec:'exec',fSource:'source',fOp:'op',fType:'type',fCommune:'commune',fTemp:'temp',fProp:'prop',fAsgn:'asgn'};
+const FKEY={fExec:'exec',fSource:'source',fOp:'op',fType:'type',fCommune:'commune',fTemp:'temp',fProp:'prop',fAsgn:'asgn',fStage:'stage'};
 function applyFilters(){
   Object.entries(FKEY).forEach(([id,key])=>{
     const v=$(id)?.value;
@@ -746,10 +752,9 @@ function applyFilters(){
 }
 function renderChips(){
   const chips=$('fltChips'),items=[];
-  const labels={period:'Periodo',exec:'Ejecutiva',source:'Fuente',op:'Operaci\u00f3n',type:'Tipo',commune:'Comuna',temp:'Temp. actual',prop:'Propiedad',asgn:'Asignaci\u00f3n'};
-  const selMap={exec:'fExec',source:'fSource',op:'fOp',type:'fType',commune:'fCommune',temp:'fTemp',prop:'fProp',asgn:'fAsgn'};
-  if(FILTERS.period_start)items.push({k:'period',v:labels.period+': '+FD(FILTERS.period_start)+' \u2013 '+FD(FILTERS.period_end)});
-  ['exec','source','op','type','commune','temp','prop','asgn'].forEach(k=>{if(FILTERS[k])items.push({k,v:labels[k]+': '+FILTERS[k]})});
+  const labels={period:'Periodo',exec:'Ejecutiva',source:'Fuente',op:'Operaci\u00f3n',type:'Tipo',commune:'Comuna',temp:'Temp. actual',prop:'Propiedad',asgn:'Asignaci\u00f3n',stage:'Etapa'};
+  const selMap={exec:'fExec',source:'fSource',op:'fOp',type:'fType',commune:'fCommune',temp:'fTemp',prop:'fProp',asgn:'fAsgn',stage:'fStage'};
+  ['exec','source','op','type','commune','temp','prop','asgn','stage'].forEach(k=>{if(FILTERS[k])items.push({k,v:labels[k]+': '+FILTERS[k]})});
   let h='';
   if(items.length){
     h=items.map(i=>'<span class="cd-chip" data-key="'+E(i.k)+'" role="button" tabindex="0">'+E(i.v)+' <i class="fa-solid fa-xmark"></i></span>').join('');
@@ -759,10 +764,11 @@ function renderChips(){
   chips.classList.toggle('has',items.length>0);
   const n=items.filter(i=>i.k!=='period').length;
   $('fltCount').hidden=n===0;$('fltCount').textContent=n;
+  $('filterButtonLabel').textContent=n?'Filtros · '+n:'Más filtros';
   chips.querySelectorAll('.cd-chip').forEach(el=>{
     const rm=()=>{const k=el.dataset.key;delete FILTERS[k];
       if(k==='period'){delete FILTERS.period_start;delete FILTERS.period_end;delete FILTERS.period_preset}
-      const s=selMap[k];if(s&&$(s))$(s).value='';
+      const s=selMap[k];if(s&&$(s))$(s).value='';if(k==='exec'&&$('fExecPrimary'))$('fExecPrimary').value='';
       renderChips();loadData()};
     el.addEventListener('click',rm);
     el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();rm()}});
@@ -772,17 +778,18 @@ function renderChips(){
 function resetFilters(){
   FILTERS={};setPeriod('30d');COMPARE='auto';CUR_PRICE_OP='Venta';PROP_SORT={k:'leads',dir:-1};
   document.querySelectorAll('.cd-filters select').forEach(s=>s.value='');
+  if($('fExecPrimary'))$('fExecPrimary').value='';
   $('pCompare').value='auto';
   $('fltChips').innerHTML='';$('fltChips').classList.remove('has');$('fltCount').hidden=true;
   history.replaceState(null,'',location.pathname);
   renderChips();loadData();
 }
 function openFilterSheet(){
-  if(matchMedia('(max-width:991px)').matches){$('filters').classList.add('open');$('filterOverlay').classList.add('open')}
-  else $('filters').classList.toggle('advanced-open');
-  $('btnFilters').setAttribute('aria-expanded',String($('filters').classList.contains('open')||$('filters').classList.contains('advanced-open')));
+  $('filters').classList.add('open');$('filterOverlay').classList.add('open');
+  $('btnFilters').setAttribute('aria-expanded','true');
+  setTimeout(()=>$('btnCloseFilters').focus(),0);
 }
-function closeFilterSheet(){$('filters').classList.remove('open');$('filterOverlay').classList.remove('open');$('btnFilters').setAttribute('aria-expanded','false')}
+function closeFilterSheet(returnFocus=false){const wasOpen=$('filters').classList.contains('open');$('filters').classList.remove('open');$('filterOverlay').classList.remove('open');$('btnFilters').setAttribute('aria-expanded','false');if(wasOpen&&returnFocus)$('btnFilters').focus()}
 
 /* ================= RENDER GENERAL ================= */
 function render(){
@@ -1133,6 +1140,10 @@ function rDemand(){
 /* ================= FUENTES ================= */
 function rSrc(){
   const src=D.sources||[],pal=PAL();
+  const byVolume=src.slice().sort((a,b)=>(b.received||0)-(a.received||0))[0];
+  const byAdvance=src.filter(x=>x.advanced_pct!=null).slice().sort((a,b)=>b.advanced_pct-a.advanced_pct)[0];
+  const leakage=src.filter(x=>(x.received||0)>0&&x.advanced_pct!=null).slice().sort((a,b)=>a.advanced_pct-b.advanced_pct)[0];
+  $('sourceConclusion').innerHTML=src.length?'<strong>Lectura accionable</strong><p>'+(byVolume?'Mayor volumen: <b>'+E(byVolume.source)+'</b> ('+F(byVolume.received)+' leads). ':'')+(byAdvance?'Mejor avance observable: <b>'+E(byAdvance.source)+'</b> ('+P1(byAdvance.advanced_pct)+'). ':'')+(leakage?'Mayor fuga relativa: <b>'+E(leakage.source)+'</b>, con '+P1(leakage.advanced_pct)+' de avance.':'')+' Revisar la tabla para volumen y porcentajes exactos.</p>':'<strong>Lectura accionable · S/I</strong><p>No hay cobertura suficiente de fuentes para establecer volumen, calidad o fuga.</p>';
   const el=$('srcChart'),ld=$('srcLd');
   if(src.length&&el){
     if(CH.src)CH.src.destroy();ld.classList.add('done');
@@ -1190,7 +1201,7 @@ function rProps(){
   rows.sort((a,b)=>((a[k]??0)-(b[k]??0))*dir);
   const arr=kk=>PROP_SORT.k===kk?'<i class="fa-solid fa-caret-'+(PROP_SORT.dir<0?'down':'up')+'"></i>':'';
   $('propTbl').innerHTML=rows.length
-    ?'<table><thead><tr><th>Propiedad</th><th>Operaci\u00f3n</th><th>Precio</th><th class="sortable" data-sk="leads">Leads'+arr('leads')+'</th><th class="sortable" data-sk="hot">Hot'+arr('hot')+'</th><th>Int.</th><th>Visitas</th><th class="sortable" data-sk="conversion_pct">Conv.'+arr('conversion_pct')+'</th></tr></thead><tbody>'
+    ?'<table><caption class="cd-fhide">Ranking de propiedades</caption><thead><tr><th>Propiedad</th><th>Operaci\u00f3n</th><th>Precio</th><th class="sortable" data-sk="leads" tabindex="0" role="button">Leads'+arr('leads')+'</th><th class="sortable" data-sk="hot" tabindex="0" role="button">Hot'+arr('hot')+'</th><th>Int.</th><th>Visitas</th><th class="sortable" data-sk="conversion_pct" tabindex="0" role="button">Conv.'+arr('conversion_pct')+'</th></tr></thead><tbody>'
       +rows.slice(0,12).map(r=>{
         const opCls=r.operation==='Venta'?'venta':r.operation==='Arriendo'?'arriendo':'na';
         const precio=r.avg_price_uf!=null?F(Math.round(r.avg_price_uf))+' UF':'<span class="m">S/I</span>';
@@ -1200,11 +1211,11 @@ function rProps(){
           +'<td>'+P(r.conversion_pct)+'</td></tr>'}).join('')
       +'</tbody></table>'
     :'<div class="cd-empty">Sin datos</div>';
-  $('propTbl').querySelectorAll('th.sortable').forEach(th=>th.addEventListener('click',()=>{
+  $('propTbl').querySelectorAll('th.sortable').forEach(th=>{const sort=()=>{
     const kk=th.dataset.sk;
     if(PROP_SORT.k===kk)PROP_SORT.dir*=-1;else PROP_SORT={k:kk,dir:-1};
     rProps();
-  }));
+  };th.addEventListener('click',sort);th.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();sort()}})});
 }
 
 /* ================= EQUIPO ================= */
@@ -1253,7 +1264,7 @@ function rTeam(){
   const low=rows.filter(r=>r.pc!=null&&r.pc<50).length;
   $('covGrid').innerHTML=rows.map(r=>{
     const st=r.pc==null?'si':r.pc>=90?'alta':r.pc>=70?'media':'baja';
-    const col=st==='alta'?pal.ok:st==='media'?pal.warn:st==='baja'?pal.bad:pal.gray;
+    const col=st==='alta'?pal.ok:st==='media'?pal.warn:pal.gray;
     return '<div class="cd-covrow st-'+st+'"><span class="f">'+E(r.n)+'</span><span class="trk"><span style="width:'+(r.pc||0)+'%;background:'+col+'"></span></span><span class="n">'+(r.p!=null?F(r.p)+' / '+F(r.t)+' \u00b7 ':'')+'<b>'+(r.pc!=null?P(r.pc):'S/I')+'</b></span></div>';
   }).join('')+(low?'<div class="cd-cov-note"><i class="fa-solid fa-triangle-exclamation"></i> La baja cobertura puede subrepresentar los indicadores.</div>':'');
 }
@@ -1265,7 +1276,7 @@ function openExecutive(name){
   document.querySelectorAll('#teamMode [data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode==='executive'));
   const avg=(key)=>{const vals=(D.executives||[]).map(e=>Number(e[key])).filter(Number.isFinite);return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null};
   const cards=[['Leads asignados',row.assigned,'Promedio equipo: '+(avg('assigned')==null?'S/I':F(Math.round(avg('assigned'))))],['Hot',row.hot,'Promedio equipo: '+(avg('hot')==null?'S/I':F(Math.round(avg('hot'))))],['Visitas',row.ever_visit_scheduled,'Conversión: '+P(row.conversion_to_visit_pct)],['Cierres',row.ever_closed_won,'Conversión: '+P(row.conversion_to_close_pct)]];
-  $('execSummary').innerHTML=cards.map(c=>'<div class="cd-card cd-kpi"><span class="cd-kpi-label">'+E(c[0])+'</span><strong class="cd-kpi-val">'+(c[1]==null?'S/I':F(c[1]))+'</strong><span class="cd-kpi-meta">'+E(c[2])+'</span></div>').join('');
+  $('execSummary').innerHTML=cards.map(c=>'<div class="cd-card cd-kpi"><span class="cd-kpi-label">'+E(c[0])+'</span><strong class="cd-kpi-val">'+(c[1]==null?'S/I':F(c[1]))+'</strong><span class="cd-kpi-meta">'+E(c[2])+'</span><span class="cd-kpi-meta">Periodo anterior: S/I</span></div>').join('');
   const stages=[['Asignados',row.assigned],['Hot',row.hot],['Visitas coordinadas',row.ever_visit_scheduled],['Negociación',row.ever_negotiation],['Cerrados',row.ever_closed_won]];
   $('execFunnel').innerHTML=stages.map((s,i)=>{const prev=i?stages[i-1][1]:null;return '<div class="cd-stage"><span class="cd-stage-lbl">'+E(s[0])+'<small>'+(i?'Conversión '+(prev?P(s[1]/prev*100):'S/I'):'Cohorte asignada')+'</small></span><span class="cd-stage-trk"><span class="cd-stage-fill" style="width:'+(row.assigned?s[1]/row.assigned*100:0)+'%"></span></span><span class="cd-stage-meta"><b>'+F(s[1])+'</b></span></div>'}).join('');
   const noMgmt=row.assigned!=null&&row.sla_fulfilled!=null?Math.max(0,row.assigned-Math.round(row.assigned*row.sla_fulfilled/100)):null;
@@ -1286,13 +1297,13 @@ async function loadMarketIndicators(){
 }
 
 /* ================= TABS / THEME / SHELL ================= */
-function actTab(name){
+function actTab(name,pushHistory=false){
   document.querySelectorAll('.cd-panel').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.cd-tabs button').forEach(b=>{b.classList.remove('active');b.setAttribute('aria-selected','false')});
   const t=$('tab-'+name);if(t)t.classList.add('active');
   const btn=document.querySelector('.cd-tabs button[data-tab="'+name+'"]');
   if(btn){btn.classList.add('active');btn.setAttribute('aria-selected','true')}
-  const url=new URL(location);url.searchParams.set('section',name);history.replaceState(null,'',url);
+  const url=new URL(location);url.searchParams.set('section',name);history[pushHistory?'pushState':'replaceState']({section:name},'',url);
 }
 function toggleMobileMenu(){
   const s=$('sidebar'),o=$('sidebarOverlay');
@@ -1321,8 +1332,9 @@ function toggleTheme(){
 }
 function restoreFromURL(){
   const params=new URLSearchParams(location.search);
-  const map={executive:'exec',source:'source',operation:'op',property_type:'type',commune:'commune',temperature:'temp',property_code:'prop',assignment:'asgn'};
+  const map={executive:'exec',source:'source',operation:'op',property_type:'type',commune:'commune',temperature:'temp',property_code:'prop',assignment:'asgn',stage:'stage'};
   Object.entries(map).forEach(([param,key])=>{const v=params.get(param);if(v)FILTERS[key]=v});
+  if(FILTERS.asgn==='1')FILTERS.asgn='assigned';else if(FILTERS.asgn==='0')FILTERS.asgn='unassigned';
   const ps=params.get('period_start'),pe=params.get('period_end');
   const urlPreset=CommercialPeriods.validPreset(params.get('period_preset'));
   if(ps&&pe){const safe=CommercialPeriods.clampRange(ps,pe);FILTERS.period_start=safe.start;FILTERS.period_end=safe.end;FILTERS.period_preset=urlPreset||'custom'}
@@ -1330,6 +1342,7 @@ function restoreFromURL(){
   const cmp=params.get('compare');
   if(cmp){COMPARE=cmp;$('pCompare').value=cmp}
   Object.entries(FKEY).forEach(([id,k])=>{if(FILTERS[k]&&$(id))$(id).value=FILTERS[k]});
+  if(FILTERS.exec&&$('fExecPrimary'))$('fExecPrimary').value=FILTERS.exec;
   document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('active',b.dataset.p===FILTERS.period_preset));
   if(FILTERS.period_preset==='custom'&&ps&&pe){
     $('pStart').value=FILTERS.period_start;$('pEnd').value=FILTERS.period_end;
@@ -1337,7 +1350,7 @@ function restoreFromURL(){
     $('periodCustom').classList.add('open');
   }
   const section=params.get('section');
-  if(['exec','demand','sources','team','quality'].includes(section))actTab(section);
+  if(['exec','demand','sources','team','quality'].includes(section))actTab(section,false);
   EXEC_DETAIL=params.get('selected_executive')||'';
 }
 
@@ -1351,12 +1364,14 @@ document.addEventListener('DOMContentLoaded',()=>{
   fetch('/api/analytics/commercial/filters',{headers:{Accept:'application/json'}}).then(r=>r.json()).then(f=>{
     const fill=(id,items,ph,skip)=>{if(items)$(id).innerHTML='<option value="">'+ph+'</option>'+items.filter(x=>x.value&&x.value!==skip).map(x=>'<option value="'+E(x.value)+'">'+E(x.label||x.value)+'</option>').join('')};
     fill('fExec',f.executives,'Ejecutiva','Sin Asignar');
+    fill('fExecPrimary',f.executives,'Todo el equipo','Sin Asignar');
     fill('fSource',f.sources,'Fuente','Sin informacion');
     fill('fOp',f.operations,'Operaci\u00f3n');
     fill('fType',f.property_types,'Tipo propiedad');
     fill('fCommune',f.communes,'Comuna','Sin informacion');
     fill('fProp',f.properties,'Propiedad');
-    setTimeout(()=>{Object.entries(FKEY).forEach(([id,k])=>{if(FILTERS[k]&&$(id))$(id).value=FILTERS[k]})},300);
+    fill('fStage',f.stages,'Etapa');
+    setTimeout(()=>{Object.entries(FKEY).forEach(([id,k])=>{if(FILTERS[k]&&$(id))$(id).value=FILTERS[k]});if(FILTERS.exec&&$('fExecPrimary'))$('fExecPrimary').value=FILTERS.exec},300);
   }).catch(()=>{});
   COMPARE=$('pCompare')?.value||'auto';
   renderChips();
@@ -1370,6 +1385,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('btnApplyPeriod').addEventListener('click',applyCustomPeriod);
   $('pCompare').addEventListener('change',()=>{loadData()});
   $('btnApply').addEventListener('click',applyFilters);
+  let execDebounce;
+  $('fExecPrimary').addEventListener('change',e=>{clearTimeout(execDebounce);$('fExec').value=e.target.value;if(e.target.value)FILTERS.exec=e.target.value;else delete FILTERS.exec;renderChips();execDebounce=setTimeout(loadData,300)});
   $('btnReset').addEventListener('click',resetFilters);
   $('btnRetry').addEventListener('click',loadData);
   $('btnMore').addEventListener('click',()=>{
@@ -1381,11 +1398,12 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('btnFilters').addEventListener('click',openFilterSheet);
   $('btnCloseFilters').addEventListener('click',closeFilterSheet);
   $('filterOverlay').addEventListener('click',closeFilterSheet);
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('filters').classList.contains('open')){e.preventDefault();closeFilterSheet(true)}});
   $('btnTheme').addEventListener('click',toggleTheme);
   $('btnHamb').addEventListener('click',toggleMobileMenu);
   $('sidebarOverlay').addEventListener('click',closeSidebar);
   $('tabNav').addEventListener('click',e=>{
-    const b=e.target.closest('[data-tab]');if(!b)return;actTab(b.dataset.tab);
+    const b=e.target.closest('[data-tab]');if(!b)return;actTab(b.dataset.tab,true);
     if(b.dataset.tab==='demand'&&!window._demandLoaded){rDemand();window._demandLoaded=true}
     if(b.dataset.tab==='sources'&&!window._srcLoaded){rSrc();window._srcLoaded=true}
     if(b.dataset.tab==='team'&&!window._teamLoaded){rTeam();window._teamLoaded=true}
@@ -1408,6 +1426,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     document.querySelectorAll('#propSub button').forEach(x=>x.classList.toggle('active',x===b));
     window._propTab=b.dataset.ps;rProps();
   });
+  window.addEventListener('popstate',()=>{const section=new URLSearchParams(location.search).get('section')||'exec';actTab(section,false);if(section==='demand')rDemand();if(section==='sources')rSrc();if(section==='team'||section==='quality')rTeam()});
   $('teamMode').addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(!b)return;b.dataset.mode==='team'?showTeam():(EXEC_DETAIL?openExecutive(EXEC_DETAIL):($('execDetailSelect').hidden=false))});
   $('execDetailSelect').addEventListener('change',e=>{if(e.target.value)openExecutive(e.target.value)});
   $('btnBackTeam').addEventListener('click',showTeam);

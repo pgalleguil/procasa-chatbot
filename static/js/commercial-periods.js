@@ -44,10 +44,29 @@
     return ['today', 'week', 'month', '30d', 'custom'].includes(value) ? value : null;
   }
 
+  function validComparison(value) {
+    return ['auto', 'prev', 'yoy', 'none'].includes(value) ? value : null;
+  }
+
+  function canonicalPreset(start, end, declared) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start || '') || !/^\d{4}-\d{2}-\d{2}$/.test(end || '')) return 'custom';
+    const s = utcDate({ year: +start.slice(0, 4), month: +start.slice(5, 7), day: +start.slice(8, 10) });
+    const e = utcDate({ year: +end.slice(0, 4), month: +end.slice(5, 7), day: +end.slice(8, 10) });
+    const days = Math.round((e - s) / 86400000) + 1;
+    const matches = {
+      today: days === 1,
+      week: s.getUTCDay() === 1 && days >= 1 && days <= 7,
+      month: s.getUTCDate() === 1 && s.getUTCFullYear() === e.getUTCFullYear() && s.getUTCMonth() === e.getUTCMonth(),
+      '30d': days === 30,
+      custom: true
+    };
+    return matches[declared] ? declared : 'custom';
+  }
+
   function comparisonLabel(mode, formattedRange) {
     if (mode === 'none') return '';
     return 'vs. ' + formattedRange + (mode === 'yoy' ? ' (año anterior)' : '');
   }
 
-  return { TIME_ZONE, parts, iso, addDays, presetRange, clampRange, validPreset, comparisonLabel };
+  return { TIME_ZONE, parts, iso, addDays, presetRange, clampRange, validPreset, validComparison, canonicalPreset, comparisonLabel };
 });

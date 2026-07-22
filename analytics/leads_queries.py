@@ -45,7 +45,8 @@ def _build_chile_period_bounds(period_start: str, period_end: str) -> tuple[date
         pe = datetime.now(CHILE_TZ)
 
     start_local = CHILE_TZ.localize(datetime(ps.year, ps.month, ps.day, 0, 0, 0))
-    end_local = CHILE_TZ.localize(datetime(pe.year, pe.month, pe.day, 0, 0, 0)) + td(days=1)
+    next_day = pe.date() + td(days=1)
+    end_local = CHILE_TZ.localize(datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0))
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 

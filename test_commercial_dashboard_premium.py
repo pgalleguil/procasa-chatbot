@@ -38,6 +38,11 @@ class CommercialDashboardPremiumTests(unittest.TestCase):
         ):
             self.assertIn(contract, self.html)
 
+    def test_zero_denominator_and_hidden_dates_are_explicit(self):
+        self.assertIn("Sin base porcentual comparable", self.html)
+        self.assertIn('id="periodCustom" hidden inert aria-hidden="true"', self.html)
+        self.assertNotIn("Infinity", self.html)
+
     def test_executive_mode_and_separate_quality_panel_exist(self):
         for contract in ('id="teamMode"', 'id="executiveView"', 'id="tab-quality"'):
             self.assertIn(contract, self.html)

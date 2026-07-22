@@ -767,6 +767,18 @@ async def api_commercial_dashboard(
     compare: str = Query(None),
     period_preset: str = Query(None),
 ):
+    from analytics.commercial_periods import VALID_COMPARISONS, VALID_PRESETS, validate_explicit_range
+    for key in ("period_start", "period_end", "compare", "period_preset"):
+        if len(request.query_params.getlist(key)) > 1:
+            raise HTTPException(status_code=422, detail=f"Parámetro duplicado: {key}")
+    if compare is not None and compare not in VALID_COMPARISONS:
+        raise HTTPException(status_code=422, detail="Comparación inválida")
+    if period_preset is not None and period_preset not in VALID_PRESETS:
+        raise HTTPException(status_code=422, detail="Preset inválido")
+    try:
+        _, _, period_preset = validate_explicit_range(period_start, period_end, period_preset)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     user = await _optional_commercial_user(request)
     privileged = bool(user and user.get("rol") in ("admin", "supervisor"))
     filters = {}

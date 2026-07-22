@@ -394,13 +394,6 @@ def get_commercial_dashboard(
     merged_filters = {**(filters or {})}
     if ef:
         merged_filters.update(ef)
-    key = _cache_key("commercial-dashboard-v2", ps=period_start, pe=period_end,
-                     exec=exec_filter, role=role, cmp=compare, preset=period_preset,
-                     filters=repr(sorted((merged_filters or {}).items())))
-    cached = _cache_get(key)
-    if cached:
-        return cached
-
     from .leads_queries import (
         query_commercial_kpis,
         query_commercial_funnel,
@@ -465,6 +458,15 @@ def get_commercial_dashboard(
 
     comparison_kwargs = ({"comparison_start": prev_start, "comparison_end": prev_end}
                          if prev_start and prev_end else {"include_comparison": False})
+    key = _cache_key(
+        "commercial-dashboard-v2", ps=period_start, pe=period_end,
+        comparison_start=prev_start, comparison_end=prev_end,
+        exec=exec_filter, role=role, cmp=mode, preset=preset,
+        filters=repr(sorted((merged_filters or {}).items())),
+    )
+    cached = _cache_get(key)
+    if cached:
+        return cached
     # Independent read-only aggregations run concurrently. PyMongo clients are
     # thread-safe and the response contract remains identical; this only
     # reduces cold-load wall time.

@@ -377,7 +377,7 @@ body.cd-page{background:var(--bg-canvas);color:var(--text-primary)}
 .cd-seg{background:var(--bg-elevated);border-color:var(--border-subtle)}.cd-seg button{color:var(--text-secondary)}.cd-seg button.active{background:var(--bg-surface);color:var(--text-primary)}
 .cd-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}.cd-btn:not(.primary):hover{background:var(--bg-elevated);color:var(--text-primary);border-color:var(--border-hover)}
 .cd-filter-overlay{z-index:940;background:rgba(2,6,23,.2)}.cd-filters{background:var(--bg-surface);border-color:var(--border-subtle)}
-.cd-custom{display:none}.cd-custom.open{display:flex}.cd-edit-dates{display:inline-flex}
+.cd-custom{display:none}.cd-custom.open{display:flex}.cd-custom[hidden]{display:none!important}.cd-edit-dates{display:inline-flex}
 .cd-tabs{margin:0 0 20px;border-color:var(--border-subtle);position:sticky;top:0;z-index:800;background:var(--bg-canvas)}.cd-tabs button{min-height:46px;color:var(--text-secondary)}.cd-tabs button.active{color:var(--text-primary);border-bottom-color:var(--accent)}.tab-short{display:none}
 .cd-panel>.cd-card,.cd-panel>.cd-grid,.cd-panel>.cd-demand-note,.cd-panel>.cd-team-toolbar,.cd-panel>.cd-team-mode-panel{margin-bottom:24px}
 .cd-priorities{padding:0!important}.cd-priority-head{padding:14px 18px 10px}.cd-priority-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--border-subtle)}.cd-priority{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;min-height:74px;padding:10px 14px;border:0;border-left:1px solid var(--border-subtle)}.cd-priority:first-child{border-left:0}.cd-priority::before{top:14px;bottom:14px}.cd-priority-count{font-size:17px}.cd-priority-copy strong{font-size:13px}.cd-priority-copy span{font-size:12px}.cd-priority-action{grid-column:2;height:auto;min-height:24px;justify-content:flex-start;padding:0;border:0;background:transparent}
@@ -485,7 +485,7 @@ body.cd-page{background:var(--bg-canvas);color:var(--text-primary)}
     <button class="cd-btn primary" id="btnApply"><i class="fa-solid fa-check"></i> <span>Aplicar</span></button>
     <button class="cd-btn danger" id="btnReset" title="Restablecer"><i class="fa-solid fa-rotate"></i> Restablecer</button>
   </div>
-  <div class="cd-custom" id="periodCustom">
+  <div class="cd-custom" id="periodCustom" hidden inert aria-hidden="true">
     <label for="pStart">Desde</label>
     <input type="date" id="pStart">
     <label for="pEnd">Hasta</label>
@@ -643,6 +643,7 @@ const FPS=(a,b)=>a===b?FD(a):FDC(a,b);
 const RM=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let D=null,CH={},FILTERS={},COMPARE='auto',CUR_PRICE_OP='Venta',FIRST_KPI=true,PROP_SORT={k:'leads',dir:-1};
 let REQUEST_CTRL=null,REQUEST_SEQ=0,TEAM_MODE='team',EXEC_DETAIL='';
+let PUSH_HISTORY=false;
 const RESPONSE_CACHE=new Map();
 
 const isDark=()=>document.documentElement.dataset.theme==='dark';
@@ -690,11 +691,12 @@ function bindTips(root){
 }
 document.addEventListener('click',()=>{document.querySelectorAll('[data-tt]').forEach(el=>el._ttOpen=false);tipHide()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')tipHide()});
+window.addEventListener('popstate',()=>location.reload());
 
 /* ================= PERIODO ================= */
 function setPeriod(preset){
   if(preset==='custom'){
-    $('periodCustom').classList.add('open');
+    $('periodCustom').hidden=false;$('periodCustom').inert=false;$('periodCustom').setAttribute('aria-hidden','false');$('periodCustom').classList.add('open');
     $('btnEditDates').hidden=true;
     document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('active',b.dataset.p==='custom'));
     if(!FILTERS.period_start){
@@ -704,7 +706,7 @@ function setPeriod(preset){
     }
     return;
   }
-  $('periodCustom').classList.remove('open');
+  $('periodCustom').classList.remove('open');$('periodCustom').hidden=true;$('periodCustom').inert=true;$('periodCustom').setAttribute('aria-hidden','true');
   $('btnEditDates').hidden=false;
   const range=CommercialPeriods.presetRange(preset);
   FILTERS.period_start=range.start;
@@ -719,7 +721,7 @@ function applyCustomPeriod(){
   if(sVal>eVal){$('metaTxt').textContent='Error: fecha inicial posterior a fecha final';return}
   const safe=CommercialPeriods.clampRange(sVal,eVal);sVal=safe.start;eVal=safe.end;
   $('pStart').value=sVal;$('pEnd').value=eVal;
-  FILTERS.period_start=sVal;FILTERS.period_end=eVal;FILTERS.period_preset='custom';
+  FILTERS.period_start=sVal;FILTERS.period_end=eVal;FILTERS.period_preset='custom';PUSH_HISTORY=true;
   loadData();
 }
 
@@ -757,7 +759,7 @@ async function loadData(){
     const cacheKey=p.toString();
     const currentUrl=new URL(location);
     ['section','view','selected_executive'].forEach(key=>{const value=currentUrl.searchParams.get(key);if(value)p.set(key,value)});
-    const url=new URL(location);url.search=p.toString();history.replaceState(null,'',url);
+    const url=new URL(location);url.search=p.toString();history[PUSH_HISTORY?'pushState':'replaceState'](null,'',url);PUSH_HISTORY=false;
     if(RESPONSE_CACHE.has(cacheKey)){
       D=RESPONSE_CACHE.get(cacheKey);render();
     }
@@ -857,14 +859,14 @@ function render(){
   const compact=matchMedia('(max-width:600px)').matches;
   $('perCur').textContent=compact?FDS(cur.end||FILTERS.period_end):FPS(cur.start||FILTERS.period_start,cur.end||FILTERS.period_end);
   $('perCmp').textContent=COMPARE==='none'?(compact?'· sin comparación':'Comparación: sin comparación'):(compact?'· vs. '+FDS(prv.end):'Comparación: '+FPS(prv.start,prv.end));
-  const totalLeads=D.kpis?.leads_received?.value||0;
+  const totalLeads=D.kpis?.leads_received?.value??null,totalLabel=totalLeads==null?'S/I':F(totalLeads);
   let upd='';
   if(D.meta?.generated_at){
     const mins=Math.max(0,Math.round((Date.now()-new Date(D.meta.generated_at).getTime())/60000));
     upd=mins<1?' \u00b7 actualizado hace instantes':mins<60?' \u00b7 actualizado hace '+mins+' min':' \u00b7 actualizado hace '+Math.round(mins/60)+' h';
   }
   const presetLabels={today:'Hoy',week:'Semana',month:'Mes','30d':'\u00daltimos 30 d\u00edas',custom:'Personalizado'};
-  $('metaTxt').textContent=(compact?'Actualizado'+upd.replace(' \u00b7 actualizado','')+' \u00b7 '+F(totalLeads)+' leads':F(totalLeads)+' leads analizados \u00b7 '+(presetLabels[FILTERS.period_preset]||'Personalizado')+upd);
+  $('metaTxt').textContent=(compact?'Actualizado'+upd.replace(' \u00b7 actualizado','')+' \u00b7 '+totalLabel+' leads':totalLabel+' leads analizados \u00b7 '+(presetLabels[FILTERS.period_preset]||'Personalizado')+upd);
   document.querySelector('#metaLine .dot').style.background='var(--cd-ok)';
   rKPI();rPriorities();rInsights();rev();rsla();rfun();
   FIRST_KPI=false;
@@ -935,6 +937,8 @@ function rKPI(){
       const ic=vv>0?'fa-arrow-trend-up':vv<0?'fa-arrow-trend-down':'fa-minus';
       const abs=cur-prv;
       varHtml='<span class="cd-kpi-var '+cls+'"><i class="fa-solid '+ic+'"></i> '+(abs>=0?'+':'')+F(abs)+' <span class="cd-kpi-vs">vs. '+E(FDS(comparative.end))+'</span></span><span class="cd-kpi-vs">'+PV(vv)+'</span>';
+    }else if(prv===0&&cur!=null){
+      varHtml='<span class="cd-kpi-var '+(cur>0?'up':'flat')+'">'+(cur>0?'+':'')+F(cur)+' leads</span><span class="cd-kpi-vs">Sin base porcentual comparable</span>';
     }
     let foot='';
     if(isLeads&&daily.length){foot='<canvas class="cd-spark" width="120" height="26" data-spark="1" aria-hidden="true"></canvas>'}
@@ -1388,17 +1392,19 @@ function restoreFromURL(){
   if(FILTERS.asgn==='1')FILTERS.asgn='assigned';else if(FILTERS.asgn==='0')FILTERS.asgn='unassigned';
   const ps=params.get('period_start'),pe=params.get('period_end');
   const urlPreset=CommercialPeriods.validPreset(params.get('period_preset'));
-  if(ps&&pe){const safe=CommercialPeriods.clampRange(ps,pe);FILTERS.period_start=safe.start;FILTERS.period_end=safe.end;FILTERS.period_preset=urlPreset||'custom'}
+  if(ps&&pe){const safe=CommercialPeriods.clampRange(ps,pe);FILTERS.period_start=safe.start;FILTERS.period_end=safe.end;FILTERS.period_preset=CommercialPeriods.canonicalPreset(safe.start,safe.end,urlPreset)}
   else setPeriod('30d');
   const cmp=params.get('compare');
-  if(cmp){COMPARE=cmp;$('pCompare').value=cmp}
+  if(CommercialPeriods.validComparison(cmp)){COMPARE=cmp;$('pCompare').value=cmp}
   Object.entries(FKEY).forEach(([id,k])=>{if(FILTERS[k]&&$(id))$(id).value=FILTERS[k]});
   if(FILTERS.exec&&$('fExecPrimary'))$('fExecPrimary').value=FILTERS.exec;
   document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('active',b.dataset.p===FILTERS.period_preset));
   if(FILTERS.period_preset==='custom'&&ps&&pe){
     $('pStart').value=FILTERS.period_start;$('pEnd').value=FILTERS.period_end;
     document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('active',b.dataset.p==='custom'));
-    $('periodCustom').classList.add('open');
+    $('periodCustom').hidden=false;$('periodCustom').inert=false;$('periodCustom').setAttribute('aria-hidden','false');$('periodCustom').classList.add('open');
+  }else{
+    $('periodCustom').hidden=true;$('periodCustom').inert=true;$('periodCustom').setAttribute('aria-hidden','true');
   }
   const section=params.get('section');
   if(['exec','demand','sources','team','quality'].includes(section))actTab(section,false);
@@ -1430,11 +1436,11 @@ document.addEventListener('DOMContentLoaded',()=>{
   /* eventos */
   $('presetSeg').addEventListener('click',e=>{
     const b=e.target.closest('[data-p]');if(!b)return;
-    setPeriod(b.dataset.p);if(b.dataset.p!=='custom')loadData();
+    setPeriod(b.dataset.p);if(b.dataset.p!=='custom'){PUSH_HISTORY=true;loadData()}
   });
   $('btnApplyPeriod').addEventListener('click',applyCustomPeriod);
   $('btnEditDates').addEventListener('click',()=>setPeriod('custom'));
-  $('pCompare').addEventListener('change',()=>{loadData()});
+  $('pCompare').addEventListener('change',()=>{PUSH_HISTORY=true;loadData()});
   $('btnApply').addEventListener('click',applyFilters);
   let execDebounce;
   $('fExecPrimary').addEventListener('change',e=>{clearTimeout(execDebounce);$('fExec').value=e.target.value;if(e.target.value)FILTERS.exec=e.target.value;else delete FILTERS.exec;renderChips();execDebounce=setTimeout(loadData,300)});

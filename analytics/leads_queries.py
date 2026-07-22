@@ -1448,7 +1448,6 @@ def query_comparative_trends(
 
 COMMERCIAL_FUNNEL_STAGES = [
     ("received", "Leads recibidos"),
-    ("hot", "Leads Hot"),
     ("visit_intent", "Intenci\u00f3n de visita"),
     ("data_delivered", "Datos entregados"),
     ("visit_scheduled", "Visita coordinada"),
@@ -1591,7 +1590,7 @@ def _stage_reached_via_history(lead, stage_upper, cutoff_utc=None):
 # 1. TEMPERATURE COVERAGE
 # =============================================================================
 
-def query_temperature_coverage(period_start=None, period_end=None):
+def _query_temperature_coverage_legacy(period_start=None, period_end=None):
     """Report temperature data coverage for the period."""
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
@@ -1623,6 +1622,69 @@ def query_temperature_coverage(period_start=None, period_end=None):
         "history_coverage_pct": _coverage_pct(row["with_history"], row["total"]),
         "note": "Temperatura hist\u00f3rica solo cuando existe temperature_history con timestamp.",
     }
+
+
+# Temperature-at-close is demonstrable only from timestamped history events.
+def _temperature_at_cutoff(history, cutoff_utc):
+    valid = []
+    for entry in history or []:
+        if not isinstance(entry, dict):
+            continue
+        value = str(entry.get("value") or entry.get("temperature") or "").upper()
+        raw_ts = entry.get("at") or entry.get("timestamp") or entry.get("changed_at")
+        if value not in ("HOT", "COLD") or not raw_ts:
+            continue
+        try:
+            ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00")) if isinstance(raw_ts, str) else raw_ts
+            if ts.tzinfo is None:
+                ts = CHILE_TZ.localize(ts)
+            ts = ts.astimezone(timezone.utc)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if ts < cutoff_utc:
+            valid.append((ts, value))
+    return max(valid, key=lambda item: item[0])[1] if valid else None
+
+
+def _summarize_temperature_history(leads, cutoff_utc):
+    by_id = {}
+    for lead in leads:
+        lead_id = lead.get("_id")
+        if lead_id not in by_id:
+            by_id[lead_id] = _temperature_at_cutoff(lead.get("temperature_history"), cutoff_utc)
+    total = len(by_id)
+    hot_count = sum(value == "HOT" for value in by_id.values())
+    cold_count = sum(value == "COLD" for value in by_id.values())
+    with_history = hot_count + cold_count
+    without_history = total - with_history
+    return {
+        "total": total, "with_history": with_history, "without_history": without_history,
+        "hot": hot_count if with_history else None,
+        "cold": cold_count if with_history else None,
+        "history_coverage_pct": _coverage_pct(with_history, total),
+        "reconciles": hot_count + cold_count + without_history == total,
+        "unit": "lead._id", "comparative_metrics": None,
+        "comparative_metrics_note": "Tasas Hot vs. Cold no disponibles sin cobertura histórica suficiente.",
+    }
+
+
+def query_temperature_coverage(period_start=None, period_end=None, filters=None):
+    """Demonstrable HOT/COLD snapshot at period close; current state is never used."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    pipeline = [_normalized_created_at_stage(), {"$match": {"$expr": {"$and": [
+        {"$gte": ["$_created_normalized", start_utc]}, {"$lt": ["$_created_normalized", end_utc]},
+    ]}}}]
+    extra = _build_extra_filter(filters) or {}
+    if extra:
+        pipeline.append({"$match": extra})
+    pipeline.append({"$project": {"_id": 1, "temperature_history": 1}})
+    result = _summarize_temperature_history(list(db["leads"].aggregate(pipeline)), end_utc)
+    result.update({
+        "with_current_temp": None,
+        "note": "Temperatura histórica al cierre: último evento HOT/COLD con timestamp anterior al corte.",
+    })
+    return result
 
 
 # =============================================================================
@@ -1680,29 +1742,13 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None,
     received = _cohort_count(extra)
     received_prev = _cohort_count(extra, prev_start, prev_end)
 
-    # KPI 2: Hot histórico (SOLO temperature_history)
-    def _hot_historical(start_dt, end_dt):
-        p = [
-            _normalized_created_at_stage(),
-            {"$match": {"$expr": {"$and": [
-                {"$gte": ["$_created_normalized", start_dt]},
-                {"$lt": ["$_created_normalized", end_dt]},
-            ]}}},
-        ]
-        if extra:
-            p.append({"$match": extra})
-        p.extend([
-            {"$match": {"$or": [
-                {"temperature_history.value": "HOT"},
-                {"temperature_history.temperature": "HOT"},
-            ]}},
-            {"$count": "c"},
-        ])
-        r = list(db["leads"].aggregate(p))
-        return r[0]["c"] if r else 0
-
-    hot = _hot_historical(start_utc, end_utc)
-    hot_prev = _hot_historical(prev_start, prev_end)
+    # KPI 2: temperatura histórica demostrable al cierre (SOLO temperature_history)
+    temp_cov = query_temperature_coverage(period_start, period_end, filters)
+    previous_temp = query_temperature_coverage(
+        prev_start.date().isoformat(), (prev_end - timedelta(days=1)).date().isoformat(), filters
+    )
+    hot = temp_cov["hot"]
+    hot_prev = previous_temp["hot"]
 
     # Hot actual (lead_temperature_effective) como KPI separado
     def _hot_current(start_dt, end_dt):
@@ -1795,11 +1841,11 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None,
             return round((cur - prev) / prev * 100, 1)
         return None
 
-    temp_cov = query_temperature_coverage(period_start, period_end)
-
     return {
         "leads_received": {"value": received, "previous": received_prev, "variation_pct": _var(received, received_prev), "universe": "cohorte"},
         "leads_hot_history": {"value": hot, "previous": hot_prev, "variation_pct": _var(hot, hot_prev), "universe": "cohorte_temperature_history"},
+        "leads_cold_history": {"value": temp_cov["cold"], "universe": "cohorte_temperature_history"},
+        "temperature_at_close": temp_cov,
         "leads_hot_current": {"value": hot_current, "universe": "temperatura_actual"},
         "visit_intent": {"value": visit_intent, "previous": visit_intent_prev, "variation_pct": _var(visit_intent, visit_intent_prev), "universe": "cohorte"},
         "visits_scheduled": {"value": visit_scheduled, "previous": visit_scheduled_prev, "variation_pct": _var(visit_scheduled, visit_scheduled_prev), "universe": "cohorte"},
@@ -1810,7 +1856,7 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None,
             "timezone": "America/Santiago",
             "cutoff_utc": end_utc.isoformat(),
             "temperature_coverage": temp_cov,
-            "note": "Hot histórico = temperature_history. Hot actual = lead_temperature_effective (KPI separado).",
+            "note": "Temperatura histórica al cierre != temperatura actual; ninguna acredita gestión.",
         },
     }
 
@@ -1842,18 +1888,7 @@ def query_commercial_funnel(period_start=None, period_end=None, filters=None):
     def _reached(lead, key):
         if key == "received":
             return True
-        if key == "hot":
-            if str(lead.get("lead_temperature_effective") or "").upper() == "HOT":
-                return True
-            for e in (lead.get("temperature_history") or []):
-                val = str(e.get("value") or e.get("temperature") or "").upper()
-                if val == "HOT":
-                    return True
-            return False
         if key == "visit_intent":
-            # Must be hot first
-            if not _reached(lead, "hot"):
-                return False
             result = _stage_reached_via_history(lead, "VISIT_SCHEDULED", cutoff_utc)
             if result is True:
                 return True

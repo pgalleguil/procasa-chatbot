@@ -142,6 +142,10 @@ body.cd-page{background:var(--cd-bg);color:var(--cd-txt);font-family:'Outfit',sy
 .cd-kpi-cov{font-size:.6rem;color:var(--cd-warn);display:flex;align-items:center;gap:4px}
 .cd-kpi-meta{font-size:.64rem;color:var(--cd-txt3)}
 .cd-kpi-meta b{color:var(--cd-txt2)}
+.cd-temp-grid{display:grid;grid-template-columns:1fr auto;gap:3px 8px;font-size:.68rem;line-height:1.25;margin-top:1px}
+.cd-temp-grid span{color:var(--cd-txt3)}
+.cd-temp-grid b{color:var(--cd-txt);font-size:.76rem;text-align:right}
+.cd-temp-grid .unknown{color:var(--cd-warn)}
 /* ---- Tabs ---- */
 .cd-tabs{display:flex;gap:2px;border-bottom:1px solid var(--cd-line);margin-bottom:14px;overflow-x:auto;scrollbar-width:none;position:relative}
 @media(max-width:991px){.cd-tabs::after{content:'';position:sticky;right:0;top:0;bottom:0;min-width:36px;pointer-events:none;background:linear-gradient(90deg,transparent,var(--cd-bg));margin-left:-36px}}
@@ -723,7 +727,7 @@ function rKPI(){
   const daily=(D.trends?.current?.daily||[]).map(d=>d.received);
   const defs=[
     ['leads_received','Leads recibidos','Leads creados en el periodo (universo: cohorte).','users',true],
-    ['leads_hot_history','Hot hist\u00f3rico','Leads del cohorte con temperature_history registrado. Cobertura: '+P(hotCov.history_coverage_pct)+'.','fire',false],
+    ['temperature_at_close','Temperatura al cierre','Última temperatura histórica demostrable antes del cierre. No usa temperatura actual ni acredita gestión.','temperature-half',false],
     ['leads_hot_current','Hot actuales','Leads con temperatura efectiva Hot hoy (lead_temperature_effective).','fire-flame-curved',false],
     ['visit_intent','Int. de visita','Leads del cohorte que manifestaron intenci\u00f3n de visita.','location-dot',false],
     ['visits_scheduled','Visitas coord.','Visitas coordinadas en el cohorte del periodo.','calendar-check',false],
@@ -731,6 +735,13 @@ function rKPI(){
   ];
   let h='';
   defs.forEach(([key,name,tip,icon,isLeads],idx)=>{
+    if(key==='temperature_at_close'){
+      const t=k.temperature_at_close||hotCov,has=t.with_history>0;
+      const hot=has&&t.hot!=null?F(t.hot):'S/I',cold=has&&t.cold!=null?F(t.cold):'S/I';
+      h+='<div class="cd-kpi" style="--d:'+(FIRST_KPI?idx*45:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">'+name+'</span><button class="cd-info" data-tt="'+E(tip)+'" aria-label="Definición de '+E(name)+'"><i class="fa-solid fa-'+icon+'"></i></button></div>'
+        +'<div class="cd-temp-grid"><span>Hot histórico</span><b class="'+(!has?'unknown':'')+'">'+hot+'</b><span>Cold histórico</span><b class="'+(!has?'unknown':'')+'">'+cold+'</b><span>Sin historial</span><b>'+F(t.without_history??t.total??0)+'</b><span>Cobertura histórica</span><b>'+P(t.history_coverage_pct)+'</b></div></div>';
+      return;
+    }
     const v=k[key]||{},cur=v.value,prv=v.previous,vv=v.variation_pct;
     let varHtml='<span class="cd-kpi-var flat"><i class="fa-solid fa-minus"></i> S/I</span>';
     if(COMPARE==='none'){varHtml='<span class="cd-kpi-vs">Sin comparaci\u00f3n</span>'}
@@ -747,9 +758,6 @@ function rKPI(){
       foot='<div class="cd-cmpbars" aria-hidden="true"><div class="cd-cmpbar cur"><span style="width:'+(cur/mx*100)+'%"></span></div><div class="cd-cmpbar prv"><span style="width:'+(prv/mx*100)+'%"></span></div><div class="cd-cmpbar-lbl"><span>Actual</span><span>Anterior</span></div></div>';
     }else{foot='<span class="cd-kpi-meta">Temperatura actual</span>'}
     let cov='';
-    if(key==='leads_hot_history'&&hotCov.history_coverage_pct!=null&&hotCov.history_coverage_pct<50){
-      cov='<span class="cd-kpi-cov"><i class="fa-solid fa-triangle-exclamation"></i> Cobertura '+P(hotCov.history_coverage_pct)+'</span>';
-    }
     h+='<div class="cd-kpi" style="--d:'+(FIRST_KPI?idx*45:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">'+name+'</span><button class="cd-info" data-tt="'+E(tip)+'" aria-label="Definici\u00f3n de '+E(name)+'"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-kpi-val" data-val="'+(cur??'')+'">'+(cur!=null?F(cur):'S/I')+'</div><div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'+varHtml+'</div><div class="cd-kpi-foot">'+foot+'</div>'+cov+'</div>';
   });
   /* SLA card */

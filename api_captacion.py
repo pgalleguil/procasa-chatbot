@@ -5,6 +5,7 @@ from chatbot.constants import CHILE_TZ
 import logging
 import uuid
 import re
+import time as _perf_time
 from captacion_kpis import (
     VISIBLE_CLASSIFICATION_STATES,
     MANAGEMENT_STATES,
@@ -489,6 +490,7 @@ def resolve_operacion(details: dict) -> str:
 
 
 def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, classification_filter=None, sort_by=None, sort_dir="desc"):
+    _l_start = _perf_time.perf_counter()
     db = get_db()
     coll = get_captacion_collection(db)
     
@@ -611,6 +613,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         return cached.get("items", []), cached.get("total_count", 0), cached.get("available_ops", ["venta", "arriendo"])
     
     total_count = coll.count_documents(query)
+    _l_count = _perf_time.perf_counter()
     
     # Available ops: resultado estático por colección, cache global 120s.
     # No depende de RBAC ni filtros, así que no debe recalcularse por request.
@@ -633,6 +636,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         if not available_ops:
             available_ops = ["venta", "arriendo"]
         get_captacion_list._ops_cache = (get_chile_now(), available_ops)
+    _l_ops = _perf_time.perf_counter()
     
     skip = (page - 1) * limit
     sort_fields = {
@@ -677,6 +681,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         mongo_sort = ([(sort_fields[key], direction) for key, direction in sort_specs] + [("_id", -1)]
                       if sort_specs else [("updated_at", -1), ("_id", -1)])
         cursor = coll.find(query, projection).sort(mongo_sort).skip(skip).limit(limit)
+    _l_cursor = _perf_time.perf_counter()
     
     items_paginated = []
     for doc in cursor:
@@ -749,6 +754,16 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             "dias_en_portal": dias_portal,
             "fecha_str": fecha_str,
         })
+    
+    _l_enrich = _perf_time.perf_counter()
+    _l_total = (_perf_time.perf_counter() - _l_start) * 1000
+    logger.info(
+        f"[CAPTACION_LIST_PERF] count={(_l_count - _l_start)*1000:.0f} "
+        f"ops={(_l_ops - _l_count)*1000:.0f} "
+        f"query_sort={(_l_cursor - _l_ops)*1000:.0f} "
+        f"enrich={(_l_enrich - _l_cursor)*1000:.0f} "
+        f"total={_l_total:.0f}ms items={len(items_paginated)}"
+    )
     
     set_cached_value(response_cache_key, {"items": items_paginated, "total_count": total_count, "available_ops": available_ops}, expire_seconds=45)
     return items_paginated, total_count, available_ops

@@ -1973,7 +1973,8 @@ async def view_captaciones(
     cache_key = f"stats_v7_{user_role}_{user_id}_{ejecutivo}"
     cache_store = getattr(app.state, 'captacion_stats_cache', {})
     _cache_now = time.time()
-    if cache_key in cache_store and _cache_now - cache_store[cache_key]['time'] < 300:
+    _kpi_hit = cache_key in cache_store and _cache_now - cache_store[cache_key]['time'] < 300
+    if _kpi_hit:
         in_gestion_count = cache_store[cache_key]['in_gestion_count']
         captados_count = cache_store[cache_key]['captados_count']
         descartados_count = cache_store[cache_key]['descartados_count']
@@ -2009,7 +2010,8 @@ async def view_captaciones(
     goal_executive = current_ejecutivo if user_role in CAPTACION_PRIVILEGED_ROLES else user_name
     goal_cache_key = f"goal_v1_{goal_executive or '_none'}"
     goal_cache = getattr(app.state, 'captacion_goal_cache', {})
-    if goal_cache_key in goal_cache and time.time() - goal_cache[goal_cache_key]['time'] < 60:
+    _goal_hit = goal_cache_key in goal_cache and time.time() - goal_cache[goal_cache_key]['time'] < 60
+    if _goal_hit:
         captacion_goal = goal_cache[goal_cache_key]['data']
     else:
         captacion_goal = await loop.run_in_executor(
@@ -2078,7 +2080,9 @@ async def view_captaciones(
         f"[CAPTACION_PERF] {' '.join(_deltas)}ms "
         f"role={user_role} page={page} sort={sort_by or 'def'} "
         f"ejec={current_ejecutivo or '-'} comuna={current_comuna or '-'} "
-        f"items={len(items)} total={total_count}"
+        f"items={len(items)} total={total_count} "
+        f"kpi_cache={'HIT' if _kpi_hit else 'MISS'} "
+        f"goal_cache={'HIT' if _goal_hit else 'MISS'}"
     )
 
     return response

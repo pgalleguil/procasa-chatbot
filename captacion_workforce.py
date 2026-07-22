@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
+import logging
+import time as _perf_time
 from typing import Iterable
 
 import pytz
@@ -28,6 +30,8 @@ VALID_EXCEPTION_TYPES = {
 }
 
 _INDEXES_READY = False
+
+logger = logging.getLogger(__name__)
 
 
 def clean_id(value) -> str:
@@ -121,7 +125,16 @@ def resolve_membership_users(db, memberships: Iterable[dict]) -> list[dict]:
 
 def get_active_captacion_team(db, local_day: date | str) -> list[dict]:
     """Retorna solo membresías explícitas; nunca infiere pertenencia por comunas."""
-    return resolve_membership_users(db, get_active_memberships(db, local_day))
+    _t0 = _perf_time.perf_counter()
+    memberships = get_active_memberships(db, local_day)
+    _t1 = _perf_time.perf_counter()
+    result = resolve_membership_users(db, memberships)
+    _t2 = _perf_time.perf_counter()
+    logger.info(
+        f"[CAPTACION_GOAL_PERF] team: memberships={(_t1-_t0)*1000:.0f}ms "
+        f"resolve_users={(_t2-_t1)*1000:.0f}ms members={len(result)}"
+    )
+    return result
 
 
 def get_calendar_day(db, local_day: date, timezone_name: str) -> dict | None:

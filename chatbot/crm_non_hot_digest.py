@@ -1,15 +1,15 @@
-"""15-minute windowed digest for non-HOT (LEAD) assignments.
+"""10-minute windowed digest for non-HOT (LEAD) assignments.
 
 Each executive receives at most one open digest window.  The first non-HOT
-assignment starts a fixed 15-minute clock.  Subsequent non-HOT assignments
+assignment starts a fixed 10-minute clock.  Subsequent non-HOT assignments
 accumulate into the same digest.  When the window expires the digest is
 claimed, delivered (or shadow-logged) and closed.
 
 The module reuses ``crm_notifications_v1`` for persistence so that the
 existing claim / finalize / dedup machinery applies.
 
-Internal temperature ``COLD`` is preserved everywhere; only the visible label
-changes to ``LEAD`` / ``Por calificar`` in the UI layer.
+Commercial labels use ``Lead`` / ``Leads`` exclusively.  The internal
+temperature enum ``COLD`` is never exposed in visible content.
 """
 from __future__ import annotations
 
@@ -372,23 +372,16 @@ def build_digest_message_content(db, notification):
     )
     exec_name = _executive_name_from_cycle(db, cycle) if cycle else "Ejecutivo"
 
-    # Build the most specific CRM link possible.
-    # ``temperatura=COLD`` filters to non-HOT (LEAD) leads.
-    # ``orden=antiguos_sin_atender`` shows oldest unattended first.
-    # The ``ejecutivo`` parameter is intentionally omitted because:
-    # - For non-admin users: the CRM automatically filters by the logged-in user's
-    #   name (api_crm.py:229-236).
-    # - For admin users: the parameter requires admin/supervisor role and would
-    #   create a dependency on the recipient's role at link-build time.
-    # The link opens the correct filtered view for the logged-in user.
+    # Build the CRM link — opens all leads sorted by oldest unattended.
+    # Internal temperature enum is never exposed in the visible message.
     base = str(getattr(Config, 'CRM_BASE_URL', 'https://procasa-chatbot-yr8d.onrender.com')).rstrip('/')
-    crm_url = f"{base}/crm?temperatura=COLD&orden=antiguos_sin_atender"
+    crm_url = f"{base}/crm?orden=antiguos_sin_atender"
 
     if count == 1:
         lines = [
-            f"📋 *Tienes 1 nuevo Lead por calificar*",
+            f"📋 *Tienes 1 nuevo Lead*",
             "",
-            f"Hola {exec_name}, tienes un nuevo lead pendiente de revisión.",
+            f"Hola {exec_name}, tienes un nuevo lead pendiente de gestión.",
             "",
             *preview_lines,
         ]
@@ -396,9 +389,9 @@ def build_digest_message_content(db, notification):
             lines.extend(["", f"📊 *Origen*: {source_dist}"])
     else:
         lines = [
-            f"📋 *Tienes {count} nuevos Leads por calificar*",
+            f"📋 *Tienes {count} nuevos Leads*",
             "",
-            f"Hola {exec_name}, tienes {count} nuevos leads pendientes de revisión.",
+            f"Hola {exec_name}, tienes {count} nuevos leads pendientes de gestión.",
             f"El más antiguo lleva {oldest_minutes} min. sin gestionar.",
             "",
             *preview_lines,

@@ -45,7 +45,7 @@ def dt(day, hour=12): return CHILE_TZ.localize(datetime(2026, 7, day, hour)).ast
 
 
 def event(lead, timestamp, *, actor="Susana", result="CONTACTADO"):
-    return {"lead_id": lead, "timestamp": timestamp, "type": "CONTACT_RESULT", "actor": actor,
+    return {"lead_id": lead, "timestamp": timestamp, "type": "HUMAN_NOTE", "actor": actor,
             "actor_type": "human", "result": result, "confirmed": True, "identity_status": "resolved", "meta": {}}
 
 

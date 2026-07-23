@@ -258,6 +258,7 @@ async def lifespan(app: FastAPI):
     from chatbot.crm_weekly_report import crm_weekly_scheduler_loop
     crm_weekly_task = asyncio.create_task(crm_weekly_scheduler_loop())
     non_hot_digest_task = asyncio.create_task(non_hot_digest_worker_loop())
+    sla_alert_task = asyncio.create_task(sla_alert_worker_loop())
     
     # Iniciar Consumers
     c1_task = asyncio.create_task(lead_consumer_worker(1))
@@ -3240,6 +3241,49 @@ async def non_hot_digest_worker_loop():
             background_tasks_status["non_hot_digest"]["status"] = f"error: {str(e)}"
 
         await asyncio.sleep(60)
+
+
+async def sla_alert_worker_loop():
+    """Periodic worker that claims and delivers due SLA alerts exclusively in shadow mode."""
+    logger.info("[SLA_ALERT] Iniciando worker de alertas SLA shadow...")
+    worker_id = f"sla_alert_worker_{os.getpid()}"
+    while True:
+        try:
+            background_tasks_status.setdefault("sla_alert", {})
+            background_tasks_status["sla_alert"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
+            background_tasks_status["sla_alert"]["status"] = "running"
+
+            if not getattr(Config, "CRM_SLA_V2_SHADOW_ENABLED", False):
+                await asyncio.sleep(60)
+                continue
+
+            loop = asyncio.get_running_loop()
+            from chatbot.storage import get_db
+            from chatbot.crm_sla_alerts import claim_due_sla_alert, send_sla_alert
+            db = get_db()
+
+            async def _try_sla():
+                try:
+                    notification = await loop.run_in_executor(
+                        _WORKER_THREAD_POOL,
+                        lambda: claim_due_sla_alert(db, worker_id=worker_id),
+                    )
+                    if notification:
+                        result = await loop.run_in_executor(
+                            _WORKER_THREAD_POOL,
+                            lambda: send_sla_alert(db, notification=notification, worker_id=worker_id),
+                        )
+                        if result["status"] not in ("idle",):
+                            logger.info("[SLA_ALERT] Resultado: %s", result)
+                except Exception as exc:
+                    logger.error("[SLA_ALERT] Error: %s", exc)
+
+            await _try_sla()
+        except Exception as e:
+            logger.error(f"[SLA_ALERT] Error en loop: {e}")
+            background_tasks_status["sla_alert"]["status"] = f"error: {str(e)}"
+
+        await asyncio.sleep(30)
 
 
 def asegurar_indices_db():

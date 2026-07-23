@@ -1196,24 +1196,33 @@ function rsla(){
   const pct=sla.within_sla_pct;
   const col=pct==null?pal.gray:pct>=85?pal.ok:pct>=50?pal.warn:pal.bad;
   const gap=pct!=null?(pct-90):null;
-  const dist=sla.distribution||[];
-  const tot=dist.reduce((a,d)=>a+(d.count||0),0);
-  const segCols=[pal.ok,'#2aa86b',pal.warn,pal.bad,pal.gray];
-  const stat=(v,l,c)=>'<div class="cd-stat"><div class="v" style="'+(c?'color:'+c:'')+'">'+v+'</div><div class="l">'+l+'</div></div>';
+  const bands=sla.risk_bands||[];
+  const eligible=sla.eligible_total??0;
+  const missingRef=sla.missing_reference??0;
   let h='<div class="cd-sla-top"><div class="cd-sla-main"><div class="cd-sla-pct" style="color:'+col+'">'+P1(pct)+'</div><div class="cd-sla-gap">Meta 90 %'+(gap!=null?' \u00b7 <b style="color:'+col+'">'+(gap>=0?'+':'')+P1(gap).replace(' %',' pp')+'</b> de brecha':'')+'</div></div><div class="cd-sla-stats">'
-    +stat(F(sla.critical_open||0),'Cr\u00edticos abiertos',pal.bad)
-    +stat(F(sla.visit_intent_at_risk||0),'Intenciones en riesgo',pal.warn)
-    +stat(sla.median_response_minutes!=null?F(sla.median_response_minutes)+' min':'S/I','Mediana respuesta')
-    +stat(sla.p90_response_minutes!=null?F(sla.p90_response_minutes)+' min':'S/I','P90 respuesta')
+    +'<div class="cd-stat"><div class="v">'+F(eligible)+'</div><div class="l">Pendientes elegibles</div></div>'
+    +'<div class="cd-stat"><div class="v">'+F(sla.critical_open||0)+'</div><div class="l">Cr\u00edticos abiertos</div></div>'
+    +'<div class="cd-stat"><div class="v">'+(sla.median_response_minutes!=null?F(sla.median_response_minutes)+' min':'S/I')+'</div><div class="l">Mediana respuesta</div></div>'
+    +'<div class="cd-stat"><div class="v">'+(sla.p90_response_minutes!=null?F(sla.p90_response_minutes)+' min':'S/I')+'</div><div class="l">P90 respuesta</div></div>'
     +'</div></div>';
-  if(dist.length&&tot>0){
-    h+='<div class="cd-sec-t">Distribuci\u00f3n por tramo de respuesta</div><div class="cd-sla-bar">'
-      +dist.map((d,i)=>'<div data-tt="'+E('<b>'+d.label+'</b><br>'+F(d.count)+' leads \u00b7 '+P1(d.count/tot*100))+'" style="width:'+(d.count/tot*100)+'%;background:'+segCols[i%segCols.length]+'"></div>').join('')
+  if(bands.length&&eligible>0){
+    const bandCols=[pal.ok,'#eab308','#f97316',pal.bad];
+    const bandLabels=['Dentro de plazo','Requiere atenci\u00f3n','Riesgo inminente','SLA vencido'];
+    h+='<div class="cd-sec-t">Estado actual de pendientes <button class="cd-info" data-tt="'+E('Distribuye los leads activos pendientes de primera gesti\u00f3n v\u00e1lida seg\u00fan el tiempo transcurrido desde su referencia SLA. El SLA se considera vencido desde las 3 horas. Los leads sin referencia temporal v\u00e1lida se excluyen de las bandas y se informan separadamente.')+'" aria-label="Metodolog\u00eda SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-sla-bar">'
+      +bands.map((b,i)=>'<div data-tt="'+E('<b>'+b.label+'</b><br>'+F(b.count)+' leads \u00b7 '+(b.percentage!=null?P1(b.percentage):'S/I'))+'" style="width:'+(eligible>0?b.count/eligible*100:0)+'%;background:'+bandCols[i%bandCols.length]+'" title="'+E(b.label)+'"></div>').join('')
       +'</div><div class="cd-sla-leg">'
-      +dist.map((d,i)=>'<span><span class="dot" style="background:'+segCols[i%segCols.length]+'"></span>'+E(d.label)+' <b>'+F(d.count)+'</b></span>').join('')
+      +bands.map((b,i)=>{
+        let r='<span><span class="dot" style="background:'+bandCols[i%bandCols.length]+'"></span>'+E(b.label)+' <b>'+F(b.count)+'</b>';
+        if(b.percentage!=null)r+=' <span style="color:var(--text-muted)">'+P1(b.percentage)+'</span>';
+        r+='<br><span style="font-size:.6rem;color:var(--text-muted)">'+bandIntervalText(b,i)+'</span>';
+        return r+'</span>';
+      }).join('')
       +'</div>';
-  }else{
-    h+='<div class="cd-empty">Sin distribuci\u00f3n disponible</div>';
+    if(missingRef>0){
+      h+='<div class="cd-sla-gap" style="margin-top:8px">Cobertura SLA: '+F(eligible+missingRef)+' de '+F(eligible+missingRef)+' pendientes con referencia v\u00e1lida<br>Sin referencia SLA: <b>'+F(missingRef)+'</b></div>';
+    }
+  }else if(bands.length===0&&eligible===0){
+    h+='<div class="cd-empty">Sin datos de riesgo SLA disponibles</div>';
   }
   const ct=sla.conversion_table||[];
   if(ct.length){
@@ -1223,6 +1232,16 @@ function rsla(){
   }
   body.innerHTML=h;
   bindTips(body);
+}
+function bandIntervalText(band,idx){
+  const mins=[
+    {min:0,max:60,text:'Menos de 60 min'},
+    {min:60,max:150,text:'60 min a menos de 2 h 30 min'},
+    {min:150,max:180,text:'2 h 30 min a menos de 3 h'},
+    {min:180,max:null,text:'3 h o m\u00e1s'},
+  ];
+  const m=mins[idx]||mins[3];
+  return m.text;
 }
 
 /* ================= FUNNEL ================= */

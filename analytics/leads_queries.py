@@ -2083,6 +2083,35 @@ def query_sla_risk_panel(period_start=None, period_end=None, filters=None):
     # For percentage calculations, use total_determined as denominator
     within_pct_determined = _coverage_pct(within, total_determined) if total_determined else None
 
+    # Risk bands for pending leads (with determined SLA start)
+    eligible_leads = [d for d in r["minutes_dist"] if not d.get("managed") and d.get("minutes") is not None]
+    missing_ref_count = len([d for d in r["minutes_dist"] if not d.get("managed") and d.get("minutes") is None])
+    eligible_total = len(eligible_leads)
+
+    def _band_pct(count, total):
+        return round(count / total * 100, 1) if total else None if total == 0 else None
+
+    risk_bands = [
+        {"key": "within_target", "label": "Dentro de plazo",
+         "min_minutes": 0, "max_minutes_exclusive": 60,
+         "count": sum(1 for d in eligible_leads if d["minutes"] < 60),
+         "percentage": None},
+        {"key": "attention_required", "label": "Requiere atenci\u00f3n",
+         "min_minutes": 60, "max_minutes_exclusive": 150,
+         "count": sum(1 for d in eligible_leads if 60 <= d["minutes"] < 150),
+         "percentage": None},
+        {"key": "imminent_risk", "label": "Riesgo inminente",
+         "min_minutes": 150, "max_minutes_exclusive": 180,
+         "count": sum(1 for d in eligible_leads if 150 <= d["minutes"] < 180),
+         "percentage": None},
+        {"key": "sla_breached", "label": "SLA vencido",
+         "min_minutes": 180, "max_minutes_exclusive": None,
+         "count": sum(1 for d in eligible_leads if d["minutes"] >= 180),
+         "percentage": None},
+    ]
+    for band in risk_bands:
+        band["percentage"] = _band_pct(band["count"], eligible_total)
+
     return {
         "total_hot": total_hot,
         "total_determined": total_determined,
@@ -2108,6 +2137,9 @@ def query_sla_risk_panel(period_start=None, period_end=None, filters=None):
             {"label": "M\u00e1s de 3 horas", "count": sum(1 for m in mins_all if m >= 180)},
             {"label": "Sin inicio SLA determinable", "count": sla_undetermined},
         ],
+        "risk_bands": risk_bands,
+        "eligible_total": eligible_total,
+        "missing_reference": missing_ref_count,
         "conversion_table": build_conversion_table(r["minutes_dist"]),
         "sla_start_coverage": {
             "total": total_hot,
@@ -2137,6 +2169,7 @@ def default_sla_response():
         "visit_intent_at_risk": 0,
         "median_response_minutes": None, "p90_response_minutes": None,
         "no_management": 0, "distribution": [], "conversion_table": [],
+        "risk_bands": [], "eligible_total": 0, "missing_reference": 0,
         "sla_start_coverage": {
             "total": 0, "determined": 0, "undetermined": 0,
             "by_origin": {"assigned_at": 0, "created_at_verified": 0, "hot_detected_at": 0, "human_escalation_at": 0, "undetermined": 0},

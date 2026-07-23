@@ -441,35 +441,25 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 .cd-card,.cd-kpi,.cd-skeleton-kpi,.cd-insights,.cd-demand-note,.cd-quality-intro{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-card);box-shadow:var(--shadow-card);color:var(--text-primary)}.cd-card{padding:22px 24px}.cd-card-h{align-items:flex-start;margin-bottom:18px}.cd-grid{gap:16px;margin-bottom:30px}.cd-panel>.cd-card,.cd-panel>.cd-grid,.cd-panel>.cd-demand-note,.cd-panel>.cd-team-toolbar,.cd-panel>.cd-team-mode-panel{margin-bottom:30px}
 .cd-priorities{padding:0!important;overflow:hidden;margin-bottom:24px!important}.cd-priority-head{min-height:48px;padding:0 20px;display:flex;align-items:center;border-bottom:1px solid var(--border-subtle)}.cd-priority-list{display:block;border-top:0}.cd-priority{position:relative;display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:54px;padding:0 18px;border:0;border-top:1px solid var(--border-subtle);transition:background-color var(--motion-fast)}.cd-priority:first-child{border-top:0}.cd-priority:hover{background:var(--bg-surface-hover)}.cd-priority::before{width:7px;height:7px;left:18px;top:50%;bottom:auto;transform:translateY(-50%);border-radius:50%}.cd-priority-count{font-size:15px;font-weight:650;text-align:right}.cd-priority-copy{display:flex;align-items:baseline;gap:8px;min-width:0}.cd-priority-copy strong{font-size:13px}.cd-priority-copy span{font-size:12px;color:var(--text-muted)}.cd-priority-action{grid-column:3;justify-content:flex-end;min-width:88px;color:var(--brand-primary)}
 .cd-kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:30px}.cd-kpi,.cd-skeleton-kpi{box-sizing:border-box}
-/* ============ EXEC OVERVIEW PREMIUM ============ */
-.cd-exec-overview{display:grid;gap:16px;margin-block:18px 28px}
-.cd-exec-brief{display:grid;grid-template-columns:minmax(220px,.65fr) minmax(0,1.35fr);align-items:start;gap:20px;padding:18px 20px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-panel,14px)}
-.cd-exec-brief__heading{min-width:0}
-.cd-eyebrow{font-size:11px;font-weight:600;color:var(--brand-primary);text-transform:uppercase;letter-spacing:.04em;margin:0 0 3px}
-.cd-exec-brief h2{font-size:18px;font-weight:650;margin:0;color:var(--text-primary)}
-.cd-exec-insight{font-size:14px;line-height:1.45;color:var(--text-secondary);margin-top:2px}
-.cd-exec-insight p{margin:0}
-.cd-primary-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
-.cd-primary-kpi{min-width:0;height:auto;min-height:152px;padding:18px;border:1px solid var(--border-subtle);border-radius:var(--radius-card,14px);background:var(--bg-surface);box-shadow:var(--shadow-card);display:flex;flex-direction:column;gap:8px}
-.cd-primary-kpi .cd-kpi-label{font-size:13px;font-weight:550;color:var(--text-secondary);text-transform:none;letter-spacing:0;line-height:1.35}
-.cd-primary-kpi .cd-kpi-val{font-size:36px;font-weight:650;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
-.cd-primary-kpi .cd-kpi-context{font-size:12px;line-height:1.35;color:var(--text-muted);margin-top:auto}
-.cd-primary-kpi .cd-kpi-context .up{color:var(--success)}.cd-primary-kpi .cd-kpi-context .down{color:var(--danger)}.cd-primary-kpi .cd-kpi-context .flat{color:var(--text-muted)}
-.cd-secondary-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border:1px solid var(--border-subtle);border-radius:var(--radius-card,14px);background:var(--bg-surface);overflow:hidden}
-.cd-secondary-metric{display:flex;align-items:baseline;gap:8px;padding:14px 18px;min-width:0}
-.cd-secondary-metric:not(:first-child){border-left:1px solid var(--border-subtle)}
-.cd-secondary-metric span{font-size:13px;font-weight:500;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.cd-secondary-metric strong{font-size:15px;font-weight:650;color:var(--text-primary);font-variant-numeric:tabular-nums;flex:0 0 auto}
-/* ============ INITIAL REVEAL ============ */
-.cd-exec-brief,.cd-primary-kpi,.cd-secondary-metrics{opacity:1;transform:none}
-.cd-exec-overview[data-reveal] .cd-exec-brief,.cd-exec-overview[data-reveal] .cd-primary-kpi,.cd-exec-overview[data-reveal] .cd-secondary-metrics{opacity:0;transform:translateY(4px)}
-.cd-exec-overview[data-reveal][data-visible] .cd-exec-brief,.cd-exec-overview[data-reveal][data-visible] .cd-primary-kpi,.cd-exec-overview[data-reveal][data-visible] .cd-secondary-metrics{opacity:1;transform:translateY(0);transition:opacity 180ms var(--ease-standard,linear),transform 220ms var(--ease-enter,ease)}
-.cd-exec-overview[data-reveal][data-visible] .cd-primary-kpi:nth-child(1){transition-delay:20ms}
-.cd-exec-overview[data-reveal][data-visible] .cd-primary-kpi:nth-child(2){transition-delay:45ms}
-.cd-exec-overview[data-reveal][data-visible] .cd-primary-kpi:nth-child(3){transition-delay:70ms}
-.cd-exec-overview[data-reveal][data-visible] .cd-primary-kpi:nth-child(4){transition-delay:95ms}
-.cd-exec-overview[data-reveal][data-visible] .cd-secondary-metrics{transition-delay:110ms}
-@media(prefers-reduced-motion:reduce){.cd-exec-overview[data-reveal] .cd-exec-brief,.cd-exec-overview[data-reveal] .cd-primary-kpi,.cd-exec-overview[data-reveal] .cd-secondary-metrics{opacity:1;transform:none;transition:none}}.cd-kpi{min-width:0;height:auto;min-height:180px;padding:21px;gap:8px;border-radius:var(--radius-card);opacity:1;transform:none;animation:none}.cd-kpi-sla{grid-column:auto}.cd-kpi:hover{transform:none;box-shadow:var(--shadow-card);border-color:var(--border-subtle)}.cd-kpi-label{font-size:13px;font-weight:600;line-height:1.35;text-transform:none;letter-spacing:0;color:var(--text-secondary)}.cd-kpi-val{font-size:36px;font-weight:650;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}.cd-kpi-var{font-size:13px;line-height:1.35}.cd-kpi-vs,.cd-kpi-meta,.cd-cmpbar-lbl{font-size:12px;line-height:1.4;color:var(--text-muted)}.cd-kpi-foot{min-height:30px}.cd-info{min-width:42px;min-height:42px;margin:-12px -12px -10px 0;font-size:16px;color:var(--text-muted)}
+/* ============ EXEC OVERVIEW SIMPLIFIED ============ */
+.cd-exec-overview{display:grid;gap:12px;margin:14px 0 22px}
+.cd-exec-insight-row{display:flex;align-items:flex-start;gap:10px;min-width:0;padding:2px 0 4px}
+.cd-exec-insight-row__indicator{flex:0 0 auto;width:3px;height:32px;margin-top:2px;border-radius:99px;background:var(--brand-primary)}
+.cd-exec-insight{min-width:0;max-width:980px;margin:0;color:var(--text-secondary);font-size:14px;font-weight:450;line-height:1.45}
+.cd-primary-kpis{display:grid;grid-template-columns:1.15fr repeat(3,minmax(0,1fr));gap:12px}
+.cd-primary-kpi{display:flex;flex-direction:column;min-width:0;min-height:132px;height:auto;padding:16px 17px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;box-shadow:var(--shadow-card)}
+.cd-primary-kpi[data-kpi-key="leads_received"]{border-color:var(--border-default)}
+.cd-primary-kpi__label{color:var(--text-secondary);font-size:12.5px;font-weight:550;line-height:1.25}
+.cd-primary-kpi__value{margin-top:10px;color:var(--text-primary);font-size:clamp(30px,2.3vw,36px);font-weight:650;line-height:1;letter-spacing:-.035em;font-variant-numeric:tabular-nums}
+.cd-primary-kpi__detail{margin-top:8px;color:var(--text-secondary);font-size:12px;line-height:1.35}
+.cd-primary-kpi__detail .up{color:var(--success)}.cd-primary-kpi__detail .down{color:var(--danger)}.cd-primary-kpi__detail .flat{color:var(--text-muted)}
+.cd-primary-kpi__scope{margin-top:auto;padding-top:10px;color:var(--text-muted);font-size:11.5px;line-height:1.3}
+/* Metric rail */
+.cd-metric-rail{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:0;padding:12px 0;border-top:1px solid var(--border-subtle);border-bottom:1px solid var(--border-subtle)}
+.cd-metric-rail__item{display:flex;align-items:baseline;justify-content:space-between;gap:12px;min-width:0;padding:0 18px}
+.cd-metric-rail__item+.cd-metric-rail__item{border-left:1px solid var(--border-subtle)}
+.cd-metric-rail dt{min-width:0;color:var(--text-muted);font-size:12px;line-height:1.3}
+.cd-metric-rail dd{flex:0 0 auto;margin:0;color:var(--text-primary);font-size:16px;font-weight:650;font-variant-numeric:tabular-nums}.cd-kpi{min-width:0;height:auto;min-height:180px;padding:21px;gap:8px;border-radius:var(--radius-card);opacity:1;transform:none;animation:none}.cd-kpi-sla{grid-column:auto}.cd-kpi:hover{transform:none;box-shadow:var(--shadow-card);border-color:var(--border-subtle)}.cd-kpi-label{font-size:13px;font-weight:600;line-height:1.35;text-transform:none;letter-spacing:0;color:var(--text-secondary)}.cd-kpi-val{font-size:36px;font-weight:650;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}.cd-kpi-var{font-size:13px;line-height:1.35}.cd-kpi-vs,.cd-kpi-meta,.cd-cmpbar-lbl{font-size:12px;line-height:1.4;color:var(--text-muted)}.cd-kpi-foot{min-height:30px}.cd-info{min-width:42px;min-height:42px;margin:-12px -12px -10px 0;font-size:16px;color:var(--text-muted)}
 .cd-loading{background:var(--bg-surface-subtle);color:var(--text-muted)}.cd-skeleton-line{background:color-mix(in srgb,var(--text-muted) 14%,transparent)}.cd-err{background:var(--danger-soft);border:1px solid color-mix(in srgb,var(--danger) 28%,transparent);color:var(--text-primary);box-shadow:none}.cd-err[hidden]{display:none!important}
 .cd-insights{background:var(--bg-surface)}.cd-ins{background:var(--bg-surface);border-color:var(--border-subtle);box-shadow:none}.cd-demand-note,.cd-quality-intro{background:var(--bg-surface-subtle);color:var(--text-secondary)}.cd-demand-note p,.cd-quality-intro{color:var(--text-secondary)}
 .cd-tbl{border:1px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-surface)}.cd-tbl table{font-size:13px}.cd-tbl th,.cd-tbl thead th{height:44px;background:var(--bg-surface-subtle);color:var(--text-muted);border-color:var(--border-subtle)}.cd-tbl td{height:46px;color:var(--text-primary);border-color:var(--border-subtle)}.cd-tbl tr[data-exec]:hover{background:var(--bg-surface-hover)}
@@ -482,7 +472,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 @media(max-width:991px){.cd{padding:0 24px 56px}.cd-command{margin:0 -24px 20px;padding:14px 24px 12px}.cd-head{padding-left:46px}.cd-temporal-context{display:grid;grid-template-columns:minmax(150px,max-content) minmax(0,1fr);align-items:start;gap:6px 18px}.cd-temporal-item{gap:0;min-width:0}.cd-temporal-item>i{width:auto;min-width:20px}.cd-tabs{margin-left:-24px;margin-right:-24px;padding:0 24px}.cd-card{padding:20px}.cd-priority-copy{display:block}.cd-head-actions{position:absolute;right:24px;top:12px}.cd-title-row{padding-right:54px}.cd-refresh-btn{display:none}}
 @media(max-width:600px){.cd{padding:0 16px 44px}.cd-command{margin:0 -16px;padding:8px 16px 8px;position:relative;height:auto;overflow:visible}.cd-head{padding-left:42px;gap:8px}.cd-title-row{padding-right:42px}.cd-head-actions{right:12px;top:8px}.cd-icon-btn{min-width:44px;height:44px;padding:0}.cd h1{font-size:23px}.cd-temporal-context{display:grid;grid-template-columns:1fr;margin-top:4px;gap:2px;min-height:0}.cd-temporal-item{gap:0}.cd-temporal-item>i,.cd-temporal-item small,.cd-temporal-sep{display:none}.cd-temporal-item strong{font-size:13px;white-space:normal;overflow-wrap:break-word;word-break:break-word}.cd-temporal-comparison strong{color:var(--text-secondary);font-weight:500}.cd-temporal-updated strong{font-size:12px;color:var(--text-muted)}.cd-temporal-updated .dot{display:none}.cd-head-r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;margin-top:6px}.cd-head-r .cd-seg{grid-column:1/-1}.cd-seg button{min-height:42px;font-size:13px}.cd-cmp-wrap{grid-column:1/-1;display:grid;grid-template-columns:1fr}.cd-cmp-wrap label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.cd-cmp-wrap select{height:42px!important;width:100%}.cd-head-r>#fExecPrimary{grid-column:1;width:100%;height:42px}.cd-head-r>#btnFilters{grid-column:2;min-height:42px}.cd-tabs{margin-left:-16px;margin-right:-16px;padding:0 16px;margin-bottom:18px}.cd-tabs button{min-height:44px;font-size:13px}.cd-priorities{margin-bottom:16px!important}.cd-priority-head{min-height:44px;padding:0 16px}.cd-priority{grid-template-columns:28px minmax(0,1fr) 72px;min-height:58px;padding:8px 12px}.cd-priority::before{left:12px}.cd-priority-copy strong{font-size:12px}.cd-priority-copy span{font-size:12px;line-height:1.25}.cd-priority-action{min-width:68px;font-size:12px}.cd-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:24px}.cd-kpi,.cd-kpi-sla{grid-column:auto;height:auto;min-height:168px;padding:16px}.cd-kpi-val{font-size:32px}.cd-kpi-vs,.cd-kpi-meta{font-size:12px}.cd-card{padding:18px 16px}.cd-chart{min-width:520px}}
 @media(max-width:370px){.cd-kpi{min-height:164px;padding:15px}.cd-kpi-label{font-size:12px}.cd-kpi-val{font-size:30px}}
-@media(max-width:1100px){.cd-exec-brief{grid-template-columns:minmax(0,1fr);gap:10px}.cd-primary-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.cd-exec-overview{gap:12px;margin-block:12px 22px}.cd-exec-brief{padding:15px 16px}.cd-exec-brief h2{font-size:17px}.cd-exec-insight{font-size:13px}.cd-primary-kpis{gap:10px}.cd-primary-kpi{min-height:145px;padding:14px}.cd-primary-kpi .cd-kpi-val{font-size:32px}.cd-secondary-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.cd-secondary-metric:last-child{grid-column:1/-1}.cd-secondary-metric{padding:12px 14px}}
+@media(max-width:1050px) and (min-width:701px){.cd-primary-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.cd-primary-kpi{min-height:128px}}@media(max-width:600px){.cd-exec-overview{gap:10px;margin:10px 0 18px}.cd-exec-insight-row{gap:8px}.cd-exec-insight-row__indicator{height:40px}.cd-exec-insight{font-size:12.5px;line-height:1.4}.cd-primary-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.cd-primary-kpi{min-height:132px;padding:13px}.cd-primary-kpi__value{font-size:30px}.cd-metric-rail{grid-template-columns:repeat(2,minmax(0,1fr))}.cd-metric-rail__item{padding:9px 12px;border-left:0}.cd-metric-rail__item:nth-child(even){border-left:1px solid var(--border-subtle)}.cd-metric-rail__item:last-child{grid-column:1/-1;border-top:1px solid var(--border-subtle)}}
 </style>
 </head>
 <body class="cd-page">
@@ -587,13 +577,10 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 
 <!-- TAB exec -->
 <div class="cd-panel active" id="tab-exec" role="tabpanel" aria-labelledby="tab-btn-exec">
-  <section class="cd-exec-overview" id="execOverview" aria-labelledby="execSummaryTitle">
-    <div class="cd-exec-brief">
-      <div class="cd-exec-brief__heading">
-        <p class="cd-eyebrow">Resumen del periodo</p>
-        <h2 id="execSummaryTitle">Actividad comercial</h2>
-      </div>
-      <div id="executiveInsight" class="cd-exec-insight" aria-live="polite"></div>
+  <section class="cd-exec-overview" id="execOverview">
+    <div class="cd-exec-insight-row">
+      <span class="cd-exec-insight-row__indicator" aria-hidden="true"></span>
+      <p id="executiveInsight" class="cd-exec-insight" aria-live="polite"></p>
     </div>
     <div class="cd-primary-kpis" id="kpiRow" aria-busy="true" aria-live="polite">
       <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
@@ -601,7 +588,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
       <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
       <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
     </div>
-    <div class="cd-secondary-metrics" id="secondaryMetrics"></div>
+    <dl class="cd-metric-rail" id="metricRail"></dl>
   </section>
   <section class="cd-card cd-priorities" aria-labelledby="prioritiesTitle"><div class="cd-priority-head"><h2 id="prioritiesTitle">Prioridades de hoy</h2><span class="cd-status-pill" id="refreshState"><i class="fa-solid fa-arrows-rotate"></i> Actualizando resultados&hellip;</span></div><div class="cd-priority-list" id="priorityList"></div></section>
   <div class="cd-insights" id="insights" hidden></div>
@@ -1045,7 +1032,6 @@ function render(){
   $('metaTxt').textContent=(compact?(upd?upd.replace(' \u00b7 actualizado ',''):'hace instantes')+' \u00b7 '+totalLabel+' leads':totalLabel+' leads analizados'+upd);
   document.querySelector('#metaLine .dot').style.background='var(--cd-ok)';
   rKPI();rExecutiveInsight();rPriorities();rInsights();rev();rsla();rfun();
-  revealExecutiveOnce();
   FIRST_KPI=false;
 }
 
@@ -1096,82 +1082,65 @@ function rExecutiveInsight(){
   const leads=k.leads_received||{},leadsVal=leads.value||0;
   const visitInt=k.visit_intent||{},visitVal=visitInt.value||0;
   const visits=k._meta?.visits_scheduled||0;
-  const term=k.ever_closed_won?.value||0;
-  let phrases=[];
   const prv=leads.previous,abs=leadsVal-(prv||0);
+  let sentence1='';
   if(COMPARE==='none'||!ctx.hasComparison){
-    phrases.push('Ingresaron '+F(leadsVal)+' leads durante '+ctx.currentLabel+'.');
+    sentence1='Ingresaron '+F(leadsVal)+' leads durante '+ctx.currentLabel+'.';
   }else if(prv===0||prv==null){
-    phrases.push('Ingresaron '+F(leadsVal)+' leads. El periodo comparable no tiene base suficiente para calcular una variaci\u00f3n porcentual.');
+    sentence1='Ingresaron '+F(leadsVal)+' leads. No hay base suficiente para comparar.';
   }else if(abs>0){
-    phrases.push('Ingresaron '+F(leadsVal)+' leads, '+F(abs)+' m\u00e1s que '+ctx.previousLabel+'.');
+    sentence1='Ingresaron '+F(leadsVal)+' leads, '+F(abs)+' m\u00e1s que '+ctx.previousLabel+'.';
   }else if(abs<0){
-    phrases.push('Ingresaron '+F(leadsVal)+' leads, '+F(Math.abs(abs))+' menos que '+ctx.previousLabel+'.');
+    sentence1='Ingresaron '+F(leadsVal)+' leads, '+F(Math.abs(abs))+' menos que '+ctx.previousLabel+'.';
   }else{
-    phrases.push('Ingresaron '+F(leadsVal)+' leads, el mismo volumen que '+ctx.previousLabel+'.');
+    sentence1='Ingresaron '+F(leadsVal)+' leads, el mismo volumen que '+ctx.previousLabel+'.';
   }
   let f2='';
   if(visitVal>0){f2=F(visitVal)+' mostraron intenci\u00f3n de visita';}
   if(visits>0){f2+=(f2?'. ':'')+F(visits)+' llegaron a visita coordinada';}
-  else if(visitVal>0){f2+='. No se registraron visitas coordinadas';}
-  if(term>0){f2+='. '+F(term)+' cerraron exitosamente';}
-  if(f2)phrases.push(f2+'.');
-  el.innerHTML=phrases.map(p=>'<p>'+E(p)+'</p>').join('');
-}
-function revealExecutiveOnce(){
-  const overview=$('execOverview');
-  if(!overview||overview.dataset.revealed==='true')return;
-  overview.dataset.revealed='true';
-  if(window.matchMedia('(prefers-reduced-motion:reduce)').matches)return;
-  overview.setAttribute('data-reveal','');
-  requestAnimationFrame(()=>requestAnimationFrame(()=>overview.setAttribute('data-visible','')));
-  setTimeout(()=>{overview.removeAttribute('data-reveal');overview.removeAttribute('data-visible')},400);
+  else if(visitVal>0){f2+='; no hubo visitas coordinadas';}
+  el.textContent=sentence1+(f2?' '+f2+'.':'');
 }
 function rKPI(){
   const k=D.kpis||{},sla=D.sla_risk||{},pal=PAL();
   const hotCov=k._meta?.temperature_coverage||{};
-  const daily=(D.trends?.current?.daily||[]).map(d=>d.received);
   const kpiCtx=getPeriodContext(D);
-  /* 4 primary KPIs */
   const defs=[
-    ['leads_received','Leads recibidos','Flujo del periodo',true],
-    ['leads_hot_current','Hot actuales','Temperatura al corte actual',false],
-    ['visit_intent','Intenci\u00f3n de visita','Flujo del periodo',false],
+    ['leads_received','Leads recibidos','Flujo del periodo'],
+    ['leads_hot_current','Hot actuales','Stock actual al corte'],
+    ['visit_intent','Intenci\u00f3n de visita','Flujo del periodo'],
   ];
   let h='';
-  defs.forEach(([key,name,scope,isLeads],idx)=>{
+  defs.forEach(([key,name,scope],idx)=>{
     const v=k[key]||{},cur=v.value,prv=v.previous,vv=v.variation_pct;
-    let ctx='<span class="flat">Sin base comparable</span>';
-    if(COMPARE==='none'){ctx='<span class="flat">Sin comparaci\u00f3n</span>'}
+    let detail='<span class="flat">Sin base comparable</span>';
+    if(COMPARE==='none'){detail='<span class="flat">Sin comparaci\u00f3n</span>'}
     else if(vv!=null&&prv!=null){
       const cls=vv>0?'up':vv<0?'down':'flat';
       const abs=cur-prv;
-      ctx='<span class="'+cls+'">'+(abs>=0?'+':'')+F(abs)+' vs. '+E(kpiCtx.previousLabel||'periodo comparable')+' <b>'+PV(vv)+'</b></span>';
+      detail='<span class="'+cls+'">'+(abs>=0?'+':'')+F(abs)+' \u00b7 '+PV(vv)+' vs. '+E(kpiCtx.previousLabel||'periodo comparable')+'</span>';
     }else if(prv===0&&cur!=null){
-      ctx='<span class="'+(cur>0?'up':'flat')+'">'+(cur>0?'+':'')+F(cur)+' leads <b>Sin base porcentual</b></span>';
+      detail='<span class="'+(cur>0?'up':'flat')+'">'+(cur>0?'+':'')+F(cur)+' leads \u00b7 Sin base porcentual</span>';
     }
-    let foot='';
-    if(key==='leads_hot_current'){
-      const hist=k.temperature_at_close||hotCov;
-      foot='<span style="font-size:12px;color:var(--text-muted)">Hist\u00f3rico al cierre: '+((hist.with_history||0)>0?F(hist.hot||0):'S/I')+'</span>';
-    }
-    h+='<div class="cd-primary-kpi"><span class="cd-kpi-label">'+E(name)+'</span><span class="cd-kpi-val">'+(cur!=null?F(cur):'S/I')+'</span><div class="cd-kpi-context">'+ctx+'</div>'+foot+'</div>';
+    const keyAttr='data-kpi-key="'+key+'"';
+    h+='<div class="cd-primary-kpi" '+keyAttr+'><span class="cd-primary-kpi__label">'+E(name)+'</span><span class="cd-primary-kpi__value">'+(cur!=null?F(cur):'S/I')+'</span><div class="cd-primary-kpi__detail">'+detail+'</div><span class="cd-primary-kpi__scope">'+E(scope)+'</span></div>';
   });
   /* SLA */
   const slaPct=sla.within_sla_pct;
   const slaCol=slaPct==null?pal.gray:slaPct>=85?pal.ok:slaPct>=50?pal.warn:pal.bad;
-  const slaCtx=slaPct==null?'<span class="flat">Sin datos demostrables</span>':slaPct>=90?'<span class="up">Sin incumplimientos publicables</span>':slaPct>=50?'<span class="flat">'+F(sla.critical_open||0)+' cr\u00edticos abiertos</span>':'<span class="down">'+F(sla.critical_open||0)+' cr\u00edticos abiertos</span>';
-  h+='<div class="cd-primary-kpi"><span class="cd-kpi-label">Cumplimiento SLA</span><span class="cd-kpi-val" style="color:'+slaCol+'">'+(slaPct!=null?P1(slaPct):'S/I')+'</span><div class="cd-kpi-context">'+slaCtx+'</div><span style="font-size:12px;color:var(--text-muted)">Gesti\u00f3n del periodo</span></div>';
+  const slaCtx=slaPct==null?'<span class="flat">Sin datos demostrables</span>':slaPct>=90?'<span class="up">Sin incumplimientos publicables</span>':'<span class="'+(slaPct>=50?'flat':'down')+'">'+F(sla.critical_open||0)+' cr\u00edticos abiertos</span>';
+  h+='<div class="cd-primary-kpi" data-kpi-key="sla"><span class="cd-primary-kpi__label">Cumplimiento SLA</span><span class="cd-primary-kpi__value" style="color:'+slaCol+'">'+(slaPct!=null?P1(slaPct):'S/I')+'</span><div class="cd-primary-kpi__detail">'+slaCtx+'</div><span class="cd-primary-kpi__scope">Gesti\u00f3n del periodo</span></div>';
   $('kpiRow').innerHTML=h;
-  /* secondary metrics */
+  /* metric rail */
   const visits=k._meta?.visits_scheduled??k.visits_scheduled?.value??null;
   const closed=k.ever_closed_won?.value??null;
   const tempCov=hotCov;
   const tempHot=tempCov.with_history>0&&tempCov.hot!=null?F(tempCov.hot):'S/I';
-  $('secondaryMetrics').innerHTML=
-    '<div class="cd-secondary-metric"><span>Visitas coordinadas</span><strong>'+(visits!=null?F(visits):'S/I')+'</strong></div>'+
-    '<div class="cd-secondary-metric"><span>Cierres</span><strong>'+(closed!=null?F(closed):'S/I')+'</strong></div>'+
-    '<div class="cd-secondary-metric"><span>Temperatura hist\u00f3rica</span><strong>'+tempHot+'</strong></div>';
+  const mr=$('metricRail');
+  if(mr)mr.innerHTML=
+    '<div class="cd-metric-rail__item"><dt>Visitas coordinadas</dt><dd>'+(visits!=null?F(visits):'S/I')+'</dd></div>'+
+    '<div class="cd-metric-rail__item"><dt>Cierres</dt><dd>'+(closed!=null?F(closed):'S/I')+'</dd></div>'+
+    '<div class="cd-metric-rail__item"><dt>Temperatura hist\u00f3rica al cierre</dt><dd>'+tempHot+'</dd></div>';
 }
 
 /* ================= INSIGHTS ================= */

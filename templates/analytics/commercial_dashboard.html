@@ -524,7 +524,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
     <select id="fType" data-advanced aria-label="Filtrar por tipo de propiedad"><option value="">Tipo propiedad</option></select>
     <select id="fCommune" data-advanced aria-label="Filtrar por comuna"><option value="">Comuna</option></select>
     <span id="moreFilters" style="display:contents">
-      <select id="fTemp" data-more aria-label="Filtrar por temperatura actual"><option value="">Temp. actual</option><option value="HOT">Hot</option><option value="COLD">Cold</option><option value="UNKNOWN">S/I</option></select>
+      <select id="fTemp" data-more aria-label="Filtrar por temperatura actual"><option value="">Temp. actual</option><option value="HOT">Hot</option><option value="COLD">Por calificar</option><option value="UNKNOWN">S/I</option></select>
       <select id="fProp" data-more aria-label="Filtrar por propiedad"><option value="">Propiedad</option></select>
       <select id="fAsgn" data-more aria-label="Filtrar por estado de asignación"><option value="">Asignaci&oacute;n</option><option value="assigned">Asignados</option><option value="unassigned">Sin asignar</option></select>
       <select id="fStage" data-more aria-label="Filtrar por etapa"><option value="">Etapa</option></select>
@@ -947,7 +947,7 @@ function applyFilters(){
 function renderChips(){
   const chips=$('fltChips'),items=[];
   const labels={period:'Periodo',exec:'Ejecutiva',source:'Fuente',op:'Operaci\u00f3n',type:'Tipo',commune:'Comuna',temp:'Temp. actual',prop:'Propiedad',asgn:'Asignaci\u00f3n',stage:'Etapa'};
-  const displayValue=(key,value)=>key==='temp'?({HOT:'Hot',COLD:'Cold',UNKNOWN:'S/I'}[value]||value):value;
+  const displayValue=(key,value)=>key==='temp'?({HOT:'Hot',COLD:'Por calificar',UNKNOWN:'S/I'}[value]||value):value;
   const selMap={exec:'fExec',source:'fSource',op:'fOp',type:'fType',commune:'fCommune',temp:'fTemp',prop:'fProp',asgn:'fAsgn',stage:'fStage'};
   ['exec','source','op','type','commune','temp','prop','asgn','stage'].forEach(k=>{if(FILTERS[k])items.push({k,v:labels[k]+': '+displayValue(k,FILTERS[k])})});
   let h='';
@@ -1064,7 +1064,7 @@ function rKPI(){
       const t=k.temperature_at_close||hotCov,has=t.with_history>0;
       const hot=has&&t.hot!=null?F(t.hot):'S/I',cold=has&&t.cold!=null?F(t.cold):'S/I';
       h+='<div class="cd-kpi" style="--d:'+(FIRST_KPI?idx*45:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">'+name+'</span><button class="cd-info" data-tt="'+E(tip)+'" aria-label="Definición de '+E(name)+'"><i class="fa-solid fa-'+icon+'"></i></button></div>'
-        +'<div class="cd-temp-grid"><span>Hot histórico</span><b class="'+(!has?'unknown':'')+'">'+hot+'</b><span>Cold histórico</span><b class="'+(!has?'unknown':'')+'">'+cold+'</b><span>Sin historial</span><b>'+F(t.without_history??t.total??0)+'</b><span>Cobertura histórica</span><b>'+P(t.history_coverage_pct)+'</b></div></div>';
+        +'<div class="cd-temp-grid"><span>Hot histórico</span><b class="'+(!has?'unknown':'')+'">'+hot+'</b><span>Por calificar histórico</span><b class="'+(!has?'unknown':'')+'">'+cold+'</b><span>Sin historial</span><b>'+F(t.without_history??t.total??0)+'</b><span>Cobertura histórica</span><b>'+P(t.history_coverage_pct)+'</b></div></div>';
       return;
     }
     const v=k[key]||{},cur=v.value,prv=v.previous,vv=v.variation_pct;

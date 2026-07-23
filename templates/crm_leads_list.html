@@ -1657,8 +1657,8 @@
             {% set selected_temperature = current_temperatura %}
             {% set selected_state = request.query_params.get('estado', '') %}
             {% set executive_label = current_ejecutivo if current_ejecutivo != 'Todos' else 'todos los ejecutivos' %}
-            {% set temperature_label = 'Leads Hot' if selected_temperature == 'HOT' else 'Leads Cold' if selected_temperature == 'COLD' else 'Todos los leads' %}
-            {% set management_title = 'Gestión de Leads Hot' if selected_temperature == 'HOT' else 'Gestión de Leads Cold' if selected_temperature == 'COLD' else 'Gestión de todos los leads' %}
+            {% set temperature_label = 'Leads Hot' if selected_temperature == 'HOT' else 'Leads por calificar' if selected_temperature == 'COLD' else 'Todos los leads' %}
+            {% set management_title = 'Gestión de Leads Hot' if selected_temperature == 'HOT' else 'Gestión de Leads por calificar' if selected_temperature == 'COLD' else 'Gestión de todos los leads' %}
             {% set state_metrics = [
                 ('nuevo', 'NEW', 'Sin atender', kpis.nuevo, kpis.nuevo_percent, kpis.nuevo_hot, kpis.nuevo_cold),
                 ('gestion', 'GRUPO_GESTION', 'En gestión', kpis.gestion, kpis.gestion_percent, kpis.gestion_hot, kpis.gestion_cold),
@@ -1844,7 +1844,7 @@
                             {% if show_priority %}<th class="col-type">Tipo</th>{% endif %}
                             <th class="col-time">
                                 {{ 'Antigüedad' if selected_temperature == 'COLD' else 'SLA / Tiempo' }}
-                                {% if selected_temperature != 'COLD' %}
+                                {% if selected_temperature not in ('COLD', 'Todos') %}
                                 <i class="fa-solid fa-circle-question ms-1 text-accent opacity-75"
                                     style="cursor: help; font-size: 0.85rem;" data-bs-toggle="tooltip"
                                     data-bs-custom-class="cloud-tooltip" data-bs-placement="top" data-bs-html="true"
@@ -1869,7 +1869,7 @@
                                     {% if lead.lead_temperature_effective == 'HOT' %}
                                     <span class="lead-type-hot" aria-label="Lead Hot">{{ lead_temperature_icon('HOT', 'me-1') }}{{ lead_temperature_label('HOT') }}</span>
                                     {% else %}
-                                    <span class="lead-type-cold" aria-label="Lead Cold">{{ lead_temperature_icon('COLD', 'me-1') }}{{ lead_temperature_label('COLD') }}</span>
+                                    <span class="lead-type-cold" aria-label="Lead por calificar">{{ lead_temperature_icon('COLD', 'me-1') }}{{ lead_temperature_label('COLD') }}</span>
                                     {% endif %}
                                 </div>
                             </td>
@@ -1878,7 +1878,7 @@
                                 <div class="mobile-cell-value d-flex align-items-center">
                                     {% if lead.lead_temperature_effective == 'COLD' %}
                                     <i class="fa-solid fa-clock-rotate-left text-info opacity-75"></i>
-                                    <span class="ms-2">{{ lead.cold_age_label }}</span>
+                                    <span class="ms-2">{{ lead.age_label }}</span>
                                     {% elif lead.sla_status == 'critical' %}
                                     <div class="led-indicator led-red pulse-red"></div>
                                     <span class="fw-bold ms-2">{{ lead.sla_label }}</span>

@@ -114,7 +114,10 @@ def normalize_result(value: Any) -> Optional[str]:
 
 
 def event_evidence(event: Mapping[str, Any]) -> dict[str, Any]:
-    event_type = str(event.get("type") or "").upper()
+    raw = event.get("type") or ""
+    if hasattr(raw, "value"):
+        raw = raw.value
+    event_type = str(raw).upper()
     meta = event.get("meta") or {}
     actor = event.get("actor")
     actor_type = str(event.get("actor_type") or meta.get("actor_type") or "").lower()

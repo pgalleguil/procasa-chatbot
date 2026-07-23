@@ -524,7 +524,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
     <select id="fType" data-advanced aria-label="Filtrar por tipo de propiedad"><option value="">Tipo propiedad</option></select>
     <select id="fCommune" data-advanced aria-label="Filtrar por comuna"><option value="">Comuna</option></select>
     <span id="moreFilters" style="display:contents">
-      <select id="fTemp" data-more aria-label="Filtrar por temperatura actual"><option value="">Temp. actual</option><option value="HOT">Hot</option><option value="COLD">Por calificar</option><option value="UNKNOWN">S/I</option></select>
+      <select id="fTemp" data-more aria-label="Filtrar por temperatura actual"><option value="">Temp. actual</option><option value="HOT">Hot</option><option value="COLD">Lead</option><option value="UNKNOWN">S/I</option></select>
       <select id="fProp" data-more aria-label="Filtrar por propiedad"><option value="">Propiedad</option></select>
       <select id="fAsgn" data-more aria-label="Filtrar por estado de asignación"><option value="">Asignaci&oacute;n</option><option value="assigned">Asignados</option><option value="unassigned">Sin asignar</option></select>
       <select id="fStage" data-more aria-label="Filtrar por etapa"><option value="">Etapa</option></select>
@@ -947,7 +947,7 @@ function applyFilters(){
 function renderChips(){
   const chips=$('fltChips'),items=[];
   const labels={period:'Periodo',exec:'Ejecutiva',source:'Fuente',op:'Operaci\u00f3n',type:'Tipo',commune:'Comuna',temp:'Temp. actual',prop:'Propiedad',asgn:'Asignaci\u00f3n',stage:'Etapa'};
-  const displayValue=(key,value)=>key==='temp'?({HOT:'Hot',COLD:'Por calificar',UNKNOWN:'S/I'}[value]||value):value;
+  const displayValue=(key,value)=>key==='temp'?({HOT:'Lead Hot',COLD:'Lead',UNKNOWN:'S/I'}[value]||value):value;
   const selMap={exec:'fExec',source:'fSource',op:'fOp',type:'fType',commune:'fCommune',temp:'fTemp',prop:'fProp',asgn:'fAsgn',stage:'fStage'};
   ['exec','source','op','type','commune','temp','prop','asgn','stage'].forEach(k=>{if(FILTERS[k])items.push({k,v:labels[k]+': '+displayValue(k,FILTERS[k])})});
   let h='';

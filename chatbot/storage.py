@@ -606,10 +606,9 @@ def log_event(phone: str, event_type: str, actor: str = "system", meta: dict = N
                 {"_id": cycle["_id"], "first_valid_management_at": {"$exists": False}},
                 {"$set": {"first_valid_management_at": event_at, "first_valid_management_actor": actor}},
             )
-        # Operational rule: opening the lead's WhatsApp from the CRM is a
-        # human contact attempt. Any canonical management evidence must stop
-        # the lead from remaining unattended, even when the event originated
-        # outside the manual-management form.
+        # Any canonical management evidence must stop the lead from remaining
+        # unattended.  Click/send/call events are excluded by event_evidence()
+        # and never reach this block.
         db[COLLECTION_CONVERSATIONS].update_one(
             {
                 "_id": lead["_id"],

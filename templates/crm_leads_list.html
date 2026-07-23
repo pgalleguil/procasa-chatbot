@@ -1085,7 +1085,7 @@
             color: var(--state-unattended) !important;
         }
 
-        .lead-type-cold {
+        .lead-type-normal {
             color: var(--lead-cold) !important;
         }
 
@@ -1657,13 +1657,13 @@
             {% set selected_temperature = current_temperatura %}
             {% set selected_state = request.query_params.get('estado', '') %}
             {% set executive_label = current_ejecutivo if current_ejecutivo != 'Todos' else 'todos los ejecutivos' %}
-            {% set temperature_label = 'Leads Hot' if selected_temperature == 'HOT' else 'Leads por calificar' if selected_temperature == 'COLD' else 'Todos los leads' %}
-            {% set management_title = 'Gestión de Leads Hot' if selected_temperature == 'HOT' else 'Gestión de Leads por calificar' if selected_temperature == 'COLD' else 'Gestión de todos los leads' %}
+            {% set temperature_label = 'Leads Hot' if selected_temperature == 'HOT' else 'Leads' if selected_temperature == 'COLD' else 'Todos los leads' %}
+            {% set management_title = 'Gestión de Leads Hot' if selected_temperature == 'HOT' else 'Gestión de Leads' if selected_temperature == 'COLD' else 'Gestión de todos los leads' %}
             {% set state_metrics = [
-                ('nuevo', 'NEW', 'Sin atender', kpis.nuevo, kpis.nuevo_percent, kpis.nuevo_hot, kpis.nuevo_cold),
-                ('gestion', 'GRUPO_GESTION', 'En gestión', kpis.gestion, kpis.gestion_percent, kpis.gestion_hot, kpis.gestion_cold),
-                ('visita', 'GRUPO_VISITA', 'Visitas', kpis.visita, kpis.visita_percent, kpis.visita_hot, kpis.visita_cold),
-                ('cerrado', 'GRUPO_CERRADO', 'Cerrados', kpis.cerrado, kpis.cerrado_percent, kpis.cerrado_hot, kpis.cerrado_cold)
+                ('nuevo', 'NEW', 'Sin atender', kpis.nuevo, kpis.nuevo_percent, kpis.nuevo_hot, 0),
+                ('gestion', 'GRUPO_GESTION', 'En gestión', kpis.gestion, kpis.gestion_percent, kpis.gestion_hot, 0),
+                ('visita', 'GRUPO_VISITA', 'Visitas', kpis.visita, kpis.visita_percent, kpis.visita_hot, 0),
+                ('cerrado', 'GRUPO_CERRADO', 'Cerrados', kpis.cerrado, kpis.cerrado_percent, kpis.cerrado_hot, 0)
             ] %}
 
             <!-- Universo completo del ejecutivo/búsqueda -->
@@ -1694,11 +1694,11 @@
                     <a href="{{ card_urls.cold }}" class="summary-card {{ 'is-active' if selected_temperature == 'COLD' }}"
                         aria-current="{{ 'true' if selected_temperature == 'COLD' else 'false' }}">
                         <div>
-                            <div class="summary-value lead-type-cold" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
-                            <div class="summary-label">{{ lead_temperature_label('COLD') }} {{ lead_temperature_icon('COLD') }}</div>
+                            <div class="summary-value" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
+                            <div class="summary-label">Leads</div>
                             <div class="summary-meta temperature-share">{{ pct(kpis.cold_percent) }}% del total</div>
                         </div>
-                        {{ lead_temperature_icon('COLD') }}
+                        <i class="fa-solid fa-user fa-2x text-secondary opacity-25"></i>
                     </a>
                 </div>
             </div>
@@ -1750,9 +1750,9 @@
                             </span>
                         </a>
                         {% if selected_temperature == 'Todos' %}
-                        <div class="state-breakdown" aria-label="Desglose por temperatura de {{ label }}">
+                        <div class="state-breakdown" aria-label="Desglose por tipo de {{ label }}">
                             <a href="{{ card_urls[(state|lower) ~ '_hot'] }}">{{ lead_temperature_icon('HOT') }}{{ hot_count }} {{ lead_temperature_label('HOT') }}</a>
-                            <a href="{{ card_urls[(state|lower) ~ '_cold'] }}">{{ lead_temperature_icon('COLD') }}{{ cold_count }} {{ lead_temperature_label('COLD') }}</a>
+                            <a href="{{ card_urls[(state|lower) ~ '_cold'] }}"><i class="fa-solid fa-user lead-type-icon me-1"></i>{{ cold_count }} Lead</a>
                         </div>
                         {% endif %}
                     </div>
@@ -1777,7 +1777,7 @@
                     <select name="temperatura" data-auto-filter>
                         <option value="Todos" {% if selected_temperature == 'Todos' %}selected{% endif %}>Todos</option>
                         <option value="HOT" {% if selected_temperature == 'HOT' %}selected{% endif %}>{{ lead_temperature_option('HOT') }}</option>
-                        <option value="COLD" {% if selected_temperature == 'COLD' %}selected{% endif %}>{{ lead_temperature_option('COLD') }}</option>
+                        <option value="COLD" {% if selected_temperature == 'COLD' %}selected{% endif %}>Lead</option>
                     </select>
                 </label>
 
@@ -1843,8 +1843,8 @@
                         <tr>
                             {% if show_priority %}<th class="col-type">Tipo</th>{% endif %}
                             <th class="col-time">
-                                {{ 'Antigüedad' if selected_temperature == 'COLD' else 'SLA / Tiempo' }}
-                                {% if selected_temperature not in ('COLD', 'Todos') %}
+                                SLA / Tiempo
+                                {% if selected_temperature != 'Todos' %}
                                 <i class="fa-solid fa-circle-question ms-1 text-accent opacity-75"
                                     style="cursor: help; font-size: 0.85rem;" data-bs-toggle="tooltip"
                                     data-bs-custom-class="cloud-tooltip" data-bs-placement="top" data-bs-html="true"
@@ -1869,17 +1869,14 @@
                                     {% if lead.lead_temperature_effective == 'HOT' %}
                                     <span class="lead-type-hot" aria-label="Lead Hot">{{ lead_temperature_icon('HOT', 'me-1') }}{{ lead_temperature_label('HOT') }}</span>
                                     {% else %}
-                                    <span class="lead-type-cold" aria-label="Lead por calificar">{{ lead_temperature_icon('COLD', 'me-1') }}{{ lead_temperature_label('COLD') }}</span>
+                                    <span class="lead-type-normal" aria-label="Lead">{{ lead_temperature_icon('COLD', 'me-1') }}{{ lead_temperature_label('COLD') }}</span>
                                     {% endif %}
                                 </div>
                             </td>
                             {% endif %}
-                            <td class="col-time" data-label="{{ 'Antigüedad' if selected_temperature == 'COLD' else 'SLA / Tiempo' }}">
+                            <td class="col-time" data-label="SLA / Tiempo">
                                 <div class="mobile-cell-value d-flex align-items-center">
-                                    {% if lead.lead_temperature_effective == 'COLD' %}
-                                    <i class="fa-solid fa-clock-rotate-left text-info opacity-75"></i>
-                                    <span class="ms-2">{{ lead.age_label }}</span>
-                                    {% elif lead.sla_status == 'critical' %}
+                                    {% if lead.sla_status == 'critical' %}
                                     <div class="led-indicator led-red pulse-red"></div>
                                     <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
                                     {% elif lead.sla_status == 'near_critical' %}

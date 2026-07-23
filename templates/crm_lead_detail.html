@@ -67,9 +67,9 @@
         }
 
         .lead-type-hot { color: var(--danger-color); }
-        .lead-type-cold { color: var(--lead-cold); }
+        .lead-type-normal { color: var(--lead-cold); }
 
-        .lead-temperature-cold {
+        .lead-temperature-normal {
             color: var(--lead-cold);
             background: color-mix(in srgb, var(--lead-cold) 10%, transparent);
             border: 1px solid color-mix(in srgb, var(--lead-cold) 30%, transparent);
@@ -2513,8 +2513,8 @@
                                     <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25"
                                         aria-label="Lead Hot">{{ lead_temperature_icon('HOT', 'me-1') }}{{ lead_temperature_label('HOT') }}</span>
                                     {% elif lead.lead_temperature_effective == 'COLD' %}
-                                    <span class="badge lead-temperature-cold"
-                                        aria-label="Lead por calificar">{{ lead_temperature_icon('COLD', 'me-1') }}{{ lead_temperature_label('COLD') }}</span>
+                                    <span class="badge lead-temperature-normal"
+                                        aria-label="Lead">{{ lead_temperature_icon('COLD', 'me-1') }}{{ lead_temperature_label('COLD') }}</span>
                                     {% endif %}
                                 </div>
                                 <div class="small text-secondary mt-1">
@@ -2803,7 +2803,7 @@
 
                                 <input type="radio" name="lead_score" value="C" id="score_c" class="score-radio"
                                     onclick="updateSummary()">
-                                <label for="score_c" class="score-label">❄️ C: Baja</label>
+                                <label for="score_c" class="score-label">C: Baja</label>
                             </div>
 
                             <label class="data-label mb-2 mt-3 border-bottom border-secondary pb-1 w-100">¿Qué
@@ -4579,7 +4579,7 @@
             // logAction(logType, { target: target, channel: defaultChannel }, target);
 
             if (currentCommChannel === 'phone') {
-                // [NEW] Added logging for phone actions to ensure CRM registration and SLA auto-promotion
+                // Logging for phone actions — telemetry only, never counts as valid management
                 const logType = `CLICK_PHONE_${target.toUpperCase()}`;
                 logAction(logType, { target: target, channel: 'phone' }, target);
 
@@ -5403,7 +5403,7 @@
             }
 
             try {
-                // Log action in CRM general log (SLA FIX: SEND_WA_LEAD stops timer)
+                // Log action in CRM general log — telemetry only, never stops SLA timer
                 await fetch('/api/crm/log_action', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

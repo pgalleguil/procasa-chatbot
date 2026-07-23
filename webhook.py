@@ -1259,34 +1259,12 @@ async def api_crm_log_action(request: Request):
             db = get_db()
             lead = db["leads"].find_one({"_id": authorized_lead["_id"]})
 
-            # A recorded send/completed call is management. Navigation-only
-            # clicks remain audit evidence and never complete first-management SLA.
-            result_by_event = {
-                "SEND_WA_LEAD": "MESSAGE_SENT_WAITING_RESPONSE",
-                "SEND_EMAIL_LEAD": "EMAIL_SENT",
-                "CALL_COMPLETED_LEAD": "CALL_NO_ANSWER",
-            }
-            if event_type in result_by_event and lead:
-                from chatbot.crm_management import record_management_result
-                from chatbot.crm_metrics import active_assignment_cycle
-                cycle = active_assignment_cycle(db, lead["_id"])
-                if not cycle:
-                    raise ValueError("El lead no tiene un ciclo de asignación activo")
-                meta = payload.get("meta") or {}
-                idempotency_key = str(meta.get("idempotency_key") or "").strip()
-                if not idempotency_key:
-                    idempotency_key = f"crm-send:{lead['_id']}:{cycle['assignment_cycle_id']}:{event_type}:{now_cl.isoformat()}"
-                record_management_result(
-                    db, lead_id=lead["_id"], assignment_cycle_id=cycle["assignment_cycle_id"],
-                    actor_user_id=actor_user_id, result_type=result_by_event[event_type],
-                    occurred_at=None, source="crm_send_action", idempotency_key=idempotency_key,
-                )
-                from chatbot.metrics import update_lead_metrics
-                update_lead_metrics(db, phone, event_at=datetime.now(timezone.utc),
-                                    event_type=event_type, lead_id=lead["_id"])
-            else:
-                log_crm_event(phone=phone, event_type=event_type, agent=actor_name,
-                              meta_data=payload.get("meta"))
+            # All click/send/call actions are telemetry only — they never write
+            # first_valid_management_at, stop SLA, or count as gestion valida.
+            # Only a complete management result from /api/crm/update or
+            # /api/crm/management-result can acreditar gestion.
+            log_crm_event(phone=phone, event_type=event_type, agent=actor_name,
+                          meta_data=payload.get("meta"))
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(_WEB_THREAD_POOL, _sync_log_action)

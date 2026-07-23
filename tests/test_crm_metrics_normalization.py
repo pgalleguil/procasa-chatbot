@@ -36,7 +36,7 @@ def event(lead_id="lead-1", event_type="CONTACT_RESULT", result="CONTACTADO",
 
 def test_multiple_events_count_one_managed_lead():
     events = [event(event_type="HUMAN_NOTE", result=None, confirmed=False) for _ in range(3)]
-    events += [event(result="NO_RESPONDIO"), event(result="CONTACTADO")]
+    events += [event(event_type="HUMAN_NOTE", result="NO_RESPONDIO"), event(event_type="HUMAN_NOTE", result="CONTACTADO")]
     assert unique_managed_lead_ids(events) == {"lead-1"}
 
 
@@ -46,8 +46,8 @@ def test_opening_apps_does_not_credit_management():
 
 
 def test_confirmed_result_credits_and_attempt_is_separate_from_effective_contact():
-    failed = event_evidence(event(result="NO_RESPONDIO"))
-    contacted = event_evidence(event(result="CONTACTADO"))
+    failed = event_evidence(event(event_type="HUMAN_NOTE", result="NO_RESPONDIO"))
+    contacted = event_evidence(event(event_type="HUMAN_NOTE", result="CONTACTADO"))
     assert failed["management"] and failed["contact_attempt"] and not failed["effective_contact"]
     assert contacted["management"] and contacted["contact_attempt"] and contacted["effective_contact"]
 

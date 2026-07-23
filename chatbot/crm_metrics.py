@@ -22,14 +22,15 @@ METRIC_VERSION = "crm_metrics_v1"
 INSTRUMENTATION_CUTOVER = "2026-07-20T00:00:00-04:00"
 
 OPEN_ONLY_EVENT_TYPES = frozenset({
-    "CLICK_PHONE_LEAD", "CLICK_EMAIL_LEAD",
+    "CLICK_WHATSAPP_LEAD", "CLICK_PHONE_LEAD", "CLICK_EMAIL_LEAD",
     "CLICK_WHATSAPP_OWNER", "CLICK_PHONE_OWNER", "CLICK_EMAIL_OWNER",
+    "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD",
     "OPEN_DETAIL", "NAVIGATION", "FILTER", "ASSIGNMENT", "assignment",
     "ALERT", "ALERT_SENT", "alert_sent", "BOT_MSG",
 })
 VALID_MANAGEMENT_EVENT_TYPES = frozenset({
     "GESTION_LOG", "HUMAN_NOTE", "CONTACT_RESULT", "STATUS_CHANGE",
-    "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD", "MANUAL_ENTRY",
+    "MANUAL_ENTRY",
 })
 REGISTERED_OUTREACH_EVENT_TYPES = frozenset({
     "CLICK_WHATSAPP_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD",
@@ -121,18 +122,13 @@ def event_evidence(event: Mapping[str, Any]) -> dict[str, Any]:
     result = normalize_result(event.get("result") or meta.get("result") or meta.get("contact_result"))
     confirmed = bool(event.get("confirmed", meta.get("confirmed", False)))
     identifiable = event.get("lead_id") is not None
-    whatsapp_opened = human and identifiable and event_type == "CLICK_WHATSAPP_LEAD"
-    attempt = whatsapp_opened or (
-        human and identifiable and confirmed and result in CONTACT_ATTEMPT_RESULTS
-    )
+    attempt = human and identifiable and confirmed and result in CONTACT_ATTEMPT_RESULTS
     effective = attempt and result in EFFECTIVE_CONTACT_RESULTS
     meaningful_change = bool(meta.get("meaningful_change"))
     management = human and identifiable and event_type not in OPEN_ONLY_EVENT_TYPES and (
-        attempt or (
-            event_type in VALID_MANAGEMENT_EVENT_TYPES
-            and event_type != "CONTACT_RESULT"
-            and (result is not None or meaningful_change)
-        )
+        event_type in VALID_MANAGEMENT_EVENT_TYPES
+        and event_type != "CONTACT_RESULT"
+        and (result is not None or meaningful_change)
     )
     return {
         "human": human, "management": management, "contact_attempt": attempt,
@@ -143,7 +139,7 @@ def event_evidence(event: Mapping[str, Any]) -> dict[str, Any]:
 def registered_outreach_evidence(event: Optional[Mapping[str, Any]], *, assigned_at=None,
                                  assignment_cycle_id=None,
                                  allow_historical_for_presentation=False) -> dict[str, Any]:
-    """Interpret a recorded WhatsApp open/send/call as management in the assignment cycle."""
+    """Interpret a recorded outreach event for presentation only — never counts as management."""
     if not event or str(event.get("type") or "").upper() not in REGISTERED_OUTREACH_EVENT_TYPES:
         return {"recognized": False, "occurred_at": None, "reason": "not_registered_outreach"}
     occurred = coerce_utc_datetime(event.get("timestamp") or event.get("occurred_at"))

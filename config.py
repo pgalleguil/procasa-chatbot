@@ -48,8 +48,8 @@ class Config:
     # Fail closed until the canonical assignment -> delivery flow is deployed and verified.
     # Operational notifications are enabled by default. Deployments can still
     # use the environment variables as emergency kill switches.
-    LEAD_HOT_NOTIFICATIONS_ENABLED = os.getenv("LEAD_HOT_NOTIFICATIONS_ENABLED", "true").lower() == "true"
-    LEAD_HOT_RECONCILIATION_ENABLED = os.getenv("LEAD_HOT_RECONCILIATION_ENABLED", "true").lower() == "true"
+    LEAD_HOT_NOTIFICATIONS_ENABLED = os.getenv("LEAD_HOT_NOTIFICATIONS_ENABLED", "false").lower() == "true"
+    LEAD_HOT_RECONCILIATION_ENABLED = os.getenv("LEAD_HOT_RECONCILIATION_ENABLED", "false").lower() == "true"
     LEAD_COLD_DIGEST_ENABLED = os.getenv("LEAD_COLD_DIGEST_ENABLED", "false").lower() == "true"
     CRM_SLA_SHADOW_ENABLED = os.getenv("CRM_SLA_SHADOW_ENABLED", "false").lower() == "true"
     CRM_SLA_ALERTS_ENABLED = os.getenv("CRM_SLA_ALERTS_ENABLED", "false").lower() == "true"
@@ -58,6 +58,42 @@ class Config:
     CRM_LEGACY_DAILY_REPORT_ENABLED = os.getenv("CRM_LEGACY_DAILY_REPORT_ENABLED", "false").lower() == "true"
     CRM_INACTIVE_NUDGE_ENABLED = os.getenv("CRM_INACTIVE_NUDGE_ENABLED", "false").lower() == "true"
     CRM_BASE_URL = os.getenv("CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")
+
+    # === Non-Hot Digest (lead qualification) ===
+    # When enabled, accumulates non-HOT assignments and sends grouped notifications
+    # every CRM_NON_HOT_DIGEST_WINDOW_MINUTES minutes per executive.
+    CRM_NON_HOT_DIGEST_ENABLED = os.getenv("CRM_NON_HOT_DIGEST_ENABLED", "true").lower() == "true"
+    # Shadow mode: builds & persists the digest record but never calls the provider.
+    CRM_NON_HOT_DIGEST_SHADOW_MODE = os.getenv("CRM_NON_HOT_DIGEST_SHADOW_MODE", "true").lower() == "true"
+    # Fixed accumulation window in minutes. First non-HOT assignment starts the clock.
+    CRM_NON_HOT_DIGEST_WINDOW_MINUTES = int(os.getenv("CRM_NON_HOT_DIGEST_WINDOW_MINUTES", "10"))
+    # Maximum property preview items in the WhatsApp message.
+    CRM_NON_HOT_DIGEST_MAX_PREVIEW_ITEMS = int(os.getenv("CRM_NON_HOT_DIGEST_MAX_PREVIEW_ITEMS", "3"))
+    # When a pending digest reaches this many leads, it is sent immediately
+    # without waiting for the 10-minute window to expire.  0 = disabled.
+    CRM_NON_HOT_DIGEST_MAX_LEADS_BEFORE_SEND = int(os.getenv("CRM_NON_HOT_DIGEST_MAX_LEADS_BEFORE_SEND", "0"))
+
+    # === After-hours notification policy ===
+    # These flags control whether HOT notifications are deferred outside business
+    # hours.  They do NOT affect the digest window, which is always 10 minutes
+    # from the first non-HOT lead regardless of time of day.
+    CRM_NOTIFICATION_BUSINESS_START = int(os.getenv("CRM_NOTIFICATION_BUSINESS_START", "9"))
+    CRM_NOTIFICATION_BUSINESS_END = int(os.getenv("CRM_NOTIFICATION_BUSINESS_END", "19"))
+    # After-hours hot mode: NEXT_BUSINESS_OPEN (queue for next opening) or ON_CALL_IMMEDIATE.
+    CRM_AFTER_HOURS_HOT_MODE = os.getenv("CRM_AFTER_HOURS_HOT_MODE", "NEXT_BUSINESS_OPEN")
+
+    # === SLA v2 shadow mode ===
+    CRM_SLA_V2_SHADOW_ENABLED = os.getenv("CRM_SLA_V2_SHADOW_ENABLED", "true").lower() == "true"
+    CRM_SLA_V2_LIVE_ENABLED = os.getenv("CRM_SLA_V2_LIVE_ENABLED", "false").lower() == "true"
+    CRM_SLA_ALERTS_SHADOW_MODE = os.getenv("CRM_SLA_ALERTS_SHADOW_MODE", "true").lower() == "true"
+    # Aggregation windows for non-HOT SLA alerts (minutes)
+    CRM_NON_HOT_SLA_PRECRITICAL_AGGREGATION_MINUTES = int(os.getenv("CRM_NON_HOT_SLA_PRECRITICAL_AGGREGATION_MINUTES", "10"))
+    CRM_NON_HOT_SLA_CRITICAL_AGGREGATION_MINUTES = int(os.getenv("CRM_NON_HOT_SLA_CRITICAL_AGGREGATION_MINUTES", "5"))
+    # Cutover date for live SLA alerts. Before this date, all alerts are shadow.
+    CRM_SLA_ALERTS_LIVE_CUTOVER_AT = os.getenv("CRM_SLA_ALERTS_LIVE_CUTOVER_AT", "2027-01-01T00:00:00Z")
+    # Legacy hot creation is permanently disabled. New hot notifications use
+    # crm_notifications_v1 exclusively. pending_notifications is read-only for
+    # existing legacy documents.
 
 
     # === GMAIL ===

@@ -446,16 +446,20 @@ _HOT_RECONCILIATION_CUTOVER = "2026-07-20T00:00:00-04:00"
 def _reconcile_missing_hot_notifications(db):
     """Recover post-cutover HOT assignments that never reached the durable queue.
 
-    Existing pending or sent notification identities are permanent evidence and
-    are never recreated. The scan is throttled and runs only when the normal
-    business-hours consumer asks for pending work.
+    Uses the canonical path (``assign_and_enqueue_hot()`` → ``crm_notifications_v1``).
+    No new documents are created in ``pending_notifications``.
+    The scan is throttled and runs only when the normal business-hours consumer
+    asks for pending work.
     """
     global _HOT_RECONCILIATION_LAST_RUN
     if not Config.LEAD_HOT_RECONCILIATION_ENABLED:
         return
+    if not Config.LEAD_HOT_NOTIFICATIONS_ENABLED:
+        return
     from datetime import timezone
-    from .crm_metrics import coerce_utc_datetime
-    from .notification_identity import lead_notification_identity
+    from .crm_metrics import coerce_utc_datetime, active_assignment_cycle
+    from .crm_hot_delivery import assign_and_enqueue_hot
+    from .crm_notifications import individual_identity, COLLECTION as NOTIF_COLL
 
     now = datetime.now(timezone.utc)
     if _HOT_RECONCILIATION_LAST_RUN and (now - _HOT_RECONCILIATION_LAST_RUN).total_seconds() < 300:
@@ -469,51 +473,86 @@ def _reconcile_missing_hot_notifications(db):
         "_id": 1, "phone": 1, "created_at": 1, "ejecutivo_asignado": 1,
         "lead_temperature_effective": 1, "pipeline_stage": 1, "stage": 1,
         "prospecto": 1, "last_message_preview": 1, "lifecycle.first_valid_management_at": 1,
+        "lifecycle.assigned_at": 1,
     }
-    for lead in db["leads"].find({"lead_temperature_effective": "HOT"}, projection):
-        created_at = coerce_utc_datetime(lead.get("created_at"))
+    for lead_doc in db["leads"].find({"lead_temperature_effective": "HOT"}, projection):
+        created_at = coerce_utc_datetime(lead_doc.get("created_at"))
         if not created_at or created_at < cutover:
             continue
-        if str(lead.get("pipeline_stage") or lead.get("stage") or "").upper() in closed:
+        if str(lead_doc.get("pipeline_stage") or lead_doc.get("stage") or "").upper() in closed:
             continue
-        # Do not send a delayed assignment alert after an executive has
-        # already managed the lead through another CRM action.
-        if (lead.get("lifecycle") or {}).get("first_valid_management_at"):
+        if (lead_doc.get("lifecycle") or {}).get("first_valid_management_at"):
             continue
-        executive = lead.get("ejecutivo_asignado")
+        executive = lead_doc.get("ejecutivo_asignado")
         if not executive:
             continue
         user = db["usuarios"].find_one({"nombre": executive, "is_active": True})
         if not user:
             continue
+        recipient_user_id = str(user.get("_id") or "")
         target_phone = user.get("telefono") or user.get("tel") or user.get("movil")
-        prospect = lead.get("prospecto") or {}
+        if not target_phone:
+            continue
+
+        # Resolve or create active cycle
+        cycle = active_assignment_cycle(db, lead_doc["_id"])
+        if not cycle:
+            from .crm_metrics import create_assignment_cycle
+            assigned_at = coerce_utc_datetime(
+                (lead_doc.get("lifecycle") or {}).get("assigned_at")
+            ) or created_at
+            cycle = create_assignment_cycle(
+                db, lead=lead_doc, assigned_to_user_id=recipient_user_id,
+                assigned_by="system", reason="reconciliation",
+                assigned_at=assigned_at,
+                assigned_to_display_name=executive,
+            )
+        if not cycle:
+            continue
+
+        cycle_id = str(cycle.get("assignment_cycle_id", ""))
+        if not cycle_id:
+            continue
+
+        # Check canonical dedup
+        identity = individual_identity(
+            lead_id=lead_doc["_id"], assignment_cycle_id=cycle_id,
+            notification_type="lead_assignment_hot", recipient_user_id=recipient_user_id,
+        )
+        existing = db[NOTIF_COLL].find_one({
+            "individual_identity": identity,
+            "state": {"$in": ["pending", "sending", "sent"]},
+        })
+        if existing:
+            continue
+
+        prospect = lead_doc.get("prospecto") or {}
         property_code = (
             prospect.get("codigo") or prospect.get("codigo_interno")
             or prospect.get("codigo_propiedad") or prospect.get("codigo_mercadolibre")
         )
         payload = {
-            "lead_id": str(lead["_id"]), "phone": lead.get("phone"),
-            "lead_phone": lead.get("phone"), "property_code": property_code,
-            "target_name": executive, "target_phone": str(target_phone or "").strip(),
-            "nombre": prospect.get("nombre"), "prospecto_nombre": prospect.get("nombre"),
+            "phone": lead_doc.get("phone"), "lead_phone": lead_doc.get("phone"),
+            "property_code": property_code,
+            "target_name": executive, "target_phone": target_phone,
+            "nombre": prospect.get("nombre"),
             "comuna": prospect.get("comuna"), "operacion": prospect.get("operacion"),
             "canal": prospect.get("origen"), "source": prospect.get("origen"),
-            "last_message": prospect.get("ultimo_mensaje") or lead.get("last_message_preview"),
+            "last_message": prospect.get("ultimo_mensaje") or lead_doc.get("last_message_preview"),
             "lead_type": "CRMLead", "notification_type": "lead_assignment_reconciled",
             "reconciled": True,
         }
-        key = lead_notification_identity(payload)
-        if not key or not payload["target_phone"]:
-            continue
-        if db[COLLECTION_PENDING_NOTIFICATIONS].find_one({
-            "notification_key": key, "status": {"$in": ["pending", "sent"]}
-        }):
-            continue
-        save_pending_notification(payload)
+
+        assign_and_enqueue_hot(
+            db, lead=lead_doc, recipient_user_id=recipient_user_id,
+            recipient_phone=target_phone, payload=payload,
+            assigned_by="system", reason="reconciliation",
+            recipient_name=executive,
+        )
         recovered += 1
+
     if recovered:
-        logger.warning("[NOTIFICATION_RECONCILIATION] Recuperados %s leads HOT sin cola", recovered)
+        logger.warning("[NOTIFICATION_RECONCILIATION] Recuperados %s leads HOT via ruta canónica", recovered)
 
 def mark_notification_sent(notification_id):
     db = get_db()
@@ -637,6 +676,63 @@ def update_lead_state(phone: str, stage: str = None, metadata: dict = None):
                 from .metrics import update_lead_metrics
                 update_lead_metrics(db, phone)
             except: pass
+
+# ── Pending response (visit confirmation) ──
+
+PENDING_RESPONSE_TTL_MINUTES = 60  # Default; override via env var at startup
+
+
+def set_pending_response(phone: str, response_type: str, property_code: str, conversation_id: str):
+    """Persist a pending response state on the lead document."""
+    db = get_db()
+    now = datetime.now(CHILE_TZ)
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {
+            "pending_response.type": response_type,
+            "pending_response.created_at": now.isoformat(),
+            "pending_response.property_code": property_code,
+            "pending_response.conversation_id": conversation_id,
+            "pending_response.status": "waiting",
+        }},
+    )
+
+
+def get_pending_response(phone: str, response_type: str = "VISIT_CONFIRMATION") -> Optional[dict]:
+    """Return pending response state if it exists and hasn't expired."""
+    db = get_db()
+    lead = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}, {"pending_response": 1})
+    if not lead:
+        return None
+    pr = lead.get("pending_response")
+    if not pr or pr.get("type") != response_type:
+        return None
+    if pr.get("status") != "waiting":
+        return None
+    created = pr.get("created_at")
+    if not created:
+        return None
+    try:
+        created_dt = datetime.fromisoformat(created)
+        if created_dt.tzinfo is None:
+            created_dt = CHILE_TZ.localize(created_dt)
+        elapsed = datetime.now(CHILE_TZ) - created_dt
+        ttl = timedelta(minutes=int(os.getenv("PENDING_RESPONSE_TTL_MINUTES", "60")))
+        if elapsed > ttl:
+            return None
+    except (ValueError, TypeError):
+        return None
+    return pr
+
+
+def resolve_pending_response(phone: str, status: str):
+    """Mark a pending response as confirmed, rejected, or expired."""
+    db = get_db()
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {"pending_response.status": status, "pending_response.resolved_at": datetime.now(CHILE_TZ).isoformat()}},
+    )
+
 
 def get_user_by_phone(phone: str) -> Optional[dict]:
     """Busca un usuario en la colección 'usuarios' por su teléfono (normalizado)."""

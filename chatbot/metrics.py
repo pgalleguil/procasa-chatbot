@@ -200,75 +200,99 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None, lead_id=None)
 
 def _enqueue_hot_lead_notification(lead):
     """
-    A lead can be assigned while still cold and become hot later as the chat evolves.
-    When that transition happens, notify the already assigned executive.
+    Canonical-only hot notification path.
+
+    Delegates to ``assign_and_enqueue_hot()`` which writes to
+    ``crm_notifications_v1``.  No documents are created in
+    ``pending_notifications``.  Legacy pending_notifications documents
+    are still read and finalized by the existing worker.
     """
     try:
         if not Config.LEAD_HOT_NOTIFICATIONS_ENABLED:
-            logger.info("[HOT_LEAD] notification suppressed flag=LEAD_HOT_NOTIFICATIONS_ENABLED")
+            logger.info("[HOT_LEAD] suppressed flag=LEAD_HOT_NOTIFICATIONS_ENABLED")
             return
         from .constants import UNASSIGNED_LABEL
         from .lead_router import get_executive_phone
-        from .storage import get_db, save_pending_notification
+        from .storage import get_db
+        from .crm_metrics import active_assignment_cycle
+        from .crm_hot_delivery import assign_and_enqueue_hot
+        from .crm_notifications import individual_identity, COLLECTION as NOTIF_COLL
 
         prospecto = lead.get("prospecto", {}) or {}
         alerts_sent = prospecto.get("alerts_sent") or {}
         if has_commercial_alert(alerts_sent):
-            logger.info(f"[HOT_LEAD] Lead {lead.get('phone')} ya tenia alerta comercial enviada. No se duplica WhatsApp HOT.")
+            logger.info("[HOT_LEAD] %s ya tenia alerta comercial.", lead.get("phone"))
             return
 
         exec_name = lead.get("ejecutivo_asignado") or prospecto.get("ejecutivo")
         unassigned = {UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", "Sin asignar", "N/A", "", None}
         if exec_name in unassigned:
-            logger.info(f"[HOT_LEAD] Lead {lead.get('phone')} quedo HOT pero no tiene ejecutivo asignado.")
+            logger.info("[HOT_LEAD] %s HOT sin ejecutivo.", lead.get("phone"))
             return
+
+        db = get_db()
+        cycle = active_assignment_cycle(db, lead["_id"])
+        if not cycle:
+            logger.info("[HOT_LEAD] %s HOT sin ciclo.", lead.get("phone"))
+            return
+
+        recipient_user_id = str(cycle.get("assigned_to_user_id") or "")
+        assignment_cycle_id = str(cycle.get("assignment_cycle_id") or "")
+
+        identity = individual_identity(
+            lead_id=lead["_id"], assignment_cycle_id=assignment_cycle_id,
+            notification_type=HOT_LEAD_NOTIFICATION_TYPE, recipient_user_id=recipient_user_id,
+        )
+        if db[NOTIF_COLL].find_one({"individual_identity": identity, "state": {"$in": ["pending", "sending", "sent"]}}):
+            logger.info("[HOT_LEAD] %s ya tiene notificacion HOT canónica.", lead.get("phone"))
+            return
+
+        try:
+            from .crm_non_hot_digest import exclude_from_open_digest
+            exclude_from_open_digest(db, lead_id=lead["_id"], assignment_cycle_id=assignment_cycle_id)
+        except Exception:
+            pass
 
         exec_phone = get_executive_phone(exec_name)
         if not exec_phone or exec_phone == "+56900000000":
-            logger.warning(f"[HOT_LEAD] Lead {lead.get('phone')} quedo HOT pero {exec_name} no tiene telefono valido.")
+            logger.warning("[HOT_LEAD] %s HOT pero %s sin telefono.", lead.get("phone"), exec_name)
             return
 
         property_code = (
-            lead.get("property_code")
-            or lead.get("codigo")
-            or prospecto.get("codigo")
-            or prospecto.get("codigo_interno")
+            lead.get("property_code") or lead.get("codigo")
+            or prospecto.get("codigo") or prospecto.get("codigo_interno")
         )
         messages = lead.get("messages") or []
-        last_message = ""
-        if messages:
-            last_message = str(messages[-1].get("content") or "")
+        last_message = messages[-1].get("content", "") if messages else ""
 
-        notification_data = {
-            "phone": lead.get("phone"),
-            "lead_phone": lead.get("phone"),
-            "property_code": property_code,
-            "lead_type": HOT_LEAD_NOTIFICATION_TYPE,
-            "target_name": exec_name,
-            "target_phone": exec_phone,
+        last_intent = str(lead.get("last_intent") or "").upper()
+        stage = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
+        if last_intent in {"ASK_VISIT", "ASK_CONTACT", "GIVE_OFFER"}:
+            hot_reason = f"Intenci\u00f3n: {last_intent}"
+        elif stage in {"VISIT_SCHEDULED", "VISIT_DONE", "OFFER", "NEGOTIATION"}:
+            hot_reason = f"Etapa: {stage}"
+        elif has_commercial_alert(alerts_sent):
+            hot_reason = "Alerta comercial previa"
+        else:
+            hot_reason = "Clasificaci\u00f3n autom\u00e1tica"
+
+        payload = {
+            "phone": lead.get("phone"), "lead_phone": lead.get("phone"),
+            "property_code": property_code, "lead_type": HOT_LEAD_NOTIFICATION_TYPE,
+            "target_name": exec_name, "target_phone": exec_phone,
             "nombre": prospecto.get("nombre") or lead.get("nombre") or "Cliente",
-            "last_message": last_message or "El lead se convirtio en HOT durante la conversacion.",
-            "is_new_assignment": False,
-            "lead_temperature": "HOT",
+            "last_message": last_message or "El lead se convirtio en HOT.",
+            "is_new_assignment": False, "lead_temperature": "HOT", "hot_reason": hot_reason,
         }
 
-        db = get_db()
-        existing = db["pending_notifications"].find_one({
-            "$or": [
-                {"lead_data.phone": lead.get("phone")},
-                {"lead_data.lead_phone": lead.get("phone")},
-            ],
-            "lead_data.lead_type": {"$in": ["LeadHotWhatsapp", "InteresVisita", "SolicitudContacto"]},
-            "status": {"$in": ["pending", "sent"]},
-        })
-        if existing:
-            logger.info(f"[HOT_LEAD] Lead {lead.get('phone')} ya tiene notificacion comercial registrada. No se duplica.")
-            return
-
-        save_pending_notification(notification_data)
-        logger.info(f"[HOT_LEAD] Notificacion HOT encolada para {exec_name} por lead {lead.get('phone')}.")
+        assign_and_enqueue_hot(
+            db, lead=lead, recipient_user_id=recipient_user_id,
+            recipient_phone=exec_phone, payload=payload,
+            assigned_by="system", reason="HOT_transition", recipient_name=exec_name,
+        )
+        logger.info("[HOT_LEAD] Can\u00f3nica creada para %s por %s (%s).", exec_name, lead.get("phone"), hot_reason)
     except Exception as e:
-        logger.error(f"[HOT_LEAD] Error encolando notificacion HOT para {lead.get('phone')}: {e}", exc_info=True)
+        logger.error("[HOT_LEAD] Error: %s para %s", e, lead.get("phone"), exc_info=True)
 
 def update_captacion_metrics(db, obj_id):
     """

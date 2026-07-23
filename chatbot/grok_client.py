@@ -75,10 +75,30 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
     - Si el cliente muestra interés → confirma que tienes disponibilidad esta semana o horarios disponibles y di que un asesor confirmará el horario exacto por WhatsApp después de que el cliente sugiera un día.
     """
 
+    from .prompts import VISIT_CONFIRMATION_PROMPT
+    from .storage import get_pending_response
+
+    # Detect if we need to inject the visit confirmation prompt
+    # (when a property has been described and there's no pending confirmation)
+    import re as _re
+    property_code = prospecto_actual.get("codigo") or ""
+    has_pending = get_pending_response(
+        prospecto_actual.get("phone") or "",
+        "VISIT_CONFIRMATION",
+    ) if prospecto_actual.get("phone") else None
+    inject_visit_prompt = bool(property_code and not has_pending)
+
     system_prompt_extraction = f"""
     [INSTRUCCIONES DE EXTRACCIÓN Y SALIDA - FORMATO JSON]
-    1. Analiza el mensaje del usuario.
+    1. Analiza el mensaje del usuario en el contexto de la conversación.
     2. Si menciona datos nuevos que NO están aquí: {json.dumps(datos_conocidos, ensure_ascii=False)}, extráelos.
+
+    CATEGORÍAS DE INTENCIÓN (elige UNA):
+    - agendar_visita: El usuario quiere visitar, ver o conocer la propiedad.
+      Incluye respuestas afirmativas a invitaciones de visita como "sí, me encantaría".
+    - contacto_directo: El usuario pide hablar con un ejecutivo o asesor humano.
+    - escalado_urgente: Reclamo, queja, urgencia, problema grave.
+    - consulta_general: Cualquier otra consulta, saludos, preguntas iniciales o técnicas.
 
     Responde EXCLUSIVAMENTE con este JSON válido (sin etiquetas markdown):
     {{
@@ -86,6 +106,7 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         "respuesta_bot": "Tu respuesta conversacional aquí (según las reglas de negocio)",
         "datos_extraidos": {{ "campo": "valor" }}
     }}
+    {VISIT_CONFIRMATION_PROMPT if inject_visit_prompt else ""}
     """
 
     structured_messages = [

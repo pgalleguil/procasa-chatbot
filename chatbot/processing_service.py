@@ -7,7 +7,7 @@ from .lead_router import find_responsible_executive
 from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, URL_RE
 from .property_lookup import PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, get_prop_location, get_prop_operation
 from config import Config
-from .storage import get_db, save_pending_notification, record_observability_event
+from .storage import get_db, record_observability_event
 from api_captacion import (
     get_zone_for_comuna, normalize_commune_v2,
     _normalize_tipo, _normalize_operacion
@@ -428,35 +428,54 @@ class LeadProcessingService:
                 # La asignación sigue ocurriendo, pero el aviso al ejecutivo se reserva
                 # para leads con intención fuerte para evitar ruido en el equipo.
                 if update_data.get("auto_reassigned"):
-                    # Evita un find_one adicional: armamos snapshot con los datos ya disponibles.
                     prospecto_data = lead.get("prospecto", {}) or {}
                     exec_name = update_data.get("ejecutivo_asignado") or update_data.get("prospecto.ejecutivo") or lead.get("ejecutivo_asignado") or prospecto_data.get("ejecutivo")
                     prop_code = prospecto_data.get("codigo") or lead.get("codigo")
-                    
+
                     from .lead_router import get_executive_phone
                     exec_phone = get_executive_phone(exec_name) if exec_name else "+56900000000"
-                    
+
                     temp = (
                         update_data.get("lead_temperature_effective")
                         or lead.get("lead_temperature_effective")
                         or "COLD"
                     )
-                        
+
                     if temp == "HOT":
-                        structured_alert = {
-                            "phone": lead.get("phone"),
-                            "property_code": prop_code,
-                            "lead_type": "ReasignacionAutomatica",
-                            "target_name": exec_name,
-                            "target_phone": exec_phone,
-                            "nombre": prospecto_data.get("nombre") or lead.get("nombre", "Cliente"),
-                            "last_message": "Asignado automáticamente por el motor de distribución."
-                        }
-                        
-                        save_pending_notification(structured_alert)
-                        logger.info(f"[PROCESS_SERVICE] Notificacion pendiente estructurada guardada para {lead.get('phone')} (destinado a {exec_name})")
+                        try:
+                            from .crm_hot_delivery import assign_and_enqueue_hot
+                            from .crm_metrics import active_assignment_cycle
+                            cycle = active_assignment_cycle(db, lead.get("_id"))
+                            if cycle:
+                                payload = {
+                                    "phone": lead.get("phone"), "property_code": prop_code,
+                                    "lead_type": "ReasignacionAutomatica",
+                                    "target_name": exec_name, "target_phone": exec_phone,
+                                    "nombre": prospecto_data.get("nombre") or lead.get("nombre", "Cliente"),
+                                    "last_message": "Asignado automáticamente por el motor de distribución.",
+                                }
+                                assign_and_enqueue_hot(
+                                    db, lead=lead, recipient_user_id=str(cycle.get("assigned_to_user_id", "")),
+                                    recipient_phone=exec_phone, payload=payload,
+                                    assigned_by="system", reason="auto_reassignment",
+                                    recipient_name=exec_name,
+                                )
+                                logger.info("[PROCESS_SERVICE] Notificacion HOT canónica creada para %s por reasignación de %s", exec_name, lead.get("phone"))
+                        except Exception as exc:
+                            logger.warning("[PROCESS_SERVICE] Error notificando HOT por reasignación: %s", exc)
                     else:
-                        logger.info(f"[PROCESS_SERVICE] Lead {lead.get('phone')} asignado a {exec_name} silenciosamente (Temperatura: {temp}). No se envía alerta de reasignación.")
+                        # Accumulate non-HOT lead in digest window
+                        try:
+                            from .crm_non_hot_digest import accumulate_non_hot_lead
+                            cycle_dict = {
+                                "lead_id": lead.get("_id"),
+                                "assignment_cycle_id": update_data.get("lifecycle.current_assignment_cycle_id") or lead.get("lifecycle", {}).get("current_assignment_cycle_id") or "",
+                                "assigned_to_user_id": exec_name or "",
+                            }
+                            accumulate_non_hot_lead(db, lead=lead, cycle=cycle_dict)
+                        except Exception:
+                            pass
+                        logger.info(f"[PROCESS_SERVICE] Lead {lead.get('phone')} asignado a {exec_name} silenciosamente (Temperatura: {temp}). Acumulado en digest.")
 
                 # --- NUEVO: STRUCTURED LOGGING PARA DECISIONES ---
                 import json

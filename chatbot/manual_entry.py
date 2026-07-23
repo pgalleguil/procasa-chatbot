@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, Tuple, Optional
 import re
-from .storage import get_db, log_event, save_pending_notification
+from .storage import get_db, log_event
 from .constants import CHILE_TZ, PipelineStage, InteractionType
 from .lead_router import find_responsible_executive
 from .processing_service import LeadProcessingService
@@ -370,37 +370,49 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             "origen": origen
         })
 
-        # 6. Notification policy:
+        # 6. Notification policy (canonical path only):
         # Solo leads manuales marcados como HOT notifican al ejecutivo por WhatsApp.
+        # Usa assign_and_enqueue_hot() → crm_notifications_v1. No escribe en pending_notifications.
         if lead_temperature == "HOT":
-            notification_data = {
-                "phone": final_phone,
-                "nombre": name,
-                "email": email,
-                "target_phone": exec_phone,
-                "target_name": exec_name,
-                "property_code": property_code,
-                "comuna": prop_location.get("comuna"),
-                "region": prop_location.get("region"),
-                "canal": origen,
-                "source": origen,
-                "lead_type": "ManualEntryHot",
-                "last_message": mensaje or "Lead manual marcado como caliente por supervisor",
-                "lead_temperature": lead_temperature,
-                "assignment_type": assignment_type,
-                "codigo": property_code,
-                "operacion": prop_operation.get("operacion"),
-                "tipo": prop_operation.get("tipo"),
-            }
-            save_pending_notification(notification_data)
-            logger.info(
-                "[MANUAL_CREATE] whatsapp_notification_enqueued phone=%s property_code=%s assigned_to=%s source=%s temperature=%s",
-                final_phone,
-                property_code,
-                exec_name,
-                origen,
-                lead_temperature,
-            )
+            try:
+                from .crm_metrics import create_assignment_cycle, active_assignment_cycle
+                from .crm_hot_delivery import assign_and_enqueue_hot
+                from bson import ObjectId
+
+                lead_obj = db["leads"].find_one({"_id": ObjectId(lead_id)})
+                if lead_obj:
+                    user = db["usuarios"].find_one({"nombre": exec_name, "is_active": {"$ne": False}})
+                    user_id = str(user["_id"]) if user else exec_name
+                    cycle = create_assignment_cycle(
+                        db, lead=lead_obj, assigned_to_user_id=user_id,
+                        assigned_by="supervisor", reason="manual_entry",
+                        assigned_to_display_name=exec_name,
+                    )
+                    recipient_user_id = str(cycle.get("assigned_to_user_id", user_id))
+                    payload = {
+                        "phone": final_phone, "nombre": name, "email": email,
+                        "property_code": property_code, "comuna": prop_location.get("comuna"),
+                        "region": prop_location.get("region"), "canal": origen,
+                        "source": origen, "lead_type": "ManualEntryHot",
+                        "last_message": mensaje or "Lead manual marcado como caliente por supervisor",
+                        "lead_temperature": lead_temperature,
+                        "assignment_type": assignment_type,
+                        "target_name": exec_name, "target_phone": exec_phone,
+                        "operacion": prop_operation.get("operacion"),
+                        "tipo": prop_operation.get("tipo"),
+                    }
+                    assign_and_enqueue_hot(
+                        db, lead=lead_obj, recipient_user_id=recipient_user_id,
+                        recipient_phone=exec_phone, payload=payload,
+                        assigned_by="supervisor", reason="manual_entry",
+                        recipient_name=exec_name,
+                    )
+                    logger.info(
+                        "[MANUAL_CREATE] canonical_hot_created phone=%s property=%s exec=%s",
+                        final_phone, property_code, exec_name,
+                    )
+            except Exception as exc:
+                logger.error("[MANUAL_CREATE] error_creating_hot_notification: %s", exc)
         else:
             logger.info(
                 "[MANUAL_CREATE] skipping_whatsapp_notification phone=%s property_code=%s assigned_to=%s source=%s temperature=%s",

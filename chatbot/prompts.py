@@ -97,6 +97,25 @@ def obtener_prompt_recomendacion(criterios, contexto_msg):
     - RECUERDA: No confirmes horarios, solo toma preferencias.
     """
 
+# Prompt para el bloque de confirmación de visita
+# Se inyecta después de describir una propiedad cuando hay intención de visita pendiente.
+VISIT_CONFIRMATION_PROMPT = """
+REGLAS DE PREGUNTA DE VISITA:
+Si acabas de presentar o describir una propiedad y el cliente ha mostrado interés positivo (pregunta por precio, detalles, disponibilidad), DEBES hacer una pregunta explícita y clara:
+
+"¿Te gustaría coordinar una visita para conocer esta propiedad?"
+
+NO termines únicamente con una descripción entusiasta sin preguntar.
+NO repitas la pregunta si el cliente ya respondió.
+NO preguntes si el cliente ya dijo que no o cambió de tema.
+
+Ejemplo correcto:
+"El departamento tiene una luz de tarde preciosa y está recién renovado. ¿Te gustaría coordinar una visita para conocerlo?"
+
+Ejemplo incorrecto (sin pregunta):
+"El departamento tiene una luz de tarde preciosa y está recién renovado. ¡Es una oportunidad única!"
+"""
+
 # ==============================================================================
 #   MÓDULO DE BUSINESS INTELLIGENCE & ANALYTICS (NUEVO - NIVEL SENIOR)
 # ==============================================================================

@@ -12,6 +12,7 @@ from typing import Any, Iterable, Mapping, Optional
 import re
 import uuid
 
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from .constants import CHILE_TZ
@@ -182,6 +183,7 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
         "unassigned_at": None, "assigned_by": assigned_by, "reason": reason,
         "metric_version": METRIC_VERSION, "schema_version": "crm_assignment_cycle_v1",
         "cycle_status": "active",
+        "applied_transition_ids": [],
     }
     try:
         db["crm_assignment_cycles"].insert_one(cycle)
@@ -248,6 +250,89 @@ def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None) -> d
     else:
         status = "good"
     return {"status": status, "minutes": minutes, "fulfilled": bool(end)}
+
+
+def atomic_transition_to_hot(db, *, cycle_id, notification_id, timestamp):
+    """Atomically close NON_HOT and open HOT for a cycle.
+
+    Uses ``applied_transition_ids`` for idempotency.  The operation is a
+    single ``find_one_and_update`` that:
+    1. Verifies the cycle is active.
+    2. Confirms the transition ID has not been applied before.
+    3. Confirms a NON_HOT segment is active (segment_end is null).
+    4. Confirms NO HOT segment is already active.
+    5. Closes the NON_HOT segment and opens HOT in one pipeline.
+
+    Returns the updated cycle or ``None`` if the transition was already applied
+    or the preconditions were not met.
+    """
+    transition_id = f"{cycle_id}|{notification_id}|NON_HOT_to_HOT"
+    now = coerce_utc_datetime(timestamp) or utc_now()
+    notification_id_str = str(notification_id)
+
+    pipeline = [
+        {"$set": {
+            "sla_segments": {
+                "$concatArrays": [
+                    {
+                        "$map": {
+                            "input": {"$ifNull": ["$sla_segments", []]},
+                            "as": "seg",
+                            "in": {
+                                "$cond": [
+                                    {
+                                        "$and": [
+                                            {"$eq": ["$$seg.policy", "NON_HOT"]},
+                                            {"$eq": ["$$seg.segment_end", None]},
+                                        ]
+                                    },
+                                    {
+                                        "$mergeObjects": [
+                                            "$$seg",
+                                            {
+                                                "segment_end": now,
+                                                "end_reason": "superseded_by_hot",
+                                            },
+                                        ]
+                                    },
+                                    "$$seg",
+                                ]
+                            },
+                        }
+                    },
+                    [
+                        {
+                            "policy": "HOT",
+                            "segment_start": now,
+                            "segment_end": None,
+                            "end_reason": None,
+                            "notification_id": notification_id_str,
+                        }
+                    ],
+                ]
+            },
+            "applied_transition_ids": {
+                "$setUnion": [
+                    {"$ifNull": ["$applied_transition_ids", []]},
+                    [transition_id],
+                ]
+            },
+        }}
+    ]
+
+    return db["crm_assignment_cycles"].find_one_and_update(
+        {
+            "assignment_cycle_id": cycle_id,
+            "cycle_status": "active",
+            "applied_transition_ids": {"$ne": transition_id},
+            "$and": [
+                {"sla_segments": {"$elemMatch": {"policy": "NON_HOT", "segment_end": None}}},
+                {"sla_segments": {"$not": {"$elemMatch": {"policy": "HOT", "segment_end": None}}}},
+            ],
+        },
+        pipeline,
+        return_document=ReturnDocument.AFTER,
+    )
 
 
 def pipeline_activity_in_period(*, visits, events, start, end) -> dict[str, int]:

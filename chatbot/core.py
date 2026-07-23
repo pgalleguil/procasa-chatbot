@@ -873,8 +873,75 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         if email_detectado:
              await _run_sync(actualizar_prospecto, phone, {"email": email_detectado.lower()})
 
+    # ── SET VISIT CONFIRMATION IF BOT ASKED ABOUT VISITING ──
+    # After the AI generates a response, check if it asked a visit question
+    # and set the pending confirmation state accordingly.
+    from .storage import get_pending_response, resolve_pending_response, set_pending_response
+    property_code = (prospecto_actual or {}).get("codigo") or ""
+    has_pending_confirmation = bool(get_pending_response(phone, "VISIT_CONFIRMATION"))
+    if not has_pending_confirmation and property_code and intencion in ("consulta_general", "agendar_visita"):
+        resp_low = respuesta.lower()
+        if any(p in resp_low for p in ["gustaría", "quisieras", "quieres", "coordin", "agendar", "visita", "conocer", "conozcas"]):
+            prompt_suffixes = ["?", "!", ""]
+            if any(resp_low.strip().endswith(s) for s in prompt_suffixes):
+                try:
+                    set_pending_response(phone, "VISIT_CONFIRMATION", property_code, conversation_id)
+                    logger.info("[VISIT_CONFIRM] Estado de confirmacion guardado para propiedad %s", property_code)
+                except Exception as e:
+                    logger.warning("[VISIT_CONFIRM] Error guardando estado: %s", e)
+
+    # ── VISIT CONFIRMATION STATE (INTERPRET) ──
+    # If there's a pending VISIT_CONFIRMATION response, interpret short
+    # affirmatives as visit requests regardless of what the AI classified.
+    pending = get_pending_response(phone, "VISIT_CONFIRMATION")
+    if pending:
+        msg_l = (original_message or "").lower().strip()
+        negative_terms = ["no", "no ", "no," "no.", "no gracias", "no, gracias", "no quiero",
+                          "por ahora no", "mas adelante", "más adelante", "solo estoy consultando",
+                          "solo consulto", "despues", "después", "no me interesa"]
+        affirmative_terms = ["sí", "si", "sí, me encantaría", "si me encantaría", "sí me encantaría",
+                            "claro", "por supuesto", "perfecto", "me encantaría", "me gustaría",
+                            "quiero verla", "quiero verlo", "mañana podría", "mañana puedo",
+                            "agendemos", "coordinemos", "dale", "obvio", "ya", "sí quiero",
+                            "si quiero", "encantado", "encantada"]
+
+        # Check negative first (explicit "no")
+        is_negative = False
+        for t in negative_terms:
+            if msg_l == t or msg_l.startswith(t):
+                is_negative = True
+                break
+
+        if is_negative:
+            resolve_pending_response(phone, "rejected")
+            logger.info("[VISIT_CONFIRM] Pending response %s rejected by user: %s", pending.get("type"), msg_l)
+
+        else:
+            # Check if response is a short affirmative or topic change
+            is_affirmative = False
+            for t in affirmative_terms:
+                if t in msg_l:
+                    is_affirmative = True
+                    break
+
+            topic_change_terms = ["precio", "cuánto", "cuanto", "gasto", "gastos",
+                                  "comunes", "mascota", "estacionamiento", "bodega",
+                                  "como es", "cómo es", "metros", "tamaño", "años",
+                                  "antigüedad", "escritura", "crédito", "hipotecario"]
+            is_topic_change = any(t in msg_l for t in topic_change_terms)
+
+            if is_affirmative and not is_topic_change:
+                intencion = "agendar_visita"
+                resolve_pending_response(phone, "confirmed")
+                logger.info("[VISIT_CONFIRM] Pending response %s confirmed by user: %s", pending.get("type"), msg_l)
+            elif is_topic_change:
+                logger.info("[VISIT_CONFIRM] Pending response %s topic changed by user: %s", pending.get("type"), msg_l)
+                # Keep pending for one more turn if it could still turn into visit
+            else:
+                # Non-affirmative, non-negative, non-topic-change → leave pending
+                logger.info("[VISIT_CONFIRM] Pending response %s still waiting: %s", pending.get("type"), msg_l)
+
     # --- GUARDRAIL DE INTENCIÓN (REGLAS DETERMINÍSTICAS) ---
-    # Evita falsos "consulta_general" cuando el usuario expresa intención explícita.
     msg_l = (original_message or "").lower()
     visit_terms = [
         "visita", "visitar", "ir a ver", "ver la propiedad", "verlo", "verla",

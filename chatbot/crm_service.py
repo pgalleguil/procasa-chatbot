@@ -260,6 +260,18 @@ class CrmService:
                 "method": method,
                 "assignment_cycle_id": cycle["assignment_cycle_id"],
             }, lead_id=lead["_id"], actor_type="human" if actor not in {"system", "bot"} else actor)
+
+            # Accumulate non-HOT leads in digest window
+            if str(lead.get("lead_temperature_effective") or "").upper() != "HOT":
+                try:
+                    from .crm_non_hot_digest import accumulate_non_hot_lead
+                    fresh_lead = db[COLLECTION_CONVERSATIONS].find_one({"_id": lead["_id"]},
+                        {"_id": 1, "lead_temperature_effective": 1, "prospecto": 1, "phone": 1})
+                    if fresh_lead:
+                        accumulate_non_hot_lead(db, lead=fresh_lead, cycle=cycle)
+                except Exception:
+                    pass
+
             return True
         return False
 

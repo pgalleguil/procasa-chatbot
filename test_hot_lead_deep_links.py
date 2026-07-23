@@ -449,7 +449,7 @@ def test_crm_partial_template_contains_only_dynamic_regions():
     assert "66,7% del total" in rendered
     assert "/ 2" in rendered
     assert "Sin atender" in rendered
-    assert "Gestión de Leads Cold" in rendered
+    assert "Gestión de Leads por calificar" in rendered
     assert "1 gestionados · 1 sin atender" in rendered
     assert "Gestionados = En gestión + Visitas + Cerrados" in rendered
     assert rendered.count('class="progress-segment ') == 2
@@ -489,7 +489,7 @@ def test_total_state_temperature_breakdown_links_are_not_empty():
     assert 'href="/crm?temperatura=HOT&amp;estado=NEW&amp;page=1"' in rendered
     assert "1 Hot" in rendered
     assert 'href="/crm?temperatura=COLD&amp;estado=NEW&amp;page=1"' in rendered
-    assert "1 Cold" in rendered
+    assert "1 Lead" in rendered
 
 
 def test_crm_filter_urls_remove_one_filter_and_reset_page():
@@ -605,11 +605,11 @@ def test_cold_leads_use_one_ice_cube_mapping_across_crm_surfaces():
     api_crm = Path("api_crm.py").read_text(encoding="utf-8")
 
     assert "fa-cube" in visual_mapping
-    assert "🧊 Cold" in visual_mapping
+    assert "📋 Lead por calificar" in visual_mapping
     assert "fa-compass" not in list_template + detail_template + visual_mapping
     assert "Informativos 🔵" not in list_template
-    assert 'aria-label="Lead Cold"' in list_template
-    assert 'aria-label="Lead Cold"' in detail_template
+    assert 'aria-label="Lead por calificar"' in list_template
+    assert 'aria-label="Lead por calificar"' in detail_template
     assert 'import lead_temperature_icon, lead_temperature_label' in detail_template
     assert '"lead_temperature_effective": lead.get("lead_temperature_effective")' in api_crm
 

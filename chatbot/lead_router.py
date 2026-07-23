@@ -143,6 +143,30 @@ def normalize_text(text: str) -> str:
     text = "".join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
     return text
 
+def is_business_hours(dt=None) -> bool:
+    """Check if the given time (or now) falls within configured notification hours."""
+    now = dt or datetime.now(CHILE_TZ)
+    weekday = now.weekday()
+    hour = now.hour
+    start = int(getattr(Config, "CRM_NOTIFICATION_BUSINESS_START", 9))
+    end = int(getattr(Config, "CRM_NOTIFICATION_BUSINESS_END", 19))
+    return weekday in BUSINESS_DAYS and start <= hour < end
+
+
+def after_hours_hot_mode() -> str:
+    return str(getattr(Config, "CRM_AFTER_HOURS_HOT_MODE", "NEXT_BUSINESS_OPEN")).upper()
+
+
+def next_business_slot_after_minutes(dt, minutes=15):
+    """Return the first business slot at least ``minutes`` after ``dt``."""
+    slot = get_next_business_slot(dt)
+    from datetime import timedelta
+    candidate = slot + timedelta(minutes=minutes)
+    if candidate.hour >= int(getattr(Config, "CRM_NOTIFICATION_BUSINESS_END", 19)):
+        candidate = get_next_business_slot(candidate)
+    return candidate
+
+
 def should_send_now() -> bool:
     """
     Check if current time in Chile is within business hours.
@@ -434,6 +458,105 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
         logger.warning(f"[ROUTER] El ejecutivo '{target_executive_name}' no tiene teléfono en DB. Se mantiene el Lead pero no recibirá Whatsapp.")
 
     return target_executive_name, phone, assignment_type
+
+HOT_CONTEXT_INITIAL = "initial_hot"
+HOT_CONTEXT_ESCALATED = "escalated_after_digest"
+HOT_CONTEXT_REASSIGNMENT = "new_assignment_cycle"
+VALID_HOT_CONTEXTS = {HOT_CONTEXT_INITIAL, HOT_CONTEXT_ESCALATED, HOT_CONTEXT_REASSIGNMENT}
+
+
+def format_hot_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, property_code: str) -> str:
+    """
+    Formats a differentiated WhatsApp message for HOT leads.
+    Supports context types:
+    - initial_hot: first HOT notification (new lead or transition before digest)
+    - escalated_after_digest: lead was previously notified as non-HOT and later became HOT
+    - new_assignment_cycle: new assignment cycle (reassignment)
+    """
+    hot_context = lead_data.get("hot_context") or HOT_CONTEXT_INITIAL
+    if hot_context not in VALID_HOT_CONTEXTS:
+        hot_context = HOT_CONTEXT_INITIAL
+
+    prop_inline = lead_data.get("property_data", {}) if isinstance(lead_data, dict) else {}
+    comuna = (
+        lead_data.get("comuna")
+        or prop_inline.get("comuna")
+        or ""
+    )
+    region = (
+        lead_data.get("region")
+        or prop_inline.get("region")
+        or ""
+    )
+    operacion = (
+        lead_data.get("operacion")
+        or prop_inline.get("operacion")
+        or "Operación no especificada"
+    )
+    nombre_cliente = lead_data.get("nombre")
+    if not nombre_cliente or nombre_cliente == "None":
+        nombre_cliente = "Cliente"
+    hot_reason = lead_data.get("hot_reason") or lead_data.get("reason") or "Clasificación automática"
+    mensaje_usuario = lead_data.get("last_message", "")
+    lead_phone = lead_data.get("lead_phone") or lead_data.get("phone") or ""
+    created_at = lead_data.get("created_at") or lead_data.get("timestamp") or ""
+
+    crm_url = build_crm_lead_url(lead_data, property_code)
+
+    ubicacion_lines = ""
+    if comuna:
+        ubicacion_lines += f"📍 *Comuna*: {comuna}\n"
+    if region:
+        ubicacion_lines += f"📍 *Región*: {region}\n"
+
+    if hot_context == HOT_CONTEXT_ESCALATED:
+        return (
+            f"🔥 *LEAD ASIGNADO PASÓ A HOT*\n\n"
+            f"Hola {executive_name}, un lead que ya estaba asignado a ti ha sido clasificado como *Hot*.\n\n"
+            f"👤 *Cliente*: {nombre_cliente}\n"
+            f"📱 *Contacto*: {lead_phone}\n"
+            f"🏠 *Propiedad*: {property_code} | {operacion}\n"
+            f"{ubicacion_lines}"
+            f"⚡ *Nuevo motivo*: {hot_reason}\n"
+            f"🕐 *Transición*: {created_at}\n\n"
+            f"📝 *Mensaje del cliente*: {mensaje_usuario}\n\n"
+            f"🔗 *Gestionar ahora en CRM*:\n{crm_url}\n\n"
+            f"💡 _Toda gestión debe registrarse en el CRM para el control SLA y seguimiento._\n"
+            f"¡Mucho éxito! 🚀"
+        )
+
+    if hot_context == HOT_CONTEXT_REASSIGNMENT:
+        return (
+            f"🔥 *LEAD HOT — NUEVA ASIGNACIÓN*\n\n"
+            f"Hola {executive_name}, se te ha reasignado un *Lead Hot* que requiere gestión inmediata.\n\n"
+            f"👤 *Cliente*: {nombre_cliente}\n"
+            f"📱 *Contacto*: {lead_phone}\n"
+            f"🏠 *Propiedad*: {property_code} | {operacion}\n"
+            f"{ubicacion_lines}"
+            f"⚡ *Motivo*: {hot_reason}\n"
+            f"🕐 *Asignado*: {created_at}\n\n"
+            f"📝 *Mensaje del cliente*: {mensaje_usuario}\n\n"
+            f"🔗 *Gestionar ahora en CRM*:\n{crm_url}\n\n"
+            f"💡 _Toda gestión debe registrarse en el CRM para el control SLA y seguimiento._\n"
+            f"¡Mucho éxito! 🚀"
+        )
+
+    # Default: initial_hot
+    return (
+        f"🔥 *LEAD HOT — ATENCIÓN PRIORITARIA*\n\n"
+        f"Hola {executive_name}, se te ha asignado un *Lead Hot* que requiere gestión inmediata.\n\n"
+        f"👤 *Cliente*: {nombre_cliente}\n"
+        f"📱 *Contacto*: {lead_phone}\n"
+        f"🏠 *Propiedad*: {property_code} | {operacion}\n"
+        f"{ubicacion_lines}"
+        f"⚡ *Motivo*: {hot_reason}\n"
+        f"🕐 *Asignado*: {created_at}\n\n"
+        f"📝 *Mensaje del cliente*: {mensaje_usuario}\n\n"
+        f"🔗 *Gestionar ahora en CRM*:\n{crm_url}\n\n"
+        f"💡 _Toda gestión debe registrarse en el CRM para el control SLA y seguimiento._\n"
+        f"¡Mucho éxito! 🚀"
+    )
+
 
 def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, property_code: str, is_new_assignment: bool = True) -> str:
     """

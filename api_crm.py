@@ -860,11 +860,11 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         if temp == "HOT":
             prioridad_badge = "🔥 Alta"
         else:
-            prioridad_badge = "🟡 Media"
+            prioridad_badge = "📋 Lead"
 
         assigned_age = format_relative_time(lifecycle_ts or created_ts).replace("Hace", "hace", 1)
         management_age = format_relative_time(last_ts_obj).replace("Hace", "hace", 1)
-        cold_age_label = (
+        age_label = (
             f"Sin atender {assigned_age}"
             if estado_final == PipelineStage.NEW else
             f"Última gestión {management_age}"
@@ -876,7 +876,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             "phone": raw_phone,
             "sla_status": sla_status,
             "sla_label": sla_label,
-            "cold_age_label": cold_age_label,
+            "age_label": age_label,
             "whatsapp_display": f"+{raw_phone}",
             "nombre": lead.get("prospecto", {}).get("nombre") or "Desconocido",
             "prioridad_badge": prioridad_badge,

@@ -1,6 +1,10 @@
 {# Mapeo visual único. Los valores internos HOT/COLD no se modifican. #}
 {% macro lead_temperature_label(value) -%}
-{{- 'Hot' if value == 'HOT' else 'Cold' -}}
+{{- 'Hot' if value == 'HOT' else 'Lead' -}}
+{%- endmacro %}
+
+{% macro lead_temperature_desc(value) -%}
+{{- 'Lead calificado como prioritario' if value == 'HOT' else 'Lead nuevo por calificar' -}}
 {%- endmacro %}
 
 {% macro lead_temperature_icon(value, extra_class='') -%}
@@ -8,5 +12,5 @@
 {%- endmacro %}
 
 {% macro lead_temperature_option(value) -%}
-{{- '🔥 Hot' if value == 'HOT' else '🧊 Cold' -}}
+{{- '🔥 Hot' if value == 'HOT' else '📋 Lead por calificar' -}}
 {%- endmacro %}

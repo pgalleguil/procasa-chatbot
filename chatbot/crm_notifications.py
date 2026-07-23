@@ -22,6 +22,7 @@ VALID_STATES = frozenset({
     "pending", "sending", "sent", "failed_retryable", "failed_final",
     "suppressed", "quarantined",
 })
+DEDUP_ACTIVE_STATES = frozenset({"pending", "sending", "sent", "failed_retryable"})
 
 
 def individual_identity(*, lead_id, assignment_cycle_id, notification_type, recipient_user_id) -> str:
@@ -66,6 +67,9 @@ def dry_run_canonical_indexes(db) -> dict:
     for name, fields in definitions.items():
         match = {"schema_version": "crm_notification_v1", "canonical_identity_version": 1}
         match.update({field: {"$exists": True} for field in fields})
+        # For individual identity, exclude documents marked as historical duplicates
+        if name == "individual":
+            match["dedupe_active"] = {"$ne": False}
         group_id = {field: f"${field}" for field in fields}
         duplicates = list(collection.aggregate([
             {"$match": match}, {"$group": {"_id": group_id, "count": {"$sum": 1}}},
@@ -73,6 +77,24 @@ def dry_run_canonical_indexes(db) -> dict:
         ]))
         result[name] = {"eligible_documents": collection.count_documents(match),
                         "duplicates": duplicates, "safe_to_create": not duplicates}
+    return result
+
+
+INDIVIDUAL_INDEX_NAME = "uq_crm_notification_individual_v1"
+DIGEST_INDEX_NAME = "uq_crm_notification_digest_v1"
+
+
+def verify_unique_indexes(db) -> dict:
+    """Verify that the required unique indexes exist.
+
+    This is called at application startup.  It logs a critical error if an
+    expected index is missing instead of silently assuming protection.
+    """
+    collection = db[COLLECTION]
+    existing = {idx["name"] for idx in collection.list_indexes()}
+    result = {}
+    for name in (INDIVIDUAL_INDEX_NAME, DIGEST_INDEX_NAME):
+        result[name] = name in existing
     return result
 
 
@@ -84,6 +106,7 @@ def ensure_unique_indexes(db) -> dict:
     collection = db[COLLECTION]
     individual_filter = {
         "schema_version": "crm_notification_v1", "canonical_identity_version": 1,
+        "dedupe_active": True,
         "lead_id": {"$exists": True}, "assignment_cycle_id": {"$exists": True},
         "notification_type": {"$exists": True}, "recipient_user_id": {"$exists": True},
     }
@@ -96,12 +119,12 @@ def ensure_unique_indexes(db) -> dict:
         collection.create_index(
             [("lead_id", 1), ("assignment_cycle_id", 1), ("notification_type", 1), ("recipient_user_id", 1)], unique=True,
             partialFilterExpression=individual_filter,
-            name="uq_crm_notification_individual_v1",
+            name=INDIVIDUAL_INDEX_NAME,
         ),
         collection.create_index(
             [("recipient_user_id", 1), ("digest_type", 1), ("business_period", 1), ("content_version", 1)], unique=True,
             partialFilterExpression=digest_filter,
-            name="uq_crm_notification_digest_v1",
+            name=DIGEST_INDEX_NAME,
         ),
     ]
     return {"dry_run": audit, "created": created, "blocked": False}
@@ -111,6 +134,18 @@ def create_pending(db, *, identity_field, identity, payload, payload_version="cr
                    canonical_fields=None, send_after=None):
     if identity_field not in {"individual_identity", "digest_identity"}:
         raise ValueError("invalid identity field")
+
+    # Pre-check: if an active notification already exists for this identity,
+    # return it instead of attempting an insert.  This is a defense-in-depth
+    # layer; the unique index is the definitive barrier.
+    if identity_field == "individual_identity":
+        existing = db[COLLECTION].find_one({
+            identity_field: identity,
+            "state": {"$in": list(DEDUP_ACTIVE_STATES)},
+        })
+        if existing:
+            return existing
+
     now = utc_now()
     document = {
         identity_field: identity, "state": "pending", "delivery_id": str(uuid.uuid4()),
@@ -120,6 +155,8 @@ def create_pending(db, *, identity_field, identity, payload, payload_version="cr
         "created_at": now, "updated_at": now,
     }
     document.update(dict(canonical_fields or {}))
+    if document.get("dedupe_active") is None:
+        document["dedupe_active"] = True
     if send_after is not None:
         document["send_after"] = send_after
     try:

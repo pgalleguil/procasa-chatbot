@@ -461,14 +461,15 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 .cd-secondary-metric span{font-size:13px;font-weight:500;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .cd-secondary-metric strong{font-size:15px;font-weight:650;color:var(--text-primary);font-variant-numeric:tabular-nums;flex:0 0 auto}
 /* ============ INITIAL REVEAL ============ */
-.cd-exec-brief,.cd-primary-kpi,.cd-secondary-metrics{opacity:0;transform:translateY(4px)}
-.dashboard-first-reveal .cd-exec-brief,.dashboard-first-reveal .cd-primary-kpi,.dashboard-first-reveal .cd-secondary-metrics{opacity:1;transform:translateY(0);transition:opacity 180ms var(--ease-standard,linear),transform 220ms var(--ease-enter,ease)}
-.dashboard-first-reveal .cd-primary-kpi:nth-child(1){transition-delay:20ms}
-.dashboard-first-reveal .cd-primary-kpi:nth-child(2){transition-delay:45ms}
-.dashboard-first-reveal .cd-primary-kpi:nth-child(3){transition-delay:70ms}
-.dashboard-first-reveal .cd-primary-kpi:nth-child(4){transition-delay:95ms}
-.dashboard-first-reveal .cd-secondary-metrics{transition-delay:110ms}
-@media(prefers-reduced-motion:reduce){.cd-exec-brief,.cd-primary-kpi,.cd-secondary-metrics{opacity:1;transform:none;transition:none}}.cd-kpi{min-width:0;height:auto;min-height:180px;padding:21px;gap:8px;border-radius:var(--radius-card);opacity:1;transform:none;animation:none}.cd-kpi-sla{grid-column:auto}.cd-kpi:hover{transform:none;box-shadow:var(--shadow-card);border-color:var(--border-subtle)}.cd-kpi-label{font-size:13px;font-weight:600;line-height:1.35;text-transform:none;letter-spacing:0;color:var(--text-secondary)}.cd-kpi-val{font-size:36px;font-weight:650;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}.cd-kpi-var{font-size:13px;line-height:1.35}.cd-kpi-vs,.cd-kpi-meta,.cd-cmpbar-lbl{font-size:12px;line-height:1.4;color:var(--text-muted)}.cd-kpi-foot{min-height:30px}.cd-info{min-width:42px;min-height:42px;margin:-12px -12px -10px 0;font-size:16px;color:var(--text-muted)}
+.cd-exec-brief,.cd-primary-kpi,.cd-secondary-metrics{opacity:1;transform:none}
+.cd-exec-overview[data-reveal] .cd-exec-brief,.cd-exec-overview[data-reveal] .cd-primary-kpi,.cd-exec-overview[data-reveal] .cd-secondary-metrics{opacity:0;transform:translateY(4px)}
+.cd-exec-overview[data-reveal][data-visible] .cd-exec-brief,.cd-exec-overview[data-reveal][data-visible] .cd-primary-kpi,.cd-exec-overview[data-reveal][data-visible] .cd-secondary-metrics{opacity:1;transform:translateY(0);transition:opacity 180ms var(--ease-standard,linear),transform 220ms var(--ease-enter,ease)}
+.cd-exec-overview[data-reveal][data-visible] .cd-primary-kpi:nth-child(1){transition-delay:20ms}
+.cd-exec-overview[data-reveal][data-visible] .cd-primary-kpi:nth-child(2){transition-delay:45ms}
+.cd-exec-overview[data-reveal][data-visible] .cd-primary-kpi:nth-child(3){transition-delay:70ms}
+.cd-exec-overview[data-reveal][data-visible] .cd-primary-kpi:nth-child(4){transition-delay:95ms}
+.cd-exec-overview[data-reveal][data-visible] .cd-secondary-metrics{transition-delay:110ms}
+@media(prefers-reduced-motion:reduce){.cd-exec-overview[data-reveal] .cd-exec-brief,.cd-exec-overview[data-reveal] .cd-primary-kpi,.cd-exec-overview[data-reveal] .cd-secondary-metrics{opacity:1;transform:none;transition:none}}.cd-kpi{min-width:0;height:auto;min-height:180px;padding:21px;gap:8px;border-radius:var(--radius-card);opacity:1;transform:none;animation:none}.cd-kpi-sla{grid-column:auto}.cd-kpi:hover{transform:none;box-shadow:var(--shadow-card);border-color:var(--border-subtle)}.cd-kpi-label{font-size:13px;font-weight:600;line-height:1.35;text-transform:none;letter-spacing:0;color:var(--text-secondary)}.cd-kpi-val{font-size:36px;font-weight:650;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}.cd-kpi-var{font-size:13px;line-height:1.35}.cd-kpi-vs,.cd-kpi-meta,.cd-cmpbar-lbl{font-size:12px;line-height:1.4;color:var(--text-muted)}.cd-kpi-foot{min-height:30px}.cd-info{min-width:42px;min-height:42px;margin:-12px -12px -10px 0;font-size:16px;color:var(--text-muted)}
 .cd-loading{background:var(--bg-surface-subtle);color:var(--text-muted)}.cd-skeleton-line{background:color-mix(in srgb,var(--text-muted) 14%,transparent)}.cd-err{background:var(--danger-soft);border:1px solid color-mix(in srgb,var(--danger) 28%,transparent);color:var(--text-primary);box-shadow:none}.cd-err[hidden]{display:none!important}
 .cd-insights{background:var(--bg-surface)}.cd-ins{background:var(--bg-surface);border-color:var(--border-subtle);box-shadow:none}.cd-demand-note,.cd-quality-intro{background:var(--bg-surface-subtle);color:var(--text-secondary)}.cd-demand-note p,.cd-quality-intro{color:var(--text-secondary)}
 .cd-tbl{border:1px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-surface)}.cd-tbl table{font-size:13px}.cd-tbl th,.cd-tbl thead th{height:44px;background:var(--bg-surface-subtle);color:var(--text-muted);border-color:var(--border-subtle)}.cd-tbl td{height:46px;color:var(--text-primary);border-color:var(--border-subtle)}.cd-tbl tr[data-exec]:hover{background:var(--bg-surface-hover)}
@@ -586,7 +587,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 
 <!-- TAB exec -->
 <div class="cd-panel active" id="tab-exec" role="tabpanel" aria-labelledby="tab-btn-exec">
-  <section class="cd-exec-overview" aria-labelledby="execSummaryTitle">
+  <section class="cd-exec-overview" id="execOverview" aria-labelledby="execSummaryTitle">
     <div class="cd-exec-brief">
       <div class="cd-exec-brief__heading">
         <p class="cd-eyebrow">Resumen del periodo</p>
@@ -1044,11 +1045,7 @@ function render(){
   $('metaTxt').textContent=(compact?(upd?upd.replace(' \u00b7 actualizado ',''):'hace instantes')+' \u00b7 '+totalLabel+' leads':totalLabel+' leads analizados'+upd);
   document.querySelector('#metaLine .dot').style.background='var(--cd-ok)';
   rKPI();rExecutiveInsight();rPriorities();rInsights();rev();rsla();rfun();
-  /* First-reveal animation: once per page load only */
-  if(!document.documentElement.classList.contains('dashboard-first-reveal')){
-    document.documentElement.classList.add('dashboard-first-reveal');
-    setTimeout(()=>document.documentElement.classList.remove('dashboard-first-reveal'),400);
-  }
+  revealExecutiveOnce();
   FIRST_KPI=false;
 }
 
@@ -1099,9 +1096,8 @@ function rExecutiveInsight(){
   const leads=k.leads_received||{},leadsVal=leads.value||0;
   const visitInt=k.visit_intent||{},visitVal=visitInt.value||0;
   const visits=k._meta?.visits_scheduled||0;
-  const term=k.ever_closed_won||0;
+  const term=k.ever_closed_won?.value||0;
   let phrases=[];
-  /* Frase 1: leads vs comparable */
   const prv=leads.previous,abs=leadsVal-(prv||0);
   if(COMPARE==='none'||!ctx.hasComparison){
     phrases.push('Ingresaron '+F(leadsVal)+' leads durante '+ctx.currentLabel+'.');
@@ -1114,7 +1110,6 @@ function rExecutiveInsight(){
   }else{
     phrases.push('Ingresaron '+F(leadsVal)+' leads, el mismo volumen que '+ctx.previousLabel+'.');
   }
-  /* Frase 2: visita data */
   let f2='';
   if(visitVal>0){f2=F(visitVal)+' mostraron intenci\u00f3n de visita';}
   if(visits>0){f2+=(f2?'. ':'')+F(visits)+' llegaron a visita coordinada';}
@@ -1122,6 +1117,15 @@ function rExecutiveInsight(){
   if(term>0){f2+='. '+F(term)+' cerraron exitosamente';}
   if(f2)phrases.push(f2+'.');
   el.innerHTML=phrases.map(p=>'<p>'+E(p)+'</p>').join('');
+}
+function revealExecutiveOnce(){
+  const overview=$('execOverview');
+  if(!overview||overview.dataset.revealed==='true')return;
+  overview.dataset.revealed='true';
+  if(window.matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  overview.setAttribute('data-reveal','');
+  requestAnimationFrame(()=>requestAnimationFrame(()=>overview.setAttribute('data-visible','')));
+  setTimeout(()=>{overview.removeAttribute('data-reveal');overview.removeAttribute('data-visible')},400);
 }
 function rKPI(){
   const k=D.kpis||{},sla=D.sla_risk||{},pal=PAL();

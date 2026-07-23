@@ -91,7 +91,7 @@ def test_hot_cold_unknown_partition_and_temperature_does_not_manage():
 def test_multiple_actions_are_one_managed_lead_and_open_is_not_management():
     events = [
         {"lead_id": "x", "type": "CLICK_WHATSAPP_LEAD", "actor": "u", "actor_type": "human"},
-        {"lead_id": "x", "type": "CONTACT_RESULT", "actor": "u", "actor_type": "human", "confirmed": True, "result": "CONTACTADO"},
+        {"lead_id": "x", "type": "HUMAN_NOTE", "actor": "u", "actor_type": "human", "confirmed": True, "result": "CONTACTADO"},
         {"lead_id": "x", "type": "HUMAN_NOTE", "actor": "u", "actor_type": "human", "meta": {"meaningful_change": True}},
     ]
     assert event_evidence(events[0])["management"] is False

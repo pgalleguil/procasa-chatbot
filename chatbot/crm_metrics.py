@@ -30,7 +30,7 @@ OPEN_ONLY_EVENT_TYPES = frozenset({
     "ALERT", "ALERT_SENT", "alert_sent", "BOT_MSG",
 })
 VALID_MANAGEMENT_EVENT_TYPES = frozenset({
-    "GESTION_LOG", "HUMAN_NOTE", "CONTACT_RESULT", "STATUS_CHANGE",
+    "GESTION_LOG", "HUMAN_NOTE", "CONTACT_RESULT",
     "MANUAL_ENTRY",
 })
 REGISTERED_OUTREACH_EVENT_TYPES = frozenset({
@@ -132,7 +132,7 @@ def event_evidence(event: Mapping[str, Any]) -> dict[str, Any]:
     management = human and identifiable and event_type not in OPEN_ONLY_EVENT_TYPES and (
         event_type in VALID_MANAGEMENT_EVENT_TYPES
         and event_type != "CONTACT_RESULT"
-        and (result is not None or meaningful_change)
+        and result is not None
     )
     return {
         "human": human, "management": management, "contact_attempt": attempt,

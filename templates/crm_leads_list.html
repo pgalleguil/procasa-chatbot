@@ -47,7 +47,7 @@
             --state-management: #fbbf24;
             --state-visits: #34d399;
             --state-closed: #64748b;
-            --lead-cold: #22d3ee;
+            --lead-normal: #94a3b8;
             
             /* Semaforo Colors */
             --led-red: #ef4444;
@@ -84,7 +84,7 @@
             --state-management: #d99a08;
             --state-visits: #168a68;
             --state-closed: #64748b;
-            --lead-cold: #22b8d6;
+            --lead-normal: #64748b;
             --accent: #4f46e5;
             --accent-hover: #4338ca;
             --shadow-soft: 0 12px 32px rgba(51, 65, 85, 0.12);
@@ -1086,7 +1086,7 @@
         }
 
         .lead-type-normal {
-            color: var(--lead-cold) !important;
+            color: var(--lead-normal) !important;
         }
 
         .summary-card > .lead-type-icon {
@@ -1892,8 +1892,8 @@
                                     <i class="fa-solid fa-check-circle text-success"></i>
                                     <span class="fw-bold text-success ms-2">{{ lead.sla_label }}</span>
                                     {% elif lead.sla_status == 'historical' %}
-                                    <i class="fa-solid fa-clock-rotate-left text-muted opacity-50"></i>
-                                    <span class="text-muted ms-2 fst-italic">{{ lead.sla_label }}</span>
+                                    <i class="fa-solid fa-clock-rotate-left text-secondary-emphasis opacity-75"></i>
+                                    <span class="text-secondary-emphasis ms-2 fst-italic">{{ lead.sla_label }}</span>
                                     {% else %}
                                     <div class="led-indicator led-green" style="opacity: 0.8;"></div>
                                     <span class="fw-bold ms-2">{{ lead.sla_label }}</span>

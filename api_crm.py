@@ -832,14 +832,20 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             sla_status = "fulfilled"
             
         # One SLA definition for cards, list, detail and monitor.
-        from chatbot.crm_metrics import calculate_sla
+        from chatbot.crm_metrics import calculate_sla, is_pre_cutover_cycle
+        assigned_at = (lead.get("lifecycle", {}) or {}).get("assigned_at") or lead.get("fecha_asignacion")
         canonical_sla = calculate_sla(
-            assigned_at=(lead.get("lifecycle", {}) or {}).get("assigned_at") or lead.get("fecha_asignacion"),
+            assigned_at=assigned_at,
             first_valid_management_at=(lead.get("lifecycle", {}) or {}).get("first_valid_management_at") or
                                       (outreach["occurred_at"] if recognized_management_ev else None),
         )
+        # Pre-cutover cycles without management are exempt from new SLA policy.
+        is_pre = is_pre_cutover_cycle(assigned_at) if canonical_sla.get("age_minutes", 0) > 0 else False
         if canonical_sla["status"] != "unknown":
-            sla_status = canonical_sla["status"]
+            if is_pre and not canonical_sla["fulfilled"]:
+                sla_status = "historical"
+            else:
+                sla_status = canonical_sla["status"]
             sla_hours = (canonical_sla["minutes"] or 0) / 60.0
         sla_labels_map = {
             "critical": "Vencido",
@@ -848,7 +854,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             "good": "En plazo",
             "pending": "Pendiente Asignación",
             "fulfilled": "Gestionado",
-            "informativo": "Antigüedad"
+            "informativo": "Antigüedad",
+            "historical": "Histórico",
         }
         sla_label = sla_labels_map.get(sla_status, "En tiempo")
         

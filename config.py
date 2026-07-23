@@ -59,6 +59,15 @@ class Config:
     CRM_INACTIVE_NUDGE_ENABLED = os.getenv("CRM_INACTIVE_NUDGE_ENABLED", "false").lower() == "true"
     CRM_BASE_URL = os.getenv("CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")
 
+    # === Phase 2 Management Enforcement Cutover ===
+    # Cycles assigned before this timestamp are exempt from the new SLA policy.
+    # They show as "Histórico" in the UI and are excluded from compliance metrics,
+    # digest, SLA alerts, and escalations.  Management can still be registered.
+    CRM_MANAGEMENT_ENFORCEMENT_CUTOVER_AT = os.getenv(
+        "CRM_MANAGEMENT_ENFORCEMENT_CUTOVER_AT",
+        "2026-07-23T22:00:00Z",
+    )
+
     # === Non-Hot Digest (lead qualification) ===
     # When enabled, accumulates non-HOT assignments and sends grouped notifications
     # every CRM_NON_HOT_DIGEST_WINDOW_MINUTES minutes per executive.

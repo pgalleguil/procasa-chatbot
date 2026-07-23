@@ -20,6 +20,7 @@ from .utils import calculate_business_minutes
 
 METRIC_VERSION = "crm_metrics_v1"
 INSTRUMENTATION_CUTOVER = "2026-07-20T00:00:00-04:00"
+MANAGEMENT_ENFORCEMENT_CUTOVER = "2026-07-23T22:00:00Z"  # Phase 2 deploy; override via env
 
 OPEN_ONLY_EVENT_TYPES = frozenset({
     "CLICK_WHATSAPP_LEAD", "CLICK_PHONE_LEAD", "CLICK_EMAIL_LEAD",
@@ -245,7 +246,25 @@ def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None) -> d
         status = "warning"
     else:
         status = "good"
-    return {"status": status, "minutes": minutes, "fulfilled": bool(end)}
+    return {"status": status, "minutes": minutes, "fulfilled": bool(end), "age_minutes": minutes}
+
+
+def is_pre_cutover_cycle(assigned_at, *, cutover=None) -> bool:
+    """Return True if the cycle's assigned_at predates the management enforcement cutover.
+
+    Pre-cutover cycles are exempt from new SLA policy. They are displayed as
+    "Histórico" and excluded from compliance metrics, digest, alerts, and escalations.
+    """
+    assigned = coerce_utc_datetime(assigned_at)
+    if not assigned:
+        return False
+    if cutover is not None:
+        cutoff = coerce_utc_datetime(cutover)
+    else:
+        from config import Config
+        raw = getattr(Config, "CRM_MANAGEMENT_ENFORCEMENT_CUTOVER_AT", None) or MANAGEMENT_ENFORCEMENT_CUTOVER
+        cutoff = coerce_utc_datetime(raw)
+    return assigned < cutoff
 
 
 def atomic_transition_to_hot(db, *, cycle_id, notification_id, timestamp):

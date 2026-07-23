@@ -94,6 +94,12 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
     if temperature == HOT:
         return None
 
+    # Pre-cutover cycles are excluded from digest (historical backlog)
+    from .crm_metrics import is_pre_cutover_cycle
+    if is_pre_cutover_cycle(cycle.get("assigned_at")):
+        logger.debug("[NON_HOT_DIGEST] Skipping pre-cutover cycle %s", cycle.get("assignment_cycle_id"))
+        return None
+
     lead_id = lead.get("_id")
     cycle_id = cycle.get("assignment_cycle_id")
     recipient = str(cycle.get("assigned_to_user_id") or "")

@@ -1660,10 +1660,10 @@
             {% set temperature_label = 'Leads Hot' if selected_temperature == 'HOT' else 'Leads' if selected_temperature == 'COLD' else 'Todos los leads' %}
             {% set management_title = 'Gestión de Leads Hot' if selected_temperature == 'HOT' else 'Gestión de Leads' if selected_temperature == 'COLD' else 'Gestión de todos los leads' %}
             {% set state_metrics = [
-                ('nuevo', 'NEW', 'Sin atender', kpis.nuevo, kpis.nuevo_percent, kpis.nuevo_hot, 0),
-                ('gestion', 'GRUPO_GESTION', 'En gestión', kpis.gestion, kpis.gestion_percent, kpis.gestion_hot, 0),
-                ('visita', 'GRUPO_VISITA', 'Visitas', kpis.visita, kpis.visita_percent, kpis.visita_hot, 0),
-                ('cerrado', 'GRUPO_CERRADO', 'Cerrados', kpis.cerrado, kpis.cerrado_percent, kpis.cerrado_hot, 0)
+                ('nuevo', 'NEW', 'Sin atender', kpis.nuevo, kpis.nuevo_percent, kpis.nuevo_hot, kpis.nuevo_cold),
+                ('gestion', 'GRUPO_GESTION', 'En gestión', kpis.gestion, kpis.gestion_percent, kpis.gestion_hot, kpis.gestion_cold),
+                ('visita', 'GRUPO_VISITA', 'Visitas', kpis.visita, kpis.visita_percent, kpis.visita_hot, kpis.visita_cold),
+                ('cerrado', 'GRUPO_CERRADO', 'Cerrados', kpis.cerrado, kpis.cerrado_percent, kpis.cerrado_hot, kpis.cerrado_cold)
             ] %}
 
             <!-- Universo completo del ejecutivo/búsqueda -->
@@ -1891,6 +1891,9 @@
                                     {% elif lead.sla_status == 'fulfilled' %}
                                     <i class="fa-solid fa-check-circle text-success"></i>
                                     <span class="fw-bold text-success ms-2">{{ lead.sla_label }}</span>
+                                    {% elif lead.sla_status == 'historical' %}
+                                    <i class="fa-solid fa-clock-rotate-left text-muted opacity-50"></i>
+                                    <span class="text-muted ms-2 fst-italic">{{ lead.sla_label }}</span>
                                     {% else %}
                                     <div class="led-indicator led-green" style="opacity: 0.8;"></div>
                                     <span class="fw-bold ms-2">{{ lead.sla_label }}</span>

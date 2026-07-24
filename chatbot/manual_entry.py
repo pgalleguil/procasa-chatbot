@@ -337,11 +337,31 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
 
             db["leads"].update_one({"_id": existing_lead["_id"]}, update_payload)
             lead_id = str(existing_lead["_id"])
+            # Create assignment cycle for the new property interest
+            from .crm_metrics import create_assignment_cycle
+            exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
+            assigned_to = str(exec_user["_id"]) if exec_user else exec_name
+            fresh_lead = db["leads"].find_one({"_id": existing_lead["_id"]})
+            if fresh_lead:
+                create_assignment_cycle(
+                    db, lead=fresh_lead, assigned_to_user_id=assigned_to,
+                    assigned_by="supervisor", reason="manual_lead_created",
+                    assigned_at=assigned_at, assigned_to_display_name=exec_name,
+                )
             
         else:
             # Insert brand new lead
             result = db["leads"].insert_one(lead_doc)
             lead_id = str(result.inserted_id)
+            # Create assignment cycle immediately with explicit commercial reason
+            from .crm_metrics import create_assignment_cycle
+            exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
+            assigned_to = str(exec_user["_id"]) if exec_user else exec_name
+            create_assignment_cycle(
+                db, lead=lead_doc, assigned_to_user_id=assigned_to,
+                assigned_by="supervisor", reason="manual_lead_created",
+                assigned_at=assigned_at, assigned_to_display_name=exec_name,
+            )
             
         # 5. Log Event
         log_event(phone or email, "MANUAL_ENTRY", "supervisor", {

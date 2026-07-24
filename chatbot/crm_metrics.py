@@ -187,7 +187,7 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
     # Determine SLA policy version for this cycle
     sla_policy = "sla_visual_v1_20260723" if not is_pre_visual_cutover(assigned_at) else "legacy"
     # Only leads created by real commercial events are notification-eligible
-    notifiable_reasons = frozenset({"lead_created", "inbound_message", "manual_lead", "router", "lead_processed"})
+    notifiable_reasons = frozenset({"lead_created", "inbound_message", "manual_lead", "router", "manual_lead_created"})
     notification_eligible = reason in notifiable_reasons
     cycle = {
         "assignment_cycle_id": str(uuid.uuid4()), "lead_id": lead["_id"],

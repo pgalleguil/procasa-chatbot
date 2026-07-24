@@ -409,13 +409,27 @@ class LeadProcessingService:
                 if not lead.get("ultima_actualizacion_bi"):
                     update_data["ultima_actualizacion_bi"] = now_cl
 
-                # Create canonical assignment cycle if an executive was assigned
-                if update_data.get("ejecutivo_asignado") and (
-                    lead.get("ejecutivo_asignado") in [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
-                    or update_data.get("ejecutivo_asignado") != lead.get("ejecutivo_asignado")
-                ):
+                # Create canonical assignment cycle for any lead with an executive
+                # that either just got assigned or doesn't have a cycle yet.
+                exec_to_use = (
+                    update_data.get("ejecutivo_asignado")
+                    or lead.get("ejecutivo_asignado")
+                    or lead.get("prospecto", {}).get("ejecutivo")
+                )
+                needs_new_cycle = (
+                    update_data.get("ejecutivo_asignado")
+                    and (
+                        lead.get("ejecutivo_asignado") in [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
+                        or update_data.get("ejecutivo_asignado") != lead.get("ejecutivo_asignado")
+                    )
+                ) or (
+                    exec_to_use
+                    and exec_to_use not in [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
+                    and not lead.get("lifecycle", {}).get("current_assignment_cycle_id")
+                )
+                if needs_new_cycle:
                     try:
-                        exec_name = update_data.get("ejecutivo_asignado") or update_data.get("prospecto.ejecutivo") or ""
+                        exec_name = exec_to_use or ""
                         from datetime import timezone as _tz
                         assigned_val = update_data.get("lifecycle.assigned_at")
                         if isinstance(assigned_val, str):

@@ -474,9 +474,9 @@ def test_single_lead_singular_message():
 
     content, count = build_digest_message_content(db, notif)
     assert count == 1
-    assert "1 nuevo Lead" in content
+    assert "1 LEAD PENDIENTE" in content
     assert "por calificar" not in content
-    assert "pendiente de gestión" in content
+    assert "sin gestion registrada" in content
 
 
 def test_multiple_leads_plural_message():
@@ -494,8 +494,7 @@ def test_multiple_leads_plural_message():
 
     content, count = build_digest_message_content(db, notif)
     assert count == 2
-    assert "Tienes 2" in content
-    assert "leads" in content
+    assert "2 LEADS PENDIENTES" in content
 
 
 def test_different_executives_independent_digests():
@@ -770,9 +769,9 @@ def test_manual_and_portal_leads_grouped():
     # Message content mentions both
     content, count = build_digest_message_content(db, notif)
     assert count == 2
-    # Content mentions both leads by their reference IDs
-    assert "F2C317C6" in content  # lead-1 reference
-    assert "3ADEE45D" in content  # lead-portal reference
+    # Content mentions both leads by their names
+    assert "Juan Perez" in content
+    assert "Pedro Soto" in content
 
 
 def test_digest_single_lead_sends_even_if_alone():

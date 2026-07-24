@@ -628,10 +628,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                         ],
                         "default": 4
                     }
+                },
+                "_hot_rank": {
+                    "$cond": [{"$eq": ["$lead_temperature_effective", "HOT"]}, 0, 1]
                 }
             }},
             {"$sort": {
-                **({"_unattended_rank": 1, "_assigned_dt": 1} if ordenar_por == "antiguos_sin_atender" else
+                **({"_unattended_rank": 1, "_sla_rank": 1, "_hot_rank": 1, "_assigned_dt": 1}
+                   if ordenar_por == "sla_urgente" else
+                   {"_unattended_rank": 1, "_assigned_dt": 1} if ordenar_por == "antiguos_sin_atender" else
                    {"_sla_rank": 1, "_assigned_dt": 1} if ordenar_por == "sla_por_vencer" else
                    {"_activity_dt": 1} if ordenar_por == "mayor_sin_gestion" else
                    {"_last_action_dt": 1, "_assigned_dt": 1} if ordenar_por == "ultima_accion_antigua" else

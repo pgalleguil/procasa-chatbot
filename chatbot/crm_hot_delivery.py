@@ -152,9 +152,11 @@ def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
     if not notification:
         return {"status": "idle"}
 
-    # Resolve executive from DB (not from stored phone)
+    # Resolve executive and build secure context
     from .crm_delivery import resolve_executive_user, get_executive_phone
     from .whatsapp_client import send_whatsapp_message_detailed
+    from .crm_message_context import build_lead_notification_context
+    from .lead_router import build_hot_lead_message
     import asyncio, json
 
     recipient = str(notification.get("recipient_user_id") or "")
@@ -170,12 +172,14 @@ def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
                          state="failed_recipient", error="executive_phone_missing", now=current)
         return {"status": "failed_recipient", "reason": "no_phone"}
 
-    # Build message from payload
-    from .lead_router import format_whatsapp_template
-    payload = notification.get("payload") or {}
-    message = format_whatsapp_template(
-        payload, payload.get("target_name", ""), payload.get("property_code", ""), True
-    )
+    # Build message from canonical context
+    metadata = notification.get("metadata") or {}
+    lead_id = metadata.get("lead_id")
+    if lead_id:
+        ctx = build_lead_notification_context(db, lead_id)
+    else:
+        ctx = {}
+    message = build_hot_lead_message(ctx)
 
     logger.info("[HOT_SEND] notif=%s user=%s phone_end=%s",
                 str(notification["_id"])[:12], str(exec_user.get("_id"))[:12], phone[-4:])

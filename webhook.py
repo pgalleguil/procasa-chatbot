@@ -1212,25 +1212,68 @@ async def _get_authorized_crm_lead(
 
 @app.get("/crm/lead/{phone}", response_class=HTMLResponse)
 async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None)):
+    """DEPRECATED: phone-based lead detail. Redirects to ObjectId route."""
     user = await get_current_user_doc(request)
-    
+    from chatbot.storage import get_db as _sync_db
+    from chatbot.lead_router import build_secure_crm_url
+
+    def _resolve():
+        db = _sync_db()
+        from chatbot.crm_metrics import resolve_canonical_lead
+        resolution = resolve_canonical_lead(db, phone=phone)
+        return resolution.lead if resolution else None
+
     loop = asyncio.get_running_loop()
-    data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_lead_detail_data(phone, property_code=codigo))
-    if not data: 
-        return HTMLResponse("Lead no encontrado")
-    
+    lead = await loop.run_in_executor(_WEB_THREAD_POOL, _resolve)
+    if not lead:
+        return HTMLResponse("Lead no encontrado", status_code=404)
+
     user_name = user.get("nombre", "")
-    
-    if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(data, user):
+    lead_data = await loop.run_in_executor(_WEB_THREAD_POOL,
+        lambda: get_lead_detail_data(phone, property_code=codigo))
+    if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(lead_data or {}, user):
         return RedirectResponse(url="/crm?error=no_es_tu_lead")
-    
-    # LÓGICA FINAL SIMPLE (Solicitada por usuario): 
-    # Usar estrictamente el correo/usuario con el que se identificó.
+
+    # Redirect to the secure ObjectId-based URL
+    secure_url = build_secure_crm_url(lead, codigo)
+    response = RedirectResponse(url=secure_url, status_code=301)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@app.get("/crm/lead-id/{lead_id}", response_class=HTMLResponse)
+async def view_crm_detail_by_id(request: Request, lead_id: str, codigo: str = Query(None)):
+    """Secure lead detail by ObjectId. No phone in URL."""
+    from bson import ObjectId as BsonObjectId
+    from bson.errors import InvalidId
+
+    user = await get_current_user_doc(request)
+    try:
+        oid = BsonObjectId(lead_id)
+    except InvalidId:
+        return HTMLResponse("ID de lead invalido", status_code=400)
+
+    from chatbot.storage import get_db as _sync_db
+
+    def _resolve():
+        db = _sync_db()
+        lead = db["leads"].find_one({"_id": oid})
+        if lead:
+            phone = lead.get("phone") or ""
+            detail = get_lead_detail_data(phone, property_code=codigo)
+            return lead, detail
+        return None, None
+
+    loop = asyncio.get_running_loop()
+    lead, data = await loop.run_in_executor(_WEB_THREAD_POOL, _resolve)
+    if not lead or not data:
+        return HTMLResponse("Lead no encontrado", status_code=404)
+
+    if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(data, user):
+        raise HTTPException(status_code=403, detail="El lead no esta asignado a este ejecutivo")
+
     email = user.get("email") or user.get("username")
-    
-    # Limpieza básica por si viene sucio
-    if email: 
-        email = email.strip()
 
     return templates.TemplateResponse("crm_lead_detail.html", {
         "request": request, 
@@ -2735,13 +2778,19 @@ async def view_crm_list(
     ejecutivo: str = None,
     temperatura: str = "Todos",
     page: int = Query(1, ge=1),
+    scope: str = Query(None),
 ):
+    """CRM list. scope=mine forces filter to the authenticated executive."""
+    user = await get_current_user_doc(request)
+    exec_filter = ejecutivo
+    if scope == "mine" and user:
+        exec_filter = user.get("nombre", "")
     return await _render_crm_list(
         request,
         estado=estado,
         busqueda=busqueda,
         orden=orden,
-        ejecutivo=ejecutivo,
+        ejecutivo=exec_filter,
         temperatura=temperatura,
         page=page,
     )

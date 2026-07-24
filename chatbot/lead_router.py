@@ -677,10 +677,143 @@ def format_summary_whatsapp_template(leads_list: list, executive_name: str) -> s
 
     template = (
         f"{header}\n\n"
-        f"Hola {executive_name}, tienes {len(leads_list)} nuevos leads esperando tu gestión:\n"
+        f"Hola {executive_name}, tienes {len(leads_list)} nuevos leads esperando tu gestion:\n"
         f"{leads_details}\n\n"
-        f"🔗 *Gestionar todos en el CRM*:\n{crm_url}\n\n"
-        f"⚡ _Realiza la gestión a la brevedad para no perder la oportunidad._\n"
-        f"¡Mucho éxito! 🚀"
+        f"\U0001F517 *Gestionar todos en el CRM*:\n{crm_url}\n\n"
+        f"\u26A1 _Realiza la gestion a la brevedad para no perder la oportunidad._\n"
+        f"\u00A1Mucho exito! \U0001F680"
     )
     return template
+
+
+# ---------------------------------------------------------------------------
+# Secure CRM URL builder (no phone in URL)
+# ---------------------------------------------------------------------------
+
+def build_secure_crm_url(lead: dict, property_code: str | None = None) -> str:
+    """Build a CRM deep-link URL using the lead ObjectId, never the phone."""
+    from config import Config
+    base = str(getattr(Config, "CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")).rstrip("/")
+    lid = lead.get("_id", "")
+    url = f"{base}/crm/lead-id/{lid}"
+    code = property_code or ""
+    if code and code not in ("N/D", "S/N", "None", ""):
+        from urllib.parse import urlencode
+        url += "?" + urlencode({"codigo": str(code)})
+    return url
+
+
+# ---------------------------------------------------------------------------
+# Canonical notification messages — production-only templates
+# ---------------------------------------------------------------------------
+
+def build_hot_lead_message(ctx: dict) -> str:
+    """Build the definitive HOT lead WhatsApp message from a notification context.
+
+    Args:
+        ctx: dict from build_lead_notification_context()
+    """
+    exec_name = ctx.get("exec_name") or "Ejecutivo"
+    code = ctx.get("property_code") or "S/N"
+    operacion = ctx.get("operacion") or ""
+    tipo = ctx.get("tipo_propiedad") or ""
+    comuna = ctx.get("comuna") or ""
+    hot_reason = ctx.get("hot_reason") or ""
+    nombre_cliente = ctx.get("nombre_cliente") or ""
+    url = ctx.get("secure_url") or ""
+
+    # Build property line: Prop. CODIGO [· operacion] [· tipo] [· comuna]
+    prop_parts = [f"\U0001F3E0 *Prop. {code}*"]
+    for part in (operacion, tipo, comuna):
+        if part:
+            prop_parts.append(f"\u00B7 {part}")
+    prop_line = " ".join(prop_parts)
+
+    lines = [
+        "\U0001F525 *NUEVO LEAD HOT*",
+        "",
+        f"Hola {exec_name}, tienes un lead prioritario pendiente de gestion.",
+        "",
+        prop_line,
+    ]
+    if hot_reason:
+        lines.append(f"\U0001F3AF Motivo: {hot_reason}")
+    if nombre_cliente:
+        lines.append(f"\U0001F464 Cliente: {nombre_cliente}")
+    lines.extend([
+        "",
+        f"\U0001F517 *Gestionar en CRM:*",
+        url,
+        "",
+        "\u26A0\uFE0F Registra el resultado en el CRM. Abrir WhatsApp o llamar no cuenta como gestion.",
+    ])
+    return "\n".join(lines)
+
+
+def build_digest_lead_message(contexts: list[dict], exec_name: str = "") -> str:
+    """Build the definitive digest WhatsApp message from one or more contexts.
+
+    Args:
+        contexts: list of dicts from build_lead_notification_context()
+        exec_name: executive display name
+    """
+    count = len(contexts)
+    if not contexts:
+        return ""
+    exec_display = exec_name or contexts[0].get("exec_name") or "Ejecutivo"
+
+    # SLA: max across all leads
+    max_sla = max((c.get("sla_minutes", 0) for c in contexts), default=0)
+    from .crm_message_context import _format_sla_duration
+    sla_display = _format_sla_duration(max_sla)
+
+    if count == 1:
+        ctx = contexts[0]
+        header = "\U0001F4CB *1 LEAD PENDIENTE*"
+        lead_preview = _format_context_preview(ctx)
+        lines = [
+            header,
+            "",
+            f"Hola {exec_display}, tienes un lead sin gestion registrada.",
+            "",
+            f"\u23F1 Pendiente hace {sla_display}",
+            "",
+            lead_preview,
+        ]
+    else:
+        header = f"\U0001F4CB *{count} LEADS PENDIENTES*"
+        previews = [_format_context_preview(c) for c in contexts]
+        numbered = [f"{i+1}. {p}" for i, p in enumerate(previews)]
+        lines = [
+            header,
+            "",
+            f"Hola {exec_display}, tienes {count} leads sin gestion registrada.",
+            "",
+            f"\u23F1 El mas antiguo lleva {sla_display} pendiente.",
+            "",
+        ] + numbered
+
+    url = f"https://procasa-chatbot-yr8d.onrender.com/crm?scope=mine&orden=sla_urgente"
+    lines.extend([
+        "",
+        f"\U0001F517 *Ver mis leads pendientes:*",
+        url,
+        "",
+        "\u26A0\uFE0F Registra el resultado en el CRM. Abrir WhatsApp o llamar no cuenta como gestion.",
+    ])
+    return "\n".join(lines)
+
+
+def _format_context_preview(ctx: dict) -> str:
+    """Format a single lead preview line for the digest."""
+    code = ctx.get("property_code") or "S/N"
+    parts = [f"*Prop. {code}*"]
+    for field in ("operacion", "tipo_propiedad", "comuna"):
+        v = ctx.get(field)
+        if v:
+            parts.append(f"\u00B7 {v}")
+    line = " ".join(parts)
+    nombre = ctx.get("nombre_cliente")
+    if nombre:
+        line += f"\n   \U0001F464 {nombre}"
+    return line

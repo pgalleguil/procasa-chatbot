@@ -349,15 +349,14 @@ def _build_preview_lines(leads, max_items):
 
 def build_digest_message_content(db, notification):
     """Build the WhatsApp message text for the digest.
-
-    Returns (content_text, lead_count) or (None, 0) if the digest is stale.
+    
+    Uses the canonical notification context for each lead.
+    Returns (content_text, lead_count) or (None, 0) if stale.
     """
     lead_ids = list(notification.get("lead_ids") or [])
     if not lead_ids:
         return None, 0
 
-    # Re-validate each lead: fetch current state.
-    # Normalize lead_ids: legacy digests store strings, leads._id is ObjectId.
     _normalized_ids = []
     for _lid in lead_ids:
         if isinstance(_lid, str) and len(_lid) == 24 and not _lid.startswith("$"):
@@ -368,24 +367,25 @@ def build_digest_message_content(db, notification):
                 _normalized_ids.append(_lid)
         else:
             _normalized_ids.append(_lid)
+
     leads = list(db["leads"].find(
         {"_id": {"$in": _normalized_ids}},
         {
             "prospecto.nombre": 1, "prospecto.codigo": 1, "prospecto.comuna": 1,
-            "prospecto.origen": 1, "origen": 1, "codigo": 1, "property_code": 1,
+            "codigo": 1, "property_code": 1,
             "nombre": 1, "lead_temperature_effective": 1, "pipeline_stage": 1,
             "ejecutivo_asignado": 1, "stage": 1,
+            "created_at": 1, "lifecycle": 1,
         },
     ))
 
-    # Filter out leads that no longer belong
     recipient = str(notification.get("recipient_user_id") or "")
     recipient_norm = None
     if recipient:
         resolved = resolve_recipient_user(db, recipient)
         if resolved:
             recipient_norm = str(resolved.get("_id"))
-    
+
     valid = []
     for lead in leads:
         if str(lead.get("lead_temperature_effective") or "").upper() == HOT:
@@ -397,7 +397,6 @@ def build_digest_message_content(db, notification):
             continue
         if lead.get("is_duplicate"):
             continue
-        # Compare canonical user IDs, not names.
         lead_exec_id = None
         lead_exec_name = lead.get("ejecutivo_asignado") or ""
         if recipient_norm and lead_exec_name:
@@ -405,83 +404,25 @@ def build_digest_message_content(db, notification):
             if exec_user:
                 lead_exec_id = str(exec_user.get("_id"))
         if recipient_norm and lead_exec_id and recipient_norm != lead_exec_id:
-            logger.info("[NON_HOT_DIGEST] Lead %s executive_mismatch: recipient=%s != lead_exec=%s (name=%s)",
-                        lead["_id"], recipient_norm[:12], lead_exec_id[:12], lead_exec_name[:20])
             continue
-        if recipient_norm and not lead_exec_id and lead_exec_name:
-            logger.info("[NON_HOT_DIGEST] Lead %s executive_not_found: name=%s", lead["_id"], lead_exec_name[:20])
-            continue
-        # Exclude leads with management registered in the current cycle
         cycle = db["crm_assignment_cycles"].find_one(
             {"lead_id": lead["_id"], "unassigned_at": None},
             sort=[("assigned_at", -1)],
         )
         if cycle and cycle.get("first_valid_management_at"):
-            logger.info(
-                "[NON_HOT_DIGEST] Lead %s gestionado (first_valid_management_at=%s). Excluido del digest.",
-                lead["_id"], cycle["first_valid_management_at"],
-            )
             continue
         valid.append(lead)
 
     if not valid:
         return None, 0
 
-    max_preview = max(int(getattr(Config, "CRM_NON_HOT_DIGEST_MAX_PREVIEW_ITEMS", 3)), 1)
-    count = len(valid)
-    oldest = min(
-        (coerce_utc_datetime(l.get("created_at")) or utc_now() for l in valid),
-        default=utc_now(),
-    )
-    oldest_minutes = int((utc_now() - oldest).total_seconds() / 60)
-    source_dist = _build_source_distribution(valid)
-    preview_lines = _build_preview_lines(valid, max_preview)
+    from .crm_message_context import build_lead_notification_context
+    from .lead_router import build_digest_lead_message
 
-    # Resolve executive name for message
-    cycle = db["crm_assignment_cycles"].find_one(
-        {"lead_id": valid[0]["_id"], "unassigned_at": None},
-        sort=[("assigned_at", -1)],
-    )
-    exec_name = _executive_name_from_cycle(db, cycle) if cycle else "Ejecutivo"
-
-    # Build the CRM link — opens all leads sorted by oldest unattended.
-    # Internal temperature enum is never exposed in the visible message.
-    base = str(getattr(Config, 'CRM_BASE_URL', 'https://procasa-chatbot-yr8d.onrender.com')).rstrip('/')
-    crm_url = f"{base}/crm?orden=antiguos_sin_atender"
-
-    if count == 1:
-        lines = [
-            f"📋 *Tienes 1 nuevo Lead*",
-            "",
-            f"Hola {exec_name}, tienes un nuevo lead pendiente de gestión.",
-            "",
-            *preview_lines,
-        ]
-        if source_dist:
-            lines.extend(["", f"📊 *Origen*: {source_dist}"])
-    else:
-        lines = [
-            f"📋 *Tienes {count} nuevos Leads*",
-            "",
-            f"Hola {exec_name}, tienes {count} nuevos leads pendientes de gestión.",
-            f"El más antiguo lleva {oldest_minutes} min. sin gestionar.",
-            "",
-            *preview_lines,
-        ]
-        extra = count - len(preview_lines)
-        if extra > 0:
-            lines.extend(["", f"_{extra} lead{'s' if extra > 1 else ''} adicional{'es' if extra > 1 else ''} disponible{'s' if extra > 1 else ''} en el CRM._"])
-        if source_dist:
-            lines.extend(["", f"📊 *Distribución por origen*: {source_dist}"])
-
-    lines.extend([
-        "",
-        f"🔗 *Revisar y gestionar en CRM*:",
-        crm_url,
-        "",
-        "💡 _Toda gestión debe registrarse en el CRM para el control SLA._",
-    ])
-    return "\n".join(lines), count
+    contexts = [build_lead_notification_context(db, ld["_id"]) for ld in valid]
+    exec_name = contexts[0].get("exec_name") or "Ejecutivo"
+    content = build_digest_lead_message(contexts, exec_name)
+    return content, len(valid)
 
 
 def _notify_hot_outside_digest(db, lead):

@@ -1,4 +1,5 @@
 # chatbot/storage.py
+import re
 from pymongo import MongoClient
 import time
 import threading
@@ -8,6 +9,16 @@ from datetime import datetime
 import pytz
 from config import Config
 from typing import List, Dict, Optional
+
+# ---- Phone redaction for logs ----
+_PHONE_RE = re.compile(r"(\+?56\s*9)\s*(\d{4})\s*(\d{4})")
+_PHONE_MASK = r"\1 **** \3"
+
+def redact_phone(text: str) -> str:
+    """Redact Chilean mobile numbers in log output. +56 9 XXXX 1234 -> +56 9 **** 1234"""
+    if not text or not isinstance(text, str):
+        return text
+    return _PHONE_RE.sub(_PHONE_MASK, text)
 from .constants import PipelineStage, InteractionType, EventType, CHILE_TZ
 import logging
 from uuid import uuid4

@@ -11,6 +11,7 @@ from config import Config
 from typing import List, Dict, Optional
 
 # ---- Phone redaction for logs ----
+import logging
 _PHONE_RE = re.compile(r"(\+?56\s*9)\s*(\d{4})\s*(\d{4})")
 _PHONE_MASK = r"\1 **** \3"
 
@@ -19,8 +20,27 @@ def redact_phone(text: str) -> str:
     if not text or not isinstance(text, str):
         return text
     return _PHONE_RE.sub(_PHONE_MASK, text)
+
+
+class RedactPhoneFilter(logging.Filter):
+    """Logging filter that redacts phone numbers from log records."""
+    def filter(self, record):
+        record.msg = redact_phone(str(record.msg))
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {k: redact_phone(str(v)) for k, v in record.args.items()}
+            elif isinstance(record.args, tuple):
+                record.args = tuple(redact_phone(str(a)) for a in record.args)
+        return True
+
+
+def install_log_redaction():
+    """Install phone redaction on the root logger and all named loggers."""
+    filt = RedactPhoneFilter()
+    for name in ("", "chatbot", "uvicorn", "uvicorn.access", "uvicorn.error",
+                 "webhook", "processing", "api", "crm"):
+        logging.getLogger(name).addFilter(filt)
 from .constants import PipelineStage, InteractionType, EventType, CHILE_TZ
-import logging
 from uuid import uuid4
 from collections import deque
 

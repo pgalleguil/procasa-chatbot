@@ -691,16 +691,14 @@ def format_summary_whatsapp_template(leads_list: list, executive_name: str) -> s
 # ---------------------------------------------------------------------------
 
 def build_secure_crm_url(lead: dict, property_code: str | None = None) -> str:
-    """Build a CRM deep-link URL using the lead ObjectId, never the phone."""
+    """Build a CRM deep-link URL using the lead ObjectId, never the phone.
+    
+    Property code is resolved server-side, never passed in query string.
+    """
     from config import Config
     base = str(getattr(Config, "CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")).rstrip("/")
     lid = lead.get("_id", "")
-    url = f"{base}/crm/lead-id/{lid}"
-    code = property_code or ""
-    if code and code not in ("N/D", "S/N", "None", ""):
-        from urllib.parse import urlencode
-        url += "?" + urlencode({"codigo": str(code)})
-    return url
+    return f"{base}/crm/lead-id/{lid}"
 
 
 # ---------------------------------------------------------------------------
@@ -732,7 +730,7 @@ def build_hot_lead_message(ctx: dict) -> str:
     lines = [
         "\U0001F525 *NUEVO LEAD HOT*",
         "",
-        f"Hola {exec_name}, tienes un lead prioritario pendiente de gestion.",
+        f"Hola {exec_name}, tienes un lead prioritario pendiente de gesti\u00F3n.",
         "",
         prop_line,
     ]
@@ -745,7 +743,7 @@ def build_hot_lead_message(ctx: dict) -> str:
         f"\U0001F517 *Gestionar en CRM:*",
         url,
         "",
-        "\u26A0\uFE0F Registra el resultado en el CRM. Abrir WhatsApp o llamar no cuenta como gestion.",
+        "\u26A0\uFE0F Registra el resultado en el CRM. Abrir WhatsApp o llamar no cuenta como gesti\u00F3n.",
     ])
     return "\n".join(lines)
 
@@ -774,9 +772,9 @@ def build_digest_lead_message(contexts: list[dict], exec_name: str = "") -> str:
         lines = [
             header,
             "",
-            f"Hola {exec_display}, tienes un lead sin gestion registrada.",
+            f"Hola {exec_display}, tienes un lead sin gesti\u00F3n registrada.",
             "",
-            f"\u23F1 Pendiente hace {sla_display}",
+            f"\u23F1 Lleva {sla_display} pendiente.",
             "",
             lead_preview,
         ]
@@ -787,9 +785,9 @@ def build_digest_lead_message(contexts: list[dict], exec_name: str = "") -> str:
         lines = [
             header,
             "",
-            f"Hola {exec_display}, tienes {count} leads sin gestion registrada.",
+            f"Hola {exec_display}, tienes {count} leads sin gesti\u00F3n registrada.",
             "",
-            f"\u23F1 El mas antiguo lleva {sla_display} pendiente.",
+            f"\u23F1 El m\u00E1s antiguo lleva {sla_display} pendiente.",
             "",
         ] + numbered
 
@@ -799,7 +797,7 @@ def build_digest_lead_message(contexts: list[dict], exec_name: str = "") -> str:
         f"\U0001F517 *Ver mis leads pendientes:*",
         url,
         "",
-        "\u26A0\uFE0F Registra el resultado en el CRM. Abrir WhatsApp o llamar no cuenta como gestion.",
+        "\u26A0\uFE0F Registra el resultado en el CRM. Abrir WhatsApp o llamar no cuenta como gesti\u00F3n.",
     ])
     return "\n".join(lines)
 

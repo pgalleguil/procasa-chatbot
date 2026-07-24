@@ -195,6 +195,11 @@ lead_processing_queue = None  # Se inicializará en lifespan
 async def lifespan(app: FastAPI):
     # Startup logic
     logger.info("Bot PRO Iniciando (Lifespan Startup)...")
+    
+    # Install phone redaction on all loggers
+    from chatbot.storage import install_log_redaction
+    install_log_redaction()
+    logger.info("[LOG] Phone redaction installed on root + chatbot + uvicorn loggers")
 
     logger.info("ThreadPoolExecutor configurado: web=8, worker=5, warmer=1")
     logger.info("[CONFIG] non_hot_digest_shadow_mode=%s configuration_source=code",
@@ -1212,7 +1217,15 @@ async def _get_authorized_crm_lead(
 
 @app.get("/crm/lead/{phone}", response_class=HTMLResponse)
 async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None)):
-    """DEPRECATED: phone-based lead detail. Redirects to ObjectId route."""
+    """DEPRECATED: phone-based lead detail. 302 redirect to ObjectId route.
+    
+    Auth is checked before any redirection. Phone is redacted in logs.
+    If the user is not authorized, returns 403 without revealing lead existence.
+    """
+    from chatbot.storage import redact_phone
+    logger.info("[DEPRECATED] /crm/lead/%s accessed — redirecting to secure route",
+                redact_phone(phone))
+    
     user = await get_current_user_doc(request)
     from chatbot.storage import get_db as _sync_db
     from chatbot.lead_router import build_secure_crm_url
@@ -1221,30 +1234,30 @@ async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None
         db = _sync_db()
         from chatbot.crm_metrics import resolve_canonical_lead
         resolution = resolve_canonical_lead(db, phone=phone)
-        return resolution.lead if resolution else None
+        if resolution and resolution.lead:
+            lead = resolution.lead
+            phone_norm = lead.get("phone") or ""
+            detail = get_lead_detail_data(phone_norm)
+            return lead, detail
+        return None, None
 
     loop = asyncio.get_running_loop()
-    lead = await loop.run_in_executor(_WEB_THREAD_POOL, _resolve)
+    lead, lead_data = await loop.run_in_executor(_WEB_THREAD_POOL, _resolve)
     if not lead:
-        return HTMLResponse("Lead no encontrado", status_code=404)
-
-    user_name = user.get("nombre", "")
-    lead_data = await loop.run_in_executor(_WEB_THREAD_POOL,
-        lambda: get_lead_detail_data(phone, property_code=codigo))
+        raise HTTPException(status_code=404, detail="Lead no encontrado")
     if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(lead_data or {}, user):
-        return RedirectResponse(url="/crm?error=no_es_tu_lead")
+        raise HTTPException(status_code=403, detail="No autorizado")
 
-    # Redirect to the secure ObjectId-based URL
-    secure_url = build_secure_crm_url(lead, codigo)
-    response = RedirectResponse(url=secure_url, status_code=301)
+    secure_url = build_secure_crm_url(lead)
+    response = RedirectResponse(url=secure_url, status_code=302)
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
 
 
 @app.get("/crm/lead-id/{lead_id}", response_class=HTMLResponse)
-async def view_crm_detail_by_id(request: Request, lead_id: str, codigo: str = Query(None)):
-    """Secure lead detail by ObjectId. No phone in URL."""
+async def view_crm_detail_by_id(request: Request, lead_id: str):
+    """Secure lead detail by ObjectId. No phone in URL. No query-string data trusted."""
     from bson import ObjectId as BsonObjectId
     from bson.errors import InvalidId
 
@@ -1261,15 +1274,21 @@ async def view_crm_detail_by_id(request: Request, lead_id: str, codigo: str = Qu
         lead = db["leads"].find_one({"_id": oid})
         if lead:
             phone = lead.get("phone") or ""
-            detail = get_lead_detail_data(phone, property_code=codigo)
+            detail = get_lead_detail_data(phone)
+            # Mask phone in the detail for the initial HTML render
+            if detail and detail.get("phone"):
+                raw = str(detail["phone"]).strip()
+                detail["phone_masked"] = _mask_phone(raw)
+                detail["phone_raw"] = raw
+                # Exclude raw phone from initial JS
+                detail["phone"] = detail["phone_masked"]
             return lead, detail
         return None, None
 
     loop = asyncio.get_running_loop()
     lead, data = await loop.run_in_executor(_WEB_THREAD_POOL, _resolve)
     if not lead or not data:
-        return HTMLResponse("Lead no encontrado", status_code=404)
-
+        raise HTTPException(status_code=404, detail="Lead no encontrado")
     if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(data, user):
         raise HTTPException(status_code=403, detail="El lead no esta asignado a este ejecutivo")
 
@@ -1282,6 +1301,101 @@ async def view_crm_detail_by_id(request: Request, lead_id: str, codigo: str = Qu
         "user_role": user.get("rol", "agente"),
         "user_name": user.get("nombre", "")
     })
+
+
+# ---- Phone masking helper ----
+
+def _mask_phone(phone: str) -> str:
+    """Mask a phone number for display: +56 9 XXXX 1234 -> +56 9 **** 1234"""
+    import re
+    p = str(phone or "").strip()
+    m = re.match(r"(\+?56\s*9)\s*(\d{4})\s*(\d{4})", p)
+    if m:
+        return f"{m.group(1)} **** {m.group(3)}"
+    return p[:6] + "****" + p[-4:] if len(p) > 8 else p
+
+
+# ---- Contact actions (secure, no phone in URL or frontend) ----
+
+@app.post("/crm/lead-id/{lead_id}/contact/whatsapp")
+async def contact_whatsapp(request: Request, lead_id: str):
+    """Open WhatsApp for a lead. Auth required. Telemetry first, phone from DB only."""
+    from bson import ObjectId as BsonObjectId
+    from bson.errors import InvalidId
+    try:
+        oid = BsonObjectId(lead_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="ID invalido")
+    
+    user = await get_current_user_doc(request)
+    from chatbot.storage import get_db as _sync_db
+    
+    loop = asyncio.get_running_loop()
+    lead, detail = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: _resolve_lead_by_id(_sync_db(), oid))
+    if not lead or not detail:
+        raise HTTPException(status_code=404, detail="Lead no encontrado")
+    if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(detail, user):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    def _log():
+        from chatbot.storage import get_db, log_event
+        db = get_db()
+        log_event(lead.get("phone", ""), "CLICK_WHATSAPP_LEAD",
+                  actor=str(user.get("nombre", "")), lead_id=lead["_id"])
+    await loop.run_in_executor(_WEB_THREAD_POOL, _log)
+    
+    raw_phone = str(lead.get("phone", "")).strip()
+    clean = "".join(c for c in raw_phone if c.isdigit() or c == "+")
+    return JSONResponse({
+        "action": "whatsapp",
+        "url": f"https://wa.me/{clean.replace('+', '')}",
+        "disclaimer": "Contactar no constituye gestion. Registra el resultado en el CRM."
+    })
+
+
+@app.post("/crm/lead-id/{lead_id}/contact/call")
+async def contact_call(request: Request, lead_id: str):
+    """Initiate a phone call. Auth required. Telemetry first."""
+    from bson import ObjectId as BsonObjectId
+    from bson.errors import InvalidId
+    try:
+        oid = BsonObjectId(lead_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="ID invalido")
+    
+    user = await get_current_user_doc(request)
+    from chatbot.storage import get_db as _sync_db
+    
+    loop = asyncio.get_running_loop()
+    lead, detail = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: _resolve_lead_by_id(_sync_db(), oid))
+    if not lead or not detail:
+        raise HTTPException(status_code=404, detail="Lead no encontrado")
+    if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(detail, user):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    def _log():
+        from chatbot.storage import get_db, log_event
+        db = get_db()
+        log_event(lead.get("phone", ""), "CLICK_CALL_LEAD",
+                  actor=str(user.get("nombre", "")), lead_id=lead["_id"])
+    await loop.run_in_executor(_WEB_THREAD_POOL, _log)
+    
+    raw_phone = str(lead.get("phone", "")).strip()
+    clean = "".join(c for c in raw_phone if c.isdigit() or c == "+")
+    return JSONResponse({
+        "action": "call",
+        "url": f"tel:{clean}",
+        "disclaimer": "Llamar no constituye gestion. Registra el resultado en el CRM."
+    })
+
+
+def _resolve_lead_by_id(db, oid):
+    lead = db["leads"].find_one({"_id": oid})
+    if lead:
+        detail = get_lead_detail_data(lead.get("phone", ""))
+        return lead, detail
+    return None, None
+
 
 @app.post("/api/crm/log_action")
 async def api_crm_log_action(request: Request):

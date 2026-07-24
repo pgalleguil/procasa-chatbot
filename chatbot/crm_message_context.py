@@ -31,9 +31,9 @@ def _is_valid_client_name(name: str | None) -> bool:
 # ------------------------------- hot reason mapping -------------------------------
 
 _HOT_INTENT_LABELS: Dict[str, str] = {
-    "ASK_VISIT": "Solicito coordinar una visita",
-    "ASK_CONTACT": "Solicito ser contactado",
-    "ASK_INFO": "Solicito informacion de la propiedad",
+    "ASK_VISIT": "Solicit\u00F3 coordinar una visita",
+    "ASK_CONTACT": "Solicit\u00F3 ser contactado",
+    "ASK_INFO": "Solicit\u00F3 informaci\u00F3n de la propiedad",
 }
 
 
@@ -92,8 +92,8 @@ def _format_sla_duration(minutes: int) -> str:
     hours_remainder = hours % 24
     if days > 0:
         if hours_remainder > 0:
-            return f"{days} dia {hours_remainder} h"
-        return f"{days} dia"
+            return f"{days} d\u00EDa {hours_remainder} h"
+        return f"{days} d\u00EDa"
     if mins_remainder > 0:
         return f"{hours} h {mins_remainder} min"
     return f"{hours} h"

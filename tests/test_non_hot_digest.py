@@ -476,7 +476,7 @@ def test_single_lead_singular_message():
     assert count == 1
     assert "1 LEAD PENDIENTE" in content
     assert "por calificar" not in content
-    assert "sin gestion registrada" in content
+    assert "sin gesti\u00F3n registrada" in content
 
 
 def test_multiple_leads_plural_message():

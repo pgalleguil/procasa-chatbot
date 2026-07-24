@@ -70,14 +70,14 @@ TYPE_LABELS = {
 TELEMETRY_LABEL_TYPES = frozenset(TYPE_LABELS.keys())
 
 
-def _after_hours_label(assigned_raw, last_action_text):
+def _after_hours_label(assigned_raw, *, has_real_management=False):
     """Return display text for assignment time, with after-hours detection.
 
     After-hours (19:00-09:00, weekends) + no management → 'Asignado anoche ...'
     Otherwise → format_relative_time() result.
     """
     dt = coerce_crm_datetime(assigned_raw)
-    if dt and last_action_text == "Sin gestión registrada":
+    if dt and not has_real_management:
         from chatbot.constants import BUSINESS_DAYS, BUSINESS_START_HOUR, BUSINESS_END_HOUR
         local = dt.astimezone(CHILE_TZ)
         is_after_hours = (
@@ -818,6 +818,11 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         )
         if not outreach["recognized"]:
             recognized_management_ev = None
+        # Real management: canonical event OR lifecycle.first_valid_management_at
+        has_real_management = (
+            recognized_management_ev is not None
+            or (lead.get("lifecycle") or {}).get("first_valid_management_at") is not None
+        )
         if recognized_management_ev:
             commercial_ev = recognized_management_ev
         else:
@@ -1008,7 +1013,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         elif last_action_text != "Sin gestión registrada":
             age_label = f"Última gestión {management_age}"
         else:
-            assigned_age = _after_hours_label(lifecycle_ts or created_ts, last_action_text)
+            assigned_age = _after_hours_label(lifecycle_ts or created_ts, has_real_management=has_real_management)
             if assigned_age.startswith("anoche"):
                 age_label = f"Asignado {assigned_age}"
             elif estado_final == PipelineStage.NEW:
@@ -1038,7 +1043,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             "ultima_accion_note": last_action_note,
             "ultima_accion_nota": last_action_note,
             "ejecutivo_nombre": ejecutivo or UNASSIGNED_LABEL,
-            "fecha_asignacion_relativa": _after_hours_label(lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion"), last_action_text),
+            "fecha_asignacion_relativa": _after_hours_label(lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion"), has_real_management=has_real_management),
             "stage": lead.get("stage") or "new",
             "sort_timestamp": sort_ts
         })

@@ -1199,11 +1199,20 @@ def update_lead_crm_data(phone, data):
     if next_date:
         schedule_crm_task(phone_clean, next_date, data.get("notas"))
     elif new_state in [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST]:
-        # Cleanup: Si se cierra el lead, resolver tareas pendientes
+        # Cleanup: Si se cierra el lead, resolver tareas pendientes y cerrar ciclo
         db["crm_tasks"].update_many(
             {"phone": phone_clean, "status": "pending"},
             {"$set": {"status": "completed", "resolved_at": datetime.now(), "resolution": "lead_closed"}}
         )
+        # Close the active cycle idempotently
+        from chatbot.crm_metrics import active_assignment_cycle
+        cycle_to_close = active_assignment_cycle(db, current_lead["_id"])
+        if cycle_to_close:
+            db["crm_assignment_cycles"].update_one(
+                {"_id": cycle_to_close["_id"], "cycle_status": "active"},
+                {"$set": {"cycle_status": "closed", "closed_at": datetime.now(CHILE_TZ),
+                          "closed_reason": "lead_closed", "unassigned_at": datetime.now(CHILE_TZ)}},
+            )
 
     # Log de gestión comercial (Acción User) -> Usamos el log centralizado
     log_event(phone_clean, InteractionType.HUMAN_NOTE, actor_name or "unresolved_actor", {

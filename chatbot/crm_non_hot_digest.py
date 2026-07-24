@@ -576,11 +576,13 @@ def send_digest(db, *, notification, worker_id, sender=None):
         logger.info("[DIGEST_RESULT] notif=%s success=%s provider=%s http=%s",
                     str(notification["_id"])[:12], success, provider_id, http_status)
         if success and provider_id:
-            state = "sent"
+            # Atomically finalize: checks state=sending, pushes completed_at
+            finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                             state="sent", provider_message_id=provider_id)
+            # Set delivery metadata separately
             db[NOTIFICATION_COLLECTION].update_one(
                 {"_id": notification["_id"]},
-                {"$set": {"state": state, "delivery_mode": "live",
-                          "actually_delivered": True, "provider_message_id": provider_id,
+                {"$set": {"delivery_mode": "live", "actually_delivered": True,
                           "updated_at": utc_now()}},
             )
             return {"status": "sent", "lead_count": lead_count, "provider_message_id": provider_id,

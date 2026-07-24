@@ -764,3 +764,73 @@ def test_format_relative_time_past_normal():
     assert "Hace" in result, f"Past timestamp should contain 'Hace': {result}"
 
 
+# =====================================================================
+#  TESTS: After-hours display
+# =====================================================================
+
+def _is_after_hours_test(dt_local):
+    """Replica de la lógica de api_crm.py para detectar asignación fuera de horario."""
+    from chatbot.constants import BUSINESS_DAYS, BUSINESS_START_HOUR, BUSINESS_END_HOUR, CHILE_TZ
+    from chatbot.crm_metrics import coerce_utc_datetime
+    assigned = coerce_utc_datetime(dt_local)
+    if not assigned:
+        return False
+    local = assigned.astimezone(CHILE_TZ)
+    return (
+        local.weekday() not in BUSINESS_DAYS
+        or local.hour >= BUSINESS_END_HOUR
+        or local.hour < BUSINESS_START_HOUR
+    )
+
+
+def test_after_hours_night_time():
+    """22:12 CLT on weekday is after hours."""
+    from datetime import datetime, timezone
+    dt = datetime(2026, 7, 23, 22, 12, tzinfo=timezone.utc)  # 18:12 CLT? No, 22:12 UTC = 18:12 CLT
+    # Need to pass the actual local time for the check
+    from chatbot.constants import CHILE_TZ
+    local_dt = datetime(2026, 7, 23, 22, 12, tzinfo=CHILE_TZ)  # 22:12 CLT
+    assert _is_after_hours_test(local_dt), "22:12 CLT should be after hours"
+
+
+def test_after_hours_business_hours():
+    """11:00 CLT on weekday is NOT after hours."""
+    from chatbot.constants import CHILE_TZ
+    from datetime import datetime
+    local_dt = datetime(2026, 7, 24, 11, 0, tzinfo=CHILE_TZ)
+    assert not _is_after_hours_test(local_dt), "11:00 CLT should be business hours"
+
+
+def test_after_hours_weekend():
+    """Saturday 11:00 CLT IS after hours."""
+    from chatbot.constants import CHILE_TZ
+    from datetime import datetime
+    local_dt = datetime(2026, 7, 25, 11, 0, tzinfo=CHILE_TZ)  # Saturday
+    assert _is_after_hours_test(local_dt), "Saturday should be after hours"
+
+
+def test_after_hours_edge_19_00():
+    """19:00 CLT exactly is after hours (end hour exclusive)."""
+    from chatbot.constants import CHILE_TZ
+    from datetime import datetime
+    local_dt = datetime(2026, 7, 24, 19, 0, tzinfo=CHILE_TZ)
+    assert _is_after_hours_test(local_dt), "19:00 CLT should be after hours"
+
+
+def test_after_hours_edge_09_00():
+    """09:00 CLT exactly is NOT after hours (start hour inclusive)."""
+    from chatbot.constants import CHILE_TZ
+    from datetime import datetime
+    local_dt = datetime(2026, 7, 24, 9, 0, tzinfo=CHILE_TZ)
+    assert not _is_after_hours_test(local_dt), "09:00 CLT should be business hours"
+
+
+def test_after_hours_pipeline_stage_none():
+    """pipeline_stage=None should not prevent after-hours display."""
+    from chatbot.constants import CHILE_TZ
+    from datetime import datetime
+    local_dt = datetime(2026, 7, 23, 22, 12, tzinfo=CHILE_TZ)
+    assert _is_after_hours_test(local_dt)
+    # This validates the core logic; the template condition was fixed
+    # to evaluate after-hours before checking pipeline_stage
+

@@ -314,6 +314,15 @@ class CrmService:
                 actor,
                 {"from": old_stage, "to": "ARCHIVED", "notes": reason},
             )
+            # Close the active cycle idempotently
+            from .crm_metrics import active_assignment_cycle
+            cycle = active_assignment_cycle(db, lead["_id"])
+            if cycle:
+                db["crm_assignment_cycles"].update_one(
+                    {"_id": cycle["_id"], "cycle_status": "active"},
+                    {"$set": {"cycle_status": "closed", "closed_at": now_cl,
+                              "closed_reason": "lead_archived", "unassigned_at": now_cl}},
+                )
             return True
         return False
 

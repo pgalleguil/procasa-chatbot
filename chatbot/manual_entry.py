@@ -7,6 +7,7 @@ from .storage import get_db, log_event
 from .constants import CHILE_TZ, PipelineStage, InteractionType
 from .lead_router import find_responsible_executive
 from .processing_service import LeadProcessingService
+from .phone_utils import normalize_phone_strict
 from .property_lookup import (
     PROPERTY_COLLECTION_NAME,
     build_property_lookup_queries,
@@ -169,22 +170,8 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
     Expected data: phone (optional), property_code, name, email, origen
     """
     db = get_db()
-    import re
     raw_phone = str(data.get("phone", "") or "").strip()
-    phone_digits = re.sub(r"\D", "", raw_phone)
-
-    # Normalización flexible:
-    # - Si viene en formato internacional explícito, lo preservamos.
-    # - Si viene como número local chileno de 8/9 dígitos, le agregamos +56.
-    # - Si viene solo con dígitos internacionales sin +, lo guardamos como +<digits>.
-    if raw_phone.startswith("+") and phone_digits:
-        phone = "+" + phone_digits
-    elif len(phone_digits) in (8, 9):
-        phone = "+56" + phone_digits
-    elif phone_digits:
-        phone = "+" + phone_digits
-    else:
-        phone = None
+    phone = normalize_phone_strict(raw_phone)
 
     property_code = str(data.get("property_code", "")).strip()
     name = data.get("nombre", "").strip()

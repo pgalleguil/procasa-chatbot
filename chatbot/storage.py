@@ -218,7 +218,12 @@ def get_async_db():
 COLLECTION_CONVERSATIONS = "leads"
 COLLECTION_PENDING_NOTIFICATIONS = "pending_notifications"
 
+
 def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None):
+    from .phone_utils import normalize_phone_strict
+    normalized = normalize_phone_strict(phone)
+    phone = normalized or phone
+
     db = get_db()
     # Usamos hora de Chile para consistencia visual en DB
     now = datetime.now(CHILE_TZ)

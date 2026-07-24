@@ -173,9 +173,16 @@ def test_archived_leads_are_excluded_from_the_active_list_universe():
 
 
 class _FakeCollection:
-    def __init__(self):
+    def __init__(self, docs=None):
         self.query = None
         self.update = None
+        self.docs = docs or []
+
+    def find_one(self, query, *args, **kwargs):
+        for doc in self.docs:
+            if all(doc.get(k) == v for k, v in query.items() if not isinstance(v, dict)):
+                return doc
+        return None
 
     def update_one(self, query, update):
         self.query = query
@@ -216,8 +223,15 @@ def test_admin_reassignment_service_targets_the_resolved_lead_and_audits_actor(m
 
 def test_admin_archive_service_is_non_destructive_and_keeps_audit_history(monkeypatch):
     collection = _FakeCollection()
+    cycle_collection = _FakeCollection()
     events = []
-    monkeypatch.setattr(crm_service_module, "get_db", lambda: {COLLECTION_CONVERSATIONS: collection})
+    monkeypatch.setattr(crm_service_module, "get_db", lambda: {
+        COLLECTION_CONVERSATIONS: collection,
+        "crm_assignment_cycles": cycle_collection,
+        "crm_management_results": _FakeCollection(),
+        "crm_notifications_v1": _FakeCollection(),
+        "crm_events": _FakeCollection(),
+    })
     monkeypatch.setattr(
         CrmService,
         "get_lead",

@@ -36,11 +36,16 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     if not all(str(value or "").strip() for value in (lead_id, assignment_cycle_id, actor_user_id, source, idempotency_key)):
         raise ValueError("canonical management identity is incomplete")
     occurred = coerce_utc_datetime(occurred_at) or utc_now()
+    # Try active cycle first, then fallback to any cycle for idempotent retries
     cycle = db["crm_assignment_cycles"].find_one({
         "lead_id": lead_id, "assignment_cycle_id": assignment_cycle_id,
         "cycle_status": "active", "unassigned_at": None,
     })
     if not cycle:
+        # If the management result already exists, allow retry even if cycle is closed
+        existing = db["crm_management_results"].find_one({"_id": f"crm_management:{idempotency_key}"})
+        if existing:
+            return existing
         raise ValueError("active assignment cycle not found")
     if str(cycle.get("assigned_to_user_id")) != str(actor_user_id):
         raise PermissionError("management actor does not own the active cycle")
@@ -99,6 +104,12 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         {"assignment_cycle_id": assignment_cycle_id, "first_valid_management_at": {"$exists": False}},
         {"$set": first_cycle_updates},
     )
+    # If the result closes the lead (managed_closed), also close the cycle
+    if rule["status"] == "managed_closed":
+        cycle_updates["cycle_status"] = "closed"
+        cycle_updates["closed_at"] = occurred
+        cycle_updates["closed_reason"] = "management_result_closed"
+        cycle_updates["unassigned_at"] = occurred
     db["crm_assignment_cycles"].update_one(
         {"assignment_cycle_id": assignment_cycle_id, "cycle_status": "active"}, {"$set": cycle_updates}
     )

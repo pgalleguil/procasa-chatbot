@@ -49,10 +49,30 @@ INDIVIDUAL_IDENTITY_FIELD = "individual_identity"
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _window_due_at(started_at):
-    """Return the fixed UTC expiry for a digest window."""
+def _window_due_at(started_at, *, after_hours=False):
+    """Return the UTC expiry for a digest window.
+
+    During business hours: fixed N-minute window (default 10).
+    After hours: next business day at 09:00 CLT.
+    """
     window = max(int(getattr(Config, "CRM_NON_HOT_DIGEST_WINDOW_MINUTES", 15)), 1)
+    if after_hours:
+        from .lead_router import get_next_business_slot
+        return get_next_business_slot(started_at + timedelta(minutes=window))
     return started_at + timedelta(minutes=window)
+
+
+def _is_after_hours(dt=None):
+    """Return True if the given time falls outside business hours (Mon-Fri 09:00-19:00 CLT)."""
+    from .constants import BUSINESS_DAYS, BUSINESS_START_HOUR, BUSINESS_END_HOUR
+    now = coerce_utc_datetime(dt) or utc_now()
+    from .constants import CHILE_TZ
+    local = now.astimezone(CHILE_TZ)
+    if local.weekday() not in BUSINESS_DAYS:
+        return True
+    if local.hour < BUSINESS_START_HOUR or local.hour >= BUSINESS_END_HOUR:
+        return True
+    return False
 
 
 def _business_period_label(assigned_at):
@@ -164,10 +184,10 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
         return db[NOTIFICATION_COLLECTION].find_one({"_id": existing["_id"]})
 
     # No open window — create one.
-    # The digest window is always 10 minutes from the first lead,
-    # regardless of time of day.  After-hours handling (if any) is
-    # configured separately and does NOT affect window_due_at.
-    send_after = _window_due_at(now)
+    # After hours: window expires at next business day 09:00 CLT.
+    # Business hours: standard N-minute window.
+    after_hours = _is_after_hours(now)
+    send_after = _window_due_at(now, after_hours=after_hours)
     now_iso = now.isoformat()
     send_after_iso = send_after.isoformat()
     payload = {

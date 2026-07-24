@@ -659,7 +659,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             else:
                 existing = recognized_management_map[phone_ev]
                 # HUMAN_NOTE always wins; for ties prefer later timestamp
-                if ev_type == "HUMAN_NOTE" or (ev.get("timestamp") or 0) > (existing.get("timestamp") or 0):
+                ev_ts = _coerce_crm_datetime(ev.get("timestamp"))
+                existing_ts = _coerce_crm_datetime(existing.get("timestamp"))
+                if ev_type == "HUMAN_NOTE" or (ev_ts and existing_ts and ev_ts > existing_ts):
                     recognized_management_map[phone_ev] = ev
 
     type_labels = {

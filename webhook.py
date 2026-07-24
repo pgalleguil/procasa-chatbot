@@ -197,6 +197,8 @@ async def lifespan(app: FastAPI):
     logger.info("Bot PRO Iniciando (Lifespan Startup)...")
 
     logger.info("ThreadPoolExecutor configurado: web=8, worker=5, warmer=1")
+    logger.info("[CONFIG] non_hot_digest_shadow_mode=%s configuration_source=code",
+                Config.CRM_NON_HOT_DIGEST_SHADOW_MODE)
     
     global lead_processing_queue, _OAUTH_HTTP_CLIENT
     lead_processing_queue = asyncio.Queue()

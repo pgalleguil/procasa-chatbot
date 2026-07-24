@@ -83,7 +83,8 @@ class Config:
     # every CRM_NON_HOT_DIGEST_WINDOW_MINUTES minutes per executive.
     CRM_NON_HOT_DIGEST_ENABLED = os.getenv("CRM_NON_HOT_DIGEST_ENABLED", "true").lower() == "true"
     # Shadow mode: builds & persists the digest record but never calls the provider.
-    CRM_NON_HOT_DIGEST_SHADOW_MODE = True
+    # Hardcoded: no env-var override. Post-canary activation.
+    CRM_NON_HOT_DIGEST_SHADOW_MODE = False
     # Fixed accumulation window in minutes. First non-HOT assignment starts the clock.
     CRM_NON_HOT_DIGEST_WINDOW_MINUTES = int(os.getenv("CRM_NON_HOT_DIGEST_WINDOW_MINUTES", "10"))
     # Maximum property preview items in the WhatsApp message.

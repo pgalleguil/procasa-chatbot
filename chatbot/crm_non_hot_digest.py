@@ -561,16 +561,9 @@ def resolve_recipient_user(db, recipient: str) -> dict | None:
     return None
 
 
-# Canary allowlists — only these IDs can bypass filters and send live during incident resolution
-CANARY_DIGEST_IDS: set[str] = {
-    "6a63b06d2af90ceb18c1f696",  # Erika digest
-    "6a63b06e2af90ceb18c1f697",  # Mariela digest
-}
-CANARY_LEAD_IDS: set[str] = {
-    "6a62dacfc20786d0d43cc04c",  # Mariela nocturnal
-    "6a5fc560c20786d0d43caeae",  # Mariela reactivated
-    "6a638a326c8a3b06b1cf78bd",  # Erika new
-}
+# Canary allowlists — emptied after successful validation
+CANARY_DIGEST_IDS: set[str] = set()
+CANARY_LEAD_IDS: set[str] = set()
 
 def send_digest(db, *, notification, worker_id, sender=None):
     """Deliver or shadow-deliver a due digest.  Fully synchronous.
@@ -578,10 +571,9 @@ def send_digest(db, *, notification, worker_id, sender=None):
     ``sender`` is a sync callable ``(phone, message) -> dict`` or None.
     In shadow mode the provider is never called.
     """
-    # Hard block: ignore shadow mode entirely during incident
-    # Allowlist: specific digest IDs can bypass shadow for canary
+    # Shadow mode: controlled by config. Canary IDs can bypass during incident.
     is_canary = str(notification.get("_id")) in CANARY_DIGEST_IDS
-    shadow = not is_canary
+    shadow = Config.CRM_NON_HOT_DIGEST_SHADOW_MODE and not is_canary
     content, lead_count = build_digest_message_content(db, notification)
     if content is None:
         finalize_attempt(

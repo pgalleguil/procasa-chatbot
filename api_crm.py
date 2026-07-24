@@ -301,10 +301,10 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
     db["crm_tasks"].insert_one(task)
 
 # --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
-async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="prioridad",
-                             user_role="agente", user_name="", ejecutivo_filter=None,
-                             temperatura_filter="HOT",
-                             page=1, limit=10):
+async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla_urgente",
+                              user_role="agente", user_name="", ejecutivo_filter=None,
+                              temperatura_filter="HOT",
+                              page=1, limit=10, property_code=None):
     from chatbot.storage import get_async_db
     db = get_async_db()
     temperatura_filter = normalize_crm_temperature(temperatura_filter)
@@ -347,6 +347,16 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         else:
             regex_term = re.compile(re.escape(term), re.IGNORECASE)
             query_parts.append({"prospecto.nombre": regex_term})
+    
+    if property_code and property_code.strip():
+        code = re.sub(r'(?i)^(prop\.?|propiedad|codigo)\s*', '', property_code.strip()).strip()
+        if code:
+            query_parts.append({"$or": [
+                {"prospecto.codigo": code},
+                {"codigo": code},
+                {"property_code": code},
+                {"datos_propiedad.codigo": code},
+            ]})
     
     # El universo global termina aquí; el alcance activo agrega exactamente una
     # temperatura y será compartido por KPI y las cuatro tarjetas de estado.
@@ -631,6 +641,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                 },
                 "_hot_rank": {
                     "$cond": [{"$eq": ["$lead_temperature_effective", "HOT"]}, 0, 1]
+                },
+                "_created_dt": {
+                    "$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}
                 }
             }},
             {"$sort": {
@@ -640,7 +653,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                    {"_sla_rank": 1, "_assigned_dt": 1} if ordenar_por == "sla_por_vencer" else
                    {"_activity_dt": 1} if ordenar_por == "mayor_sin_gestion" else
                    {"_last_action_dt": 1, "_assigned_dt": 1} if ordenar_por == "ultima_accion_antigua" else
-                   {"_activity_dt": -1}),
+                   {"_assigned_dt": -1, "_created_dt": -1} if ordenar_por == "recientes" else
+                   # Default: sla_urgente
+                   {"_unattended_rank": 1, "_sla_rank": 1, "_hot_rank": 1, "_assigned_dt": 1}),
                 "_id": 1
             }},
             {"$skip": offset},

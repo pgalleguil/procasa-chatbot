@@ -2791,11 +2791,12 @@ async def _render_crm_list(
     request: Request, 
     estado: str = None, 
     busqueda: str = None, 
-    orden: str = "fecha", 
+    orden: str = "sla_urgente", 
     ejecutivo: str = None,
     temperatura: str = "Todos",
     page: int = 1,
     partial: bool = False,
+    property_code: str = None,
 ):
     username = await get_current_user(request)
     from chatbot.storage import get_async_db
@@ -2829,6 +2830,7 @@ async def _render_crm_list(
         temperatura_filter=temperatura,
         page=page,
         limit=limit,
+        property_code=property_code,
     )
     exec_task = get_unique_executives() if can_administer else asyncio.sleep(0, result=[])
     leads_payload, executives = await asyncio.gather(leads_task, exec_task)
@@ -2888,11 +2890,12 @@ async def view_crm_list(
     request: Request,
     estado: str = None,
     busqueda: str = None,
-    orden: str = "fecha",
+    orden: str = "sla_urgente",
     ejecutivo: str = None,
     temperatura: str = "Todos",
     page: int = Query(1, ge=1),
     scope: str = Query(None),
+    property_code: str = Query(None),
 ):
     """CRM list. scope=mine forces filter to the authenticated executive."""
     user = await get_current_user_doc(request)
@@ -2907,6 +2910,7 @@ async def view_crm_list(
         ejecutivo=exec_filter,
         temperatura=temperatura,
         page=page,
+        property_code=property_code,
     )
 
 
@@ -2929,10 +2933,11 @@ async def view_crm_list_partial(
     request: Request,
     estado: str = None,
     busqueda: str = None,
-    orden: str = "fecha",
+    orden: str = "sla_urgente",
     ejecutivo: str = None,
     temperatura: str = "Todos",
     page: int = Query(1, ge=1),
+    property_code: str = Query(None),
 ):
     return await _render_crm_list(
         request,
@@ -2943,6 +2948,7 @@ async def view_crm_list_partial(
         temperatura=temperatura,
         page=page,
         partial=True,
+        property_code=property_code,
     )
 
 @app.post("/api/marcar_gestionado")

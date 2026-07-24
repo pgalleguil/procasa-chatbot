@@ -550,7 +550,6 @@ def send_digest(db, *, notification, worker_id, sender=None):
     # Live delivery: use internal sender when none provided
     _effective_sender = sender
     if not _effective_sender:
-        # Build an internal sender using the executive's phone from usuarios
         recipient = str(notification.get("recipient_user_id") or "")
         from .crm_delivery import resolve_executive_user, get_executive_phone
         exec_user = resolve_executive_user(db, recipient)
@@ -563,28 +562,83 @@ def send_digest(db, *, notification, worker_id, sender=None):
             finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
                              state="failed_recipient", error="executive_phone_missing")
             return {"status": "failed_recipient", "reason": "no_phone"}
+
+        from .crm_notifications import reserve_for_delivery, refresh_lease, record_delivery_attempt
+        from .crm_notifications import reserve_cycle_delivery, finalize_cycle_delivery, is_cycle_delivered
         from .whatsapp_client import send_whatsapp_message_detailed
-        import asyncio
-        recipient_str = str(notification.get("recipient_user_id") or "")
+        import asyncio, uuid, threading
+        import hashlib
+
+        # --- 1. Pre-provider: reserve delivery slot atomically ---
+        delivery_token = str(uuid.uuid4())
+        reserved = reserve_for_delivery(db, notification_id=notification["_id"],
+                                        worker_id=worker_id, delivery_token=delivery_token)
+        if not reserved:
+            logger.warning("[DIGEST_DUP] notif=%s already reserved — skipping", str(notification["_id"])[:12])
+            return {"status": "already_reserved", "reason": "delivery_in_progress"}
+
+        # --- 2. Cycle-level barrier: one delivery per cycle ---
+        cycle_ids = list(notification.get("assignment_cycle_ids") or [])
+        reserved_cycles = []
+        for cid in cycle_ids:
+            if is_cycle_delivered(db, assignment_cycle_id=cid):
+                logger.warning("[DIGEST_DUP] cycle=%s already delivered — skipping", str(cid)[:12])
+                finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                                 state="failed_retryable", error="cycle_already_delivered")
+                return {"status": "failed_retryable", "reason": "cycle_already_delivered"}
+            rc = reserve_cycle_delivery(db, assignment_cycle_id=cid,
+                                        digest_id=str(notification["_id"]),
+                                        delivery_token=delivery_token)
+            if rc:
+                reserved_cycles.append(cid)
+
+        # --- 3. Refresh lease before calling provider ---
+        refresh_lease(db, notification_id=notification["_id"], worker_id=worker_id, lease_seconds=120)
+
+        # --- 4. Call provider ---
+        content_hash = hashlib.sha256((content or "").encode()).hexdigest()
         phone_display = phone[-4:] if phone else "?"
-        logger.info("[DIGEST_SEND] notif=%s exec=%s phone_end=%s len=%d",
-                    str(notification["_id"])[:12], recipient_str[:16], phone_display, len(content or ""))
-        receipt = asyncio.run(send_whatsapp_message_detailed(phone, content))
+        logger.info("[DIGEST_SEND] notif=%s exec=%s phone_end=%s len=%d token=%s",
+                    str(notification["_id"])[:12], str(recipient)[:16],
+                    phone_display, len(content or ""), delivery_token[:8])
+        call_started = utc_now()
+        try:
+            receipt = asyncio.run(send_whatsapp_message_detailed(phone, content))
+        except Exception as exc:
+            record_delivery_attempt(db, notification_id=notification["_id"],
+                                    delivery_token=delivery_token,
+                                    attempt_data={"started_at": call_started, "worker_id": worker_id,
+                                                  "http_status": None, "provider_message_id": None,
+                                                  "content_hash": content_hash, "result": "exception"})
+            finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                             state="failed_retryable", error=type(exc).__name__)
+            return {"status": "failed_retryable", "error": type(exc).__name__}
+
         success = bool(receipt.get("success"))
         provider_id = receipt.get("provider_message_id")
         http_status = receipt.get("http_status")
-        logger.info("[DIGEST_RESULT] notif=%s success=%s provider=%s http=%s",
-                    str(notification["_id"])[:12], success, provider_id, http_status)
+        logger.info("[DIGEST_RESULT] notif=%s success=%s provider=%s http=%s token=%s",
+                    str(notification["_id"])[:12], success, provider_id, http_status, delivery_token[:8])
+
+        # --- 5. Append-only delivery record ---
+        result = "sent" if (success and provider_id) else ("failed_validation" if http_status == 422 else "failed")
+        record_delivery_attempt(db, notification_id=notification["_id"],
+                                delivery_token=delivery_token,
+                                attempt_data={"started_at": call_started, "worker_id": worker_id,
+                                              "http_status": http_status, "provider_message_id": provider_id,
+                                              "content_hash": content_hash, "result": result})
+
         if success and provider_id:
-            # Atomically finalize: checks state=sending, pushes completed_at
             finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
                              state="sent", provider_message_id=provider_id)
-            # Set delivery metadata separately
             db[NOTIFICATION_COLLECTION].update_one(
                 {"_id": notification["_id"]},
-                {"$set": {"delivery_mode": "live", "actually_delivered": True,
-                          "updated_at": utc_now()}},
+                {"$set": {"delivery_mode": "live", "actually_delivered": True, "updated_at": utc_now()}},
             )
+            # Mark cycles as delivered
+            for cid in reserved_cycles:
+                finalize_cycle_delivery(db, assignment_cycle_id=cid,
+                                        provider_message_id=provider_id)
             return {"status": "sent", "lead_count": lead_count, "provider_message_id": provider_id,
                     "delivery_mode": "live", "actually_delivered": True}
         else:
@@ -592,8 +646,6 @@ def send_digest(db, *, notification, worker_id, sender=None):
             finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
                              state=state, error=f"http_{http_status}" if http_status else receipt.get("error"))
             return {"status": state, "lead_count": lead_count}
-        # Unreachable — fall through to sender path for clarity
-        return {"status": "failed", "reason": "unreachable"}
 
     recipient = str(notification.get("recipient_user_id") or "")
     exec_user = resolve_recipient_user(db, recipient)

@@ -760,11 +760,6 @@ def build_digest_lead_message(contexts: list[dict], exec_name: str = "") -> str:
         return ""
     exec_display = exec_name or contexts[0].get("exec_name") or "Ejecutivo"
 
-    # SLA: max across all leads
-    max_sla = max((c.get("sla_minutes", 0) for c in contexts), default=0)
-    from .crm_message_context import _format_sla_duration
-    sla_display = _format_sla_duration(max_sla)
-
     if count == 1:
         ctx = contexts[0]
         header = "\U0001F4CB *1 LEAD PENDIENTE*"
@@ -773,8 +768,6 @@ def build_digest_lead_message(contexts: list[dict], exec_name: str = "") -> str:
             header,
             "",
             f"Hola {exec_display}, tienes un lead sin gesti\u00F3n registrada.",
-            "",
-            f"\u23F1 Lleva {sla_display} pendiente.",
             "",
             lead_preview,
         ]
@@ -786,8 +779,6 @@ def build_digest_lead_message(contexts: list[dict], exec_name: str = "") -> str:
             header,
             "",
             f"Hola {exec_display}, tienes {count} leads sin gesti\u00F3n registrada.",
-            "",
-            f"\u23F1 El m\u00E1s antiguo lleva {sla_display} pendiente.",
             "",
         ] + numbered
 

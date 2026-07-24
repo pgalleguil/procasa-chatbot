@@ -181,7 +181,8 @@ def claim_next(db, *, worker_id, lease_seconds=120, now=None, extra_filter=None)
 
 
 def recover_expired_lease(db, *, notification_id, provider_status, now=None):
-    """Recovery requires an explicit provider check and never creates a record."""
+    """Recovery requires an explicit provider check. Never recovers documents
+    with delivery evidence (provider_message_id, actually_delivered, delivery_token)."""
     now = now or utc_now()
     if provider_status not in {"not_found", "failed", "sent", "delivered"}:
         raise ValueError("provider status must be checked before lease recovery")
@@ -190,10 +191,54 @@ def recover_expired_lease(db, *, notification_id, provider_status, now=None):
     else:
         state = "failed_retryable"
     return db[COLLECTION].find_one_and_update(
-        {"_id": notification_id, "state": "sending", "lease_expires_at": {"$lte": now}},
+        {"_id": notification_id, "state": "sending", "lease_expires_at": {"$lte": now},
+         "provider_message_id": {"$exists": False},
+         "actually_delivered": {"$ne": True},
+         "delivery_token": {"$exists": False}},
         {"$set": {"state": state, "provider_status_checked_at": now,
                   "lease_owner": None, "lease_expires_at": None, "updated_at": now}},
         return_document=ReturnDocument.AFTER,
+    )
+
+
+def reserve_for_delivery(db, *, notification_id, worker_id, delivery_token, now=None):
+    """Atomically reserve a delivery slot before calling the provider.
+    Only succeeds if state=sending, lease_owner matches, and no prior call started."""
+    now = now or utc_now()
+    return db[COLLECTION].find_one_and_update(
+        {"_id": notification_id, "state": "sending", "lease_owner": worker_id,
+         "provider_call_started_at": {"$exists": False}},
+        {"$set": {"provider_call_started_at": now, "delivery_token": delivery_token,
+                  "updated_at": now}},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+def refresh_lease(db, *, notification_id, worker_id, lease_seconds=120, now=None):
+    """Extend lease while provider call is in progress."""
+    now = now or utc_now()
+    return db[COLLECTION].update_one(
+        {"_id": notification_id, "state": "sending", "lease_owner": worker_id},
+        {"$set": {"lease_expires_at": now + timedelta(seconds=lease_seconds), "updated_at": now}},
+    )
+
+
+def record_delivery_attempt(db, *, notification_id, delivery_token, attempt_data, now=None):
+    """Append-only delivery record. Never overwrites previous provider_message_ids."""
+    now = now or utc_now()
+    return db[COLLECTION].update_one(
+        {"_id": notification_id},
+        {"$push": {"delivery_attempts": {
+            "delivery_token": delivery_token,
+            "started_at": attempt_data.get("started_at"),
+            "completed_at": now,
+            "worker_id": attempt_data.get("worker_id"),
+            "provider_http_status": attempt_data.get("http_status"),
+            "provider_message_id": attempt_data.get("provider_message_id"),
+            "provider_request_id": attempt_data.get("provider_request_id"),
+            "content_hash": attempt_data.get("content_hash"),
+            "result": attempt_data.get("result", "unknown"),
+        }}},
     )
 
 
@@ -209,6 +254,45 @@ def finalize_attempt(db, *, notification_id, worker_id, state, provider_message_
                                                    "provider_message_id": provider_message_id, "error": error}}},
         return_document=ReturnDocument.AFTER,
     )
+
+
+def reserve_cycle_delivery(db, *, assignment_cycle_id, digest_id, delivery_token, now=None):
+    """Atomically reserve delivery for a non-HOT cycle. Only succeeds once per cycle."""
+    now = now or utc_now()
+    return db["crm_assignment_cycles"].find_one_and_update(
+        {"assignment_cycle_id": assignment_cycle_id,
+         "non_hot_delivery_status": {"$exists": False}},
+        {"$set": {
+            "non_hot_delivery_status": "reserved",
+            "non_hot_delivery_token": delivery_token,
+            "non_hot_digest_id": digest_id,
+            "non_hot_delivery_reserved_at": now,
+        }},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+def finalize_cycle_delivery(db, *, assignment_cycle_id, provider_message_id=None, now=None):
+    """Mark cycle delivery as completed with provider evidence."""
+    now = now or utc_now()
+    return db["crm_assignment_cycles"].update_one(
+        {"assignment_cycle_id": assignment_cycle_id, "non_hot_delivery_status": "reserved"},
+        {"$set": {
+            "non_hot_delivery_status": "delivered",
+            "non_hot_provider_message_id": provider_message_id,
+            "non_hot_delivered_at": now,
+            "updated_at": now,
+        }},
+    )
+
+
+def is_cycle_delivered(db, *, assignment_cycle_id) -> bool:
+    """Check if a cycle has already been delivered."""
+    cycle = db["crm_assignment_cycles"].find_one(
+        {"assignment_cycle_id": assignment_cycle_id},
+        {"non_hot_delivery_status": 1},
+    )
+    return bool(cycle and cycle.get("non_hot_delivery_status") in ("reserved", "delivered"))
 
 
 @dataclass(frozen=True)

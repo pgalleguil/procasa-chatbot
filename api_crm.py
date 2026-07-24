@@ -70,6 +70,26 @@ TYPE_LABELS = {
 TELEMETRY_LABEL_TYPES = frozenset(TYPE_LABELS.keys())
 
 
+def _after_hours_label(assigned_raw, last_action_text):
+    """Return display text for assignment time, with after-hours detection.
+
+    After-hours (19:00-09:00, weekends) + no management → 'Asignado anoche ...'
+    Otherwise → format_relative_time() result.
+    """
+    dt = coerce_crm_datetime(assigned_raw)
+    if dt and last_action_text == "Sin gestión registrada":
+        from chatbot.constants import BUSINESS_DAYS, BUSINESS_START_HOUR, BUSINESS_END_HOUR
+        local = dt.astimezone(CHILE_TZ)
+        is_after_hours = (
+            local.weekday() not in BUSINESS_DAYS
+            or local.hour >= BUSINESS_END_HOUR
+            or local.hour < BUSINESS_START_HOUR
+        )
+        if is_after_hours:
+            return "anoche · SLA iniciado hoy 09:00"
+    return format_relative_time(assigned_raw)
+
+
 def format_relative_time(dt_obj):
     if isinstance(dt_obj, str):
         try:
@@ -982,28 +1002,19 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         else:
             prioridad_badge = "📋 Lead"
 
-        assigned_age = format_relative_time(lifecycle_ts or created_ts).replace("Hace", "hace", 1)
         management_age = format_relative_time(last_ts_obj).replace("Hace", "hace", 1)
         if estado_final in (PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST):
-            age_label = f"Cerrado {assigned_age}"
+            age_label = f"Cerrado {format_relative_time(lifecycle_ts or created_ts).replace('Hace', 'hace', 1)}"
+        elif last_action_text != "Sin gestión registrada":
+            age_label = f"Última gestión {management_age}"
         else:
-            # Detect after-hours assignment regardless of pipeline_stage
-            assigned_dt = coerce_crm_datetime(lifecycle_ts or created_ts)
-            is_after_hours = False
-            if assigned_dt:
-                from chatbot.constants import BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
-                local = assigned_dt.astimezone(CHILE_TZ)
-                is_after_hours = (
-                    local.weekday() not in BUSINESS_DAYS
-                    or local.hour >= BUSINESS_END_HOUR
-                    or local.hour < BUSINESS_START_HOUR
-                )
-            if is_after_hours and last_action_text == "Sin gestión registrada":
-                age_label = "Asignado anoche · SLA iniciado hoy 09:00"
-            elif last_action_text != "Sin gestión registrada":
-                age_label = f"Última gestión {management_age}"
+            assigned_age = _after_hours_label(lifecycle_ts or created_ts, last_action_text)
+            if assigned_age.startswith("anoche"):
+                age_label = f"Asignado {assigned_age}"
+            elif estado_final == PipelineStage.NEW:
+                age_label = f"Sin atender {format_relative_time(lifecycle_ts or created_ts).replace('Hace', 'hace', 1)}"
             else:
-                age_label = f"Sin atender {assigned_age}" if estado_final == PipelineStage.NEW else f"Asignado {assigned_age}"
+                age_label = f"Asignado {assigned_age}"
 
         leads_procesados.append({
             "phone": raw_phone,
@@ -1027,7 +1038,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             "ultima_accion_note": last_action_note,
             "ultima_accion_nota": last_action_note,
             "ejecutivo_nombre": ejecutivo or UNASSIGNED_LABEL,
-            "fecha_asignacion_relativa": format_relative_time(lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion")),
+            "fecha_asignacion_relativa": _after_hours_label(lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion"), last_action_text),
             "stage": lead.get("stage") or "new",
             "sort_timestamp": sort_ts
         })

@@ -656,6 +656,22 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         "MANUAL_ENTRY": "Ingreso Manual",
     }
 
+    # 5b. BULK QUERY DE CICLOS DE ASIGNACIÓN para los leads de esta página.
+    # Resuelve todos los ciclos activos en una sola consulta batch.
+    page_lead_ids = [l.get("_id") for l in leads_list if l.get("_id")]
+    cycle_by_lead_id: dict[str, dict] = {}
+    if page_lead_ids:
+        from chatbot.storage import get_async_db
+        adb = get_async_db()
+        cycles_cursor = adb["crm_assignment_cycles"].find(
+            {"lead_id": {"$in": page_lead_ids}, "cycle_status": "active"},
+        ).sort([("assigned_at", -1)])
+        cycle_docs = await cycles_cursor.to_list(length=len(page_lead_ids) + 1)
+        for c in cycle_docs:
+            lid = str(c.get("lead_id"))
+            if lid not in cycle_by_lead_id:
+                cycle_by_lead_id[lid] = c
+
     # 5. PROCESAR LEADS EN MEMORIA
     state_map = {
         # Enums
@@ -833,7 +849,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             sla_status = "fulfilled"
             
         # One SLA definition for cards, list, detail and monitor.
-        from chatbot.crm_metrics import calculate_sla, is_pre_visual_cutover, active_assignment_cycle
+        from chatbot.crm_metrics import calculate_sla, is_pre_visual_cutover
         assigned_at = (lead.get("lifecycle", {}) or {}).get("assigned_at") or lead.get("fecha_asignacion")
         visual_pre = is_pre_visual_cutover(assigned_at) if assigned_at else True
         
@@ -846,8 +862,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             sla_status = "historical" if visual_pre else "unknown"
             sla_label = "Histórico" if visual_pre else "SLA S/I"
         else:
-            cyc = active_assignment_cycle(db, lead["_id"]) if lead.get("_id") else None
-            if cyc:
+            # Use the batch-resolved cycle dict; no async db call inside the loop
+            cyc = cycle_by_lead_id.get(str(lead.get("_id"))) if lead.get("_id") else None
+            if cyc is not None and isinstance(cyc, dict):
                 hot_started_at = cyc.get("hot_started_at") or cyc.get("temperature_transitioned_at")
             
             canonical_sla = calculate_sla(

@@ -1099,6 +1099,84 @@
             color: #64748b;
         }
 
+        /* SLA info popup */
+        .sla-info-popup {
+            display: none;
+            position: absolute;
+            z-index: 1060;
+            width: 340px;
+            max-width: 90vw;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+            padding: 16px;
+            top: 28px;
+            left: 0;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            color: var(--text-primary);
+            text-align: left;
+        }
+        .sla-info-popup.show {
+            display: block;
+        }
+        .sla-info-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 0.95rem;
+        }
+        .sla-info-close {
+            background: none;
+            border: none;
+            font-size: 1.3rem;
+            cursor: pointer;
+            color: var(--text-secondary);
+            line-height: 1;
+            padding: 0 4px;
+        }
+        .sla-info-close:hover {
+            color: var(--text-primary);
+        }
+        .sla-info-body h4 {
+            font-size: 0.85rem;
+            margin: 10px 0 4px;
+            color: var(--text-primary);
+        }
+        .sla-info-body p {
+            margin: 4px 0;
+            color: var(--text-secondary);
+        }
+        .sla-info-body ul {
+            margin: 4px 0 4px 16px;
+            padding: 0;
+            color: var(--text-secondary);
+        }
+        .sla-info-body li {
+            margin: 2px 0;
+        }
+        .sla-info-note {
+            font-style: italic;
+            opacity: 0.8;
+            font-size: 0.8rem;
+        }
+        .col-time {
+            position: relative;
+        }
+        @media (max-width: 768px) {
+            .sla-info-popup {
+                position: fixed;
+                top: 50% !important;
+                left: 50% !important;
+                transform: translate(-50%, -50%);
+                width: 90vw;
+                max-height: 80vh;
+                overflow-y: auto;
+            }
+        }
+
         .summary-card > .lead-type-icon {
             width: auto;
             font-size: 2rem;
@@ -1854,12 +1932,45 @@
                             {% if show_priority %}<th class="col-type">Tipo</th>{% endif %}
                             <th class="col-time">
                                 SLA / Tiempo
-                                {% if selected_temperature != 'Todos' %}
-                                <i class="fa-solid fa-circle-question ms-1 text-accent opacity-75"
-                                    style="cursor: help; font-size: 0.85rem;" data-bs-toggle="tooltip"
-                                    data-bs-custom-class="cloud-tooltip" data-bs-placement="top" data-bs-html="true"
-                                    data-bs-title="<b>Métrica SLA: Prioridad Ejecutiva</b><br><br>Tiempo desde asignación hasta la primera gestión humana.<br><br>🟢 <b>Gestionado</b>: Ya tiene acción.<br>🟢 <b>En tiempo</b>: < 1 hora.<br>🟡 <b>Advertencia</b>: 1h - 2.5 horas.<br>🟠 <b>Próximo a Crítico</b>: 2.5h - 3 horas.<br>🔴 <b>Crítico</b>: > 3 horas."></i>
-                                {% endif %}
+                                <span class="sla-info-trigger" role="button" tabindex="0"
+                                    aria-label="Información del SLA"
+                                    onclick="toggleSlaInfo(event)" onkeydown="if(event.key==='Enter'||event.key===' ') { toggleSlaInfo(event); event.preventDefault(); }">
+                                    <i class="fa-solid fa-circle-info ms-1 text-accent opacity-75"
+                                        style="cursor: help; font-size: 0.85rem;"></i>
+                                </span>
+                                <div class="sla-info-popup" role="tooltip" aria-hidden="true">
+                                    <div class="sla-info-header">
+                                        <strong>Cómo funciona el SLA</strong>
+                                        <button type="button" class="sla-info-close" aria-label="Cerrar"
+                                            onclick="closeSlaInfo(event)">&times;</button>
+                                    </div>
+                                    <div class="sla-info-body">
+                                        <p>El SLA mide el tiempo hábil transcurrido desde la asignación del lead hasta que se registra un resultado válido de gestión en el CRM.</p>
+
+                                        <h4>Lead</h4>
+                                        <ul>
+                                            <li><b>Atención:</b> desde 120 minutos hábiles.</li>
+                                            <li><b>Próximo a vencer:</b> desde 150 minutos hábiles.</li>
+                                            <li><b>Vencido:</b> desde 180 minutos hábiles.</li>
+                                        </ul>
+
+                                        <h4>Lead Hot</h4>
+                                        <ul>
+                                            <li><b>Atención prioritaria:</b> desde 30 minutos hábiles.</li>
+                                            <li><b>Próximo a vencer:</b> desde 45 minutos hábiles.</li>
+                                            <li><b>Vencido:</b> desde 60 minutos hábiles como Lead Hot.</li>
+                                        </ul>
+
+                                        <h4>Horario de medición</h4>
+                                        <p>Lunes a viernes, de 09:00 a 19:00. El contador se pausa fuera de ese horario y durante el fin de semana.</p>
+
+                                        <h4>Importante</h4>
+                                        <p>Abrir WhatsApp, llamar, enviar mensajes o cambiar el estado no detiene el SLA. Para acreditar la gestión es obligatorio registrar el resultado en el CRM.</p>
+
+                                        <p class="sla-info-note">Los leads anteriores al inicio de esta política aparecen como "Histórico" y no participan en las nuevas métricas.</p>
+                                        <p class="sla-info-note">Las alertas automáticas, avisos al supervisor y la reasignación de leads todavía no están activados.</p>
+                                    </div>
+                                </div>
                             </th>
                             <th class="col-client">Cliente</th>
                             <th class="col-property">Propiedad</th>
@@ -2417,6 +2528,45 @@
                         .catch(err => console.error("Session renew failed", err));
                 }
             }, 5000); 
+
+            function toggleSlaInfo(event) {
+                event.stopPropagation();
+                const popup = event.currentTarget.closest('th').querySelector('.sla-info-popup');
+                if (!popup) return;
+                const isOpen = popup.classList.contains('show');
+                closeAllSlaPopups();
+                if (!isOpen) {
+                    popup.classList.add('show');
+                    popup.setAttribute('aria-hidden', 'false');
+                    // Close on Escape
+                    const onKey = function(e) {
+                        if (e.key === 'Escape') { closeAllSlaPopups(); }
+                    };
+                    document.addEventListener('keydown', onKey);
+                    // Close on click outside
+                    const onClick = function(e) {
+                        if (!popup.contains(e.target) && !e.target.closest('.sla-info-trigger')) {
+                            closeAllSlaPopups();
+                            document.removeEventListener('keydown', onKey);
+                            document.removeEventListener('click', onClick);
+                        }
+                    };
+                    setTimeout(function() { document.addEventListener('click', onClick); }, 10);
+                }
+            }
+
+            function closeSlaInfo(event) {
+                event.stopPropagation();
+                event.preventDefault();
+                closeAllSlaPopups();
+            }
+
+            function closeAllSlaPopups() {
+                document.querySelectorAll('.sla-info-popup.show').forEach(function(p) {
+                    p.classList.remove('show');
+                    p.setAttribute('aria-hidden', 'true');
+                });
+            }
         </script>
     </body>
 

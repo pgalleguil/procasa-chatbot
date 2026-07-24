@@ -18,28 +18,35 @@ from chatbot.storage import get_db
 
 def format_relative_time(dt_obj):
     if isinstance(dt_obj, str):
-        try: dt_obj = datetime.fromisoformat(dt_obj.replace('Z', ''))
-        except: return "S/I"
+        try:
+            # Handle Z suffix and +00:00 as UTC
+            normalized = dt_obj.replace('Z', '+00:00')
+            dt_obj = datetime.fromisoformat(normalized)
+        except:
+            return "S/I"
     
     if not dt_obj or dt_obj == datetime.min: return "S/I"
-            
+    
     chile_tz = pytz.timezone('Chile/Continental')
     now = datetime.now(chile_tz)
     
+    # MongoDB returns naive datetimes representing UTC timestamps.
+    # Never localize naive datetimes as CLT — first interpret as UTC.
     if dt_obj.tzinfo is None:
-        dt_obj = chile_tz.localize(dt_obj)
-        
-    diff = now - dt_obj
+        dt_obj = pytz.utc.localize(dt_obj)
+    
+    # Convert to CLT for display so now-dt_obj works in local time
+    dt_obj_cl = dt_obj.astimezone(chile_tz)
+    diff = now - dt_obj_cl
     seconds = diff.total_seconds()
     
     if seconds < 0:
-        # Future timestamp — never show "Hace"
         future_sec = abs(seconds)
         future_hours = int(future_sec // 3600)
         future_minutes = int((future_sec % 3600) // 60)
-        future_time = dt_obj.astimezone(chile_tz).strftime("%H:%M")
+        future_time = dt_obj_cl.strftime("%H:%M")
         if future_hours >= 24:
-            future_day = dt_obj.astimezone(chile_tz).strftime("%d/%m")
+            future_day = dt_obj_cl.strftime("%d/%m")
             return f"Programado para {future_day} a las {future_time}"
         elif future_hours > 0:
             return f"Programado para hoy a las {future_time}"

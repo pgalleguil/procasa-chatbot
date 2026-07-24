@@ -46,6 +46,13 @@ EFFECTIVE_CONTACT_RESULTS = frozenset({
     "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO",
     "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED",
 })
+VALID_MANAGEMENT_RESULTS = frozenset({
+    "NO_RESPONDIO", "OCUPADO", "NUMERO_INVALIDO", "MENSAJE_ENVIADO",
+    "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO", "OTRO",
+    "MESSAGE_SENT_WAITING_RESPONSE", "CALL_NO_ANSWER", "EMAIL_SENT",
+    "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "INVALID_NUMBER",
+    "DISCARDED_VALID_REASON", "SCHEDULE_FOLLOW_UP",
+})
 HUMAN_ACTOR_TYPES = frozenset({"human", "agent", "administrator", "supervisor"})
 
 
@@ -133,6 +140,7 @@ def event_evidence(event: Mapping[str, Any]) -> dict[str, Any]:
         event_type in VALID_MANAGEMENT_EVENT_TYPES
         and event_type != "CONTACT_RESULT"
         and result is not None
+        and result in VALID_MANAGEMENT_RESULTS
     )
     return {
         "human": human, "management": management, "contact_attempt": attempt,

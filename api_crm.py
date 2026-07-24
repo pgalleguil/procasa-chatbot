@@ -644,25 +644,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     events_list = await events_cursor.to_list(length=200)
     events_map = {}
     recognized_management_map = {}
-    # Management events for last-action display: prefer canonical human management
-    # over telemetry. HUMAN_NOTE (management form) beats outreach clicks.
-    # Priority order: HUMAN_NOTE > SEND_WA/SEND_EMAIL > CLICK_WHATSAPP (legacy)
+    recognized_management_types = {
+        "CLICK_WHATSAPP_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD"
+    }
     for ev in events_list:
         phone_ev = ev.get("phone", "").replace("+", "").strip()
         if phone_ev not in events_map:
             events_map[phone_ev] = ev
-        ev_type = ev.get("type")
-        # Only overwrite recognized management with a higher-priority event
-        if ev_type in ("HUMAN_NOTE", "GESTION_LOG", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD"):
-            if phone_ev not in recognized_management_map:
-                recognized_management_map[phone_ev] = ev
-            else:
-                existing = recognized_management_map[phone_ev]
-                # HUMAN_NOTE always wins; for ties prefer later timestamp
-                ev_ts = _coerce_crm_datetime(ev.get("timestamp"))
-                existing_ts = _coerce_crm_datetime(existing.get("timestamp"))
-                if ev_type == "HUMAN_NOTE" or (ev_ts and existing_ts and ev_ts > existing_ts):
-                    recognized_management_map[phone_ev] = ev
+        if phone_ev not in recognized_management_map and ev.get("type") in recognized_management_types:
+            recognized_management_map[phone_ev] = ev
 
     type_labels = {
         "CLICK_WHATSAPP_LEAD": "WhatsApp abierto",
@@ -948,17 +938,13 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
 
         assigned_age = format_relative_time(lifecycle_ts or created_ts).replace("Hace", "hace", 1)
         management_age = format_relative_time(last_ts_obj).replace("Hace", "hace", 1)
-        # Closed leads: show close reason, not management age
-        if estado_final in (PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST):
-            age_label = f"Cerrado {assigned_age}"
-        else:
-            age_label = (
-                f"Sin atender {assigned_age}"
-                if estado_final == PipelineStage.NEW else
-                f"Última gestión {management_age}"
-                if last_action_text != "Sin gestión registrada" else
-                f"Asignado {assigned_age}"
-            )
+        age_label = (
+            f"Sin atender {assigned_age}"
+            if estado_final == PipelineStage.NEW else
+            f"Última gestión {management_age}"
+            if last_action_text != "Sin gestión registrada" else
+            f"Asignado {assigned_age}"
+        )
 
         leads_procesados.append({
             "phone": raw_phone,
@@ -1242,22 +1228,7 @@ def update_lead_crm_data(phone, data):
         # Mapeo de seguridad por si el frontend manda strings viejos
         valid_stage = new_state
         if new_state == "visita": valid_stage = PipelineStage.VISIT_SCHEDULED
-        elif new_state == "cerrado":
-            # Distinguir CLOSED_WON de CLOSED_LOST según el motivo de cierre
-            close_cat = None
-            if isinstance(data.get("details_json"), dict):
-                close_cat = data["details_json"].get("close_cat_radio")
-            elif isinstance(data.get("details_json"), str):
-                try:
-                    import json
-                    parsed = json.loads(data["details_json"])
-                    close_cat = parsed.get("close_cat_radio")
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            if close_cat == "ganado":
-                valid_stage = PipelineStage.CLOSED_WON
-            else:
-                valid_stage = PipelineStage.CLOSED_LOST
+        elif new_state == "cerrado": valid_stage = PipelineStage.CLOSED_WON
         elif new_state == "gestion": valid_stage = PipelineStage.CONTACTED
         
         stage_updated = CrmService.update_stage(

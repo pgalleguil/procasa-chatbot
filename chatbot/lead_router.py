@@ -610,8 +610,12 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
     if not nombre_cliente or nombre_cliente == "None":
         nombre_cliente = ""
 
-    # Header dinámico según si es nuevo o seguimiento
-    header = "🚀 *¡Nuevo Lead Asignado!*" if is_new_assignment else "💬 *Actualización de Lead*"
+    # Header dinámico: HOT tiene prioridad máxima
+    hot_context = lead_data.get("hot_context") or ""
+    if hot_context:
+        header = "\uD83D\uDD25 *\u00A1NUEVO LEAD HOT!* \uD83D\uDD25"
+    else:
+        header = "\uD83D\uDE80 *\u00A1Nuevo Lead Asignado!*" if is_new_assignment else "\uD83D\uDCAC *Actualizaci\u00F3n de Lead*"
     
     # Si es seguimiento, enfatizamos que ya tiene dueño
     contexto_extra = ""

@@ -164,11 +164,12 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
     })
 
     if existing:
-        # Append this lead if not already present
-        existing_lead_ids = set(existing.get("lead_ids") or [])
+        # Append this lead if not already present.
+        # Compare canonical string representations for dedup, but store ObjectId.
+        existing_lead_ids = [str(lid) for lid in (existing.get("lead_ids") or [])]
         str_lead_id = str(lead_id)
         if str_lead_id not in existing_lead_ids:
-            new_ids = list(existing_lead_ids) + [str_lead_id]
+            new_ids = list(existing.get("lead_ids") or []) + [lead_id]
             existing_cycles = list(existing.get("assignment_cycle_ids") or [])
             if str(cycle_id) not in existing_cycles:
                 existing_cycles.append(str(cycle_id))
@@ -210,8 +211,8 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
     payload = {
         "digest_type": DIGEST_TYPE,
         "recipient_user_id": recipient,
-        "lead_ids": [str(lead_id)],
-        "assignment_cycle_ids": [str(cycle_id)],
+        "lead_ids": [lead_id],
+        "assignment_cycle_ids": [cycle_id],
         "window_started_at": now_iso,
         "window_due_at": send_after_iso,
         "lead_count": 1,
@@ -228,8 +229,8 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
             "digest_type": DIGEST_TYPE,
             "business_period": _business_period_label(now),
             "content_version": CONTENT_VERSION,
-            "lead_ids": [str(lead_id)],
-            "assignment_cycle_ids": [str(cycle_id)],
+            "lead_ids": [lead_id],
+            "assignment_cycle_ids": [cycle_id],
             "window_started_at": now_iso,
             "window_due_at": send_after_iso,
             "lead_count": 1,
@@ -257,15 +258,18 @@ def exclude_from_open_digest(db, *, lead_id, assignment_cycle_id=None):
     """
     str_lead_id = str(lead_id)
     modified = []
+    # Match both string and ObjectId stored lead_ids
     for digest in db[NOTIFICATION_COLLECTION].find({
-        "lead_ids": str_lead_id,
+        "$or": [{"lead_ids": lead_id}, {"lead_ids": str_lead_id}],
         "state": {"$in": ["pending", "sending"]},
         "digest_type": DIGEST_TYPE,
     }):
         current_ids = list(digest.get("lead_ids") or [])
-        if str_lead_id not in current_ids:
+        # Compare canonical string representations
+        current_strs = [str(cid) for cid in current_ids]
+        if str_lead_id not in current_strs:
             continue
-        new_ids = [lid for lid in current_ids if lid != str_lead_id]
+        new_ids = [cid for i, cid in enumerate(current_ids) if current_strs[i] != str_lead_id]
         current_cycles = list(digest.get("assignment_cycle_ids") or [])
         new_cycles = current_cycles
         if assignment_cycle_id:
@@ -352,9 +356,20 @@ def build_digest_message_content(db, notification):
     if not lead_ids:
         return None, 0
 
-    # Re-validate each lead: fetch current state
+    # Re-validate each lead: fetch current state.
+    # Normalize lead_ids: legacy digests store strings, leads._id is ObjectId.
+    _normalized_ids = []
+    for _lid in lead_ids:
+        if isinstance(_lid, str) and len(_lid) == 24 and not _lid.startswith("$"):
+            try:
+                from bson import ObjectId
+                _normalized_ids.append(ObjectId(_lid))
+            except Exception:
+                _normalized_ids.append(_lid)
+        else:
+            _normalized_ids.append(_lid)
     leads = list(db["leads"].find(
-        {"_id": {"$in": lead_ids}},
+        {"_id": {"$in": _normalized_ids}},
         {
             "prospecto.nombre": 1, "prospecto.codigo": 1, "prospecto.comuna": 1,
             "prospecto.origen": 1, "origen": 1, "codigo": 1, "property_code": 1,

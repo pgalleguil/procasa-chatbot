@@ -186,7 +186,7 @@ def test_real_sla_worker_flag_prevents_database_and_provider_access():
 
 def test_containment_flags_are_independent_and_safe_by_default():
     from config import Config
-    assert Config.LEAD_HOT_NOTIFICATIONS_ENABLED is False
+    assert Config.LEAD_HOT_NOTIFICATIONS_ENABLED is True
     assert Config.LEAD_HOT_RECONCILIATION_ENABLED is False
     assert Config.LEAD_COLD_DIGEST_ENABLED is False
     assert Config.CRM_SLA_SHADOW_ENABLED is False

@@ -48,7 +48,7 @@ class Config:
     # Fail closed until the canonical assignment -> delivery flow is deployed and verified.
     # Operational notifications are enabled by default. Deployments can still
     # use the environment variables as emergency kill switches.
-    LEAD_HOT_NOTIFICATIONS_ENABLED = os.getenv("LEAD_HOT_NOTIFICATIONS_ENABLED", "false").lower() == "true"
+    LEAD_HOT_NOTIFICATIONS_ENABLED = os.getenv("LEAD_HOT_NOTIFICATIONS_ENABLED", "true").lower() == "true"
     LEAD_HOT_RECONCILIATION_ENABLED = os.getenv("LEAD_HOT_RECONCILIATION_ENABLED", "false").lower() == "true"
     LEAD_COLD_DIGEST_ENABLED = os.getenv("LEAD_COLD_DIGEST_ENABLED", "false").lower() == "true"
     CRM_SLA_SHADOW_ENABLED = os.getenv("CRM_SLA_SHADOW_ENABLED", "false").lower() == "true"
@@ -83,7 +83,7 @@ class Config:
     # every CRM_NON_HOT_DIGEST_WINDOW_MINUTES minutes per executive.
     CRM_NON_HOT_DIGEST_ENABLED = os.getenv("CRM_NON_HOT_DIGEST_ENABLED", "true").lower() == "true"
     # Shadow mode: builds & persists the digest record but never calls the provider.
-    CRM_NON_HOT_DIGEST_SHADOW_MODE = os.getenv("CRM_NON_HOT_DIGEST_SHADOW_MODE", "true").lower() == "true"
+    CRM_NON_HOT_DIGEST_SHADOW_MODE = os.getenv("CRM_NON_HOT_DIGEST_SHADOW_MODE", "false").lower() == "true"
     # Fixed accumulation window in minutes. First non-HOT assignment starts the clock.
     CRM_NON_HOT_DIGEST_WINDOW_MINUTES = int(os.getenv("CRM_NON_HOT_DIGEST_WINDOW_MINUTES", "10"))
     # Maximum property preview items in the WhatsApp message.

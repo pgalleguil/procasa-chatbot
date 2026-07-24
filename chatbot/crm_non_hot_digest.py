@@ -545,44 +545,51 @@ def send_digest(db, *, notification, worker_id, sender=None):
         return {"status": "shadow_sent", "lead_count": lead_count, "suppressed": False,
                 "delivery_mode": "shadow", "actually_delivered": False}
 
-    if not sender:
-        if is_canary:
-            # Canary: use canonical sender (asyncio.run is safe in threadpool)
-            from .crm_delivery import resolve_executive_user, get_executive_phone
-            recipient = str(notification.get("recipient_user_id") or "")
-            exec_user = resolve_executive_user(db, recipient)
-            if exec_user:
-                phone = get_executive_phone(exec_user)
-                if phone:
-                    from .whatsapp_client import send_whatsapp_message_detailed
-                    import asyncio
-                    receipt = asyncio.run(send_whatsapp_message_detailed(phone, content))
-                    success = bool(receipt.get("success"))
-                    provider_id = receipt.get("provider_message_id")
-                    http_status = receipt.get("http_status")
-                    logger.info("[CANARY] digest=%s sent phone_end=%s success=%s provider=%s http=%s",
-                                notification["_id"], phone[-4:], success, provider_id, http_status)
-                    if success and provider_id:
-                        state = "sent"
-                        db[NOTIFICATION_COLLECTION].update_one(
-                            {"_id": notification["_id"]},
-                            {"$set": {"state": state, "delivery_mode": "live",
-                                      "actually_delivered": True, "provider_message_id": provider_id,
-                                      "updated_at": utc_now()}},
-                        )
-                        return {"status": "sent", "lead_count": lead_count, "provider_message_id": provider_id,
-                                "delivery_mode": "live", "actually_delivered": True}
-                    else:
-                        state = "failed_retryable" if http_status not in (422,) else "failed_validation"
-                        finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
-                                         state=state, error=f"http_{http_status}")
-                        return {"status": state, "lead_count": lead_count}
-        else:
-            finalize_attempt(
-                db, notification_id=notification["_id"], worker_id=worker_id,
-                state="failed_retryable", error="no_sender_provided",
+    # Live delivery: use internal sender when none provided
+    _effective_sender = sender
+    if not _effective_sender:
+        # Build an internal sender using the executive's phone from usuarios
+        recipient = str(notification.get("recipient_user_id") or "")
+        from .crm_delivery import resolve_executive_user, get_executive_phone
+        exec_user = resolve_executive_user(db, recipient)
+        if not exec_user:
+            finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                             state="failed_recipient", error="executive_not_found")
+            return {"status": "failed_recipient", "reason": "executive_not_found"}
+        phone = get_executive_phone(exec_user)
+        if not phone:
+            finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                             state="failed_recipient", error="executive_phone_missing")
+            return {"status": "failed_recipient", "reason": "no_phone"}
+        from .whatsapp_client import send_whatsapp_message_detailed
+        import asyncio
+        recipient_str = str(notification.get("recipient_user_id") or "")
+        phone_display = phone[-4:] if phone else "?"
+        logger.info("[DIGEST_SEND] notif=%s exec=%s phone_end=%s len=%d",
+                    str(notification["_id"])[:12], recipient_str[:16], phone_display, len(content or ""))
+        receipt = asyncio.run(send_whatsapp_message_detailed(phone, content))
+        success = bool(receipt.get("success"))
+        provider_id = receipt.get("provider_message_id")
+        http_status = receipt.get("http_status")
+        logger.info("[DIGEST_RESULT] notif=%s success=%s provider=%s http=%s",
+                    str(notification["_id"])[:12], success, provider_id, http_status)
+        if success and provider_id:
+            state = "sent"
+            db[NOTIFICATION_COLLECTION].update_one(
+                {"_id": notification["_id"]},
+                {"$set": {"state": state, "delivery_mode": "live",
+                          "actually_delivered": True, "provider_message_id": provider_id,
+                          "updated_at": utc_now()}},
             )
-            return {"status": "failed", "reason": "no_sender"}
+            return {"status": "sent", "lead_count": lead_count, "provider_message_id": provider_id,
+                    "delivery_mode": "live", "actually_delivered": True}
+        else:
+            state = "failed_retryable" if http_status not in (422,) else "failed_validation"
+            finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                             state=state, error=f"http_{http_status}" if http_status else receipt.get("error"))
+            return {"status": state, "lead_count": lead_count}
+        # Unreachable — fall through to sender path for clarity
+        return {"status": "failed", "reason": "unreachable"}
 
     recipient = str(notification.get("recipient_user_id") or "")
     exec_user = resolve_recipient_user(db, recipient)

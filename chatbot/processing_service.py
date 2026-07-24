@@ -469,10 +469,8 @@ class LeadProcessingService:
                         phone=lead.get("phone"),
                     )
                 
-                # 3. Notificar solo si el lead realmente quedó HOT.
-                # La asignación sigue ocurriendo, pero el aviso al ejecutivo se reserva
-                # para leads con intención fuerte para evitar ruido en el equipo.
-                if update_data.get("auto_reassigned"):
+                # 3. Notificar solo si el lead realmente quedó HOT o se creó un ciclo nuevo.
+                if update_data.get("auto_reassigned") or needs_new_cycle:
                     prospecto_data = lead.get("prospecto", {}) or {}
                     exec_name = update_data.get("ejecutivo_asignado") or update_data.get("prospecto.ejecutivo") or lead.get("ejecutivo_asignado") or prospecto_data.get("ejecutivo")
                     prop_code = prospecto_data.get("codigo") or lead.get("codigo")

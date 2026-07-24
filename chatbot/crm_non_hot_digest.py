@@ -457,6 +457,44 @@ def _notify_hot_outside_digest(db, lead):
 # Send (or shadow-send)
 # ---------------------------------------------------------------------------
 
+
+def resolve_recipient_user(db, recipient: str) -> dict | None:
+    """Resolve a recipient user from various identifier formats.
+
+    Priority:
+    1. ObjectId (from string hex)
+    2. Raw string _id (legacy users with string _id)
+    3. nombre (exact match, logged as fallback)
+    Returns the user dict or None.
+    """
+    from bson import ObjectId
+    from bson.errors import InvalidId
+
+    # 1. Try as ObjectId hex string
+    if isinstance(recipient, str) and len(recipient) == 24:
+        try:
+            oid = ObjectId(recipient)
+            user = db["usuarios"].find_one({"_id": oid})
+            if user:
+                return user
+        except InvalidId:
+            pass
+
+    # 2. Try as raw string _id (legacy)
+    user = db["usuarios"].find_one({"_id": recipient})
+    if user:
+        return user
+
+    # 3. Fallback: exact nombre match (logged)
+    user = db["usuarios"].find_one({"nombre": recipient})
+    if user:
+        logger.info("[DIGEST] recipient_resolution_mode=name_fallback for %s", recipient[:20])
+        return user
+
+    logger.warning("[DIGEST] recipient not resolved: %s (type=%s)", str(recipient)[:24], type(recipient).__name__)
+    return None
+
+
 async def send_digest(db, *, notification, worker_id, sender=None):
     """Deliver or shadow-deliver a due digest.
 
@@ -502,7 +540,7 @@ async def send_digest(db, *, notification, worker_id, sender=None):
         return {"status": "failed", "reason": "no_sender"}
 
     recipient = str(notification.get("recipient_user_id") or "")
-    exec_user = db["usuarios"].find_one({"_id": recipient}, {"telefono": 1, "nombre": 1})
+    exec_user = resolve_recipient_user(db, recipient)
     if not exec_user:
         finalize_attempt(
             db, notification_id=notification["_id"], worker_id=worker_id,

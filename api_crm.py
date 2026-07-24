@@ -47,6 +47,29 @@ def coerce_crm_datetime(value):
     return None
 
 
+# Module-level constants for CRM event display (defined before any function).
+TYPE_LABELS = {
+    "CLICK_WHATSAPP_LEAD": "WhatsApp abierto",
+    "CLICK_PHONE_LEAD": "Llamada realizada",
+    "CLICK_EMAIL_LEAD": "Click Email (Lead)",
+    "SEND_WA_LEAD": "WhatsApp enviado",
+    "SEND_EMAIL_LEAD": "Email enviado",
+    "CALL_COMPLETED_LEAD": "Llamada realizada",
+    "CLICK_WHATSAPP_OWNER": "Click WhatsApp (Prop)",
+    "CLICK_PHONE_OWNER": "Llamada Prop. Iniciada",
+    "CLICK_EMAIL_OWNER": "Click Email (Prop)",
+    "SEND_WA_OWNER": "WhatsApp Enviado (Prop)",
+    "SEND_EMAIL_OWNER": "Email Enviado (Prop)",
+    "STATUS_CHANGE": "Estado actualizado",
+    "HUMAN_NOTE": "Gestión manual",
+    "ASSIGNMENT": "Lead asignado",
+    "GESTION_LOG": "Gestión manual",
+    "ALERT_SENT": "Alerta Enviada",
+    "MANUAL_ENTRY": "Ingreso Manual",
+}
+TELEMETRY_LABEL_TYPES = frozenset(TYPE_LABELS.keys())
+
+
 def format_relative_time(dt_obj):
     if isinstance(dt_obj, str):
         try:
@@ -675,40 +698,17 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     events_list = await events_cursor.to_list(length=200)
     events_map = {}
     recognized_management_map = {}
-    # Management events for last-action display.
-    # Priority: HUMAN_NOTE/GESTION_LOG (management form) > SEND/SEND/CALL > legacy CLICK.
-    # No longer includes CLICK_WHATSAPP_LEAD or STATUS_CHANGE as management.
-    HIGH_PRIORITY_TYPES = frozenset({"HUMAN_NOTE", "GESTION_LOG"})
-    MEDIUM_PRIORITY_TYPES = frozenset({"SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD"})
+    # Only HUMAN_NOTE and GESTION_LOG are recognized as management events.
+    # SEND/CLICK/STATUS_CHANGE are telemetry and never enter this map.
+    MANAGEMENT_EVENT_TYPES = frozenset({"HUMAN_NOTE", "GESTION_LOG"})
     for ev in events_list:
         phone_ev = ev.get("phone", "").replace("+", "").strip()
         if phone_ev not in events_map:
             events_map[phone_ev] = ev
-        ev_type = ev.get("type")
-        if ev_type in HIGH_PRIORITY_TYPES:
-            recognized_management_map[phone_ev] = ev
-        elif phone_ev not in recognized_management_map and ev_type in MEDIUM_PRIORITY_TYPES:
+        if ev.get("type") in MANAGEMENT_EVENT_TYPES:
             recognized_management_map[phone_ev] = ev
 
-    type_labels = {
-        "CLICK_WHATSAPP_LEAD": "WhatsApp abierto",
-        "CLICK_PHONE_LEAD": "Llamada realizada",
-        "CLICK_EMAIL_LEAD": "Click Email (Lead)",
-        "SEND_WA_LEAD": "WhatsApp enviado",
-        "SEND_EMAIL_LEAD": "Email enviado",
-        "CALL_COMPLETED_LEAD": "Llamada realizada",
-        "CLICK_WHATSAPP_OWNER": "Click WhatsApp (Prop)",
-        "CLICK_PHONE_OWNER": "Llamada Prop. Iniciada",
-        "CLICK_EMAIL_OWNER": "Click Email (Prop)",
-        "SEND_WA_OWNER": "WhatsApp Enviado (Prop)",
-        "SEND_EMAIL_OWNER": "Email Enviado (Prop)",
-        "STATUS_CHANGE": "Estado actualizado",
-        "HUMAN_NOTE": "Gestión manual",
-        "ASSIGNMENT": "Lead asignado",
-        "GESTION_LOG": "Gestión manual",
-        "ALERT_SENT": "Alerta Enviada",
-        "MANUAL_ENTRY": "Ingreso Manual",
-    }
+    # TYPE_LABELS is defined at module level (above). No local type_labels needed.
 
     # 5b. BULK QUERY DE CICLOS DE ASIGNACIÓN para los leads de esta página.
     # Resuelve todos los ciclos activos en una sola consulta batch.
@@ -798,14 +798,24 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         )
         if not outreach["recognized"]:
             recognized_management_ev = None
-        commercial_ev = recognized_management_ev or last_ev
+        if recognized_management_ev:
+            commercial_ev = recognized_management_ev
+        else:
+            commercial_ev = None
+            for candidate_ev in events_list:
+                if candidate_ev.get("phone", "").replace("+", "").strip() == raw_phone:
+                    if candidate_ev.get("type") in TELEMETRY_LABEL_TYPES:
+                        commercial_ev = candidate_ev
+                        break
+            if not commercial_ev:
+                commercial_ev = last_ev
         if commercial_ev:
             event_meta = commercial_ev.get("meta") or commercial_ev.get("metadata") or {}
             last_action_text = (
-                type_labels.get(commercial_ev.get("type"))
+                TYPE_LABELS.get(commercial_ev.get("type"))
                 or event_meta.get("action_label")
                 or event_meta.get("action")
-                or "Gestión manual"
+                or "Sin gestión registrada"
             )
             last_action_note = event_meta.get("notes") or event_meta.get("note") or ""
         else:

@@ -476,7 +476,7 @@ class LeadProcessingService:
                     prop_code = prospecto_data.get("codigo") or lead.get("codigo")
 
                     from .lead_router import get_executive_phone
-                    exec_phone = get_executive_phone(exec_name) if exec_name else "+56900000000"
+                    exec_phone = get_executive_phone(exec_name) if exec_name else None
 
                     temp = (
                         update_data.get("lead_temperature_effective")

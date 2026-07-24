@@ -112,6 +112,10 @@ async def send_whatsapp_message_detailed(number: str, text: str) -> dict:
     """Envía por WASender y retorna metadatos seguros de aceptación del proveedor."""
     if not text:
         return {"success": False, "delivery_status": "rejected_empty_message", "provider_message_id": None}
+    if not number or number in ("+56900000000", "56900000000"):
+        logger.error("[WHATSAPP_SEND] rejected_placeholder phone=%s", str(number)[:15])
+        return {"success": False, "delivery_status": "rejected_placeholder", "provider_message_id": None,
+                "http_status": None, "provider_called": False}
 
     clean = provider_recipient(number)
     masked = mask_whatsapp_recipient(number)

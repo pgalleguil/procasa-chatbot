@@ -100,6 +100,16 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
         logger.debug("[NON_HOT_DIGEST] Skipping pre-cutover cycle %s", cycle.get("assignment_cycle_id"))
         return None
 
+    # Exclude cycles with non-notifiable origins
+    non_notifiable = ("historical_reconciliation", "startup_repair", "cycle_repair", "backfill")
+    co = str(cycle.get("cycle_origin") or "")
+    if co in non_notifiable:
+        logger.debug("[NON_HOT_DIGEST] Skipping non-notifiable cycle_origin=%s for %s", co, cycle.get("assignment_cycle_id"))
+        return None
+    if not cycle.get("notification_eligible", True):
+        logger.debug("[NON_HOT_DIGEST] Skipping notification_eligible=false for %s", cycle.get("assignment_cycle_id"))
+        return None
+
     lead_id = lead.get("_id")
     cycle_id = cycle.get("assignment_cycle_id")
     recipient = str(cycle.get("assigned_to_user_id") or "")
@@ -328,6 +338,12 @@ def build_digest_message_content(db, notification):
 
     # Filter out leads that no longer belong
     recipient = str(notification.get("recipient_user_id") or "")
+    recipient_norm = None
+    if recipient:
+        resolved = resolve_recipient_user(db, recipient)
+        if resolved:
+            recipient_norm = str(resolved.get("_id"))
+    
     valid = []
     for lead in leads:
         if str(lead.get("lead_temperature_effective") or "").upper() == HOT:
@@ -339,11 +355,19 @@ def build_digest_message_content(db, notification):
             continue
         if lead.get("is_duplicate"):
             continue
-        exec_name = lead.get("ejecutivo_asignado") or ""
-        exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
-        if exec_user and str(exec_user.get("_id")) != recipient:
+        # Compare canonical user IDs, not names.
+        lead_exec_id = None
+        lead_exec_name = lead.get("ejecutivo_asignado") or ""
+        if recipient_norm and lead_exec_name:
+            exec_user = db["usuarios"].find_one({"nombre": lead_exec_name}, {"_id": 1})
+            if exec_user:
+                lead_exec_id = str(exec_user.get("_id"))
+        if recipient_norm and lead_exec_id and recipient_norm != lead_exec_id:
+            logger.info("[NON_HOT_DIGEST] Lead %s executive_mismatch: recipient=%s != lead_exec=%s (name=%s)",
+                        lead["_id"], recipient_norm[:12], lead_exec_id[:12], lead_exec_name[:20])
             continue
-        if not exec_user and exec_name:
+        if recipient_norm and not lead_exec_id and lead_exec_name:
+            logger.info("[NON_HOT_DIGEST] Lead %s executive_not_found: name=%s", lead["_id"], lead_exec_name[:20])
             continue
         # Exclude leads with management registered in the current cycle
         cycle = db["crm_assignment_cycles"].find_one(
@@ -495,10 +519,10 @@ def resolve_recipient_user(db, recipient: str) -> dict | None:
     return None
 
 
-async def send_digest(db, *, notification, worker_id, sender=None):
-    """Deliver or shadow-deliver a due digest.
+def send_digest(db, *, notification, worker_id, sender=None):
+    """Deliver or shadow-deliver a due digest.  Fully synchronous.
 
-    ``sender`` is an async callable ``(phone, message) -> dict``.
+    ``sender`` is a sync callable ``(phone, message) -> dict`` or None.
     In shadow mode the provider is never called.
     """
     shadow = str(getattr(Config, "CRM_NON_HOT_DIGEST_SHADOW_MODE", "true")).lower() == "true"
@@ -554,12 +578,22 @@ async def send_digest(db, *, notification, worker_id, sender=None):
             db, notification_id=notification["_id"], worker_id=worker_id,
             state="failed_final", error="no_phone",
         )
-        return {"status": "failed", "reason": "no_phone"}
+        return {"status": "failed", "reason": "recipient_not_found"}
 
+    # Instrumented send
+    logger.info("[WASEND] sending digest=%s recipient=%s phone_end=%s len=%d",
+                notification["_id"], recipient[:16], phone[-4:], len(content or ""))
     try:
-        receipt = await sender(phone, content)
+        receipt = sender(phone, content)
         success = bool(receipt.get("success"))
         provider_id = receipt.get("provider_message_id")
+        http_status = receipt.get("http_status", receipt.get("status_code", "?"))
+        logger.info("[WASEND] result digest=%s success=%s provider=%s http=%s",
+                    notification["_id"], success, provider_id, http_status)
+        if not success and http_status in (422, 429):
+            logger.warning("[WASEND] provider_error digest=%s http=%s body=%s",
+                           notification["_id"], http_status,
+                           str(receipt.get("response_body", receipt.get("error", "")))[:200])
         state = "sent" if success and provider_id else "quarantined" if success else "failed_retryable"
         finalize_attempt(
             db, notification_id=notification["_id"], worker_id=worker_id,
@@ -576,6 +610,7 @@ async def send_digest(db, *, notification, worker_id, sender=None):
         return {"status": state, "lead_count": lead_count,
                 "delivery_mode": "live", "actually_delivered": bool(success and provider_id)}
     except Exception as exc:
+        logger.error("[WASEND] exception digest=%s error=%s", notification["_id"], exc)
         finalize_attempt(
             db, notification_id=notification["_id"], worker_id=worker_id,
             state="failed_retryable", error=type(exc).__name__,
@@ -587,16 +622,20 @@ async def send_digest(db, *, notification, worker_id, sender=None):
 # Process one due digest (async-friendly, designed for worker loop)
 # ---------------------------------------------------------------------------
 
-async def process_one_digest(db, *, worker_id, now=None, sender=None):
-    """Claim and deliver/record one due digest.
+def process_one_digest(db, *, worker_id, now=None, sender=None):
+    """Claim and deliver/record one due digest.  Fully synchronous.
 
-    Returns a status dict.  Designed to be called from a periodic worker.
-    ``sender`` is an optional async callable ``(phone, message) -> dict``.
+    Returns a status dict.  Designed to be called from a periodic worker
+    via ``run_in_executor`` so all PyMongo operations run off the event loop.
+    ``sender`` is an optional sync callable ``(phone, message) -> dict``.
     """
     notification = claim_due_digest(db, worker_id=worker_id, now=now)
     if not notification:
         return {"status": "idle"}
-    result = await send_digest(db, notification=notification, worker_id=worker_id, sender=sender)
+    # send_digest must not be async when called from here
+    if hasattr(send_digest, '__code__') and send_digest.__code__.co_flags & 0x80:
+        raise TypeError("send_digest must be sync when called from process_one_digest")
+    result = send_digest(db, notification=notification, worker_id=worker_id, sender=sender)
     return result
 
 

@@ -3199,20 +3199,18 @@ async def non_hot_digest_worker_loop():
 
             from chatbot.crm_non_hot_digest import process_one_digest
             from chatbot.storage import get_db
-            from chatbot.whatsapp_client import send_whatsapp_message_detailed
-            from chatbot.lead_router import format_whatsapp_template
             db = get_db()
-
-            async def _digest_sender(phone, content):
-                """Send digest message via WhatsApp. content is pre-built by build_digest_message_content."""
-                return await send_whatsapp_message_detailed(phone, content)
+            loop = asyncio.get_running_loop()
 
             try:
-                result = await process_one_digest(
-                    db, worker_id=worker_id, sender=_digest_sender,
+                result = await loop.run_in_executor(
+                    _WORKER_THREAD_POOL,
+                    lambda: process_one_digest(db, worker_id=worker_id),
                 )
                 if result["status"] not in ("idle", "shadow_sent"):
                     logger.info("[NON_HOT_DIGEST] Resultado: %s", result)
+                # If we needed a live send in the future, the sender call would
+                # happen here in the async context, NOT inside process_one_digest.
             except Exception as exc:
                 logger.error("[NON_HOT_DIGEST] Error en digest: %s", exc)
         except Exception as e:

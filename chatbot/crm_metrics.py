@@ -186,6 +186,9 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
         )
     # Determine SLA policy version for this cycle
     sla_policy = "sla_visual_v1_20260723" if not is_pre_visual_cutover(assigned_at) else "legacy"
+    # Only leads created by real commercial events are notification-eligible
+    notifiable_reasons = frozenset({"lead_created", "inbound_message", "manual_lead", "router"})
+    notification_eligible = reason in notifiable_reasons
     cycle = {
         "assignment_cycle_id": str(uuid.uuid4()), "lead_id": lead["_id"],
         "assigned_to_user_id": assigned_to_user_id, "assigned_at": assigned_at,
@@ -195,6 +198,7 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
         "cycle_status": "active",
         "applied_transition_ids": [],
         "sla_policy_version": sla_policy,
+        "notification_eligible": notification_eligible,
     }
     try:
         db["crm_assignment_cycles"].insert_one(cycle)

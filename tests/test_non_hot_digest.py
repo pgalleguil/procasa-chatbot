@@ -624,8 +624,7 @@ def test_retry_does_not_duplicate():
         later = future_time()
         claimed = claim_due_digest(db, worker_id="worker-1", now=later)
         assert claimed is not None
-        import asyncio
-        result = asyncio.run(send_digest(db, notification=claimed, worker_id="worker-1", sender=None))
+        result = send_digest(db, notification=claimed, worker_id="worker-1", sender=None)
 
     # Shadow mode sends with "sent" state
     after_first = db["crm_notifications_v1"].find_one({"_id": claimed["_id"]})
@@ -891,12 +890,11 @@ def test_shadow_mode_no_provider_call_and_distinguishable():
         # Track if provider was called
         provider_called = []
 
-        async def fake_provider(phone, msg):
+        def fake_provider(phone, msg):
             provider_called.append(phone)
             return {"success": True, "provider_message_id": "real-id-123"}
 
-        import asyncio
-        result = asyncio.run(send_digest(db, notification=claimed, worker_id="shadow-test", sender=fake_provider))
+        result = send_digest(db, notification=claimed, worker_id="shadow-test", sender=fake_provider)
     assert result["status"] == "shadow_sent"
     assert result["delivery_mode"] == "shadow"
     assert result["actually_delivered"] is False
@@ -1492,7 +1490,7 @@ def test_digest_sent_then_hot_at_40_sends_escalation():
     claimed = claim_due_digest(db, worker_id="test", now=later)
     if claimed:
         from chatbot.crm_non_hot_digest import send_digest
-        import asyncio; asyncio.run(send_digest(db, notification=claimed, worker_id="test", sender=None))
+        send_digest(db, notification=claimed, worker_id="test", sender=None)
     # Lead becomes HOT at minute 40 (after digest already sent)
     lead["lead_temperature_effective"] = "HOT"
     db["leads"].update_one({"_id": "lead-1"}, {"$set": {"lead_temperature_effective": "HOT"}})
@@ -1621,7 +1619,7 @@ def test_all_managed_digest_suppressed():
         notif = accumulate_non_hot_lead(db, lead=lead, cycle=cycle)
     # Digest should be suppressed when sending
     from chatbot.crm_non_hot_digest import send_digest
-    import asyncio; result = asyncio.run(send_digest(db, notification=notif, worker_id="test", sender=None))
+    result = send_digest(db, notification=notif, worker_id="test", sender=None)
     assert result["status"] in ("suppressed", "shadow_sent")
     # If suppressed, all leads were removed
     if result["status"] == "suppressed":

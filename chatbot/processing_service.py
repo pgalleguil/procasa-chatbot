@@ -515,10 +515,13 @@ class LeadProcessingService:
                                 "assignment_cycle_id": update_data.get("lifecycle.current_assignment_cycle_id") or lead.get("lifecycle", {}).get("current_assignment_cycle_id") or "",
                                 "assigned_to_user_id": exec_name or "",
                             }
-                            accumulate_non_hot_lead(db, lead=lead, cycle=cycle_dict)
-                        except Exception:
-                            pass
-                        logger.info(f"[PROCESS_SERVICE] Lead {lead.get('phone')} asignado a {exec_name} silenciosamente (Temperatura: {temp}). Acumulado en digest.")
+                            digest_result = accumulate_non_hot_lead(db, lead=lead, cycle=cycle_dict)
+                            if digest_result:
+                                logger.info("[PROCESS_SERVICE] Lead %s acumulado en digest para %s", lead.get("phone"), exec_name)
+                            else:
+                                logger.debug("[PROCESS_SERVICE] Lead %s no acumulado en digest (filtro)", lead.get("phone"))
+                        except Exception as exc:
+                            logger.debug("[PROCESS_SERVICE] Error acumulando lead %s: %s", lead.get("phone"), exc)
 
                 # --- NUEVO: STRUCTURED LOGGING PARA DECISIONES ---
                 import json

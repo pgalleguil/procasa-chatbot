@@ -176,12 +176,21 @@ async def process_one_hot(db, *, sender, worker_id, now=None, enabled=False):
         return {"status": "failed_retryable", "delivery_id": notification["delivery_id"]}
     success = bool(receipt.get("success"))
     provider_message_id = receipt.get("provider_message_id")
-    state = "sent" if success and provider_message_id else "quarantined" if success else "failed_retryable"
+    provider_called = receipt.get("provider_called", True)
+    # If the sender rejected without calling the provider (placeholder, invalid), fail terminal
+    if not provider_called:
+        state = "failed_recipient"
+    elif success and provider_message_id:
+        state = "sent"
+    elif success:
+        state = "quarantined"
+    else:
+        state = "failed_retryable"
+    error = receipt.get("error") or receipt.get("delivery_status")
     result = await asyncio.to_thread(
         finalize_attempt, db, notification_id=notification["_id"], worker_id=worker_id, state=state,
         provider_message_id=provider_message_id,
-        error=("missing_provider_message_id" if success and not provider_message_id else
-               None if success else receipt.get("error") or receipt.get("delivery_status")), now=current,
+        error=error, now=current,
     )
     return {"status": state, "delivery_id": result["delivery_id"],
             "provider_message_id": result.get("provider_message_id")}

@@ -2841,14 +2841,28 @@ async def process_pending_leads_loop():
                 # Canonical Hot worker. Fail-closed flag; it never reads the legacy queue.
                 if Config.LEAD_HOT_NOTIFICATIONS_ENABLED:
                     from chatbot.crm_hot_delivery import process_one_hot
-                    from chatbot.lead_router import format_whatsapp_template
-                    from chatbot.whatsapp_client import send_whatsapp_message_detailed
+                    from chatbot.crm_delivery import resolve_executive_user, get_executive_phone, send_whatsapp_to_executive
+                    from chatbot.storage import get_db as _get_sync_db
 
                     async def _canonical_hot_sender(recipient, payload):
+                        """Canonical HOT sender: resolves user from DB, never uses stored placeholder."""
+                        user_id = payload.get("assigned_to_user_id") or payload.get("recipient_user_id")
+                        if not user_id:
+                            return {"success": False, "error": "no_user_id", "provider_called": False}
+                        sync_db = _get_sync_db()
+                        user = resolve_executive_user(sync_db, user_id)
+                        if not user:
+                            return {"success": False, "error": "executive_user_not_found", "provider_called": False}
+                        phone = get_executive_phone(user)
+                        if not phone:
+                            return {"success": False, "error": "executive_phone_missing_or_invalid",
+                                    "provider_called": False}
+                        from chatbot.lead_router import format_whatsapp_template
                         message = format_whatsapp_template(
                             payload, payload.get("target_name"), payload.get("property_code"), True
                         )
-                        return await send_whatsapp_message_detailed(recipient, message)
+                        result = await send_whatsapp_message_detailed(phone, message)
+                        return result
 
                     await process_one_hot(
                         get_db(), sender=_canonical_hot_sender,

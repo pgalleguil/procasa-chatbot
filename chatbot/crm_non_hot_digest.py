@@ -110,29 +110,35 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
     if db_cycle is None:
         db_cycle = cycle  # fallback to passed dict
 
-    # Pre-cutover cycles are excluded from digest
-    from .crm_metrics import is_pre_cutover_cycle
-    if is_pre_cutover_cycle(db_cycle.get("assigned_at")):
-        logger.debug("[NON_HOT_DIGEST] Skipping pre-cutover cycle %s", cycle_id)
-        return None
+    # Canary: skip all eligibility checks for authorized leads
+    str_lead_id = str(lead.get("_id"))
+    if str_lead_id in CANARY_LEAD_IDS:
+        logger.info("[NON_HOT_DIGEST] Canary lead %s bypassing eligibility checks", str_lead_id[:12])
 
-    # Exclude cycles with non-notifiable origins or missing notification_eligible
-    non_notifiable = ("historical_reconciliation", "startup_repair", "cycle_repair", "backfill")
-    co = str(db_cycle.get("cycle_origin") or "")
-    if co in non_notifiable:
-        logger.debug("[NON_HOT_DIGEST] Skipping non-notifiable cycle_origin=%s for %s", co, cycle_id)
-        return None
-    # Also skip if notification_eligible is explicitly False OR if the reason
-    # is a non-commercial processing reason (no notification_eligible field).
-    eligible = db_cycle.get("notification_eligible")
-    reason = str(db_cycle.get("reason") or "")
-    non_commercial_reasons = ("historical_reconciliation", "lead_processed", "lead_processed_repair", "startup", "backfill", "reconciliation", "cycle_repair")
-    if eligible is False:
-        logger.debug("[NON_HOT_DIGEST] Skipping notification_eligible=false for %s", cycle_id)
-        return None
-    if eligible is None and reason in non_commercial_reasons:
-        logger.debug("[NON_HOT_DIGEST] Skipping non-commercial reason=%s for %s", reason, cycle_id)
-        return None
+    # Pre-cutover cycles are excluded from digest
+    if str_lead_id not in CANARY_LEAD_IDS:
+        from .crm_metrics import is_pre_cutover_cycle
+        if is_pre_cutover_cycle(db_cycle.get("assigned_at")):
+            logger.debug("[NON_HOT_DIGEST] Skipping pre-cutover cycle %s", cycle_id)
+            return None
+
+        # Exclude cycles with non-notifiable origins or missing notification_eligible
+        non_notifiable = ("historical_reconciliation", "startup_repair", "cycle_repair", "backfill")
+        co = str(db_cycle.get("cycle_origin") or "")
+        if co in non_notifiable:
+            logger.debug("[NON_HOT_DIGEST] Skipping non-notifiable cycle_origin=%s for %s", co, cycle_id)
+            return None
+        # Also skip if notification_eligible is explicitly False OR if the reason
+        # is a non-commercial processing reason (no notification_eligible field).
+        eligible = db_cycle.get("notification_eligible")
+        reason = str(db_cycle.get("reason") or "")
+        non_commercial_reasons = ("historical_reconciliation", "lead_processed", "lead_processed_repair", "startup", "backfill", "reconciliation", "cycle_repair")
+        if eligible is False:
+            logger.debug("[NON_HOT_DIGEST] Skipping notification_eligible=false for %s", cycle_id)
+            return None
+        if eligible is None and reason in non_commercial_reasons:
+            logger.debug("[NON_HOT_DIGEST] Skipping non-commercial reason=%s for %s", reason, cycle_id)
+            return None
     recipient = str(cycle.get("assigned_to_user_id") or "")
     if not lead_id or not cycle_id or not recipient:
         return None
@@ -540,8 +546,16 @@ def resolve_recipient_user(db, recipient: str) -> dict | None:
     return None
 
 
-# Canary allowlist — only these digest IDs can send live during incident resolution
-CANARY_DIGEST_IDS: set[str] = set()
+# Canary allowlists — only these IDs can bypass filters and send live during incident resolution
+CANARY_DIGEST_IDS: set[str] = {
+    "6a63b06d2af90ceb18c1f696",  # Erika digest
+    "6a63b06e2af90ceb18c1f697",  # Mariela digest
+}
+CANARY_LEAD_IDS: set[str] = {
+    "6a62dacfc20786d0d43cc04c",  # Mariela nocturnal
+    "6a5fc560c20786d0d43caeae",  # Mariela reactivated
+    "6a638a326c8a3b06b1cf78bd",  # Erika new
+}
 
 def send_digest(db, *, notification, worker_id, sender=None):
     """Deliver or shadow-deliver a due digest.  Fully synchronous.
@@ -550,7 +564,9 @@ def send_digest(db, *, notification, worker_id, sender=None):
     In shadow mode the provider is never called.
     """
     # Hard block: ignore shadow mode entirely during incident
-    shadow = True
+    # Allowlist: specific digest IDs can bypass shadow for canary
+    is_canary = str(notification.get("_id")) in CANARY_DIGEST_IDS
+    shadow = not is_canary
     content, lead_count = build_digest_message_content(db, notification)
     if content is None:
         finalize_attempt(
@@ -582,11 +598,42 @@ def send_digest(db, *, notification, worker_id, sender=None):
                 "delivery_mode": "shadow", "actually_delivered": False}
 
     if not sender:
-        finalize_attempt(
-            db, notification_id=notification["_id"], worker_id=worker_id,
-            state="failed_retryable", error="no_sender_provided",
-        )
-        return {"status": "failed", "reason": "no_sender"}
+        if is_canary:
+            # Canary: use canonical sender (asyncio.run is safe in threadpool)
+            from .crm_delivery import resolve_executive_user, get_executive_phone
+            exec_user = resolve_executive_user(db, recipient)
+            if exec_user:
+                phone = get_executive_phone(exec_user)
+                if phone:
+                    from .whatsapp_client import send_whatsapp_message_detailed
+                    import asyncio
+                    receipt = asyncio.run(send_whatsapp_message_detailed(phone, content))
+                    success = bool(receipt.get("success"))
+                    provider_id = receipt.get("provider_message_id")
+                    http_status = receipt.get("http_status")
+                    logger.info("[CANARY] digest=%s sent phone_end=%s success=%s provider=%s http=%s",
+                                notification["_id"], phone[-4:], success, provider_id, http_status)
+                    if success and provider_id:
+                        state = "sent"
+                        db[NOTIFICATION_COLLECTION].update_one(
+                            {"_id": notification["_id"]},
+                            {"$set": {"state": state, "delivery_mode": "live",
+                                      "actually_delivered": True, "provider_message_id": provider_id,
+                                      "updated_at": utc_now()}},
+                        )
+                        return {"status": "sent", "lead_count": lead_count, "provider_message_id": provider_id,
+                                "delivery_mode": "live", "actually_delivered": True}
+                    else:
+                        state = "failed_retryable" if http_status not in (422,) else "failed_validation"
+                        finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                                         state=state, error=f"http_{http_status}")
+                        return {"status": state, "lead_count": lead_count}
+        else:
+            finalize_attempt(
+                db, notification_id=notification["_id"], worker_id=worker_id,
+                state="failed_retryable", error="no_sender_provided",
+            )
+            return {"status": "failed", "reason": "no_sender"}
 
     recipient = str(notification.get("recipient_user_id") or "")
     exec_user = resolve_recipient_user(db, recipient)

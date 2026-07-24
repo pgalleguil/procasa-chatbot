@@ -127,73 +127,112 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
     return {"cycle": cycle, "notification": notification}
 
 
-async def process_one_hot(db, *, sender, worker_id, now=None, enabled=False):
-    """Claim and deliver one due canonical Hot; sender must return a receipt dict."""
-    # Kill-switch check before claim
-    if not enabled:
-        return {"status": "disabled"}
-    from config import Config
-    if not getattr(Config, "LEAD_HOT_NOTIFICATIONS_ENABLED", False):
-        # Suppress any pending document without sending
-        current = coerce_utc_datetime(now) or utc_now()
-        notification = await asyncio.to_thread(
-            claim_next, db, worker_id=worker_id, now=current,
-            extra_filter={"notification_type": NOTIFICATION_TYPE, "send_after": {"$lte": current}},
-        )
-        if notification:
-            await asyncio.to_thread(
-                finalize_attempt, db, notification_id=notification["_id"], worker_id=worker_id,
-                state="suppressed", error="kill_switch_disabled", now=current,
-            )
-            return {"status": "suppressed", "reason": "kill_switch", "delivery_id": notification["delivery_id"]}
-        return {"status": "disabled"}
+def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
+    """Fully synchronous HOT notification delivery. Runs in threadpool, never in event loop.
+    
+    Args:
+        sender: Optional override for testability. Called as sender(phone, message); must return dict
+                with success, provider_message_id, http_status keys.
+    """
+    import os, threading
     current = coerce_utc_datetime(now) or utc_now()
-    # Re-check before claim for race safety
-    if not getattr(Config, "LEAD_HOT_NOTIFICATIONS_ENABLED", False):
+    
+    # Runtime diagnostic
+    logger.info("[HOT_RUNTIME] pid=%s thread=%s is_main=%s",
+                os.getpid(), threading.current_thread().name,
+                threading.current_thread() is threading.main_thread())
+
+    from config import Config as _C
+    if not getattr(_C, "LEAD_HOT_NOTIFICATIONS_ENABLED", False):
         return {"status": "disabled"}
-    notification = await asyncio.to_thread(
-        claim_next, db, worker_id=worker_id, now=current,
-        extra_filter={"notification_type": NOTIFICATION_TYPE, "send_after": {"$lte": current}},
-    )
+
+    notification = claim_next(db, worker_id=worker_id, now=current,
+                              extra_filter={"notification_type": NOTIFICATION_TYPE,
+                                            "send_after": {"$lte": current}})
     if not notification:
         return {"status": "idle"}
 
-    # Final check before provider call — flag may have changed during claim
-    if not getattr(Config, "LEAD_HOT_NOTIFICATIONS_ENABLED", False):
-        await asyncio.to_thread(
-            finalize_attempt, db, notification_id=notification["_id"], worker_id=worker_id,
-            state="suppressed", error="kill_switch_disabled", now=current,
-        )
-        return {"status": "suppressed", "reason": "kill_switch", "delivery_id": notification["delivery_id"]}
+    # Resolve executive from DB (not from stored phone)
+    from .crm_delivery import resolve_executive_user, get_executive_phone
+    from .whatsapp_client import send_whatsapp_message_detailed
+    import asyncio, json
+
+    recipient = str(notification.get("recipient_user_id") or "")
+    exec_user = resolve_executive_user(db, recipient)
+    if not exec_user:
+        finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                         state="failed_recipient", error="executive_not_found", now=current)
+        return {"status": "failed_recipient", "reason": "executive_not_found"}
+
+    phone = get_executive_phone(exec_user)
+    if not phone:
+        finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                         state="failed_recipient", error="executive_phone_missing", now=current)
+        return {"status": "failed_recipient", "reason": "no_phone"}
+
+    # Build message from payload
+    from .lead_router import format_whatsapp_template
+    payload = notification.get("payload") or {}
+    message = format_whatsapp_template(
+        payload, payload.get("target_name", ""), payload.get("property_code", ""), True
+    )
+
+    logger.info("[HOT_SEND] notif=%s user=%s phone_end=%s",
+                str(notification["_id"])[:12], str(exec_user.get("_id"))[:12], phone[-4:])
 
     try:
-        receipt = await sender(notification["recipient_phone"], notification["payload"])
+        if sender is not None:
+            receipt = sender(phone, message)
+        else:
+            receipt = asyncio.run(send_whatsapp_message_detailed(phone, message))
     except Exception as exc:
-        await asyncio.to_thread(
-            finalize_attempt, db, notification_id=notification["_id"], worker_id=worker_id,
-            state="failed_retryable", error=type(exc).__name__, now=current,
-        )
-        return {"status": "failed_retryable", "delivery_id": notification["delivery_id"]}
+        finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                         state="failed_retryable", error=type(exc).__name__, now=current)
+        return {"status": "failed_retryable", "error": type(exc).__name__}
+
     success = bool(receipt.get("success"))
-    provider_message_id = receipt.get("provider_message_id")
-    provider_called = receipt.get("provider_called", True)
-    # If the sender rejected without calling the provider (placeholder, invalid), fail terminal
-    if not provider_called:
-        state = "failed_recipient"
-    elif success and provider_message_id:
+    provider_id = receipt.get("provider_message_id")
+    http_status = receipt.get("http_status")
+
+    # Determine state based on response
+    if not success:
+        http_status = receipt.get("http_status")
+        if http_status == 422:
+            state = "failed_validation"
+            error_detail = f"http_422 body={str(receipt.get('response_body', receipt.get('error', '')))[:200]}"
+            logger.warning("[HOT_422] notif=%s %s", str(notification["_id"])[:12], error_detail)
+        elif http_status == 429:
+            state = "rate_limited"
+            error_detail = f"http_429 retry_after={receipt.get('retry_after', '?')}"
+        else:
+            state = "failed_retryable"
+            error_detail = receipt.get("error") or receipt.get("delivery_status") or f"http_{http_status}"
+    elif provider_id:
         state = "sent"
-    elif success:
-        state = "quarantined"
+        error_detail = None
     else:
-        state = "failed_retryable"
-    error = receipt.get("error") or receipt.get("delivery_status")
-    result = await asyncio.to_thread(
-        finalize_attempt, db, notification_id=notification["_id"], worker_id=worker_id, state=state,
-        provider_message_id=provider_message_id,
-        error=error, now=current,
-    )
-    return {"status": state, "delivery_id": result["delivery_id"],
-            "provider_message_id": result.get("provider_message_id")}
+        state = "quarantined"
+        error_detail = "missing_provider_message_id"
+
+    finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                     state=state, provider_message_id=provider_id, error=error_detail, now=current)
+    
+    if state == "sent":
+        db[COLLECTION].update_one({"_id": notification["_id"]},
+                                  {"$set": {"delivery_mode": "live", "actually_delivered": True}})
+
+    return {"status": state, "provider_message_id": provider_id, "delivery_id": notification.get("delivery_id")}
+
+
+async def process_one_hot(db, *, sender, worker_id, now=None, enabled=False):
+    """Async wrapper that delegates to sync version via run_in_executor."""
+    if not enabled:
+        return {"status": "disabled"}
+    import asyncio, functools
+    loop = asyncio.get_running_loop()
+    fn = functools.partial(process_one_hot_sync, db, worker_id=worker_id, now=now, sender=sender)
+    result = await loop.run_in_executor(None, fn)
+    return result
 
 
 def canonical_delivery_evidence(db, assignment_cycle_id) -> bool:

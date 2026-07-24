@@ -175,9 +175,11 @@ def _find_by_source_event(source_system: str, source_event_id: str) -> Optional[
     })
 
 
-def _atomic_reserve_event(source_system: str, source_event_id: str) -> bool:
+def _atomic_reserve_event(source_system: str, source_event_id: str, _retry: bool = False) -> bool:
     """Intenta reservar un evento en el ledger técnico. Operación atómica.
-    Retorna True si se reservó (primera vez), False si ya existía."""
+    Retorna True si se reservó (primera vez), False si ya existía.
+    Si existe una entrada trabada (status=processing sin lead_id), la elimina
+    y permite reintentar."""
     db = get_db()
     try:
         db[IDEMPOTENCY_COLLECTION].insert_one({
@@ -188,6 +190,26 @@ def _atomic_reserve_event(source_system: str, source_event_id: str) -> bool:
         })
         return True
     except Exception:
+        if not _retry:
+            stuck = db[IDEMPOTENCY_COLLECTION].find_one({
+                "source_system": source_system,
+                "source_event_id": str(source_event_id),
+                "status": "processing",
+                "lead_id": {"$exists": False},
+            })
+            if stuck:
+                logger.warning(f"[INGEST] Entrada trabada detectada, eliminando: {source_system}/{source_event_id}")
+                db[IDEMPOTENCY_COLLECTION].delete_one({"_id": stuck["_id"]})
+                try:
+                    db[IDEMPOTENCY_COLLECTION].insert_one({
+                        "source_system": source_system,
+                        "source_event_id": str(source_event_id),
+                        "reserved_at": datetime.now(CHILE_TZ).isoformat(),
+                        "status": "processing",
+                    })
+                    return True
+                except Exception:
+                    return False
         return False
 
 
@@ -271,7 +293,7 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         lead_by_phone, lead_by_email, _ = _find_lead_by_id(phone_normalized, email)
     else:
         lead_by_phone = None
-        lead_by_email, _, _ = _find_lead_by_id(None, email)
+        _, lead_by_email, _ = _find_lead_by_id(None, email)
     identity_conflict = False
     conflict_details = None
     target_lead = None
@@ -396,18 +418,12 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         if hot_detected:
             update_fields["last_intent"] = "ASK_VISIT"
 
-        update_payload = {"$set": update_fields, "$push": {"messages": {"$each": [message_entry], "$slice": -50}}}
-        if "source_events" in update_fields:
-            del update_fields["$addToSet"]
-            update_payload["$addToSet"] = {"source_events": {
-                "source_system": event.source_system,
-                "source_event_id": event.source_event_id,
-                "contact_date": contact_date,
-                "portal_source": portal_source,
-                "message_preview": message[:160],
-                "ingested_at": now_iso,
-            }}
-            del update_fields["$addToSet"]
+        update_payload = {"$set": {}, "$push": {"messages": {"$each": [message_entry], "$slice": -50}}}
+        for k, v in update_fields.items():
+            if k != "$addToSet":
+                update_payload["$set"][k] = v
+        if "$addToSet" in update_fields:
+            update_payload["$addToSet"] = update_fields["$addToSet"]
 
         db[COLLECTION_CONVERSATIONS].update_one({"_id": target_lead["_id"]}, update_payload)
 

@@ -2838,36 +2838,18 @@ async def process_pending_leads_loop():
             background_tasks_status["notifications_loop"]["status"] = "running"
             
             if should_send_now():
-                # Canonical Hot worker. Fail-closed flag; it never reads the legacy queue.
+                # Canonical Hot worker. Fully sync — runs in threadpool.
                 if Config.LEAD_HOT_NOTIFICATIONS_ENABLED:
-                    from chatbot.crm_hot_delivery import process_one_hot
-                    from chatbot.crm_delivery import resolve_executive_user, get_executive_phone, send_whatsapp_to_executive
+                    from chatbot.crm_hot_delivery import process_one_hot_sync
                     from chatbot.storage import get_db as _get_sync_db
-
-                    async def _canonical_hot_sender(recipient, payload):
-                        """Canonical HOT sender: resolves user from DB, never uses stored placeholder."""
-                        user_id = payload.get("assigned_to_user_id") or payload.get("recipient_user_id")
-                        if not user_id:
-                            return {"success": False, "error": "no_user_id", "provider_called": False}
-                        sync_db = _get_sync_db()
-                        user = resolve_executive_user(sync_db, user_id)
-                        if not user:
-                            return {"success": False, "error": "executive_user_not_found", "provider_called": False}
-                        phone = get_executive_phone(user)
-                        if not phone:
-                            return {"success": False, "error": "executive_phone_missing_or_invalid",
-                                    "provider_called": False}
-                        from chatbot.lead_router import format_whatsapp_template
-                        message = format_whatsapp_template(
-                            payload, payload.get("target_name"), payload.get("property_code"), True
-                        )
-                        result = await send_whatsapp_message_detailed(phone, message)
-                        return result
-
-                    await process_one_hot(
-                        get_db(), sender=_canonical_hot_sender,
-                        worker_id=f"render:{os.getpid()}", enabled=True,
-                    )
+                    loop = asyncio.get_running_loop()
+                    import functools
+                    sync_db = _get_sync_db()
+                    fn = functools.partial(process_one_hot_sync, sync_db,
+                                           worker_id=f"render:{os.getpid()}")
+                    result = await loop.run_in_executor(_WORKER_THREAD_POOL, fn)
+                    if result and result.get("status") not in ("idle", "disabled"):
+                        logger.info("[HOT] Resultado: %s", result)
                 pending = await run_db("pending_notifications.find", get_pending_notifications)
                 if pending:
                     logger.info(f"[BACKGROUND] Analizando {len(pending)} envíos pendientes...")

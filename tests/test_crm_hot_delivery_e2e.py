@@ -18,13 +18,16 @@ def _run_with_hot(coro):
         return asyncio.run(coro)
 
 
-async def fake_sender(_recipient, _payload):
+def fake_sender(_recipient, _payload):
     return {"success": True, "provider_message_id": "fake-provider-1", "delivery_status": "accepted"}
 
 
 def setup_db():
     lead = {"_id": "lead-1", "lead_temperature_effective": "HOT", "temperature_history": [{"at": local(20, 8), "value": "HOT"}]}
-    db = DB(leads=Collection([lead]), crm_assignment_cycles=Collection(), crm_notifications_v1=Collection(unique={"individual_identity"}))
+    user = {"_id": "u1", "nombre": "Test", "telefono": "+56911111111"}
+    db = DB(leads=Collection([lead]), crm_assignment_cycles=Collection(),
+            crm_notifications_v1=Collection(unique={"individual_identity"}),
+            usuarios=Collection([user]))
     return db, lead
 
 
@@ -99,7 +102,7 @@ def test_provider_acceptance_without_message_id_is_quarantined_not_retried():
     db, lead = setup_db()
     assign_and_enqueue_hot(db, lead=lead, recipient_user_id="u1", recipient_phone="+56911111111",
                            payload={}, assigned_at=local(20, 9), send_after=local(20, 9))
-    async def accepted_without_evidence(_recipient, _payload):
+    def accepted_without_evidence(_recipient, _payload):
         return {"success": True, "provider_message_id": None, "delivery_status": "accepted"}
     result = _run_with_hot(process_one_hot(db, sender=accepted_without_evidence,
                                           worker_id="w", now=local(20, 10), enabled=True))

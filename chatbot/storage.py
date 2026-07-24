@@ -23,15 +23,26 @@ def redact_phone(text: str) -> str:
 
 
 class RedactPhoneFilter(logging.Filter):
-    """Logging filter that redacts phone numbers from log records."""
+    """Logging filter that redacts phone numbers from log records.
+
+    Preserves types: int, float, bool, None are never converted to str.
+    Only string values and stringified record.msg are redacted.
+    """
     def filter(self, record):
         record.msg = redact_phone(str(record.msg))
         if record.args:
             if isinstance(record.args, dict):
-                record.args = {k: redact_phone(str(v)) for k, v in record.args.items()}
+                record.args = {k: _redact_value(v) for k, v in record.args.items()}
             elif isinstance(record.args, tuple):
-                record.args = tuple(redact_phone(str(a)) for a in record.args)
+                record.args = tuple(_redact_value(a) for a in record.args)
         return True
+
+
+def _redact_value(val):
+    """Redact phone from val if it's a string; otherwise return as-is."""
+    if isinstance(val, str):
+        return redact_phone(val)
+    return val
 
 
 def install_log_redaction():

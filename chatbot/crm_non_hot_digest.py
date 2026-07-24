@@ -132,7 +132,7 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
         # is a non-commercial processing reason (no notification_eligible field).
         eligible = db_cycle.get("notification_eligible")
         reason = str(db_cycle.get("reason") or "")
-        non_commercial_reasons = ("historical_reconciliation", "lead_processed", "lead_processed_repair", "startup", "backfill", "reconciliation", "cycle_repair")
+        non_commercial_reasons = ("historical_reconciliation", "startup", "backfill", "reconciliation", "cycle_repair")
         if eligible is False:
             logger.debug("[NON_HOT_DIGEST] Skipping notification_eligible=false for %s", cycle_id)
             return None

@@ -7,7 +7,7 @@ from .storage import get_db, log_event
 from .constants import CHILE_TZ, PipelineStage, InteractionType
 from .lead_router import find_responsible_executive
 from .processing_service import LeadProcessingService
-from .phone_utils import normalize_phone_strict, build_synthetic_phone_key
+from .phone_utils import normalize_phone_strict
 from .property_lookup import (
     PROPERTY_COLLECTION_NAME,
     build_property_lookup_queries,
@@ -177,56 +177,13 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
     name = data.get("nombre", "").strip()
     email = data.get("email", "").strip()
     mensaje = data.get("mensaje", "").strip()
-    origen = data.get("origen", data.get("channel", "Manual"))
+    origen = data.get("origen", data.get("channel", "Manual")) # Fallback to channel if origen missing
+    # All manual leads enter as Lead normal. HOT cannot be created from this screen.
+    # The frontend no longer sends lead_temperature; enforce COLD regardless of payload.
     lead_temperature = "COLD"
-    manual_submission_id = data.get("manual_submission_id") or ""
 
     if not property_code:
         return {"status": "error", "message": "Código de Propiedad es obligatorio"}
-
-    # Intentar ingest_lead_event si hay manual_submission_id
-    if manual_submission_id:
-        from .ingest_service import ingest_lead_event, LeadEvent, build_synthetic_phone_key
-        ingest_result = ingest_lead_event(LeadEvent(
-            source_system="manual",
-            source_event_id=manual_submission_id,
-            phone=phone or "",
-            email=email or None,
-            name=name,
-            message=mensaje or f"Ingreso manual - {origen}",
-            property_code=property_code,
-            portal_source=origen,
-        ))
-        if ingest_result.status == "duplicate_event":
-            logger.info(f"[MANUAL] Solicitud duplicada detectada: submission_id={manual_submission_id}")
-            existing_doc = db["leads"].find_one({"_id": ingest_result.lead_id}) if ingest_result.lead_id else None
-            if existing_doc:
-                return {
-                    "status": "ok",
-                    "message": "Lead ya existe para esta solicitud",
-                    "lead_id": str(existing_doc["_id"]),
-                    "assigned_to": existing_doc.get("ejecutivo_asignado") or existing_doc.get("prospecto", {}).get("ejecutivo") or "No Asignado",
-                    "exec_phone": None,
-                    "phone": existing_doc.get("phone", phone or ""),
-                    "property_code": property_code,
-                }
-            return {"status": "error", "message": "Solicitud duplicada pero lead no encontrado"}
-        if ingest_result.status in ("created", "updated"):
-            existing_doc = db["leads"].find_one({"_id": ingest_result.lead_id}) if ingest_result.lead_id else None
-            if existing_doc:
-                return {
-                    "status": "ok",
-                    "message": "Lead procesado exitosamente",
-                    "lead_id": str(existing_doc["_id"]),
-                    "assigned_to": existing_doc.get("ejecutivo_asignado") or existing_doc.get("prospecto", {}).get("ejecutivo") or "No Asignado",
-                    "exec_phone": None,
-                    "phone": existing_doc.get("phone", phone or ""),
-                    "property_code": property_code,
-                }
-        if ingest_result.status == "conflict":
-            return {"status": "error", "message": "Conflicto de identidad: teléfono y correo apuntan a leads distintos. Revisar manualmente."}
-        if ingest_result.status == "error":
-            logger.warning(f"[MANUAL] ingest_lead_event falló, usando ruta legacy: {ingest_result.error}")
 
     prop = find_property_by_any_identifier(db, property_code, PROPERTY_COLLECTION_NAME)
     if not prop:
@@ -263,13 +220,7 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
     
     # 3. Prepare Lead Document
     now = datetime.now(CHILE_TZ)
-    from .phone_utils import build_synthetic_phone_key
-    if phone:
-        final_phone = phone
-    elif manual_submission_id:
-        final_phone = build_synthetic_phone_key("manual", manual_submission_id)
-    else:
-        final_phone = f"no-phone-{now.timestamp()}"
+    final_phone = phone or f"no-phone-{now.timestamp()}"
     
     messages = [
         {

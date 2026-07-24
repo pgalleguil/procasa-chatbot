@@ -1505,13 +1505,13 @@ DEBOUNCE_SECONDS = 15.0
 try:
     from chatbot import process_user_message
 except ImportError:
-    def process_user_message(phone, message, is_from_me=False, provider_message_id=None):
+    def process_user_message(phone, message):
         return f"Respuesta de prueba para {phone}: {message[:50]}..."
 
 from chatbot.whatsapp_client import send_whatsapp_message
 from chatbot.notification_service import NotificationService
 
-async def process_with_debounce(phone: str, full_text: str, is_from_me: bool = False, provider_message_id: str = None):
+async def process_with_debounce(phone: str, full_text: str, is_from_me: bool = False):
     if phone in pending_tasks and not pending_tasks[phone].done():
         pending_tasks[phone].cancel()
         logger.info(f"[DEBOUNCE] Tarea anterior cancelada para {phone}")
@@ -1557,7 +1557,7 @@ async def process_with_debounce(phone: str, full_text: str, is_from_me: bool = F
             logger.info(f"[PROCESS] Procesando mensaje {'HUMANO' if from_me else 'CLIENTE'} de {phone}")
             
             capture_time = last_message_time.get(phone, 0)
-            bot_response = await process_user_message(phone, final_message, is_from_me=from_me, provider_message_id=provider_message_id)
+            bot_response = await process_user_message(phone, final_message, is_from_me=from_me)
 
             # Si el documento se envió mientras respondía la IA, nunca mandar esa
             # respuesta fuera de contexto al cliente.
@@ -1769,8 +1769,7 @@ async def webhook(
     except:
         pass
         
-    provider_msg_id = msg_obj.get("key", {}).get("id") or msg_obj.get("messageId") or ""
-    await process_with_debounce(phone, text, is_from_me=from_me, provider_message_id=provider_msg_id)
+    await process_with_debounce(phone, text, is_from_me=from_me)
     return JSONResponse({"ok": True}, status_code=200)
 
 @app.get("/health")

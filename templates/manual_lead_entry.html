@@ -463,7 +463,6 @@
 
                         <!-- Temperatura: Siempre Lead normal. No se puede crear Hot desde esta pantalla. -->
                         <input type="hidden" name="lead_temperature" value="COLD">
-                        <input type="hidden" name="manual_submission_id" id="manualSubmissionId" value="">
 
                         <!-- MENSAJE -->
                         <div class="col-12">
@@ -490,16 +489,6 @@
         let isVerified = false;
         let lastVerifiedData = { phone: '', email: '', property_code: '' };
         let phoneIntl = null;
-
-        function generateManualSubmissionId() {
-            let sid = document.getElementById('manualSubmissionId').value;
-            if (!sid) {
-                sid = crypto.randomUUID ? crypto.randomUUID() : ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
-                document.getElementById('manualSubmissionId').value = sid;
-            }
-            return sid;
-        }
-        generateManualSubmissionId();
 
         function normalizePropertyCode(raw) {
             return (raw || '').toString().trim().replace(/\./g, '').replace(/\s+/g, '');

@@ -986,9 +986,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         management_age = format_relative_time(last_ts_obj).replace("Hace", "hace", 1)
         if estado_final in (PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST):
             age_label = f"Cerrado {assigned_age}"
-        elif not estado_final == PipelineStage.NEW and last_action_text == "Sin gestión registrada":
-            # After-hours detection uses module-level coerce_crm_datetime and CHILE_TZ
+        else:
+            # Detect after-hours assignment regardless of pipeline_stage
             assigned_dt = coerce_crm_datetime(lifecycle_ts or created_ts)
+            is_after_hours = False
             if assigned_dt:
                 from chatbot.constants import BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
                 local = assigned_dt.astimezone(CHILE_TZ)
@@ -997,18 +998,12 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                     or local.hour >= BUSINESS_END_HOUR
                     or local.hour < BUSINESS_START_HOUR
                 )
-                if is_after_hours:
-                    age_label = "Asignado anoche · SLA iniciado hoy 09:00"
-                else:
-                    age_label = f"Asignado {assigned_age}"
+            if is_after_hours and last_action_text == "Sin gestión registrada":
+                age_label = "Asignado anoche · SLA iniciado hoy 09:00"
+            elif last_action_text != "Sin gestión registrada":
+                age_label = f"Última gestión {management_age}"
             else:
-                age_label = f"Asignado {assigned_age}"
-        else:
-            age_label = (
-                f"Sin atender {assigned_age}"
-                if estado_final == PipelineStage.NEW else
-                f"Última gestión {management_age}"
-            )
+                age_label = f"Sin atender {assigned_age}" if estado_final == PipelineStage.NEW else f"Asignado {assigned_age}"
 
         leads_procesados.append({
             "phone": raw_phone,

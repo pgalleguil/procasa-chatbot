@@ -94,24 +94,45 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
     if temperature == HOT:
         return None
 
-    # Pre-cutover cycles are excluded from digest (historical backlog)
-    from .crm_metrics import is_pre_cutover_cycle
-    if is_pre_cutover_cycle(cycle.get("assigned_at")):
-        logger.debug("[NON_HOT_DIGEST] Skipping pre-cutover cycle %s", cycle.get("assignment_cycle_id"))
-        return None
-
-    # Exclude cycles with non-notifiable origins
-    non_notifiable = ("historical_reconciliation", "startup_repair", "cycle_repair", "backfill")
-    co = str(cycle.get("cycle_origin") or "")
-    if co in non_notifiable:
-        logger.debug("[NON_HOT_DIGEST] Skipping non-notifiable cycle_origin=%s for %s", co, cycle.get("assignment_cycle_id"))
-        return None
-    if not cycle.get("notification_eligible", True):
-        logger.debug("[NON_HOT_DIGEST] Skipping notification_eligible=false for %s", cycle.get("assignment_cycle_id"))
-        return None
-
+    # Resolve the actual cycle from DB (the passed `cycle` may be a minimal dict)
     lead_id = lead.get("_id")
     cycle_id = cycle.get("assignment_cycle_id")
+    if not lead_id or not cycle_id:
+        return None
+
+    db_cycle = None
+    try:
+        from bson import ObjectId
+        db_cycle = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": cycle_id})
+    except Exception:
+        pass
+
+    if db_cycle is None:
+        db_cycle = cycle  # fallback to passed dict
+
+    # Pre-cutover cycles are excluded from digest
+    from .crm_metrics import is_pre_cutover_cycle
+    if is_pre_cutover_cycle(db_cycle.get("assigned_at")):
+        logger.debug("[NON_HOT_DIGEST] Skipping pre-cutover cycle %s", cycle_id)
+        return None
+
+    # Exclude cycles with non-notifiable origins or missing notification_eligible
+    non_notifiable = ("historical_reconciliation", "startup_repair", "cycle_repair", "backfill")
+    co = str(db_cycle.get("cycle_origin") or "")
+    if co in non_notifiable:
+        logger.debug("[NON_HOT_DIGEST] Skipping non-notifiable cycle_origin=%s for %s", co, cycle_id)
+        return None
+    # Also skip if notification_eligible is explicitly False OR if the reason
+    # is a non-commercial processing reason (no notification_eligible field).
+    eligible = db_cycle.get("notification_eligible")
+    reason = str(db_cycle.get("reason") or "")
+    non_commercial_reasons = ("historical_reconciliation", "lead_processed", "lead_processed_repair", "startup", "backfill", "reconciliation", "cycle_repair")
+    if eligible is False:
+        logger.debug("[NON_HOT_DIGEST] Skipping notification_eligible=false for %s", cycle_id)
+        return None
+    if eligible is None and reason in non_commercial_reasons:
+        logger.debug("[NON_HOT_DIGEST] Skipping non-commercial reason=%s for %s", reason, cycle_id)
+        return None
     recipient = str(cycle.get("assigned_to_user_id") or "")
     if not lead_id or not cycle_id or not recipient:
         return None

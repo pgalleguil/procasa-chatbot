@@ -16,6 +16,37 @@ except ImportError:
 
 from chatbot.storage import get_db
 
+
+def coerce_crm_datetime(value):
+    """Normalize any CRM timestamp to an aware UTC datetime or None.
+
+    Accepts:
+    - datetime aware (returned as-is in UTC)
+    - datetime naive (interpreted as UTC — MongoDB convention)
+    - ISO string with Z or +offset
+    - ISO string without zone (interpreted as UTC)
+    - None or invalid (returns None)
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return pytz.utc.localize(value)
+        return value.astimezone(pytz.utc)
+    if isinstance(value, str):
+        try:
+            normalized = value.replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(normalized)
+            if parsed.tzinfo is None:
+                parsed = pytz.utc.localize(parsed)
+            else:
+                parsed = parsed.astimezone(pytz.utc)
+            return parsed
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
 def format_relative_time(dt_obj):
     if isinstance(dt_obj, str):
         try:
@@ -644,14 +675,19 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     events_list = await events_cursor.to_list(length=200)
     events_map = {}
     recognized_management_map = {}
-    recognized_management_types = {
-        "CLICK_WHATSAPP_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD"
-    }
+    # Management events for last-action display.
+    # Priority: HUMAN_NOTE/GESTION_LOG (management form) > SEND/SEND/CALL > legacy CLICK.
+    # No longer includes CLICK_WHATSAPP_LEAD or STATUS_CHANGE as management.
+    HIGH_PRIORITY_TYPES = frozenset({"HUMAN_NOTE", "GESTION_LOG"})
+    MEDIUM_PRIORITY_TYPES = frozenset({"SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD"})
     for ev in events_list:
         phone_ev = ev.get("phone", "").replace("+", "").strip()
         if phone_ev not in events_map:
             events_map[phone_ev] = ev
-        if phone_ev not in recognized_management_map and ev.get("type") in recognized_management_types:
+        ev_type = ev.get("type")
+        if ev_type in HIGH_PRIORITY_TYPES:
+            recognized_management_map[phone_ev] = ev
+        elif phone_ev not in recognized_management_map and ev_type in MEDIUM_PRIORITY_TYPES:
             recognized_management_map[phone_ev] = ev
 
     type_labels = {
@@ -938,13 +974,16 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
 
         assigned_age = format_relative_time(lifecycle_ts or created_ts).replace("Hace", "hace", 1)
         management_age = format_relative_time(last_ts_obj).replace("Hace", "hace", 1)
-        age_label = (
-            f"Sin atender {assigned_age}"
-            if estado_final == PipelineStage.NEW else
-            f"Última gestión {management_age}"
-            if last_action_text != "Sin gestión registrada" else
-            f"Asignado {assigned_age}"
-        )
+        if estado_final in (PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST):
+            age_label = f"Cerrado {assigned_age}"
+        else:
+            age_label = (
+                f"Sin atender {assigned_age}"
+                if estado_final == PipelineStage.NEW else
+                f"Última gestión {management_age}"
+                if last_action_text != "Sin gestión registrada" else
+                f"Asignado {assigned_age}"
+            )
 
         leads_procesados.append({
             "phone": raw_phone,
@@ -1225,10 +1264,20 @@ def update_lead_crm_data(phone, data):
         new_state = "gestion"
 
     if new_state and new_state != old_state:
-        # Mapeo de seguridad por si el frontend manda strings viejos
         valid_stage = new_state
         if new_state == "visita": valid_stage = PipelineStage.VISIT_SCHEDULED
-        elif new_state == "cerrado": valid_stage = PipelineStage.CLOSED_WON
+        elif new_state == "cerrado":
+            close_cat = None
+            raw_details = data.get("details_json") or {}
+            if isinstance(raw_details, dict):
+                close_cat = raw_details.get("close_cat_radio")
+            elif isinstance(raw_details, str):
+                try:
+                    import json
+                    close_cat = json.loads(raw_details).get("close_cat_radio")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            valid_stage = PipelineStage.CLOSED_WON if close_cat == "ganado" else PipelineStage.CLOSED_LOST
         elif new_state == "gestion": valid_stage = PipelineStage.CONTACTED
         
         stage_updated = CrmService.update_stage(

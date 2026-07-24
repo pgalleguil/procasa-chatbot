@@ -5,9 +5,79 @@ import sys
 from copy import deepcopy
 from datetime import datetime, timedelta
 from threading import Lock
+# =====================================================================
+#  TESTS: coerce_crm_datetime helper
+# =====================================================================
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+def test_coerce_crm_datetime_aware():
+    from api_crm import coerce_crm_datetime
+    from datetime import datetime, timezone
+    dt = datetime(2026, 7, 24, 3, 23, tzinfo=timezone.utc)
+    result = coerce_crm_datetime(dt)
+    assert result == dt
+    assert result.tzinfo is not None
 
+
+def test_coerce_crm_datetime_naive():
+    from api_crm import coerce_crm_datetime
+    from datetime import datetime, timezone
+    dt = datetime(2026, 7, 24, 3, 23)  # naive
+    result = coerce_crm_datetime(dt)
+    assert result.tzinfo is not None
+    assert result.hour == 3
+    assert result.minute == 23
+
+
+def test_coerce_crm_datetime_iso_z():
+    from api_crm import coerce_crm_datetime
+    result = coerce_crm_datetime("2026-07-24T03:23:00Z")
+    assert result is not None
+    assert result.hour == 3
+
+
+def test_coerce_crm_datetime_iso_offset():
+    from api_crm import coerce_crm_datetime
+    result = coerce_crm_datetime("2026-07-23T23:23:00-04:00")
+    assert result is not None
+    assert result.tzinfo is not None
+    assert result.utcoffset().total_seconds() == 0  # Should be UTC
+    assert result.strftime("%H:%M") == "03:23"
+
+
+def test_coerce_crm_datetime_iso_naive():
+    from api_crm import coerce_crm_datetime
+    result = coerce_crm_datetime("2026-07-24T03:23:00")
+    assert result is not None
+    assert result.hour == 3
+
+
+def test_coerce_crm_datetime_none():
+    from api_crm import coerce_crm_datetime
+    assert coerce_crm_datetime(None) is None
+
+
+def test_coerce_crm_datetime_invalid():
+    from api_crm import coerce_crm_datetime
+    assert coerce_crm_datetime("not-a-date") is None
+    assert coerce_crm_datetime(12345) is None
+
+
+def test_coerce_crm_datetime_string_vs_datetime_compare():
+    """String and datetime timestamps produce comparable UTC datetimes."""
+    from api_crm import coerce_crm_datetime
+    from datetime import datetime, timezone
+    str_ts = coerce_crm_datetime("2026-07-24T03:23:00Z")
+    dt_ts = coerce_crm_datetime(datetime(2026, 7, 24, 3, 23, tzinfo=timezone.utc))
+    assert str_ts == dt_ts
+
+
+def test_coerce_crm_datetime_naive_vs_aware_compare():
+    """Naive and aware datetimes produce equal UTC datetimes."""
+    from api_crm import coerce_crm_datetime
+    from datetime import datetime, timezone
+    naive = coerce_crm_datetime(datetime(2026, 7, 24, 3, 23))
+    aware = coerce_crm_datetime(datetime(2026, 7, 24, 3, 23, tzinfo=timezone.utc))
+    assert naive == aware
 from chatbot.crm_management import RESULT_RULES, record_management_result
 from chatbot.crm_metrics import (
     VALID_MANAGEMENT_EVENT_TYPES, OPEN_ONLY_EVENT_TYPES, event_evidence,

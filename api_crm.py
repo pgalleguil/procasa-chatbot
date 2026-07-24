@@ -675,19 +675,19 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
     events_list = await events_cursor.to_list(length=200)
     events_map = {}
     recognized_management_map = {}
-    # recognized_management_map: only canonical human management events.
-    # Telemetry (CLICK, SEND, PAGE_VIEW, STATUS_CHANGE) never enters here.
-    MANAGEMENT_TYPES = frozenset({"HUMAN_NOTE", "GESTION_LOG"})
-    # Telemetry types that are shown as last-action display when no management exists.
-    TELEMETRY_LABEL_TYPES = frozenset(type_labels.keys())
+    # Management events for last-action display.
+    # Priority: HUMAN_NOTE/GESTION_LOG (management form) > SEND/SEND/CALL > legacy CLICK.
+    # No longer includes CLICK_WHATSAPP_LEAD or STATUS_CHANGE as management.
+    HIGH_PRIORITY_TYPES = frozenset({"HUMAN_NOTE", "GESTION_LOG"})
+    MEDIUM_PRIORITY_TYPES = frozenset({"SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD"})
     for ev in events_list:
         phone_ev = ev.get("phone", "").replace("+", "").strip()
-        ev_type = ev.get("type")
-        # Populate events_map with the most recent event overall
         if phone_ev not in events_map:
             events_map[phone_ev] = ev
-        # Populate recognized_management_map only with actual management events
-        if ev_type in MANAGEMENT_TYPES:
+        ev_type = ev.get("type")
+        if ev_type in HIGH_PRIORITY_TYPES:
+            recognized_management_map[phone_ev] = ev
+        elif phone_ev not in recognized_management_map and ev_type in MEDIUM_PRIORITY_TYPES:
             recognized_management_map[phone_ev] = ev
 
     type_labels = {
@@ -798,34 +798,21 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         )
         if not outreach["recognized"]:
             recognized_management_ev = None
-        # Build last-action text: real management wins, then best telemetry label
-        if recognized_management_ev:
-            commercial_ev = recognized_management_ev
-        else:
-            # Pick the most recent event with a type_label (skip PAGE_VIEW, PAGE_EXIT, etc.)
-            commercial_ev = None
-            for candidate_ev in events_list:
-                if candidate_ev.get("phone", "").replace("+", "").strip() == raw_phone:
-                    if candidate_ev.get("type") in type_labels:
-                        commercial_ev = candidate_ev
-                        break
-            if not commercial_ev:
-                commercial_ev = last_ev
+        commercial_ev = recognized_management_ev or last_ev
         if commercial_ev:
             event_meta = commercial_ev.get("meta") or commercial_ev.get("metadata") or {}
             last_action_text = (
                 type_labels.get(commercial_ev.get("type"))
                 or event_meta.get("action_label")
                 or event_meta.get("action")
-                or "Sin gestión registrada"
+                or "Gestión manual"
             )
             last_action_note = event_meta.get("notes") or event_meta.get("note") or ""
         else:
             persisted_action = (lead.get("last_action_label") or "").strip()
             last_action_text = (
                 "Sin gestión registrada"
-                if persisted_action.lower() in {"", "acción registrada", "accion registrada",
-                                                  "sin gestión aún", "gestión manual"}
+                if persisted_action.lower() in {"", "acción registrada", "accion registrada", "sin gestión aún"}
                 else persisted_action
             )
             last_action_note = ""

@@ -2012,6 +2012,15 @@
                                     {% elif lead.sla_status == 'fulfilled' %}
                                     <i class="fa-solid fa-check-circle text-success"></i>
                                     <span class="fw-bold text-success ms-2">{{ lead.sla_label }}</span>
+                                    {% elif lead.sla_status == 'hot_critical' %}
+                                    <div class="led-indicator led-red pulse-red"></div>
+                                    <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
+                                    {% elif lead.sla_status == 'hot_near_critical' %}
+                                    <div class="led-indicator led-orange"></div>
+                                    <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
+                                    {% elif lead.sla_status == 'hot_warning' %}
+                                    <div class="led-indicator led-yellow"></div>
+                                    <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
                                     {% elif lead.sla_status == 'historical' %}
                                     <i class="fa-solid fa-clock-rotate-left sla-historical"></i>
                                     <span class="sla-historical ms-2 fst-italic">{{ lead.sla_label }}</span>

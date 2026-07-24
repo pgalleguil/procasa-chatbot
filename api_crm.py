@@ -990,7 +990,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
                     sla_info["hot_started"] = str(hot_started_at)
         
         sla_labels_map = {
-            "critical": "Vencido", "near_critical": "Próximo a vencer", "warning": "Advertencia",
+            "critical": "Vencido", "near_critical": "Próximo a vencer", "warning": "Atención",
             "good": "En plazo", "pending": "Pendiente Asignación", "fulfilled": "Gestionado",
             "hot_critical": "Vencido", "hot_near_critical": "Próximo a vencer",
             "hot_warning": "Atención prioritaria",

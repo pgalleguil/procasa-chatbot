@@ -831,6 +831,96 @@ def test_after_hours_pipeline_stage_none():
     from datetime import datetime
     local_dt = datetime(2026, 7, 23, 22, 12, tzinfo=CHILE_TZ)
     assert _is_after_hours_test(local_dt)
-    # This validates the core logic; the template condition was fixed
-    # to evaluate after-hours before checking pipeline_stage
+
+
+# =====================================================================
+#  TESTS: SLA threshold boundaries
+# =====================================================================
+
+def _sla_test(minutes, temperature, hot_started=None):
+    """Helper to test SLA threshold boundaries.
+    assigned=09:00 CLT (13:00 UTC), now=assigned+minutes, all business hours.
+    """
+    from datetime import datetime, timezone, timedelta
+    from chatbot.crm_metrics import calculate_sla
+    from chatbot.constants import CHILE_TZ
+    assigned_clt = CHILE_TZ.localize(datetime(2026, 7, 24, 9, 0))
+    assigned = assigned_clt.astimezone(timezone.utc)
+    now = assigned + timedelta(minutes=minutes)
+    if hot_started is not None:
+        hot_started = assigned + timedelta(minutes=hot_started)
+    return calculate_sla(assigned_at=assigned, temperature=temperature,
+                        hot_started_at=hot_started, now=now)
+
+
+def test_sla_lead_0min():
+    """0 business minutes → good / En plazo."""
+    sla = _sla_test(0, "COLD")
+    assert sla["status"] == "good"
+
+
+def test_sla_lead_78min():
+    """78 business minutes → good / En plazo."""
+    sla = _sla_test(78, "COLD")
+    assert sla["status"] == "good"
+
+
+def test_sla_lead_119min():
+    """119 business minutes → good / En plazo."""
+    sla = _sla_test(119, "COLD")
+    assert sla["status"] == "good"
+
+
+def test_sla_lead_120min():
+    """120 business minutes → warning / Atención."""
+    sla = _sla_test(120, "COLD")
+    assert sla["status"] == "warning"
+
+
+def test_sla_lead_149min():
+    """149 business minutes → warning / Atención."""
+    sla = _sla_test(149, "COLD")
+    assert sla["status"] == "warning"
+
+
+def test_sla_lead_150min():
+    """150 business minutes → near_critical / Próximo a vencer."""
+    sla = _sla_test(150, "COLD")
+    assert sla["status"] == "near_critical"
+
+
+def test_sla_lead_179min():
+    """179 business minutes → near_critical / Próximo a vencer."""
+    sla = _sla_test(179, "COLD")
+    assert sla["status"] == "near_critical"
+
+
+def test_sla_lead_180min():
+    """180 business minutes → critical / Vencido."""
+    sla = _sla_test(180, "COLD")
+    assert sla["status"] == "critical"
+
+
+def test_sla_hot_29min():
+    """29 hot minutes → good / En plazo."""
+    sla = _sla_test(29, "HOT", hot_started=0)
+    assert sla["status"] == "good", f"Expected good, got {sla['status']}"
+
+
+def test_sla_hot_30min():
+    """30 hot minutes → warning / Atención prioritaria."""
+    sla = _sla_test(30, "HOT", hot_started=0)
+    assert sla["status"] == "warning", f"Expected warning, got {sla['status']}"
+
+
+def test_sla_hot_45min():
+    """45 hot minutes → near_critical / Próximo a vencer."""
+    sla = _sla_test(45, "HOT", hot_started=0)
+    assert sla["status"] == "near_critical", f"Expected near_critical, got {sla['status']}"
+
+
+def test_sla_hot_60min():
+    """60 hot minutes → critical / Vencido."""
+    sla = _sla_test(60, "HOT", hot_started=0)
+    assert sla["status"] == "critical", f"Expected critical, got {sla['status']}"
 

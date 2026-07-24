@@ -76,3 +76,26 @@ def normalize_phone_strict(raw: str) -> Optional[str]:
     if valid:
         return phone
     return None
+
+
+SYNTHETIC_PHONE_PREFIX = "no-phone-"
+
+
+def is_synthetic_phone(phone: Optional[str]) -> bool:
+    """Detecta si un valor de phone es sintético (no real)."""
+    if not phone:
+        return True
+    return phone.startswith(SYNTHETIC_PHONE_PREFIX) or phone == "+56900000000"
+
+
+def build_synthetic_phone_key(source_system: str, source_event_id: str) -> str:
+    """Genera una clave técnica determinística para contactos sin teléfono.
+    Formato: no-phone-<source_system>-<source_event_id>
+    Garantiza: mismo evento → misma clave, sin colisiones entre canales.
+    """
+    system = re.sub(r"[^a-z0-9]", "", source_system.lower().strip())
+    event = re.sub(r"[^a-z0-9]", "", str(source_event_id).lower().strip())
+    key = f"{SYNTHETIC_PHONE_PREFIX}{system}-{event}"
+    if len(key) > 80:
+        key = key[:80]
+    return key

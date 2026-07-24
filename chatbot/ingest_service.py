@@ -30,7 +30,7 @@ from dataclasses import dataclass, field, asdict
 
 from .constants import CHILE_TZ, PipelineStage, UNASSIGNED_LABEL
 from .storage import get_db, COLLECTION_CONVERSATIONS, log_event
-from .phone_utils import normalize_phone_strict
+from .phone_utils import normalize_phone_strict, is_synthetic_phone, build_synthetic_phone_key
 from .lead_temperature import effective_temperature_set
 from .lead_router import find_responsible_executive, get_executive_phone, get_next_business_slot
 from .property_lookup import (
@@ -240,7 +240,8 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
     now = datetime.now(CHILE_TZ)
     now_iso = now.isoformat()
 
-    phone = normalize_phone_strict(event.phone)
+    phone_raw = str(event.phone or "").strip()
+    phone_normalized = normalize_phone_strict(phone_raw)
     email, email_valid = _normalize_email(event.email)
     name = (event.name or "").strip()
     message = (event.message or "").strip()
@@ -261,13 +262,22 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
             error="Evento ya reservado pero lead no encontrado",
         )
 
-    lead_by_phone, lead_by_email, _ = _find_lead_by_id(phone, email)
+    phone_has_real = bool(phone_normalized) and not is_synthetic_phone(phone_normalized)
+    phone_for_key = phone_normalized if phone_has_real else None
+    if not phone_for_key and phone_raw and not phone_normalized:
+        phone_for_key = phone_raw
+
+    if phone_has_real:
+        lead_by_phone, lead_by_email, _ = _find_lead_by_id(phone_normalized, email)
+    else:
+        lead_by_phone = None
+        lead_by_email, _, _ = _find_lead_by_id(None, email)
     identity_conflict = False
     conflict_details = None
     target_lead = None
     action = None
 
-    if phone and email and lead_by_phone and lead_by_email:
+    if phone_normalized and email and lead_by_phone and lead_by_email:
         lead_phone_id = str(lead_by_phone["_id"])
         lead_email_id = str(lead_by_email["_id"])
         if lead_phone_id != lead_email_id:
@@ -275,7 +285,7 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
             conflict_details = {
                 "phone_lead_id": lead_phone_id,
                 "email_lead_id": lead_email_id,
-                "phone": phone,
+                "phone": phone_normalized or phone_raw,
                 "email": email,
             }
             for candidate_id in [lead_phone_id, lead_email_id]:
@@ -329,7 +339,7 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
             update_fields["prospecto.region"] = property_enrich.get("region", "")
             update_fields["prospecto.tipo"] = property_enrich.get("tipo", "")
             update_fields["prospecto.operacion"] = property_enrich.get("operacion", "")
-            if phone:
+            if phone_normalized:
                 db[COLLECTION_CONVERSATIONS].update_one(
                     {"_id": target_lead["_id"]},
                     {"$addToSet": {"prospecto.propiedades_vistas": property_code}},
@@ -366,7 +376,7 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
                 exec_name, exec_phone, assignment_type = find_responsible_executive(
                     property_code=property_code,
                     comuna=property_enrich.get("comuna", ""),
-                    lead_phone=phone,
+                    lead_phone=phone_normalized or phone_raw,
                     lead_name=name,
                 )
                 if exec_name not in unassigned:
@@ -378,12 +388,6 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
                         update_fields["lifecycle.created_at"] = now_iso
         else:
             exec_name = current_exec
-
-        if action.startswith("updated"):
-            if target_lead.get("pipeline_stage") in {None, "", PipelineStage.NEW}:
-                pass
-            else:
-                pass
 
         hot_detected = _has_hot_intent(message)
         initial_temp = "HOT" if hot_detected else "COLD"
@@ -408,15 +412,15 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         db[COLLECTION_CONVERSATIONS].update_one({"_id": target_lead["_id"]}, update_payload)
 
         log_event(
-            phone or email or "unknown",
+            phone_normalized or email or "unknown",
             "LEAD_INGEST",
             event.source_system,
             {"action": action, "source_event_id": event.source_event_id, "property_code": property_code},
             lead_id=target_lead["_id"],
         )
 
-        identity = "phone" if phone else "email"
-        if phone and email:
+        identity = "phone" if phone_normalized else ("email" if email else "none")
+        if phone_normalized and email:
             identity = "both" if lead_by_phone and lead_by_email and str(lead_by_phone["_id"]) == str(lead_by_email["_id"]) else identity
         _finalize_event(event.source_system, event.source_event_id, lead_id, "updated")
         return IngestResult(
@@ -434,7 +438,7 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         exec_name, exec_phone, assignment_type = find_responsible_executive(
             property_code=property_code,
             comuna=property_enrich.get("comuna", ""),
-            lead_phone=phone,
+            lead_phone=phone_normalized or phone_raw,
             lead_name=name,
         )
     elif _is_valid_property_code(property_code) and not property_enrich["property_found"]:
@@ -442,11 +446,13 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         assignment_type = "MISSING_PROPERTY"
 
     assigned_at = get_next_business_slot(now)
-    if phone:
-        final_phone = phone
+    if phone_normalized:
+        final_phone = phone_normalized
+        phone_is_synthetic = False
         contact_identity_incomplete = False
     else:
-        final_phone = None
+        final_phone = build_synthetic_phone_key(event.source_system, event.source_event_id)
+        phone_is_synthetic = True
         contact_identity_incomplete = True
 
     hot_detected = _has_hot_intent(message)
@@ -454,6 +460,11 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
     temp_set = effective_temperature_set(initial_temp)
 
     lead_doc: Dict[str, Any] = {
+        "phone": final_phone,
+        "phone_is_synthetic": phone_is_synthetic,
+        "contact_phone": phone_raw if phone_raw else None,
+        "contact_phone_normalized": phone_normalized,
+        "contact_identity_incomplete": contact_identity_incomplete,
         "contact_identity_incomplete": contact_identity_incomplete,
         "created_at": now_iso,
         "updated_at": now_iso,
@@ -468,6 +479,7 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         "prospecto": {
             "nombre": name,
             "email": email or "",
+            "phone": phone_raw or "",
             "codigo": property_code,
             "codigo": property_code,
             "ejecutivo": exec_name,
@@ -525,15 +537,15 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         lead_id = str(result.inserted_id)
 
         log_event(
-            phone or email or "unknown",
+            phone_normalized or email or "unknown",
             "LEAD_CREATED",
             event.source_system,
             {"source_event_id": event.source_event_id, "property_code": property_code, "assigned_to": exec_name},
             lead_id=lead_id,
         )
 
-        identity = "phone" if phone else ("email" if email else "none")
-        if phone and email:
+        identity = "phone" if phone_normalized else ("email" if email else "none")
+        if phone_normalized and email:
             identity = "both"
         _finalize_event(event.source_system, event.source_event_id, lead_id, "created")
         return IngestResult(

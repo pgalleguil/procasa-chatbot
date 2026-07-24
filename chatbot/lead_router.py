@@ -29,6 +29,8 @@ def build_crm_lead_url(lead_data: Dict[str, Any], property_code: Any = None) -> 
     after either password or Google login the executive returns directly to
     this lead.  Phone is normalized to digits so it is safe as a path segment.
     """
+    from .phone_utils import is_synthetic_phone
+
     base_url = str(Config.CRM_BASE_URL or "").rstrip("/")
     phone = (
         lead_data.get("lead_phone")
@@ -36,11 +38,17 @@ def build_crm_lead_url(lead_data: Dict[str, Any], property_code: Any = None) -> 
         or lead_data.get("whatsapp_phone")
         or ""
     )
-    phone_clean = re.sub(r"\D", "", str(phone))
-    if not phone_clean:
-        return f"{base_url}/crm?temperatura=HOT"
+    phone_str = str(phone)
+    if is_synthetic_phone(phone_str):
+        if not phone_str:
+            return f"{base_url}/crm?temperatura=HOT"
+        url = f"{base_url}/crm/lead/{quote(phone_str, safe='')}"
+    else:
+        phone_clean = re.sub(r"\D", "", phone_str)
+        if not phone_clean:
+            return f"{base_url}/crm?temperatura=HOT"
+        url = f"{base_url}/crm/lead/{quote(phone_clean, safe='')}"
 
-    url = f"{base_url}/crm/lead/{quote(phone_clean, safe='')}"
     code = property_code or lead_data.get("property_code") or lead_data.get("codigo")
     if code not in (None, "", "N/D", "S/N"):
         url += "?" + urlencode({"codigo": str(code)})

@@ -61,11 +61,16 @@ def _val(data: Mapping[str, Any], *keys: str, default: str = "") -> str:
 
 def _lead_url(lead_data: Mapping[str, Any], property_code: Optional[str] = None) -> str:
     """Build a deep link to the CRM lead detail page."""
+    from .phone_utils import is_synthetic_phone
+
     base = str(getattr(Config, "CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")).rstrip("/")
-    phone = _val(lead_data, "lead_phone", "phone").replace("+", "").strip()
+    phone = str(_val(lead_data, "lead_phone", "phone") or "")
     if not phone:
         return f"{base}/crm?temperatura=HOT"
-    url = f"{base}/crm/lead/{quote(phone, safe='')}"
+    if is_synthetic_phone(phone):
+        url = f"{base}/crm/lead/{quote(phone, safe='')}"
+    else:
+        url = f"{base}/crm/lead/{quote(phone.replace('+', '').strip(), safe='')}"
     code = property_code or _val(lead_data, "property_code", "codigo", "prospecto.codigo")
     if code and code not in ("", "N/D", "S/N", "NONE"):
         url += "?" + urlencode({"codigo": code})

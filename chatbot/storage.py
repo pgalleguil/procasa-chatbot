@@ -219,13 +219,12 @@ COLLECTION_CONVERSATIONS = "leads"
 COLLECTION_PENDING_NOTIFICATIONS = "pending_notifications"
 
 
-def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None):
-    from .phone_utils import normalize_phone_strict
+def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None, lead_id: str = None):
+    from .phone_utils import normalize_phone_strict, is_synthetic_phone
     normalized = normalize_phone_strict(phone)
     phone = normalized or phone
 
     db = get_db()
-    # Usamos hora de Chile para consistencia visual en DB
     now = datetime.now(CHILE_TZ)
     message = {
         "role": role,
@@ -235,22 +234,40 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None):
     if metadata:
         message.update(metadata)
 
-    result = db[COLLECTION_CONVERSATIONS].update_one(
-        {"phone": phone},
-        {
-            "$push": {"messages": {"$each": [message], "$slice": -50}}, # Historial más largo
-            "$set": {
-                "last_message_at": now.isoformat(),
-                "last_message_role": role,
-                "last_message_preview": str(content)[:160],
-            },
-            "$setOnInsert": {
-                "created_at": now.isoformat(),
-                "lead_temperature_effective": "COLD",
+    if lead_id:
+        from bson import ObjectId
+        try:
+            qid = ObjectId(lead_id) if isinstance(lead_id, str) else lead_id
+        except Exception:
+            qid = lead_id
+        result = db[COLLECTION_CONVERSATIONS].update_one(
+            {"_id": qid},
+            {
+                "$push": {"messages": {"$each": [message], "$slice": -50}},
+                "$set": {
+                    "last_message_at": now.isoformat(),
+                    "last_message_role": role,
+                    "last_message_preview": str(content)[:160],
+                },
             }
-        },
-        upsert=True
-    )
+        )
+    else:
+        result = db[COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            {
+                "$push": {"messages": {"$each": [message], "$slice": -50}},
+                "$set": {
+                    "last_message_at": now.isoformat(),
+                    "last_message_role": role,
+                    "last_message_preview": str(content)[:160],
+                },
+                "$setOnInsert": {
+                    "created_at": now.isoformat(),
+                    "lead_temperature_effective": "COLD",
+                }
+            },
+            upsert=True
+        )
     if result.modified_count or result.upserted_id:
         from .crm_updates import bump_crm_leads_version
         bump_crm_leads_version(db, reason=f"message_{role}", phone=phone)

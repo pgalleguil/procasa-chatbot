@@ -549,8 +549,8 @@ def send_digest(db, *, notification, worker_id, sender=None):
 # Process one due digest (async-friendly, designed for worker loop)
 # ---------------------------------------------------------------------------
 
-async def process_one_digest(db, *, worker_id, now=None, sender=None):
-    """Claim and deliver/record one due digest.
+def process_one_digest(db, *, worker_id, now=None, sender=None):
+    """Claim and deliver/record one due digest (sync — designed for run_in_executor).
 
     Returns a status dict.  Designed to be called from a periodic worker.
     """

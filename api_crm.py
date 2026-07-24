@@ -987,29 +987,13 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
         if estado_final in (PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST):
             age_label = f"Cerrado {assigned_age}"
         else:
-            # Detect after-hours assignment for better display
-            is_after_hours = False
-            from chatbot.constants import BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
-            from chatbot.crm_metrics import coerce_utc_datetime
-            assigned_check = coerce_utc_datetime(lifecycle_ts or created_ts)
-            if assigned_check:
-                from chatbot.constants import CHILE_TZ
-                local_assigned = assigned_check.astimezone(CHILE_TZ)
-                is_after_hours = (
-                    local_assigned.weekday() not in BUSINESS_DAYS
-                    or local_assigned.hour >= BUSINESS_END_HOUR
-                    or local_assigned.hour < BUSINESS_START_HOUR
-                )
-            if is_after_hours and not estado_final == PipelineStage.NEW and last_action_text == "Sin gestión registrada":
-                age_label = f"Asignado anoche · SLA iniciado hoy 09:00"
-            else:
-                age_label = (
-                    f"Sin atender {assigned_age}"
-                    if estado_final == PipelineStage.NEW else
-                    f"Última gestión {management_age}"
-                    if last_action_text != "Sin gestión registrada" else
-                    f"Asignado {assigned_age}"
-                )
+            age_label = (
+                f"Sin atender {assigned_age}"
+                if estado_final == PipelineStage.NEW else
+                f"Última gestión {management_age}"
+                if last_action_text != "Sin gestión registrada" else
+                f"Asignado {assigned_age}"
+            )
 
         leads_procesados.append({
             "phone": raw_phone,

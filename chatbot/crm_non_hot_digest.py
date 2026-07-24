@@ -457,7 +457,7 @@ def _notify_hot_outside_digest(db, lead):
 # Send (or shadow-send)
 # ---------------------------------------------------------------------------
 
-def send_digest(db, *, notification, worker_id, sender=None):
+async def send_digest(db, *, notification, worker_id, sender=None):
     """Deliver or shadow-deliver a due digest.
 
     ``sender`` is an async callable ``(phone, message) -> dict``.
@@ -519,7 +519,7 @@ def send_digest(db, *, notification, worker_id, sender=None):
         return {"status": "failed", "reason": "no_phone"}
 
     try:
-        receipt = sender(phone, content)
+        receipt = await sender(phone, content)
         success = bool(receipt.get("success"))
         provider_id = receipt.get("provider_message_id")
         state = "sent" if success and provider_id else "quarantined" if success else "failed_retryable"
@@ -549,15 +549,16 @@ def send_digest(db, *, notification, worker_id, sender=None):
 # Process one due digest (async-friendly, designed for worker loop)
 # ---------------------------------------------------------------------------
 
-def process_one_digest(db, *, worker_id, now=None, sender=None):
-    """Claim and deliver/record one due digest (sync — designed for run_in_executor).
+async def process_one_digest(db, *, worker_id, now=None, sender=None):
+    """Claim and deliver/record one due digest.
 
     Returns a status dict.  Designed to be called from a periodic worker.
+    ``sender`` is an optional async callable ``(phone, message) -> dict``.
     """
     notification = claim_due_digest(db, worker_id=worker_id, now=now)
     if not notification:
         return {"status": "idle"}
-    result = send_digest(db, notification=notification, worker_id=worker_id, sender=sender)
+    result = await send_digest(db, notification=notification, worker_id=worker_id, sender=sender)
     return result
 
 

@@ -36,10 +36,13 @@ from .lead_router import find_responsible_executive, get_executive_phone, get_ne
 from .property_lookup import (
     PROPERTY_COLLECTION_NAME,
     find_property_by_any_identifier,
+    find_property_in_any_collection,
     get_prop_location,
     get_prop_operation,
     get_prop_executive,
 )
+
+IDEMPOTENCY_COLLECTION = "lead_ingest_events"
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +89,16 @@ def ensure_idempotency_index():
         collection.create_index("prospecto.email", name="idx_prospecto_email")
         logger.info("[INGEST] Índice idx_prospecto_email creado")
 
+    ledger = db[IDEMPOTENCY_COLLECTION]
+    ledger_indexes = ledger.index_information()
+    if "uq_ingest_ledger" not in ledger_indexes:
+        ledger.create_index(
+            [("source_system", 1), ("source_event_id", 1)],
+            name="uq_ingest_ledger",
+            unique=True,
+        )
+        logger.info("[INGEST] Índice único uq_ingest_ledger creado en %s", IDEMPOTENCY_COLLECTION)
+
 
 @dataclass
 class LeadEvent:
@@ -103,13 +116,16 @@ class LeadEvent:
 
 @dataclass
 class IngestResult:
-    status: str
+    status: str  # created | updated | duplicate_event | conflict | rejected | error
     lead_id: Optional[str] = None
-    action: Optional[str] = None
+    is_new_lead: bool = False
+    identity_match: str = "none"  # phone | email | both | source_event | none
+    property_found: bool = False
+    assignment_changed: bool = False
+    temperature: str = "COLD"  # HOT | COLD
     executive: Optional[str] = None
     identity_conflict: bool = False
     conflict_details: Optional[Dict[str, Any]] = None
-    property_found: bool = False
     error: Optional[str] = None
 
 
@@ -159,12 +175,41 @@ def _find_by_source_event(source_system: str, source_event_id: str) -> Optional[
     })
 
 
+def _atomic_reserve_event(source_system: str, source_event_id: str) -> bool:
+    """Intenta reservar un evento en el ledger técnico. Operación atómica.
+    Retorna True si se reservó (primera vez), False si ya existía."""
+    db = get_db()
+    try:
+        db[IDEMPOTENCY_COLLECTION].insert_one({
+            "source_system": source_system,
+            "source_event_id": str(source_event_id),
+            "reserved_at": datetime.now(CHILE_TZ).isoformat(),
+            "status": "processing",
+        })
+        return True
+    except Exception:
+        return False
+
+
+def _finalize_event(source_system: str, source_event_id: str, lead_id: str, status: str):
+    """Actualiza el ledger técnico con el resultado del procesamiento."""
+    db = get_db()
+    db[IDEMPOTENCY_COLLECTION].update_one(
+        {"source_system": source_system, "source_event_id": str(source_event_id)},
+        {"$set": {
+            "status": status,
+            "lead_id": lead_id,
+            "completed_at": datetime.now(CHILE_TZ).isoformat(),
+        }},
+    )
+
+
 def _enrich_from_cartera(db, property_code: str) -> Dict[str, Any]:
-    """Busca una propiedad en universo_cartera y retorna datos enriquecidos."""
+    """Busca una propiedad en las colecciones de cartera y retorna datos enriquecidos."""
     if not _is_valid_property_code(property_code):
         return {"property_found": False}
 
-    prop = find_property_by_any_identifier(db, property_code, PROPERTY_COLLECTION_NAME)
+    prop = find_property_in_any_collection(db, property_code)
     if not prop:
         return {"property_found": False}
 
@@ -203,12 +248,17 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
     portal_source = (event.portal_source or event.metadata.get("medio") or "").strip()
     contact_date = event.contact_date or now_iso
 
-    existing_by_source = _find_by_source_event(event.source_system, event.source_event_id)
-    if existing_by_source:
+    if not _atomic_reserve_event(event.source_system, event.source_event_id):
+        existing_by_source = _find_by_source_event(event.source_system, event.source_event_id)
+        if existing_by_source:
+            return IngestResult(
+                status="duplicate_event",
+                lead_id=str(existing_by_source["_id"]),
+                identity_match="source_event",
+            )
         return IngestResult(
-            status="duplicate",
-            lead_id=str(existing_by_source["_id"]),
-            action="skipped_duplicate_event",
+            status="rejected",
+            error="Evento ya reservado pero lead no encontrado",
         )
 
     lead_by_phone, lead_by_email, _ = _find_lead_by_id(phone, email)
@@ -243,9 +293,10 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
                 )
             return IngestResult(
                 status="conflict",
+                identity_match="both",
                 identity_conflict=True,
                 conflict_details=conflict_details,
-                action="identity_conflict_detected",
+                temperature="COLD",
             )
 
     if lead_by_phone:
@@ -364,12 +415,18 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
             lead_id=target_lead["_id"],
         )
 
+        identity = "phone" if phone else "email"
+        if phone and email:
+            identity = "both" if lead_by_phone and lead_by_email and str(lead_by_phone["_id"]) == str(lead_by_email["_id"]) else identity
+        _finalize_event(event.source_system, event.source_event_id, lead_id, "updated")
         return IngestResult(
             status="updated",
             lead_id=lead_id,
-            action=action,
+            identity_match=identity,
             executive=update_fields.get("ejecutivo_asignado", current_exec),
             property_found=property_enrich["property_found"],
+            temperature=initial_temp,
+            assignment_changed=(update_fields.get("ejecutivo_asignado") != target_lead.get("ejecutivo_asignado")),
         )
 
     exec_name, exec_phone, assignment_type = UNASSIGNED_LABEL, None, "NO_PROPERTY"
@@ -388,13 +445,8 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
     if phone:
         final_phone = phone
         contact_identity_incomplete = False
-    elif email:
-        email_hash = hashlib.md5(email.encode()).hexdigest()[:12]
-        final_phone = f"email-only-{email_hash}"
-        contact_identity_incomplete = True
     else:
-        event_hash = hashlib.md5(f"{event.source_system}-{event.source_event_id}".encode()).hexdigest()[:12]
-        final_phone = f"no-contact-{event_hash}"
+        final_phone = None
         contact_identity_incomplete = True
 
     hot_detected = _has_hot_intent(message)
@@ -402,7 +454,6 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
     temp_set = effective_temperature_set(initial_temp)
 
     lead_doc: Dict[str, Any] = {
-        "phone": final_phone,
         "contact_identity_incomplete": contact_identity_incomplete,
         "created_at": now_iso,
         "updated_at": now_iso,
@@ -417,7 +468,7 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         "prospecto": {
             "nombre": name,
             "email": email or "",
-            "phone": phone or "",
+            "codigo": property_code,
             "codigo": property_code,
             "ejecutivo": exec_name,
             "comuna": property_enrich.get("comuna", ""),
@@ -481,12 +532,19 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
             lead_id=lead_id,
         )
 
+        identity = "phone" if phone else ("email" if email else "none")
+        if phone and email:
+            identity = "both"
+        _finalize_event(event.source_system, event.source_event_id, lead_id, "created")
         return IngestResult(
             status="created",
             lead_id=lead_id,
-            action="created",
+            is_new_lead=True,
+            identity_match=identity,
             executive=exec_name,
             property_found=property_enrich["property_found"],
+            temperature=initial_temp,
+            assignment_changed=True,
         )
     except Exception as e:
         logger.error(f"[INGEST] Error creando lead: {e}", exc_info=True)

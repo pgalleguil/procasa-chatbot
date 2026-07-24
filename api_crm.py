@@ -833,34 +833,65 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="pri
             sla_status = "fulfilled"
             
         # One SLA definition for cards, list, detail and monitor.
-        from chatbot.crm_metrics import calculate_sla, is_pre_cutover_cycle
+        from chatbot.crm_metrics import calculate_sla, is_pre_visual_cutover, active_assignment_cycle
         assigned_at = (lead.get("lifecycle", {}) or {}).get("assigned_at") or lead.get("fecha_asignacion")
-        canonical_sla = calculate_sla(
-            assigned_at=assigned_at,
-            first_valid_management_at=(lead.get("lifecycle", {}) or {}).get("first_valid_management_at") or
-                                      (outreach["occurred_at"] if recognized_management_ev else None),
-        )
-        # Pre-cutover cycles without management are exempt from new SLA policy.
-        is_pre = is_pre_cutover_cycle(assigned_at) if canonical_sla.get("age_minutes", 0) > 0 else False
-        if canonical_sla["status"] != "unknown":
-            if is_pre and not canonical_sla["fulfilled"]:
+        visual_pre = is_pre_visual_cutover(assigned_at) if assigned_at else True
+        
+        sla_hours = 0
+        canonical_sla = {}
+        hot_started_at = None
+        sla_info = {}
+        
+        if not assigned_at:
+            sla_status = "historical" if visual_pre else "unknown"
+            sla_label = "Histórico" if visual_pre else "SLA S/I"
+        else:
+            cyc = active_assignment_cycle(db, lead["_id"]) if lead.get("_id") else None
+            if cyc:
+                hot_started_at = cyc.get("hot_started_at") or cyc.get("temperature_transitioned_at")
+            
+            canonical_sla = calculate_sla(
+                assigned_at=assigned_at,
+                first_valid_management_at=(lead.get("lifecycle", {}) or {}).get("first_valid_management_at") or
+                                          (outreach["occurred_at"] if recognized_management_ev else None),
+                temperature=temp,
+                hot_started_at=hot_started_at,
+            )
+            
+            if visual_pre and not canonical_sla.get("fulfilled"):
                 sla_status = "historical"
+            elif canonical_sla.get("status"):
+                if temp == "HOT" and canonical_sla.get("hot_minutes") is not None and not canonical_sla.get("fulfilled"):
+                    if canonical_sla["status"] == "critical": sla_status = "hot_critical"
+                    elif canonical_sla["status"] == "near_critical": sla_status = "hot_near_critical"
+                    elif canonical_sla["status"] == "warning": sla_status = "hot_warning"
+                    else: sla_status = "good"
+                else:
+                    sla_status = canonical_sla["status"]
             else:
-                sla_status = canonical_sla["status"]
-            sla_hours = (canonical_sla["minutes"] or 0) / 60.0
+                sla_status = "unknown"
+            
+            sla_hours = (canonical_sla.get("minutes") or 0) / 60.0
+            
+            # Build SLA info for row tooltip
+            if not visual_pre:
+                sla_info = {
+                    "total_minutes": canonical_sla.get("minutes", 0),
+                    "hot_minutes": canonical_sla.get("hot_minutes"),
+                    "assigned_at": str(assigned_at),
+                }
+                if hot_started_at:
+                    sla_info["hot_started"] = str(hot_started_at)
+        
         sla_labels_map = {
-            "critical": "Vencido",
-            "near_critical": "Próximo a vencer",
-            "warning": "Advertencia",
-            "good": "En plazo",
-            "pending": "Pendiente Asignación",
-            "fulfilled": "Gestionado",
-            "informativo": "Antigüedad",
-            "historical": "Histórico",
+            "critical": "Vencido", "near_critical": "Próximo a vencer", "warning": "Advertencia",
+            "good": "En plazo", "pending": "Pendiente Asignación", "fulfilled": "Gestionado",
+            "hot_critical": "Vencido", "hot_near_critical": "Próximo a vencer",
+            "hot_warning": "Atención prioritaria",
+            "informativo": "Antigüedad", "historical": "Histórico", "unknown": "SLA S/I",
         }
         sla_label = sla_labels_map.get(sla_status, "En tiempo")
         
-        # Re-check pending if no executive
         if not ejecutivo or ejecutivo in [UNASSIGNED_LABEL, "No asignado", "Sin Asignar", "Sin asignar"]:
              sla_status = "pending"
              sla_label = "Pendiente Asignación"

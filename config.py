@@ -68,6 +68,16 @@ class Config:
         "2026-07-23T22:00:00Z",
     )
 
+    # === Phase 3 SLA Visual Cutover ===
+    # Cycles assigned on or after this timestamp use differentiated SLA thresholds:
+    # Lead: 120/150/180 min, Lead Hot: 30/45/60 min.
+    # Pre-cutover cycles show as "Histórico" regardless of management status.
+    CRM_SLA_VISUAL_CUTOVER_AT = os.getenv(
+        "CRM_SLA_VISUAL_CUTOVER_AT",
+        "2026-07-23T23:00:00Z",
+    )
+    CRM_SLA_VISUAL_ENABLED = os.getenv("CRM_SLA_VISUAL_ENABLED", "true").lower() == "true"
+
     # === Non-Hot Digest (lead qualification) ===
     # When enabled, accumulates non-HOT assignments and sends grouped notifications
     # every CRM_NON_HOT_DIGEST_WINDOW_MINUTES minutes per executive.
@@ -186,6 +196,7 @@ class Config:
     # === Chatbot / colección ===
     HISTORIAL_MAX = 8
     COLLECTION_NAME = "universo_cartera"
+    PROPERTY_COLLECTION_NAME = os.getenv("PROPERTY_COLLECTION_NAME", "universo_cartera")
     
     # === Threshold / Configuración de Leads ===
     LEAD_ASSIGNMENT_THRESHOLD = int(os.getenv("LEAD_ASSIGNMENT_THRESHOLD", 40))

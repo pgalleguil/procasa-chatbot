@@ -4,7 +4,7 @@ from typing import Any, Dict, Iterable, Optional
 from config import Config
 from .utils import safe_int_conversion
 
-PROPERTY_COLLECTION_NAME = "universo_cartera_prop360"
+PROPERTY_COLLECTION_NAME = Config.PROPERTY_COLLECTION_NAME
 
 
 def _clean_text(value: Any) -> str:
@@ -103,6 +103,21 @@ def find_property_by_any_identifier(db, raw_value: Any, collection_name: str = P
         if prop:
             return prop
     return None
+
+
+BACKUP_COLLECTION = "universo_cartera_prop360"
+
+
+def find_property_in_any_collection(db, raw_value: Any) -> dict | None:
+    """Busca en universo_cartera primero, luego en universo_cartera_prop360 como fallback."""
+    prop = find_property_by_any_identifier(db, raw_value, PROPERTY_COLLECTION_NAME)
+    if prop:
+        return prop
+    if PROPERTY_COLLECTION_NAME != BACKUP_COLLECTION:
+        prop = find_property_by_any_identifier(db, raw_value, BACKUP_COLLECTION)
+        if prop:
+            prop["_lookup_fallback"] = True
+    return prop
 
 
 def get_prop_location(prop: Dict[str, Any]) -> Dict[str, Any]:

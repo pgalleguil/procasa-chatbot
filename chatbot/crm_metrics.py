@@ -184,6 +184,8 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
             {"_id": active["_id"], "unassigned_at": None},
             {"$set": {"unassigned_at": assigned_at, "cycle_status": "closed"}},
         )
+    # Determine SLA policy version for this cycle
+    sla_policy = "sla_visual_v1_20260723" if not is_pre_visual_cutover(assigned_at) else "legacy"
     cycle = {
         "assignment_cycle_id": str(uuid.uuid4()), "lead_id": lead["_id"],
         "assigned_to_user_id": assigned_to_user_id, "assigned_at": assigned_at,
@@ -192,6 +194,7 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
         "metric_version": METRIC_VERSION, "schema_version": "crm_assignment_cycle_v1",
         "cycle_status": "active",
         "applied_transition_ids": [],
+        "sla_policy_version": sla_policy,
     }
     try:
         db["crm_assignment_cycles"].insert_one(cycle)
@@ -238,34 +241,63 @@ def active_assignment_cycle(db, lead_id):
     )
 
 
-def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None) -> dict[str, Any]:
-    """Single SLA: assignment start -> first valid human management."""
+def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
+                  temperature=None, hot_started_at=None) -> dict[str, Any]:
+    """Calculate SLA with differentiated thresholds for Lead vs Lead Hot.
+
+    Lead thresholds:   0-119 good, 120-149 warning, 150-179 near_critical, 180+ critical
+    Lead Hot thresholds: 0-29 good, 30-44 warning, 45-59 near_critical, 60+ critical
+
+    When hot_started_at is provided, returns both total minutes and hot_segment minutes.
+    """
     start = coerce_utc_datetime(assigned_at)
     end = coerce_utc_datetime(first_valid_management_at)
+    hot_start = coerce_utc_datetime(hot_started_at) if hot_started_at else None
     current = coerce_utc_datetime(now) if now is not None else utc_now()
     if not start:
         return {"status": "unknown", "minutes": None, "fulfilled": False}
     boundary = end or current
-    minutes = max(0, calculate_business_minutes(start.astimezone(CHILE_TZ), boundary.astimezone(CHILE_TZ)))
+    total_minutes = max(0, calculate_business_minutes(start.astimezone(CHILE_TZ), boundary.astimezone(CHILE_TZ)))
+
+    # Calculate hot segment minutes if applicable
+    hot_minutes = None
+    if hot_start and not end:
+        hot_boundary = current
+        hot_minutes = max(0, calculate_business_minutes(
+            hot_start.astimezone(CHILE_TZ), hot_boundary.astimezone(CHILE_TZ)))
+
+    is_hot = str(temperature or "").upper() == "HOT"
+    use_hot_thresholds = is_hot and hot_minutes is not None
+
     if end:
         status = "fulfilled"
-    elif minutes >= 180:
-        status = "critical"
-    elif minutes >= 150:
-        status = "near_critical"
-    elif minutes >= 60:
-        status = "warning"
+    elif use_hot_thresholds:
+        if hot_minutes >= 60:
+            status = "critical"
+        elif hot_minutes >= 45:
+            status = "near_critical"
+        elif hot_minutes >= 30:
+            status = "warning"
+        else:
+            status = "good"
     else:
-        status = "good"
-    return {"status": status, "minutes": minutes, "fulfilled": bool(end), "age_minutes": minutes}
+        if total_minutes >= 180:
+            status = "critical"
+        elif total_minutes >= 150:
+            status = "near_critical"
+        elif total_minutes >= 120:
+            status = "warning"
+        else:
+            status = "good"
+    return {
+        "status": status, "minutes": total_minutes, "fulfilled": bool(end),
+        "age_minutes": total_minutes,
+        "hot_minutes": hot_minutes,
+    }
 
 
 def is_pre_cutover_cycle(assigned_at, *, cutover=None) -> bool:
-    """Return True if the cycle's assigned_at predates the management enforcement cutover.
-
-    Pre-cutover cycles are exempt from new SLA policy. They are displayed as
-    "Histórico" and excluded from compliance metrics, digest, alerts, and escalations.
-    """
+    """Return True if cycle assigned_at predates the management enforcement cutover."""
     assigned = coerce_utc_datetime(assigned_at)
     if not assigned:
         return False
@@ -274,6 +306,24 @@ def is_pre_cutover_cycle(assigned_at, *, cutover=None) -> bool:
     else:
         from config import Config
         raw = getattr(Config, "CRM_MANAGEMENT_ENFORCEMENT_CUTOVER_AT", None) or MANAGEMENT_ENFORCEMENT_CUTOVER
+        cutoff = coerce_utc_datetime(raw)
+    return assigned < cutoff
+
+
+def is_pre_visual_cutover(assigned_at, *, cutover=None) -> bool:
+    """Return True if assigned_at predates the SLA VISUAL cutover.
+
+    Cycles on/after this cutover use differentiated thresholds (Lead 120/150/180,
+    Lead Hot 30/45/60). Pre-cutover = Historico / SLA no aplicable.
+    """
+    assigned = coerce_utc_datetime(assigned_at)
+    if not assigned:
+        return False
+    if cutover is not None:
+        cutoff = coerce_utc_datetime(cutover)
+    else:
+        from config import Config
+        raw = getattr(Config, "CRM_SLA_VISUAL_CUTOVER_AT", None) or "2026-07-23T23:00:00Z"
         cutoff = coerce_utc_datetime(raw)
     return assigned < cutoff
 

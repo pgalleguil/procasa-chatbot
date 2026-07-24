@@ -919,8 +919,8 @@
             box-shadow: none;
         }
 
-        .crm-table .col-type { width: 7%; }
-        .crm-table .col-time { width: 12%; }
+        .crm-table .col-type { width: 10%; min-width: 120px; }
+        .crm-table .col-time { width: 13%; }
         .crm-table .col-client { width: 25%; }
         .crm-table .col-property { width: 10%; }
         .crm-table .col-state { width: 10%; }
@@ -928,8 +928,8 @@
         .crm-table .col-executive { width: 14%; }
 
         @media (min-width: 769px) and (max-width: 1200px) {
-            .crm-table .col-type { width: 9%; }
-            .crm-table .col-time { width: 15%; }
+            .crm-table .col-type { width: 12%; min-width: 130px; }
+            .crm-table .col-time { width: 16%; }
             .crm-table .col-client { width: 22%; }
             .crm-table .col-property { width: 11%; }
             .crm-table .col-state { width: 12%; }
@@ -1081,11 +1081,13 @@
             opacity: 1;
         }
 
-        .lead-type-hot {
-            color: var(--bs-danger) !important;
+        .lead-type-hot,
+        .lead-type-normal {
             white-space: nowrap;
         }
-
+        .lead-type-hot {
+            color: var(--bs-danger) !important;
+        }
         .lead-type-normal {
             color: var(--lead-normal) !important;
         }

@@ -3185,7 +3185,11 @@ async def sla_monitor_loop():
 
 async def non_hot_digest_worker_loop():
     """Periodic worker that claims and delivers due non-HOT digests in shadow mode."""
-    logger.info("[NON_HOT_DIGEST] Iniciando worker de digest leads por calificar...")
+    from chatbot.crm_non_hot_digest import process_one_digest as _pod
+    import inspect
+    logger.info("[NON_HOT_DIGEST] Iniciando worker pid=%s sync=%s file=%s",
+                os.getpid(), not inspect.iscoroutinefunction(_pod),
+                inspect.getfile(_pod))
     worker_id = f"non_hot_digest_worker_{os.getpid()}"
     while True:
         try:
@@ -3198,6 +3202,10 @@ async def non_hot_digest_worker_loop():
                 continue
 
             from chatbot.crm_non_hot_digest import process_one_digest
+            import inspect
+            is_coro = inspect.iscoroutinefunction(process_one_digest)
+            if is_coro:
+                logger.error("[NON_HOT_DIGEST] CRITICAL: process_one_digest is still a coroutine! Fix not applied.")
             from chatbot.storage import get_db
             db = get_db()
             loop = asyncio.get_running_loop()

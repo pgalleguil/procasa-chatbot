@@ -540,13 +540,17 @@ def resolve_recipient_user(db, recipient: str) -> dict | None:
     return None
 
 
+# Canary allowlist — only these digest IDs can send live during incident resolution
+CANARY_DIGEST_IDS: set[str] = set()
+
 def send_digest(db, *, notification, worker_id, sender=None):
     """Deliver or shadow-deliver a due digest.  Fully synchronous.
 
     ``sender`` is a sync callable ``(phone, message) -> dict`` or None.
     In shadow mode the provider is never called.
     """
-    shadow = str(getattr(Config, "CRM_NON_HOT_DIGEST_SHADOW_MODE", "true")).lower() == "true"
+    # Hard block: ignore shadow mode entirely during incident
+    shadow = True
     content, lead_count = build_digest_message_content(db, notification)
     if content is None:
         finalize_attempt(
@@ -608,13 +612,35 @@ def send_digest(db, *, notification, worker_id, sender=None):
         receipt = sender(phone, content)
         success = bool(receipt.get("success"))
         provider_id = receipt.get("provider_message_id")
-        http_status = receipt.get("http_status", receipt.get("status_code", "?"))
+        http_status = receipt.get("http_status", receipt.get("status_code"))
         logger.info("[WASEND] result digest=%s success=%s provider=%s http=%s",
                     notification["_id"], success, provider_id, http_status)
-        if not success and http_status in (422, 429):
-            logger.warning("[WASEND] provider_error digest=%s http=%s body=%s",
-                           notification["_id"], http_status,
-                           str(receipt.get("response_body", receipt.get("error", "")))[:200])
+
+        if not success:
+            if http_status == 422:
+                # Validation error — never retry
+                logger.warning("[WASEND] provider_422 digest=%s body=%s",
+                               notification["_id"],
+                               str(receipt.get("response_body", receipt.get("error", "")))[:200])
+                finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                                 state="failed_validation", error=f"http_422",
+                                 provider_message_id=None)
+                return {"status": "failed_validation", "lead_count": lead_count,
+                        "delivery_mode": "live", "actually_delivered": False}
+            elif http_status == 429:
+                # Rate limit — respect Retry-After
+                retry_after = int(receipt.get("retry_after", 60))
+                logger.warning("[WASEND] provider_429 digest=%s retry_after=%s",
+                               notification["_id"], retry_after)
+                next_attempt = utc_now() + timedelta(seconds=max(retry_after, 30))
+                db[NOTIFICATION_COLLECTION].update_one(
+                    {"_id": notification["_id"]},
+                    {"$set": {"next_attempt_at": next_attempt, "updated_at": utc_now()},
+                     "$push": {"attempts": {"rate_limited_at": utc_now(), "retry_after": retry_after}}},
+                )
+                return {"status": "rate_limited", "lead_count": lead_count,
+                        "delivery_mode": "live", "actually_delivered": False}
+
         state = "sent" if success and provider_id else "quarantined" if success else "failed_retryable"
         finalize_attempt(
             db, notification_id=notification["_id"], worker_id=worker_id,

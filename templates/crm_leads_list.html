@@ -1082,11 +1082,19 @@
         }
 
         .lead-type-hot {
-            color: var(--state-unattended) !important;
+            color: var(--bs-danger) !important;
+            white-space: nowrap;
         }
 
         .lead-type-normal {
             color: var(--lead-normal) !important;
+        }
+
+        .sla-historical {
+            color: #94a3b8;
+        }
+        [data-theme="light"] .sla-historical {
+            color: #64748b;
         }
 
         .summary-card > .lead-type-icon {
@@ -1892,8 +1900,8 @@
                                     <i class="fa-solid fa-check-circle text-success"></i>
                                     <span class="fw-bold text-success ms-2">{{ lead.sla_label }}</span>
                                     {% elif lead.sla_status == 'historical' %}
-                                    <i class="fa-solid fa-clock-rotate-left text-secondary-emphasis opacity-75"></i>
-                                    <span class="text-secondary-emphasis ms-2 fst-italic">{{ lead.sla_label }}</span>
+                                    <i class="fa-solid fa-clock-rotate-left sla-historical"></i>
+                                    <span class="sla-historical ms-2 fst-italic">{{ lead.sla_label }}</span>
                                     {% else %}
                                     <div class="led-indicator led-green" style="opacity: 0.8;"></div>
                                     <span class="fw-bold ms-2">{{ lead.sla_label }}</span>

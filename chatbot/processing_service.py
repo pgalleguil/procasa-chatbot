@@ -409,6 +409,37 @@ class LeadProcessingService:
                 if not lead.get("ultima_actualizacion_bi"):
                     update_data["ultima_actualizacion_bi"] = now_cl
 
+                # Create canonical assignment cycle if an executive was assigned
+                if update_data.get("ejecutivo_asignado") and (
+                    lead.get("ejecutivo_asignado") in [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
+                    or update_data.get("ejecutivo_asignado") != lead.get("ejecutivo_asignado")
+                ):
+                    try:
+                        exec_name = update_data.get("ejecutivo_asignado") or update_data.get("prospecto.ejecutivo") or ""
+                        from datetime import timezone as _tz
+                        assigned_val = update_data.get("lifecycle.assigned_at")
+                        if isinstance(assigned_val, str):
+                            from chatbot.crm_metrics import coerce_utc_datetime
+                            assigned_dt = coerce_utc_datetime(assigned_val)
+                        else:
+                            assigned_dt = assigned_val
+                        exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1}) if exec_name else None
+                        exec_user_id = str(exec_user["_id"]) if exec_user else exec_name
+                        from .crm_metrics import create_assignment_cycle
+                        cycle = create_assignment_cycle(
+                            db, lead=lead, assigned_to_user_id=exec_user_id,
+                            assigned_by="system", reason="lead_processed",
+                            assigned_at=assigned_dt or now_cl,
+                            assigned_to_display_name=exec_name,
+                        )
+                        update_data["lifecycle.current_assignment_cycle_id"] = cycle["assignment_cycle_id"]
+                        logger.info(
+                            "[PROCESS_SERVICE] Cycle created for lead %s: %s",
+                            lead.get("phone"), cycle["assignment_cycle_id"],
+                        )
+                    except Exception as exc:
+                        logger.warning("[PROCESS_SERVICE] Error creating cycle: %s", exc)
+
                 update_result = db["leads"].update_one({"_id": query_id}, {"$set": update_data})
                 visible_update_fields = {
                     "ejecutivo_asignado", "prospecto.ejecutivo",

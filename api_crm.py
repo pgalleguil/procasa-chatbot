@@ -23,17 +23,28 @@ def format_relative_time(dt_obj):
     
     if not dt_obj or dt_obj == datetime.min: return "S/I"
             
-    # Los datos nuevos ya vienen en hora local (Chile/Continental)
-    # Los viejos en UTC, pero priorizamos la consistencia local.
     chile_tz = pytz.timezone('Chile/Continental')
     now = datetime.now(chile_tz)
     
-    # Asegurar que dt_obj sea aware si no lo es (asumimos local)
     if dt_obj.tzinfo is None:
         dt_obj = chile_tz.localize(dt_obj)
         
     diff = now - dt_obj
     seconds = diff.total_seconds()
+    
+    if seconds < 0:
+        # Future timestamp — never show "Hace"
+        future_sec = abs(seconds)
+        future_hours = int(future_sec // 3600)
+        future_minutes = int((future_sec % 3600) // 60)
+        future_time = dt_obj.astimezone(chile_tz).strftime("%H:%M")
+        if future_hours >= 24:
+            future_day = dt_obj.astimezone(chile_tz).strftime("%d/%m")
+            return f"Programado para {future_day} a las {future_time}"
+        elif future_hours > 0:
+            return f"Programado para hoy a las {future_time}"
+        else:
+            return f"Programado en {future_minutes}m"
     
     days = int(seconds // 86400)
     hours = int((seconds % 86400) // 3600)

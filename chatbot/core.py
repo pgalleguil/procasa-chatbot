@@ -259,7 +259,7 @@ def _buscar_propiedad_en_universo(db, raw_value, portal: str | None = None):
 # ==========================================
 
 
-async def process_user_message(phone: str, message: str, is_from_me: bool = False) -> str:
+async def process_user_message(phone: str, message: str, is_from_me: bool = False, provider_message_id: str = None) -> str:
     async def _run_sync(fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)
 
@@ -268,10 +268,29 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     msg_lower = original_message.lower()
     logger.info(f"[LINK_TRACE] trace={trace_id} phone={phone} inicio_proceso_mensaje")
     
-    # 1. Guardar mensaje (con el rol correcto)
-    # Si viene de 'me' (del dueño del bot), lo guardamos como assistant/human
     role = "assistant" if is_from_me else "user"
-    await _run_sync(guardar_mensaje, phone, role, original_message)
+
+    # 1a. Si hay provider_message_id, pasar por ingest_lead_event
+    lead_id = None
+    if provider_message_id and role == "user":
+        try:
+            from .ingest_service import ingest_lead_event, LeadEvent
+            result = await _run_sync(ingest_lead_event, LeadEvent(
+                source_system="whatsapp",
+                source_event_id=provider_message_id,
+                phone=phone,
+                message=original_message[:500],
+            ))
+            if result.status in ("created", "updated"):
+                lead_id = result.lead_id
+        except Exception as e:
+            logger.warning(f"[INGEST] Error en ingest_lead_event para WhatsApp: {e}")
+
+    # 1b. Guardar mensaje (con lead_id si disponible)
+    if lead_id:
+        await _run_sync(guardar_mensaje, phone, role, original_message, lead_id=lead_id)
+    else:
+        await _run_sync(guardar_mensaje, phone, role, original_message)
 
     # === LÓGICA DE PAUSA (INTERCEPCIÓN) ===
     from .storage import obtener_bot_pausado, toggle_bot_pausado

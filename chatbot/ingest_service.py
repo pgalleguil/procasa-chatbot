@@ -271,7 +271,7 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         lead_by_phone, lead_by_email, _ = _find_lead_by_id(phone_normalized, email)
     else:
         lead_by_phone = None
-        lead_by_email, _, _ = _find_lead_by_id(None, email)
+        _, lead_by_email, _ = _find_lead_by_id(None, email)
     identity_conflict = False
     conflict_details = None
     target_lead = None
@@ -396,18 +396,12 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         if hot_detected:
             update_fields["last_intent"] = "ASK_VISIT"
 
-        update_payload = {"$set": update_fields, "$push": {"messages": {"$each": [message_entry], "$slice": -50}}}
-        if "source_events" in update_fields:
-            del update_fields["$addToSet"]
-            update_payload["$addToSet"] = {"source_events": {
-                "source_system": event.source_system,
-                "source_event_id": event.source_event_id,
-                "contact_date": contact_date,
-                "portal_source": portal_source,
-                "message_preview": message[:160],
-                "ingested_at": now_iso,
-            }}
-            del update_fields["$addToSet"]
+        update_payload = {"$set": {}, "$push": {"messages": {"$each": [message_entry], "$slice": -50}}}
+        for k, v in update_fields.items():
+            if k != "$addToSet":
+                update_payload["$set"][k] = v
+        if "$addToSet" in update_fields:
+            update_payload["$addToSet"] = update_fields["$addToSet"]
 
         db[COLLECTION_CONVERSATIONS].update_one({"_id": target_lead["_id"]}, update_payload)
 

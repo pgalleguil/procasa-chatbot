@@ -616,6 +616,7 @@ def send_digest(db, *, notification, worker_id, sender=None):
         if is_canary:
             # Canary: use canonical sender (asyncio.run is safe in threadpool)
             from .crm_delivery import resolve_executive_user, get_executive_phone
+            recipient = str(notification.get("recipient_user_id") or "")
             exec_user = resolve_executive_user(db, recipient)
             if exec_user:
                 phone = get_executive_phone(exec_user)

@@ -20,7 +20,8 @@ COLLECTION = "crm_notifications_v1"
 TERMINAL_STATES = frozenset({"sent", "failed_final", "suppressed", "quarantined"})
 VALID_STATES = frozenset({
     "pending", "sending", "sent", "failed_retryable", "failed_final",
-    "suppressed", "quarantined",
+    "suppressed", "quarantined", "failed_recipient", "failed_validation",
+    "rate_limited", "held",
 })
 DEDUP_ACTIVE_STATES = frozenset({"pending", "sending", "sent", "failed_retryable"})
 

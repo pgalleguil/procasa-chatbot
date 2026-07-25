@@ -1671,17 +1671,21 @@ from chatbot.whatsapp_client import send_whatsapp_message
 from chatbot.notification_service import NotificationService
 
 async def process_with_debounce(phone: str, full_text: str, is_from_me: bool = False):
-    if phone in pending_tasks and not pending_tasks[phone].done():
-        pending_tasks[phone].cancel()
-        logger.info(f"[DEBOUNCE] Tarea anterior cancelada para {phone}")
-    
+    # Never cancel in-flight processing — accumulates text instead.
+    # The existing task will pick up accumulated text when it wakes.
     current_text = accumulated_messages.get(phone, "")
     if current_text:
         accumulated_messages[phone] = current_text + " " + full_text.strip()
     else:
         accumulated_messages[phone] = full_text.strip()
-        
+    
     last_message_time[phone] = time.time()
+
+    # If a task is already running for this phone, just accumulate and return.
+    existing = pending_tasks.get(phone)
+    if existing is not None and not existing.done():
+        logger.info(f"[DEBOUNCE] Task already running for {phone}, accumulated text (skip cancel)")
+        return
 
     async def delayed_process(from_me: bool):
         # ANTI-DUPLICADO: Capturamos referencia a la tarea ACTUAL para compararla luego

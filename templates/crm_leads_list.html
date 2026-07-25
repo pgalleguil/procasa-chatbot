@@ -1852,11 +1852,20 @@
             <div class="table-container">
             <form action="/crm" method="GET" class="filter-bar" id="crmFilterForm">
                 <label class="filter-field filter-search-field">
-                    <span class="filter-field-label">Buscar por teléfono</span>
+                    <span class="filter-field-label">Teléfono</span>
                     <span class="search-box">
                         <i class="fa-solid fa-magnifying-glass"></i>
                         <input type="search" name="busqueda" placeholder="Ej. 56912345678" autocomplete="off"
                             value="{{ request.query_params.get('busqueda', '') }}">
+                    </span>
+                </label>
+
+                <label class="filter-field filter-search-field" style="max-width:130px">
+                    <span class="filter-field-label">Propiedad</span>
+                    <span class="search-box">
+                        <i class="fa-solid fa-building"></i>
+                        <input type="search" name="property_code" placeholder="Ej. 6537" autocomplete="off"
+                            value="{{ request.query_params.get('property_code', '') }}">
                     </span>
                 </label>
 
@@ -1895,23 +1904,22 @@
                 <label class="filter-field">
                     <span class="filter-field-label">Orden</span>
                     <select name="orden" data-auto-filter>
-                        <option value="fecha" {% if request.query_params.get('orden', 'fecha')=='fecha' %}selected{% endif %}>Más recientes</option>
+                        <option value="sla_urgente" {% if request.query_params.get('orden', 'sla_urgente')=='sla_urgente' %}selected{% endif %}>Prioridad SLA</option>
                         <option value="antiguos_sin_atender" {% if request.query_params.get('orden')=='antiguos_sin_atender' %}selected{% endif %}>Más antiguos sin atender</option>
-                        <option value="sla_por_vencer" {% if request.query_params.get('orden')=='sla_por_vencer' %}selected{% endif %}>SLA por vencer</option>
-                        <option value="mayor_sin_gestion" {% if request.query_params.get('orden')=='mayor_sin_gestion' %}selected{% endif %}>Mayor tiempo sin gestión</option>
-                        <option value="ultima_accion_antigua" {% if request.query_params.get('orden')=='ultima_accion_antigua' %}selected{% endif %}>Última acción más antigua</option>
+                        <option value="recientes" {% if request.query_params.get('orden')=='recientes' %}selected{% endif %}>Más recientes</option>
                     </select>
                 </label>
                 <a href="{{ filter_urls['clear'] }}" class="btn-clear-filters"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Limpiar filtros</a>
             </form>
 
             {% set state_labels = {'NEW': 'Sin atender', 'GRUPO_GESTION': 'En gestión', 'GRUPO_VISITA': 'Visitas', 'GRUPO_CERRADO': 'Cerrados', 'UNASSIGNED': 'Sin asignar'} %}
-            {% set order_labels = {'antiguos_sin_atender': 'Más antiguos sin atender', 'sla_por_vencer': 'SLA por vencer', 'mayor_sin_gestion': 'Mayor tiempo sin gestión', 'ultima_accion_antigua': 'Última acción más antigua'} %}
+            {% set order_labels = {'sla_urgente': 'Prioridad SLA', 'antiguos_sin_atender': 'Más antiguos sin atender', 'recientes': 'Más recientes'} %}
             <div class="active-filters" aria-label="Filtros activos">
                 {% if selected_temperature != 'Todos' %}<a class="filter-chip" href="{{ filter_urls.temperature }}">{{ lead_temperature_icon(selected_temperature) }}{{ lead_temperature_label(selected_temperature) }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if selected_state %}<a class="filter-chip" href="{{ filter_urls.state }}">{{ state_labels.get(selected_state, selected_state) }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if current_ejecutivo != 'Todos' and can_administer_leads %}<a class="filter-chip" href="{{ filter_urls.executive }}">{{ current_ejecutivo }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if request.query_params.get('busqueda') %}<a class="filter-chip" href="{{ filter_urls.search }}">Teléfono: {{ request.query_params.get('busqueda') }} <span aria-hidden="true">×</span></a>{% endif %}
+                {% if request.query_params.get('property_code') %}<a class="filter-chip" href="{{ filter_urls.search }}">Propiedad: {{ request.query_params.get('property_code') }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if request.query_params.get('orden') in order_labels %}<a class="filter-chip" href="{{ filter_urls.order }}">{{ order_labels[request.query_params.get('orden')] }} <span aria-hidden="true">×</span></a>{% endif %}
             </div>
 
@@ -2309,12 +2317,13 @@
                 const params = new URLSearchParams(new FormData(form));
                 params.delete('page');
                 if (!params.get('busqueda')?.trim()) params.delete('busqueda');
+                if (!params.get('property_code')?.trim()) params.delete('property_code');
                 if (!params.get('estado')) params.delete('estado');
                 if (params.get('temperatura') === 'Todos') params.delete('temperatura');
                 if (params.get('ejecutivo') === 'Todos') params.delete('ejecutivo');
-                if (params.get('orden') === 'fecha') params.delete('orden');
+                if (params.get('orden') === 'sla_urgente') params.delete('orden');
                 const query = params.toString();
-                window.location.assign('/crm' + (query ? `?${query}` : ''));
+                window.location.assign('/crm' + (query ? '?' + query : ''));
             }
 
             document.addEventListener('change', event => {
@@ -2324,7 +2333,7 @@
             });
 
             document.addEventListener('input', event => {
-                if (!event.target.matches('#crmFilterForm input[name="busqueda"]')) return;
+                if (!event.target.matches('#crmFilterForm input[name="busqueda"], #crmFilterForm input[name="property_code"]')) return;
                 clearTimeout(crmSearchDebounce);
                 crmSearchDebounce = setTimeout(() => applyCrmFilters(event.target.form), 500);
             });

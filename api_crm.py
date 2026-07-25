@@ -644,16 +644,23 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 },
                 "_created_dt": {
                     "$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}
+                },
+                "_has_assigned": {
+                    "$cond": [{"$ifNull": ["$_assigned_dt", False]}, 0, 1]
+                },
+                "_has_created": {
+                    "$cond": [{"$ifNull": ["$_created_dt", False]}, 0, 1]
                 }
             }},
             {"$sort": {
                 **({"_unattended_rank": 1, "_sla_rank": 1, "_hot_rank": 1, "_assigned_dt": 1}
                    if ordenar_por == "sla_urgente" else
                    {"_unattended_rank": 1, "_assigned_dt": 1} if ordenar_por == "antiguos_sin_atender" else
+                   {"_has_assigned": 1, "_assigned_dt": -1, "_has_created": 1, "_created_dt": -1}
+                   if ordenar_por == "recientes" else
                    {"_sla_rank": 1, "_assigned_dt": 1} if ordenar_por == "sla_por_vencer" else
                    {"_activity_dt": 1} if ordenar_por == "mayor_sin_gestion" else
                    {"_last_action_dt": 1, "_assigned_dt": 1} if ordenar_por == "ultima_accion_antigua" else
-                   {"_assigned_dt": -1, "_created_dt": -1} if ordenar_por == "recientes" else
                    # Default: sla_urgente
                    {"_unattended_rank": 1, "_sla_rank": 1, "_hot_rank": 1, "_assigned_dt": 1}),
                 "_id": 1

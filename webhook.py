@@ -267,6 +267,10 @@ async def lifespan(app: FastAPI):
     non_hot_digest_task = asyncio.create_task(non_hot_digest_worker_loop())
     sla_alert_task = asyncio.create_task(sla_alert_worker_loop())
     
+    # Chatbot response worker — durable inbound → batch → LLM → WASender
+    from chatbot.chatbot_queue import chatbot_response_worker_loop as _crwl
+    cb_task = asyncio.create_task(_crwl())
+    
     # Iniciar Consumers
     c1_task = asyncio.create_task(lead_consumer_worker(1))
     c2_task = asyncio.create_task(lead_consumer_worker(2))
@@ -307,6 +311,7 @@ async def lifespan(app: FastAPI):
     crm_weekly_task.cancel()
     c1_task.cancel()
     c2_task.cancel()
+    cb_task.cancel()
     try:
         await asyncio.gather(
             n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, c1_task, c2_task,
@@ -1917,7 +1922,7 @@ async def webhook(
 
     logger.info(f"[WHATSAPP] {'[HUMANO]' if from_me else '[CLIENTE]'} Mensaje en {phone}: {text}")
     try:
-        from chatbot.storage import log_event, EventType
+        from chatbot.storage import log_event, EventType, get_db as _sync_db
         # Para el log de eventos, usamos el número limpio sin el '+'
         phone_log = phone.replace("+", "")
         await loop.run_in_executor(
@@ -1931,6 +1936,22 @@ async def webhook(
         )
     except:
         pass
+    
+    # Persist to durable queue before async processing
+    if not from_me:
+        try:
+            from chatbot.chatbot_queue import create_inbound_job
+            pid = data.get("message_id") or data.get("id") or str(int(time.time() * 1000))
+            msg_text = data.get("text") or data.get("body") or data.get("message", "")
+            await loop.run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: create_inbound_job(
+                    _sync_db(), inbound_provider_message_id=str(pid),
+                    phone=phone, text=str(msg_text), conversation_id=conversation_id,
+                ),
+            )
+        except Exception:
+            pass
         
     await process_with_debounce(phone, text, is_from_me=from_me)
     return JSONResponse({"ok": True}, status_code=200)
@@ -1938,12 +1959,20 @@ async def webhook(
 @app.get("/health")
 async def health_check():
     now = datetime.now(CHILE_TZ).isoformat()
+    from chatbot.storage import get_db
+    try:
+        from chatbot.chatbot_queue import get_pending_counts
+        counts = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_pending_counts(get_db()))
+    except Exception:
+        counts = {}
     return {
         "status": "healthy",
         "deploy_commit": os.getenv("RENDER_GIT_COMMIT", "unknown"),
         "server_time": now,
         "active_conversations": len(pending_tasks),
         "background_tasks": background_tasks_status,
+        "chatbot": {"worker": background_tasks_status.get("chatbot_response", "pending"),
+                    **{k: v for k, v in (counts or {}).items() if k != "oldest_pending"}},
         "uptime_now": time.strftime("%Y-%m-%d %H:%M:%S")
     }
 

@@ -1052,4 +1052,20 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         "intent": intencion,
         "response_len": len(respuesta or "")
     })
+    
+    return respuesta
+
+
+def process_user_message_sync(phone: str, message: str) -> str:
+    """Sync wrapper for process_user_message — used from threadpool workers.
+    
+    Runs the full async process_user_message in a fresh event loop.
+    """
+    import asyncio
+    
+    async def _run():
+        from chatbot.core import process_user_message
+        return await process_user_message(phone, message, is_from_me=False)
+    
+    return asyncio.run(_run())
     return respuesta

@@ -13,19 +13,20 @@ from datetime import datetime, timezone
 from collections import Counter
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-os.environ.setdefault("MONGO_URI", "mongodb+srv://pgalleguil:vLr5MTTZ7kcNzjSZ@cluster0.mzve39k.mongodb.net/?retryWrites=true&w=majority")
-os.environ.setdefault("DB_NAME", "URLS")
+from config import Config
+if not Config.MONGO_URI:
+    raise RuntimeError("MONGO_URI is required; refusing to use a local fallback")
 
 from pymongo import MongoClient
 from bson import ObjectId
 
 client = MongoClient(
-    os.environ["MONGO_URI"],
+    Config.MONGO_URI,
     socketTimeoutMS=30000,
     connectTimeoutMS=10000,
     serverSelectionTimeoutMS=20000,
 )
-db = client[os.environ["DB_NAME"]]
+db = client[Config.DB_NAME]
 
 UNASSIGNED_VALUES = {"", "Sin Asignar", "No Asignado", "Sin asignar", "No asignado", None}
 ACTIVE_STAGES = {"ARCHIVED", "CLOSED_WON", "CLOSED_LOST"}

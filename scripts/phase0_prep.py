@@ -10,16 +10,17 @@ import sys, os, uuid
 from datetime import datetime, timezone
 from collections import Counter
 
-sys.path.insert(0, r"C:\Users\pgall\Desktop\Python\ChatBot_v4_Grok")
-os.environ["MONGO_URI"] = "mongodb+srv://pgalleguil:vLr5MTTZ7kcNzjSZ@cluster0.mzve39k.mongodb.net/?retryWrites=true&w=majority"
-os.environ["DB_NAME"] = "URLS"
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from config import Config
+if not Config.MONGO_URI:
+    raise RuntimeError("MONGO_URI is required; refusing to use a local fallback")
 
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import DuplicateKeyError
 from bson import ObjectId
 
-client = MongoClient(os.environ["MONGO_URI"], socketTimeoutMS=60000, connectTimeoutMS=10000, serverSelectionTimeoutMS=20000)
-db = client[os.environ["DB_NAME"]]
+client = MongoClient(Config.MONGO_URI, socketTimeoutMS=60000, connectTimeoutMS=10000, serverSelectionTimeoutMS=20000)
+db = client[Config.DB_NAME]
 CHILE_TZ = __import__("pytz").timezone("America/Santiago")
 
 INDEX_NAME = "uq_crm_assignment_cycle_active_lead"

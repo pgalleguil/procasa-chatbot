@@ -18,7 +18,7 @@ import inspect
 from concurrent.futures import ThreadPoolExecutor
 from pymongo import MongoClient
 from pymongo import ReturnDocument
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import uvicorn
 import json
@@ -1660,111 +1660,7 @@ async def api_crm_send_recommendation(request: Request):
         logger.error(f"[SEMANTIC] Error send_recommendation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ========================= 7. WHATSAPP LOGIC (CORE) =========================
-pending_tasks: Dict[str, Any] = {}
-last_message_time: Dict[str, float] = {}
-accumulated_messages: Dict[str, str] = {}
-DEBOUNCE_SECONDS = 15.0
-
-try:
-    from chatbot import process_user_message
-except ImportError:
-    def process_user_message(phone, message):
-        return f"Respuesta de prueba para {phone}: {message[:50]}..."
-
-from chatbot.whatsapp_client import send_whatsapp_message
-from chatbot.notification_service import NotificationService
-
-async def process_with_debounce(phone: str, full_text: str, is_from_me: bool = False):
-    # Never cancel in-flight processing — accumulates text instead.
-    # The existing task will pick up accumulated text when it wakes.
-    current_text = accumulated_messages.get(phone, "")
-    if current_text:
-        accumulated_messages[phone] = current_text + " " + full_text.strip()
-    else:
-        accumulated_messages[phone] = full_text.strip()
-    
-    last_message_time[phone] = time.time()
-
-    # If a task is already running for this phone, just accumulate and return.
-    existing = pending_tasks.get(phone)
-    if existing is not None and not existing.done():
-        logger.info(f"[DEBOUNCE] Task already running for {phone}, accumulated text (skip cancel)")
-        return
-
-    async def delayed_process(from_me: bool):
-        # ANTI-DUPLICADO: Capturamos referencia a la tarea ACTUAL para compararla luego
-        current_task = asyncio.current_task()
-        try:
-            await asyncio.sleep(DEBOUNCE_SECONDS)
-            # Verificación 1: el usuario no envió otro mensaje durante el sleep
-            if time.time() - last_message_time.get(phone, 0) < DEBOUNCE_SECONDS - 0.1:
-                return
-            final_message = accumulated_messages.pop(phone, "").strip()
-            if not final_message:
-                return
-
-            # El equipo pudo enviar un documento durante el debounce. Volvemos a
-            # validar por ESTE teléfono antes de registrar o procesar como lead.
-            if not from_me:
-                from chatbot.storage import get_db
-                loop = asyncio.get_running_loop()
-                document_guard = await loop.run_in_executor(
-                    _WEB_THREAD_POOL,
-                    lambda: find_active_document_guard(get_db(), phone),
-                )
-                if document_guard:
-                    logger.info(
-                        "[DOCUMENT_GUARD] Mensaje descartado antes del chatbot "
-                        f"phone={phone} type={document_guard['document_type']} "
-                        f"code={document_guard['document_code']} "
-                        f"expires_at={document_guard['expires_at']}"
-                    )
-                    return
-
-            logger.info(f"[PROCESS] Procesando mensaje {'HUMANO' if from_me else 'CLIENTE'} de {phone}")
-            
-            capture_time = last_message_time.get(phone, 0)
-            bot_response = await process_user_message(phone, final_message, is_from_me=from_me)
-
-            # Si el documento se envió mientras respondía la IA, nunca mandar esa
-            # respuesta fuera de contexto al cliente.
-            if not from_me:
-                document_guard = await loop.run_in_executor(
-                    _WEB_THREAD_POOL,
-                    lambda: find_active_document_guard(get_db(), phone),
-                )
-                if document_guard:
-                    logger.info(f"[DOCUMENT_GUARD] Respuesta suprimida para phone={phone}")
-                    return
-
-            # Verificación 2: ¿llegó un mensaje nuevo MIENTRAS el LLM procesaba?
-            if last_message_time.get(phone, 0) > capture_time:
-                logger.warning(f"⚫ [ANTI-DUP-1] {phone}: nuevo mensaje llegó durante LLM. Descartando respuesta vieja.")
-                return
-
-            # Verificación 3: ¿ya existe una tarea más reciente en pending_tasks para este phone?
-            # Esto cubre el caso donde el cliente envió mensaje justo cuando el LLM terminó.
-            registered_task = pending_tasks.get(phone)
-            if registered_task is not None and registered_task is not current_task and not registered_task.done():
-                logger.warning(f"⚫ [ANTI-DUP-2] {phone}: hay tarea más nueva pendiente. Abortando envío de respuesta actual.")
-                return
-
-            if bot_response and bot_response.strip():
-                await send_whatsapp_message(phone, bot_response)
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            logger.error(f"Error procesando {phone}: {e}", exc_info=True)
-        finally:
-            # Solo limpiar si somos la tarea registrada actualmente
-            if pending_tasks.get(phone) is asyncio.current_task():
-                pending_tasks.pop(phone, None)
-
-    task = asyncio.create_task(delayed_process(is_from_me))
-    pending_tasks[phone] = task
-
-# ========================= 8. WEBHOOK & API ENDPOINTS =========================
+# ========================= 7. WEBHOOK & API ENDPOINTS =========================
 
 @app.post("/webhook")
 async def webhook(
@@ -1937,42 +1833,71 @@ async def webhook(
     except:
         pass
     
-    # Persist to durable queue before async processing
+    # Persist to the durable queue. The durable worker is the only component
+    # authorized to batch, invoke the LLM and send a chatbot response.
     if not from_me:
+        from chatbot.chatbot_queue import create_inbound_job
+        provider_message_id = (
+            key.get("id")
+            or msg_obj.get("id")
+            or msg_obj.get("messageId")
+            or data.get("message_id")
+            or data.get("id")
+        )
+        if not provider_message_id:
+            logger.error("[CHATBOT_QUEUE] inbound rejected: provider id missing")
+            raise HTTPException(status_code=422, detail="Inbound provider message id required")
         try:
-            from chatbot.chatbot_queue import create_inbound_job
-            pid = data.get("message_id") or data.get("id") or str(int(time.time() * 1000))
-            msg_text = data.get("text") or data.get("body") or data.get("message", "")
-            await loop.run_in_executor(
+            job_id = await loop.run_in_executor(
                 _WEB_THREAD_POOL,
                 lambda: create_inbound_job(
-                    _sync_db(), inbound_provider_message_id=str(pid),
-                    phone=phone, text=str(msg_text), conversation_id=conversation_id,
+                    _sync_db(),
+                    inbound_provider_message_id=str(provider_message_id),
+                    phone=phone,
+                    text=text,
+                    conversation_id=None,
                 ),
             )
+        except ValueError as exc:
+            logger.warning("[CHATBOT_QUEUE] inbound rejected: %s", exc)
+            raise HTTPException(status_code=422, detail=str(exc))
         except Exception:
-            pass
-        
-    await process_with_debounce(phone, text, is_from_me=from_me)
-    return JSONResponse({"ok": True}, status_code=200)
+            logger.exception("[CHATBOT_QUEUE] persistence failed")
+            raise HTTPException(status_code=503, detail="Durable queue unavailable")
+        return JSONResponse({"ok": True, "job_id": str(job_id)}, status_code=200)
+
+    return JSONResponse({"ok": True, "status": "human_message_recorded"}, status_code=200)
 
 @app.get("/health")
 async def health_check():
     now = datetime.now(CHILE_TZ).isoformat()
     from chatbot.storage import get_db
     try:
-        from chatbot.chatbot_queue import get_pending_counts
-        counts = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_pending_counts(get_db()))
-    except Exception:
-        counts = {}
+        from chatbot.chatbot_queue import get_queue_health
+        loop = asyncio.get_running_loop()
+        worker_status = background_tasks_status.get("chatbot_response") or {}
+        queue_health = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: get_queue_health(get_db(), heartbeat=worker_status),
+        )
+        degraded_reasons = list(queue_health.get("degraded_reasons") or [])
+    except Exception as exc:
+        logger.exception("[HEALTH] chatbot queue metrics unavailable")
+        queue_health = {
+            "metrics_available": False,
+            "degraded_reasons": ["queue_metrics_unavailable"],
+            "error_type": type(exc).__name__,
+        }
+        degraded_reasons = ["queue_metrics_unavailable"]
     return {
-        "status": "healthy",
+        "status": "degraded" if degraded_reasons else "healthy",
         "deploy_commit": os.getenv("RENDER_GIT_COMMIT", "unknown"),
         "server_time": now,
-        "active_conversations": len(pending_tasks),
         "background_tasks": background_tasks_status,
-        "chatbot": {"worker": background_tasks_status.get("chatbot_response", "pending"),
-                    **{k: v for k, v in (counts or {}).items() if k != "oldest_pending"}},
+        "chatbot": {
+            "worker": background_tasks_status.get("chatbot_response", {"status": "missing"}),
+            "queue": queue_health,
+        },
         "uptime_now": time.strftime("%Y-%m-%d %H:%M:%S")
     }
 
@@ -3770,15 +3695,13 @@ async def reassign_unassigned_leads_loop():
             from chatbot.constants import UNASSIGNED_LABEL
             unassigned_labels = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
             
+            now_utc = datetime.now(timezone.utc)
             query = {
                 "stage": {"$nin": ["ARCHIVED", "REJECTED", "CLOSED_LOST", "CLOSED_WON"]},
                 "$or": [
-                    {"cluster_id": {"$exists": False}},
-                    {"cluster_id": {"$in": [None, ""]}},
-                    {"zone": {"$exists": False}},
-                    {"zone": {"$in": [None, ""]}},
-                    {"ejecutivo_asignado": {"$in": unassigned_labels}},
-                    {"prospecto.ejecutivo": {"$in": unassigned_labels}}
+                    {"processing_required": True, "processing_state": {"$in": ["received", "new"]}},
+                    {"processing_required": True, "processing_state": "failed_retryable",
+                     "processing_next_attempt_at": {"$lte": now_utc}},
                 ]
             }
             

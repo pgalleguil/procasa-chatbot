@@ -63,6 +63,7 @@ tests/
 !tests/
 tests/*
 !tests/test_document_message_guard.py
+!tests/test_chatbot_durable_queue.py
 scraper*/
 reports/
 

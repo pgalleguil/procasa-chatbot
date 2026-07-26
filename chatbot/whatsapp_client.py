@@ -126,55 +126,66 @@ async def send_whatsapp_message_detailed(number: str, text: str) -> dict:
         "Content-Type": "application/json",
     }
 
-    last_status = None
-    for attempt in (1, 2):
-        try:
-            response = await asyncio.to_thread(
-                requests.post, url, json=payload, headers=headers, timeout=15
-            )
-            last_status = response.status_code
-            try:
-                body = response.json()
-            except ValueError:
-                body = {}
-            success = response.status_code == 200 and body.get("success", True) is not False
-            if success:
-                message_id = _provider_message_id(body)
-                data = body.get("data") if isinstance(body.get("data"), dict) else {}
-                provider_status = normalize_provider_status(data.get("status") or body.get("status"))
-                logger.info(
-                    "[WHATSAPP_SEND] recipient=%s status=accepted provider_message_id=%s attempt=%s",
-                    masked,
-                    message_id or "unavailable",
-                    attempt,
-                )
-                return {
-                    "success": True,
-                    "delivery_status": provider_status if provider_status != "unknown" else "accepted",
-                    "provider_message_id": message_id,
-                    "http_status": response.status_code,
-                }
-            logger.warning(
-                "[WHATSAPP_SEND] recipient=%s status=failed http_status=%s attempt=%s",
-                masked,
-                response.status_code,
-                attempt,
-            )
-        except Exception as exc:
-            logger.error(
-                "[WHATSAPP_SEND] recipient=%s status=exception attempt=%s error_type=%s",
-                masked,
-                attempt,
-                type(exc).__name__,
-            )
-        if attempt == 1:
-            await asyncio.sleep(2)
+    # One HTTP call per durable delivery attempt. Retrying here would bypass the
+    # queue lease/idempotency policy and can duplicate an accepted-but-timed-out
+    # provider request.
+    try:
+        response = await asyncio.to_thread(
+            requests.post, url, json=payload, headers=headers, timeout=15
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.error(
+            "[WHATSAPP_SEND] recipient=%s status=uncertain error_type=%s",
+            masked,
+            type(exc).__name__,
+        )
+        return {
+            "success": False,
+            "delivery_status": "delivery_unknown",
+            "provider_message_id": None,
+            "http_status": None,
+            "provider_call_uncertain": True,
+        }
 
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+    success = response.status_code == 200 and body.get("success", True) is not False
+    if success:
+        message_id = _provider_message_id(body)
+        data = body.get("data") if isinstance(body.get("data"), dict) else {}
+        provider_status = normalize_provider_status(data.get("status") or body.get("status"))
+        logger.info(
+            "[WHATSAPP_SEND] recipient=%s status=accepted provider_message_id=%s",
+            masked,
+            message_id or "unavailable",
+        )
+        return {
+            "success": True,
+            "delivery_status": provider_status if provider_status != "unknown" else "accepted",
+            "provider_message_id": message_id,
+            "http_status": response.status_code,
+        }
+    retry_after = None
+    if response.status_code == 429:
+        try:
+            retry_after = max(int(response.headers.get("Retry-After", "60")), 1)
+        except (TypeError, ValueError):
+            retry_after = 60
+    logger.warning(
+        "[WHATSAPP_SEND] recipient=%s status=failed http_status=%s",
+        masked,
+        response.status_code,
+    )
     return {
         "success": False,
         "delivery_status": "failed",
         "provider_message_id": None,
-        "http_status": last_status,
+        "http_status": response.status_code,
+        "retry_after": retry_after,
     }
 
 

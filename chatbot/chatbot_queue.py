@@ -385,6 +385,10 @@ def get_queue_health(db, *, heartbeat=None, now=None, heartbeat_max_age_seconds=
         degraded_reasons.append("empty_batches")
     if stuck_due_batches:
         degraded_reasons.append("stuck_due_batches")
+    if states[ST_FAILED_RETRYABLE]:
+        degraded_reasons.append("failed_retryable_present")
+    if states[ST_DELIVERY_UNKNOWN]:
+        degraded_reasons.append("delivery_unknown_present")
     return {
         "metrics_available": True,
         "worker_heartbeat": heartbeat_at,
@@ -428,8 +432,9 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
     except Exception as exc:
         return finalize_batch(
             db, batch_id=batch_id, state=ST_FAILED_RETRYABLE,
-            error=f"llm:{type(exc).__name__}", worker_id=worker_id,
+            error=f"llm:{type(exc).__name__}:{str(exc)[:300]}", worker_id=worker_id,
             delivery_token=token,
+            next_attempt_at=(now or utc_now()) + timedelta(seconds=30),
         )
     response = _valid_text(response)
     if not response:

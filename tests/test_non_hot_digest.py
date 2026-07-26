@@ -1625,21 +1625,19 @@ def test_all_managed_digest_suppressed():
         assert result.get("reason") == "no_valid_leads"
 
 
-def test_non_hot_digest_always_10_min_window():
-    """The digest window is always 10 minutes from the first lead, regardless of hour."""
+def test_non_hot_digest_after_hours_uses_next_business_open():
+    """After-hours accumulation is due at opening, without another ten minutes."""
     from chatbot.crm_non_hot_digest import accumulate_non_hot_lead
 
     db, lead, cycle = default_db()
     with _patch_config():
         notif = accumulate_non_hot_lead(db, lead=lead, cycle=cycle)
     assert notif is not None
-    # The window_due_at should be 10 minutes after window_started_at
     from datetime import datetime as dt
     ws = dt.fromisoformat(notif.get("window_started_at", ""))
     wd = dt.fromisoformat(notif.get("window_due_at", ""))
-    diff = (wd - ws).total_seconds()
-    expected = FakeConfig.CRM_NON_HOT_DIGEST_WINDOW_MINUTES * 60
-    assert abs(diff - expected) < 2, f"Expected {expected}s window, got {diff}s"
+    from chatbot.lead_router import get_next_business_slot
+    assert wd == get_next_business_slot(ws)
 
 
 def test_hot_after_hours_excluded_from_digest():

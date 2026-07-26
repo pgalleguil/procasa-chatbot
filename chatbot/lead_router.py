@@ -3,7 +3,7 @@ import re
 import random
 import difflib
 from urllib.parse import quote, urlencode
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 import pytz
 from typing import Dict, Any, Optional, Tuple
 from pymongo import MongoClient
@@ -153,12 +153,11 @@ def normalize_text(text: str) -> str:
 
 def is_business_hours(dt=None) -> bool:
     """Check if the given time (or now) falls within configured notification hours."""
-    now = dt or datetime.now(CHILE_TZ)
-    weekday = now.weekday()
-    hour = now.hour
+    value = dt or datetime.now(CHILE_TZ)
     start = int(getattr(Config, "CRM_NOTIFICATION_BUSINESS_START", 9))
     end = int(getattr(Config, "CRM_NOTIFICATION_BUSINESS_END", 19))
-    return weekday in BUSINESS_DAYS and start <= hour < end
+    from .business_calendar import is_business_time
+    return is_business_time(value, start_hour=start, end_hour=end)
 
 
 def after_hours_hot_mode() -> str:
@@ -193,22 +192,11 @@ def should_send_now() -> bool:
     return result
 
 def get_next_business_slot(dt: datetime) -> datetime:
-    """Calcula el inicio del próximo bloque laboral si dt está fuera de horario."""
-    # Si ya es hora laboral, retornar el mismo
-    if dt.hour >= BUSINESS_START_HOUR and dt.hour < BUSINESS_END_HOUR and dt.weekday() in BUSINESS_DAYS:
-        return dt
-    
-    next_slot = dt.replace(hour=BUSINESS_START_HOUR, minute=0, second=0, microsecond=0)
-    
-    # Si ya pasó la hora de inicio de hoy, es mañana
-    if dt.hour >= BUSINESS_END_HOUR or (dt.hour == BUSINESS_START_HOUR and dt.minute > 0):
-        next_slot += timedelta(days=1)
-    
-    # Si cae en fin de semana, saltar al lunes
-    while next_slot.weekday() not in BUSINESS_DAYS:
-        next_slot += timedelta(days=1)
-        
-    return next_slot
+    """Return the current business instant or the next opening in UTC."""
+    start = int(getattr(Config, "CRM_NOTIFICATION_BUSINESS_START", 9))
+    end = int(getattr(Config, "CRM_NOTIFICATION_BUSINESS_END", 19))
+    from .business_calendar import next_business_slot_utc
+    return next_business_slot_utc(dt, start_hour=start, end_hour=end)
 
 def get_next_round_robin_executive(norm_comuna: str = "") -> str:
     """

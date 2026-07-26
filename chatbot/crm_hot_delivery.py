@@ -17,6 +17,10 @@ from .crm_notifications import (
 )
 
 NOTIFICATION_TYPE = "lead_assignment_hot"
+ALLOWED_COMMERCIAL_REASONS = (
+    "lead_created", "inbound_message", "manual_lead",
+    "manual_lead_created", "router", "LeadRouter",
+)
 
 
 def _existing_hot_notification(db, *, lead_id, cycle_id, recipient_user_id):
@@ -99,7 +103,7 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
     # unless the mode is ON_CALL_IMMEDIATE.
     final_send_after = due
     from .lead_router import is_business_hours, after_hours_hot_mode, get_next_business_slot
-    if not is_business_hours():
+    if not is_business_hours(due):
         mode = after_hours_hot_mode()
         if mode == "NEXT_BUSINESS_OPEN":
             final_send_after = get_next_business_slot(due)
@@ -121,6 +125,9 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
             "recipient_phone": recipient_phone,
             "dedupe_active": True,
             "hot_context": effective_context,
+            "notification_eligible": cycle.get("notification_eligible") is True,
+            "cycle_reason": cycle.get("reason"),
+            "cycle_origin": cycle.get("cycle_origin") or cycle.get("reason"),
         },
         metadata={"assignment_cycle_id": cycle["assignment_cycle_id"], "lead_id": str(lead["_id"])},
     )
@@ -148,9 +155,31 @@ def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
 
     notification = claim_next(db, worker_id=worker_id, now=current,
                               extra_filter={"notification_type": NOTIFICATION_TYPE,
-                                            "send_after": {"$lte": current}})
+                                            "send_after": {"$lte": current},
+                                            "notification_eligible": True,
+                                            "cycle_reason": {"$in": list(ALLOWED_COMMERCIAL_REASONS)},
+                                            "cycle_origin": {"$in": list(ALLOWED_COMMERCIAL_REASONS)},
+                                            "provider_message_id": {"$exists": False},
+                                            "actually_delivered": {"$ne": True}})
     if not notification:
         return {"status": "idle"}
+
+    cycle = db["crm_assignment_cycles"].find_one({
+        "assignment_cycle_id": notification.get("assignment_cycle_id"),
+        "notification_eligible": True,
+        "reason": {"$in": list(ALLOWED_COMMERCIAL_REASONS)},
+        "cycle_status": "active",
+    })
+    lead = db["leads"].find_one({
+        "_id": notification.get("lead_id"),
+        "stage": {"$nin": ["ARCHIVED", "CLOSED_WON", "CLOSED_LOST", "REJECTED"]},
+    })
+    if not cycle or not lead:
+        finalize_attempt(
+            db, notification_id=notification["_id"], worker_id=worker_id,
+            state="suppressed", error="ineligible_cycle_or_lead", now=current,
+        )
+        return {"status": "suppressed", "reason": "ineligible_cycle_or_lead"}
 
     # Resolve executive and build secure context
     from .crm_delivery import resolve_executive_user, get_executive_phone

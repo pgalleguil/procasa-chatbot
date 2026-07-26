@@ -50,7 +50,10 @@ INDIVIDUAL_IDENTITY_FIELD = "individual_identity"
 # ---------------------------------------------------------------------------
 
 def _window_due_at(started_at):
-    """Return the fixed UTC expiry for a digest window."""
+    """Return a fixed in-hours window or the next business opening."""
+    from .lead_router import get_next_business_slot, is_business_hours
+    if not is_business_hours(started_at):
+        return get_next_business_slot(started_at)
     window = max(int(getattr(Config, "CRM_NON_HOT_DIGEST_WINDOW_MINUTES", 15)), 1)
     return started_at + timedelta(minutes=window)
 
@@ -160,10 +163,11 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
 
     # Try to find an existing open (pending) digest for this executive.
     existing = db[NOTIFICATION_COLLECTION].find_one({
-        "digest_identity": identity,
+        "recipient_user_id": recipient,
+        "digest_type": DIGEST_TYPE,
         "schema_version": "crm_notification_v1",
         "state": {"$in": ["pending", "sending"]},
-    })
+    }, sort=[("created_at", 1)])
 
     if existing:
         # Append this lead if not already present.
@@ -175,6 +179,13 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
             existing_cycles = list(existing.get("assignment_cycle_ids") or [])
             if str(cycle_id) not in existing_cycles:
                 existing_cycles.append(str(cycle_id))
+            cycle_reasons = list(existing.get("cycle_reasons") or [])
+            cycle_origins = list(existing.get("cycle_origins") or [])
+            if db_cycle.get("reason") not in cycle_reasons:
+                cycle_reasons.append(db_cycle.get("reason"))
+            origin = db_cycle.get("cycle_origin") or db_cycle.get("reason")
+            if origin not in cycle_origins:
+                cycle_origins.append(origin)
             new_count = len(new_ids)
             # Volume threshold: if we just reached the max, mark as ready now.
             max_before_send = int(getattr(Config, "CRM_NON_HOT_DIGEST_MAX_LEADS_BEFORE_SEND", "0"))
@@ -187,6 +198,9 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
                         "updated_at": now,
                         "lead_count": new_count,
                         "send_after": now,
+                        "notification_eligible": True,
+                        "cycle_reasons": cycle_reasons,
+                        "cycle_origins": cycle_origins,
                     }},
                 )
             else:
@@ -197,6 +211,9 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
                         "assignment_cycle_ids": existing_cycles,
                         "updated_at": now,
                         "lead_count": new_count,
+                        "notification_eligible": True,
+                        "cycle_reasons": cycle_reasons,
+                        "cycle_origins": cycle_origins,
                     }},
                 )
         else:
@@ -236,6 +253,9 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
             "window_started_at": now_iso,
             "window_due_at": send_after_iso,
             "lead_count": 1,
+            "notification_eligible": db_cycle.get("notification_eligible") is True,
+            "cycle_reasons": [db_cycle.get("reason")],
+            "cycle_origins": [db_cycle.get("cycle_origin") or db_cycle.get("reason")],
         },
         metadata={
             "digest_type": DIGEST_TYPE,
@@ -310,6 +330,13 @@ def claim_due_digest(db, *, worker_id, now=None):
         extra_filter={
             "digest_type": DIGEST_TYPE,
             "send_after": {"$lte": current},
+            "notification_eligible": True,
+            "cycle_reasons": {"$not": {"$elemMatch": {"$nin": [
+                "lead_created", "inbound_message", "manual_lead",
+                "manual_lead_created", "router",
+            ]}}},
+            "provider_message_id": {"$exists": False},
+            "actually_delivered": {"$ne": True},
         },
     )
 

@@ -215,6 +215,53 @@ def test_two_messages_in_window_make_one_batch_and_one_response():
     assert len(result["delivery_attempts"]) == 2
 
 
+def test_process_one_batch_offloads_all_sync_mongo_from_event_loop(monkeypatch):
+    import threading
+
+    db = DB()
+    add(db, "wamid-thread", "hola", NOW)
+    main_thread = threading.get_ident()
+    observed = []
+
+    def track(name, original):
+        def wrapped(*args, **kwargs):
+            try:
+                asyncio.get_running_loop()
+                loop_active = True
+            except RuntimeError:
+                loop_active = False
+            observed.append((name, threading.get_ident(), loop_active))
+            return original(*args, **kwargs)
+        return wrapped
+
+    monkeypatch.setattr(
+        queue, "claim_pending_batch",
+        track("claim", queue.claim_pending_batch),
+    )
+    monkeypatch.setattr(
+        queue, "record_delivery_attempt",
+        track("attempt", queue.record_delivery_attempt),
+    )
+    monkeypatch.setattr(
+        queue, "finalize_batch",
+        track("finalize", queue.finalize_batch),
+    )
+
+    async def llm(_phone, _text):
+        return "respuesta"
+
+    async def sender(_phone, _text):
+        return {"success": True, "provider_message_id": "out-thread", "http_status": 200}
+
+    asyncio.run(queue.process_one_batch(
+        db, worker_id="thread-worker", llm=llm, sender=sender,
+        now=NOW + timedelta(seconds=15),
+    ))
+    assert {name for name, _, _ in observed} == {"claim", "attempt", "finalize"}
+    assert all(thread_id != main_thread and not loop_active
+               for _, thread_id, loop_active in observed)
+
+
 def test_batch_not_claimed_before_window_and_two_workers_cannot_claim():
     db = DB()
     add(db, "wamid-1", "hola")

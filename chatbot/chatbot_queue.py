@@ -434,55 +434,60 @@ def get_pending_counts(db):
 
 async def process_one_batch(db, *, worker_id, llm, sender, now=None):
     """Process at most one due batch. Injection points keep tests/provider dry."""
-    claimed = claim_pending_batch(db, worker_id=worker_id, now=now)
+    claimed = await asyncio.to_thread(
+        claim_pending_batch, db, worker_id=worker_id, now=now
+    )
     if not claimed:
         return None
     batch_id = claimed["_id"]
     token = claimed["delivery_token"]
     text = _valid_text(claimed.get("combined_text"))
     if not text:
-        return finalize_batch(
-            db, batch_id=batch_id, state=ST_FAILED_TERMINAL,
-            error="invalid_or_empty_snapshot", worker_id=worker_id, delivery_token=token,
+        return await asyncio.to_thread(
+            finalize_batch, db, batch_id=batch_id, state=ST_FAILED_TERMINAL,
+            error="invalid_or_empty_snapshot", worker_id=worker_id,
+            delivery_token=token,
         )
     try:
         response = await llm(claimed["phone"], text)
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        return finalize_batch(
-            db, batch_id=batch_id, state=ST_FAILED_RETRYABLE,
+        return await asyncio.to_thread(
+            finalize_batch, db, batch_id=batch_id, state=ST_FAILED_RETRYABLE,
             error=f"llm:{type(exc).__name__}:{str(exc)[:300]}", worker_id=worker_id,
             delivery_token=token,
             next_attempt_at=(now or utc_now()) + timedelta(seconds=30),
         )
     response = _valid_text(response)
     if not response:
-        return finalize_batch(
-            db, batch_id=batch_id, state=ST_FAILED_RETRYABLE,
+        return await asyncio.to_thread(
+            finalize_batch, db, batch_id=batch_id, state=ST_FAILED_RETRYABLE,
             error="empty_response", worker_id=worker_id, delivery_token=token,
         )
 
-    record_delivery_attempt(
-        db, batch_id=batch_id, worker_id=worker_id, delivery_token=token,
+    await asyncio.to_thread(
+        record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
+        delivery_token=token,
         status="started",
     )
     try:
         receipt = await sender(claimed["phone"], response)
     except asyncio.CancelledError:
-        finalize_batch(
-            db, batch_id=batch_id, state=ST_DELIVERY_UNKNOWN,
+        await asyncio.to_thread(
+            finalize_batch, db, batch_id=batch_id, state=ST_DELIVERY_UNKNOWN,
             error="send_cancelled_after_attempt_started", worker_id=worker_id,
             delivery_token=token,
         )
         raise
     except Exception as exc:
-        record_delivery_attempt(
-            db, batch_id=batch_id, worker_id=worker_id, delivery_token=token,
+        await asyncio.to_thread(
+            record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
+            delivery_token=token,
             status=ST_DELIVERY_UNKNOWN, error=type(exc).__name__,
         )
-        return finalize_batch(
-            db, batch_id=batch_id, state=ST_DELIVERY_UNKNOWN,
+        return await asyncio.to_thread(
+            finalize_batch, db, batch_id=batch_id, state=ST_DELIVERY_UNKNOWN,
             error=f"send:{type(exc).__name__}", worker_id=worker_id,
             delivery_token=token,
         )
@@ -492,12 +497,13 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
     if receipt.get("provider_call_uncertain"):
         state, error, retry_at = ST_DELIVERY_UNKNOWN, "provider_call_uncertain", None
     elif receipt.get("success") and provider_id:
-        record_delivery_attempt(
-            db, batch_id=batch_id, worker_id=worker_id, delivery_token=token,
+        await asyncio.to_thread(
+            record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
+            delivery_token=token,
             status="accepted", provider_message_id=provider_id, http_status=http_status,
         )
-        return finalize_batch(
-            db, batch_id=batch_id, state=ST_RESPONDED,
+        return await asyncio.to_thread(
+            finalize_batch, db, batch_id=batch_id, state=ST_RESPONDED,
             outbound_provider_message_id=provider_id, worker_id=worker_id,
             delivery_token=token,
         )
@@ -512,12 +518,14 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
         retry_at = (now or utc_now()) + timedelta(seconds=retry_after)
     else:
         state, error, retry_at = ST_FAILED_RETRYABLE, f"http_{http_status or 'unknown'}", None
-    record_delivery_attempt(
-        db, batch_id=batch_id, worker_id=worker_id, delivery_token=token,
+    await asyncio.to_thread(
+        record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
+        delivery_token=token,
         status=state, http_status=http_status, error=error,
     )
-    return finalize_batch(
-        db, batch_id=batch_id, state=state, error=error, worker_id=worker_id,
+    return await asyncio.to_thread(
+        finalize_batch, db, batch_id=batch_id, state=state, error=error,
+        worker_id=worker_id,
         delivery_token=token, next_attempt_at=retry_at,
     )
 

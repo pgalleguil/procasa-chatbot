@@ -180,6 +180,44 @@ def claim_next(db, *, worker_id, lease_seconds=120, now=None, extra_filter=None)
     )
 
 
+def source_event_response_evidence(db, *, assignment_cycle_id):
+    """Return accepted chatbot delivery evidence for the cycle's source inbound."""
+    cycle = db["crm_assignment_cycles"].find_one(
+        {"assignment_cycle_id": assignment_cycle_id},
+        {"source_event_id": 1, "source_inbound_provider_id": 1, "lead_id": 1},
+    ) or {}
+    source_id = str(
+        cycle.get("source_inbound_provider_id") or cycle.get("source_event_id") or ""
+    )
+    if not source_id:
+        return None
+    job = db["chatbot_inbound_jobs"].find_one({
+        "inbound_provider_message_id": source_id,
+        "state": "responded",
+    })
+    if not job:
+        return None
+    batch_id = job.get("batch_id")
+    batch = db["chatbot_inbound_jobs"].find_one({"_id": batch_id}) if batch_id else None
+    if not batch:
+        return None
+    provider_id = batch.get("outbound_provider_message_id")
+    accepted = provider_id or next((
+        attempt.get("provider_message_id")
+        for attempt in (batch.get("delivery_attempts") or [])
+        if attempt.get("status") == "accepted" and attempt.get("provider_message_id")
+    ), None)
+    if not accepted:
+        return None
+    return {
+        "source_event_id": source_id,
+        "job_id": str(job.get("_id")),
+        "batch_id": str(batch_id),
+        "provider_message_id": str(accepted),
+        "responded_at": batch.get("responded_at") or batch.get("updated_at"),
+    }
+
+
 def recover_expired_lease(db, *, notification_id, provider_status, now=None):
     """Recovery requires an explicit provider check. Never recovers documents
     with delivery evidence (provider_message_id, actually_delivered, delivery_token)."""

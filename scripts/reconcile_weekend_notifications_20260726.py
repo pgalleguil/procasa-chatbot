@@ -55,6 +55,25 @@ def _aware(value):
 
 def _latest_event(db, lead):
     lead_id = lead["_id"]
+    jobs = list(db["chatbot_inbound_jobs"].find({
+        "phone": lead.get("phone"),
+        "received_at": {"$gte": WEEKEND_START.replace(tzinfo=None)},
+        "inbound_provider_message_id": {"$exists": True, "$ne": None},
+    }).sort("received_at", -1))
+    for job in jobs:
+        provider_id = str(job.get("inbound_provider_message_id") or "")
+        if provider_id.startswith("synthetic_canary"):
+            continue
+        batch = db["chatbot_inbound_jobs"].find_one({"_id": job.get("batch_id")}) or {}
+        outbound = batch.get("outbound_provider_message_id")
+        return {
+            "id": provider_id,
+            "reason": "inbound_message",
+            "at": _aware(job.get("received_at")),
+            "responded": job.get("state") == "responded" and bool(outbound),
+            "outbound_provider_message_id": outbound,
+            "batch_id": str(job.get("batch_id") or ""),
+        }
     events = list(db["crm_events"].find({
         "lead_id": {"$in": [lead_id, str(lead_id)]},
         "type": {"$in": ["msg_in", "MANUAL_LEAD_CREATED"]},
@@ -66,20 +85,7 @@ def _latest_event(db, lead):
             "id": str(event["_id"]),
             "reason": "manual_lead_created" if event.get("type") == "MANUAL_LEAD_CREATED" else "inbound_message",
             "at": _aware(event.get("timestamp")),
-        }
-    jobs = list(db["chatbot_inbound_jobs"].find({
-        "phone": lead.get("phone"),
-        "received_at": {"$gte": WEEKEND_START.replace(tzinfo=None)},
-        "inbound_provider_message_id": {"$exists": True, "$ne": None},
-    }).sort("received_at", -1))
-    for job in jobs:
-        provider_id = str(job.get("inbound_provider_message_id") or "")
-        if provider_id.startswith("synthetic_canary"):
-            continue
-        return {
-            "id": provider_id,
-            "reason": "inbound_message",
-            "at": _aware(job.get("received_at")),
+            "responded": False,
         }
     return None
 
@@ -152,6 +158,7 @@ def _ensure_assignment(db, lead, event, *, apply):
         {"assignment_cycle_id": cycle["assignment_cycle_id"]},
         {"$set": {
             "source_event_id": event["id"],
+            "source_inbound_provider_id": event["id"],
             "cycle_origin": "manual_lead" if event["reason"] == "manual_lead_created" else "inbound_message",
             "notification_eligible": True,
         }},
@@ -229,6 +236,15 @@ def reconcile(*, apply=False):
             continue
         if not event:
             results.append({"lead_id": raw_id, "result": "blocked_no_original_commercial_event"})
+            continue
+        if event.get("responded"):
+            results.append({
+                "lead_id": raw_id,
+                "result": "excluded_already_recovered_and_delivered",
+                "event_id": event["id"],
+                "batch_id": event.get("batch_id"),
+                "outbound_provider_message_id": event.get("outbound_provider_message_id"),
+            })
             continue
         cycle, created = _ensure_assignment(db, lead, event, apply=apply)
         if not cycle:

@@ -111,6 +111,45 @@ def test_provider_acceptance_without_message_id_is_quarantined_not_retried():
                                         worker_id="restart", now=local(20, 11), enabled=True))["status"] == "idle"
 
 
+def test_responded_source_inbound_blocks_reconstruction_and_send():
+    db, lead = setup_db()
+    created = assign_and_enqueue_hot(
+        db, lead=lead, recipient_user_id="u1", recipient_phone="+56911111111",
+        payload={}, assigned_at=local(20, 9), send_after=local(20, 9),
+    )
+    cycle_id = created["cycle"]["assignment_cycle_id"]
+    db["crm_assignment_cycles"].update_one(
+        {"assignment_cycle_id": cycle_id},
+        {"$set": {"source_inbound_provider_id": "inbound-accepted"}},
+    )
+    db["chatbot_inbound_jobs"].docs.extend([
+        {
+            "_id": "job-accepted", "inbound_provider_message_id": "inbound-accepted",
+            "state": "responded", "batch_id": "batch:accepted",
+        },
+        {
+            "_id": "batch:accepted", "state": "responded",
+            "outbound_provider_message_id": "provider-accepted",
+        },
+    ])
+
+    repeated = assign_and_enqueue_hot(
+        db, lead=lead, recipient_user_id="u1", recipient_phone="+56911111111",
+        payload={}, assigned_at=local(20, 9), send_after=local(20, 9),
+    )
+    assert repeated["notification"] is None
+    assert repeated["suppression_reason"] == "source_inbound_already_responded"
+
+    calls = []
+    result = _run_with_hot(process_one_hot(
+        db, sender=lambda *_: calls.append(True), worker_id="barrier",
+        now=local(20, 10), enabled=True,
+    ))
+    assert result["status"] == "suppressed"
+    assert result["reason"] == "source_inbound_already_responded"
+    assert calls == []
+
+
 def test_claim_and_finalize_offloaded_from_event_loop_and_main_thread():
     """Regression: claim_next/finalize_attempt must not run on MainThread or event loop.
 

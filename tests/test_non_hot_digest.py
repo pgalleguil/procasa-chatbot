@@ -2218,3 +2218,28 @@ def test_two_workers_no_duplicate_hot_and_digest():
     # Exactly one HOT notification
     hot_docs = [d for d in db["crm_notifications_v1"].docs if d.get("notification_type") == "lead_assignment_hot"]
     assert len(hot_docs) == 1
+
+
+def test_responded_source_inbound_never_enters_digest():
+    db, lead, cycle = default_db()
+    db["crm_assignment_cycles"].update_one(
+        {"assignment_cycle_id": cycle["assignment_cycle_id"]},
+        {"$set": {"source_inbound_provider_id": "digest-inbound-accepted"}},
+    )
+    cycle["source_inbound_provider_id"] = "digest-inbound-accepted"
+    db["chatbot_inbound_jobs"].docs.extend([
+        {
+            "_id": "digest-job",
+            "inbound_provider_message_id": "digest-inbound-accepted",
+            "state": "responded",
+            "batch_id": "batch:digest-accepted",
+        },
+        {
+            "_id": "batch:digest-accepted",
+            "state": "responded",
+            "outbound_provider_message_id": "digest-provider-accepted",
+        },
+    ])
+    with _patch_config():
+        assert accumulate_non_hot_lead(db, lead=lead, cycle=cycle) is None
+    assert db["crm_notifications_v1"].docs == []

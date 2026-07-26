@@ -112,6 +112,12 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
 
     if db_cycle is None:
         db_cycle = cycle  # fallback to passed dict
+    from .crm_notifications import source_event_response_evidence
+    if source_event_response_evidence(db, assignment_cycle_id=cycle_id):
+        logger.info(
+            "[NON_HOT_DIGEST] source inbound already responded cycle=%s", cycle_id
+        )
+        return None
 
     # Canary: skip all eligibility checks for authorized leads
     str_lead_id = str(lead.get("_id"))
@@ -541,6 +547,19 @@ def send_digest(db, *, notification, worker_id, sender=None):
     ``sender`` is a sync callable ``(phone, message) -> dict`` or None.
     In shadow mode the provider is never called.
     """
+    from .crm_notifications import source_event_response_evidence
+    for cycle_id in list(notification.get("assignment_cycle_ids") or []):
+        if source_event_response_evidence(db, assignment_cycle_id=cycle_id):
+            finalize_attempt(
+                db, notification_id=notification["_id"], worker_id=worker_id,
+                state="suppressed", error="source_inbound_already_responded",
+            )
+            return {
+                "status": "suppressed",
+                "reason": "source_inbound_already_responded",
+                "assignment_cycle_id": cycle_id,
+            }
+
     # Shadow mode: controlled by config. Canary IDs can bypass during incident.
     is_canary = str(notification.get("_id")) in CANARY_DIGEST_IDS
     shadow = Config.CRM_NON_HOT_DIGEST_SHADOW_MODE and not is_canary

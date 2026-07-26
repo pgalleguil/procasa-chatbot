@@ -95,6 +95,12 @@ def create_inbound_job(
         "is_from_me": False,
         "created_at": now,
         "updated_at": now,
+        "message_domain": "chatbot",
+        "message_type": "inbound_message",
+        "recipient_role": "client",
+        "state_source": JOB_COLLECTION,
+        "responsible_service": "chatbot_response_delivery",
+        "idempotency_key": f"chatbot:inbound:{provider_id}",
     }
     try:
         coll.insert_one(job)
@@ -131,6 +137,12 @@ def create_inbound_job(
             "created_at": now,
             "updated_at": now,
             "delivery_attempts": [],
+            "message_domain": "chatbot",
+            "message_type": "chatbot_response",
+            "recipient_role": "client",
+            "state_source": JOB_COLLECTION,
+            "responsible_service": "chatbot_response_delivery",
+            "idempotency_key": f"chatbot:batch:{batch_id}",
         })
     else:
         batch_id = batch["_id"]
@@ -176,6 +188,12 @@ def batch_inbound_jobs(db, *, phone, batch_id=None, max_wait_seconds=15, now=Non
         "created_at": now,
         "updated_at": now,
         "delivery_attempts": [],
+        "message_domain": "chatbot",
+        "message_type": "chatbot_response",
+        "recipient_role": "client",
+        "state_source": JOB_COLLECTION,
+        "responsible_service": "chatbot_response_delivery",
+        "idempotency_key": f"chatbot:batch:{batch_id}",
     }
     coll.insert_one(batch)
     for job in jobs:
@@ -195,6 +213,7 @@ def claim_pending_batch(db, *, worker_id, lease_seconds=120, now=None):
     coll = db[JOB_COLLECTION]
     query = {
         "kind": KIND_BATCH,
+        "message_domain": "chatbot",
         "state": {"$in": [ST_BATCHING, ST_PENDING, ST_FAILED_RETRYABLE]},
         "window_end_at": {"$lte": now},
         "outbound_provider_message_id": {"$exists": False},
@@ -210,6 +229,7 @@ def claim_pending_batch(db, *, worker_id, lease_seconds=120, now=None):
     jobs = list(coll.find({
         "_id": {"$in": candidate.get("job_ids", [])},
         "kind": KIND_JOB,
+        "message_domain": "chatbot",
         "state": {"$in": [ST_BATCHING, ST_PENDING, ST_FAILED_RETRYABLE]},
     }).sort("received_at", ASCENDING))
     messages = [

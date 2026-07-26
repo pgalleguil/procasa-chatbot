@@ -112,6 +112,12 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
 
     if db_cycle is None:
         db_cycle = cycle  # fallback to passed dict
+    from .crm_notifications import verified_commercial_source
+    if not verified_commercial_source(db, db_cycle):
+        logger.info(
+            "[NON_HOT_DIGEST] unverified commercial source cycle=%s", cycle_id
+        )
+        return None
     # Canary: skip all eligibility checks for authorized leads
     str_lead_id = str(lead.get("_id"))
     if str_lead_id in CANARY_LEAD_IDS:
@@ -328,11 +334,14 @@ def claim_due_digest(db, *, worker_id, now=None):
         now=current,
         extra_filter={
             "digest_type": DIGEST_TYPE,
+            "message_domain": "commercial_notification",
             "send_after": {"$lte": current},
             "notification_eligible": True,
             "cycle_reasons": {"$not": {"$elemMatch": {"$nin": [
-                "lead_created", "inbound_message", "manual_lead",
-                "manual_lead_created", "router",
+                "lead_created", "inbound_message", "manual_lead_created",
+            ]}}},
+            "cycle_origins": {"$not": {"$elemMatch": {"$nin": [
+                "inbound_message", "manual_lead",
             ]}}},
             "provider_message_id": {"$exists": False},
             "actually_delivered": {"$ne": True},
@@ -433,10 +442,20 @@ def build_digest_message_content(db, notification):
                 lead_exec_id = str(exec_user.get("_id"))
         if recipient_norm and lead_exec_id and recipient_norm != lead_exec_id:
             continue
+        expected_cycle_ids = {
+            str(value) for value in (notification.get("assignment_cycle_ids") or [])
+        }
         cycle = db["crm_assignment_cycles"].find_one(
-            {"lead_id": lead["_id"], "unassigned_at": None},
+            {
+                "lead_id": lead["_id"],
+                "unassigned_at": None,
+                "assignment_cycle_id": {"$in": list(expected_cycle_ids)},
+            },
             sort=[("assigned_at", -1)],
         )
+        from .crm_notifications import verified_commercial_source
+        if not verified_commercial_source(db, cycle):
+            continue
         if cycle and cycle.get("first_valid_management_at"):
             continue
         valid.append(lead)
@@ -540,6 +559,13 @@ def send_digest(db, *, notification, worker_id, sender=None):
     ``sender`` is a sync callable ``(phone, message) -> dict`` or None.
     In shadow mode the provider is never called.
     """
+    if notification.get("message_domain") != "commercial_notification":
+        finalize_attempt(
+            db, notification_id=notification["_id"], worker_id=worker_id,
+            state="suppressed", error="wrong_message_domain",
+        )
+        return {"status": "suppressed", "reason": "wrong_message_domain"}
+
     # Shadow mode: controlled by config. Canary IDs can bypass during incident.
     is_canary = str(notification.get("_id")) in CANARY_DIGEST_IDS
     shadow = Config.CRM_NON_HOT_DIGEST_SHADOW_MODE and not is_canary

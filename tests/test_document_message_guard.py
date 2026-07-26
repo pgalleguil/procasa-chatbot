@@ -102,7 +102,7 @@ def test_expired_or_not_sent_document_does_not_block():
     assert find_active_document_guard(fake_db(contracts=documents), "56912345678", now) is None
 
 
-def test_webhook_cannot_disconnect_document_guard_again():
+def test_webhook_keeps_document_and_chatbot_domains_independent():
     webhook_path = Path(__file__).resolve().parents[1] / "webhook.py"
     tree = ast.parse(webhook_path.read_text(encoding="utf-8-sig"))
 
@@ -119,6 +119,6 @@ def test_webhook_cannot_disconnect_document_guard_again():
         and node.func.id == "find_active_document_guard"
     ]
 
-    assert imported
+    assert not imported
     # Recepción, post-debounce y antes de enviar una respuesta tardía.
-    assert len(guard_calls) >= 3
+    assert guard_calls == []

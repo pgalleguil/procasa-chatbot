@@ -324,6 +324,12 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             
         visita_doc = {
             "visita_code": visita_code,
+            "message_domain": "document_signature",
+            "message_type": "visit_order",
+            "recipient_role": "client",
+            "state_source": "visitas",
+            "responsible_service": "document_signature_delivery",
+            "idempotency_key": f"document_signature:{visita_code}:{data.get('phone', '')}",
             "origen": data.get("origen", "CRM"),
             "property_code": property_code,
             "phone": data.get("phone", ""),

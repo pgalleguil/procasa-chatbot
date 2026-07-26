@@ -345,6 +345,12 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
 
         contract_doc = {
             "contract_code": contract_code,
+            "message_domain": "document_signature",
+            "message_type": "brokerage_agreement",
+            "recipient_role": "client",
+            "state_source": "contracts",
+            "responsible_service": "document_signature_delivery",
+            "idempotency_key": f"document_signature:{contract_code}:{data.get('phone', '')}",
             "origen": data.get("origen", "Captación Interna"),
             "property_code": property_code,
             "phone": data.get("phone", ""),

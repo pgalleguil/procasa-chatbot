@@ -345,6 +345,9 @@ def make_cycle(cycle_id="cycle-1", lead_id="lead-1", exec_user_id="user-erika",
         "reason": "inbound_message",
         "cycle_origin": "inbound_message",
         "notification_eligible": True,
+        "source_event_id": f"inbound-{cycle_id}",
+        "source_inbound_provider_id": f"inbound-{cycle_id}",
+        "source_event_verified": True,
     }
 
 
@@ -362,6 +365,11 @@ def default_db():
         usuarios=Collection([user]),
         crm_notifications_v1=Collection(),
         pending_notifications=Collection(),
+        chatbot_inbound_jobs=Collection([{
+            "_id": "job-cycle-1",
+            "inbound_provider_message_id": "inbound-cycle-1",
+            "kind": "job",
+        }]),
     )
     return db, lead, cycle
 
@@ -2137,12 +2145,12 @@ def test_digest_volume_threshold_early_send():
             assert n1.get("lead_count") == 1
 
             l2 = make_lead("l2-vt", "56900000002"); db["leads"].insert_one(l2)
-            c2 = {"lead_id": "l2-vt", "assignment_cycle_id": "cy-l2-vt", "assigned_to_user_id": "user-erika"}
+            c2 = make_cycle("cy-l2-vt", "l2-vt")
             n2 = accumulate_non_hot_lead(db, lead=l2, cycle=c2)
             assert n2.get("lead_count") == 2
 
             l3 = make_lead("l3-vt", "56900000003"); db["leads"].insert_one(l3)
-            c3 = {"lead_id": "l3-vt", "assignment_cycle_id": "cy-l3-vt", "assigned_to_user_id": "user-erika"}
+            c3 = make_cycle("cy-l3-vt", "l3-vt")
             n3 = accumulate_non_hot_lead(db, lead=l3, cycle=c3)
             assert n3.get("lead_count") == 3
 

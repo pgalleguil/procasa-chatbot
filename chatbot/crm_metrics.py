@@ -188,14 +188,13 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
     sla_policy = "sla_visual_v1_20260723" if not is_pre_visual_cutover(assigned_at) else "legacy"
     # Only leads created by real commercial events are notification-eligible
     notifiable_reasons = frozenset({
-        "lead_created", "inbound_message", "manual_lead", "router",
-        "LeadRouter", "manual_lead_created",
+        "lead_created", "inbound_message", "manual_lead_created",
     })
     notification_eligible = reason in notifiable_reasons
-    if reason in {"manual_lead", "manual_lead_created"}:
+    if reason == "manual_lead_created":
         cycle_origin = "manual_lead"
-    elif reason == "LeadRouter":
-        cycle_origin = "router"
+    elif reason == "lead_created":
+        cycle_origin = "inbound_message"
     else:
         cycle_origin = reason
     cycle = {

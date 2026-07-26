@@ -24,6 +24,10 @@ VALID_STATES = frozenset({
     "rate_limited", "held",
 })
 DEDUP_ACTIVE_STATES = frozenset({"pending", "sending", "sent", "failed_retryable"})
+ALLOWED_COMMERCIAL_REASONS = frozenset({
+    "inbound_message", "lead_created", "manual_lead_created",
+})
+ALLOWED_COMMERCIAL_ORIGINS = frozenset({"inbound_message", "manual_lead"})
 
 
 def individual_identity(*, lead_id, assignment_cycle_id, notification_type, recipient_user_id) -> str:
@@ -43,6 +47,39 @@ def digest_identity(*, recipient_user_id, digest_type, business_period, content_
 def content_hash(payload) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def verified_commercial_source(db, cycle) -> bool:
+    """A commercial cycle must point to a real inbound or manual-create event."""
+    if not cycle or cycle.get("notification_eligible") is not True:
+        return False
+    if cycle.get("reason") not in ALLOWED_COMMERCIAL_REASONS:
+        return False
+    if cycle.get("cycle_origin") not in ALLOWED_COMMERCIAL_ORIGINS:
+        return False
+    source_id = str(
+        cycle.get("source_inbound_provider_id") or cycle.get("source_event_id") or ""
+    ).strip()
+    if not source_id:
+        return False
+    if cycle.get("source_event_verified") is True:
+        return True
+    if db["chatbot_inbound_jobs"].find_one({
+        "inbound_provider_message_id": source_id,
+        "kind": {"$ne": "batch"},
+    }):
+        return True
+    try:
+        from bson import ObjectId
+        source_values = [source_id]
+        if len(source_id) == 24:
+            source_values.append(ObjectId(source_id))
+    except Exception:
+        source_values = [source_id]
+    return bool(db["crm_events"].find_one({
+        "_id": {"$in": source_values},
+        "type": {"$in": ["msg_in", "MANUAL_LEAD_CREATED"]},
+    }))
 
 
 def audit_duplicate_identities(db) -> dict:
@@ -154,6 +191,15 @@ def create_pending(db, *, identity_field, identity, payload, payload_version="cr
         "payload": payload, "metadata": dict(metadata or {}), "attempts": [],
         "schema_version": "crm_notification_v1", "canonical_identity_version": 1,
         "created_at": now, "updated_at": now,
+        "message_domain": "commercial_notification",
+        "message_type": (
+            (canonical_fields or {}).get("notification_type")
+            or (canonical_fields or {}).get("digest_type")
+        ),
+        "recipient_role": "executive",
+        "state_source": COLLECTION,
+        "responsible_service": "commercial_notification_delivery",
+        "idempotency_key": identity,
     }
     document.update(dict(canonical_fields or {}))
     if document.get("dedupe_active") is None:

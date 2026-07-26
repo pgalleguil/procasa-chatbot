@@ -23,11 +23,20 @@ def fake_sender(_recipient, _payload):
 
 
 def setup_db():
-    lead = {"_id": "lead-1", "lead_temperature_effective": "HOT", "temperature_history": [{"at": local(20, 8), "value": "HOT"}]}
+    lead = {
+        "_id": "lead-1", "lead_temperature_effective": "HOT",
+        "source_inbound_provider_id": "test-inbound-1",
+        "temperature_history": [{"at": local(20, 8), "value": "HOT"}],
+    }
     user = {"_id": "u1", "nombre": "Test", "telefono": "+56911111111"}
     db = DB(leads=Collection([lead]), crm_assignment_cycles=Collection(),
             crm_notifications_v1=Collection(unique={"individual_identity"}),
-            usuarios=Collection([user]))
+            usuarios=Collection([user]),
+            chatbot_inbound_jobs=Collection([{
+                "_id": "test-job-1",
+                "inbound_provider_message_id": "test-inbound-1",
+                "kind": "job",
+            }]))
     return db, lead
 
 

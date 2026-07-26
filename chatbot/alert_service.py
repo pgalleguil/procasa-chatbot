@@ -213,11 +213,22 @@ def _send_alert_once_sync(
         lead_data["target_name"] = exec_name
         lead_data["target_phone"] = exec_phone
         lead_data["is_new_assignment"] = is_new_assignment
+        source_job = db["chatbot_inbound_jobs"].find_one(
+            {
+                "phone": resolution.lead.get("phone"),
+                "inbound_provider_message_id": {"$exists": True, "$ne": None},
+            },
+            sort=[("received_at", -1)],
+        )
+        if not source_job:
+            logger.error("[ALERT] canonical Hot blocked: no verified inbound source")
+            return
         canonical = assign_and_enqueue_hot(
             db, lead=resolution.lead, recipient_user_id=recipient_user_id, recipient_name=exec_name,
             recipient_phone=exec_phone, payload=lead_data,
-            assigned_by="system", reason="LeadRouter", assigned_at=due_local,
+            assigned_by="system", reason="inbound_message", assigned_at=due_local,
             send_after=due_local,
+            source_event_id=source_job.get("inbound_provider_message_id"),
         )
         logger.info(
             "[ALERT] canonical Hot queued lead_id=%s cycle_id=%s delivery_id=%s",

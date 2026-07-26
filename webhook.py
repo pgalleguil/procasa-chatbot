@@ -75,7 +75,6 @@ from captacion_goals import (
 from captacion_workforce import create_work_exception, upsert_calendar_day, upsert_membership
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate, resolve_property_code
 from chatbot.processing_service import LeadProcessingService
-from chatbot.document_message_guard import find_active_document_guard
 from chatbot.crm_permissions import (
     can_administer_leads,
     lead_is_assigned_to_user,
@@ -1768,23 +1767,6 @@ async def webhook(
             from_me = True
 
     # --- GUARDA DE FIRMA DIGITAL: SOLO EL TELÉFONO DEL DOCUMENTO VIGENTE ---
-    from chatbot.storage import get_db
-    _db = await loop.run_in_executor(_WEB_THREAD_POOL, get_db)
-    phone_digits_check = "".join(filter(str.isdigit, phone))
-    if phone_digits_check and len(phone_digits_check) >= 8:
-        document_guard = await loop.run_in_executor(
-            _WEB_THREAD_POOL,
-            lambda: find_active_document_guard(_db, phone),
-        )
-        if document_guard:
-            logger.info(
-                "[DOCUMENT_GUARD] Mensaje ignorado antes de lectura/procesamiento "
-                f"phone={phone} type={document_guard['document_type']} "
-                f"code={document_guard['document_code']} "
-                f"expires_at={document_guard['expires_at']}"
-            )
-            return JSONResponse({"status": "active document chat suppressed"}, status_code=200)
-
     # Si detectamos que es un grupo (@g.us), lo ignoramos
     if "@g.us" in (key.get("remoteJid") or ""):
          logger.info(f"[WHATSAPP] Ignorando mensaje de grupo")

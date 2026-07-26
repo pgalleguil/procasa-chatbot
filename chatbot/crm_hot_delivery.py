@@ -13,14 +13,14 @@ logger = logging.getLogger(__name__)
 from .crm_metrics import coerce_utc_datetime, create_assignment_cycle, utc_now
 from .crm_notifications import (
     COLLECTION, DEDUP_ACTIVE_STATES, claim_next, create_pending, finalize_attempt,
-    individual_identity,
+    individual_identity, verified_commercial_source,
 )
 
 NOTIFICATION_TYPE = "lead_assignment_hot"
 ALLOWED_COMMERCIAL_REASONS = (
-    "lead_created", "inbound_message", "manual_lead",
-    "manual_lead_created", "router", "LeadRouter",
+    "lead_created", "inbound_message", "manual_lead_created",
 )
+ALLOWED_COMMERCIAL_ORIGINS = ("inbound_message", "manual_lead")
 
 
 def _existing_hot_notification(db, *, lead_id, cycle_id, recipient_user_id):
@@ -36,8 +36,9 @@ def _existing_hot_notification(db, *, lead_id, cycle_id, recipient_user_id):
 
 
 def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payload,
-                           assigned_by="system", reason="LeadRouter", assigned_at=None,
-                           send_after=None, recipient_name=None, hot_context=None):
+                           assigned_by="system", reason="inbound_message", assigned_at=None,
+                           send_after=None, recipient_name=None, hot_context=None,
+                           source_event_id=None):
     if lead.get("_id") is None:
         raise ValueError("canonical lead_id is required")
     assigned = coerce_utc_datetime(assigned_at) or utc_now()
@@ -47,6 +48,24 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
         assigned_by=assigned_by, reason=reason, assigned_at=assigned,
         assigned_to_display_name=recipient_name or str(recipient_user_id),
     )
+    source_id = str(
+        source_event_id or lead.get("source_inbound_provider_id")
+        or lead.get("source_event_id") or ""
+    ).strip()
+    if source_id:
+        db["crm_assignment_cycles"].update_one(
+            {
+                "assignment_cycle_id": cycle["assignment_cycle_id"],
+                "source_event_id": {"$exists": False},
+            },
+            {"$set": {
+                "source_event_id": source_id,
+                "source_inbound_provider_id": source_id,
+            }},
+        )
+        cycle = db["crm_assignment_cycles"].find_one({
+            "assignment_cycle_id": cycle["assignment_cycle_id"]
+        }) or cycle
     # Check for existing non-terminal notification before updating the lead.
     # If a notification already exists for this identity, return it instead
     # of creating a duplicate.  A new assignment cycle (different cycle_id)
@@ -155,26 +174,34 @@ def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
 
     notification = claim_next(db, worker_id=worker_id, now=current,
                               extra_filter={"notification_type": NOTIFICATION_TYPE,
+                                            "message_domain": "commercial_notification",
                                             "send_after": {"$lte": current},
                                             "notification_eligible": True,
                                             "cycle_reason": {"$in": list(ALLOWED_COMMERCIAL_REASONS)},
-                                            "cycle_origin": {"$in": list(ALLOWED_COMMERCIAL_REASONS)},
+                                            "cycle_origin": {"$in": list(ALLOWED_COMMERCIAL_ORIGINS)},
                                             "provider_message_id": {"$exists": False},
                                             "actually_delivered": {"$ne": True}})
     if not notification:
         return {"status": "idle"}
+    if notification.get("message_domain") != "commercial_notification":
+        finalize_attempt(
+            db, notification_id=notification["_id"], worker_id=worker_id,
+            state="suppressed", error="wrong_message_domain", now=current,
+        )
+        return {"status": "suppressed", "reason": "wrong_message_domain"}
 
     cycle = db["crm_assignment_cycles"].find_one({
         "assignment_cycle_id": notification.get("assignment_cycle_id"),
         "notification_eligible": True,
         "reason": {"$in": list(ALLOWED_COMMERCIAL_REASONS)},
+        "cycle_origin": {"$in": list(ALLOWED_COMMERCIAL_ORIGINS)},
         "cycle_status": "active",
     })
     lead = db["leads"].find_one({
         "_id": notification.get("lead_id"),
         "stage": {"$nin": ["ARCHIVED", "CLOSED_WON", "CLOSED_LOST", "REJECTED"]},
     })
-    if not cycle or not lead:
+    if not cycle or not lead or not verified_commercial_source(db, cycle):
         finalize_attempt(
             db, notification_id=notification["_id"], worker_id=worker_id,
             state="suppressed", error="ineligible_cycle_or_lead", now=current,

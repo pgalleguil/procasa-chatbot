@@ -342,6 +342,9 @@ def make_cycle(cycle_id="cycle-1", lead_id="lead-1", exec_user_id="user-erika",
         "unassigned_at": None,
         "cycle_status": "active",
         "schema_version": "crm_assignment_cycle_v1",
+        "reason": "inbound_message",
+        "cycle_origin": "inbound_message",
+        "notification_eligible": True,
     }
 
 

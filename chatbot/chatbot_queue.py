@@ -375,8 +375,13 @@ def get_queue_health(db, *, heartbeat=None, now=None, heartbeat_max_age_seconds=
     jobs_without_batch = coll.count_documents({
         "kind": KIND_JOB, "batch_id": {"$exists": False},
     })
+    terminal_invalid_batches = coll.count_documents({
+        "kind": KIND_BATCH, "state": ST_FAILED_TERMINAL,
+        "last_error": "invalid_or_empty_snapshot",
+    })
     empty_batches = coll.count_documents({
-        "kind": KIND_BATCH, "$or": [{"job_ids": {"$size": 0}}, {"job_ids": {"$exists": False}}],
+        "kind": KIND_BATCH, "state": {"$nin": list(TERMINAL_STATES)},
+        "$or": [{"job_ids": {"$size": 0}}, {"job_ids": {"$exists": False}}],
     })
     stuck_due_batches = coll.count_documents({
         "kind": KIND_BATCH,
@@ -418,6 +423,7 @@ def get_queue_health(db, *, heartbeat=None, now=None, heartbeat_max_age_seconds=
         "processing_with_expired_lease": expired,
         "jobs_without_batch": jobs_without_batch,
         "empty_batches": empty_batches,
+        "terminal_invalid_batches": terminal_invalid_batches,
         "stuck_due_batches": stuck_due_batches,
         "delivery_unknown": states[ST_DELIVERY_UNKNOWN],
         "recent_worker_errors": recent_errors,

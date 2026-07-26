@@ -466,6 +466,25 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
             error="empty_response", worker_id=worker_id, delivery_token=token,
         )
 
+    # Commercial work is a separate durable state machine. It observes the
+    # verified inbound snapshot, but cannot reuse or block chatbot delivery.
+    try:
+        from .commercial_intake import ensure_indexes, process_inbound
+        await asyncio.to_thread(ensure_indexes, db)
+        for item in claimed.get("snapshot") or []:
+            job = await asyncio.to_thread(
+                db[JOB_COLLECTION].find_one, {"_id": item["job_id"]}
+            )
+            if job:
+                await asyncio.to_thread(
+                    process_inbound, db,
+                    inbound_provider_id=item.get("provider_id"),
+                    phone=claimed["phone"], text=item.get("text") or "",
+                    received_at=job.get("received_at"), is_test=bool(job.get("is_test")),
+                )
+    except Exception:
+        logger.exception("[COMMERCIAL_INTAKE] durable commercial processing failed")
+
     await asyncio.to_thread(
         record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
         delivery_token=token,

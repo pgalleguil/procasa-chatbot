@@ -230,7 +230,7 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
     payload = {
         "digest_type": DIGEST_TYPE,
         "recipient_user_id": recipient,
-        "lead_ids": [lead_id],
+        "lead_ids": [str(lead_id)],
         "assignment_cycle_ids": [cycle_id],
         "window_started_at": now_iso,
         "window_due_at": send_after_iso,

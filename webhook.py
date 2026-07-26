@@ -30,6 +30,8 @@ from chatbot.storage import observability_mark, observability_snapshot_and_reset
 _WEB_THREAD_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="procasa_web")
 # Pool separado para workers de procesamiento de leads.
 _WORKER_THREAD_POOL = ThreadPoolExecutor(max_workers=5, thread_name_prefix="procasa_worker")
+# Strictly limited PROCESS_SERVICE pool; it cannot consume chatbot/delivery capacity.
+_PROCESS_THREAD_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="procasa_process")
 # Pool dedicado para tareas periódicas (cache warmer) para evitar competir con workers.
 _WARMER_THREAD_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="procasa_warmer")
 
@@ -201,12 +203,12 @@ async def lifespan(app: FastAPI):
     install_log_redaction()
     logger.info("[LOG] Phone redaction installed on root + chatbot + uvicorn loggers")
 
-    logger.info("ThreadPoolExecutor configurado: web=8, worker=5, warmer=1")
+    logger.info("ThreadPoolExecutor configurado: web=8, worker=5, process=2, warmer=1")
     logger.info("[CONFIG] non_hot_digest_shadow_mode=%s configuration_source=code",
                 Config.CRM_NON_HOT_DIGEST_SHADOW_MODE)
     
     global lead_processing_queue, _OAUTH_HTTP_CLIENT
-    lead_processing_queue = asyncio.Queue()
+    lead_processing_queue = asyncio.Queue(maxsize=4)
 
     # Preconectar DB para reducir latencia del primer login/request.
     try:
@@ -328,6 +330,7 @@ async def lifespan(app: FastAPI):
             _OAUTH_HTTP_CLIENT = None
         _WEB_THREAD_POOL.shutdown(wait=False)
         _WORKER_THREAD_POOL.shutdown(wait=False)
+        _PROCESS_THREAD_POOL.shutdown(wait=False)
         _WARMER_THREAD_POOL.shutdown(wait=False)
         logger.info("ThreadPoolExecutors cerrados.")
 
@@ -1182,11 +1185,6 @@ async def api_create_manual_lead(request: Request):
     if result.get("status") != "ok":
         raise HTTPException(status_code=400, detail=result.get("message"))
 
-    # Encolar para procesamiento en background (evita saturar anyio y el default thread pool)
-    lead_id_obj = result.get("lead_id")
-    if lead_id_obj:
-        await lead_processing_queue.put(lead_id_obj)
-
     logger.info(
         f"[PERF] /api/leads/manual TOTAL_BEFORE_RESPONSE: {(_time.perf_counter()-_t0)*1000:.1f}ms "
         f"lead_id={result.get('lead_id')} assigned_to={result.get('assigned_to')}"
@@ -1872,9 +1870,9 @@ async def webhook(
 async def health_check():
     now = datetime.now(CHILE_TZ).isoformat()
     from chatbot.storage import get_db
+    loop = asyncio.get_running_loop()
     try:
         from chatbot.chatbot_queue import get_queue_health
-        loop = asyncio.get_running_loop()
         worker_status = background_tasks_status.get("chatbot_response") or {}
         queue_health = await loop.run_in_executor(
             _WEB_THREAD_POOL,
@@ -1889,6 +1887,20 @@ async def health_check():
             "error_type": type(exc).__name__,
         }
         degraded_reasons = ["queue_metrics_unavailable"]
+    try:
+        from chatbot.processing_service import get_process_service_health
+        process_health = await loop.run_in_executor(
+            _WEB_THREAD_POOL, lambda: get_process_service_health(get_db())
+        )
+        if process_health.get("expired_leases"):
+            degraded_reasons.append("process_service_expired_leases")
+    except Exception as exc:
+        logger.exception("[HEALTH] PROCESS_SERVICE metrics unavailable")
+        process_health = {
+            "metrics_available": False,
+            "error_type": type(exc).__name__,
+        }
+        degraded_reasons.append("process_service_metrics_unavailable")
     return {
         "status": "degraded" if degraded_reasons else "healthy",
         "deploy_commit": os.getenv("RENDER_GIT_COMMIT", "unknown"),
@@ -1897,6 +1909,10 @@ async def health_check():
         "chatbot": {
             "worker": background_tasks_status.get("chatbot_response", {"status": "missing"}),
             "queue": queue_health,
+        },
+        "process_service": {
+            "worker": background_tasks_status.get("lead_processing", {"status": "missing"}),
+            "queue": process_health,
         },
         "uptime_now": time.strftime("%Y-%m-%d %H:%M:%S")
     }
@@ -3652,23 +3668,33 @@ async def inactive_lead_nudge_loop():
 
 async def lead_consumer_worker(worker_id: int):
     """
-    Consumidor aislado. Toma leads de la cola y los procesa usando el _WORKER_THREAD_POOL.
+    Consumidor aislado. Procesa exclusivamente claims ya reservados.
     Mantiene el ritmo estable y no satura el event loop ni el default executor.
     """
     logger.info(f"[CONSUMER-{worker_id}] Worker iniciado y escuchando cola...")
     loop = asyncio.get_running_loop()
     while True:
         try:
-            lead_id = await lead_processing_queue.get()
+            claimed = await lead_processing_queue.get()
             try:
+                status = background_tasks_status["lead_processing"]
+                status["active"] = status.get("active", 0) + 1
                 t0 = time.time()
                 # Worker pool dedicado: evita interferencia con requests HTTP.
-                await loop.run_in_executor(_WORKER_THREAD_POOL, LeadProcessingService.process_lead, lead_id)
+                await loop.run_in_executor(
+                    _PROCESS_THREAD_POOL, LeadProcessingService.process_claimed, claimed
+                )
                 elapsed_ms = (time.time() - t0) * 1000
-                logger.debug(f"[CONSUMER-{worker_id}] Lead {lead_id} procesado en {elapsed_ms:.0f}ms")
+                background_tasks_status["lead_processing"]["last_duration_ms"] = round(elapsed_ms)
+                logger.debug(f"[CONSUMER-{worker_id}] Claim procesado en {elapsed_ms:.0f}ms")
             except Exception as le:
-                logger.error(f"[CONSUMER-{worker_id}] Error procesando lead {lead_id}: {le}")
+                background_tasks_status["lead_processing"]["errors"] = (
+                    background_tasks_status["lead_processing"].get("errors", 0) + 1
+                )
+                logger.error(f"[CONSUMER-{worker_id}] Error procesando claim: {le}")
             finally:
+                status = background_tasks_status["lead_processing"]
+                status["active"] = max(0, status.get("active", 1) - 1)
                 lead_processing_queue.task_done()
         except asyncio.CancelledError:
             break
@@ -3677,43 +3703,30 @@ async def lead_consumer_worker(worker_id: int):
             await asyncio.sleep(5)
 
 async def reassign_unassigned_leads_loop():
-    """
-    PRODUCTOR: Busca leads pendientes en Mongo cada 5 minutos y los encola.
-    Ya no procesa nada por su cuenta ni agrupa en batches pesados.
-    """
-    logger.info("[PRODUCER] Iniciando scanner de leads pendientes en background...")
+    """Reserva trabajo explícito atómicamente y lo entrega al pool aislado."""
+    logger.info("[PRODUCER] Iniciando claimer atómico de PROCESS_SERVICE...")
     while True:
         try:
             background_tasks_status["lead_processing"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
             background_tasks_status["lead_processing"]["status"] = "running"
-            
-            db = LeadProcessingService._db() if hasattr(LeadProcessingService, '_db') else None
-            if db is None:
-                from chatbot.storage import get_db
-                db = get_db()
-
-            from chatbot.constants import UNASSIGNED_LABEL
-            unassigned_labels = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
-            
-            now_utc = datetime.now(timezone.utc)
-            query = {
-                "stage": {"$nin": ["ARCHIVED", "REJECTED", "CLOSED_LOST", "CLOSED_WON"]},
-                "$or": [
-                    {"processing_required": True, "processing_state": {"$in": ["received", "new"]}},
-                    {"processing_required": True, "processing_state": "failed_retryable",
-                     "processing_next_attempt_at": {"$lte": now_utc}},
-                ]
-            }
-            
-            def _find_unassigned():
-                return list(db["leads"].find(query, {"_id": 1}).limit(20))
-            leads = await run_db("reassign_producer_find", _find_unassigned)
-            if leads:
-                logger.info(f"[PRODUCER] Encontró {len(leads)} leads pendientes. Encolando...")
-                for lead in leads:
-                    await lead_processing_queue.put(lead["_id"])
-            
-            await asyncio.sleep(3600)  # Revisar cada 1 hora en lugar de 5 minutos
+            loop = asyncio.get_running_loop()
+            owner = f"render-{os.getenv('RENDER_INSTANCE_ID', 'local')}"
+            claimed_count = 0
+            while not lead_processing_queue.full():
+                claimed = await loop.run_in_executor(
+                    _PROCESS_THREAD_POOL,
+                    lambda: LeadProcessingService.claim_next(owner),
+                )
+                if not claimed:
+                    break
+                await lead_processing_queue.put(claimed)
+                claimed_count += 1
+            background_tasks_status["lead_processing"].update({
+                "max_concurrency": 2,
+                "queued": lead_processing_queue.qsize(),
+                "claims_last_cycle": claimed_count,
+            })
+            await asyncio.sleep(5)
         except asyncio.CancelledError:
             break
         except Exception as e:

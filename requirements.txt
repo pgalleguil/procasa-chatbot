@@ -33,3 +33,4 @@ google-auth-oauthlib>=1.1.0
 --only-binary=all
 psutil>=5.9.0
 motor
+mongomock>=4.3.0

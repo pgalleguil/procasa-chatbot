@@ -1,6 +1,8 @@
 # chatbot/processing_service.py
 import logging
-from datetime import datetime
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from .constants import CHILE_TZ, UNASSIGNED_LABEL
 from .lead_router import find_responsible_executive
@@ -13,15 +15,164 @@ from api_captacion import (
     _normalize_tipo, _normalize_operacion
 )
 from bson import ObjectId
+from pymongo import ReturnDocument
 
 logger = logging.getLogger(__name__)
 
 INVALID_PROPERTY_CODES = {"", "N/D", "NONE", "NULL", "S/N", "ND"}
+PROCESSING_LEASE_SECONDS = 300
+PROCESSING_MAX_ATTEMPTS = 5
+TECHNICAL_PROCESSING_REASONS = {
+    "historical_reconciliation", "lead_processed", "lead_processed_repair",
+    "startup", "startup_repair", "cycle_repair", "backfill",
+    "reconciliation", "deploy_reprocessing", "repair", "migration",
+}
+TECHNICAL_REASON_PATTERN = (
+    r"(histor|reconcil|repair|repar|backfill|startup|deploy.*reprocess|lead_processed)"
+)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _eligible_processing_query(now: datetime) -> Dict[str, Any]:
+    """Only explicit new work or a due retry can enter PROCESS_SERVICE."""
+    technical = sorted(TECHNICAL_PROCESSING_REASONS)
+    claim_available = {
+        "$or": [
+            {"processing_state": {"$ne": "processing"}},
+            {"processing_lease_until": {"$lte": now}},
+        ]
+    }
+    new_event = {
+        "processing_required": True,
+        "processing_event_id": {"$exists": True, "$nin": [None, ""]},
+        "processing_reason": {
+            "$nin": technical, "$not": re.compile(TECHNICAL_REASON_PATTERN, re.I)
+        },
+        "$expr": {"$ne": [
+            "$processing_event_id", {"$ifNull": ["$processed_event_id", None]}
+        ]},
+        "processing_state": {"$in": ["received", "new", "pending", "processing"]},
+    }
+    due_retry = {
+        "processing_required": True,
+        "processing_state": "failed_retryable",
+        "processing_next_attempt_at": {"$lte": now},
+        "processing_reason": {
+            "$nin": technical, "$not": re.compile(TECHNICAL_REASON_PATTERN, re.I)
+        },
+    }
+    return {
+        "stage": {"$nin": ["ARCHIVED", "REJECTED", "CLOSED_LOST", "CLOSED_WON"]},
+        "$and": [claim_available, {"$or": [new_event, due_retry]}],
+    }
+
+
+def claim_next_processing_lead(db, *, owner: str, now: Optional[datetime] = None,
+                               lease_seconds: int = PROCESSING_LEASE_SECONDS):
+    """Atomically reserve one event. The token is required for every final write."""
+    now = now or _utc_now()
+    token = uuid.uuid4().hex
+    # Pipeline update is required to copy the event id atomically.
+    pipeline = [
+        {"$set": {
+            "processing_state": "processing",
+            "processing_owner": owner,
+            "processing_token": token,
+            "processing_started_at": now,
+            "processing_lease_until": now + timedelta(seconds=lease_seconds),
+            "processing_claimed_event_id": "$processing_event_id",
+            "processing_attempts": {"$add": [{"$ifNull": ["$processing_attempts", 0]}, 1]},
+            "processing_history": {"$concatArrays": [
+                {"$ifNull": ["$processing_history", []]},
+                [{"at": now, "state": "processing", "owner": owner, "token": token}],
+            ]},
+        }},
+    ]
+    return db["leads"].find_one_and_update(
+        _eligible_processing_query(now),
+        pipeline,
+        sort=[("processing_requested_at", 1), ("_id", 1)],
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+def finalize_processing_claim(db, *, lead_id: Any, token: str, state: str,
+                              event_id: Any, error: Optional[str] = None,
+                              now: Optional[datetime] = None) -> bool:
+    if state not in {"completed", "failed_retryable", "failed_terminal"}:
+        raise ValueError("invalid PROCESS_SERVICE terminal state")
+    now = now or _utc_now()
+    set_fields = {
+        "processing_state": state,
+        "processing_required": state == "failed_retryable",
+        "processing_completed_at": now,
+    }
+    if state == "completed":
+        set_fields["processed_event_id"] = event_id
+    if error:
+        set_fields["processing_last_error"] = str(error)[:240]
+    if state == "failed_retryable":
+        lead = db["leads"].find_one(
+            {"_id": lead_id, "processing_token": token},
+            {"processing_attempts": 1},
+        ) or {}
+        attempts = int(lead.get("processing_attempts") or 1)
+        if attempts >= PROCESSING_MAX_ATTEMPTS:
+            state = "failed_terminal"
+            set_fields["processing_state"] = state
+            set_fields["processing_required"] = False
+        else:
+            delay = min(3600, 60 * (2 ** max(0, attempts - 1)))
+            set_fields["processing_next_attempt_at"] = now + timedelta(seconds=delay)
+    update = {
+        "$set": set_fields,
+        "$unset": {
+            "processing_owner": "", "processing_token": "",
+            "processing_lease_until": "", "processing_started_at": "",
+        },
+        "$push": {"processing_history": {
+            "at": now, "state": state, "event_id": event_id,
+            **({"error": str(error)[:240]} if error else {}),
+        }},
+    }
+    result = db["leads"].update_one(
+        {"_id": lead_id, "processing_token": token, "processing_state": "processing"},
+        update,
+    )
+    return bool(result.modified_count)
+
+
+def get_process_service_health(db, *, now: Optional[datetime] = None) -> Dict[str, Any]:
+    now = now or _utc_now()
+    states = {
+        state: db["leads"].count_documents({"processing_state": state})
+        for state in ("new", "processing", "completed", "failed_retryable", "failed_terminal")
+    }
+    return {
+        "metrics_available": True,
+        "states": states,
+        "ready": db["leads"].count_documents(_eligible_processing_query(now)),
+        "expired_leases": db["leads"].count_documents({
+            "processing_state": "processing",
+            "processing_lease_until": {"$lte": now},
+        }),
+        "technical_pending": db["leads"].count_documents({
+            "processing_required": True,
+            "processing_reason": {"$in": sorted(TECHNICAL_PROCESSING_REASONS)},
+        }),
+    }
 
 class LeadProcessingService:
     @staticmethod
     def _db():
         return get_db()
+
+    @staticmethod
+    def claim_next(owner: str, now: Optional[datetime] = None):
+        return claim_next_processing_lead(LeadProcessingService._db(), owner=owner, now=now)
 
     @staticmethod
     def _normalize_commune_ui(name: str) -> str:
@@ -308,7 +459,7 @@ class LeadProcessingService:
         }
 
     @staticmethod
-    def process_lead(lead_id: Any, force: bool = False, force_notif: bool = False) -> bool:
+    def _process_claimed_body(lead_id: Any, force: bool = False, force_notif: bool = False) -> bool:
         """
         Entry point único para procesar un lead (Clasificación + Asignación).
         """
@@ -340,6 +491,9 @@ class LeadProcessingService:
                 "updated_at": 1,
                 "url": 1,
                 "ultima_actualizacion_bi": 1,
+                "lifecycle": 1,
+                "processing_reason": 1,
+                "processing_claimed_event_id": 1,
                 "prospecto": 1,
                 "messages": {"$slice": -5}
             }
@@ -416,16 +570,12 @@ class LeadProcessingService:
                     or lead.get("ejecutivo_asignado")
                     or lead.get("prospecto", {}).get("ejecutivo")
                 )
-                needs_new_cycle = (
+                needs_new_cycle = bool(
                     update_data.get("ejecutivo_asignado")
                     and (
                         lead.get("ejecutivo_asignado") in [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
                         or update_data.get("ejecutivo_asignado") != lead.get("ejecutivo_asignado")
                     )
-                ) or (
-                    exec_to_use
-                    and exec_to_use not in [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
-                    and not lead.get("lifecycle", {}).get("current_assignment_cycle_id")
                 )
                 if needs_new_cycle:
                     try:
@@ -440,16 +590,28 @@ class LeadProcessingService:
                         exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1}) if exec_name else None
                         exec_user_id = str(exec_user["_id"]) if exec_user else exec_name
                         from .crm_metrics import create_assignment_cycle
-                        cycle = create_assignment_cycle(
-                            db, lead=lead, assigned_to_user_id=exec_user_id,
-                            assigned_by="system", reason="lead_processed",
-                            assigned_at=assigned_dt or now_cl,
-                            assigned_to_display_name=exec_name,
-                        )
+                        event_id = lead.get("processing_claimed_event_id")
+                        cycle = db["crm_assignment_cycles"].find_one({
+                            "lead_id": lead["_id"], "source_event_id": event_id,
+                        }) if event_id else None
+                        reused = bool(cycle)
+                        if not cycle:
+                            cycle = create_assignment_cycle(
+                                db, lead=lead, assigned_to_user_id=exec_user_id,
+                                assigned_by="system", reason=str(lead.get("processing_reason") or "new_lead_event"),
+                                assigned_at=assigned_dt or now_cl,
+                                assigned_to_display_name=exec_name,
+                            )
+                            db["crm_assignment_cycles"].update_one(
+                                {"assignment_cycle_id": cycle["assignment_cycle_id"]},
+                                {"$set": {"source_event_id": event_id}},
+                            )
                         update_data["lifecycle.current_assignment_cycle_id"] = cycle["assignment_cycle_id"]
+                        update_data["processing_cycle_result"] = "cycle_reused" if reused else "cycle_created"
                         logger.info(
-                            "[PROCESS_SERVICE] Cycle created for lead %s: %s",
-                            lead.get("phone"), cycle["assignment_cycle_id"],
+                            "[PROCESS_SERVICE] %s for lead: %s",
+                            "cycle_reused" if reused else "cycle_created",
+                            cycle["assignment_cycle_id"],
                         )
                     except Exception as exc:
                         logger.warning("[PROCESS_SERVICE] Error creating cycle: %s", exc)
@@ -470,7 +632,7 @@ class LeadProcessingService:
                     )
                 
                 # 3. Notificar solo si el lead realmente quedó HOT o se creó un ciclo nuevo.
-                if update_data.get("auto_reassigned") or needs_new_cycle:
+                if False and (update_data.get("auto_reassigned") or needs_new_cycle):
                     prospecto_data = lead.get("prospecto", {}) or {}
                     exec_name = update_data.get("ejecutivo_asignado") or update_data.get("prospecto.ejecutivo") or lead.get("ejecutivo_asignado") or prospecto_data.get("ejecutivo")
                     prop_code = prospecto_data.get("codigo") or lead.get("codigo")
@@ -553,4 +715,58 @@ class LeadProcessingService:
 
         except Exception as e:
             logger.error(f"[PROCESS_SERVICE] Error procesando lead {lead_id}: {e}", exc_info=True)
+            raise
+
+    @staticmethod
+    def process_claimed(lead: Dict[str, Any]) -> bool:
+        """Run business logic and guarantee a persisted terminal state."""
+        db = LeadProcessingService._db()
+        lead_id = lead["_id"]
+        token = lead.get("processing_token")
+        event_id = lead.get("processing_claimed_event_id")
+        if not token or not event_id:
+            logger.error("[PROCESS_SERVICE] Refusing claim without token/event")
             return False
+        try:
+            result = LeadProcessingService._process_claimed_body(lead_id)
+        except Exception as exc:
+            finalize_processing_claim(
+                db, lead_id=lead_id, token=token, event_id=event_id,
+                state="failed_retryable", error=type(exc).__name__,
+            )
+            return False
+        finalize_processing_claim(
+            db, lead_id=lead_id, token=token, event_id=event_id,
+            state="completed",
+        )
+        return result
+
+    @staticmethod
+    def process_lead(lead_id: Any, force: bool = False, force_notif: bool = False) -> bool:
+        """Compatibility entry point; claims explicit work before processing it."""
+        db = LeadProcessingService._db()
+        query_id = ObjectId(lead_id) if isinstance(lead_id, str) else lead_id
+        now = _utc_now()
+        token = uuid.uuid4().hex
+        owner = f"direct-{token[:8]}"
+        query = _eligible_processing_query(now)
+        query["_id"] = query_id
+        pipeline = [{"$set": {
+            "processing_state": "processing",
+            "processing_owner": owner,
+            "processing_token": token,
+            "processing_started_at": now,
+            "processing_lease_until": now + timedelta(seconds=PROCESSING_LEASE_SECONDS),
+            "processing_claimed_event_id": "$processing_event_id",
+            "processing_attempts": {"$add": [{"$ifNull": ["$processing_attempts", 0]}, 1]},
+            "processing_history": {"$concatArrays": [
+                {"$ifNull": ["$processing_history", []]},
+                [{"at": now, "state": "processing", "owner": owner, "token": token}],
+            ]},
+        }}]
+        claimed = db["leads"].find_one_and_update(
+            query, pipeline, return_document=ReturnDocument.AFTER
+        )
+        if not claimed:
+            return False
+        return LeadProcessingService.process_claimed(claimed)

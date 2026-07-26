@@ -111,7 +111,7 @@ def test_provider_acceptance_without_message_id_is_quarantined_not_retried():
                                         worker_id="restart", now=local(20, 11), enabled=True))["status"] == "idle"
 
 
-def test_responded_source_inbound_blocks_reconstruction_and_send():
+def test_chatbot_response_does_not_block_commercial_hot_delivery():
     db, lead = setup_db()
     created = assign_and_enqueue_hot(
         db, lead=lead, recipient_user_id="u1", recipient_phone="+56911111111",
@@ -133,21 +133,18 @@ def test_responded_source_inbound_blocks_reconstruction_and_send():
         },
     ])
 
-    repeated = assign_and_enqueue_hot(
-        db, lead=lead, recipient_user_id="u1", recipient_phone="+56911111111",
-        payload={}, assigned_at=local(20, 9), send_after=local(20, 9),
-    )
-    assert repeated["notification"] is None
-    assert repeated["suppression_reason"] == "source_inbound_already_responded"
-
     calls = []
     result = _run_with_hot(process_one_hot(
-        db, sender=lambda *_: calls.append(True), worker_id="barrier",
+        db, sender=lambda *_: calls.append(True) or {
+            "success": True, "provider_message_id": "commercial-hot-1",
+            "delivery_status": "accepted",
+        }, worker_id="commercial",
         now=local(20, 10), enabled=True,
     ))
-    assert result["status"] == "suppressed"
-    assert result["reason"] == "source_inbound_already_responded"
-    assert calls == []
+    assert result["status"] == "sent"
+    assert result["provider_message_id"] == "commercial-hot-1"
+    assert calls == [True]
+    assert len(db[COLLECTION].docs) == 1
 
 
 def test_claim_and_finalize_offloaded_from_event_loop_and_main_thread():

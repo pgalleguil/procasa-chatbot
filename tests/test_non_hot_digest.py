@@ -2220,7 +2220,7 @@ def test_two_workers_no_duplicate_hot_and_digest():
     assert len(hot_docs) == 1
 
 
-def test_responded_source_inbound_never_enters_digest():
+def test_chatbot_response_does_not_block_commercial_digest():
     db, lead, cycle = default_db()
     db["crm_assignment_cycles"].update_one(
         {"assignment_cycle_id": cycle["assignment_cycle_id"]},
@@ -2241,5 +2241,8 @@ def test_responded_source_inbound_never_enters_digest():
         },
     ])
     with _patch_config():
-        assert accumulate_non_hot_lead(db, lead=lead, cycle=cycle) is None
-    assert db["crm_notifications_v1"].docs == []
+        digest = accumulate_non_hot_lead(db, lead=lead, cycle=cycle)
+    assert digest is not None
+    assert digest["assignment_cycle_ids"] == [cycle["assignment_cycle_id"]]
+    assert digest["recipient_user_id"] == cycle["assigned_to_user_id"]
+    assert len(db["crm_notifications_v1"].docs) == 1

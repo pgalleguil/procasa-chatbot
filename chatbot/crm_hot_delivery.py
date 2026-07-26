@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 from .crm_metrics import coerce_utc_datetime, create_assignment_cycle, utc_now
 from .crm_notifications import (
     COLLECTION, DEDUP_ACTIVE_STATES, claim_next, create_pending, finalize_attempt,
-    individual_identity, source_event_response_evidence,
+    individual_identity,
 )
 
 NOTIFICATION_TYPE = "lead_assignment_hot"
@@ -47,19 +47,6 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
         assigned_by=assigned_by, reason=reason, assigned_at=assigned,
         assigned_to_display_name=recipient_name or str(recipient_user_id),
     )
-    response_evidence = source_event_response_evidence(
-        db, assignment_cycle_id=cycle["assignment_cycle_id"]
-    )
-    if response_evidence:
-        logger.info(
-            "[HOT_DELIVERY] source inbound already responded cycle=%s provider=%s",
-            cycle["assignment_cycle_id"], response_evidence["provider_message_id"],
-        )
-        return {
-            "cycle": cycle, "notification": None, "dedup_suppressed": True,
-            "suppression_reason": "source_inbound_already_responded",
-            "response_evidence": response_evidence,
-        }
     # Check for existing non-terminal notification before updating the lead.
     # If a notification already exists for this identity, return it instead
     # of creating a duplicate.  A new assignment cycle (different cycle_id)
@@ -193,20 +180,6 @@ def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
             state="suppressed", error="ineligible_cycle_or_lead", now=current,
         )
         return {"status": "suppressed", "reason": "ineligible_cycle_or_lead"}
-    response_evidence = source_event_response_evidence(
-        db, assignment_cycle_id=cycle["assignment_cycle_id"]
-    )
-    if response_evidence:
-        finalize_attempt(
-            db, notification_id=notification["_id"], worker_id=worker_id,
-            state="suppressed", error="source_inbound_already_responded", now=current,
-        )
-        return {
-            "status": "suppressed",
-            "reason": "source_inbound_already_responded",
-            "provider_message_id": response_evidence["provider_message_id"],
-        }
-
     # Resolve executive and build secure context
     from .crm_delivery import resolve_executive_user, get_executive_phone
     from .whatsapp_client import send_whatsapp_message_detailed

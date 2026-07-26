@@ -237,15 +237,6 @@ def reconcile(*, apply=False):
         if not event:
             results.append({"lead_id": raw_id, "result": "blocked_no_original_commercial_event"})
             continue
-        if event.get("responded"):
-            results.append({
-                "lead_id": raw_id,
-                "result": "excluded_already_recovered_and_delivered",
-                "event_id": event["id"],
-                "batch_id": event.get("batch_id"),
-                "outbound_provider_message_id": event.get("outbound_provider_message_id"),
-            })
-            continue
         cycle, created = _ensure_assignment(db, lead, event, apply=apply)
         if not cycle:
             results.append({"lead_id": raw_id, "result": "blocked_no_current_recipient"})

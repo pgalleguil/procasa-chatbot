@@ -204,3 +204,23 @@ def test_crm_projection_treats_naive_bson_datetime_as_utc():
     source = Path("api_crm.py").read_text(encoding="utf-8")
     assert "parsed = pytz.utc.localize(parsed)" in source
     assert "parsed = CHILE_TZ.localize(parsed)" not in source
+
+
+def test_hot_cycle_without_transition_uses_hot_60_minute_threshold():
+    result = calculate_sla(
+        assigned_at=datetime(2026, 7, 27, 13, tzinfo=timezone.utc),
+        temperature="HOT", now=datetime(2026, 7, 27, 14, 1, tzinfo=timezone.utc),
+    )
+    assert result["status"] == "critical" and result["hot_minutes"] >= 60
+
+def test_normal_cycle_uses_180_minute_threshold():
+    result = calculate_sla(
+        assigned_at=datetime(2026, 7, 27, 13, tzinfo=timezone.utc),
+        temperature="COLD", now=datetime(2026, 7, 27, 16, 1, tzinfo=timezone.utc),
+    )
+    assert result["status"] == "critical"
+
+def test_naive_bson_datetime_is_utc_not_chile_local_time():
+    assert coerce_utc_datetime(datetime(2026, 7, 27, 14, 43, 32)) == datetime(
+        2026, 7, 27, 14, 43, 32, tzinfo=timezone.utc
+    )

@@ -315,6 +315,13 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         {"pipeline_stage": {"$ne": "ARCHIVED"}},
         {"archived_at": {"$exists": False}},
         {"_test_lead": {"$ne": True}},
+        {"is_test": {"$ne": True}},
+        {"synthetic": {"$ne": True}},
+        {"is_synthetic": {"$ne": True}},
+        {"suppressed": {"$ne": True}},
+        {"stage": {"$ne": "SUPPRESSED"}},
+        {"pipeline_stage": {"$ne": "SUPPRESSED"}},
+        {"prospecto.nombre": {"$not": re.compile(r"^synthetic-", re.IGNORECASE)}},
     ]
     
     # --- FILTRO DE SEGURIDAD (ROL) ---

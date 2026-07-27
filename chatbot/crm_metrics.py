@@ -64,16 +64,20 @@ def coerce_utc_datetime(value: Any, *, naive_timezone=CHILE_TZ) -> Optional[date
     """Read BSON datetimes and legacy ISO values without silently guessing invalid data."""
     if isinstance(value, datetime):
         parsed = value
-    elif isinstance(value, str) and value.strip():
+        # BSON datetimes returned by PyMongo are UTC even when tz_aware=False.
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    if isinstance(value, str) and value.strip():
         try:
             parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
         except (TypeError, ValueError):
             return None
-    else:
-        return None
-    if parsed.tzinfo is None:
-        parsed = naive_timezone.localize(parsed)
-    return parsed.astimezone(timezone.utc)
+        # Legacy zone-less strings are CRM local values, not BSON timestamps.
+        if parsed.tzinfo is None:
+            parsed = naive_timezone.localize(parsed)
+        return parsed.astimezone(timezone.utc)
+    return None
 
 
 def commercial_sla_start_at(assigned_at: Any) -> Optional[datetime]:
@@ -304,15 +308,16 @@ def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
     boundary = end or current
     total_minutes = max(0, calculate_business_minutes(start.astimezone(CHILE_TZ), boundary.astimezone(CHILE_TZ)))
 
-    # Calculate hot segment minutes if applicable
-    hot_minutes = None
-    if hot_start and not end:
-        hot_boundary = current
-        hot_minutes = max(0, calculate_business_minutes(
-            hot_start.astimezone(CHILE_TZ), hot_boundary.astimezone(CHILE_TZ)))
-
+    # A current HOT cycle always uses the 60-minute policy.  If it was
+    # already HOT at assignment, its SLA segment starts at sla_started_at.
     is_hot = str(temperature or "").upper() == "HOT"
-    use_hot_thresholds = is_hot and hot_minutes is not None
+    hot_minutes = None
+    if is_hot and not end:
+        hot_boundary = current
+        hot_base = hot_start or start
+        hot_minutes = max(0, calculate_business_minutes(
+            hot_base.astimezone(CHILE_TZ), hot_boundary.astimezone(CHILE_TZ)))
+    use_hot_thresholds = is_hot
 
     if end:
         status = "fulfilled"

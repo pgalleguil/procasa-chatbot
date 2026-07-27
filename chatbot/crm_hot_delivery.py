@@ -6,6 +6,7 @@ real provider. Production remains fail-closed through its feature flag.
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -179,7 +180,7 @@ def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
                                             "notification_eligible": True,
                                             "cycle_reason": {"$in": list(ALLOWED_COMMERCIAL_REASONS)},
                                             "cycle_origin": {"$in": list(ALLOWED_COMMERCIAL_ORIGINS)},
-                                            "provider_message_id": {"$exists": False},
+                                            "provider_message_id": {"$in": [None]},
                                             "actually_delivered": {"$ne": True}})
     if not notification:
         return {"status": "idle"}
@@ -261,7 +262,7 @@ def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
             error_detail = f"http_422 body={str(receipt.get('response_body', receipt.get('error', '')))[:200]}"
             logger.warning("[HOT_422] notif=%s %s", str(notification["_id"])[:12], error_detail)
         elif http_status == 429:
-            state = "rate_limited"
+            state = "failed_retryable"
             error_detail = f"http_429 retry_after={receipt.get('retry_after', '?')}"
         else:
             state = "failed_retryable"
@@ -275,7 +276,23 @@ def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
 
     finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
                      state=state, provider_message_id=provider_id, error=error_detail, now=current)
-    
+
+    # After a confirmed non-delivery (no accepted provider ID), clear the
+    # pre-call reservation markers so a retry can claim a fresh delivery slot.
+    if state == "failed_retryable":
+        retry_after = 60
+        if http_status == 429:
+            try:
+                retry_after = max(int(receipt.get("retry_after", 60)), 30)
+            except (TypeError, ValueError):
+                retry_after = 60
+        db[COLLECTION].update_one(
+            {"_id": notification["_id"], "state": "failed_retryable"},
+            {"$unset": {"provider_call_started_at": "", "delivery_token": ""},
+             "$set": {"next_attempt_at": current + timedelta(seconds=retry_after),
+                      "updated_at": current}},
+        )
+
     if state == "sent":
         db[COLLECTION].update_one({"_id": notification["_id"]},
                                   {"$set": {"delivery_mode": "live", "actually_delivered": True}})

@@ -20,11 +20,72 @@ from chatbot.crm_sla_shadow import evaluate_sla_shadow
 
 def _match(doc, query):
     for key, expected in query.items():
+        if key == "$or":
+            if not any(_match(doc, branch) for branch in expected):
+                return False
+            continue
+        if key == "$and":
+            if not all(_match(doc, branch) for branch in expected):
+                return False
+            continue
         actual = doc.get(key)
         if isinstance(expected, dict):
-            if "$in" in expected and actual not in expected["$in"]: return False
-            if "$lte" in expected and not (actual is not None and actual <= expected["$lte"]): return False
-        elif actual != expected: return False
+            if "$in" in expected:
+                expected_list = expected["$in"]
+                if isinstance(actual, list):
+                    if not any(str(x) in [str(y) for y in actual] for x in expected_list):
+                        return False
+                    continue
+                if actual is None and None in expected_list:
+                    continue
+                if actual not in expected_list:
+                    return False
+                continue
+            if "$nin" in expected:
+                nin_list = expected["$nin"]
+                if isinstance(actual, list):
+                    if any(str(x) in [str(y) for y in actual] for x in nin_list):
+                        return False
+                    continue
+                if actual is not None and actual in nin_list:
+                    return False
+                continue
+            if "$ne" in expected:
+                not_val = expected["$ne"]
+                if isinstance(actual, list):
+                    if not_val in actual:
+                        return False
+                elif actual == not_val:
+                    return False
+                continue
+            if "$lte" in expected:
+                if actual is None or actual > expected["$lte"]:
+                    return False
+                continue
+            if "$gte" in expected:
+                if actual is None or actual < expected["$gte"]:
+                    return False
+                continue
+            if "$exists" in expected:
+                exists = key in doc
+                if expected["$exists"] != exists:
+                    return False
+                continue
+            if "$not" in expected:
+                sub = expected["$not"]
+                if _match(doc, {key: sub}):
+                    return False
+                continue
+            if "$elemMatch" in expected:
+                sub = expected["$elemMatch"]
+                if not isinstance(actual, list) or not any(_match({"_val": item}, {"_val": sub}) for item in actual):
+                    return False
+                continue
+        elif isinstance(actual, list) and not isinstance(expected, (dict, list)):
+            if expected not in actual and str(expected) not in actual:
+                return False
+        elif actual != expected:
+            return False
     return True
 
 

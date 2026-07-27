@@ -557,7 +557,7 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
 
 async def chatbot_response_worker_loop():
     from chatbot.core import process_user_message_sync
-    from chatbot.storage import get_db
+    from chatbot.storage import get_db, run_in_threadpool
     from chatbot.whatsapp_client import send_whatsapp_message_detailed
 
     worker_id = f"chatbot_response_{os.getpid()}_{uuid.uuid4().hex[:8]}"
@@ -568,29 +568,31 @@ async def chatbot_response_worker_loop():
     status = background_tasks_status.setdefault("chatbot_response", {})
     logger.info("[CHATBOT_WORKER] starting worker=%s", worker_id)
     try:
-        db = get_db()
-        ensure_queue_indexes(db)
+        db = await run_in_threadpool(get_db)
+        await run_in_threadpool(ensure_queue_indexes, db)
+        last_health_refresh = 0.0
         while True:
             heartbeat = utc_now()
             status.update({"status": "running", "last_heartbeat": heartbeat.isoformat(),
                            "worker_id": worker_id})
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: reconcile_expired_leases(db))
-            legacy_phones = await loop.run_in_executor(
-                None,
-                lambda: db[JOB_COLLECTION].distinct(
-                    "phone", {"state": ST_RECEIVED, "is_from_me": False}
-                ),
+            await run_in_threadpool(reconcile_expired_leases, db)
+            legacy_phones = await run_in_threadpool(
+                db[JOB_COLLECTION].distinct, "phone",
+                {"state": ST_RECEIVED, "is_from_me": False},
             )
             for phone in legacy_phones:
-                await loop.run_in_executor(
-                    None, lambda p=phone: batch_inbound_jobs(db, phone=p)
+                await run_in_threadpool(batch_inbound_jobs, db, phone=phone)
+
+            if time.monotonic() - last_health_refresh >= 10.0:
+                status["health_snapshot"] = await run_in_threadpool(
+                    get_queue_health, db, heartbeat=status,
                 )
+                status["health_snapshot_at"] = utc_now().isoformat()
+                last_health_refresh = time.monotonic()
 
             async def llm(phone, text):
-                return await loop.run_in_executor(
-                    None, lambda: process_user_message_sync(phone, text)
-                )
+                return await run_in_threadpool(process_user_message_sync, phone, text)
 
             try:
                 processed = await process_one_batch(

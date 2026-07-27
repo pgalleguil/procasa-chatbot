@@ -4,6 +4,7 @@ import os
 from pymongo import MongoClient
 import time
 import threading
+from contextvars import ContextVar
 import inspect
 import asyncio
 from datetime import datetime, timedelta
@@ -64,6 +65,7 @@ _mongo_log_last_ts = {}
 _observability_lock = threading.Lock()
 _observability_metrics = {"mongo_sync_on_loop": 0, "event_loop_blocked": 0}
 _event_loop_blocked_ts = deque(maxlen=1000)
+_delegated_sync_mongo = ContextVar("delegated_sync_mongo", default=False)
 
 
 def record_observability_event(event_type: str, payload: dict | None = None) -> str:
@@ -113,7 +115,12 @@ def ensure_conversation_id(phone: str) -> str:
 
 
 async def run_in_threadpool(func, *args, **kwargs):
-    return await asyncio.to_thread(func, *args, **kwargs)
+    """Run synchronous storage work outside the caller's event loop."""
+    token = _delegated_sync_mongo.set(True)
+    try:
+        return await asyncio.to_thread(func, *args, **kwargs)
+    finally:
+        _delegated_sync_mongo.reset(token)
 
 
 def observability_mark(kind: str, **kwargs):
@@ -177,7 +184,9 @@ def _patch_mongo_forensics():
                         in_event_loop = True
                     except RuntimeError:
                         in_event_loop = False
-                    if in_event_loop and (not from_motor):
+                    is_main_thread = threading.current_thread() is threading.main_thread()
+                    delegated = _delegated_sync_mongo.get()
+                    if in_event_loop and is_main_thread and (not from_motor):
                         observability_mark("mongo_sync_on_loop")
                         logger.error(
                             f"[MONGO_SYNC_ON_EVENT_LOOP] op={name} col={self.name} caller={caller} "
@@ -187,7 +196,12 @@ def _patch_mongo_forensics():
                             f"[CRITICAL] [ASYNC_VIOLATION] type=mongo_sync_on_event_loop "
                             f"event_loop_blocked=none lag_ms=none op={name} collection={self.name} "
                             f"caller={caller} trace=none impact=HIGH action_required=true "
-                            f"async_context=true thread_type=main safe=false"
+                            f"async_context=true thread_type=main delegated=false safe=false"
+                        )
+                    elif in_event_loop and (not from_motor) and not delegated:
+                        logger.warning(
+                            f"[MONGO_SYNC_ON_WORKER_LOOP] op={name} col={self.name} caller={caller} "
+                            f"thread={thread_name}:{thread_id} delegated=false"
                         )
                     try:
                         return fn(self, *args, **kwargs)
@@ -197,7 +211,7 @@ def _patch_mongo_forensics():
                         # 1) Siempre: operaciones lentas >=400ms
                         # 2) Siempre: sync real en event loop (no motor)
                         # 3) Muestreo: 1 log/30s por firma para rápidas normales
-                        is_anomalous = (dt_ms >= 400.0) or (in_event_loop and not from_motor)
+                        is_anomalous = (dt_ms >= 400.0) or (in_event_loop and is_main_thread and not from_motor)
                         key = f"{name}:{self.name}:{caller}:{thread_name}:{str(in_event_loop).lower()}:{str(from_motor).lower()}"
                         if is_anomalous or _should_rate_log(key, 30.0):
                             logger.debug(
@@ -208,7 +222,8 @@ def _patch_mongo_forensics():
                             logger.debug(
                                 f"[MONGO_OP_META] async_context={str(in_event_loop).lower()} "
                                 f"thread_type={'main' if thread_name.lower().startswith('main') else 'threadpool'} "
-                                f"safe={str((not in_event_loop) or from_motor).lower()} from_motor={str(from_motor).lower()}"
+                                f"safe={str((not in_event_loop) or from_motor or delegated).lower()} "
+                                f"delegated={str(delegated).lower()} from_motor={str(from_motor).lower()}"
                             )
                 _wrapped.__forensics_wrapped__ = True
                 return _wrapped

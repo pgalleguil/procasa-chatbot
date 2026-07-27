@@ -53,6 +53,10 @@ class Config:
     LEAD_COLD_DIGEST_ENABLED = os.getenv("LEAD_COLD_DIGEST_ENABLED", "false").lower() == "true"
     CRM_SLA_SHADOW_ENABLED = os.getenv("CRM_SLA_SHADOW_ENABLED", "false").lower() == "true"
     CRM_SLA_ALERTS_ENABLED = os.getenv("CRM_SLA_ALERTS_ENABLED", "false").lower() == "true"
+    # The independent SLA producer is dry-run only until an explicit activation.
+    CRM_SLA_ALERTS_DRY_RUN = os.getenv("CRM_SLA_ALERTS_DRY_RUN", "true").lower() == "true"
+    # Required only at a future explicit activation; empty means fail closed.
+    CRM_SLA_ALERTS_ACTIVATION_AT = os.getenv("CRM_SLA_ALERTS_ACTIVATION_AT", "")
     CRM_WEEKLY_REPORT_GENERATION_ENABLED = os.getenv("CRM_WEEKLY_REPORT_GENERATION_ENABLED", "false").lower() == "true"
     CRM_WEEKLY_REPORT_SEND_ENABLED = os.getenv("CRM_WEEKLY_REPORT_SEND_ENABLED", "false").lower() == "true"
     CRM_LEGACY_DAILY_REPORT_ENABLED = os.getenv("CRM_LEGACY_DAILY_REPORT_ENABLED", "false").lower() == "true"
@@ -103,7 +107,7 @@ class Config:
     CRM_AFTER_HOURS_HOT_MODE = os.getenv("CRM_AFTER_HOURS_HOT_MODE", "NEXT_BUSINESS_OPEN")
 
     # === SLA v2 shadow mode ===
-    CRM_SLA_V2_SHADOW_ENABLED = os.getenv("CRM_SLA_V2_SHADOW_ENABLED", "true").lower() == "true"
+    CRM_SLA_V2_SHADOW_ENABLED = os.getenv("CRM_SLA_V2_SHADOW_ENABLED", "false").lower() == "true"
     CRM_SLA_V2_LIVE_ENABLED = os.getenv("CRM_SLA_V2_LIVE_ENABLED", "false").lower() == "true"
     CRM_SLA_ALERTS_SHADOW_MODE = os.getenv("CRM_SLA_ALERTS_SHADOW_MODE", "true").lower() == "true"
     # Aggregation windows for non-HOT SLA alerts (minutes)

@@ -1851,15 +1851,15 @@ async def webhook(
 @app.get("/health")
 async def health_check():
     now = datetime.now(CHILE_TZ).isoformat()
-    from chatbot.storage import get_db
-    loop = asyncio.get_running_loop()
     try:
-        from chatbot.chatbot_queue import get_queue_health
         worker_status = background_tasks_status.get("chatbot_response") or {}
-        queue_health = await loop.run_in_executor(
-            _WEB_THREAD_POOL,
-            lambda: get_queue_health(get_db(), heartbeat=worker_status),
-        )
+        queue_health = worker_status.get("health_snapshot")
+        snapshot_at = worker_status.get("health_snapshot_at")
+        if not queue_health or not snapshot_at:
+            raise RuntimeError("queue_health_snapshot_missing")
+        snapshot_dt = datetime.fromisoformat(str(snapshot_at).replace("Z", "+00:00"))
+        if (datetime.now(timezone.utc) - snapshot_dt.astimezone(timezone.utc)).total_seconds() > 30:
+            raise RuntimeError("queue_health_snapshot_stale")
         degraded_reasons = list(queue_health.get("degraded_reasons") or [])
     except Exception as exc:
         logger.exception("[HEALTH] chatbot queue metrics unavailable")
@@ -1870,10 +1870,14 @@ async def health_check():
         }
         degraded_reasons = ["queue_metrics_unavailable"]
     try:
-        from chatbot.processing_service import get_process_service_health
-        process_health = await loop.run_in_executor(
-            _WEB_THREAD_POOL, lambda: get_process_service_health(get_db())
-        )
+        process_status = background_tasks_status.get("lead_processing") or {}
+        process_health = process_status.get("health_snapshot")
+        snapshot_at = process_status.get("health_snapshot_at")
+        if not process_health or not snapshot_at:
+            raise RuntimeError("process_health_snapshot_missing")
+        snapshot_dt = datetime.fromisoformat(str(snapshot_at).replace("Z", "+00:00"))
+        if (datetime.now(timezone.utc) - snapshot_dt.astimezone(timezone.utc)).total_seconds() > 30:
+            raise RuntimeError("process_health_snapshot_stale")
         if process_health.get("expired_leases"):
             degraded_reasons.append("process_service_expired_leases")
     except Exception as exc:
@@ -3687,6 +3691,7 @@ async def lead_consumer_worker(worker_id: int):
 async def reassign_unassigned_leads_loop():
     """Reserva trabajo explícito atómicamente y lo entrega al pool aislado."""
     logger.info("[PRODUCER] Iniciando claimer atómico de PROCESS_SERVICE...")
+    last_health_refresh = 0.0
     while True:
         try:
             background_tasks_status["lead_processing"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
@@ -3708,6 +3713,14 @@ async def reassign_unassigned_leads_loop():
                 "queued": lead_processing_queue.qsize(),
                 "claims_last_cycle": claimed_count,
             })
+            if time.monotonic() - last_health_refresh >= 10.0:
+                from chatbot.processing_service import get_process_service_health
+                from chatbot.storage import get_db
+                background_tasks_status["lead_processing"]["health_snapshot"] = await run_in_threadpool(
+                    get_process_service_health, get_db(),
+                )
+                background_tasks_status["lead_processing"]["health_snapshot_at"] = datetime.now(timezone.utc).isoformat()
+                last_health_refresh = time.monotonic()
             await asyncio.sleep(5)
         except asyncio.CancelledError:
             break

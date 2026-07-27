@@ -878,14 +878,21 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # and set the pending confirmation state accordingly.
     from .storage import get_pending_response, resolve_pending_response, set_pending_response
     property_code = (prospecto_actual or {}).get("codigo") or ""
-    has_pending_confirmation = bool(get_pending_response(phone, "VISIT_CONFIRMATION"))
+    # These helpers use synchronous PyMongo. process_user_message runs inside
+    # an asyncio loop, so every access must be delegated off that loop.
+    has_pending_confirmation = bool(
+        await _run_sync(get_pending_response, phone, "VISIT_CONFIRMATION")
+    )
     if not has_pending_confirmation and property_code and intencion in ("consulta_general", "agendar_visita"):
         resp_low = respuesta.lower()
         if any(p in resp_low for p in ["gustaría", "quisieras", "quieres", "coordin", "agendar", "visita", "conocer", "conozcas"]):
             prompt_suffixes = ["?", "!", ""]
             if any(resp_low.strip().endswith(s) for s in prompt_suffixes):
                 try:
-                    set_pending_response(phone, "VISIT_CONFIRMATION", property_code, conversation_id)
+                    await _run_sync(
+                        set_pending_response, phone, "VISIT_CONFIRMATION",
+                        property_code, conversation_id,
+                    )
                     logger.info("[VISIT_CONFIRM] Estado de confirmacion guardado para propiedad %s", property_code)
                 except Exception as e:
                     logger.warning("[VISIT_CONFIRM] Error guardando estado: %s", e)
@@ -893,7 +900,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # ── VISIT CONFIRMATION STATE (INTERPRET) ──
     # If there's a pending VISIT_CONFIRMATION response, interpret short
     # affirmatives as visit requests regardless of what the AI classified.
-    pending = get_pending_response(phone, "VISIT_CONFIRMATION")
+    pending = await _run_sync(get_pending_response, phone, "VISIT_CONFIRMATION")
     if pending:
         msg_l = (original_message or "").lower().strip()
         negative_terms = ["no", "no ", "no," "no.", "no gracias", "no, gracias", "no quiero",
@@ -913,7 +920,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 break
 
         if is_negative:
-            resolve_pending_response(phone, "rejected")
+            await _run_sync(resolve_pending_response, phone, "rejected")
             logger.info("[VISIT_CONFIRM] Pending response %s rejected by user: %s", pending.get("type"), msg_l)
 
         else:
@@ -932,7 +939,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
             if is_affirmative and not is_topic_change:
                 intencion = "agendar_visita"
-                resolve_pending_response(phone, "confirmed")
+                await _run_sync(resolve_pending_response, phone, "confirmed")
                 logger.info("[VISIT_CONFIRM] Pending response %s confirmed by user: %s", pending.get("type"), msg_l)
             elif is_topic_change:
                 logger.info("[VISIT_CONFIRM] Pending response %s topic changed by user: %s", pending.get("type"), msg_l)

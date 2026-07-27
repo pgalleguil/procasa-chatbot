@@ -98,9 +98,22 @@ def property_summary(captacion):
     code = captacion.get("codigo") or captacion.get("property_code")
     prop_type = captacion.get("tipo_propiedad")
     comuna = captacion.get("comuna")
-    price = _format_uf(captacion.get("precio_uf"), captacion.get("operacion"))
-    parts = [str(v).strip() for v in (code, prop_type.title() if prop_type else None, comuna, price) if v]
+    operation = str(captacion.get("operacion") or "").strip().lower()
+    operation_label = {"venta": "Venta", "arriendo": "Arriendo"}.get(operation)
+    price = _format_uf(captacion.get("precio_uf"), operation)
+    parts = [str(v).strip() for v in (operation_label, code, prop_type.title() if prop_type else None, comuna, price) if v]
     return " \u00b7 ".join(parts) or None
+
+def canonical_audit_note(task, captacion):
+    requested = task.get("audit_note")
+    if not requested:
+        return None
+    notes = ((captacion.get("gestion") or {}).get("notas") or [])
+    for entry in reversed(notes):
+        content = entry.get("content") if isinstance(entry, dict) else None
+        if content == requested:
+            return content
+    return None
 
 def reminder_text(task, captacion):
     # Unicode is kept as normal Python strings from source through provider.
@@ -113,7 +126,9 @@ def reminder_text(task, captacion):
     contact = task.get("contact_name") or details.get("publicador") or captacion.get("seller_name")
     property_ref = property_summary(captacion)
     current_state = canonical_captacion_state(captacion)
-    note = task.get("audit_note") or task.get("note")
+    note = canonical_audit_note(task, captacion)
+    if task.get("audit_note") and note is None:
+        raise ValueError("canonical_audit_note_missing")
     if has_degraded_unicode(contact, current_state, note):
         raise ValueError("invalid_unicode_input")
     base_url = str(__import__("config").Config.CRM_BASE_URL).rstrip("/")
@@ -186,7 +201,7 @@ async def deliver_claimed_reminder(db, task):
                      "recipient_name": recipient.get("nombre"),
                      "recipient_phone_masked": masked_phone,
                      "state_at_delivery": current_state,
-                     "audit_note_used": task.get("audit_note") or task.get("note"),
+                     "audit_note_used": canonical_audit_note(task, captacion),
                      "message_content": content, "content_hash": content_hash,
                      "late_delivery_reason": task.get("late_delivery_reason"),
                      "updated_at": now},

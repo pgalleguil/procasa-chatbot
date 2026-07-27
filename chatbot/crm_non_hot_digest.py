@@ -156,8 +156,10 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
     if not getattr(Config, "CRM_NON_HOT_DIGEST_ENABLED", False):
         return None
 
-    now = utc_now()
-    window_minutes = max(int(getattr(Config, "CRM_NON_HOT_DIGEST_WINDOW_MINUTES", 15)), 1)
+    # The fixed window belongs to the commercial assignment event, never to
+    # a retry, restart or reconciliation time.
+    now = coerce_utc_datetime(db_cycle.get("assigned_at")) or utc_now()
+    window_minutes = max(int(getattr(Config, "CRM_NON_HOT_DIGEST_WINDOW_MINUTES", 10)), 1)
 
     identity = digest_identity(
         recipient_user_id=recipient,

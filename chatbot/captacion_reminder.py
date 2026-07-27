@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pymongo import ReturnDocument
 
 DOMAIN = "captacion_reminder"
-MESSAGE_TYPE = "followup_reminder"
+MESSAGE_TYPE = "scheduled_reminder"
 RECIPIENT_ROLE = "executive"
 COLLECTION = "crm_tasks"
 
@@ -40,28 +41,61 @@ def claim_due_reminder(db, *, worker_id: str, now: datetime | None = None, task_
     )
 
 def resolve_recipient(db, task):
-    recipient_id = task.get("recipient_user_id")
+    # Target identity is persisted by the authenticated producer.  Name lookup
+    # is a legacy fallback only when it is unique among active users.
+    recipient_id = task.get("target_user_id") or task.get("recipient_user_id")
     if recipient_id:
         from bson import ObjectId
         try:
             query = {"_id": ObjectId(str(recipient_id))}
         except Exception:
             query = {"_id": recipient_id}
+        user = db["usuarios"].find_one({**query, "is_active": {"$ne": False}})
     else:
-        query = {"nombre": task.get("recipient_name") or task.get("target_name")}
-    user = db["usuarios"].find_one({**query, "is_active": {"$ne": False}})
+        name = task.get("recipient_name") or task.get("target_name")
+        candidates = list(db["usuarios"].find({"nombre": name, "is_active": {"$ne": False}}).limit(2))
+        user = candidates[0] if len(candidates) == 1 else None
     if not user:
         return None, None
     phone = user.get("telefono") or user.get("tel") or user.get("movil")
     return user, phone
 
+def _format_scheduled(task):
+    from .constants import CHILE_TZ
+    value = task.get("scheduled_at") or task.get("execute_at")
+    if not isinstance(value, datetime):
+        return "S/I"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(CHILE_TZ).strftime("%d/%m/%Y %H:%M")
+
 def reminder_text(task, captacion):
-    owner = (captacion.get("details") or {}).get("publicador") or "captaci?n"
-    link = f"/captacion/{task['obj_id']}"
-    return (f"? *Recordatorio de captaci?n*\n\n"
-            f"Tienes seguimiento pendiente de *{owner}*.\n\n"
-            f"?? *Nota:* {task.get('note') or 'Sin detalles'}\n"
-            f"?? Gestionar: {link}")
+    # Unicode is kept as normal Python strings from source through provider.
+    bell, person, house, pin, memo, clock, link, warning = (
+        "\U0001f514", "\U0001f464", "\U0001f3e0", "\U0001f4cc",
+        "\U0001f4dd", "\U0001f550", "\U0001f517", "\u26a0\ufe0f"
+    )
+    details = captacion.get("details") or {}
+    gestion = captacion.get("gestion") or {}
+    contact = task.get("contact_name") or details.get("publicador") or captacion.get("seller_name")
+    property_ref = (captacion.get("codigo") or captacion.get("property_code")
+                    or captacion.get("direccion_exacta") or captacion.get("title"))
+    current_state = gestion.get("estado_captacion") or gestion.get("estado") or "S/I"
+    note = task.get("audit_note") or task.get("note")
+    base_url = str(__import__("config").Config.CRM_BASE_URL).rstrip("/")
+    url = f"{base_url}/captacion/{task['obj_id']}"
+    lines = [f"{bell} *RECORDATORIO DE CAPTACI\u00d3N*", ""]
+    if contact:
+        lines.append(f"{person} *Contacto:* {contact}")
+    if property_ref:
+        lines.append(f"{house} *Propiedad:* {property_ref}")
+    lines.append(f"{pin} *Estado actual:* {current_state}")
+    if note:
+        lines.append(f"{memo} *Bit\u00e1cora:* {note}")
+    lines.append(f"{clock} *Programada para:* {_format_scheduled(task)}")
+    lines.extend(["", f"{link} *Abrir captaci\u00f3n:*", url, "",
+                  f"{warning} Registra el resultado de la gesti\u00f3n en el m\u00f3dulo de captaciones."])
+    return "\n".join(lines)
 
 async def deliver_claimed_reminder(db, task):
     """Deliver one already-claimed reminder. Never touches other domains."""
@@ -91,8 +125,13 @@ async def deliver_claimed_reminder(db, task):
              "$unset": {"lease_owner": "", "lease_token": "", "lease_until": ""}},
         )
         return {"status": "failed_terminal", "provider_message_id": None}
-    result = await send_whatsapp_message_detailed(phone, reminder_text(task, captacion))
+    content = reminder_text(task, captacion)
+    result = await send_whatsapp_message_detailed(phone, content)
     now = utc_now()
+    current_state = ((captacion.get("gestion") or {}).get("estado_captacion")
+                     or (captacion.get("gestion") or {}).get("estado") or "S/I")
+    masked_phone = "****" + str(phone)[-4:]
+    content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
     update_filter = {"_id": task["_id"], "status": "processing", "lease_token": token}
     if result.get("success"):
         db[COLLECTION].update_one(update_filter, {
@@ -100,8 +139,13 @@ async def deliver_claimed_reminder(db, task):
                      "provider_message_id": result.get("provider_message_id"),
                      "actually_delivered": True, "delivered_at": now,
                      "recipient_user_id": str(recipient["_id"]),
+                     "target_user_id": str(recipient["_id"]),
                      "recipient_name": recipient.get("nombre"),
-                     "late_delivery_reason": "worker_skipped_unresolved_captacion_assignee",
+                     "recipient_phone_masked": masked_phone,
+                     "state_at_delivery": current_state,
+                     "audit_note_used": task.get("audit_note") or task.get("note"),
+                     "message_content": content, "content_hash": content_hash,
+                     "late_delivery_reason": task.get("late_delivery_reason"),
                      "updated_at": now},
             "$unset": {"lease_owner": "", "lease_token": "", "lease_until": "", "next_attempt_at": ""},
             "$push": {"delivery_attempts": {"at": now, "accepted": True,

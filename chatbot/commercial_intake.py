@@ -93,7 +93,14 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
     cycle = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": cycle["assignment_cycle_id"]}) or cycle
     db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
         "ejecutivo_asignado": recipient["nombre"], "prospecto.ejecutivo": recipient["nombre"],
-        "prospecto.codigo": code, "lifecycle.current_assignment_cycle_id": cycle["assignment_cycle_id"],
+        "prospecto.codigo": code,
+        "lifecycle.current_assignment_cycle_id": cycle["assignment_cycle_id"],
+        "lifecycle.assignment_cycle_id": cycle["assignment_cycle_id"],
+        "lifecycle.assigned_at": cycle.get("assigned_at"),
+        "lifecycle.cycle_started_at": cycle.get("cycle_started_at") or cycle.get("assigned_at"),
+        "lifecycle.sla_started_at": cycle.get("sla_started_at") or cycle.get("assigned_at"),
+        "lifecycle.assigned_to_user_id": cycle.get("assigned_to_user_id"),
+        "lifecycle.assigned_to_display_name": cycle.get("assigned_to_display_name"),
         "commercial_processing_state": COMPLETED, "commercial_notification_eligible": True}})
     fresh = db["leads"].find_one({"_id": lead["_id"]}) or lead
     if str(fresh.get("lead_temperature_effective") or "").upper() == "HOT":

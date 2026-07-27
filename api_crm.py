@@ -764,8 +764,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     if page_lead_ids:
         from chatbot.storage import get_async_db
         adb = get_async_db()
+        # The list must use the same canonical commercial cycle for SLA,
+        # temperature and executive. Technical/legacy active cycles are not
+        # presentation sources.
         cycles_cursor = adb["crm_assignment_cycles"].find(
-            {"lead_id": {"$in": page_lead_ids}, "cycle_status": "active"},
+            {"lead_id": {"$in": page_lead_ids}, "cycle_status": "active",
+             "schema_version": "crm_assignment_cycle_v1",
+             "notification_eligible": True,
+             "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created"]},
+             "cycle_origin": {"$in": ["inbound_message", "manual_lead"]}},
         ).sort([("assigned_at", -1)])
         cycle_docs = await cycles_cursor.to_list(length=len(page_lead_ids) + 1)
         for c in cycle_docs:
@@ -831,14 +838,21 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             recognized_management_map.get(raw_phone)
             if phone_identity_counts.get(raw_phone) == 1 else None
         )
+        current_cycle = cycle_by_lead_id.get(str(lead.get("_id"))) if lead.get("_id") else None
+        lifecycle = lead.get("lifecycle") or {}
+        # Never combine new-cycle SLA with historical lead fields.  If a
+        # canonical active cycle exists, it is the sole source for this row.
         assigned_for_cycle = _coerce_crm_datetime(
-            (lead.get("lifecycle") or {}).get("assigned_at") or lead.get("fecha_asignacion")
+            (current_cycle or {}).get("assigned_at") or lifecycle.get("assigned_at") or lead.get("fecha_asignacion")
         )
+        current_cycle_id = ((current_cycle or {}).get("assignment_cycle_id")
+                            or lifecycle.get("current_assignment_cycle_id")
+                            or lifecycle.get("assignment_cycle_id"))
         from chatbot.crm_metrics import registered_outreach_evidence
         outreach = registered_outreach_evidence(
             recognized_management_ev,
             assigned_at=assigned_for_cycle,
-            assignment_cycle_id=(lead.get("lifecycle") or {}).get("assignment_cycle_id"),
+            assignment_cycle_id=current_cycle_id,
             # Previous-cycle outreach may remain visible in the timeline, but
             # it must not mark the current assignment as managed.
             allow_historical_for_presentation=False,
@@ -892,7 +906,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             last_action_note = lead.get("last_message_preview") or ""
         
         ultimo_msg_ts = lead.get("prospecto", {}).get("ultimo_mensaje")
-        lifecycle_ts = lead.get("lifecycle", {}).get("assigned_at")
+        lifecycle_ts = ((current_cycle or {}).get("assigned_at")
+                        or lifecycle.get("assigned_at"))
         created_ts = lead.get("created_at")
         
         # Mantener la prioridad histórica de la última gestión, salvo que haya
@@ -909,8 +924,11 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             estado_final = PipelineStage.CONTACTED
         
         # Identificar ejecutivo y timestamp real para visualización
-        ejecutivo = lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo")
-        sort_ts = lead.get("effective_assigned_at") or lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion") or lead.get("created_at")
+        ejecutivo = ((current_cycle or {}).get("assigned_to_display_name")
+                     or lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo"))
+        sort_ts = ((current_cycle or {}).get("assigned_at")
+                   or lead.get("effective_assigned_at") or lifecycle.get("assigned_at")
+                   or lead.get("fecha_asignacion") or lead.get("created_at"))
         
         if last_ts:
             try: 
@@ -927,7 +945,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
 
         # 1. TEMPERATURA Y PRIORIDAD: única fuente persistida, sin reinterpretar
         # alerts_sent ni otras señales durante la consulta/render.
-        temp = lead["lead_temperature_effective"]
+        temp = str((current_cycle or {}).get("temperature_at_assignment")
+                   or lead.get("lead_temperature_effective") or "COLD").upper()
 
         # 5. SLA / TIEMPO DE RESPUESTA
         sla_status = lead.get("sla_status", "good")
@@ -966,8 +985,11 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             
         # One SLA definition for cards, list, detail and monitor.
         from chatbot.crm_metrics import calculate_sla, is_pre_visual_cutover
-        assigned_at = (lead.get("lifecycle", {}) or {}).get("assigned_at") or lead.get("fecha_asignacion")
-        visual_pre = is_pre_visual_cutover(assigned_at) if assigned_at else True
+        assigned_at = ((current_cycle or {}).get("sla_started_at")
+                       or (current_cycle or {}).get("assigned_at")
+                       or lifecycle.get("sla_started_at") or lifecycle.get("assigned_at")
+                       or lead.get("fecha_asignacion"))
+        visual_pre = is_pre_visual_cutover((current_cycle or {}).get("assigned_at") or assigned_at) if assigned_at else True
         
         sla_hours = 0
         canonical_sla = {}
@@ -978,14 +1000,14 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             sla_status = "historical" if visual_pre else "unknown"
             sla_label = "Histórico" if visual_pre else "SLA S/I"
         else:
-            # Use the batch-resolved cycle dict; no async db call inside the loop
-            cyc = cycle_by_lead_id.get(str(lead.get("_id"))) if lead.get("_id") else None
-            if cyc is not None and isinstance(cyc, dict):
-                hot_started_at = cyc.get("hot_started_at") or cyc.get("temperature_transitioned_at")
+            # The current canonical cycle was resolved in the batch query.
+            if current_cycle is not None and isinstance(current_cycle, dict):
+                hot_started_at = current_cycle.get("hot_started_at") or current_cycle.get("temperature_transitioned_at")
             
             canonical_sla = calculate_sla(
                 assigned_at=assigned_at,
-                first_valid_management_at=(lead.get("lifecycle", {}) or {}).get("first_valid_management_at") or
+                first_valid_management_at=(lifecycle.get("first_valid_management_at")
+                                          if lifecycle.get("current_assignment_cycle_id") == current_cycle_id else None) or
                                           (outreach["occurred_at"] if recognized_management_ev else None),
                 temperature=temp,
                 hot_started_at=hot_started_at,
@@ -1070,7 +1092,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "ultima_accion_note": last_action_note,
             "ultima_accion_nota": last_action_note,
             "ejecutivo_nombre": ejecutivo or UNASSIGNED_LABEL,
-            "fecha_asignacion_relativa": _after_hours_label(lead.get("lifecycle", {}).get("assigned_at") or lead.get("fecha_asignacion"), has_real_management=has_real_management),
+            "fecha_asignacion_relativa": _after_hours_label(lifecycle_ts or lead.get("fecha_asignacion"), has_real_management=has_real_management),
+            "assignment_cycle_id": current_cycle_id,
+            "assigned_at": assigned_for_cycle,
             "stage": lead.get("stage") or "new",
             "sort_timestamp": sort_ts
         })

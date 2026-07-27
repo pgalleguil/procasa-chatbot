@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
+from pathlib import Path
 
 from chatbot.crm_metrics import (
     build_snapshot_document, calculate_sla, coerce_utc_datetime,
-    create_assignment_cycle, event_evidence, normalize_result, pipeline_activity_in_period,
+    commercial_sla_start_at, create_assignment_cycle, event_evidence, normalize_result, pipeline_activity_in_period,
     resolve_canonical_lead, unique_managed_lead_ids, validate_list_parity,
 )
 
@@ -131,3 +132,69 @@ def test_snapshot_separates_cohort_pipeline_and_current_priority():
     )
     assert set(("cohort", "pipeline_activity", "current_priorities")) <= snapshot.keys()
     assert snapshot["immutable"] is True
+
+
+def test_historical_lead_new_inbound_cycle_has_its_own_assignment_and_sla_timestamps():
+    db = FakeDB(crm_assignment_cycles=FakeCollection([
+        {"_id": "old", "lead_id": "lead-1", "assignment_cycle_id": "old-cycle",
+         "assigned_at": datetime(2026, 7, 1, 13, tzinfo=timezone.utc),
+         "unassigned_at": None, "cycle_status": "active", "schema_version": "legacy"}
+    ]))
+    cycle = create_assignment_cycle(
+        db, lead={"_id": "lead-1", "lead_temperature_effective": "HOT"},
+        assigned_to_user_id="u-new", assigned_by="commercial_intake",
+        reason="inbound_message", assigned_at="2026-07-27T10:30:00-04:00",
+        assigned_to_display_name="Susana",
+    )
+    assert cycle["assignment_cycle_id"] != "old-cycle"
+    assert cycle["assigned_at"] == datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
+    assert cycle["cycle_started_at"] == cycle["assigned_at"]
+    assert cycle["sla_started_at"] == cycle["assigned_at"]
+    assert cycle["temperature_at_assignment"] == "HOT"
+
+
+def test_new_cycle_does_not_inherit_pre_activation_policy():
+    db = FakeDB(crm_assignment_cycles=FakeCollection())
+    cycle = create_assignment_cycle(
+        db, lead={"_id": "lead-2"}, assigned_to_user_id="u1",
+        assigned_by="commercial_intake", reason="inbound_message",
+        assigned_at="2026-07-27T10:30:00-04:00",
+    )
+    assert cycle["sla_policy_version"] == "sla_visual_v1_20260723"
+    assert cycle["cycle_started_at"] == cycle["assigned_at"]
+
+
+def test_sla_starts_at_next_opening_outside_business_hours():
+    # Sunday Chile: next business opening is Monday 09:00 Chile / 13:00 UTC.
+    start = commercial_sla_start_at("2026-07-26T16:00:00-04:00")
+    assert start == datetime(2026, 7, 27, 13, 0, tzinfo=timezone.utc)
+
+
+def test_sla_starts_at_assignment_inside_business_hours():
+    assigned = datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
+    assert commercial_sla_start_at(assigned) == assigned
+
+
+def test_same_assignment_reuses_cycle_without_duplicate_commercial_opportunity():
+    db = FakeDB(crm_assignment_cycles=FakeCollection())
+    lead = {"_id": "lead-3", "lead_temperature_effective": "COLD"}
+    first = create_assignment_cycle(db, lead=lead, assigned_to_user_id="u1",
+                                    assigned_by="commercial_intake", reason="inbound_message")
+    second = create_assignment_cycle(db, lead=lead, assigned_to_user_id="u1",
+                                     assigned_by="commercial_intake", reason="inbound_message")
+    assert second["assignment_cycle_id"] == first["assignment_cycle_id"]
+    assert len(db["crm_assignment_cycles"].docs) == 1
+
+
+def test_crm_list_uses_one_canonical_cycle_source_for_row_fields():
+    source = Path("api_crm.py").read_text(encoding="utf-8")
+    assert '"schema_version": "crm_assignment_cycle_v1"' in source
+    assert 'current_cycle = cycle_by_lead_id' in source
+    assert '"assignment_cycle_id": current_cycle_id' in source
+    assert 'current_cycle or {}).get("temperature_at_assignment")' in source
+
+
+def test_sla_before_opening_starts_at_same_day_opening():
+    assert commercial_sla_start_at("2026-07-27T08:59:00-04:00") == datetime(
+        2026, 7, 27, 13, 0, tzinfo=timezone.utc
+    )

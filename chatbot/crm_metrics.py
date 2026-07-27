@@ -7,7 +7,7 @@ report or WhatsApp concerns.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Iterable, Mapping, Optional
 import re
 import uuid
@@ -15,7 +15,7 @@ import uuid
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from .constants import CHILE_TZ
+from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
 from .utils import calculate_business_minutes
 
 METRIC_VERSION = "crm_metrics_v1"
@@ -74,6 +74,35 @@ def coerce_utc_datetime(value: Any, *, naive_timezone=CHILE_TZ) -> Optional[date
     if parsed.tzinfo is None:
         parsed = naive_timezone.localize(parsed)
     return parsed.astimezone(timezone.utc)
+
+
+def commercial_sla_start_at(assigned_at: Any) -> Optional[datetime]:
+    """Return the effective SLA start using Chile business hours, in UTC.
+
+    The cycle keeps both the factual assignment instant and this business-clock
+    boundary so presentation and alerting never inherit a lead's old history.
+    """
+    assigned = coerce_utc_datetime(assigned_at)
+    if not assigned:
+        return None
+    local = assigned.astimezone(CHILE_TZ)
+    if local.weekday() in BUSINESS_DAYS:
+        if BUSINESS_START_HOUR <= local.hour < BUSINESS_END_HOUR:
+            return assigned
+        # Before opening, the next business opening is today.
+        if local.hour < BUSINESS_START_HOUR:
+            opening = CHILE_TZ.localize(datetime(
+                local.year, local.month, local.day, BUSINESS_START_HOUR, 0, 0
+            ))
+            return opening.astimezone(timezone.utc)
+    day = local.date()
+    while True:
+        day += timedelta(days=1)
+        if day.weekday() in BUSINESS_DAYS:
+            opening = CHILE_TZ.localize(datetime(
+                day.year, day.month, day.day, BUSINESS_START_HOUR, 0, 0
+            ))
+            return opening.astimezone(timezone.utc)
 
 
 def normalize_phone(value: Any) -> str:
@@ -200,6 +229,9 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
     cycle = {
         "assignment_cycle_id": str(uuid.uuid4()), "lead_id": lead["_id"],
         "assigned_to_user_id": assigned_to_user_id, "assigned_at": assigned_at,
+        "cycle_started_at": assigned_at,
+        "sla_started_at": commercial_sla_start_at(assigned_at),
+        "temperature_at_assignment": str(lead.get("lead_temperature_effective") or "COLD").upper(),
         "assigned_to_display_name": assigned_to_display_name or str(assigned_to_user_id),
         "unassigned_at": None, "assigned_by": assigned_by, "reason": reason,
         "metric_version": METRIC_VERSION, "schema_version": "crm_assignment_cycle_v1",

@@ -20,3 +20,12 @@ def test_recovery_claim_can_be_narrowed_to_exact_digest():
     source = Path("chatbot/crm_non_hot_digest.py").read_text(encoding="utf-8")
     assert "notification_id=None" in source
     assert 'extra_filter["_id"] = notification_id' in source
+
+
+def test_retryable_digest_respects_retry_after_and_releases_cycle_reservation():
+    notifications = Path("chatbot/crm_notifications.py").read_text(encoding="utf-8")
+    digest = Path("chatbot/crm_non_hot_digest.py").read_text(encoding="utf-8")
+    assert '"next_attempt_at": {"$lte": now}' in notifications
+    assert 'def release_cycle_delivery' in notifications
+    assert 'release_cycle_delivery(' in digest
+    assert 'http_status == 429' in digest

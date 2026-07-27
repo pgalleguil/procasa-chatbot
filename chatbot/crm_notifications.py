@@ -215,7 +215,14 @@ def create_pending(db, *, identity_field, identity, payload, payload_version="cr
 
 def claim_next(db, *, worker_id, lease_seconds=120, now=None, extra_filter=None):
     now = now or utc_now()
-    query = {"state": {"$in": ["pending", "failed_retryable"]}}
+    query = {
+        "state": {"$in": ["pending", "failed_retryable"]},
+        "$or": [
+            {"next_attempt_at": {"$exists": False}},
+            {"next_attempt_at": None},
+            {"next_attempt_at": {"$lte": now}},
+        ],
+    }
     query.update(dict(extra_filter or {}))
     return db[COLLECTION].find_one_and_update(
         query,
@@ -329,6 +336,40 @@ def finalize_cycle_delivery(db, *, assignment_cycle_id, provider_message_id=None
             "non_hot_delivered_at": now,
             "updated_at": now,
         }},
+    )
+
+
+def release_cycle_delivery(db, *, assignment_cycle_id, digest_id, delivery_token, reason, now=None):
+    """Release a cycle reservation only after a confirmed non-delivery.
+
+    The compare-and-set filter prevents a later retry from releasing a newer
+    reservation.  Delivery history remains append-only on the cycle.
+    """
+    now = now or utc_now()
+    return db["crm_assignment_cycles"].find_one_and_update(
+        {
+            "assignment_cycle_id": assignment_cycle_id,
+            "non_hot_delivery_status": "reserved",
+            "non_hot_digest_id": str(digest_id),
+            "non_hot_delivery_token": delivery_token,
+        },
+        {
+            "$unset": {
+                "non_hot_delivery_status": "",
+                "non_hot_delivery_token": "",
+                "non_hot_digest_id": "",
+                "non_hot_delivery_reserved_at": "",
+            },
+            "$set": {"updated_at": now},
+            "$push": {"notification_delivery_history": {
+                "at": now,
+                "event": "non_hot_delivery_reservation_released",
+                "digest_id": str(digest_id),
+                "delivery_token": delivery_token,
+                "reason": reason,
+            }},
+        },
+        return_document=ReturnDocument.AFTER,
     )
 
 

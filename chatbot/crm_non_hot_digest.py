@@ -618,7 +618,10 @@ def send_digest(db, *, notification, worker_id, sender=None):
             return {"status": "failed_recipient", "reason": "no_phone"}
 
         from .crm_notifications import reserve_for_delivery, refresh_lease, record_delivery_attempt
-        from .crm_notifications import reserve_cycle_delivery, finalize_cycle_delivery, is_cycle_delivered
+        from .crm_notifications import (
+            reserve_cycle_delivery, finalize_cycle_delivery, is_cycle_delivered,
+            release_cycle_delivery,
+        )
         from .whatsapp_client import send_whatsapp_message_detailed
         import asyncio, uuid, threading
         import hashlib
@@ -697,9 +700,28 @@ def send_digest(db, *, notification, worker_id, sender=None):
                     "delivery_mode": "live", "actually_delivered": True}
         else:
             state = "failed_retryable" if http_status not in (422,) else "failed_validation"
+            failure_reason = f"http_{http_status}" if http_status else receipt.get("error")
             finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
-                             state=state, error=f"http_{http_status}" if http_status else receipt.get("error"))
-            return {"status": state, "lead_count": lead_count}
+                             state=state, error=failure_reason)
+            # A provider response without an accepted provider ID is a confirmed
+            # non-delivery, so this exact reservation can safely be retried.
+            for cid in reserved_cycles:
+                release_cycle_delivery(
+                    db, assignment_cycle_id=cid, digest_id=notification["_id"],
+                    delivery_token=delivery_token, reason=failure_reason,
+                )
+            retry_after = None
+            if http_status == 429:
+                try:
+                    retry_after = max(int(receipt.get("retry_after", 60)), 30)
+                except (TypeError, ValueError):
+                    retry_after = 60
+                db[NOTIFICATION_COLLECTION].update_one(
+                    {"_id": notification["_id"], "state": "failed_retryable"},
+                    {"$set": {"next_attempt_at": utc_now() + timedelta(seconds=retry_after),
+                              "updated_at": utc_now()}},
+                )
+            return {"status": state, "lead_count": lead_count, "retry_after": retry_after}
 
     recipient = str(notification.get("recipient_user_id") or "")
     exec_user = resolve_recipient_user(db, recipient)

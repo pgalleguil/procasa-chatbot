@@ -140,3 +140,15 @@ def test_team_total_includes_verified_rows_from_every_member():
     assert by_name["Mariela"]["week_count"] == 2
     assert by_name["Paula"]["week_count"] == 1
     assert by_name["Erika"]["week_count"] == 0
+
+
+def test_team_outcomes_exclude_credited_activity_from_non_member():
+    team = [{"id": "u1", "name": "Ana"}]
+    rows = [
+        {"actor_user_id": "u1", "property_id": "p-team", "occurred_at": _at(15), "result": "contacted", "credited": True},
+        {"actor_user_id": "former-user", "property_id": "p-former", "occurred_at": _at(15), "result": "captured", "credited": True},
+    ]
+    result = build_captacion_goal_dashboard(team, rows, now=_at(15))
+    assert result["week_count"] == 1
+    assert sum(group["total"] for group in result["outcome_groups"].values()) == 1
+    assert result["outcome_groups"]["management_in_progress"]["total"] == 1

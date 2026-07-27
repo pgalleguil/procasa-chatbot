@@ -383,6 +383,7 @@ def test_official_send_targets_group_never_admin(monkeypatch):
     snapshot = weekly.build_weekly_snapshot(object(), "2026-07-13", "2026-07-17", is_test=False)
     report = {
         "report_id": "r-group", "report_type": "captacion_weekly_official",
+        "message_domain": weekly.MESSAGE_DOMAIN, "message_type": "weekly_report", "recipient_role": "captacion_team",
         "period_start": "2026-07-13", "period_end": "2026-07-17", "is_test": False,
         "status": "ready_to_send", "snapshot": snapshot, "snapshot_id": snapshot["snapshot_id"],
         "snapshot_hash": "hash", "crm_parity_validated": True,

@@ -36,6 +36,8 @@ ADMIN_RECIPIENT = "+56983219804"
 PROMPT_VERSION = Config.CAPTACION_WEEKLY_PROMPT_VERSION
 REPORT_COLLECTION = Config.CAPTACION_WEEKLY_REPORT_COLLECTION
 DELIVERY_COLLECTION = Config.CAPTACION_WEEKLY_DELIVERY_COLLECTION
+MESSAGE_DOMAIN = "captacion_weekly_report"
+RESPONSIBLE_SERVICE = "captacion_weekly_report_scheduler"
 
 OUTCOME_LABELS = {
     "por_contactar": "Por contactar",
@@ -502,6 +504,10 @@ async def create_weekly_report(period_start, period_end, *, is_test: bool, creat
     document = {
         "report_id": str(uuid.uuid4()),
         "report_type": "captacion_weekly_preview" if is_test else "captacion_weekly_official",
+        "message_domain": MESSAGE_DOMAIN,
+        "message_type": "weekly_preview" if is_test else "weekly_report",
+        "recipient_role": "administrator" if is_test else "captacion_team",
+        "responsible_service": RESPONSIBLE_SERVICE,
         "snapshot_id": snapshot["snapshot_id"],
         "schema_version": SCHEMA_VERSION,
         "period_start": snapshot["report"]["period_start"],
@@ -750,6 +756,10 @@ async def _notify_admin_once(report: dict, notification_type: str, text: str) ->
     db = get_db()
     key = f"captacion_weekly_notice:{notification_type}:{report['report_id']}"
     delivery, claimed = await _claim_delivery(db, key, {
+        "message_domain": MESSAGE_DOMAIN,
+        "message_type": "internal_notice",
+        "recipient_role": "administrator",
+        "responsible_service": RESPONSIBLE_SERVICE,
         "report_id": report["report_id"],
         "snapshot_id": report.get("snapshot_id"),
         "is_test": False,
@@ -778,7 +788,8 @@ async def send_official_report(report_id: str, *, now=None) -> dict:
     db = get_db()
     await asyncio.to_thread(ensure_weekly_report_indexes, db)
     report = await asyncio.to_thread(
-        db[REPORT_COLLECTION].find_one, {"report_id": str(report_id), "is_test": False}
+        db[REPORT_COLLECTION].find_one,
+        {"report_id": str(report_id), "is_test": False, "message_domain": MESSAGE_DOMAIN},
     )
     if not report or report.get("status") not in {"ready_to_send", "send_retry_pending"}:
         raise ValueError("El reporte oficial no está disponible para envío")
@@ -791,6 +802,10 @@ async def send_official_report(report_id: str, *, now=None) -> dict:
     deadline = local_now.replace(hour=Config.CAPTACION_WEEKLY_RETRY_DEADLINE_HOUR, minute=0, second=0, microsecond=0)
     key = _official_idempotency_key(report, group_id)
     delivery, claimed = await _claim_delivery(db, key, {
+        "message_domain": MESSAGE_DOMAIN,
+        "message_type": "weekly_report",
+        "recipient_role": "captacion_team",
+        "responsible_service": RESPONSIBLE_SERVICE,
         "report_type": "captacion_weekly_official",
         "report_id": report["report_id"],
         "period_start": report["period_start"],
@@ -913,6 +928,45 @@ async def check_and_prepare_weekly_report(*, force: bool = False, now=None) -> d
             return await asyncio.to_thread(
                 db[REPORT_COLLECTION].find_one, {"report_id": existing["report_id"]}, {"_id": 0}
             )
+        if existing.get("status") == "blocked_validation" and not existing.get("recovery_attempted_at"):
+            # Un ?nico reintento dentro de la misma ventana semanal. Conserva el
+            # documento bloqueado como auditor?a y delega la entrega al worker
+            # exclusivo de captacion_weekly_report.
+            claimed = await asyncio.to_thread(
+                db[REPORT_COLLECTION].find_one_and_update,
+                {"report_id": existing["report_id"], "status": "blocked_validation",
+                 "recovery_attempted_at": {"$exists": False}},
+                {"$set": {"recovery_attempted_at": datetime.now(timezone.utc)}},
+            )
+            if claimed:
+                try:
+                    recovered = await create_weekly_report(
+                        period_start, period_end, is_test=False, created_by="scheduler_recovery"
+                    )
+                except Exception as exc:
+                    await asyncio.to_thread(
+                        db[REPORT_COLLECTION].update_one,
+                        {"report_id": existing["report_id"]},
+                        {"$set": {"recovery_error": str(exc), "updated_at": datetime.now(timezone.utc)}},
+                    )
+                    return await asyncio.to_thread(
+                        db[REPORT_COLLECTION].find_one, {"report_id": existing["report_id"]}, {"_id": 0}
+                    )
+                await asyncio.to_thread(
+                    db[REPORT_COLLECTION].update_one,
+                    {"report_id": existing["report_id"]},
+                    {"$set": {"status": "superseded_recovered", "recovery_report_id": recovered["report_id"],
+                              "updated_at": datetime.now(timezone.utc)}},
+                )
+                await asyncio.to_thread(
+                    db[REPORT_COLLECTION].update_one,
+                    {"report_id": recovered["report_id"]},
+                    {"$set": {"scheduler_generated": True, "recovered_from_report_id": existing["report_id"]}},
+                )
+                await send_official_report(recovered["report_id"], now=local_now)
+                return await asyncio.to_thread(
+                    db[REPORT_COLLECTION].find_one, {"report_id": recovered["report_id"]}, {"_id": 0}
+                )
         return existing
     try:
         report = await create_weekly_report(period_start, period_end, is_test=False, created_by="scheduler")

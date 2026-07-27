@@ -384,7 +384,18 @@ def build_captacion_goal_dashboard(team: Iterable[dict], rows: Iterable[dict], s
         row for row in rows
         if monday <= _as_chile_datetime(row.get("occurred_at")).date() <= monday + timedelta(days=4)
     ]
-    outcome_summary = summarize_grouped_outcomes(weekday_rows)
+    # El tablero de equipo cuenta exclusivamente actividades de integrantes
+    # activos. Los resultados deben usar exactamente la misma poblaci?n: una
+    # actividad acreditada de una identidad ajena al equipo no puede inflar el
+    # reporte semanal ni romper su paridad.
+    active_member_ids = {_clean(member.get("id")) for member in members if _clean(member.get("id"))}
+    active_member_names = set(names)
+    team_weekday_rows = [
+        row for row in weekday_rows
+        if (_clean(row.get("actor_user_id")) in active_member_ids)
+        or (_name_key(row.get("actor")) in active_member_names)
+    ]
+    outcome_summary = summarize_grouped_outcomes(team_weekday_rows)
 
     if selected_key:
         metrics = member_metrics(selected_key, names[selected_key])

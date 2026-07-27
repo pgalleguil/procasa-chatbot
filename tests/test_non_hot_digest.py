@@ -78,16 +78,28 @@ class Collection:
             if isinstance(expected, dict):
                 if "$in" in expected:
                     expected_list = expected["$in"]
-                    if isinstance(expected_list, list):
-                        str_actual = str(actual) if actual is not None else None
-                        if str_actual is not None:
-                            if str_actual not in [str(x) for x in expected_list]:
-                                return False
-                        else:
+                    if isinstance(actual, list):
+                        str_list = [str(x) for x in actual]
+                        if not any(str(x) in str_list for x in expected_list):
                             return False
-                    else:
-                        if actual not in expected_list:
+                        continue
+                    # MongoDB $in: [None] matches missing/null fields
+                    if actual is None:
+                        if None in expected_list:
+                            continue
+                        return False
+                    if str(actual) not in [str(x) for x in expected_list]:
+                        return False
+                    continue
+                if "$nin" in expected:
+                    nin_list = expected["$nin"]
+                    if isinstance(actual, list):
+                        str_list = [str(x) for x in actual]
+                        if any(str(x) in str_list for x in nin_list):
                             return False
+                        continue
+                    if actual is not None and str(actual) in [str(x) for x in nin_list]:
+                        return False
                     continue
                 if "$ne" in expected:
                     not_val = expected["$ne"]
@@ -112,6 +124,21 @@ class Collection:
                         return False
                 if "$type" in expected:
                     pass  # skip for tests
+                if "$not" in expected:
+                    # $not negates the sub-query.  Evaluate the sub-query on the
+                    # same document (key → actual); if it matches, $not fails.
+                    sub = expected["$not"]
+                    # Simulate a field check: {key: sub}
+                    if self._match(doc, {key: sub}):
+                        return False
+                    continue
+                if "$elemMatch" in expected:
+                    sub = expected["$elemMatch"]
+                    if not isinstance(actual, list):
+                        return False
+                    if not any(self._match({"_val": item}, {"_val": sub}) for item in actual):
+                        return False
+                    continue
             elif isinstance(actual, list) and not isinstance(expected, (dict, list)):
                 # Array containment
                 if expected not in actual and str(expected) not in actual:
@@ -1641,6 +1668,13 @@ def test_non_hot_digest_after_hours_uses_next_business_open():
     from chatbot.crm_non_hot_digest import accumulate_non_hot_lead
 
     db, lead, cycle = default_db()
+    # Set assigned_at to 21:00 (after business hours)
+    after_hours = local(21, 0)
+    cycle["assigned_at"] = after_hours
+    db["crm_assignment_cycles"].update_one(
+        {"assignment_cycle_id": cycle["assignment_cycle_id"]},
+        {"$set": {"assigned_at": after_hours}},
+    )
     with _patch_config():
         notif = accumulate_non_hot_lead(db, lead=lead, cycle=cycle)
     assert notif is not None

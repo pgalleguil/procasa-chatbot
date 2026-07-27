@@ -185,6 +185,7 @@ background_tasks_status = {
     "notifications_loop": {"status": "starting", "last_heartbeat": None},
     "sla_monitor": {"status": "starting", "last_heartbeat": None},
     "task_monitor": {"status": "starting", "last_heartbeat": None},
+    "captacion_reminder": {"status": "starting", "last_heartbeat": None},
     "captacion_distributor": {"status": "starting", "last_heartbeat": None},
     "lead_processing": {"status": "starting", "last_heartbeat": None}
 }
@@ -256,6 +257,7 @@ async def lifespan(app: FastAPI):
     n_task = asyncio.create_task(process_pending_leads_loop())
     s_task = asyncio.create_task(sla_monitor_loop())
     t_task = asyncio.create_task(check_scheduled_tasks_loop())
+    cr_task = asyncio.create_task(captacion_reminder_loop())
     c_task = asyncio.create_task(captacion_distribution_loop())
     r_task = asyncio.create_task(reassign_unassigned_leads_loop()) # Ahora es Productor
     d_task = asyncio.create_task(daily_report_loop())
@@ -3166,7 +3168,8 @@ async def check_scheduled_tasks_loop():
             
             tasks = await run_db(
                 "crm_tasks.find_due",
-                lambda: list(db["crm_tasks"].find({"status": "pending", "execute_at": {"$lte": now}}))
+                lambda: list(db["crm_tasks"].find({"status": "pending", "execute_at": {"$lte": now},
+                    "lead_type": {"$ne": "captacion"}}))
             )
             
             if tasks:
@@ -3294,6 +3297,31 @@ async def check_scheduled_tasks_loop():
             background_tasks_status["task_monitor"]["status"] = f"error: {str(e)}"
             
         await asyncio.sleep(60)
+
+async def captacion_reminder_loop():
+    """Dedicated durable worker for captaci?n reminders only."""
+    from chatbot.storage import get_db
+    from chatbot.captacion_reminder import process_one_due_reminder
+    worker_id = f"captacion_reminder_{os.getpid()}"
+    while True:
+        try:
+            background_tasks_status["captacion_reminder"] = {
+                "status": "running", "last_heartbeat": datetime.now(CHILE_TZ).isoformat()}
+            # The durable reminder implementation uses the synchronous Mongo
+            # client; run its complete claim/delivery transaction off-loop.
+            result = await asyncio.to_thread(
+                lambda: asyncio.run(process_one_due_reminder(get_db(), worker_id=worker_id))
+            )
+            if result.get("status") not in {"idle", "notified"}:
+                logger.warning("[CAPTACION_REMINDER] result=%s", result)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("[CAPTACION_REMINDER] worker error: %s", exc)
+            background_tasks_status["captacion_reminder"] = {
+                "status": f"error: {type(exc).__name__}",
+                "last_heartbeat": datetime.now(CHILE_TZ).isoformat()}
+        await asyncio.sleep(30)
 
 async def sla_monitor_loop():
     logger.info("[SLA_MONITOR] Iniciando monitor de SLA...")

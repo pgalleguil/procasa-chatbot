@@ -1034,13 +1034,21 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
                 
             task = {
                 "task_id": str(uuid.uuid4()),
+                "message_domain": "captacion_reminder",
+                "message_type": "followup_reminder",
+                "recipient_role": "executive",
+                "recipient_user_id": str((user_doc or {}).get("_id") or ""),
+                "recipient_name": (user_doc or {}).get("nombre") or user_name,
+                "idempotency_key": f"captacion_reminder:{obj_id_str}:{execute_at.astimezone(timezone.utc).isoformat()}:{str((user_doc or {}).get('_id') or user_name)}",
                 "lead_type": "captacion",
                 "phone": "+56900000000",
                 "obj_id": obj_id_str,
                 "target_name": user_name,
                 "type": "REMINDER_CAPTACION",
                 "status": "pending",
+                "scheduled_at": execute_at,
                 "execute_at": execute_at,
+                "attempts": 0,
                 "created_at": now,
                 "note": (
                     str(notes).strip() if notes and str(notes).strip()

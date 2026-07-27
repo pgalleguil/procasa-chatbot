@@ -1025,6 +1025,10 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
                 execute_at = CHILE_TZ.localize(execute_at)
 
             obj_id_str = str(obj_id)
+            audit_note = str(notes).strip() if notes and str(notes).strip() else None
+            if any("?" in str(value or "") for value in (audit_note, old_status)):
+                logger.error("Rejected captacion reminder with degraded Unicode input")
+                return False
             # Deduplicación por captación: el teléfono es un dummy, así que
             # usamos obj_id para evitar crear 2 o 3 recordatorios para la misma gestión.
             db["crm_tasks"].update_many(
@@ -1041,7 +1045,7 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
                 "recipient_user_id": str((user_doc or {}).get("_id") or ""),
                 "recipient_name": (user_doc or {}).get("nombre") or user_name,
                 "state_at_creation": old_status,
-                "audit_note": (str(notes).strip() if notes and str(notes).strip() else None),
+                "audit_note": audit_note,
                 "idempotency_key": f"captacion_reminder:{obj_id_str}:{execute_at.astimezone(timezone.utc).isoformat()}:{str((user_doc or {}).get('_id') or user_name)}",
                 "lead_type": "captacion",
                 "phone": "+56900000000",

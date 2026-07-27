@@ -69,6 +69,39 @@ def _format_scheduled(task):
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(CHILE_TZ).strftime("%d/%m/%Y %H:%M")
 
+def canonical_captacion_state(captacion):
+    gestion = captacion.get("gestion") or {}
+    # This is the state selected and saved from the captaci?n detail.
+    return gestion.get("estado_captacion") or gestion.get("estado") or "S/I"
+
+def has_degraded_unicode(*values):
+    # A literal question mark in user-facing contact/state/note is unsafe here:
+    # it is the observed corruption marker and must never be delivered.
+    return any("?" in str(value or "") for value in values)
+
+def _format_uf(value, operation):
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None
+    if amount <= 0:
+        return None
+    if str(operation or "").lower() == "venta":
+        return f"{int(round(amount)):,}".replace(",", ".") + " UF"
+    rounded = round(amount, 1)
+    if rounded.is_integer():
+        return f"{int(rounded):,}".replace(",", ".") + " UF"
+    integer, decimal = f"{rounded:.1f}".split(".")
+    return f"{int(integer):,}".replace(",", ".") + f",{decimal} UF"
+
+def property_summary(captacion):
+    code = captacion.get("codigo") or captacion.get("property_code")
+    prop_type = captacion.get("tipo_propiedad")
+    comuna = captacion.get("comuna")
+    price = _format_uf(captacion.get("precio_uf"), captacion.get("operacion"))
+    parts = [str(v).strip() for v in (code, prop_type.title() if prop_type else None, comuna, price) if v]
+    return " \u00b7 ".join(parts) or None
+
 def reminder_text(task, captacion):
     # Unicode is kept as normal Python strings from source through provider.
     bell, person, house, pin, memo, clock, link, warning = (
@@ -78,10 +111,11 @@ def reminder_text(task, captacion):
     details = captacion.get("details") or {}
     gestion = captacion.get("gestion") or {}
     contact = task.get("contact_name") or details.get("publicador") or captacion.get("seller_name")
-    property_ref = (captacion.get("codigo") or captacion.get("property_code")
-                    or captacion.get("direccion_exacta") or captacion.get("title"))
-    current_state = gestion.get("estado_captacion") or gestion.get("estado") or "S/I"
+    property_ref = property_summary(captacion)
+    current_state = canonical_captacion_state(captacion)
     note = task.get("audit_note") or task.get("note")
+    if has_degraded_unicode(contact, current_state, note):
+        raise ValueError("invalid_unicode_input")
     base_url = str(__import__("config").Config.CRM_BASE_URL).rstrip("/")
     url = f"{base_url}/captacion/{task['obj_id']}"
     lines = [f"{bell} *RECORDATORIO DE CAPTACI\u00d3N*", ""]
@@ -125,11 +159,20 @@ async def deliver_claimed_reminder(db, task):
              "$unset": {"lease_owner": "", "lease_token": "", "lease_until": ""}},
         )
         return {"status": "failed_terminal", "provider_message_id": None}
-    content = reminder_text(task, captacion)
+    try:
+        content = reminder_text(task, captacion)
+    except ValueError as exc:
+        db[COLLECTION].update_one(
+            {"_id": task["_id"], "status": "processing", "lease_token": token},
+            {"$set": {"status": "failed_terminal", "error": str(exc), "updated_at": utc_now()},
+             "$unset": {"lease_owner": "", "lease_token": "", "lease_until": ""},
+             "$push": {"history": {"at": utc_now(), "state": "failed_terminal",
+                                    "reason": "invalid_unicode_input"}}},
+        )
+        return {"status": "failed_terminal", "provider_message_id": None}
     result = await send_whatsapp_message_detailed(phone, content)
     now = utc_now()
-    current_state = ((captacion.get("gestion") or {}).get("estado_captacion")
-                     or (captacion.get("gestion") or {}).get("estado") or "S/I")
+    current_state = canonical_captacion_state(captacion)
     masked_phone = "****" + str(phone)[-4:]
     content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
     update_filter = {"_id": task["_id"], "status": "processing", "lease_token": token}

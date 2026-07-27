@@ -343,7 +343,7 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             assigned_to = str(exec_user["_id"]) if exec_user else exec_name
             fresh_lead = db["leads"].find_one({"_id": existing_lead["_id"]})
             if fresh_lead:
-                create_assignment_cycle(
+                cycle = create_assignment_cycle(
                     db, lead=fresh_lead, assigned_to_user_id=assigned_to,
                     assigned_by="supervisor", reason="manual_lead_created",
                     assigned_at=assigned_at, assigned_to_display_name=exec_name,
@@ -357,12 +357,29 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             from .crm_metrics import create_assignment_cycle
             exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
             assigned_to = str(exec_user["_id"]) if exec_user else exec_name
-            create_assignment_cycle(
+            cycle = create_assignment_cycle(
                 db, lead=lead_doc, assigned_to_user_id=assigned_to,
                 assigned_by="supervisor", reason="manual_lead_created",
                 assigned_at=assigned_at, assigned_to_display_name=exec_name,
             )
             
+        # Canonical manual source plus immediate non-HOT digest accumulation.
+        # A missing/synthetic client phone is irrelevant: delivery targets the
+        # active executive resolved from usuarios via the assignment cycle.
+        cycle_id = (cycle or {}).get("assignment_cycle_id")
+        source_event_id = f"manual_lead:{lead_id}:{cycle_id}"
+        db["crm_assignment_cycles"].update_one(
+            {"assignment_cycle_id": cycle_id},
+            {"$set": {"source_event_id": source_event_id,
+                      "source_event_verified": True,
+                      "source_event_type": "MANUAL_LEAD_CREATED"}},
+        )
+        fresh_lead = db["leads"].find_one({"_id": ObjectId(lead_id)})
+        notification = None
+        if fresh_lead and str(fresh_lead.get("lead_temperature_effective") or "").upper() != "HOT":
+            from .crm_non_hot_digest import accumulate_non_hot_lead
+            notification = accumulate_non_hot_lead(db, lead=fresh_lead, cycle=cycle)
+
         # 5. Log Event
         log_event(phone or email, "MANUAL_ENTRY", "supervisor", {
             "property_code": property_code,
@@ -386,7 +403,9 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             "assigned_to": exec_name,
             "exec_phone": exec_phone,
             "phone": final_phone,
-            "property_code": property_code
+            "property_code": property_code,
+            "assignment_cycle_id": cycle_id,
+            "source_event_id": source_event_id
         }
     except Exception as e:
         logger.error(f"Error creating manual lead: {e}")

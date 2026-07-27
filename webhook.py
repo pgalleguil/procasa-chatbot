@@ -1277,13 +1277,6 @@ async def view_crm_detail_by_id(request: Request, lead_id: str):
         if lead:
             phone = lead.get("phone") or ""
             detail = get_lead_detail_data(phone)
-            # Mask phone in the detail for the initial HTML render
-            if detail and detail.get("phone"):
-                raw = str(detail["phone"]).strip()
-                detail["phone_masked"] = _mask_phone(raw)
-                detail["phone_raw"] = raw
-                # Exclude raw phone from initial JS
-                detail["phone"] = detail["phone_masked"]
             return lead, detail
         return None, None
 
@@ -1291,8 +1284,16 @@ async def view_crm_detail_by_id(request: Request, lead_id: str):
     lead, data = await loop.run_in_executor(_WEB_THREAD_POOL, _resolve)
     if not lead or not data:
         raise HTTPException(status_code=404, detail="Lead no encontrado")
-    if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(data, user):
+    full_phone_access = can_administer_leads(user.get("rol")) or lead_is_assigned_to_user(data, user)
+    if not full_phone_access:
+        # Keep the current ownership gate for lead access, but never leak a raw
+        # phone if this route is reused by a read-only authenticated view.
         raise HTTPException(status_code=403, detail="El lead no esta asignado a este ejecutivo")
+    if data.get("phone"):
+        data["phone"] = str(data["phone"]).strip()
+    data.pop("phone_raw", None)
+    data["phone_masked"] = _mask_phone(data.get("phone") or "")
+    data["phone_visibility"] = "full"
 
     email = user.get("email") or user.get("username")
 

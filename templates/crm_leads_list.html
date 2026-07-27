@@ -1904,16 +1904,16 @@
                 <label class="filter-field">
                     <span class="filter-field-label">Orden</span>
                     <select name="orden" data-auto-filter>
-                        <option value="sla_urgente" {% if request.query_params.get('orden', 'sla_urgente')=='sla_urgente' %}selected{% endif %}>Prioridad SLA</option>
-                        <option value="antiguos_sin_atender" {% if request.query_params.get('orden')=='antiguos_sin_atender' %}selected{% endif %}>Más antiguos sin atender</option>
-                        <option value="recientes" {% if request.query_params.get('orden')=='recientes' %}selected{% endif %}>Más recientes</option>
+                        <option value="recent_assigned" {% if request.query_params.get('orden', 'recent_assigned') in ['recent_assigned', 'recientes'] or not request.query_params.get('orden') %}selected{% endif %}>Más recientes</option>
+                        <option value="sla_priority" {% if request.query_params.get('orden') in ['sla_priority', 'sla_urgente'] %}selected{% endif %}>Prioridad SLA</option>
+                        <option value="oldest_unmanaged" {% if request.query_params.get('orden') in ['oldest_unmanaged', 'antiguos_sin_atender'] %}selected{% endif %}>Más antiguos sin atender</option>
                     </select>
                 </label>
                 <a href="{{ filter_urls['clear'] }}" class="btn-clear-filters"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Limpiar filtros</a>
             </form>
 
             {% set state_labels = {'NEW': 'Sin atender', 'GRUPO_GESTION': 'En gestión', 'GRUPO_VISITA': 'Visitas', 'GRUPO_CERRADO': 'Cerrados', 'UNASSIGNED': 'Sin asignar'} %}
-            {% set order_labels = {'sla_urgente': 'Prioridad SLA', 'antiguos_sin_atender': 'Más antiguos sin atender', 'recientes': 'Más recientes'} %}
+            {% set order_labels = {'sla_priority': 'Prioridad SLA', 'sla_urgente': 'Prioridad SLA', 'oldest_unmanaged': 'Más antiguos sin atender', 'antiguos_sin_atender': 'Más antiguos sin atender', 'recent_assigned': 'Más recientes', 'recientes': 'Más recientes'} %}
             <div class="active-filters" aria-label="Filtros activos">
                 {% if selected_temperature != 'Todos' %}<a class="filter-chip" href="{{ filter_urls.temperature }}">{{ lead_temperature_icon(selected_temperature) }}{{ lead_temperature_label(selected_temperature) }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if selected_state %}<a class="filter-chip" href="{{ filter_urls.state }}">{{ state_labels.get(selected_state, selected_state) }} <span aria-hidden="true">×</span></a>{% endif %}
@@ -2321,7 +2321,7 @@
                 if (!params.get('estado')) params.delete('estado');
                 if (params.get('temperatura') === 'Todos') params.delete('temperatura');
                 if (params.get('ejecutivo') === 'Todos') params.delete('ejecutivo');
-                if (params.get('orden') === 'sla_urgente') params.delete('orden');
+                if (params.get('orden') === 'recent_assigned') params.delete('orden');
                 const query = params.toString();
                 window.location.assign('/crm' + (query ? '?' + query : ''));
             }

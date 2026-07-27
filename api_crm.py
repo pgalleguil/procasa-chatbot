@@ -301,7 +301,7 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
     db["crm_tasks"].insert_one(task)
 
 # --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
-async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla_urgente",
+async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla_priority",
                               user_role="agente", user_name="", ejecutivo_filter=None,
                               temperatura_filter="HOT",
                               page=1, limit=10, property_code=None):
@@ -485,9 +485,18 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     # Otros filtros (gestion, visita, cerrado, sin_asignar):
     #   Actividad reciente DESC (por defecto)
     # -----------------------------------------------------------------------
-    # Compatibilidad con enlaces históricos: el orden inteligente solo se usa
-    # cuando se solicita expresamente orden=prioridad.
-    use_smart_sort = ordenar_por == "prioridad" and temperatura_filter in ["HOT", "Todos"] and not filtro_estado
+    # Sort normalisation: canonical names with backward-compatible aliases
+    # -----------------------------------------------------------------------
+    _sort_map = {
+        "sla_urgente": "sla_priority",
+        "recientes": "recent_assigned",
+        "antiguos_sin_atender": "oldest_unmanaged",
+        "sla_por_vencer": "sla_priority",
+        "mayor_sin_gestion": "oldest_unmanaged",
+        "ultima_accion_antigua": "oldest_unmanaged",
+        "prioridad": "sla_priority",
+    }
+    ordenar_por = _sort_map.get(ordenar_por, "sla_priority")
     NEW_STAGES = [PipelineStage.NEW, None, "nuevo", "new", "NEW"]
 
     # Proyección mínima — solo campos necesarios para el listado
@@ -515,168 +524,86 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         "fecha_asignacion": 1,
         "datos_propiedad.codigo": 1,
         "lead_temperature_effective": 1,
+        "_has_assigned": 1,
+        "_cycle_assigned_at": 1,
+        "_temperature": 1,
+        "_has_management": 1,
     }
 
     paginated_query = query_with_state.copy()
-    # El cursor historico se recibia desde /crm, pero nunca se aplicaba al
-    # pipeline. Por eso todas las paginas devolvian los mismos registros.
-    # page/skip funciona tanto con filtros como con el orden inteligente.
     page = max(int(page or 1), 1)
     offset = (page - 1) * limit
 
-    if use_smart_sort:
-        # Pipeline inteligente: calcula urgency_rank para ordenar en Mongo directamente
-        # urgency_rank:
-        #   1 = HOT + Sin Atender  (más urgente, va primero, ASC por asignación)
-        #   2 = HOT + gestionado   (activo, va segundo, DESC por actividad)
-        #   3 = COLD               (informativo, va al final, DESC por actividad)
-        smart_pipeline = [
-            {"$match": paginated_query},
-            {"$addFields": {
-                # Fecha efectiva de asignación (para ordenar HOT no atendidos)
-                "_assigned_dt": {
-                    "$let": {
-                        "vars": {
-                            "a": {"$convert": {"input": "$lifecycle.assigned_at", "to": "date", "onError": None, "onNull": None}},
-                            "b": {"$convert": {"input": "$fecha_asignacion", "to": "date", "onError": None, "onNull": None}},
-                            "c": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
-                        },
-                        "in": {"$ifNull": ["$$a", {"$ifNull": ["$$b", "$$c"]}]}
-                    }
-                },
-                # Fecha de última actividad (para ordenar gestionados)
-                "_activity_dt": {
-                    "$let": {
-                        "vars": {
-                            "ev": {"$convert": {"input": "$last_event_at", "to": "date", "onError": None, "onNull": None}},
-                            "msg": {"$convert": {"input": "$last_message_at", "to": "date", "onError": None, "onNull": None}},
-                            "cr": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
-                        },
-                        "in": {"$max": ["$$ev", "$$msg", "$$cr"]}
-                    }
-                },
-                # urgency_rank: define el grupo de ordenamiento
-                "_urgency_rank": {
-                    "$switch": {
-                        "branches": [
-                            {
-                                # HOT + Sin Atender (NEW stage) = máxima urgencia
-                                "case": {
-                                    "$and": [
-                                        {"$eq": ["$lead_temperature_effective", HOT]},
-                                        {"$or": [
-                                            {"$eq": ["$pipeline_stage", "NEW"]},
-                                            {"$eq": ["$pipeline_stage", None]},
-                                            {"$eq": ["$stage", "nuevo"]},
-                                            {"$not": [{"$ifNull": ["$pipeline_stage", False]}]}
-                                        ]}
-                                    ]
-                                },
-                                "then": 1
-                            },
-                            {
-                                # HOT + gestionado (ya fue atendido)
-                                "case": {"$eq": ["$lead_temperature_effective", HOT]},
-                                "then": 2
-                            }
-                        ],
-                        "default": 3  # COLD / informativos
-                    }
-                }
-            }},
-            {"$sort": {
-                # Grupo: rank ASC (1 antes que 2, 2 antes que 3)
-                "_urgency_rank": 1,
-                # Dentro del grupo 1 (HOT no atendidos): asignación ASC (más antiguo = más urgente)
-                # Dentro de grupos 2 y 3: actividad DESC (más reciente primero)
-                # Truco: invertimos _assigned_dt para grupo 1 usando un campo condicional
-                "_assigned_dt": 1,     # ASC para grupo 1 (oldest first = most overdue)
-                "_activity_dt": -1,    # DESC para grupos 2 y 3 (newest activity first)
-                "_id": 1               # desempate estable entre paginas
-            }},
-            {"$skip": offset},
-            {"$limit": limit},
-            {"$project": PROJECTION}
-        ]
-        records_pipeline = smart_pipeline
+    # Canonical pipeline: look up the active assignment cycle for every lead,
+    # then sort using cycle-anchored fields (assigned_at, temperature,
+    # management evidence).  Unassigned leads sort last.
+    canonical_pipeline = [
+        {"$match": paginated_query},
+        {"$lookup": {
+            "from": "crm_assignment_cycles",
+            "let": {"lead_id": "$_id"},
+            "pipeline": [
+                {"$match": {
+                    "$expr": {"$eq": ["$lead_id", "$$lead_id"]},
+                    "unassigned_at": None,
+                }},
+                {"$sort": {"assigned_at": -1}},
+                {"$limit": 1},
+            ],
+            "as": "_active_cycle",
+        }},
+        {"$set": {
+            "_active_cycle": {"$arrayElemAt": ["$_active_cycle", 0]},
+        }},
+        {"$set": {
+            "_has_assigned": {"$cond": [{"$ne": ["$_active_cycle", None]}, 0, 1]},
+            "_cycle_assigned_at": "$_active_cycle.assigned_at",
+            "_temperature": {"$ifNull": [
+                "$_active_cycle.temperature_at_assignment",
+                "$lead_temperature_effective",
+                "COLD",
+            ]},
+            "_has_management": {"$cond": [
+                {"$or": [
+                    {"$ne": ["$_active_cycle.first_valid_management_at", None]},
+                    {"$gt": [{"$size": {"$ifNull": ["$_active_cycle.applied_transition_ids", []]}}, 0]},
+                ]},
+                0, 1,
+            ]},
+        }},
+    ]
+
+    # Build sort spec from the canonical cycle fields
+    if ordenar_por == "recent_assigned":
+        _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
+    elif ordenar_por == "sla_priority":
+        _sort_spec = {
+            "_has_assigned": 1,
+            "_temperature": 1,          # HOT=0 first, then rest
+            "_cycle_assigned_at": 1,    # oldest HOT first, then oldest COLD
+            "_id": 1,
+        }
+    elif ordenar_por == "oldest_unmanaged":
+        _sort_spec = {
+            "_has_management": 1,        # unmanaged (1) first? No: 1 means no management
+            "_has_assigned": 1,
+            "_cycle_assigned_at": 1,
+            "_id": 1,
+        }
     else:
-        # Ordenamiento contextual. Las fechas se calculan en Mongo para que la
-        # paginación mantenga el orden sobre todo el universo filtrado.
-        simple_pipeline = [
-            {"$match": paginated_query},
-            {"$addFields": {
-                "_assigned_dt": {
-                    "$let": {
-                        "vars": {
-                            "a": {"$convert": {"input": "$lifecycle.assigned_at", "to": "date", "onError": None, "onNull": None}},
-                            "b": {"$convert": {"input": "$fecha_asignacion", "to": "date", "onError": None, "onNull": None}},
-                            "c": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
-                        },
-                        "in": {"$ifNull": ["$$a", {"$ifNull": ["$$b", "$$c"]}]}
-                    }
-                },
-                "_activity_dt": {
-                    "$let": {
-                        "vars": {
-                            "ev": {"$convert": {"input": "$last_event_at", "to": "date", "onError": None, "onNull": None}},
-                            "msg": {"$convert": {"input": "$last_message_at", "to": "date", "onError": None, "onNull": None}},
-                            "cr": {"$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}}
-                        },
-                        "in": {"$max": ["$$ev", "$$msg", "$$cr"]}
-                    }
-                },
-                "_last_action_dt": {
-                    "$convert": {"input": "$last_event_at", "to": "date", "onError": None, "onNull": None}
-                },
-                "_unattended_rank": {
-                    "$cond": [{"$or": [
-                        {"$eq": ["$pipeline_stage", "NEW"]},
-                        {"$eq": ["$pipeline_stage", None]},
-                        {"$eq": ["$stage", "nuevo"]}
-                    ]}, 0, 1]
-                },
-                "_sla_rank": {
-                    "$switch": {
-                        "branches": [
-                            {"case": {"$eq": ["$sla_status", "critical"]}, "then": 0},
-                            {"case": {"$eq": ["$sla_status", "near_critical"]}, "then": 1},
-                            {"case": {"$eq": ["$sla_status", "warning"]}, "then": 2},
-                            {"case": {"$eq": ["$sla_status", "good"]}, "then": 3}
-                        ],
-                        "default": 4
-                    }
-                },
-                "_hot_rank": {
-                    "$cond": [{"$eq": ["$lead_temperature_effective", "HOT"]}, 0, 1]
-                },
-                "_created_dt": {
-                    "$convert": {"input": "$created_at", "to": "date", "onError": None, "onNull": None}
-                },
-                "_has_assigned": {
-                    "$cond": [{"$ifNull": ["$_assigned_dt", False]}, 0, 1]
-                },
-                "_has_created": {
-                    "$cond": [{"$ifNull": ["$_created_dt", False]}, 0, 1]
-                }
-            }},
-            {"$sort": {
-                **({"_unattended_rank": 1, "_sla_rank": 1, "_hot_rank": 1, "_assigned_dt": 1}
-                   if ordenar_por == "sla_urgente" else
-                   {"_unattended_rank": 1, "_assigned_dt": 1} if ordenar_por == "antiguos_sin_atender" else
-                   {"_has_assigned": 1, "_assigned_dt": -1, "_has_created": 1, "_created_dt": -1}
-                   if ordenar_por == "recientes" else
-                   {"_sla_rank": 1, "_assigned_dt": 1} if ordenar_por == "sla_por_vencer" else
-                   {"_activity_dt": 1} if ordenar_por == "mayor_sin_gestion" else
-                   {"_last_action_dt": 1, "_assigned_dt": 1} if ordenar_por == "ultima_accion_antigua" else
-                   # Default: sla_urgente
-                   {"_unattended_rank": 1, "_sla_rank": 1, "_hot_rank": 1, "_assigned_dt": 1}),
-                "_id": 1
-            }},
-            {"$skip": offset},
-            {"$limit": limit},
-            {"$project": PROJECTION}
-        ]
-        records_pipeline = simple_pipeline
+        _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
+
+    canonical_pipeline.extend([
+        {"$sort": _sort_spec},
+    ])
+
+    # Pagination appended after sort for stable ordering
+    canonical_pipeline.extend([
+        {"$skip": offset},
+        {"$limit": limit},
+        {"$project": PROJECTION},
+    ])
+    records_pipeline = canonical_pipeline
 
     # Conteos y registros provienen del mismo snapshot y de una única agregación.
     facet_pipeline[0]["$facet"]["records"] = records_pipeline

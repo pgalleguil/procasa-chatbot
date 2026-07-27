@@ -617,18 +617,16 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     if ordenar_por == "recent_assigned":
         _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
     elif ordenar_por == "sla_priority":
-        # Exclude managed or closed cycles from SLA view.  unassigned and
-        # historical cycles sort last via the natural sort spec.
+        # Exclude managed cycles.  Business-minute sort happens in Python
+        # because $dateDiff cannot respect Chile business hours (Mon-Fri
+        # 09:00-19:00, America/Santiago).  The canonical function is
+        # calculate_business_minutes from chatbot.utils.
         canonical_pipeline.append({"$match": {
             "_has_assigned": 0,
             "_has_management": 1,
         }})
-        # Most overdue first (_overdue_minutes DESC).  Positive = overdue,
-        # negative = in-plazo.  Missing/null sorts last by default.
-        _sort_spec = {
-            "_overdue_minutes": -1,
-            "_id": 1,
-        }
+        _use_python_sla_sort = True
+        _sort_spec = {"_id": 1}
     elif ordenar_por == "oldest_unmanaged":
         # Filter out managed leads entirely for this view.
         canonical_pipeline.append({"$match": {"_has_management": 1}})
@@ -637,8 +635,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "_cycle_assigned_at": 1,  # ASC: oldest first
             "_id": 1,
         }
+        _use_python_sla_sort = False
     else:
         _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
+        _use_python_sla_sort = False
 
     canonical_pipeline.extend([
         {"$sort": _sort_spec},
@@ -652,11 +652,63 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     ])
     records_pipeline = canonical_pipeline
 
+    # For SLA priority: fetch all eligible leads (no MongoDB pagination)
+    # and compute business minutes + sort in Python.
+    if _use_python_sla_sort:
+        sla_full_pipeline = list(canonical_pipeline)
+        # Remove $skip, $limit, $project; add an aggregate-level $limit as safety cap
+        sla_full_pipeline = [s for s in sla_full_pipeline if "$skip" not in s and "$limit" not in s and "$project" not in s]
+        sla_full_pipeline.append({"$limit": 500})
+        sla_full_pipeline.append({"$project": PROJECTION})
+
     # Conteos y registros provienen del mismo snapshot y de una única agregación.
-    facet_pipeline[0]["$facet"]["records"] = records_pipeline
+    if _use_python_sla_sort:
+        facet_pipeline[0]["$facet"]["records"] = records_pipeline
+        facet_pipeline[0]["$facet"]["sla_all"] = sla_full_pipeline
+    else:
+        facet_pipeline[0]["$facet"]["records"] = records_pipeline
     facet_results = await db["leads"].aggregate(facet_pipeline).to_list(length=1)
     facet_res = facet_results[0] if facet_results else {}
     leads_list = facet_res.get("records", [])
+
+    # SLA priority: compute business minutes in Python, sort, paginate
+    if _use_python_sla_sort:
+        sla_all = facet_res.get("sla_all", [])
+        from chatbot.utils import calculate_business_minutes
+        from chatbot.crm_metrics import coerce_utc_datetime
+        from chatbot.constants import CHILE_TZ
+        now_chile = datetime.now(CHILE_TZ)
+        for lead in sla_all:
+            at_raw = lead.get("_cycle_assigned_at")
+            at_dt = coerce_utc_datetime(at_raw)
+            if at_dt:
+                at_chile = at_dt.astimezone(CHILE_TZ)
+            else:
+                at_chile = None
+            temp = lead.get("_temperature") or lead.get("lead_temperature_effective") or "COLD"
+            threshold = 60 if str(temp).upper() == "HOT" else 180
+            if at_chile:
+                elapsed = calculate_business_minutes(at_chile, now_chile)
+                lead["_business_minutes"] = elapsed
+                lead["_overdue_minutes"] = elapsed - threshold
+            else:
+                lead["_business_minutes"] = None
+                lead["_overdue_minutes"] = None
+        # Sort: overdue DESC (most overdue first), then in-plazo ASC (closest to deadline first)
+        def _sla_key(lead):
+            od = lead.get("_overdue_minutes")
+            if od is None:
+                return (2, 0)  # missing date → last
+            if od > 0:
+                return (0, -od)  # overdue: higher = more urgent (negated for ASC in group 0)
+            return (1, od)  # in-plazo: higher od (closer to 0) = closer to deadline → was more urgent
+        sla_all.sort(key=_sla_key)
+        total_count = len(sla_all)
+        # Manual pagination
+        sla_page = sla_all[offset:offset + limit]
+        leads_list = sla_page
+        # Also compute total_pagina override
+        facet_res["total_pagina"] = [{"count": total_count}]
 
     def get_facet_count(key):
         return facet_res.get(key, [{"count": 0}])[0]["count"] if facet_res.get(key) else 0

@@ -552,23 +552,43 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             ],
             "as": "_active_cycle",
         }},
+        # $arrayElemAt([], 0) does NOT reliably return null in MongoDB.
+        # Use $size to detect empty arrays before accessing elements.
         {"$set": {
-            "_active_cycle": {"$arrayElemAt": ["$_active_cycle", 0]},
+            "_has_cycle": {"$gt": [{"$size": "$_active_cycle"}, 0]},
         }},
         {"$set": {
-            "_has_assigned": {"$cond": [{"$ne": ["$_active_cycle", None]}, 0, 1]},
-            "_cycle_assigned_at": "$_active_cycle.assigned_at",
-            "_temperature": {"$ifNull": [
-                "$_active_cycle.temperature_at_assignment",
+            "_active_cycle": {"$cond": [
+                "$_has_cycle",
+                {"$arrayElemAt": ["$_active_cycle", 0]},
+                None,
+            ]},
+        }},
+        {"$set": {
+            "_has_assigned": {"$cond": ["$_has_cycle", 0, 1]},
+            "_cycle_assigned_at": {"$cond": [
+                "$_has_cycle",
+                "$_active_cycle.assigned_at",
+                None,
+            ]},
+            "_temperature": {"$cond": [
+                "$_has_cycle",
+                {"$ifNull": [
+                    "$_active_cycle.temperature_at_assignment",
+                    "$lead_temperature_effective",
+                ]},
                 "$lead_temperature_effective",
-                "COLD",
             ]},
             "_has_management": {"$cond": [
-                {"$or": [
-                    {"$ne": ["$_active_cycle.first_valid_management_at", None]},
-                    {"$gt": [{"$size": {"$ifNull": ["$_active_cycle.applied_transition_ids", []]}}, 0]},
+                "$_has_cycle",
+                {"$cond": [
+                    {"$or": [
+                        {"$ne": ["$_active_cycle.first_valid_management_at", None]},
+                        {"$gt": [{"$size": {"$ifNull": ["$_active_cycle.applied_transition_ids", []]}}, 0]},
+                    ]},
+                    0, 1,
                 ]},
-                0, 1,
+                1,
             ]},
         }},
     ]

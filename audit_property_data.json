@@ -1,0 +1,31 @@
+{
+  "total_contracts": 14,
+  "missing_property_data_field": 1,
+  "property_data_null": 1,
+  "property_data_not_dict": 0,
+  "missing_direccion": 1,
+  "missing_rol": 1,
+  "have_property_code": 0,
+  "missing_property_data_contracts": [
+    {
+      "contract_code": "PROC-TEST-001",
+      "status": "signed",
+      "property_code": "",
+      "has_property_data": false,
+      "has_direccion_top": false,
+      "has_comuna": false,
+      "has_rol": false,
+      "has_cliente_nombre": false,
+      "created_by": "?"
+    }
+  ],
+  "missing_direccion_contracts": [
+    {
+      "contract_code": "PROC-TEST-001",
+      "has_top_level_dir": false,
+      "property_data": null
+    }
+  ],
+  "complete_contracts": 13,
+  "incomplete_contracts": 1
+}

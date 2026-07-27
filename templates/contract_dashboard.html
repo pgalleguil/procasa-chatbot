@@ -738,12 +738,12 @@
                             {% endif %}
                             <td data-label="Código"><strong>{{ c.property_code or c.contract_code[:8] }}</strong></td>
                             <td data-label="Cliente">
-                                {{ c.client_data.nombre }}<br>
-                                <small class="text-secondary">{{ c.client_data.rut }}</small>
+                                {{ c.client_data.get('nombre', 'S/I') }}<br>
+                                <small class="text-secondary">{{ c.client_data.get('rut', 'S/I') }}</small>
                             </td>
                             <td data-label="Propiedad / Rol">
-                                {{ c.property_data.direccion }}<br>
-                                <small class="text-secondary">Rol: {{ c.property_data.rol }}</small>
+                                {{ c.property_data.get('direccion', 'S/I') }}<br>
+                                <small class="text-secondary">Rol: {{ c.property_data.get('rol', 'S/I') }}</small>
                             </td>
                             <td data-label="Estado" class="contract-status-cell">
                                 {% if c.status == 'created' %}<span class="status-badge status-created">Creado</span>

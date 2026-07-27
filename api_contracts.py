@@ -1681,6 +1681,37 @@ async def contract_dashboard(request: Request):
     contracts = await contracts_cursor.to_list(length=100)
 
     for c in contracts:
+        # Normalizar property_data y client_data para renderizado seguro en template
+        c["property_data"] = c.get("property_data") or {}
+        c["client_data"] = c.get("client_data") or {}
+
+        pd = c["property_data"]
+        cd = c["client_data"]
+
+        if not pd.get("direccion") and c.get("propiedad_direccion"):
+            pd["direccion"] = c["propiedad_direccion"]
+        if not pd.get("comuna") and c.get("comuna"):
+            pd["comuna"] = c["comuna"]
+        if not pd.get("rol") and c.get("rol"):
+            pd["rol"] = c["rol"]
+        if not pd.get("tipo") and c.get("tipo"):
+            pd["tipo"] = c["tipo"]
+        if not pd.get("ciudad_firma") and c.get("ciudad_firma"):
+            pd["ciudad_firma"] = c["ciudad_firma"]
+
+        if not cd.get("nombre") and c.get("cliente_nombre"):
+            cd["nombre"] = c["cliente_nombre"]
+        if not cd.get("rut") and c.get("cliente_rut"):
+            cd["rut"] = c["cliente_rut"]
+        if not cd.get("email") and c.get("email"):
+            cd["email"] = c["email"]
+
+        pd.setdefault("direccion", "S/I")
+        pd.setdefault("rol", "S/I")
+        pd.setdefault("comuna", "S/I")
+        cd.setdefault("nombre", "S/I")
+        cd.setdefault("rut", "S/I")
+
         if "_id" in c:
             c["_id"] = str(c["_id"])
         if c.get("created_at"):
@@ -1688,12 +1719,12 @@ async def contract_dashboard(request: Request):
             c["created_at"] = dt_utc.astimezone(CHILE_TZ)
         c["edit_data"] = {
             "contract_code": c.get("contract_code", ""),
-            "client_data": c.get("client_data", {}),
-            "property_data": c.get("property_data", {}),
+            "client_data": cd,
+            "property_data": pd,
             "property_code": c.get("property_code", ""),
             "phone": c.get("phone", ""),
             "origen": c.get("origen", ""),
-            "ciudad_firma": c.get("property_data", {}).get("ciudad_firma", "Santiago de Chile"),
+            "ciudad_firma": pd.get("ciudad_firma", "Santiago de Chile"),
             "executive": c.get("executive", ""),
             "created_by": c.get("created_by", "")
         }

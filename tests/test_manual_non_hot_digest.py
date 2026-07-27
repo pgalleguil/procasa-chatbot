@@ -29,3 +29,9 @@ def test_retryable_digest_respects_retry_after_and_releases_cycle_reservation():
     assert 'def release_cycle_delivery' in notifications
     assert 'release_cycle_delivery(' in digest
     assert 'http_status == 429' in digest
+
+
+def test_retryable_digest_accepts_null_provider_id_but_not_accepted_delivery():
+    source = Path("chatbot/crm_non_hot_digest.py").read_text(encoding="utf-8")
+    assert '"provider_message_id": {"$in": [None]}' in source
+    assert '"actually_delivered": {"$ne": True}' in source

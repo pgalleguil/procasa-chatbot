@@ -341,7 +341,9 @@ def claim_due_digest(db, *, worker_id, now=None, notification_id=None):
             "cycle_origins": {"$not": {"$elemMatch": {"$nin": [
                 "inbound_message", "manual_lead",
             ]}}},
-            "provider_message_id": {"$exists": False},
+            # ``finalize_attempt`` stores a failed provider ID as null; both
+            # missing and null mean no provider accepted this delivery.
+            "provider_message_id": {"$in": [None]},
             "actually_delivered": {"$ne": True},
     }
     # Recovery uses the same durable claim path, narrowed to the exact

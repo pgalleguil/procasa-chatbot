@@ -705,6 +705,13 @@ def send_digest(db, *, notification, worker_id, sender=None):
             failure_reason = f"http_{http_status}" if http_status else receipt.get("error")
             finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
                              state=state, error=failure_reason)
+            # The provider explicitly rejected this request without an ID, so a
+            # future retry needs a fresh delivery token and pre-call reservation.
+            db[NOTIFICATION_COLLECTION].update_one(
+                {"_id": notification["_id"], "state": state, "provider_message_id": None},
+                {"$unset": {"provider_call_started_at": "", "delivery_token": ""},
+                 "$set": {"updated_at": utc_now()}},
+            )
             # A provider response without an accepted provider ID is a confirmed
             # non-delivery, so this exact reservation can safely be retried.
             for cid in reserved_cycles:

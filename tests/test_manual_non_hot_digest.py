@@ -35,3 +35,9 @@ def test_retryable_digest_accepts_null_provider_id_but_not_accepted_delivery():
     source = Path("chatbot/crm_non_hot_digest.py").read_text(encoding="utf-8")
     assert '"provider_message_id": {"$in": [None]}' in source
     assert '"actually_delivered": {"$ne": True}' in source
+
+
+def test_confirmed_non_delivery_clears_pre_call_reservation_for_retry():
+    source = Path("chatbot/crm_non_hot_digest.py").read_text(encoding="utf-8")
+    assert '"provider_call_started_at": ""' in source
+    assert '"delivery_token": ""' in source

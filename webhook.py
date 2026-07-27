@@ -3365,7 +3365,12 @@ async def sla_alert_worker_loop():
             background_tasks_status["sla_alert"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
             background_tasks_status["sla_alert"]["status"] = "running"
 
-            if not getattr(Config, "CRM_SLA_V2_SHADOW_ENABLED", False):
+            # SLA delivery is intentionally disabled while the independent
+            # crm_sla_alert domain is in dry-run.  Do not claim legacy shadow
+            # documents or call a provider under either flag state.
+            if (not getattr(Config, "CRM_SLA_ALERTS_ENABLED", False)
+                    or getattr(Config, "CRM_SLA_ALERTS_DRY_RUN", True)):
+                background_tasks_status["sla_alert"].update({"status": "disabled", "mode": "dry_run"})
                 await asyncio.sleep(60)
                 continue
 

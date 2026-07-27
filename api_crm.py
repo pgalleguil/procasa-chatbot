@@ -589,21 +589,18 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "_has_management": {"$cond": [
                 "$_has_cycle",
                 {"$cond": [
-                    {"$or": [
-                        {"$ne": ["$_active_cycle.first_valid_management_at", None]},
-                        {"$gt": [{"$size": {"$ifNull": ["$_active_cycle.applied_transition_ids", []]}}, 0]},
-                    ]},
+                    {"$ne": [{"$ifNull": ["$_active_cycle.first_valid_management_at", None]}, None]},
                     0, 1,
                 ]},
                 1,
             ]},
         }},
-        # SLA urgency computed in a separate $set stage because it references
-        # _cycle_assigned_at and _temperature from the previous stage.
+        # SLA overdue minutes computed in a separate $set stage.  Positive =
+        # overdue, negative = in-plazo.  Assigned + unmanaged only.
         {"$set": {
-            "_sla_urgency": {"$cond": [
+            "_overdue_minutes": {"$cond": [
                 "$_has_cycle",
-                {"$divide": [
+                {"$subtract": [
                     {"$dateDiff": {
                         "startDate": {"$convert": {"input": "$_cycle_assigned_at", "to": "date", "onError": None, "onNull": None}},
                         "endDate": "$$NOW",
@@ -620,11 +617,16 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     if ordenar_por == "recent_assigned":
         _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
     elif ordenar_por == "sla_priority":
-        # Most urgent first: overdue (highest _sla_urgency), then near-overdue,
-        # then in-plazo.  Missing/null deadline sorts last.
+        # Exclude managed or closed cycles from SLA view.  unassigned and
+        # historical cycles sort last via the natural sort spec.
+        canonical_pipeline.append({"$match": {
+            "_has_assigned": 0,
+            "_has_management": 1,
+        }})
+        # Most overdue first (_overdue_minutes DESC).  Positive = overdue,
+        # negative = in-plazo.  Missing/null sorts last by default.
         _sort_spec = {
-            "_has_assigned": 1,
-            "_sla_urgency": -1,       # highest urgency ratio first
+            "_overdue_minutes": -1,
             "_id": 1,
         }
     elif ordenar_por == "oldest_unmanaged":

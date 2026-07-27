@@ -198,3 +198,9 @@ def test_sla_before_opening_starts_at_same_day_opening():
     assert commercial_sla_start_at("2026-07-27T08:59:00-04:00") == datetime(
         2026, 7, 27, 13, 0, tzinfo=timezone.utc
     )
+
+
+def test_crm_projection_treats_naive_bson_datetime_as_utc():
+    source = Path("api_crm.py").read_text(encoding="utf-8")
+    assert "parsed = pytz.utc.localize(parsed)" in source
+    assert "parsed = CHILE_TZ.localize(parsed)" not in source

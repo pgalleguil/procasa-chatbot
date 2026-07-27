@@ -810,8 +810,11 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             return None
         try:
             parsed = datetime.fromisoformat(value.replace('Z', '+00:00')) if isinstance(value, str) else value
+            # PyMongo returns BSON UTC datetimes as naive values unless its
+            # client was configured tz_aware.  They are never local Chile
+            # wall-clock values, so localizing them here shifts SLA by hours.
             if parsed.tzinfo is None:
-                parsed = CHILE_TZ.localize(parsed)
+                parsed = pytz.utc.localize(parsed)
             return parsed.astimezone(CHILE_TZ)
         except (TypeError, ValueError, AttributeError):
             return None

@@ -495,8 +495,12 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         "mayor_sin_gestion": "oldest_unmanaged",
         "ultima_accion_antigua": "oldest_unmanaged",
         "prioridad": "sla_priority",
+        # Canonical names
+        "sla_priority": "sla_priority",
+        "recent_assigned": "recent_assigned",
+        "oldest_unmanaged": "oldest_unmanaged",
     }
-    ordenar_por = _sort_map.get(ordenar_por, "sla_priority")
+    ordenar_por = _sort_map.get(ordenar_por, "recent_assigned")
     NEW_STAGES = [PipelineStage.NEW, None, "nuevo", "new", "NEW"]
 
     # Proyección mínima — solo campos necesarios para el listado
@@ -594,23 +598,41 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 1,
             ]},
         }},
+        # SLA urgency computed in a separate $set stage because it references
+        # _cycle_assigned_at and _temperature from the previous stage.
+        {"$set": {
+            "_sla_urgency": {"$cond": [
+                "$_has_cycle",
+                {"$divide": [
+                    {"$dateDiff": {
+                        "startDate": {"$convert": {"input": "$_cycle_assigned_at", "to": "date", "onError": None, "onNull": None}},
+                        "endDate": "$$NOW",
+                        "unit": "minute",
+                    }},
+                    {"$cond": [{"$eq": ["$_temperature", "HOT"]}, 60, 180]},
+                ]},
+                None,
+            ]},
+        }},
     ]
 
     # Build sort spec from the canonical cycle fields
     if ordenar_por == "recent_assigned":
         _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
     elif ordenar_por == "sla_priority":
+        # Most urgent first: overdue (highest _sla_urgency), then near-overdue,
+        # then in-plazo.  Missing/null deadline sorts last.
         _sort_spec = {
             "_has_assigned": 1,
-            "_temperature": 1,          # HOT=0 first, then rest
-            "_cycle_assigned_at": 1,    # oldest HOT first, then oldest COLD
+            "_sla_urgency": -1,       # highest urgency ratio first
             "_id": 1,
         }
     elif ordenar_por == "oldest_unmanaged":
+        # Filter out managed leads entirely for this view.
+        canonical_pipeline.append({"$match": {"_has_management": 1}})
         _sort_spec = {
-            "_has_management": 1,        # unmanaged (1) first? No: 1 means no management
-            "_has_assigned": 1,
-            "_cycle_assigned_at": 1,
+            "_has_assigned": 1,       # ASC: 0 (assigned) before 1 (unassigned)
+            "_cycle_assigned_at": 1,  # ASC: oldest first
             "_id": 1,
         }
     else:

@@ -546,6 +546,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 {"$match": {
                     "$expr": {"$eq": ["$lead_id", "$$lead_id"]},
                     "unassigned_at": None,
+                    "notification_eligible": True,
+                    "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created"]},
+                    "cycle_origin": {"$in": ["inbound_message", "manual_lead"]},
                 }},
                 {"$sort": {"assigned_at": -1}},
                 {"$limit": 1},

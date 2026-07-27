@@ -324,17 +324,13 @@ def exclude_from_open_digest(db, *, lead_id, assignment_cycle_id=None):
 # Claim due digest windows
 # ---------------------------------------------------------------------------
 
-def claim_due_digest(db, *, worker_id, now=None):
+def claim_due_digest(db, *, worker_id, now=None, notification_id=None):
     """Atomically claim one due non-HOT digest for delivery.
 
     Returns the claimed notification or ``None``.
     """
     current = coerce_utc_datetime(now) or utc_now()
-    return claim_next(
-        db,
-        worker_id=worker_id,
-        now=current,
-        extra_filter={
+    extra_filter = {
             "digest_type": DIGEST_TYPE,
             "message_domain": "commercial_notification",
             "send_after": {"$lte": current},
@@ -347,8 +343,12 @@ def claim_due_digest(db, *, worker_id, now=None):
             ]}}},
             "provider_message_id": {"$exists": False},
             "actually_delivered": {"$ne": True},
-        },
-    )
+    }
+    # Recovery uses the same durable claim path, narrowed to the exact
+    # notification. Normal workers never pass this selector.
+    if notification_id is not None:
+        extra_filter["_id"] = notification_id
+    return claim_next(db, worker_id=worker_id, now=current, extra_filter=extra_filter)
 
 
 # ---------------------------------------------------------------------------
@@ -782,14 +782,14 @@ def send_digest(db, *, notification, worker_id, sender=None):
 # Process one due digest (async-friendly, designed for worker loop)
 # ---------------------------------------------------------------------------
 
-def process_one_digest(db, *, worker_id, now=None, sender=None):
+def process_one_digest(db, *, worker_id, now=None, sender=None, notification_id=None):
     """Claim and deliver/record one due digest.  Fully synchronous.
 
     Returns a status dict.  Designed to be called from a periodic worker
     via ``run_in_executor`` so all PyMongo operations run off the event loop.
     ``sender`` is an optional sync callable ``(phone, message) -> dict``.
     """
-    notification = claim_due_digest(db, worker_id=worker_id, now=now)
+    notification = claim_due_digest(db, worker_id=worker_id, now=now, notification_id=notification_id)
     if not notification:
         return {"status": "idle"}
     # send_digest must not be async when called from here

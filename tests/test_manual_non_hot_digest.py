@@ -14,3 +14,9 @@ def test_non_hot_digest_uses_fixed_window_and_due_claim():
 def test_digest_window_is_anchored_to_assignment_not_worker_recovery_time():
     source = Path("chatbot/crm_non_hot_digest.py").read_text(encoding="utf-8")
     assert 'now = coerce_utc_datetime(db_cycle.get("assigned_at")) or utc_now()' in source
+
+
+def test_recovery_claim_can_be_narrowed_to_exact_digest():
+    source = Path("chatbot/crm_non_hot_digest.py").read_text(encoding="utf-8")
+    assert "notification_id=None" in source
+    assert 'extra_filter["_id"] = notification_id' in source

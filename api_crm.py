@@ -618,20 +618,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     if ordenar_por == "recent_assigned":
         _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
     elif ordenar_por == "sla_priority":
-        # Exclude managed cycles.  Business-minute sort happens in Python
-        # because $dateDiff cannot respect Chile business hours (Mon-Fri
-        # 09:00-19:00, America/Santiago).  The canonical function is
-        # calculate_business_minutes from chatbot.utils.
-        canonical_pipeline.append({"$match": {
-            "_has_assigned": 0,
-            "_has_management": 1,
-        }})
+        # Include all leads; business-minute sort in Python groups
+        # unmanaged+overdue first, managed/closed last.
+        # No $match filter — parity must match scope_total.
         _use_python_sla_sort = True
         _sort_spec = {"_id": 1}
     elif ordenar_por == "oldest_unmanaged":
-        # Filter out managed leads entirely for this view.
-        canonical_pipeline.append({"$match": {"_has_management": 1}})
+        # Unmanaged first, managed at the bottom.  No $match filter.
         _sort_spec = {
+            "_has_management": -1,     # DESC: 1 (unmanaged) before 0 (managed)
             "_has_assigned": 1,       # ASC: 0 (assigned) before 1 (unassigned)
             "_cycle_assigned_at": 1,  # ASC: oldest first
             "_id": 1,
@@ -692,14 +687,29 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             else:
                 lead["_business_minutes"] = None
                 lead["_overdue_minutes"] = None
-        # Sort: overdue DESC (most overdue first), then in-plazo ASC (closest to deadline first)
+        # Sort groups:
+        #   0 = unmanaged assigned overdue (by overdue DESC)
+        #   1 = unmanaged assigned in-plazo (by remaining ASC, i.e., overdue ASC but negative)
+        #   2 = unassigned
+        #   3 = managed assigned
+        #   4 = no cycle / historical / missing date
         def _sla_key(lead):
             od = lead.get("_overdue_minutes")
+            mgmt = lead.get("_has_management", 1)
+            assigned = lead.get("_has_assigned", 1)
+            # No cycle or missing date
             if od is None:
-                return (2, 0)  # missing date → last
+                return (4, 0)
+            # Managed or closed
+            if assigned == 0 and mgmt == 0:
+                return (3, 0)
+            # Unassigned
+            if assigned != 0:
+                return (2, 0)
+            # Unmanaged + assigned: overdue first, then in-plazo
             if od > 0:
-                return (0, -od)  # overdue: higher = more urgent (negated for ASC in group 0)
-            return (1, od)  # in-plazo: higher od (closer to 0) = closer to deadline → was more urgent
+                return (0, -od)  # higher overdue first
+            return (1, -od)  # closer to 0 = closer to deadline first
         sla_all.sort(key=_sla_key)
         total_count = len(sla_all)
         # Manual pagination

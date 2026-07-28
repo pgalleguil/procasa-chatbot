@@ -195,7 +195,7 @@ def process_chat_timeline(messages):
 from chatbot.storage import log_event # Usamos el logger centralizado
 from chatbot.crm_service import CrmService
 from chatbot.utils import calculate_business_minutes
-from chatbot.constants import PipelineStage, InteractionType, UNASSIGNED_LABEL
+from chatbot.constants import PipelineStage, InteractionType, UNASSIGNED_LABEL, CHILE_TZ
 from chatbot.lead_temperature import COLD, HOT
 from chatbot.crm_permissions import can_administer_leads
 
@@ -675,7 +675,6 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         sla_all = facet_res.get("sla_all", [])
         from chatbot.utils import calculate_business_minutes
         from chatbot.crm_metrics import coerce_utc_datetime
-        from chatbot.constants import CHILE_TZ
         now_chile = datetime.now(CHILE_TZ)
         for lead in sla_all:
             at_raw = lead.get("_cycle_assigned_at")

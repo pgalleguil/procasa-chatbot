@@ -652,22 +652,19 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         sla_full_pipeline = list(canonical_pipeline)
         # Remove $skip, $limit, $project; add an aggregate-level $limit as safety cap
         sla_full_pipeline = [s for s in sla_full_pipeline if "$skip" not in s and "$limit" not in s and "$project" not in s]
-        sla_full_pipeline.append({"$limit": 500})
         sla_full_pipeline.append({"$project": PROJECTION})
 
     # Conteos y registros provienen del mismo snapshot y de una única agregación.
-    if _use_python_sla_sort:
-        facet_pipeline[0]["$facet"]["records"] = records_pipeline
-        facet_pipeline[0]["$facet"]["sla_all"] = sla_full_pipeline
-    else:
-        facet_pipeline[0]["$facet"]["records"] = records_pipeline
+    facet_pipeline[0]["$facet"]["records"] = records_pipeline
     facet_results = await db["leads"].aggregate(facet_pipeline).to_list(length=1)
     facet_res = facet_results[0] if facet_results else {}
     leads_list = facet_res.get("records", [])
 
-    # SLA priority: compute business minutes in Python, sort, paginate
+    # SLA priority: fetch all scope leads in a separate aggregation so the
+    # $facet memory budget is never shared between KPI sub-pipelines and
+    # the full-universe sort.
     if _use_python_sla_sort:
-        sla_all = facet_res.get("sla_all", [])
+        sla_all = await db["leads"].aggregate(sla_full_pipeline).to_list(length=None)
         from chatbot.utils import calculate_business_minutes
         from chatbot.crm_metrics import coerce_utc_datetime
         now_chile = datetime.now(CHILE_TZ)
@@ -689,7 +686,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 lead["_overdue_minutes"] = None
         # Sort groups:
         #   0 = unmanaged assigned overdue (by overdue DESC)
-        #   1 = unmanaged assigned in-plazo (by remaining ASC, i.e., overdue ASC but negative)
+        #   1 = unmanaged assigned in-plazo (by remaining ASC)
         #   2 = unassigned
         #   3 = managed assigned
         #   4 = no cycle / historical / missing date
@@ -697,26 +694,21 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             od = lead.get("_overdue_minutes")
             mgmt = lead.get("_has_management", 1)
             assigned = lead.get("_has_assigned", 1)
-            # No cycle or missing date
             if od is None:
                 return (4, 0)
-            # Managed or closed
             if assigned == 0 and mgmt == 0:
                 return (3, 0)
-            # Unassigned
             if assigned != 0:
                 return (2, 0)
-            # Unmanaged + assigned: overdue first, then in-plazo
             if od > 0:
-                return (0, -od)  # higher overdue first
-            return (1, -od)  # closer to 0 = closer to deadline first
+                return (0, -od)
+            return (1, -od)
         sla_all.sort(key=_sla_key)
         total_count = len(sla_all)
-        # Manual pagination
         sla_page = sla_all[offset:offset + limit]
         leads_list = sla_page
-        # Also compute total_pagina override
-        facet_res["total_pagina"] = [{"count": total_count}]
+    else:
+        total_count = get_facet_count("total_pagina")
 
     def get_facet_count(key):
         return facet_res.get(key, [{"count": 0}])[0]["count"] if facet_res.get(key) else 0

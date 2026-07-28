@@ -10,6 +10,8 @@ from typing import Any, Dict, Optional
 
 from bson import ObjectId
 
+from .property_lookup import PROPERTY_COLLECTION_NAME
+
 logger = logging.getLogger(__name__)
 
 CHILE_TZ = timezone(timedelta(hours=-4))
@@ -135,25 +137,25 @@ def build_lead_notification_context(db, lead_id) -> dict:
     # --- operation ---
     operacion = prospect.get("operacion") or lead.get("operacion") or None
     if not operacion and property_code:
-        cartera = db["universo_cartera"].find_one({"codigo": property_code})
+        cartera = db[PROPERTY_COLLECTION_NAME].find_one({"codigo": property_code})
         if cartera:
             operacion = cartera.get("operacion") or None
 
     # --- property type ---
     tipo_propiedad = prospect.get("tipo") or lead.get("tipo") or None
     if not tipo_propiedad and property_code:
-        cartera = db["universo_cartera"].find_one({"codigo": property_code}) if not (operacion and prospect.get("tipo")) else None
+        cartera = db[PROPERTY_COLLECTION_NAME].find_one({"codigo": property_code}) if not (operacion and prospect.get("tipo")) else None
         if cartera:
             tipo_propiedad = cartera.get("tipo") or None
     if not tipo_propiedad and property_code:
-        cartera = db["universo_cartera"].find_one({"codigo": property_code})
+        cartera = db[PROPERTY_COLLECTION_NAME].find_one({"codigo": property_code})
         if cartera:
             tipo_propiedad = cartera.get("tipo") or None
 
     # --- comuna ---
     comuna = prospect.get("comuna") or lead.get("comuna") or None
     if not comuna and property_code:
-        cartera = db["universo_cartera"].find_one({"codigo": property_code})
+        cartera = db[PROPERTY_COLLECTION_NAME].find_one({"codigo": property_code})
         if cartera:
             comuna = cartera.get("comuna") or None
 

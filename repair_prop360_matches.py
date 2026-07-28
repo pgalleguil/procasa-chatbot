@@ -22,7 +22,7 @@ async def main():
     
     client = MongoClient(Config.MONGO_URI)
     db = client[Config.DB_NAME]
-    coll = db["universo_cartera"]
+    coll = db[Config.PROPERTY_COLLECTION_NAME]
 
     # 1. CREACIÓN DEL BACKUP MONGO
     backup_col_name = f"universo_cartera_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"

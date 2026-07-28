@@ -533,18 +533,15 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
                     ]},
                 ]})
     elif user_role == "agente":
-        fallback_identity_clauses = []
-        if user_id:
-            fallback_identity_clauses.append({"gestion.ejecutivo_id": user_id})
-        if user_email:
-            fallback_identity_clauses.append({"gestion.ejecutivo_email": user_email})
         assignment_clauses = []
+        # Canonico: matchear por ejecutivo_id
+        if user_id:
+            assignment_clauses.append({"gestion.ejecutivo_id": user_id})
+        # Fallback: documentos legacy sin ejecutivo_id, matchear por nombre
         if user_name:
-            assignment_clauses.append({"gestion.ejecutivo_asignado": user_name})
-        if fallback_identity_clauses:
             assignment_clauses.append({"$and": [
-                {"gestion.ejecutivo_asignado": {"$in": [None, ""]}},
-                {"$or": fallback_identity_clauses},
+                {"gestion.ejecutivo_id": {"$exists": False}},
+                {"gestion.ejecutivo_asignado": user_name},
             ]})
         if assignment_clauses:
             add_condition({"$or": assignment_clauses})

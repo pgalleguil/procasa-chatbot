@@ -2048,14 +2048,13 @@ async def view_captaciones(
         "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}
     }
     if user_role not in CAPTACION_PRIVILEGED_ROLES:
+        # Agente ve sus propias propiedades: matchea por ejecutivo_id (canonico)
+        # con fallback a ejecutivo_asignado para documentos legacy
         base_query["$or"] = [
-            {"gestion.ejecutivo_asignado": user_name},
+            {"gestion.ejecutivo_id": user_id},
             {"$and": [
-                {"gestion.ejecutivo_asignado": {"$in": [None, ""]}},
-                {"$or": [
-                    {"gestion.ejecutivo_id": user_id},
-                    {"gestion.ejecutivo_email": user_email},
-                ]},
+                {"gestion.ejecutivo_id": {"$exists": False}},
+                {"gestion.ejecutivo_asignado": user_name},
             ]},
         ]
 
@@ -2072,24 +2071,22 @@ async def view_captaciones(
     else:
         if ejecutivo and ejecutivo != "Todos" and user_role in CAPTACION_PRIVILEGED_ROLES:
             selected_exec_doc = await adb["usuarios"].find_one(
-                {"nombre": ejecutivo}, {"email": 1}
+                {"nombre": ejecutivo}
             )
-            selected_exec_ids = [ejecutivo]
-            selected_exec_emails = [ejecutivo]
             if selected_exec_doc:
-                selected_exec_ids.append(str(selected_exec_doc["_id"]))
-                if selected_exec_doc.get("email"):
-                    selected_exec_emails.append(selected_exec_doc["email"])
-            base_query["$or"] = [
-                {"gestion.ejecutivo_asignado": ejecutivo},
-                {"$and": [
-                    {"gestion.ejecutivo_asignado": {"$in": [None, ""]}},
-                    {"$or": [
-                        {"gestion.ejecutivo_id": {"$in": selected_exec_ids}},
-                        {"gestion.ejecutivo_email": {"$in": selected_exec_emails}},
+                exec_id = str(selected_exec_doc["_id"])
+                exec_name = selected_exec_doc.get("nombre", ejecutivo)
+                # Canonico: matchear por ejecutivo_id, con fallback a nombre para legacy
+                base_query["$or"] = [
+                    {"gestion.ejecutivo_id": exec_id},
+                    {"$and": [
+                        {"gestion.ejecutivo_id": {"$exists": False}},
+                        {"gestion.ejecutivo_asignado": exec_name},
                     ]},
-                ]},
-            ]
+                ]
+            else:
+                # Fallback si no encuentra el usuario: buscar solo por nombre
+                base_query["gestion.ejecutivo_asignado"] = ejecutivo
         from captacion_kpis import AVAILABLE_STATES, MANAGEMENT_STATES, CAPTURED_STATES, DISCARDED_STATES
         kpi_facet = [
             {"$match": base_query},

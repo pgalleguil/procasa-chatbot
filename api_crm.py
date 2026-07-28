@@ -530,6 +530,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         "lead_temperature_effective": 1,
         "_has_assigned": 1,
         "_cycle_assigned_at": 1,
+        "_legacy_assigned_at": 1,
         "_temperature": 1,
         "_has_management": 1,
     }
@@ -592,7 +593,16 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                     {"$ne": [{"$ifNull": ["$_active_cycle.first_valid_management_at", None]}, None]},
                     0, 1,
                 ]},
-                1,
+                # Fallback: use lead-level lifecycle evidence for legacy docs
+                {"$cond": [
+                    {"$ne": [{"$ifNull": ["$lifecycle.first_valid_management_at", None]}, None]},
+                    0, 1,
+                ]},
+            ]},
+            # Fallback assignment date for leads without a commercial cycle
+            "_legacy_assigned_at": {"$ifNull": [
+                {"$convert": {"input": "$lifecycle.assigned_at", "to": "date", "onError": None, "onNull": None}},
+                {"$convert": {"input": "$fecha_asignacion", "to": "date", "onError": None, "onNull": None}},
             ]},
         }},
         # SLA overdue minutes computed in a separate $set stage.  Positive =
@@ -624,11 +634,24 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         _use_python_sla_sort = True
         _sort_spec = {"_id": 1}
     elif ordenar_por == "oldest_unmanaged":
-        # Unmanaged first, managed at the bottom.  No $match filter.
+        # For this view, "assigned" means any valid assignment date exists
+        # (cycle, lifecycle, or fecha_asignacion).  Legacy leads without
+        # a commercial cycle still count as assigned if they have a date.
+        # Update _has_assigned to include legacy fallback.
+        canonical_pipeline.append({"$set": {
+            "_has_assigned": {"$cond": [
+                {"$or": [
+                    "$_has_cycle",
+                    {"$ne": ["$_legacy_assigned_at", None]},
+                ]},
+                0, 1,
+            ]},
+        }})
         _sort_spec = {
             "_has_management": -1,     # DESC: 1 (unmanaged) before 0 (managed)
-            "_has_assigned": 1,       # ASC: 0 (assigned) before 1 (unassigned)
-            "_cycle_assigned_at": 1,  # ASC: oldest first
+            "_has_assigned": 1,
+            "_cycle_assigned_at": 1,
+            "_legacy_assigned_at": 1,
             "_id": 1,
         }
     else:

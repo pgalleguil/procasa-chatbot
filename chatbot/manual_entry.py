@@ -368,6 +368,12 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
         # A missing/synthetic client phone is irrelevant: delivery targets the
         # active executive resolved from usuarios via the assignment cycle.
         cycle_id = (cycle or {}).get("assignment_cycle_id")
+        if not cycle_id:
+            logger.error(
+                "[MANUAL_CREATE] cycle_creation_failed lead_id=%s assigned_to=%s property_code=%s",
+                lead_id, exec_name, property_code,
+            )
+            raise RuntimeError("manual lead cycle was not created")
         source_event_id = f"manual_lead:{lead_id}:{cycle_id}"
         db["crm_assignment_cycles"].update_one(
             {"assignment_cycle_id": cycle_id},
@@ -380,6 +386,21 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
         if fresh_lead and str(fresh_lead.get("lead_temperature_effective") or "").upper() != "HOT":
             from .crm_non_hot_digest import accumulate_non_hot_lead
             notification = accumulate_non_hot_lead(db, lead=fresh_lead, cycle=cycle)
+            if notification:
+                logger.info(
+                    "[MANUAL_CREATE] digest_enqueued lead_id=%s cycle_id=%s notification_id=%s "
+                    "recipient_user_id=%s send_after=%s window_started_at=%s",
+                    lead_id, cycle_id, notification.get("_id"),
+                    notification.get("recipient_user_id"), notification.get("send_after"),
+                    notification.get("window_started_at"),
+                )
+            else:
+                logger.error(
+                    "[MANUAL_CREATE] digest_not_enqueued lead_id=%s cycle_id=%s "
+                    "temperature=%s notification_eligible=%s source_verified=%s",
+                    lead_id, cycle_id, fresh_lead.get("lead_temperature_effective"),
+                    cycle.get("notification_eligible"), cycle.get("source_event_verified"),
+                )
 
         # 5. Log Event
         log_event(phone or email, "MANUAL_ENTRY", "supervisor", {
@@ -406,7 +427,9 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             "phone": final_phone,
             "property_code": property_code,
             "assignment_cycle_id": cycle_id,
-            "source_event_id": source_event_id
+            "source_event_id": source_event_id,
+            "notification_id": str(notification.get("_id")) if notification else None,
+            "notification_send_after": notification.get("send_after") if notification else None,
         }
     except Exception as e:
         logger.error(f"Error creating manual lead: {e}")

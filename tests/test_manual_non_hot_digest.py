@@ -41,3 +41,16 @@ def test_confirmed_non_delivery_clears_pre_call_reservation_for_retry():
     source = Path("chatbot/crm_non_hot_digest.py").read_text(encoding="utf-8")
     assert '"provider_call_started_at": ""' in source
     assert '"delivery_token": ""' in source
+
+
+def test_window_due_uses_the_same_explicit_window_as_digest_creation():
+    source = Path("chatbot/crm_non_hot_digest.py").read_text(encoding="utf-8")
+    assert "def _window_due_at(started_at, *, window_minutes=None)" in source
+    assert "send_after = _window_due_at(now, window_minutes=window_minutes)" in source
+
+
+def test_manual_creation_exposes_and_logs_digest_identity():
+    source = Path("chatbot/manual_entry.py").read_text(encoding="utf-8")
+    assert "digest_enqueued" in source
+    assert '"notification_id": str(notification.get("_id"))' in source
+    assert "cycle_creation_failed" in source

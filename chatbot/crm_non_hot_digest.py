@@ -49,12 +49,17 @@ INDIVIDUAL_IDENTITY_FIELD = "individual_identity"
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _window_due_at(started_at):
+def _window_due_at(started_at, *, window_minutes=None):
     """Return a fixed in-hours window or the next business opening."""
     from .lead_router import get_next_business_slot, is_business_hours
     if not is_business_hours(started_at):
         return get_next_business_slot(started_at)
-    window = max(int(getattr(Config, "CRM_NON_HOT_DIGEST_WINDOW_MINUTES", 15)), 1)
+    configured_window = (
+        window_minutes
+        if window_minutes is not None
+        else getattr(Config, "CRM_NON_HOT_DIGEST_WINDOW_MINUTES", 10)
+    )
+    window = max(int(configured_window), 1)
     return started_at + timedelta(minutes=window)
 
 
@@ -231,7 +236,7 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
     # The digest window is always 10 minutes from the first lead,
     # regardless of time of day.  After-hours handling (if any) is
     # configured separately and does NOT affect window_due_at.
-    send_after = _window_due_at(now)
+    send_after = _window_due_at(now, window_minutes=window_minutes)
     now_iso = now.isoformat()
     send_after_iso = send_after.isoformat()
     payload = {

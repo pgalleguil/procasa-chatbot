@@ -105,7 +105,7 @@ def find_property_by_any_identifier(db, raw_value: Any, collection_name: str = P
     return None
 
 
-BACKUP_COLLECTION = "universo_cartera_prop360"
+BACKUP_COLLECTION = "universo_cartera"
 
 
 def find_property_in_any_collection(db, raw_value: Any) -> dict | None:

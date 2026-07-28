@@ -201,7 +201,7 @@ class Config:
     # === Chatbot / colección ===
     HISTORIAL_MAX = 8
     COLLECTION_NAME = "universo_cartera"
-    PROPERTY_COLLECTION_NAME = os.getenv("PROPERTY_COLLECTION_NAME", "universo_cartera")
+    PROPERTY_COLLECTION_NAME = os.getenv("PROPERTY_COLLECTION_NAME", "universo_cartera_prop360")
     
     # === Threshold / Configuración de Leads ===
     LEAD_ASSIGNMENT_THRESHOLD = int(os.getenv("LEAD_ASSIGNMENT_THRESHOLD", 40))

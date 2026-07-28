@@ -3308,12 +3308,19 @@ async def captacion_reminder_loop():
             background_tasks_status["captacion_reminder"] = {
                 "status": "running", "last_heartbeat": datetime.now(CHILE_TZ).isoformat()}
             # The durable reminder implementation uses the synchronous Mongo
-            # client; run its complete claim/delivery transaction off-loop.
+            # client; run its complete claim/delivery transaction off-loop
+            # with the delegated context so forensics does not flag it.
+            from chatbot.storage import _delegated_sync_mongo
             loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                _WORKER_THREAD_POOL,
-                lambda: asyncio.run(process_one_due_reminder(get_db(), worker_id=worker_id)),
-            )
+
+            def _run_reminder_off_loop():
+                token = _delegated_sync_mongo.set(True)
+                try:
+                    return asyncio.run(process_one_due_reminder(get_db(), worker_id=worker_id))
+                finally:
+                    _delegated_sync_mongo.reset(token)
+
+            result = await loop.run_in_executor(_WORKER_THREAD_POOL, _run_reminder_off_loop)
             if result.get("status") not in {"idle", "notified"}:
                 logger.warning("[CAPTACION_REMINDER] result=%s", result)
         except asyncio.CancelledError:

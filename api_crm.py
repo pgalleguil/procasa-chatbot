@@ -737,6 +737,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         "sin_asignar_global": get_facet_count("sin_asignar_global"),
     }
     from chatbot.crm_metrics import validate_list_parity
+    # SLA priority fetches the full universe for Python-side business-minute
+    # sort; the sub-pipeline counts are independent of record-level filters.
+    if _use_python_sla_sort:
+        total_count = scope_total
     parity = validate_list_parity(kpis=kpi_counts, listed_total=total_count, state_filter=filtro_estado)
     if not parity["validated"]:
         logger.error("[CRM_PARITY] KPI/list mismatch: %s", parity)

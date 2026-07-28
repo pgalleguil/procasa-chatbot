@@ -614,6 +614,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     ]
 
     # Build sort spec from the canonical cycle fields
+    _use_python_sla_sort = False
     if ordenar_por == "recent_assigned":
         _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
     elif ordenar_por == "sla_priority":
@@ -635,10 +636,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "_cycle_assigned_at": 1,  # ASC: oldest first
             "_id": 1,
         }
-        _use_python_sla_sort = False
     else:
         _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
-        _use_python_sla_sort = False
 
     canonical_pipeline.extend([
         {"$sort": _sort_spec},

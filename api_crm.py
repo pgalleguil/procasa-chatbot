@@ -660,6 +660,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     facet_res = facet_results[0] if facet_results else {}
     leads_list = facet_res.get("records", [])
 
+    def get_facet_count(key):
+        return facet_res.get(key, [{"count": 0}])[0]["count"] if facet_res.get(key) else 0
+
     # SLA priority: fetch all scope leads in a separate aggregation so the
     # $facet memory budget is never shared between KPI sub-pipelines and
     # the full-universe sort.
@@ -709,9 +712,6 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         leads_list = sla_page
     else:
         total_count = get_facet_count("total_pagina")
-
-    def get_facet_count(key):
-        return facet_res.get(key, [{"count": 0}])[0]["count"] if facet_res.get(key) else 0
 
     total_count = get_facet_count("total_pagina")
     global_total = get_facet_count("global_total")

@@ -1119,11 +1119,14 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             if current_cycle is not None and isinstance(current_cycle, dict):
                 hot_started_at = current_cycle.get("hot_started_at") or current_cycle.get("temperature_transitioned_at")
             
+            # SLA completion is scoped to the active assignment cycle. Never
+            # reuse a lead-level historical timestamp after reassignment; an
+            # outreach event is telemetry and does not stop the SLA clock.
+            cycle_management_at = ((current_cycle or {}).get("first_valid_management_at")
+                                   if current_cycle else lifecycle.get("first_valid_management_at"))
             canonical_sla = calculate_sla(
                 assigned_at=assigned_at,
-                first_valid_management_at=(lifecycle.get("first_valid_management_at")
-                                          if lifecycle.get("current_assignment_cycle_id") == current_cycle_id else None) or
-                                          (outreach["occurred_at"] if recognized_management_ev else None),
+                first_valid_management_at=cycle_management_at,
                 temperature=temp,
                 hot_started_at=hot_started_at,
             )

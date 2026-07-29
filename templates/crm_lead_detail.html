@@ -3707,7 +3707,7 @@
             last_action_label: "{{ lead.last_action_label or 'Sin gestión aún' }}",
             last_action_relative: "{{ lead.last_action_relative or '' }}",
             param_auth_user: "{{ user_email }}",
-            execName: "{{ user_name }}"
+            execName: "{{ lead.ejecutivo_asignado or user_name }}"
         };
 
         function toggleMobileMenu() {

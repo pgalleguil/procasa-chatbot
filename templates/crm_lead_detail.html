@@ -2789,23 +2789,6 @@
                         <!-- LÓGICA DE CONTACTO EFECTIVO (TEXTOS LIMPIOS) -->
                         <div id="logic-effective" class="logic-section d-none">
 
-                            <!-- Scoring -->
-                            <label class="data-label mb-2">1. Calificar Lead <span class="validation-dot"
-                                    id="dot-score"></span></label>
-                            <div class="scoring-group">
-                                <input type="radio" name="lead_score" value="A" id="score_a" class="score-radio"
-                                    onclick="updateSummary()">
-                                <label for="score_a" class="score-label">🔥 A: Alta</label>
-
-                                <input type="radio" name="lead_score" value="B" id="score_b" class="score-radio"
-                                    onclick="updateSummary()">
-                                <label for="score_b" class="score-label">🌤️ B: Media</label>
-
-                                <input type="radio" name="lead_score" value="C" id="score_c" class="score-radio"
-                                    onclick="updateSummary()">
-                                <label for="score_c" class="score-label">C: Baja</label>
-                            </div>
-
                             <label class="data-label mb-2 mt-3 border-bottom border-secondary pb-1 w-100">¿Qué
                                 manifestó
                                 el Lead?</label>
@@ -3960,18 +3943,14 @@
             document.querySelectorAll('.field-incomplete').forEach(el => el.classList.remove('field-incomplete'));
 
             if (currentInteraction === 'effective') {
-                const score = document.querySelector('input[name="lead_score"]:checked');
+                totalSteps = 2;
                 const subRes = document.getElementById('resultado_gestion').value;
                 const date = document.getElementById('fecha_global').value;
-
-                if (score) { currentSteps++; setValidationDot('score', true); } else { setValidationDot('score', false); }
                 if (subRes) { currentSteps++; setValidationDot('result', true); } else { setValidationDot('result', false); }
                 if (date) { currentSteps++; setValidationDot('date', true); } else { setValidationDot('date', false); }
-
-                if (!score) { missing = "Calificación"; }
-                else if (!subRes) { missing = "Manifestación"; }
-                else if (!date) { missing = "Programar Seguimiento"; }
-                else { isValid = true; }
+                if (!subRes) missing = "Manifestación";
+                else if (!date) missing = "Programar Seguimiento";
+                else isValid = true;
 
             } else if (currentInteraction === 'partial') {
                 totalSteps = 2;
@@ -4344,12 +4323,8 @@
 
             // --- PROGRESSIVE DISCLOSURE (EFECTIVO) ---
             if (currentInteraction === 'effective') {
-                const score = document.querySelector('input[name="lead_score"]:checked');
-                if (score) {
-                    document.getElementById('manifestacion-step').classList.remove('d-none');
-                } else {
-                    document.getElementById('manifestacion-step').classList.add('d-none');
-                }
+                // La temperatura ya fue calculada por el sistema; no pedir otra calificación.
+                document.getElementById('manifestacion-step').classList.remove('d-none');
                 if (document.getElementById('resultado_gestion').value) {
                     document.getElementById('gestion-footer').classList.remove('d-none');
                 } else {
@@ -4425,10 +4400,7 @@
 
                 // Resaltado dinámico por sección
                 if (currentInteraction === 'effective') {
-                    if (!document.querySelector('input[name="lead_score"]:checked')) {
-                        targetField = document.querySelector('.scoring-group');
-                    } else if (!document.getElementById('resultado_gestion').value) {
-                        // FIXED: Highlighting the entire manifestacion-container
+                    if (!document.getElementById('resultado_gestion').value) {
                         targetField = document.getElementById('manifestacion-container');
                     } else if (!document.getElementById('fecha_global').value) {
                         targetField = document.getElementById('fecha_global');

@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timezone
 from pymongo import ReturnDocument
 from .crm_metrics import create_assignment_cycle
-from .property_lookup import find_property_by_any_identifier, get_prop_location
+from .property_lookup import find_property_by_any_identifier, get_prop_location, lookup_property_link
 from .lead_router import find_responsible_executive
 
 COLLECTION = "commercial_processing_events"
@@ -62,7 +62,11 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
             "commercial_notification_eligible": False}})
         _state(db, event["_id"], WAITING_PROPERTY, "property_not_provided", now)
         return db[COLLECTION].find_one({"_id": event["_id"]})
-    prop = find_property_by_any_identifier(db, raw)
+    prop_meta = {}
+    if str(raw).lower().startswith(("http://", "https://")):
+        prop, prop_meta = lookup_property_link(db, raw)
+    else:
+        prop = find_property_by_any_identifier(db, raw)
     if not prop:
         db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
             "commercial_processing_state": WAITING_INVENTORY, "assignment_type": "MISSING_PROPERTY",
@@ -74,6 +78,7 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
         _state(db, event["_id"], WAITING_INVENTORY, "property_not_in_inventory", now)
         return db[COLLECTION].find_one({"_id": event["_id"]})
     code = str(prop.get("codigo") or raw)
+    operation = prop_meta.get("operation")
     location = get_prop_location(prop)
     executive, _unused, assignment_type = find_responsible_executive(
         property_code=code, comuna=location.get("comuna"), lead_phone=phone)
@@ -94,6 +99,17 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
     db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
         "ejecutivo_asignado": recipient["nombre"], "prospecto.ejecutivo": recipient["nombre"],
         "prospecto.codigo": code,
+        "prospecto.codigo_propiedad": code,
+        "prospecto.operacion": operation or (lead.get("prospecto") or {}).get("operacion"),
+        "prospecto.operacion_fuente": operation,
+        "prospecto.portal_origen": prop_meta.get("portal"),
+        "prospecto.external_id_origen": prop_meta.get("external_id"),
+        "codigo": code,
+        "codigo_propiedad": code,
+        "operacion": operation or lead.get("operacion"),
+        "operacion_fuente": operation,
+        "portal_origen": prop_meta.get("portal"),
+        "external_id_origen": prop_meta.get("external_id"),
         "lifecycle.current_assignment_cycle_id": cycle["assignment_cycle_id"],
         "lifecycle.assignment_cycle_id": cycle["assignment_cycle_id"],
         "lifecycle.assigned_at": cycle.get("assigned_at"),

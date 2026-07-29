@@ -98,6 +98,10 @@ def build_property_lookup_queries(raw_value: Any) -> list[Dict[str, Any]]:
 
 
 def find_property_by_any_identifier(db, raw_value: Any, collection_name: str = PROPERTY_COLLECTION_NAME):
+    if isinstance(raw_value, str) and raw_value.strip().lower().startswith(("http://", "https://")):
+        alias_prop, _meta = lookup_property_link(db, raw_value, collection_name)
+        if alias_prop:
+            return alias_prop
     collection = db[collection_name]
     for query in build_property_lookup_queries(raw_value):
         prop = collection.find_one(query)

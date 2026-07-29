@@ -20,6 +20,80 @@ except Exception:
     MongoClient = None
 
 
+def validate_classification_probability_consistency(state, confidence):
+    """Valida que estado y probabilidad sean consistentes.
+    INCIERTO: 0.50-0.69, DUEÑO_PROBABLE: 0.70-0.89, DUEÑO_SEGURO: 0.90-1.00
+    Retorna lista de errores (vacia = OK)."""
+    errors = []
+    if not state: return errors
+    try: conf = float(confidence)
+    except (TypeError, ValueError): return ["INVALID_CONFIDENCE"]
+    
+    if state == "INCIERTO":
+        if conf < 0.50: errors.append(f"INCIERTO_CONFIDENCE_TOO_LOW({conf})")
+        if conf >= 0.70: errors.append(f"INCIERTO_CONFIDENCE_TOO_HIGH({conf})")
+    elif state == "DUEÑO_PROBABLE":
+        if conf < 0.70: errors.append(f"DUEÑO_PROBABLE_CONFIDENCE_TOO_LOW({conf})")
+        if conf >= 0.90: errors.append(f"DUEÑO_PROBABLE_CONFIDENCE_TOO_HIGH({conf})")
+    elif state == "DUEÑO_SEGURO":
+        if conf < 0.90: errors.append(f"DUEÑO_SEGURO_CONFIDENCE_TOO_LOW({conf})")
+        if conf > 1.00: errors.append(f"DUEÑO_SEGURO_CONFIDENCE_TOO_HIGH({conf})")
+    return errors
+
+
+def validate_property_for_canonical_insert(doc: dict[str, Any]) -> list[str]:
+    """Valida que un documento este listo para insercion canonica en MongoDB.
+    Retorna lista de errores (vacia = OK)."""
+    errors = []
+
+    # Campos minimos obligatorios
+    lid = doc.get("listing_id", "")
+    if not lid or not str(lid).isdigit():
+        errors.append("MISSING_LISTING_ID")
+    if not doc.get("url"):
+        errors.append("MISSING_URL")
+    if not doc.get("comuna"):
+        errors.append("MISSING_COMUNA")
+    if not doc.get("operacion"):
+        errors.append("MISSING_OPERACION")
+    if not doc.get("tipo_propiedad"):
+        errors.append("MISSING_TIPO_PROPIEDAD")
+
+    # Contenido minimo
+    title = doc.get("title", "")
+    desc = doc.get("description", doc.get("descripcion", ""))
+    if not title and not desc:
+        errors.append("MISSING_TITLE_AND_DESCRIPTION")
+
+    # Clasificacion canonica
+    classification = doc.get("classification") or {}
+    state = classification.get("state", "")
+    confidence = classification.get("confidence", 0)
+    source = classification.get("source", "")
+
+    # Rechazar clasificacion solo por URL path
+    if source == "url_path_signal":
+        errors.append("CLASSIFICATION_FROM_URL_PATH_ONLY")
+
+    # Rechazar sin clasificacion o sin estado
+    if not state:
+        errors.append("MISSING_CLASSIFICATION_STATE")
+    if not source:
+        errors.append("MISSING_CLASSIFICATION_SOURCE")
+
+    # Consistencia estado-probabilidad
+    errors.extend(validate_classification_probability_consistency(state, confidence))
+
+    # Scrape stage valido
+    scrape_stage = doc.get("scrape_stage", "")
+    if scrape_stage in ("PROCESSING_BLOCKED", "needs_rescrape", "ad_removed", "incomplete"):
+        errors.append(f"INVALID_SCRAPE_STAGE({scrape_stage})")
+    if scrape_stage == "classified_from_listing":
+        errors.append("SCRAPE_STAGE_CLASSIFIED_FROM_LISTING_ONLY")
+
+    return errors
+
+
 @dataclass(slots=True)
 class MongoStore:
     config: AppConfig
@@ -66,6 +140,12 @@ class MongoStore:
             uf_fecha=self.config.uf_fecha,
         )
         apply_owner_probability_to_document(crm_doc)
+
+        # Guard canonico de insercion
+        validation_errors = validate_property_for_canonical_insert(crm_doc)
+        if validation_errors:
+            raise ValueError(f"CANONICAL_INSERT_VALIDATION_FAILED: {validation_errors}")
+
         listing_id = crm_doc.get("listing_id", "")
         origen = crm_doc.get("origen", crm_doc.get("source_portal", "toctoc"))
         if not listing_id:

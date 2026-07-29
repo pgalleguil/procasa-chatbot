@@ -26,17 +26,38 @@ def assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]]:
         owner_probability = None
     if owner_probability is None:
         reasons.append("owner_probability_missing")
-    elif owner_probability < 0.50:
-        reasons.append("owner_probability_below_50")
+    else:
+        # Consistencia estado-probabilidad (mismos umbrales que insercion)
+        if state == "INCIERTO":
+            if owner_probability < 0.50 or owner_probability >= 0.70:
+                reasons.append("owner_probability_inconsistent_with_state")
+        elif state == "DUEÑO_PROBABLE":
+            if owner_probability < 0.70 or owner_probability >= 0.90:
+                reasons.append("owner_probability_inconsistent_with_state")
+        elif state in ("DUEÑO_SEGURO", "DUENO_SEGURO"):
+            if owner_probability < 0.90:
+                reasons.append("owner_probability_inconsistent_with_state")
 
     stage = str(doc.get("scrape_stage") or "").lower()
     html_status = str(doc.get("html_validation_status") or "").upper()
-    if state == "AD_REMOVED" or stage in {"ad_removed", "needs_rescrape", "incomplete"}:
+    if state == "AD_REMOVED" or stage in {"ad_removed", "needs_rescrape", "incomplete", "processing_blocked", "classified_from_listing"}:
         reasons.append("removed_or_incomplete")
     if html_status in {"LISTING_REMOVED", "INVALID", "BLOCKED"}:
         reasons.append("invalid_source_document")
+    
+    # Bloqueo explicito de detalle
+    if doc.get("block_reason") or stage == "processing_blocked":
+        reasons.append("processing_blocked")
+    
+    # Clasificacion solo por URL path
+    source_cls = str(cls.get("source") or "").lower()
+    if source_cls == "url_path_signal":
+        reasons.append("classification_from_url_path_only")
+    
+    # Contenido minimo
     if not str(doc.get("descripcion") or doc.get("description") or "").strip():
-        reasons.append("missing_essential_fields")
+        if not str(doc.get("title") or "").strip():
+            reasons.append("missing_essential_fields")
     if not (doc.get("listing_id") or doc.get("url") or doc.get("source_url")):
         reasons.append("missing_essential_fields")
     if not (doc.get("comuna_slug") or doc.get("comuna")):

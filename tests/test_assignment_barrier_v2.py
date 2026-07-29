@@ -5,14 +5,23 @@ def base_doc():
     return {
         "listing_id": "1", "url": "https://example/1", "comuna": "Talca",
         "description": "Descripción suficiente de la propiedad.",
-        "classification": {"state": "INCIERTO", "source": "deepseek", "deepseek_status": "VALID",
+        "classification": {"state": "DUEÑO_SEGURO", "source": "deepseek", "deepseek_status": "VALID",
                            "deepseek_raw": {"choices": [{}]}, "assignment_ready": True,
-                           "owner_probability": 0.75},
+                           "owner_probability": 0.95},
     }
 
 
 def test_valid_persisted_deepseek_can_be_assigned():
     assert assignment_eligibility(base_doc()) == (True, [])
+
+def test_incierto_with_valid_deepseek_is_blocked():
+    """INCIERTO is never assignable, even with valid DeepSeek evidence."""
+    doc = base_doc()
+    doc["classification"]["state"] = "INCIERTO"
+    doc["classification"]["owner_probability"] = 0.75
+    eligible, reasons = assignment_eligibility(doc)
+    assert eligible is False
+    assert "classification_not_assignable" in reasons
 
 
 def test_pending_or_unpersisted_deepseek_is_blocked():

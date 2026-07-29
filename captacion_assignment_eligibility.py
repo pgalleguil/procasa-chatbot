@@ -14,9 +14,14 @@ def assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]]:
     state = str(cls.get("state") or cls.get("final_state") or "").upper()
     if state not in FINAL_STATES:
         reasons.append("classification_not_assignable")
+    # INCIERTO and CORREDOR are never assignment-eligible regardless of assignment_ready
+    if state in ("INCIERTO",) or state.startswith("CORR"):
+        reasons.append("classification_not_assignable")
     if cls.get("assignment_ready") is not True:
         reasons.append("classification_not_final_or_not_persisted")
-    if gestion.get("semantic_review_hold") is True or cls.get("manual_review_required") is True:
+    if (gestion.get("semantic_review_hold") is True or
+        cls.get("manual_review_required") is True or
+        doc.get("manual_review_required") is True):
         reasons.append("manual_review_pending")
     if cls.get("exclude_from_assignment") is True or gestion.get("exclude_from_assignment") is True:
         reasons.append("explicitly_excluded")

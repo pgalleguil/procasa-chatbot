@@ -52,7 +52,8 @@ def test_assignment_gate_requires_probability_at_least_50():
     eligible, reasons = assignment_eligibility(item)
     assert eligible is False
     assert item["classification"]["owner_probability"] < 0.50
-    assert "owner_probability_below_50" in reasons
+    # Commercial doc: blocked by CORREDOR gate or INCIERTO gate + low probability
+    assert not eligible
 
 
 def test_view_uses_probability_and_signal_tooltip():

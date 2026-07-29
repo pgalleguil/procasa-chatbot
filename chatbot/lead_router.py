@@ -770,13 +770,9 @@ def build_digest_lead_message(contexts: list[dict], exec_name: str = "") -> str:
             "",
         ] + numbered
 
-    url = f"https://procasa-chatbot-yr8d.onrender.com/crm?scope=mine&orden=sla_urgente"
     lines.extend([
         "",
-        f"\U0001F517 *Ver mis leads pendientes:*",
-        url,
-        "",
-        "\u26A0\uFE0F Registra el resultado en el CRM. Abrir WhatsApp o llamar no cuenta como gesti\u00F3n.",
+        "\u26A0\uFE0F Registra el resultado de la gesti\u00F3n en el CRM. Abrir WhatsApp o llamar no cuenta como gesti\u00F3n.",
     ])
     return "\n".join(lines)
 
@@ -793,4 +789,7 @@ def _format_context_preview(ctx: dict) -> str:
     nombre = ctx.get("nombre_cliente")
     if nombre:
         line += f"\n   \U0001F464 {nombre}"
+    secure_url = ctx.get("secure_url")
+    if secure_url:
+        line += f"\n   \U0001F517 Abrir lead: {secure_url}"
     return line

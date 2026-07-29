@@ -150,23 +150,50 @@ def format_relative_time(dt_obj):
 
 # --- HELPER: Datos de Propiedad ---
 def get_real_property_data(db, codigo_propiedad):
+    """Resolve property detail data from the canonical Prop360 collection.
+
+    Prop360 stores owner, address and operation data in nested documents; keep
+    the flat shape expected by the CRM template while preserving legacy fallback
+    field names for older records.
+    """
     if not codigo_propiedad or codigo_propiedad == "S/N":
         return None
-    prop = db[Config.COLLECTION_NAME].find_one({"codigo": str(codigo_propiedad)})
-    if not prop: return None
+    collection_name = getattr(Config, "PROPERTY_COLLECTION_NAME", "universo_cartera_prop360")
+    prop = db[collection_name].find_one({"codigo": str(codigo_propiedad)})
+    if not prop:
+        return None
+    owner = prop.get("datos_propietario") or {}
+    location = prop.get("ubicacion") or {}
+    summary = prop.get("resumen") or {}
+    operation = prop.get("tipo_operacion") or {}
+    metadata = prop.get("metadata") or {}
+    tipo = prop.get("tipo") or operation.get("tipo") or metadata.get("tipo_propiedad") or "Propiedad"
+    venta = bool(operation.get("venta"))
+    arriendo = bool(operation.get("arriendo"))
+    operation_label = "Venta y arriendo" if venta and arriendo else ("Venta" if venta else ("Arriendo" if arriendo else prop.get("operacion", "Venta")))
+    calle = prop.get("calle") or location.get("calle") or ""
+    numero = prop.get("numeracion") or prop.get("numero") or location.get("numero") or ""
+    precio_uf = prop.get("precio_uf") or summary.get("precio_uf")
+    if precio_uf is None:
+        precio_uf = (operation.get("precio_venta") or {}).get("precio_uf")
+    telefono = owner.get("telefono") or owner.get("fono_1") or owner.get("movil_propietario") or prop.get("movil_propietario") or prop.get("fono_propietario") or "S/I"
+    email = owner.get("email") or prop.get("email_propietario") or "S/I"
+    nombre = owner.get("nombre") or prop.get("nombre_propietario") or "No registrado"
+    comuna = prop.get("comuna") or location.get("comuna") or ""
+    region = prop.get("region") or location.get("region") or ""
     return {
         "codigo": prop.get("codigo"),
-        "tipo": prop.get("tipo", "Propiedad"),
-        "operacion": prop.get("operacion", "Venta"),
-        "precio_uf": prop.get("precio_uf") or prop.get("precio", 0),
-        "comuna": prop.get("comuna", ""),
-        "region": prop.get("region", ""),
-        "calle": prop.get("calle", ""),
-        "numeracion": prop.get("numeracion", ""),
-        "direccion_completa": f"{prop.get('calle', '')} #{prop.get('numeracion', '')}",
-        "nombre_propietario": prop.get("nombre_propietario", "No registrado"),
-        "movil_propietario": prop.get("movil_propietario") or prop.get("fono_propietario", "S/I"),
-        "email_propietario": prop.get("email_propietario", "S/I"),
+        "tipo": tipo,
+        "operacion": operation_label,
+        "precio_uf": precio_uf if precio_uf is not None else 0,
+        "comuna": comuna,
+        "region": region,
+        "calle": calle,
+        "numeracion": numero,
+        "direccion_completa": " ".join(part for part in (calle, f"#{numero}" if numero else "") if part),
+        "nombre_propietario": nombre,
+        "movil_propietario": telefono,
+        "email_propietario": email,
         "url": f"https://www.procasa.cl/{prop.get('codigo')}"
     }
 

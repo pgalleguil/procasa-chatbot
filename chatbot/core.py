@@ -417,6 +417,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     nuevo_origen = None
     codigo_externo = None  # Solo para trazabilidad, no para routing si no hay match
     codigo_detectado = None
+    link_operation = None
 
     logger.info(
         f"[PROPERTY_TRACE] origen=PRE_LINK_RESOLUTION trace={trace_id} phone={phone} "
@@ -485,6 +486,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         nuevo_origen = plataforma_origen or "WhatsApp"
         codigo_detectado = str(propiedad.get("codigo"))
         codigo_externo = codigo_externo_raw
+        link_operation = (propiedad.get("_link_match") or {}).get("operation")
         logger.info(
             f"[PROPERTY_BEFORE] trace={trace_id} phone={phone} variable=propiedad valor_anterior={_codigo_antes}"
         )
@@ -595,7 +597,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # Actualizar prospecto si encontramos propiedad nueva
     if propiedad and codigo_detectado:
         prop_loc = get_prop_location(propiedad)
-        prop_op = get_prop_operation(propiedad)
+        prop_op = get_prop_operation(propiedad, operation_override=link_operation)
         updates_prop = {
             "ultimo_mensaje": datetime.now(CHILE_TZ).isoformat(),
             "codigo": codigo_detectado,
@@ -603,6 +605,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "comuna": prop_loc.get("comuna"),
             "tipo": prop_op.get("tipo"),
             "operacion": prop_op.get("operacion"),
+            "codigo_propiedad": codigo_detectado,
+            "operacion_fuente": link_operation,
+            "portal_origen": plataforma_origen,
+            "external_id_origen": codigo_externo,
             "origen": nuevo_origen,  # Siempre actualiza origen si viene de link
             "link_pendiente": False
         }

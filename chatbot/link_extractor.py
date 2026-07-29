@@ -5,7 +5,7 @@ from typing import Tuple, Optional
 from .storage import get_db
 from .utils import safe_int_conversion
 from config import Config
-from .property_lookup import PROPERTY_COLLECTION_NAME, find_property_by_any_identifier
+from .property_lookup import (PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, lookup_property_link, canonical_portal, normalize_property_url, extract_property_external_id, operation_from_property_url)
 
 URL_RE = re.compile(r'https?://[^\s<>\]\)"]+', re.IGNORECASE)
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ def detectar_plataforma(url: str) -> str:
         return "TocToc"
     if "yapo.cl" in url_lower:
         return "Yapo"
-    if "portalinmobiliario.com" in url_lower:
+    if "portalinmobiliario.com" in url_lower or "portalinmobiliario.cl" in url_lower:
         return "PortalInmobiliario"
     if "mercadolibre." in url_lower:
         return "MercadoLibre"
@@ -117,6 +117,19 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
         
         # === PASO 1: Identificar plataforma ===
         plataforma = detectar_plataforma(url_clean)
+
+        # Aliases: resolver primero por ID externo y luego por URL normalizada.
+        alias_prop, alias_meta = lookup_property_link(db, url_clean)
+        if alias_prop:
+            propiedad = dict(alias_prop)
+            propiedad["_link_match"] = alias_meta
+            codigo_externo = alias_meta.get("external_id")
+            logger.info(
+                "[PROPERTY_LINK_MATCH] portal=%s external_id=%s operation=%s property_code=%s match_method=%s",
+                alias_meta.get("portal"), alias_meta.get("external_id"), alias_meta.get("operation"),
+                propiedad.get("codigo"), alias_meta.get("match_method"),
+            )
+            return True, propiedad, plataforma, codigo_externo
         
         print(f"\n[INFO] Plataforma detectada: {plataforma} | Buscando en {PROPERTY_COLLECTION_NAME}")
         print(f"[LINK_DEBUG] URL recibida: {url_clean}")
@@ -301,6 +314,21 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
             codigo_externo = None
 
         if propiedad:
+            legacy_meta = {
+                "portal": canonical_portal(url_clean),
+                "external_id": codigo_externo or extract_property_external_id(url_clean),
+                "operation": operation_from_property_url(url_clean),
+                "url_normalized": normalize_property_url(url_clean),
+                "match_method": "legacy_field",
+            }
+            propiedad = dict(propiedad)
+            propiedad["_link_match"] = legacy_meta
+            codigo_externo = legacy_meta.get("external_id") or codigo_externo
+            logger.info(
+                "[PROPERTY_LINK_MATCH] portal=%s external_id=%s operation=%s property_code=%s match_method=legacy_field",
+                legacy_meta.get("portal"), legacy_meta.get("external_id"), legacy_meta.get("operation"),
+                propiedad.get("codigo"),
+            )
             print(f"[EXITO] PROPIEDAD ENCONTRADA | Plataforma: {plataforma} | Código Procasa: {propiedad.get('codigo')}")
             logger.info(
                 f"[LINK_QUERY_OK]\ntrace={trace_id or 'no-trace'}\nphone={phone}\n"
@@ -318,7 +346,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 f"plataforma={plataforma}\ncodigo_yapo={codigo_externo}\nquery_ok=True\n"
                 f"propiedad={propiedad.get('codigo')}\nstatus=SUCCESS"
             )
-            return True, propiedad, plataforma, url_clean
+            return True, propiedad, plataforma, codigo_externo
         else:
             print(f"[FALLO] NO se encontró propiedad con el link '{url_clean[:80]}'")
             logger.info(

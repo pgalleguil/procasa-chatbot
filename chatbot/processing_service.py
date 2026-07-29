@@ -219,6 +219,7 @@ class LeadProcessingService:
         comuna = prospecto.get("comuna") or lead_doc.get("comuna_interes")
         tipo = prospecto.get("tipo") or lead_doc.get("tipo_interes") or lead_doc.get("tipo_propiedad")
         operacion = prospecto.get("operacion") or lead_doc.get("operacion")
+        operation_from_source = None
         
         # 2. Si falta comuna pero tenemos código, buscar en universo_cartera
         property_code = prospecto.get("codigo") or lead_doc.get("codigo")
@@ -261,7 +262,7 @@ class LeadProcessingService:
                 
                 if prop:
                     location = get_prop_location(prop)
-                    operation = get_prop_operation(prop)
+                    operation = get_prop_operation(prop, operation_override=operation_from_source)
                     comuna = comuna or location["comuna"]
                     tipo = tipo or operation["tipo"]
                     operacion = operacion or operation["operacion"]

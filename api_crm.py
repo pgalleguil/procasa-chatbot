@@ -1032,7 +1032,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         # may promote the row; outreach alone remains Sin Atender.
         if current_cycle and not has_real_management and estado_final not in (
             PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST,
-            PipelineStage.ARCHIVED, PipelineStage.SUPPRESSED,
+            "ARCHIVED", "SUPPRESSED",
         ):
             estado_final = PipelineStage.NEW
         elif recognized_management_ev and estado_final == PipelineStage.NEW:

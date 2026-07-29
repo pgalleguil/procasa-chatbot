@@ -70,8 +70,8 @@ TYPE_LABELS = {
 TELEMETRY_LABEL_TYPES = frozenset(TYPE_LABELS.keys())
 
 
-def _after_hours_label(assigned_raw, *, has_real_management=False):
-    """Display assignment timestamp without collapsing old after-hours dates into 'anoche'."""
+def _after_hours_label(assigned_raw, *, sla_started_raw=None, has_real_management=False):
+    """Display factual assignment and SLA-start dates for after-hours cycles."""
     dt = coerce_crm_datetime(assigned_raw)
     if not dt or has_real_management:
         return format_relative_time(assigned_raw)
@@ -86,12 +86,20 @@ def _after_hours_label(assigned_raw, *, has_real_management=False):
     if not is_after_hours:
         return format_relative_time(assigned_raw)
     if local.date() == now_local.date() - timedelta(days=1) and local.hour >= BUSINESS_END_HOUR:
-        prefix = "Asignado anoche"
+        assignment_text = "anoche"
     elif local.date() == now_local.date():
-        prefix = "Asignado hoy"
+        assignment_text = "hoy"
     else:
-        prefix = f"Asignado {local.strftime('%d/%m/%Y %H:%M')}"
-    return f"{prefix} ? SLA iniciado hoy 09:00"
+        assignment_text = local.strftime("%d/%m/%Y %H:%M")
+    sla_dt = coerce_crm_datetime(sla_started_raw) or dt
+    sla_local = sla_dt.astimezone(CHILE_TZ)
+    if sla_local.date() == now_local.date():
+        sla_text = f"hoy {sla_local.strftime('%H:%M')}"
+    elif sla_local.date() > now_local.date():
+        sla_text = f"el {sla_local.strftime('%d/%m/%Y')} a las {sla_local.strftime('%H:%M')}"
+    else:
+        sla_text = f"el {sla_local.strftime('%d/%m/%Y')} a las {sla_local.strftime('%H:%M')}"
+    return f"{assignment_text} ? SLA iniciado {sla_text}"
 
 
 def format_relative_time(dt_obj):
@@ -1123,13 +1131,16 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         else:
             prioridad_badge = "📋 Lead"
 
+        sla_started_display = ((current_cycle or {}).get("sla_started_at")
+                               or lifecycle.get("sla_started_at")
+                               or lifecycle_ts)
         management_age = format_relative_time(last_ts_obj).replace("Hace", "hace", 1)
         if estado_final in (PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST):
             age_label = f"Cerrado {format_relative_time(lifecycle_ts or created_ts).replace('Hace', 'hace', 1)}"
         elif last_action_text != "Sin gestión registrada":
             age_label = f"Última gestión {management_age}"
         else:
-            assigned_age = _after_hours_label(lifecycle_ts or created_ts, has_real_management=has_real_management)
+            assigned_age = _after_hours_label(lifecycle_ts or created_ts, sla_started_raw=sla_started_display, has_real_management=has_real_management)
             if assigned_age.startswith("anoche"):
                 age_label = f"Asignado {assigned_age}"
             elif estado_final == PipelineStage.NEW:
@@ -1159,7 +1170,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "ultima_accion_note": last_action_note,
             "ultima_accion_nota": last_action_note,
             "ejecutivo_nombre": ejecutivo or UNASSIGNED_LABEL,
-            "fecha_asignacion_relativa": _after_hours_label(lifecycle_ts or lead.get("fecha_asignacion"), has_real_management=has_real_management),
+            "fecha_asignacion_relativa": _after_hours_label(lifecycle_ts or lead.get("fecha_asignacion"), sla_started_raw=sla_started_display, has_real_management=has_real_management),
             "assignment_cycle_id": current_cycle_id,
             "assigned_at": assigned_for_cycle,
             "stage": lead.get("stage") or "new",

@@ -1,6 +1,6 @@
 # from pymongo import MongoClient (Replaced by singleton)
 from config import Config
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import re
 import uuid
@@ -71,23 +71,27 @@ TELEMETRY_LABEL_TYPES = frozenset(TYPE_LABELS.keys())
 
 
 def _after_hours_label(assigned_raw, *, has_real_management=False):
-    """Return display text for assignment time, with after-hours detection.
-
-    After-hours (19:00-09:00, weekends) + no management → 'Asignado anoche ...'
-    Otherwise → format_relative_time() result.
-    """
+    """Display assignment timestamp without collapsing old after-hours dates into 'anoche'."""
     dt = coerce_crm_datetime(assigned_raw)
-    if dt and not has_real_management:
-        from chatbot.constants import BUSINESS_DAYS, BUSINESS_START_HOUR, BUSINESS_END_HOUR
-        local = dt.astimezone(CHILE_TZ)
-        is_after_hours = (
-            local.weekday() not in BUSINESS_DAYS
-            or local.hour >= BUSINESS_END_HOUR
-            or local.hour < BUSINESS_START_HOUR
-        )
-        if is_after_hours:
-            return "anoche · SLA iniciado hoy 09:00"
-    return format_relative_time(assigned_raw)
+    if not dt or has_real_management:
+        return format_relative_time(assigned_raw)
+    from chatbot.constants import BUSINESS_DAYS, BUSINESS_START_HOUR, BUSINESS_END_HOUR
+    local = dt.astimezone(CHILE_TZ)
+    now_local = datetime.now(CHILE_TZ)
+    is_after_hours = (
+        local.weekday() not in BUSINESS_DAYS
+        or local.hour >= BUSINESS_END_HOUR
+        or local.hour < BUSINESS_START_HOUR
+    )
+    if not is_after_hours:
+        return format_relative_time(assigned_raw)
+    if local.date() == now_local.date() - timedelta(days=1) and local.hour >= BUSINESS_END_HOUR:
+        prefix = "Asignado anoche"
+    elif local.date() == now_local.date():
+        prefix = "Asignado hoy"
+    else:
+        prefix = f"Asignado {local.strftime('%d/%m/%Y %H:%M')}"
+    return f"{prefix} ? SLA iniciado hoy 09:00"
 
 
 def format_relative_time(dt_obj):

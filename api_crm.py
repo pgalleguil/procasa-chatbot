@@ -99,7 +99,7 @@ def _after_hours_label(assigned_raw, *, sla_started_raw=None, has_real_managemen
         sla_text = f"el {sla_local.strftime('%d/%m/%Y')} a las {sla_local.strftime('%H:%M')}"
     else:
         sla_text = f"el {sla_local.strftime('%d/%m/%Y')} a las {sla_local.strftime('%H:%M')}"
-    return f"{assignment_text} ? SLA iniciado {sla_text}"
+    return f"{assignment_text} - SLA iniciado {sla_text}"
 
 
 def format_relative_time(dt_obj):

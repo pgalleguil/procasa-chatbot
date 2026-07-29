@@ -961,10 +961,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         )
         if not outreach["recognized"]:
             recognized_management_ev = None
-        # Real management: canonical event OR lifecycle.first_valid_management_at
-        has_real_management = (
+        # Management is cycle-scoped and must come from a canonical human result.
+        # A legacy lead-level timestamp must never mark a newer active cycle as
+        # managed; SEND_WA/CLICK events are outreach telemetry only.
+        cycle_management_at = (current_cycle or {}).get("first_valid_management_at")
+        legacy_management_at = (lead.get("lifecycle") or {}).get("first_valid_management_at")
+        has_real_management = bool(
             recognized_management_ev is not None
-            or (lead.get("lifecycle") or {}).get("first_valid_management_at") is not None
+            or cycle_management_at
+            or (not current_cycle and legacy_management_at)
         )
         if recognized_management_ev:
             commercial_ev = recognized_management_ev
@@ -1022,7 +1027,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         )
         
         estado_final = estado_db
-        if recognized_management_ev and estado_final == PipelineStage.NEW:
+        # A stale CONTACTED value can remain on a lead after reassignment or
+        # bot outreach. For an active cycle, only canonical human management
+        # may promote the row; outreach alone remains Sin Atender.
+        if current_cycle and not has_real_management and estado_final not in (
+            PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST,
+            PipelineStage.ARCHIVED, PipelineStage.SUPPRESSED,
+        ):
+            estado_final = PipelineStage.NEW
+        elif recognized_management_ev and estado_final == PipelineStage.NEW:
             estado_final = PipelineStage.CONTACTED
         
         # Identificar ejecutivo y timestamp real para visualización

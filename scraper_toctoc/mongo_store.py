@@ -69,7 +69,7 @@ def validate_property_for_canonical_insert(doc: dict[str, Any]) -> list[str]:
     classification = doc.get("classification") or {}
     state = classification.get("state", "")
     confidence = classification.get("confidence", 0)
-    source = classification.get("source", "")
+    source = classification.get("source") or classification.get("decision_source", "")
 
     # Rechazar clasificacion solo por URL path
     if source == "url_path_signal":

@@ -192,6 +192,7 @@ def build_lead_notification_context(db, lead_id) -> dict:
     return {
         "lead_id": lead_id,
         "assignment_cycle_id": assignment_cycle_id,
+        "assigned_at": cycle.get("assigned_at") if cycle else None,
         "assigned_to_user_id": assigned_to_user_id,
         "exec_name": exec_name,
         "exec_phone": exec_phone,

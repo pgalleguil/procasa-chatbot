@@ -748,20 +748,36 @@ def build_digest_lead_message(contexts: list[dict], exec_name: str = "") -> str:
         return ""
     exec_display = exec_name or contexts[0].get("exec_name") or "Ejecutivo"
 
+    def _recently_assigned(ctx: dict, minutes: int = 30) -> bool:
+        value = ctx.get("assigned_at")
+        if not value:
+            return False
+        try:
+            if isinstance(value, str):
+                value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - value.astimezone(timezone.utc)).total_seconds()
+            return 0 <= age <= minutes * 60
+        except (TypeError, ValueError, AttributeError):
+            return False
+
     if count == 1:
         ctx = contexts[0]
-        header = "\U0001F4CB *1 LEAD PENDIENTE*"
-        lead_preview = _format_context_preview(ctx)
+        recent = _recently_assigned(ctx)
+        header = "\U0001F195 *NUEVO LEAD ASIGNADO*" if recent else "\U0001F4CB *1 LEAD PENDIENTE*"
+        lead_preview = _format_context_preview(ctx, recently_assigned=recent)
         lines = [
             header,
             "",
-            f"Hola {exec_display}, tienes un lead sin gesti\u00F3n registrada.",
+            (f"Hola {exec_display}, te asignaron un lead nuevo para revisar."
+             if recent else f"Hola {exec_display}, tienes un lead sin gesti\u00F3n registrada."),
             "",
             lead_preview,
         ]
     else:
         header = f"\U0001F4CB *{count} LEADS PENDIENTES*"
-        previews = [_format_context_preview(c) for c in contexts]
+        previews = [_format_context_preview(c, recently_assigned=_recently_assigned(c)) for c in contexts]
         numbered = [f"{i+1}. {p}" for i, p in enumerate(previews)]
         lines = [
             header,
@@ -777,7 +793,7 @@ def build_digest_lead_message(contexts: list[dict], exec_name: str = "") -> str:
     return "\n".join(lines)
 
 
-def _format_context_preview(ctx: dict) -> str:
+def _format_context_preview(ctx: dict, *, recently_assigned: bool = False) -> str:
     """Format a single lead preview line for the digest."""
     code = ctx.get("property_code") or "S/N"
     parts = [f"*Prop. {code}*"]
@@ -786,6 +802,8 @@ def _format_context_preview(ctx: dict) -> str:
         if v:
             parts.append(f"\u00B7 {v}")
     line = " ".join(parts)
+    if recently_assigned:
+        line += "\n   \U0001F195 Asignado recientemente"
     nombre = ctx.get("nombre_cliente")
     if nombre:
         line += f"\n   \U0001F464 {nombre}"

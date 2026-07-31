@@ -473,10 +473,30 @@ def build_digest_message_content(db, notification):
         return None, 0
 
     from .crm_message_context import build_lead_notification_context
-    from .lead_router import build_digest_lead_message
+    from .lead_router import build_digest_lead_message, format_whatsapp_template
 
     contexts = [build_lead_notification_context(db, ld["_id"]) for ld in valid]
     exec_name = contexts[0].get("exec_name") or "Ejecutivo"
+
+    # A one-lead digest is merely a deferred delivery (for example, a lead
+    # received outside business hours).  Reuse the normal individual template
+    # verbatim; otherwise the recipient sees a different message depending on
+    # the delivery time rather than on the event itself.
+    if len(valid) == 1:
+        lead_data = dict(valid[0])
+        context = contexts[0]
+        lead_data.setdefault("nombre", context.get("nombre_cliente"))
+        lead_data.setdefault("property_code", context.get("property_code"))
+        lead_data.setdefault("operacion", context.get("operacion"))
+        lead_data.setdefault("comuna", context.get("comuna"))
+        content = format_whatsapp_template(
+            lead_data,
+            exec_name,
+            context.get("property_code") or "S/N",
+            is_new_assignment=True,
+        )
+        return content, 1
+
     content = build_digest_lead_message(contexts, exec_name)
     return content, len(valid)
 

@@ -149,6 +149,44 @@ def format_relative_time(dt_obj):
     else: return "Ahora"
 
 # --- HELPER: Datos de Propiedad ---
+def select_owner_phone(prop, owner):
+    """Return the most usable owner phone stored by Prop360.
+
+    Prop360 often keeps an obsolete or concatenated value in ``telefono`` or
+    ``fono_1`` while a clean mobile number is present in another ``fono_*``
+    field.  This data is used by both the call and WhatsApp actions in the CRM,
+    so select by validity rather than by the historical field order.
+    """
+    from chatbot.phone_utils import normalize_phone_strict
+
+    candidates = []
+    for field in ("telefono", "fono_1", "fono_2", "fono_3", "movil_propietario"):
+        candidates.append(owner.get(field))
+    for field in ("movil_propietario", "fono_propietario"):
+        candidates.append(prop.get(field))
+
+    for phones in (owner.get("telefonos"), prop.get("telefonos")):
+        if isinstance(phones, (list, tuple)):
+            candidates.extend(phones)
+
+    fallback = next((str(phone).strip() for phone in candidates if phone and str(phone).strip()), "S/I")
+    valid_phones = []
+    seen = set()
+    for candidate in candidates:
+        normalized = normalize_phone_strict(str(candidate or ""))
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            valid_phones.append(normalized)
+
+    if not valid_phones:
+        return fallback
+
+    # The CRM's owner contact buttons include WhatsApp, for which a Chilean
+    # mobile is the most useful choice.  Do not make fono_3 a hard-coded rule:
+    # it wins only when it is a valid mobile number.
+    return next((phone for phone in valid_phones if phone.startswith("+569")), valid_phones[0])
+
+
 def get_real_property_data(db, codigo_propiedad):
     """Resolve property detail data from the canonical Prop360 collection.
 
@@ -176,7 +214,7 @@ def get_real_property_data(db, codigo_propiedad):
     precio_uf = prop.get("precio_uf") or summary.get("precio_uf")
     if precio_uf is None:
         precio_uf = (operation.get("precio_venta") or {}).get("precio_uf")
-    telefono = owner.get("telefono") or owner.get("fono_1") or owner.get("movil_propietario") or prop.get("movil_propietario") or prop.get("fono_propietario") or "S/I"
+    telefono = select_owner_phone(prop, owner)
     email = owner.get("email") or prop.get("email_propietario") or "S/I"
     nombre = owner.get("nombre") or prop.get("nombre_propietario") or "No registrado"
     comuna = prop.get("comuna") or location.get("comuna") or ""

@@ -18,6 +18,7 @@ from collections import Counter, defaultdict
 from datetime import timedelta
 import hashlib
 import uuid
+from urllib.parse import urlencode
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,34 @@ def _executive_name_from_cycle(db, cycle):
         if user:
             display = user.get("nombre", "")
     return display or str(cycle.get("assigned_to_user_id", "Ejecutivo"))
+
+
+def _build_grouped_digest_message(*, executive_name, lead_count):
+    """Build the concise CRM-list message for a multi-lead digest.
+
+    Individual deferred notifications intentionally reuse the normal individual
+    template.  A group, however, must not become a long WhatsApp list: the
+    executive receives the total and opens their own new non-HOT leads in CRM.
+    ``scope=mine`` is resolved from the authenticated CRM user, not from a
+    display name embedded in the URL.
+    """
+    base_url = str(getattr(Config, "CRM_BASE_URL", "")).rstrip("/")
+    query = urlencode({
+        "scope": "mine",
+        "temperatura": "COLD",
+        "estado": "NEW",
+        "orden": "recent_assigned",
+    })
+    crm_url = f"{base_url}/crm?{query}"
+    return "\n".join([
+        f"\U0001F4E5 *{lead_count} NUEVOS LEADS ASIGNADOS*",
+        "",
+        f"Hola {executive_name}, tienes *{lead_count} nuevos leads* para revisar.",
+        "",
+        f"\U0001F517 *Ver mis leads nuevos en CRM:*\n{crm_url}",
+        "",
+        "\u26A0\uFE0F Registra el resultado de la gesti\u00F3n en el CRM. Abrir WhatsApp o llamar no cuenta como gesti\u00F3n.",
+    ])
 
 
 # ---------------------------------------------------------------------------
@@ -473,7 +502,7 @@ def build_digest_message_content(db, notification):
         return None, 0
 
     from .crm_message_context import build_lead_notification_context
-    from .lead_router import build_digest_lead_message, format_whatsapp_template
+    from .lead_router import format_whatsapp_template
 
     contexts = [build_lead_notification_context(db, ld["_id"]) for ld in valid]
     exec_name = contexts[0].get("exec_name") or "Ejecutivo"
@@ -497,7 +526,10 @@ def build_digest_message_content(db, notification):
         )
         return content, 1
 
-    content = build_digest_lead_message(contexts, exec_name)
+    content = _build_grouped_digest_message(
+        executive_name=exec_name,
+        lead_count=len(valid),
+    )
     return content, len(valid)
 
 

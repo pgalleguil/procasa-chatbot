@@ -59,21 +59,28 @@ async def run_evaluation_and_persist_once(
                                              alert_cutover=_settings.CRM_SLA_ALERT_CUTOVER_AT, now=now)
     candidates = eval_report.get("alerts", [])
 
-    # Apply canary allowlist
-    allowlist = _settings.CRM_SLA_ALERTS_CANARY_RECIPIENT_USER_IDS
+    # Apply canary allowlist (or all if canary mode is off)
     authorized = []
     excluded_by_allowlist = 0
     excluded_no_phone = 0
-
-    for c in candidates:
-        uid = c.get("recipient_user_id", "")
-        if uid not in allowlist:
-            excluded_by_allowlist += 1
-            continue
-        if not c.get("executive_phone"):
-            excluded_no_phone += 1
-            continue
-        authorized.append(c)
+    if _settings.CRM_SLA_ALERTS_CANARY_MODE:
+        allowlist = _settings.CRM_SLA_ALERTS_CANARY_RECIPIENT_USER_IDS
+        for c in candidates:
+            uid = c.get("recipient_user_id", "")
+            if uid not in allowlist:
+                excluded_by_allowlist += 1
+                continue
+            if not c.get("executive_phone"):
+                excluded_no_phone += 1
+                continue
+            authorized.append(c)
+    else:
+        allowlist = set()
+        for c in candidates:
+            if not c.get("executive_phone"):
+                excluded_no_phone += 1
+                continue
+            authorized.append(c)
 
     # Sort by deadline ascending
     authorized.sort(key=lambda c: c.get("deadline_dt") or datetime.max.replace(tzinfo=timezone.utc))

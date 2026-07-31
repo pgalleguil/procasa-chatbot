@@ -116,9 +116,12 @@ def validate_persist_config() -> dict:
     if CRM_SLA_ALERT_CUTOVER_AT is None: failures.append("CRM_SLA_ALERT_CUTOVER_AT must be valid")
     if CRM_SLA_ALERTS_PERSIST_CONFIRMATION != REQUIRED_PERSIST_CONFIRMATION:
         failures.append("CRM_SLA_ALERTS_PERSIST_CONFIRMATION must be exactly 'PERSIST_CRM_SLA_ALERTS_V1'")
-    if not CRM_SLA_ALERTS_CANARY_MODE: failures.append("CRM_SLA_ALERTS_CANARY_MODE must be true")
-    if not CRM_SLA_ALERTS_CANARY_RECIPIENT_USER_IDS:
-        failures.append("CRM_SLA_ALERTS_CANARY_RECIPIENT_USER_IDS must not be empty")
+    if not CRM_SLA_ALERTS_CANARY_MODE:
+        # Permanent operation: no allowlist restriction, no canary expiration needed
+        pass
+    else:
+        if not CRM_SLA_ALERTS_CANARY_RECIPIENT_USER_IDS:
+            failures.append("CRM_SLA_ALERTS_CANARY_RECIPIENT_USER_IDS must not be empty when CANARY_MODE is true")
     if failures:
         return {"valid": False, "reason": "invalid_persist_configuration: " + "; ".join(failures)}
     return {"valid": True}
@@ -154,9 +157,12 @@ def validate_cutover_safe_for_persistence(now=None) -> dict:
             f"does not match today {current_cl.date()}"
         )}
 
-    # expires_at is required for --persist
+    # expires_at is required for --persist when canary mode is on
     if expires is None:
-        return {"valid": False, "reason": "canary_expiration_required: CRM_SLA_ALERT_CANARY_EXPIRES_AT must be set for --persist"}
+        if CRM_SLA_ALERTS_CANARY_MODE:
+            return {"valid": False, "reason": "canary_expiration_required: CRM_SLA_ALERT_CANARY_EXPIRES_AT must be set for --persist"}
+        # Permanent mode: no expiration check needed
+        return {"valid": True}
 
     expires_cl = expires.astimezone(chile_tz)
 

@@ -63,6 +63,12 @@ class Config:
     CRM_INACTIVE_NUDGE_ENABLED = os.getenv("CRM_INACTIVE_NUDGE_ENABLED", "false").lower() == "true"
     CRM_BASE_URL = os.getenv("CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")
 
+    # Chatbot inbound batching.  The quiet window is renewed for every inbound
+    # message, but a bounded total wait keeps an active conversation deliverable.
+    CHATBOT_BATCH_QUIET_SECONDS = int(os.getenv("CHATBOT_BATCH_QUIET_SECONDS", "15"))
+    CHATBOT_BATCH_MAX_WAIT_SECONDS = int(os.getenv("CHATBOT_BATCH_MAX_WAIT_SECONDS", "60"))
+    CHATBOT_BATCH_MAX_REGENERATIONS = int(os.getenv("CHATBOT_BATCH_MAX_REGENERATIONS", "2"))
+
     # === Phase 2 Management Enforcement Cutover ===
     # Cycles assigned before this timestamp are exempt from the new SLA policy.
     # They show as "Histórico" in the UI and are excluded from compliance metrics,

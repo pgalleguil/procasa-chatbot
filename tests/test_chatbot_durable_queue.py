@@ -194,7 +194,7 @@ def test_two_messages_in_window_make_one_batch_and_one_response():
     batches = db.collection.find({"kind": queue.KIND_BATCH})
     assert len(batches) == 1
     assert len(batches[0]["job_ids"]) == 2
-    assert batches[0]["window_end_at"] == NOW + timedelta(seconds=15)
+    assert batches[0]["window_end_at"] == NOW + timedelta(seconds=25)
 
     sent = []
 
@@ -208,7 +208,7 @@ def test_two_messages_in_window_make_one_batch_and_one_response():
 
     result = asyncio.run(queue.process_one_batch(
         db, worker_id="w1", llm=llm, sender=sender,
-        now=NOW + timedelta(seconds=15),
+        now=NOW + timedelta(seconds=25),
     ))
     assert result["state"] == queue.ST_RESPONDED
     assert sent == [("+56911112222", "respuesta")]

@@ -3543,6 +3543,7 @@ async def inactive_lead_nudge_loop():
             
             from chatbot.storage import get_db
             from chatbot.whatsapp_client import send_whatsapp_message
+            from chatbot.conversation_policy import nudge_eligibility
             db = get_db()
             
             now_utc = datetime.utcnow()
@@ -3586,11 +3587,25 @@ async def inactive_lead_nudge_loop():
                     "phone": 1, "messages": 1, "stage": 1,
                     "ejecutivo_asignado": 1, "prospecto": 1,
                     "nudge_count": 1, "nudge_sent_at": 1, "nudge_last_date": 1,
-                    "last_intent": 1, "lifecycle": 1
+                    "last_intent": 1, "lifecycle": 1, "conversation_status": 1,
+                    "human_takeover_at": 1, "bot_pausado": 1,
+                    "delivery_unknown_pending": 1, "pending_response": 1
                 }))
             leads = await run_db("nudge_loop_find", _fetch_nudge_leads)
             
             for lead in leads:
+                policy = nudge_eligibility(lead)
+                if not policy["eligible"]:
+                    _lead_id = lead["_id"]
+                    await run_db(
+                        "nudge_skip_policy",
+                        lambda: db["leads"].update_one({"_id": _lead_id}, {"$set": {
+                            "nudge_status": f"skipped_{policy['reason']}",
+                            "nudge_skip_reason": policy["reason"],
+                            "nudge_skip_evidence": policy["evidence"],
+                        }}),
+                    )
+                    continue
                 messages = lead.get("messages", [])
                 if not messages:
                     continue
@@ -3600,7 +3615,9 @@ async def inactive_lead_nudge_loop():
                     lead.get("ejecutivo_asignado") or
                     lead.get("prospecto", {}).get("ejecutivo")
                 )
-                if ejecutivo not in UNASSIGNED_LABELS:
+                if ejecutivo not in UNASSIGNED_LABELS and (
+                    lead.get("human_takeover_at") or (lead.get("lifecycle") or {}).get("human_takeover_at")
+                ):
                     logger.debug(f"[NUDGE] Omitido {lead.get('phone')}: ya asignado a {ejecutivo}.")
                     _lead_id = lead["_id"]
                     await run_db("nudge_skip_executive", lambda: db["leads"].update_one({"_id": _lead_id}, {"$set": {"nudge_status": "skipped_has_executive"}}))
@@ -3608,7 +3625,9 @@ async def inactive_lead_nudge_loop():
 
                 # ─── FILTRO 2: intención avanzada (visita, oferta, negociación) ───
                 last_intent = lead.get("last_intent") or lead.get("prospecto", {}).get("last_intent", "")
-                if str(last_intent).upper() in INTENTS_NO_NUDGE:
+                if str(last_intent).upper() in INTENTS_NO_NUDGE and (
+                    lead.get("human_takeover_at") or (lead.get("lifecycle") or {}).get("human_takeover_at")
+                ):
                     logger.debug(f"[NUDGE] Omitido {lead.get('phone')}: intención avanzada '{last_intent}'.")
                     _lead_id = lead["_id"]
                     await run_db("nudge_skip_intent", lambda: db["leads"].update_one({"_id": _lead_id}, {"$set": {"nudge_status": "skipped_advanced_intent"}}))

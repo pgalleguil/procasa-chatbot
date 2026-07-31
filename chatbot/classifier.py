@@ -1,6 +1,7 @@
 # chatbot/classifier.py
 import logging
 import re
+import unicodedata
 from config import Config
 from .utils import limpiar_telefono
 from .grok_client import client # Cliente OpenAI-compatible apuntando a DeepSeek
@@ -148,12 +149,36 @@ _PATRON_CORREDOR = re.compile(
     re.IGNORECASE
 )
 
+BROKER_CLASSIFIER_VERSION = "external_broker_v1"
+
+
+def _normalize_broker_text(value: str) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", text.casefold())).strip()
+
+
+def clasificar_corredor_externo(mensaje: str) -> dict:
+    """Deterministic, auditable external-broker classifier."""
+    text = _normalize_broker_text(mensaje)
+    negatives = ("no soy corredor", "no soy corredora", "comprando mediante una corredora",
+                 "publicada por una corredora", "corredora no me respondio")
+    if any(value in text for value in negatives):
+        return {"is_external_broker": False, "confidence": "none", "reason": "negated_or_third_party", "evidence": text, "version": BROKER_CLASSIFIER_VERSION}
+    explicit = ("soy corredor", "soy corredora", "soy colega", "soy asesora inmobiliaria", "soy asesor inmobiliario", "corredor inmobiliario", "agente inmobiliario", "trabajo en una corredora", "trabajo como corredor", "trabajo en remax", "trabajo en re max", "hacen canje", "aceptan canje", "ofrezco canje", "hago canje", "comparten comision", "trabajan con corredores", "corretaje compartido", "compartir comision", "representando a mi cliente", "representando a un cliente")
+    if any(value in text for value in explicit):
+        return {"is_external_broker": True, "confidence": "high", "reason": "explicit_external_broker", "evidence": text, "version": BROKER_CLASSIFIER_VERSION}
+    if ("tengo un cliente interesado" in text or "mis clientes buscan" in text) and any(value in text for value in ("canje", "comision", "corredor", "corredora", "remax", "re max")):
+        return {"is_external_broker": True, "confidence": "high", "reason": "intermediary_collaboration", "evidence": text, "version": BROKER_CLASSIFIER_VERSION}
+    return {"is_external_broker": False, "confidence": "none", "reason": "no_high_confidence_signal", "evidence": text, "version": BROKER_CLASSIFIER_VERSION}
+
+
 def es_corredor_externo(mensaje: str) -> bool:
     """
     Detecta si el mensaje proviene de un corredor de propiedades externo.
     Retorna True si se detectan patrones de corredor/canje.
     """
-    if _PATRON_CORREDOR.search(mensaje):
+    if clasificar_corredor_externo(mensaje)["is_external_broker"]:
         logger.info(f"[CORREDOR] Patrón de corredor externo detectado en mensaje.")
         return True
     return False

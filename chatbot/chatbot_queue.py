@@ -38,6 +38,18 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
+def _as_utc(value):
+    """Mongo may return naive UTC datetimes depending on client configuration."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _as_comparable(value, reference):
+    normalized = _as_utc(value)
+    return normalized.replace(tzinfo=None) if reference.tzinfo is None else normalized
+
+
 def _valid_text(value):
     text = str(value or "").strip()
     return text if text and not ID_LIKE_RE.fullmatch(text) else None
@@ -55,6 +67,24 @@ def ensure_queue_indexes(db):
         [("kind", ASCENDING), ("state", ASCENDING), ("window_end_at", ASCENDING)],
         name="batch_claim",
     )
+    # Exactly one active batch may exist for a conversation across webhook
+    # producers, workers and service instances.  The unique constraint is the
+    # concurrency boundary; the read below is only a recovery path after E11000.
+    coll.create_index(
+        [("active_conversation_key", ASCENDING)], unique=True,
+        partialFilterExpression={"kind": KIND_BATCH, "active_conversation_key": {"$exists": True}},
+        name="uniq_active_chatbot_batch",
+    )
+
+
+def _batch_settings(max_wait_seconds=None):
+    quiet = max(int(os.getenv("CHATBOT_BATCH_QUIET_SECONDS", "15")), 1)
+    maximum = max(int(os.getenv("CHATBOT_BATCH_MAX_WAIT_SECONDS", str(max_wait_seconds or 60))), quiet)
+    return quiet, maximum
+
+
+def _conversation_key(phone, conversation_id=None):
+    return f"conversation:{conversation_id}" if conversation_id else f"phone:{phone}"
 
 
 def create_inbound_job(
@@ -67,7 +97,7 @@ def create_inbound_job(
     text,
     received_at=None,
     is_from_me=False,
-    max_wait_seconds=15,
+    max_wait_seconds=None,
 ):
     """Idempotently persist one inbound and attach it to one durable batch."""
     provider_id = str(inbound_provider_message_id or "").strip()
@@ -114,39 +144,49 @@ def create_inbound_job(
             raise
         return existing["_id"]
 
-    # Reuse the open batch for this conversation. If two producers race, only
-    # one job can be attached because the job update below is conditional.
+    quiet_seconds, maximum_wait_seconds = _batch_settings(max_wait_seconds)
+    conversation_key = _conversation_key(phone, conversation_id)
+    # The unique partial index makes this insert atomic across processes.  A
+    # competing producer gets E11000 and attaches to the winning active batch.
     batch = coll.find_one({
         "kind": KIND_BATCH,
-        "phone": phone,
-        "state": ST_BATCHING,
-        "window_end_at": {"$gt": now},
-    }, sort=[("created_at", ASCENDING)])
+        "active_conversation_key": conversation_key,
+    })
     if batch is None:
         batch_id = f"batch:{uuid.uuid4()}"
-        window_end = now + timedelta(seconds=max_wait_seconds)
-        coll.insert_one({
-            "_id": batch_id,
-            "kind": KIND_BATCH,
-            "phone": phone,
-            "conversation_id": conversation_id,
-            "lead_id": lead_id,
-            "job_ids": [],
-            "state": ST_BATCHING,
-            "attempts": 0,
-            "window_end_at": window_end,
-            "created_at": now,
-            "updated_at": now,
-            "delivery_attempts": [],
-            "message_domain": "chatbot",
-            "message_type": "chatbot_response",
-            "recipient_role": "client",
-            "state_source": JOB_COLLECTION,
-            "responsible_service": "chatbot_response_delivery",
-            "idempotency_key": f"chatbot:batch:{batch_id}",
-        })
-    else:
-        batch_id = batch["_id"]
+        try:
+            coll.insert_one({
+                "_id": batch_id,
+                "kind": KIND_BATCH,
+                "phone": phone,
+                "conversation_id": conversation_id,
+                "lead_id": lead_id,
+                "active_conversation_key": conversation_key,
+                "job_ids": [],
+                "state": ST_BATCHING,
+                "attempts": 0,
+                "conversation_sequence": 0,
+                "window_started_at": now,
+                "last_message_at": now,
+                "window_end_at": now + timedelta(seconds=quiet_seconds),
+                "max_window_end_at": now + timedelta(seconds=maximum_wait_seconds),
+                "created_at": now,
+                "updated_at": now,
+                "delivery_attempts": [],
+                "message_domain": "chatbot",
+                "message_type": "chatbot_response",
+                "recipient_role": "client",
+                "state_source": JOB_COLLECTION,
+                "responsible_service": "chatbot_response_delivery",
+                "idempotency_key": f"chatbot:batch:{batch_id}",
+            })
+        except DuplicateKeyError:
+            batch = coll.find_one({"kind": KIND_BATCH, "active_conversation_key": conversation_key})
+            if batch is None:
+                raise
+        else:
+            batch = coll.find_one({"_id": batch_id})
+    batch_id = batch["_id"]
 
     attached = coll.update_one(
         {"_id": job_id, "kind": KIND_JOB, "state": ST_RECEIVED},
@@ -154,9 +194,21 @@ def create_inbound_job(
     )
     if attached.modified_count != 1:
         raise RuntimeError("inbound_job_attach_failed")
+    # A message may arrive while LLM generation is active.  It still attaches
+    # to the same active batch and advances its sequence; the worker will mark
+    # its stale snapshot and regenerate before provider delivery.
+    maximum_deadline = _as_comparable(batch.get("max_window_end_at", now + timedelta(seconds=maximum_wait_seconds)), now)
+    previous_deadline = _as_comparable(batch.get("window_end_at", now + timedelta(seconds=quiet_seconds)), now)
+    current_deadline = min(
+        now + timedelta(seconds=quiet_seconds),
+        maximum_deadline,
+    )
     coll.update_one(
-        {"_id": batch_id, "kind": KIND_BATCH, "state": ST_BATCHING},
-        {"$addToSet": {"job_ids": job_id}, "$set": {"updated_at": now}},
+        {"_id": batch_id, "kind": KIND_BATCH, "active_conversation_key": conversation_key},
+        {"$addToSet": {"job_ids": job_id}, "$set": {
+            "updated_at": now, "last_message_at": now,
+            "window_end_at": max(previous_deadline, current_deadline),
+        }, "$inc": {"conversation_sequence": 1}},
     )
     return job_id
 
@@ -257,6 +309,8 @@ def claim_pending_batch(db, *, worker_id, lease_seconds=120, now=None):
             "updated_at": now,
             "snapshot": messages,
             "combined_text": "\n".join(item["text"] for item in messages),
+            "snapshot_at": now,
+            "snapshot_sequence": candidate.get("conversation_sequence", 0),
             "delivery_token": delivery_token,
         }, "$inc": {"claim_count": 1}},
         return_document=ReturnDocument.AFTER,
@@ -304,9 +358,14 @@ def finalize_batch(db, *, batch_id, state, outbound_provider_message_id=None,
         update["accepted_delivery_token"] = delivery_token
     if state == ST_RESPONDED:
         update["responded_at"] = now
+    unset = {"lease_owner": "", "lease_until": ""}
+    if state in TERMINAL_STATES:
+        # Release the conversation only after a terminal delivery decision.
+        # Retryable batches deliberately keep ownership of the active key.
+        unset["active_conversation_key"] = ""
     result = db[JOB_COLLECTION].find_one_and_update(
         selector,
-        {"$set": update, "$unset": {"lease_owner": "", "lease_until": ""}},
+        {"$set": update, "$unset": unset},
         return_document=ReturnDocument.AFTER,
     )
     if not result:
@@ -455,42 +514,104 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
             error="invalid_or_empty_snapshot", worker_id=worker_id,
             delivery_token=token,
         )
-    try:
-        response = await llm(claimed["phone"], text)
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        return await asyncio.to_thread(
-            finalize_batch, db, batch_id=batch_id, state=ST_FAILED_RETRYABLE,
-            error=f"llm:{type(exc).__name__}:{str(exc)[:300]}", worker_id=worker_id,
-            delivery_token=token,
-            next_attempt_at=(now or utc_now()) + timedelta(seconds=30),
+    max_regenerations = max(int(os.getenv("CHATBOT_BATCH_MAX_REGENERATIONS", "2")), 0)
+    regenerations = 0
+    while True:
+        try:
+            response = await llm(claimed["phone"], text)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return await asyncio.to_thread(
+                finalize_batch, db, batch_id=batch_id, state=ST_FAILED_RETRYABLE,
+                error=f"llm:{type(exc).__name__}:{str(exc)[:300]}", worker_id=worker_id,
+                delivery_token=token,
+                next_attempt_at=(now or utc_now()) + timedelta(seconds=30),
+            )
+        response = _valid_text(response)
+        if not response:
+            # A blocked conversation deliberately produces no outbound message.
+            return await asyncio.to_thread(
+                finalize_batch, db, batch_id=batch_id, state=ST_RESPONDED,
+                error="suppressed_no_auto_response", worker_id=worker_id,
+                delivery_token=token,
+            )
+
+        latest = await asyncio.to_thread(
+            db[JOB_COLLECTION].find_one, {"_id": batch_id, "lease_owner": worker_id,
+                                           "delivery_token": token},
         )
-    response = _valid_text(response)
-    if not response:
-        return await asyncio.to_thread(
-            finalize_batch, db, batch_id=batch_id, state=ST_FAILED_RETRYABLE,
-            error="empty_response", worker_id=worker_id, delivery_token=token,
+        if not latest:
+            raise RuntimeError("batch_lease_lost_before_delivery")
+        if latest.get("conversation_sequence", 0) <= claimed.get("conversation_sequence", 0):
+            break
+        if regenerations >= max_regenerations:
+            await asyncio.to_thread(
+                record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
+                delivery_token=token, status="stale_regeneration_limit",
+                error="new_inbound_after_snapshot",
+            )
+            return await asyncio.to_thread(
+                # Do not retry the same stale snapshot indefinitely.  Closing
+                # this turn without delivery preserves the invariant that no
+                # incomplete response is sent and releases the next inbound
+                # message to form a fresh, complete turn.
+                finalize_batch, db, batch_id=batch_id, state=ST_FAILED_TERMINAL,
+                error="stale_regeneration_limit", worker_id=worker_id, delivery_token=token,
+            )
+        jobs = await asyncio.to_thread(lambda: list(db[JOB_COLLECTION].find({
+            "_id": {"$in": latest.get("job_ids", [])}, "kind": KIND_JOB,
+        }).sort("received_at", ASCENDING)))
+        messages = [
+            {"job_id": job["_id"], "provider_id": job.get("inbound_provider_message_id"),
+             "text": _valid_text(job.get("text")), "received_at": job.get("received_at")}
+            for job in jobs
+        ]
+        if not messages or any(not item["text"] for item in messages):
+            return await asyncio.to_thread(
+                finalize_batch, db, batch_id=batch_id, state=ST_FAILED_TERMINAL,
+                error="invalid_or_empty_snapshot", worker_id=worker_id, delivery_token=token,
+            )
+        claimed = await asyncio.to_thread(
+            db[JOB_COLLECTION].find_one_and_update,
+            {"_id": batch_id, "lease_owner": worker_id, "delivery_token": token},
+            {"$set": {"snapshot": messages, "combined_text": "\n".join(x["text"] for x in messages),
+                      "snapshot_at": utc_now(), "snapshot_sequence": latest.get("conversation_sequence", 0),
+                      "updated_at": utc_now()}},
+            return_document=ReturnDocument.AFTER,
         )
+        text = claimed["combined_text"]
+        regenerations += 1
 
     # Commercial work is a separate durable state machine. It observes the
     # verified inbound snapshot, but cannot reuse or block chatbot delivery.
     try:
-        from .commercial_intake import ensure_indexes, process_inbound
-        await asyncio.to_thread(ensure_indexes, db)
-        for item in claimed.get("snapshot") or []:
-            job = await asyncio.to_thread(
-                db[JOB_COLLECTION].find_one, {"_id": item["job_id"]}
-            )
-            if job:
-                await asyncio.to_thread(
-                    process_inbound, db,
-                    inbound_provider_id=item.get("provider_id"),
-                    phone=claimed["phone"], text=item.get("text") or "",
-                    received_at=job.get("received_at"), is_test=bool(job.get("is_test")),
+        lead = await asyncio.to_thread(db["leads"].find_one, {"phone": claimed["phone"]}, {"conversation_status": 1})
+        if (lead or {}).get("conversation_status") != "BLOCKED_EXTERNAL_BROKER":
+            from .commercial_intake import ensure_indexes, process_inbound
+            await asyncio.to_thread(ensure_indexes, db)
+            for item in claimed.get("snapshot") or []:
+                job = await asyncio.to_thread(
+                    db[JOB_COLLECTION].find_one, {"_id": item["job_id"]}
                 )
+                if job:
+                    await asyncio.to_thread(
+                        process_inbound, db,
+                        inbound_provider_id=item.get("provider_id"),
+                        phone=claimed["phone"], text=item.get("text") or "",
+                        received_at=job.get("received_at"), is_test=bool(job.get("is_test")),
+                    )
     except Exception:
         logger.exception("[COMMERCIAL_INTAKE] durable commercial processing failed")
+
+    from chatbot.conversation_policy import outbound_phone_request, safe_phone_free_response
+    if outbound_phone_request(response):
+        await asyncio.to_thread(
+            record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
+            delivery_token=token, status="blocked_phone_request",
+            error="outbound_explicit_phone_request",
+        )
+        response = safe_phone_free_response(response)
 
     await asyncio.to_thread(
         record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,

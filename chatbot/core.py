@@ -27,7 +27,7 @@ from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internaci
 from .utils import extraer_rut, extraer_email, safe_int_conversion, extraer_nombre_explicito
 from .utils import parse_bool
 from .alert_service import send_alert_once
-from .classifier import es_propietario, es_corredor_externo
+from .classifier import es_propietario, clasificar_corredor_externo
 from .processing_service import LeadProcessingService
 from .property_lookup import PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, get_prop_location, get_prop_operation
 
@@ -304,6 +304,18 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # NOTA: stage es un campo de nivel superior, no está dentro de 'prospecto'
     db = await _run_sync(get_db)
     lead_doc_full = await _run_sync(lambda: db["leads"].find_one({"phone": phone}) or {})
+    if lead_doc_full.get("conversation_status") == "BLOCKED_EXTERNAL_BROKER":
+        logger.info("[CORREDOR] Conversación bloqueada; inbound persistido sin respuesta automática.")
+        return ""
+    if any(phrase in msg_lower for phrase in ("no me escriban", "dejen de escribir", "no quiero mensajes", "stop")):
+        await _run_sync(db["leads"].update_one, {"phone": phone}, {"$set": {
+            "conversation_status": "STOPPED_BY_CLIENT",
+            "conversation_status_reason": "explicit_stop_request",
+            "conversation_status_evidence": original_message[:300],
+            "conversation_status_at": datetime.now(CHILE_TZ).isoformat(),
+            "conversation_status_version": "conversation_stop_v1",
+        }})
+        return ""
     prospecto_actual = lead_doc_full.get("prospecto", {})
     conversation_id = lead_doc_full.get("conversation_id") or prospecto_actual.get("conversation_id")
     if not conversation_id:
@@ -361,13 +373,26 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # =======================================================
     # Si el mensaje contiene frases de corredor (canje, representación, etc.),
     # informamos que PROCASA no opera con corredores externos y cerramos el diálogo.
-    if es_corredor_externo(original_message):
+    broker_result = clasificar_corredor_externo(original_message)
+    if broker_result["is_external_broker"]:
         respuesta_corredor = (
-            "Estimado/a, muchas gracias por contactarnos. "
-            "PROCASA no realiza operaciones de canje ni trabaja con corredores externos. "
-            "Si usted es cliente final y está buscando una propiedad, con gusto lo atendemos. "
-            "Que tenga un excelente día."
+            "Gracias por escribirnos. Por política de la empresa, no realizamos canjes "
+            "ni colaboraciones con corredores. Que tengas un buen día."
         )
+        blocked = await _run_sync(
+            db["leads"].update_one,
+            {"phone": phone, "conversation_status": {"$ne": "BLOCKED_EXTERNAL_BROKER"}},
+            {"$set": {
+                "conversation_status": "BLOCKED_EXTERNAL_BROKER",
+                "conversation_status_reason": broker_result["reason"],
+                "conversation_status_evidence": broker_result["evidence"],
+                "conversation_status_at": datetime.now(CHILE_TZ).isoformat(),
+                "conversation_status_version": broker_result["version"],
+            }},
+        )
+        if blocked.modified_count != 1:
+            logger.info("[CORREDOR] Otro worker ya bloqueó la conversación; no se repite rechazo.")
+            return ""
         logger.info(f"[CORREDOR] Respuesta de rechazo enviada a {phone}.")
         await _run_sync(guardar_mensaje, phone, "assistant", respuesta_corredor, {"tipo": "rechazo_corredor"})
         return respuesta_corredor
@@ -702,21 +727,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         )
     
     # --- CONTEXTO 1: ESTADO DE DATOS PERSONALES ---
-    datos_necesarios = {
-        "Nombre": prospecto_actual.get("nombre"),
-        "RUT": prospecto_actual.get("rut"),
-        "Email": prospecto_actual.get("email")
-    }
-    faltantes = [k for k, v in datos_necesarios.items() if not v]
-    
-    if faltantes:
-        system_parts.append(f"""
-        [ESTADO DE DATOS DEL CLIENTE]
-        Datos que FALTAN para Orden de Visita: {', '.join(faltantes)}.
-        INSTRUCCIÓN: Si hay intención clara de visitar, solicítalos amablemente.
-        """)
-    else:
-        system_parts.append("[ESTADO] ¡Tenemos todos los datos (Nombre, RUT, Email)! Solo coordina preferencia de hora (No confirmes, solo registra).")
+    # A visit lead is actionable with the WhatsApp identity already available.
+    # Name, RUT and email are optional enrichment, never a gate for alerting.
+    system_parts.append("""
+    [COORDINACIÓN DE VISITA]
+    El teléfono canónico ya está disponible por WhatsApp. Nunca solicites teléfono,
+    celular, WhatsApp ni número de contacto. Nombre, RUT y correo son opcionales:
+    no los presentes como requisito ni los solicites para la primera coordinación.
+    Si corresponde hacer una pregunta de visita, formula solo una: día o rango horario
+    preferido. No confirmes ni agendes una visita; el ejecutivo confirma disponibilidad.
+    """)
 
     # --- CONTEXTO 1.5: EVALUAR EJECUTIVO HISTÓRICO EFECTIVO ---
     current_exec = lead_doc_full.get("ejecutivo_asignado") or prospecto_actual.get("ejecutivo")
@@ -828,6 +848,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # CORRECCIÓN: Recargar prospecto_actual para reflejar el codigo ya guardado (16479)
     # y para que el log [DEEPSEEK PROPERTY_PAYLOAD] sea exacto y no muestre el código anterior.
     prospecto_actual = await _run_sync(obtener_prospecto, phone) or {}
+    # Canonical identity for the conversational pipeline.  Historical nested
+    # phone variants remain read-compatible but are not used as a primary source.
+    prospecto_actual["phone"] = lead_doc_full.get("phone") or phone
     logger.info(
         f"[PROPERTY_TRACE] origen=PRE_DEEPSEEK trace={trace_id} phone={phone} "
         f"prospecto.codigo={prospecto_actual.get('codigo')} prospecto.comuna={prospecto_actual.get('comuna')}"

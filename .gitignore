@@ -58,12 +58,23 @@ exports/
 scraping/
 scraping_convecta/
 scripts/
+!scripts/
+scripts/*
+!scripts/run_crm_sla_alert_persist_canary.py
+!scripts/run_crm_sla_alert_send_canary.py
+!scripts/report_crm_sla_alerts.py
 scripts_legacy/
 tests/
 !tests/
 tests/*
 !tests/test_document_message_guard.py
 !tests/test_chatbot_durable_queue.py
+!tests/test_chatbot_phase1.py
+!tests/test_crm_sla_alert_evaluator.py
+!tests/test_crm_sla_alert_pipeline.py
+!tests/test_crm_sla_alert_repository.py
+!tests/test_crm_sla_alert_worker.py
+!tests/test_crm_sla_alert_sender.py
 scraper*/
 reports/
 

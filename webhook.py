@@ -269,7 +269,15 @@ async def lifespan(app: FastAPI):
     crm_weekly_task = asyncio.create_task(crm_weekly_scheduler_loop())
     non_hot_digest_task = asyncio.create_task(non_hot_digest_worker_loop())
     sla_alert_task = asyncio.create_task(sla_alert_worker_loop())
-    
+
+    # CRM SLA Alert orchestrator — exclusive domain, behind feature flag
+    sla_orch_task = None
+    try:
+        from chatbot.crm_sla_alert_orchestrator import sla_alert_orchestrator_loop
+        sla_orch_task = asyncio.create_task(sla_alert_orchestrator_loop())
+    except Exception:
+        logger.warning("[SLA_ALERT] Orchestrator import failed — disabled", exc_info=True)
+
     # Chatbot response worker — durable inbound → batch → LLM → WASender
     from chatbot.chatbot_queue import chatbot_response_worker_loop as _crwl
     cb_task = asyncio.create_task(_crwl())
@@ -315,9 +323,12 @@ async def lifespan(app: FastAPI):
     c1_task.cancel()
     c2_task.cancel()
     cb_task.cancel()
+    if sla_orch_task is not None:
+        sla_orch_task.cancel()
     try:
         await asyncio.gather(
             n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, c1_task, c2_task,
+            *([sla_orch_task] if sla_orch_task is not None else []),
             return_exceptions=True
         )
     except Exception as e:

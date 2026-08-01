@@ -21,17 +21,18 @@ CANONICAL = {
 
 
 class FakeCollection:
-    def __init__(self):
+    def __init__(self, result=None):
         self.pipelines = []
+        self.result = result if result is not None else []
 
     def aggregate(self, pipeline):
         self.pipelines.append(pipeline)
-        return []
+        return self.result
 
 
 class FakeDB:
-    def __init__(self):
-        self.leads = FakeCollection()
+    def __init__(self, result=None):
+        self.leads = FakeCollection(result=result)
 
     def __getitem__(self, name):
         assert name == "leads"
@@ -156,3 +157,53 @@ def test_filter_clear_restores_empty_filter_state():
     assert "function resetFilters()" in html
     assert "FILTERS={period_start:FILTERS.period_start,period_end:FILTERS.period_end,period_preset:FILTERS.period_preset}" in html
     assert "renderChips();loadData()" in html
+
+
+def test_query_field_coverage_executes_filtered_period_pipeline(monkeypatch):
+    db = FakeDB(result=[{"_id": None, "total": 2, "populated": 1, "convertible": 2, "conflict": 0}])
+    monkeypatch.setattr(q, "get_db", lambda: db)
+    result = q.query_field_coverage(
+        period_start="2026-07-01",
+        period_end="2026-07-31",
+        universe="received_in_period",
+        filters={"source": "Portal A", "commune": "Ñuñoa"},
+    )
+    assert result["created_at"]["total"] == 2
+    assert result["created_at"]["coverage_pct"] == 100.0
+    assert "prospecto.origen" in str(db.leads.pipelines[0][0]["$match"])
+    assert "prospecto.comuna" in str(db.leads.pipelines[0][0]["$match"])
+
+
+def test_get_commercial_dashboard_resolves_all_parallel_queries(monkeypatch):
+    from analytics import leads_service as service
+
+    calls = []
+
+    def mark(name, payload):
+        def _fn(**kwargs):
+            calls.append((name, kwargs))
+            return payload
+        return _fn
+
+    kpis = {"leads_received": {"value": 2, "previous": 1, "variation_pct": 100.0}}
+    sla = {"overall_compliance_pct": 50.0, "overall_numerator": 1, "overall_denominator": 2}
+    monkeypatch.setattr(q, "query_commercial_kpis", mark("kpis", kpis))
+    monkeypatch.setattr(q, "query_commercial_funnel", mark("funnel", []))
+    monkeypatch.setattr(q, "query_sla_risk_panel", mark("sla", sla))
+    monkeypatch.setattr(q, "query_demand_by_price_ranges", mark("demand", {}))
+    monkeypatch.setattr(q, "query_commercial_executive_matrix", mark("executives", []))
+    monkeypatch.setattr(q, "query_commercial_property_ranking", mark("properties", {}))
+    monkeypatch.setattr(q, "query_source_performance", mark("sources", []))
+    monkeypatch.setattr(q, "query_comparative_trends", mark("trends", {}))
+    monkeypatch.setattr(q, "query_field_coverage", mark("coverage", {"created_at": {"total": 2}}))
+    monkeypatch.setattr(q, "query_commercial_insights", mark("insights", []))
+    service.L1_CACHE.clear()
+
+    result = service.get_commercial_dashboard(
+        period_start="2026-07-01", period_end="2026-07-31",
+        filters={"source": "Portal A"}, compare="none", period_preset="custom",
+    )
+    assert set(result) >= {"kpis", "funnel", "sla_risk", "demand_by_price", "executives", "properties", "sources", "trends", "coverage", "insights"}
+    assert result["coverage"] == {"created_at": {"total": 2}}
+    assert {name for name, _ in calls} == {"kpis", "funnel", "sla", "demand", "executives", "properties", "sources", "trends", "coverage", "insights"}
+    assert all(kwargs.get("filters") == {"source": "Portal A"} for name, kwargs in calls if name != "insights")

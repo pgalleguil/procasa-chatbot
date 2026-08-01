@@ -691,9 +691,10 @@ def query_field_coverage(
     """Cobertura de campos sobre el universo seleccionado."""
     db = get_db()
     match_parts = []
+    extra = _build_extra_filter(filters) or {}
     if period_start and period_end:
         start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
-        match_parts.append(_commercial_cohort_match(start_utc, end_utc, filters))
+        match_parts.append(_build_commercial_cohort_match(start_utc, end_utc, filters))
     elif universe != "received_in_period":
         match_parts.append(build_active_filter())
     user_filter = _build_user_filter(executive)

@@ -197,6 +197,13 @@ body.cd-page{background:var(--cd-bg);color:var(--cd-txt);font-family:'Outfit',sy
 .cd-stat .v{font-size:1.02rem;font-weight:700;color:var(--cd-txt)}
 .cd-stat .l{font-size:.62rem;color:var(--cd-txt3);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
 .cd-sla-bar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--cd-el);margin-bottom:8px}
+.cd-sla-profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cd-sla-profile{padding:12px 14px}
+.cd-sla-profile h3{font-size:.82rem;margin:0;color:var(--cd-txt)}
+.cd-sla-grid{display:grid;grid-template-columns:1fr auto;gap:5px 12px;font-size:.7rem}
+.cd-sla-grid span{color:var(--cd-txt3)}
+.cd-sla-grid b{text-align:right;color:var(--cd-txt)}
+.cd-sla-grid b.r{color:var(--cd-bad)}
 .cd-sla-bar div{height:100%;transition:width .4s;cursor:default}
 .cd-sla-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:.66rem;color:var(--cd-txt2);margin-bottom:12px}
 .cd-sla-leg .dot{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:-1px}
@@ -294,6 +301,7 @@ body.cd-page{background:var(--cd-bg);color:var(--cd-txt);font-family:'Outfit',sy
   .cd-chips.has{display:none}
 }
 @media(max-width:768px){
+  .cd-sla-profile-grid{grid-template-columns:1fr}
   .cd-head-r .cd-seg{flex:0 0 100%;width:100%;overflow-x:auto;scrollbar-width:none}
   .cd-head-r .cd-seg::-webkit-scrollbar{display:none}
   .cd-cmp-wrap{flex:1;min-width:0}
@@ -1092,11 +1100,11 @@ function rKPI(){
     h+='<div class="cd-kpi" style="--d:'+(FIRST_KPI?idx*45:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">'+name+'</span>'+info+'</div><div class="cd-kpi-val" data-val="'+(cur??'')+'">'+(cur!=null?F(cur):'S/I')+'</div><div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'+varHtml+'</div><div class="cd-kpi-foot">'+foot+'</div>'+cov+'</div>';
   });
   /* SLA card */
-  const slaPct=sla.within_sla_pct;
+  const slaPct=sla.overall_compliance_pct;
   const slaCls=slaPct==null?'flat':slaPct>=85?'up':slaPct>=50?'flat':'down';
   const slaCol=slaPct==null?pal.gray:slaPct>=85?pal.ok:slaPct>=50?pal.warn:pal.bad;
   const gap=slaPct!=null?(slaPct-90):null;
-  const slaTip=(D.meta?.sla_policy?.display_label||'SLA')+'. Universo: cohorte Hot con inicio SLA determinable.';
+  const slaTip=SLA_HELP;
   h+='<div class="cd-kpi cd-kpi-sla" style="--d:'+(FIRST_KPI?6*45:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">Cumplimiento SLA</span><button class="cd-info" data-tt="'+E(slaTip)+'" aria-label="Definici\u00f3n de SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-kpi-val" style="color:'+slaCol+'" data-sla="1">'+(slaPct!=null?P1(slaPct):'S/I')+'</div><div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span class="cd-kpi-meta">Meta <b>90 %</b></span>'+(gap!=null?'<span class="cd-kpi-var '+slaCls+'">'+(gap>=0?'+':'')+P1(gap).replace(' %',' pp')+'</span>':'')+'</div><div class="cd-kpi-foot"><span class="cd-kpi-meta">'+(sla.critical_open!=null?F(sla.critical_open)+' cr\u00edticos abiertos':'')+'</span></div></div>';
   $('kpiRow').innerHTML=h;
   /* animación de valores solo en primera carga */
@@ -1188,7 +1196,8 @@ function rev(){
 }
 
 /* ================= SLA ================= */
-function rsla(){
+const SLA_HELP='El SLA mide el tiempo h\u00e1bil transcurrido desde la asignaci\u00f3n del lead hasta que se registra un resultado v\u00e1lido de gesti\u00f3n en el CRM.\n\nLead:\nAtenci\u00f3n desde 120 minutos h\u00e1biles.\nPr\u00f3ximo a vencer desde 150 minutos h\u00e1biles.\nVencido desde 180 minutos h\u00e1biles.\n\nLead Hot:\nAtenci\u00f3n prioritaria desde 30 minutos h\u00e1biles.\nPr\u00f3ximo a vencer desde 45 minutos h\u00e1biles.\nVencido desde 60 minutos h\u00e1biles como Lead Hot.\n\nHorario de medici\u00f3n:\nLunes a viernes, de 09:00 a 19:00. El contador se pausa fuera de ese horario y durante el fin de semana.\n\nAbrir WhatsApp, llamar, enviar mensajes o cambiar el estado no detiene el SLA. Para acreditar la gesti\u00f3n es obligatorio registrar el resultado en el CRM.\n\nLos leads anteriores al inicio de esta pol\u00edtica aparecen como Hist\u00f3rico y no participan en las nuevas m\u00e9tricas.\n\nLas alertas autom\u00e1ticas, avisos al supervisor y la reasignaci\u00f3n de leads todav\u00eda no est\u00e1n activados.';
+function rslaLegacy(){
   const sla=D.sla_risk||{},body=$('slaBody');
   if(!body)return;
   $('slaPolicy').textContent=D.meta?.sla_policy?.display_label||'';
@@ -1233,6 +1242,24 @@ function rsla(){
   body.innerHTML=h;
   bindTips(body);
 }
+/* Canonical SLA renderer. */
+function rsla(){
+  const sla=D.sla_risk||{},body=$('slaBody');
+  if(!body)return;
+  $('slaPolicy').textContent=D.meta?.sla_policy?.display_label||sla.sla_policy?.display_label||'';
+  const pal=PAL(),pct=sla.overall_compliance_pct;
+  const col=pct==null?pal.gray:pct>=85?pal.ok:pct>=50?pal.warn:pal.bad;
+  const lead=sla.lead||{},hot=sla.lead_hot||{},ex=sla.excluded||{};
+  const val=v=>v==null?'S/I':F(v);
+  const metric=(label,value,cls='')=>'<span>'+label+'</span><b class="'+cls+'">'+val(value)+'</b>';
+  const profile=(label,b,isHot)=>'<div class="cd-card cd-sla-profile"><div class="cd-card-h"><h3>'+label+'</h3><button class="cd-info" data-tt="'+E(isHot?'Lead Hot: 30/45/60 minutos h\u00e1biles.':'Lead: 120/150/180 minutos h\u00e1biles.')+'" aria-label="Definici\u00f3n '+label+'"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-sla-grid">'
+    +metric('Elegibles',b.eligible)+metric('Normal abiertos',b.open_normal)+metric('Atenci\u00f3n',b.attention)+metric('Pr\u00f3ximo a vencer',b.near_breach)+metric('Vencidos',b.breached,b.breached?'r':'')+metric('Gestionados dentro',b.managed_within)+metric('Gestionados fuera',b.managed_outside)+metric('Mediana',b.median_minutes==null?null:F(b.median_minutes)+' min')+metric('P90',b.p90_minutes==null?null:F(b.p90_minutes)+' min')+'</div></div>';
+  let h='<div class="cd-sla-top"><div class="cd-sla-main"><div class="cd-sla-pct" style="color:'+col+'">'+P1(pct)+'</div><div class="cd-sla-gap">Cumplimiento definitivo</div></div><div class="cd-sla-stats"><div class="cd-stat"><div class="v">'+val(sla.overall_numerator)+'</div><div class="l">Dentro de plazo</div></div><div class="cd-stat"><div class="v">'+val(sla.overall_denominator)+'</div><div class="l">Denominador</div></div><div class="cd-stat"><div class="v">'+val(ex.historical)+'</div><div class="l">Hist\u00f3ricos excluidos</div></div><div class="cd-stat"><div class="v">'+val((ex.not_assigned||0)+(ex.insufficient_data||0))+'</div><div class="l">Sin cobertura</div></div></div></div>';
+  h+='<div class="cd-sec-t">Estado SLA por clasificaci\u00f3n <button class="cd-info" data-tt="'+E(SLA_HELP)+'" aria-label="C\u00f3mo funciona el SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-sla-profile-grid">'+profile('Lead',lead,false)+profile('Lead Hot',hot,true)+'</div>';
+  h+='<div class="cd-sla-gap" style="margin-top:10px">Hist\u00f3ricos excluidos: <b>'+val(ex.historical)+'</b> \u00b7 Sin asignaci\u00f3n: <b>'+val(ex.not_assigned)+'</b> \u00b7 Cobertura insuficiente: <b>'+val(ex.insufficient_data)+'</b></div>';
+  body.innerHTML=h;bindTips(body);
+}
+
 function bandIntervalText(band,idx){
   const mins=[
     {min:0,max:60,text:'Menos de 60 min'},

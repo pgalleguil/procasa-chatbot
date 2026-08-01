@@ -2,10 +2,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from chatbot.constants import CHILE_TZ
+from chatbot.crm_metrics import (
+    calculate_sla,
+    coerce_utc_datetime,
+    is_pre_visual_cutover,
+    resolve_hot_start_at,
+)
 from chatbot.storage import get_db
+from config import Config
 
 ACTIVE_STAGES = ["ARCHIVED", "CLOSED_WON", "CLOSED_LOST"]
 UNASSIGNED_VALUES = ["Sin Asignar", "No Asignado", None, ""]
@@ -1814,35 +1821,10 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None,
     visit_scheduled = _stage_count("VISIT_SCHEDULED", start_utc, end_utc)
     visit_scheduled_prev = _stage_count("VISIT_SCHEDULED", prev_start, prev_end) if include_comparison else None
 
-    # KPI 5: SLA
-    sla_parts = [
-        _normalized_created_at_stage(),
-        {"$match": {"$expr": {"$and": [
-            {"$gte": ["$_created_normalized", start_utc]},
-            {"$lt": ["$_created_normalized", end_utc]},
-        ]}}},
-    ]
-    if extra:
-        sla_parts.append({"$match": extra})
-    sla_parts.extend([
-        {"$match": {"$or": [
-            {"temperature_history.value": "HOT"},
-            {"temperature_history.temperature": "HOT"},
-        ]}},
-        {"$match": {"lifecycle.first_valid_management_at": {"$ne": None}}},
-        {"$addFields": {
-            "_sla_start": {"$ifNull": [{"$toDate": "$lifecycle.assigned_at"}, "$_created_normalized"]},
-            "_mgmt": {"$toDate": "$lifecycle.first_valid_management_at"},
-        }},
-        {"$addFields": {
-            "_resp_min": {"$dateDiff": {"startDate": "$_sla_start", "endDate": "$_mgmt", "unit": "minute"}},
-        }},
-        {"$match": {"_resp_min": {"$lt": 180}}},
-        {"$count": "c"},
-    ])
-    sla_within = list(db["leads"].aggregate(sla_parts))
-    sla_managed = sla_within[0]["c"] if sla_within else 0
-    sla_pct_val = _pct(sla_managed, hot) if hot else None
+    # SLA is calculated once by query_sla_risk_panel using the canonical CRM
+    # business-minute policy. The service attaches that result to this legacy
+    # KPI field after both read-only queries complete.
+    sla_pct_val = None
 
     # KPI 6: Cierres (pipeline_stage actual)
     closed_won = _stage_count("CLOSED_WON", start_utc, end_utc)
@@ -1861,7 +1843,7 @@ def query_commercial_kpis(period_start=None, period_end=None, filters=None,
         "leads_hot_current": {"value": hot_current, "universe": "temperatura_actual"},
         "visit_intent": {"value": visit_intent, "previous": visit_intent_prev, "variation_pct": _var(visit_intent, visit_intent_prev), "universe": "cohorte"},
         "visits_scheduled": {"value": visit_scheduled, "previous": visit_scheduled_prev, "variation_pct": _var(visit_scheduled, visit_scheduled_prev), "universe": "cohorte"},
-        "sla_compliance": {"value": sla_pct_val, "previous": None, "pp_change": None, "universe": "cohorte_hot", "sla_policy": "SLA: 3h corridas"},
+        "sla_compliance": {"value": sla_pct_val, "previous": None, "pp_change": None, "universe": "sla_risk_panel", "sla_policy": "SLA: minutos h\u00e1biles"},
         "closed_won": {"value": closed_won, "previous": closed_won_prev, "variation_pct": _var(closed_won, closed_won_prev), "universe": "cohorte"},
         "_meta": {
             "period_start": period_start, "period_end": period_end,
@@ -1953,234 +1935,170 @@ def query_commercial_funnel(period_start=None, period_end=None, filters=None):
 # 4. SLA RISK PANEL (CORREGIDO)
 # =============================================================================
 
+def _sla_percentile(values, percentile):
+    values = sorted(float(value) for value in values if value is not None)
+    if not values:
+        return None
+    position = (len(values) - 1) * percentile / 100
+    lower = int(position)
+    upper = min(lower + 1, len(values) - 1)
+    return round(values[lower] + (values[upper] - values[lower]) * (position - lower), 1)
+
+
+def _sla_bucket():
+    return {
+        "eligible": 0, "open_normal": 0, "attention": 0,
+        "near_breach": 0, "breached": 0,
+        "managed_within": 0, "managed_outside": 0,
+        "median_minutes": None, "p90_minutes": None,
+        "_managed_minutes": [],
+    }
+
+
+def build_sla_risk_payload(leads, *, now=None, cutover_at=None):
+    """Build the dashboard SLA contract from canonical lead evidence only."""
+    now = coerce_utc_datetime(now) or datetime.now(timezone.utc)
+    cutover = coerce_utc_datetime(cutover_at)
+    buckets = {"lead": _sla_bucket(), "lead_hot": _sla_bucket()}
+    managed_durations = {"lead": [], "lead_hot": []}
+    excluded = {"historical": 0, "not_assigned": 0, "insufficient_data": 0}
+
+    for lead in leads:
+        lifecycle = lead.get("lifecycle") or {}
+        assigned = coerce_utc_datetime(lifecycle.get("assigned_at"))
+        managed = coerce_utc_datetime(lifecycle.get("first_valid_management_at"))
+        if not assigned:
+            excluded["not_assigned"] += 1
+            continue
+        if cutover and is_pre_visual_cutover(assigned, cutover=cutover):
+            excluded["historical"] += 1
+            continue
+        if managed and managed < assigned:
+            excluded["insufficient_data"] += 1
+            continue
+
+        history = lead.get("temperature_history") or []
+        has_hot_evidence = str(lead.get("lead_temperature_effective") or "").upper() == "HOT"
+        has_hot_evidence = has_hot_evidence or any(
+            str((entry or {}).get("value") or (entry or {}).get("temperature") or "").upper() == "HOT"
+            for entry in history if isinstance(entry, Mapping)
+        )
+        hot_start = resolve_hot_start_at(
+            assigned_at=assigned,
+            temperature_history=history,
+            effective_temperature=lead.get("lead_temperature_effective"),
+        ) if has_hot_evidence else None
+        # The SLA is closed at first valid management. A Hot event after that
+        # point cannot reclassify the already-closed Lead cycle.
+        profile = "lead_hot" if hot_start and (not managed or hot_start < managed) else "lead"
+        if has_hot_evidence and not hot_start:
+            excluded["insufficient_data"] += 1
+            continue
+        sla = calculate_sla(
+            assigned_at=assigned,
+            first_valid_management_at=managed,
+            now=now,
+            temperature="HOT" if profile == "lead_hot" else "COLD",
+            hot_started_at=hot_start,
+            require_hot_start=(profile == "lead_hot"),
+        )
+        if profile == "lead_hot" and hot_start and hot_start > assigned:
+            # A Lead breach before Hot conversion remains an outside-SLA
+            # result even if the later Hot segment itself was short.
+            pre_hot = calculate_sla(
+                assigned_at=assigned,
+                first_valid_management_at=hot_start,
+                now=now,
+                temperature="COLD",
+            )
+            if pre_hot.get("canonical_state") == "MANAGED_OUTSIDE_SLA":
+                sla["canonical_state"] = "MANAGED_OUTSIDE_SLA"
+            elif pre_hot.get("canonical_state") == "BREACHED":
+                sla["canonical_state"] = "BREACHED"
+        if sla.get("canonical_state") in {"SLA_NOT_STARTED", "INSUFFICIENT_DATA"}:
+            excluded["insufficient_data"] += 1
+            continue
+
+        bucket = buckets[profile]
+        bucket["eligible"] += 1
+        minutes = sla.get("hot_minutes") if profile == "lead_hot" else sla.get("minutes")
+        if managed:
+            bucket["managed_within" if sla["canonical_state"] == "MANAGED_WITHIN_SLA" else "managed_outside"] += 1
+            if minutes is not None:
+                managed_durations[profile].append(minutes)
+        elif sla["canonical_state"] == "ACTIVE_NORMAL":
+            bucket["open_normal"] += 1
+        elif sla["canonical_state"] == "ATTENTION":
+            bucket["attention"] += 1
+        elif sla["canonical_state"] == "NEAR_BREACH":
+            bucket["near_breach"] += 1
+        elif sla["canonical_state"] == "BREACHED":
+            bucket["breached"] += 1
+
+    for bucket in buckets.values():
+        profile = "lead" if bucket is buckets["lead"] else "lead_hot"
+        bucket.pop("_managed_minutes", None)
+        bucket["median_minutes"] = _sla_percentile(managed_durations[profile], 50)
+        bucket["p90_minutes"] = _sla_percentile(managed_durations[profile], 90)
+    overall_numerator = sum(bucket["managed_within"] for bucket in buckets.values())
+    overall_denominator = overall_numerator + sum(
+        bucket["managed_outside"] + bucket["breached"] for bucket in buckets.values()
+    )
+    overall_pct = _coverage_pct(overall_numerator, overall_denominator) if overall_denominator else None
+    policy_cutover = cutover.isoformat() if cutover else None
+    return {
+        "policy_timezone": "America/Santiago",
+        "business_hours": {"days": "lunes-viernes", "start": "09:00", "end": "19:00"},
+        "policy_cutover_at": policy_cutover,
+        "overall_compliance_pct": overall_pct,
+        "overall_numerator": overall_numerator,
+        "overall_denominator": overall_denominator,
+        "lead": buckets["lead"], "lead_hot": buckets["lead_hot"],
+        "excluded": excluded,
+        "within_sla_pct": overall_pct,
+        "critical_open": buckets["lead"]["breached"] + buckets["lead_hot"]["breached"],
+        "no_management": sum(bucket["open_normal"] + bucket["attention"] + bucket["near_breach"] + bucket["breached"] for bucket in buckets.values()),
+        "eligible_total": sum(bucket["eligible"] for bucket in buckets.values()),
+        "missing_reference": excluded["insufficient_data"],
+        "risk_bands": [],
+        "distribution": [],
+        "sla_policy": {
+            "type": "business_minutes", "threshold_minutes": 180,
+            "display_label": "SLA vigente: minutos h\u00e1biles",
+            "timezone": "America/Santiago",
+            "business_hours": "Lunes a viernes, 09:00-19:00",
+        },
+    }
+
+
 def query_sla_risk_panel(period_start=None, period_end=None, filters=None):
-    """SLA risk panel with corrected SLA start and stock separation.
-    SLA: 3 horas calendario (limitaci\u00f3n MongoDB Atlas free tier).
-    Gestin: lifecycle.first_valid_management_at can\u00f3nico del CRM.
-    """
+    """Canonical SLA panel using business minutes and verified assignment evidence."""
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
-    now = datetime.now(timezone.utc)
-
     pipeline = [
         _normalized_created_at_stage(),
         {"$match": {"$expr": {"$and": [
             {"$gte": ["$_created_normalized", start_utc]},
             {"$lt": ["$_created_normalized", end_utc]},
         ]}}},
-        {"$addFields": {
-            "_is_hot": {"$cond": [{"$or": [
-                {"$eq": ["$lead_temperature_effective", "HOT"]},
-                {"$gt": [{"$size": {
-                    "$ifNull": [{"$filter": {
-                        "input": {"$ifNull": ["$temperature_history", []]},
-                        "cond": {"$eq": [{"$toUpper": {"$ifNull": ["$$this.value", "$$this.temperature", ""]}}, "HOT"]},
-                    }}, []]
-                }}, 0]},
-            ]}, 1, 0]},
-            "_sla_origin": {"$cond": [
-                {"$ne": [{"$toDate": "$lifecycle.assigned_at"}, None]},
-                "assigned_at",
-                {"$cond": [
-                    {"$eq": ["$lead_temperature_effective", "HOT"]},
-                    "created_at_verified",
-                    {"$cond": [
-                        {"$gt": [{"$size": {
-                            "$ifNull": [{"$filter": {
-                                "input": {"$ifNull": ["$temperature_history", []]},
-                                "cond": {"$and": [
-                                    {"$eq": [{"$toUpper": {"$ifNull": ["$$this.value", "$$this.temperature", ""]}}, "HOT"]},
-                                    {"$lte": [{"$toDate": {"$ifNull": ["$$this.at", "$$this.timestamp"]}}, "$_created_normalized"]},
-                                ]},
-                            }}, []]
-                        }}, 0]},
-                        "created_at_verified",
-                        "undetermined"
-                    ]}
-                ]}
-            ]},
-            "_sla_start": {"$ifNull": [{"$toDate": "$lifecycle.assigned_at"}, "$_created_normalized"]},
-            "_mgmt": {"$toDate": "$lifecycle.first_valid_management_at"},
-            "_is_vi": {"$cond": [{"$or": [
-                {"$in": [{"$ifNull": ["$bi_analytics_global.RESULTADO_CHAT", ""]}, list(VISIT_RESULTS)]},
-                {"$in": [{"$ifNull": ["$last_intent", ""]}, list(VISIT_RESULTS)]},
-                {"$in": [{"$ifNull": ["$pipeline_stage", ""]}, ["VISIT_SCHEDULED", "VISIT_DONE"]]},
-            ]}, 1, 0]},
-        }},
-        {"$match": {"_is_hot": 1}},
-        {"$addFields": {
-            "_elapsed": {"$dateDiff": {
-                "startDate": "$_sla_start",
-                "endDate": {"$ifNull": ["$_mgmt", now]},
-                "unit": "minute",
-            }},
-        }},
-        {"$group": {
-            "_id": None,
-            "total_hot": {"$sum": 1},
-            "with_mgmt": {"$sum": {"$cond": [{"$ne": ["$_mgmt", None]}, 1, 0]}},
-            "sla_start_origins": {"$push": "$_sla_origin"},
-            "critical_open": {"$sum": {"$cond": [
-                {"$and": [{"$eq": ["$_mgmt", None]}, {"$gte": ["$_elapsed", 180]}]}, 1, 0
-            ]}},
-            "breached_ever": {"$sum": {"$cond": [
-                {"$and": [{"$ne": ["$_mgmt", None]}, {"$gte": ["$_elapsed", 180]}]}, 1, 0
-            ]}},
-            "vi_risk": {"$sum": {"$cond": [
-                {"$and": [{"$eq": ["$_is_vi", 1]}, {"$eq": ["$_mgmt", None]}, {"$gte": ["$_elapsed", 180]}]}, 1, 0
-            ]}},
-            "no_mgmt": {"$sum": {"$cond": [{"$eq": ["$_mgmt", None]}, 1, 0]}},
-            "recovered": {"$sum": {"$cond": [
-                {"$and": [{"$ne": ["$_mgmt", None]}, {"$gte": ["$_elapsed", 180]}]}, 1, 0
-            ]}},
-            "minutes_dist": {"$push": {
-                "minutes": "$_elapsed",
-                "managed": {"$cond": [{"$ne": ["$_mgmt", None]}, 1, 0]},
-                "has_visit": "$_is_vi",
-            }},
+        {"$project": {
+            "_id": 1,
+            "lifecycle.assigned_at": 1,
+            "lifecycle.first_valid_management_at": 1,
+            "lead_temperature_effective": 1,
+            "temperature_history": 1,
         }},
     ]
-
     raw = list(db["leads"].aggregate(pipeline))
-    if not raw:
-        return default_sla_response()
-
-    r = raw[0]
-    total_hot = r["total_hot"]
-    # Classify SLA start origins
-    origins = r.get("sla_start_origins", [])
-    sla_origin_counts = {
-        "assigned_at": origins.count("assigned_at"),
-        "created_at_verified": origins.count("created_at_verified"),
-        "hot_detected_at": origins.count("hot_detected_at"),
-        "human_escalation_at": origins.count("human_escalation_at"),
-        "undetermined": origins.count("undetermined"),
-    }
-    sla_evidenced = sla_origin_counts.get("assigned_at", 0)
-    sla_fallback = sla_origin_counts.get("created_at_verified", 0)
-    sla_undetermined = sla_origin_counts.get("undetermined", 0)
-
-    # Critical/breach should only count from DETERMINED origins (not undetermined)
-    total_determined = total_hot - sla_undetermined
-    within = sum(1 for d in r["minutes_dist"] if d["minutes"] is not None and d["minutes"] < 180 and d["managed"])
-    within_pct = _coverage_pct(within, total_hot)
-    mins_all = [d["minutes"] for d in r["minutes_dist"] if d["minutes"] is not None]
-    mins_managed = sorted([d["minutes"] for d in r["minutes_dist"] if d["minutes"] is not None and d["managed"]])
-
-    def pctl(arr, p):
-        if not arr:
-            return None
-        k = (len(arr) - 1) * p / 100
-        f = int(k)
-        c = f + 1
-        if c >= len(arr):
-            return arr[f]
-        return arr[f] + (k - f) * (arr[c] - arr[f])
-
-    # Critical/breach stats EXCLUDING undetermined
-    critical_open = r["critical_open"]
-    breached_ever = r["breached_ever"]
-    # For percentage calculations, use total_determined as denominator
-    within_pct_determined = _coverage_pct(within, total_determined) if total_determined else None
-
-    # Risk bands for pending leads (with determined SLA start)
-    eligible_leads = [d for d in r["minutes_dist"] if not d.get("managed") and d.get("minutes") is not None]
-    missing_ref_count = len([d for d in r["minutes_dist"] if not d.get("managed") and d.get("minutes") is None])
-    eligible_total = len(eligible_leads)
-
-    def _band_pct(count, total):
-        return round(count / total * 100, 1) if total else None if total == 0 else None
-
-    risk_bands = [
-        {"key": "within_target", "label": "Dentro de plazo",
-         "min_minutes": 0, "max_minutes_exclusive": 60,
-         "count": sum(1 for d in eligible_leads if d["minutes"] < 60),
-         "percentage": None},
-        {"key": "attention_required", "label": "Requiere atenci\u00f3n",
-         "min_minutes": 60, "max_minutes_exclusive": 150,
-         "count": sum(1 for d in eligible_leads if 60 <= d["minutes"] < 150),
-         "percentage": None},
-        {"key": "imminent_risk", "label": "Riesgo inminente",
-         "min_minutes": 150, "max_minutes_exclusive": 180,
-         "count": sum(1 for d in eligible_leads if 150 <= d["minutes"] < 180),
-         "percentage": None},
-        {"key": "sla_breached", "label": "SLA vencido",
-         "min_minutes": 180, "max_minutes_exclusive": None,
-         "count": sum(1 for d in eligible_leads if d["minutes"] >= 180),
-         "percentage": None},
-    ]
-    for band in risk_bands:
-        band["percentage"] = _band_pct(band["count"], eligible_total)
-
-    return {
-        "total_hot": total_hot,
-        "total_determined": total_determined,
-        "total_undetermined": sla_undetermined,
-        "within_sla_pct": within_pct_determined,
-        "within_sla_pct_including_undetermined": within_pct,
-        "critical_open": critical_open,
-        "critical_open_excluding_undetermined": critical_open,  # Already excludes undetermined
-        "breached_during_period": breached_ever,
-        "recovered_after_breach": r["recovered"],
-        "visit_intent_at_risk": r["vi_risk"],
-        "median_response_minutes": round(pctl(mins_managed, 50), 1) if mins_managed else None,
-        "p90_response_minutes": round(pctl(mins_managed, 90), 1) if mins_managed else None,
-        "no_management": r["no_mgmt"],
-        "undetermined_no_management": sum(
-            1 for d in r["minutes_dist"]
-            if not d.get("managed") and origins[sorted(origins).index("undetermined") if "undetermined" in origins else 0:].count("undetermined") > 0
-        ) if False else 0,  # Simplified: we just report origin counts
-        "distribution": [
-            {"label": "Menos de 30 min", "count": sum(1 for m in mins_all if m < 30)},
-            {"label": "30-60 min", "count": sum(1 for m in mins_all if 30 <= m < 60)},
-            {"label": "1-3 horas", "count": sum(1 for m in mins_all if 60 <= m < 180)},
-            {"label": "M\u00e1s de 3 horas", "count": sum(1 for m in mins_all if m >= 180)},
-            {"label": "Sin inicio SLA determinable", "count": sla_undetermined},
-        ],
-        "risk_bands": risk_bands,
-        "eligible_total": eligible_total,
-        "missing_reference": missing_ref_count,
-        "conversion_table": build_conversion_table(r["minutes_dist"]),
-        "sla_start_coverage": {
-            "total": total_hot,
-            "determined": total_determined,
-            "undetermined": sla_undetermined,
-            "by_origin": sla_origin_counts,
-            "assigned_at_pct": _coverage_pct(sla_origin_counts.get("assigned_at", 0), total_hot),
-            "created_at_verified_pct": _coverage_pct(sla_origin_counts.get("created_at_verified", 0), total_hot),
-            "undetermined_pct": _coverage_pct(sla_origin_counts.get("undetermined", 0), total_hot),
-            "note": "assigned_at = lifecycle.assigned_at existe. created_at_verified = lead naci\u00f3 Hot o temperatura lo confirma desde creaci\u00f3n. undetermined = no se pudo determinar inicio SLA.",
-        },
-        "sla_policy": {
-            "type": "calendar_minutes", "threshold_minutes": 180,
-            "display_label": "SLA actual: 3 horas corridas",
-            "timezone": "America/Santiago",
-            "note": "Calendar minutes (no business hours) debido a limitaci\u00f3n de MongoDB Atlas free tier ($function no soportado). En M10+ migrar a calculate_business_minutes del CRM.",
-        },
-    }
+    return build_sla_risk_payload(
+        raw,
+        now=datetime.now(timezone.utc),
+        cutover_at=getattr(Config, "CRM_SLA_VISUAL_CUTOVER_AT", None),
+    )
 
 
 def default_sla_response():
-    return {
-        "total_hot": 0, "total_determined": 0, "total_undetermined": 0,
-        "within_sla_pct": None, "within_sla_pct_including_undetermined": None,
-        "critical_open": 0, "critical_open_excluding_undetermined": 0,
-        "breached_during_period": 0, "recovered_after_breach": 0,
-        "visit_intent_at_risk": 0,
-        "median_response_minutes": None, "p90_response_minutes": None,
-        "no_management": 0, "distribution": [], "conversion_table": [],
-        "risk_bands": [], "eligible_total": 0, "missing_reference": 0,
-        "sla_start_coverage": {
-            "total": 0, "determined": 0, "undetermined": 0,
-            "by_origin": {"assigned_at": 0, "created_at_verified": 0, "hot_detected_at": 0, "human_escalation_at": 0, "undetermined": 0},
-            "assigned_at_pct": None, "created_at_verified_pct": None, "undetermined_pct": None,
-        },
-        "sla_policy": {
-            "type": "calendar_minutes", "threshold_minutes": 180,
-            "display_label": "SLA actual: 3 horas corridas",
-            "timezone": "America/Santiago",
-        },
-    }
+    return build_sla_risk_payload([])
 
 
 def build_conversion_table(minutes_dist):

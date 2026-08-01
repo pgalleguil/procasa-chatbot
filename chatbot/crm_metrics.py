@@ -291,7 +291,8 @@ def active_assignment_cycle(db, lead_id):
 
 
 def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
-                  temperature=None, hot_started_at=None) -> dict[str, Any]:
+                  temperature=None, hot_started_at=None,
+                  require_hot_start=False) -> dict[str, Any]:
     """Calculate SLA with differentiated thresholds for Lead vs Lead Hot.
 
     Lead thresholds:   0-119 good, 120-149 warning, 150-179 near_critical, 180+ critical
@@ -304,7 +305,11 @@ def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
     hot_start = coerce_utc_datetime(hot_started_at) if hot_started_at else None
     current = coerce_utc_datetime(now) if now is not None else utc_now()
     if not start:
-        return {"status": "unknown", "minutes": None, "fulfilled": False}
+        return {
+            "status": "unknown", "canonical_state": "SLA_NOT_STARTED",
+            "minutes": None, "hot_minutes": None, "fulfilled": False,
+            "coverage": "insufficient_data",
+        }
     boundary = end or current
     total_minutes = max(0, calculate_business_minutes(start.astimezone(CHILE_TZ), boundary.astimezone(CHILE_TZ)))
 
@@ -312,38 +317,85 @@ def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
     # already HOT at assignment, its SLA segment starts at sla_started_at.
     is_hot = str(temperature or "").upper() == "HOT"
     hot_minutes = None
-    if is_hot and not end:
-        hot_boundary = current
-        hot_base = hot_start or start
-        hot_minutes = max(0, calculate_business_minutes(
-            hot_base.astimezone(CHILE_TZ), hot_boundary.astimezone(CHILE_TZ)))
+    if is_hot:
+        if hot_start:
+            hot_boundary = end or current
+            hot_minutes = max(0, calculate_business_minutes(
+                hot_start.astimezone(CHILE_TZ), hot_boundary.astimezone(CHILE_TZ)))
+        elif require_hot_start:
+            return {
+                "status": "unknown", "canonical_state": "INSUFFICIENT_DATA",
+                "minutes": total_minutes, "hot_minutes": None, "fulfilled": False,
+                "coverage": "insufficient_data",
+            }
+        else:
+            hot_minutes = total_minutes
     use_hot_thresholds = is_hot
 
     if end:
+        measured_minutes = hot_minutes if use_hot_thresholds else total_minutes
+        threshold = 60 if use_hot_thresholds else 180
         status = "fulfilled"
+        canonical_state = "MANAGED_WITHIN_SLA" if measured_minutes < threshold else "MANAGED_OUTSIDE_SLA"
     elif use_hot_thresholds:
         if hot_minutes >= 60:
             status = "critical"
+            canonical_state = "BREACHED"
         elif hot_minutes >= 45:
             status = "near_critical"
+            canonical_state = "NEAR_BREACH"
         elif hot_minutes >= 30:
             status = "warning"
+            canonical_state = "ATTENTION"
         else:
             status = "good"
+            canonical_state = "ACTIVE_NORMAL"
     else:
         if total_minutes >= 180:
             status = "critical"
+            canonical_state = "BREACHED"
         elif total_minutes >= 150:
             status = "near_critical"
+            canonical_state = "NEAR_BREACH"
         elif total_minutes >= 120:
             status = "warning"
+            canonical_state = "ATTENTION"
         else:
             status = "good"
+            canonical_state = "ACTIVE_NORMAL"
     return {
-        "status": status, "minutes": total_minutes, "fulfilled": bool(end),
-        "age_minutes": total_minutes,
-        "hot_minutes": hot_minutes,
+        "status": status, "canonical_state": canonical_state,
+        "minutes": total_minutes, "fulfilled": bool(end),
+        "age_minutes": total_minutes, "hot_minutes": hot_minutes,
+        "threshold_minutes": 60 if use_hot_thresholds else 180,
+        "coverage": "determined",
     }
+
+
+def resolve_hot_start_at(*, assigned_at, temperature_history=None,
+                         effective_temperature=None) -> Optional[datetime]:
+    """Resolve a demonstrable Hot start without inferring it from current state."""
+    assigned = coerce_utc_datetime(assigned_at)
+    if not assigned:
+        return None
+    events = []
+    for entry in temperature_history or []:
+        if not isinstance(entry, Mapping):
+            continue
+        value = str(entry.get("value") or entry.get("temperature") or "").upper()
+        raw_at = entry.get("at") or entry.get("timestamp") or entry.get("changed_at")
+        timestamp = coerce_utc_datetime(raw_at)
+        if value in {"HOT", "COLD"} and timestamp:
+            events.append((timestamp, value))
+    events.sort(key=lambda item: item[0])
+    before_assignment = [item for item in events if item[0] <= assigned]
+    if before_assignment and before_assignment[-1][1] == "HOT":
+        return assigned
+    for timestamp, value in events:
+        if timestamp >= assigned and value == "HOT":
+            return timestamp
+    # Current HOT without a historical timestamp is intentionally insufficient.
+    return None
 
 
 def is_pre_cutover_cycle(assigned_at, *, cutover=None) -> bool:

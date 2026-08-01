@@ -492,6 +492,13 @@ def get_commercial_dashboard(
     kpis = futures["kpis"].result()
     funnel = futures["funnel"].result()
     sla = futures["sla"].result()
+    kpis["sla_compliance"] = {
+        "value": sla.get("overall_compliance_pct"),
+        "previous": None,
+        "pp_change": None,
+        "universe": "sla_risk_panel",
+        "sla_policy": "SLA: minutos h\u00e1biles",
+    }
     demand_price = futures["demand"].result()
     executives = futures["executives"].result()
     properties = futures["properties"].result()
@@ -514,10 +521,11 @@ def get_commercial_dashboard(
         "read_only": True,
         "unit": "lead._id",
         "sla_policy": {
-            "type": "calendar_minutes",
+            "type": "business_minutes",
             "threshold_minutes": 180,
-            "display_label": "SLA actual: 3 horas corridas",
+            "display_label": "SLA vigente: minutos h\u00e1biles",
             "timezone": "America/Santiago",
+            "business_hours": "Lunes a viernes, 09:00-19:00",
         },
     }
 

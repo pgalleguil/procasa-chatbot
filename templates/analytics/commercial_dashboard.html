@@ -462,6 +462,17 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 @media(max-width:600px){.cd{padding:0 16px 44px}.cd-command{margin:0 -16px;padding:8px 16px 8px;position:relative;height:auto;overflow:visible}.cd-head{padding-left:42px;gap:8px}.cd-title-row{padding-right:42px}.cd-head-actions{right:12px;top:8px}.cd-icon-btn{min-width:44px;height:44px;padding:0}.cd h1{font-size:23px}.cd-temporal-context{display:grid;grid-template-columns:1fr;margin-top:4px;gap:2px;min-height:0}.cd-temporal-item{gap:0}.cd-temporal-item>i,.cd-temporal-item small,.cd-temporal-sep{display:none}.cd-temporal-item strong{font-size:13px;white-space:normal;overflow-wrap:break-word;word-break:break-word}.cd-temporal-comparison strong{color:var(--text-secondary);font-weight:500}.cd-temporal-updated strong{font-size:12px;color:var(--text-muted)}.cd-temporal-updated .dot{display:none}.cd-head-r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;margin-top:6px}.cd-head-r .cd-seg{grid-column:1/-1}.cd-seg button{min-height:42px;font-size:13px}.cd-cmp-wrap{grid-column:1/-1;display:grid;grid-template-columns:1fr}.cd-cmp-wrap label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.cd-cmp-wrap select{height:42px!important;width:100%}.cd-head-r>#fExecPrimary{grid-column:1;width:100%;height:42px}.cd-head-r>#btnFilters{grid-column:2;min-height:42px}.cd-tabs{margin-left:-16px;margin-right:-16px;padding:0 16px;margin-bottom:18px}.cd-tabs button{min-height:44px;font-size:13px}.cd-priorities{margin-bottom:16px!important}.cd-priority-head{min-height:44px;padding:0 16px}.cd-priority{grid-template-columns:28px minmax(0,1fr) 72px;min-height:58px;padding:8px 12px}.cd-priority::before{left:12px}.cd-priority-copy strong{font-size:12px}.cd-priority-copy span{font-size:12px;line-height:1.25}.cd-priority-action{min-width:68px;font-size:12px}.cd-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:24px}.cd-kpi,.cd-kpi-sla{grid-column:auto;height:auto;min-height:168px;padding:16px}.cd-kpi-val{font-size:32px}.cd-kpi-vs,.cd-kpi-meta{font-size:12px}.cd-card{padding:18px 16px}.cd-chart{min-width:520px}}
 @media(max-width:370px){.cd-kpi{min-height:164px;padding:15px}.cd-kpi-label{font-size:12px}.cd-kpi-val{font-size:30px}}
 </style>
+<style>
+.commercial-ops-panel{margin-top:16px}
+.commercial-ops-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.commercial-ops-stage,.commercial-ops-metric,.commercial-ops-speed{border:1px solid var(--border-subtle);border-radius:var(--radius-sm);background:var(--bg-surface-subtle);padding:10px}
+.commercial-ops-stage:not(:last-child)::after{content:'→';float:right;color:var(--text-muted)}
+.commercial-ops-stage b,.commercial-ops-metric b{display:block;font-size:1.25rem;color:var(--text-primary)}
+.commercial-ops-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.commercial-ops-metrics,.commercial-ops-speed-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.commercial-ops-speed{margin-top:12px;background:transparent;padding:0;border:0}
+@media(max-width:600px){.commercial-ops-flow,.commercial-ops-metrics,.commercial-ops-speed-grid{grid-template-columns:1fr 1fr}.commercial-ops-stage:not(:last-child)::after{display:none}}
+</style>
 </head>
 <body class="cd-page">
 <nav class="sidebar" id="sidebar" aria-label="Navegación principal">
@@ -572,6 +583,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
     <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
     <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
   </div>
+  <div id="commercialOpsPanel"></div>
   <div class="cd-insights" id="insights" hidden></div>
   <div class="cd-grid cd-g-exec">
     <div class="cd-card">
@@ -1010,7 +1022,7 @@ function render(){
   }
   $('metaTxt').textContent=(compact?(upd?upd.replace(' \u00b7 actualizado ',''):'hace instantes')+' \u00b7 '+universeLabel+totalLabel+' leads':universeLabel+totalLabel+' leads'+upd);
   document.querySelector('#metaLine .dot').style.background='var(--cd-ok)';
-  rKPI();rPriorities();rInsights();rev();rsla();rfun();
+  rKPI();rPriorities();rInsights();rev();rsla();rfun();renderOperationalControl(D.executive_summary);
   FIRST_KPI=false;
 }
 
@@ -1258,6 +1270,28 @@ function rsla(){
   h+='<div class="cd-sec-t">Estado SLA por clasificaci\u00f3n <button class="cd-info" data-tt="'+E(SLA_HELP)+'" aria-label="C\u00f3mo funciona el SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-sla-profile-grid">'+profile('Lead',lead,false)+profile('Lead Hot',hot,true)+'</div>';
   h+='<div class="cd-sla-gap" style="margin-top:10px">Hist\u00f3ricos excluidos: <b>'+val(ex.historical)+'</b> \u00b7 Sin asignaci\u00f3n: <b>'+val(ex.not_assigned)+'</b> \u00b7 Cobertura insuficiente: <b>'+val(ex.insufficient_data)+'</b></div>';
   body.innerHTML=h;bindTips(body);
+}
+
+function formatOperationalMinutes(value){
+  if(value==null)return'S/I';
+  const n=Math.max(0,Math.round(Number(value))),h=Math.floor(n/60),m=n%60;
+  return h?m?h+' h '+m+' min':h+' h':n+' min';
+}
+
+function renderOperationalControl(summary){
+  const panel=$('commercialOpsPanel'),body=$('slaBody');
+  if(!panel||!body)return;
+  const s=summary||{},c=s.current||{},v=s.variations||{},n=x=>x==null?'S/I':F(x),p=x=>x==null?'S/I':P1(x);
+  const variation=(key)=>{const item=v[key]||{};return item.absolute==null?'S/I':(item.absolute>0?'+':'')+F(item.absolute)+' vs ant.'};
+  const stage=(label,count,detail)=>'<div class="commercial-ops-stage"><span>'+label+'</span><b>'+n(count)+'</b><small>'+detail+'</small></div>';
+  panel.className='cd-card commercial-ops-panel';
+  panel.innerHTML='<div class="cd-card-h"><h2>Control operativo de leads <small>seguimiento del flujo del periodo</small></h2></div><div class="commercial-ops-flow">'
+    +stage('Recibidos',c.received,'entrada')+stage('Asignados',c.assigned,variation('assigned'))+stage('Gestionados',c.managed,variation('managed'))+stage('Contactados',c.effective_contact,variation('effective_contact'))
+    +'</div><div class="commercial-ops-chips"><span class="cd-pill">Sin asignar: '+n(c.unassigned)+'</span><span class="cd-pill">Backlog: '+n(c.backlog)+'</span><span class="cd-pill">Sin contacto: '+n(c.managed_without_effective_contact)+'</span></div><div class="commercial-ops-metrics"><div class="commercial-ops-metric"><span>Cobertura de gestión</span><b>'+p(c.management_coverage_pct)+'</b></div><div class="commercial-ops-metric"><span>Contactabilidad</span><b>'+p(c.contactability_pct)+'</b></div><div class="commercial-ops-metric"><span>Backlog</span><b>'+p(c.backlog_breached_pct)+'</b></div></div>';
+  const mt=c.management_time||{},ct=c.effective_contact_time||{};
+  const speed=(title,median,p90,measured,extra)=>'<div class="commercial-ops-speed"><b>'+title+'</b><div class="commercial-ops-speed-grid"><div class="commercial-ops-metric"><span>Mediana</span><b>'+formatOperationalMinutes(median)+'</b></div><div class="commercial-ops-metric"><span>P90</span><b>'+formatOperationalMinutes(p90)+'</b></div><div class="commercial-ops-metric"><span>Medidos</span><b>'+n(measured)+'</b></div></div>'+(extra||'')+'</div>';
+  body.insertAdjacentHTML('beforeend','<section class="commercial-ops-speed"><div class="cd-sec-t">Velocidad de atención</div>'+speed('Lead',mt.lead_median_minutes,mt.lead_p90_minutes,mt.lead_measured)+speed('Lead Hot',mt.hot_median_minutes,mt.hot_p90_minutes,mt.hot_measured)+speed('Primer contacto efectivo',ct.median_minutes,ct.p90_minutes,ct.measured)+'<div class="commercial-ops-chips"><span class="cd-pill">Vencidos abiertos: '+n(c.open_breached)+'</span><span class="cd-pill">Gestionados fuera de SLA: '+n(c.managed_outside_sla)+'</span></div></section>');
+  bindTips(panel);bindTips(body);
 }
 
 function bandIntervalText(band,idx){

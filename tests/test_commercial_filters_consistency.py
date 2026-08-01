@@ -197,6 +197,7 @@ def test_get_commercial_dashboard_resolves_all_parallel_queries(monkeypatch):
     monkeypatch.setattr(q, "query_comparative_trends", mark("trends", {}))
     monkeypatch.setattr(q, "query_field_coverage", mark("coverage", {"created_at": {"total": 2}}))
     monkeypatch.setattr(q, "query_commercial_insights", mark("insights", []))
+    monkeypatch.setattr(q, "query_executive_summary", mark("executive_summary", {"current": {}, "previous": {}, "variations": {}, "excluded": {}}))
     service.L1_CACHE.clear()
 
     result = service.get_commercial_dashboard(
@@ -205,5 +206,5 @@ def test_get_commercial_dashboard_resolves_all_parallel_queries(monkeypatch):
     )
     assert set(result) >= {"kpis", "funnel", "sla_risk", "demand_by_price", "executives", "properties", "sources", "trends", "coverage", "insights"}
     assert result["coverage"] == {"created_at": {"total": 2}}
-    assert {name for name, _ in calls} == {"kpis", "funnel", "sla", "demand", "executives", "properties", "sources", "trends", "coverage", "insights"}
+    assert {name for name, _ in calls} == {"kpis", "funnel", "sla", "demand", "executives", "properties", "sources", "trends", "coverage", "insights", "executive_summary"}
     assert all(kwargs.get("filters") == {"source": "Portal A"} for name, kwargs in calls if name != "insights")

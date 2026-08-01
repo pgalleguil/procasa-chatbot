@@ -405,6 +405,7 @@ def get_commercial_dashboard(
         query_source_performance,
         query_comparative_trends,
         query_field_coverage,
+        query_executive_summary,
         query_executive_load_detail,
     )
 
@@ -493,6 +494,9 @@ def get_commercial_dashboard(
     kpis = futures["kpis"].result()
     funnel = futures["funnel"].result()
     sla = futures["sla"].result()
+    executive_summary = query_executive_summary(
+        **kwargs, **comparison_kwargs, sla_risk=sla,
+    )
     kpis["sla_compliance"] = {
         "value": sla.get("overall_compliance_pct"),
         "previous": None,
@@ -542,6 +546,7 @@ def get_commercial_dashboard(
         "kpis": kpis,
         "funnel": funnel,
         "sla_risk": sla,
+        "executive_summary": executive_summary,
         "demand_by_price": demand_price,
         "executives": executives,
         "properties": properties,

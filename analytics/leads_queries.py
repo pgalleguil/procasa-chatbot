@@ -11,6 +11,7 @@ from chatbot.crm_metrics import (
     is_pre_visual_cutover,
     resolve_hot_start_at,
 )
+from chatbot.utils import calculate_business_minutes
 from chatbot.storage import get_db
 from config import Config
 
@@ -2098,6 +2099,162 @@ def build_sla_risk_payload(leads, *, now=None, cutover_at=None):
             "timezone": "America/Santiago",
             "business_hours": "Lunes a viernes, 09:00-19:00",
         },
+    }
+
+
+def _load_executive_cohort(period_start, period_end, filters=None):
+    """Load one projected document per lead for the executive summary."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
+        {"$project": {
+            "_id": 1,
+            "ejecutivo_asignado": 1,
+            "lead_temperature_effective": 1,
+            "temperature_history": 1,
+            "lifecycle.assigned_at": 1,
+            "lifecycle.first_valid_management_at": 1,
+            "lifecycle.first_effective_contact_at": 1,
+        }},
+    ]
+    raw = list(db["leads"].aggregate(pipeline))
+    unique = {}
+    for lead in raw:
+        key = str(lead.get("_id"))
+        unique.setdefault(key, lead)
+    return list(unique.values()), end_utc
+
+
+def _summary_percentile(values, percentile):
+    return _sla_percentile(sorted(values), percentile) if values else None
+
+
+def _executive_summary_snapshot(leads, cutoff_utc, sla_risk):
+    received = len(leads)
+    assigned = 0
+    managed = 0
+    effective_contact = 0
+    hot = 0
+    management_times = {"lead": [], "hot": []}
+    contact_times = []
+    insufficient = 0
+
+    for lead in leads:
+        lifecycle = lead.get("lifecycle") or {}
+        assigned_at = coerce_utc_datetime(lifecycle.get("assigned_at"))
+        management_at = coerce_utc_datetime(lifecycle.get("first_valid_management_at"))
+        contact_at = coerce_utc_datetime(lifecycle.get("first_effective_contact_at"))
+        history = lead.get("temperature_history") or []
+        has_hot = str(lead.get("lead_temperature_effective") or "").upper() == "HOT" or any(
+            str((item or {}).get("value") or (item or {}).get("temperature") or "").upper() == "HOT"
+            for item in history if isinstance(item, Mapping)
+        )
+        if has_hot:
+            hot += 1
+        if not assigned_at or assigned_at >= cutoff_utc:
+            continue
+        assigned += 1
+        valid_management = bool(management_at and assigned_at <= management_at < cutoff_utc)
+        if management_at and management_at < assigned_at:
+            insufficient += 1
+            valid_management = False
+        if not valid_management:
+            continue
+        managed += 1
+        hot_start = resolve_hot_start_at(
+            assigned_at=assigned_at, temperature_history=history,
+            effective_temperature=lead.get("lead_temperature_effective"),
+        ) if has_hot else None
+        management_start = hot_start if hot_start and hot_start < management_at else assigned_at
+        management_minutes = calculate_business_minutes(
+            management_start.astimezone(CHILE_TZ), management_at.astimezone(CHILE_TZ)
+        )
+        management_times["hot" if hot_start and hot_start < management_at else "lead"].append(management_minutes)
+        if contact_at and assigned_at <= contact_at < cutoff_utc:
+            effective_contact += 1
+            contact_times.append(calculate_business_minutes(
+                assigned_at.astimezone(CHILE_TZ), contact_at.astimezone(CHILE_TZ)
+            ))
+
+    lead_bucket = (sla_risk or {}).get("lead", {})
+    hot_bucket = (sla_risk or {}).get("lead_hot", {})
+    managed_within = lead_bucket.get("managed_within", 0) + hot_bucket.get("managed_within", 0)
+    managed_outside = lead_bucket.get("managed_outside", 0) + hot_bucket.get("managed_outside", 0)
+    open_breached = lead_bucket.get("breached", 0) + hot_bucket.get("breached", 0)
+    backlog = max(assigned - managed, 0)
+    unassigned = max(received - assigned, 0)
+    managed_without_contact = max(managed - effective_contact, 0)
+    return {
+        "received": received, "hot": hot, "assigned": assigned, "unassigned": unassigned,
+        "managed": managed, "backlog": backlog, "effective_contact": effective_contact,
+        "managed_without_effective_contact": managed_without_contact,
+        "assignment_rate_pct": _coverage_pct(assigned, received),
+        "management_coverage_pct": _coverage_pct(managed, assigned),
+        "contactability_pct": _coverage_pct(effective_contact, managed),
+        "managed_within_sla": managed_within, "managed_outside_sla": managed_outside,
+        "managed_outside_rate_pct": _coverage_pct(managed_outside, managed_within + managed_outside),
+        "open_breached": open_breached,
+        "backlog_breached_pct": _coverage_pct(open_breached, backlog),
+        "management_time": {
+            "lead_median_minutes": _summary_percentile(management_times["lead"], 50),
+            "lead_p90_minutes": _summary_percentile(management_times["lead"], 90),
+            "lead_measured": len(management_times["lead"]),
+            "hot_median_minutes": _summary_percentile(management_times["hot"], 50),
+            "hot_p90_minutes": _summary_percentile(management_times["hot"], 90),
+            "hot_measured": len(management_times["hot"]),
+        },
+        "effective_contact_time": {
+            "median_minutes": _summary_percentile(contact_times, 50),
+            "p90_minutes": _summary_percentile(contact_times, 90),
+            "measured": len(contact_times),
+            "coverage_pct": _coverage_pct(len(contact_times), managed),
+        },
+        "risk": {"lead": lead_bucket, "lead_hot": hot_bucket},
+        "insufficient_data": insufficient,
+    }
+
+
+def _summary_variations(current, previous):
+    if not previous:
+        return {}
+    count_keys = ("received", "hot", "assigned", "unassigned", "managed", "backlog", "effective_contact", "managed_without_effective_contact", "managed_within_sla", "managed_outside_sla", "open_breached")
+    rate_keys = ("assignment_rate_pct", "management_coverage_pct", "contactability_pct", "managed_outside_rate_pct", "backlog_breached_pct")
+    result = {}
+    for key in count_keys:
+        cur, prev = current.get(key), previous.get(key)
+        result[key] = {"absolute": cur - prev, "pct": round((cur - prev) / prev * 100, 1) if prev else None}
+    for key in rate_keys:
+        cur, prev = current.get(key), previous.get(key)
+        result[key] = {"pp": round(cur - prev, 1) if cur is not None and prev is not None else None}
+    for key in ("lead_median_minutes", "lead_p90_minutes", "hot_median_minutes", "hot_p90_minutes"):
+        cur = current["management_time"].get(key)
+        prev = previous["management_time"].get(key)
+        result[key] = {"minutes": cur - prev if cur is not None and prev is not None else None}
+    return result
+
+
+def query_executive_summary(period_start=None, period_end=None, filters=None,
+                            comparison_start=None, comparison_end=None,
+                            include_comparison=True, sla_risk=None):
+    current_leads, current_cutoff = _load_executive_cohort(period_start, period_end, filters)
+    current = _executive_summary_snapshot(current_leads, current_cutoff, sla_risk or {})
+    previous = {}
+    if include_comparison and comparison_start and comparison_end:
+        previous_leads, previous_cutoff = _load_executive_cohort(comparison_start, comparison_end, filters)
+        previous_sla = build_sla_risk_payload(
+            previous_leads, now=previous_cutoff, cutover_at=getattr(Config, "CRM_SLA_VISUAL_CUTOVER_AT", None)
+        )
+        previous = _executive_summary_snapshot(previous_leads, previous_cutoff, previous_sla)
+    excluded = (sla_risk or {}).get("excluded", {"historical": 0, "not_assigned": 0, "insufficient_data": 0})
+    return {
+        "current": current,
+        "previous": previous,
+        "variations": _summary_variations(current, previous),
+        "excluded": excluded,
+        "unit": "lead._id",
+        "contact_effective_results": ["EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "NOT_INTERESTED"],
     }
 
 

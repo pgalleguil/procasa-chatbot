@@ -1498,6 +1498,53 @@ def query_comparative_trends(
     }
 
 
+def query_executive_contribution(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    comparison_start: Optional[str] = None,
+    comparison_end: Optional[str] = None,
+    include_comparison: bool = True,
+    filters: Optional[dict] = None,
+) -> dict:
+    """Aggregate comparable lead volume by source, executive and commune once."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    current_match = _build_commercial_cohort_match(start_utc, end_utc, filters)
+    if include_comparison and comparison_start and comparison_end:
+        previous_start, previous_end = _build_chile_period_bounds(comparison_start, comparison_end)
+        previous_match = _build_commercial_cohort_match(previous_start, previous_end, filters)
+    else:
+        previous_match = None
+
+    dimensions = {
+        "source": ("$prospecto.origen", "Sin informacion"),
+        "executive": ("$ejecutivo_asignado", "Sin asignar"),
+        "commune": ("$prospecto.comuna", "Sin informacion"),
+    }
+
+    def facet(match, field):
+        return [
+            {"$match": match},
+            {"$group": {"_id": "$_id", "segment": {"$first": {"$ifNull": [field[0], field[1]]}}}},
+            {"$group": {"_id": "$segment", "count": {"$sum": 1}}},
+            {"$project": {"segment": "$_id", "count": 1, "_id": 0}},
+        ]
+
+    facets = {}
+    for name, field in dimensions.items():
+        facets[f"current_{name}"] = facet(current_match, field)
+        facets[f"previous_{name}"] = facet(previous_match, field) if previous_match else []
+
+    raw = list(db["leads"].aggregate([_normalized_created_at_stage(), {"$facet": facets}]))
+    row = raw[0] if raw else {}
+    result = {}
+    for name in dimensions:
+        current = [{"segment": item.get("segment"), "count": item.get("count", 0)} for item in row.get(f"current_{name}", [])]
+        previous = [{"segment": item.get("segment"), "count": item.get("count", 0)} for item in row.get(f"previous_{name}", [])]
+        result[name] = {"current": current, "previous": previous}
+    return {"available": bool(previous_match), "dimensions": result}
+
+
 
 COMMERCIAL_FUNNEL_STAGES = [
     ("received", "Leads recibidos"),

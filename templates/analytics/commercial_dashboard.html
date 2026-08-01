@@ -472,6 +472,14 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 .commercial-ops-metrics,.commercial-ops-speed-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 .commercial-ops-speed{margin-top:12px;background:transparent;padding:0;border:0}
 @media(max-width:600px){.commercial-ops-flow,.commercial-ops-metrics,.commercial-ops-speed-grid{grid-template-columns:1fr 1fr}.commercial-ops-stage:not(:last-child)::after{display:none}}
+.commercial-story{margin-top:16px}
+.commercial-story-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.commercial-story-block{padding:10px 12px;border-left:3px solid var(--border-subtle);min-width:0}
+.commercial-story-block h3{margin:0 0 7px;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
+.commercial-story-block p{margin:0;color:var(--text-primary);font-size:.9rem;line-height:1.45}
+.commercial-story-meta{margin-top:9px;font-size:.78rem;color:var(--text-muted)}
+@media(max-width:991px){.commercial-story-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.commercial-story-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body class="cd-page">
@@ -584,6 +592,15 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
     <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
   </div>
   <div id="commercialOpsPanel"></div>
+  <section class="cd-card commercial-story" id="executiveStory" hidden aria-labelledby="executiveStoryTitle">
+    <div class="cd-card-h"><h2 id="executiveStoryTitle">Lectura ejecutiva del período</h2><span class="cd-status-pill" id="executiveStoryUniverse"></span></div>
+    <div class="commercial-story-grid">
+      <div class="commercial-story-block" data-story-block="outcome" data-tt="Síntesis de volumen y desempeño operacional frente al periodo comparable."><h3>Resultado</h3><p id="executiveStoryOutcome"></p></div>
+      <div class="commercial-story-block" data-story-block="contribution" data-tt="Segmento con la mayor contribución estadística al cambio observado. No implica causalidad."><h3>Principal contribución</h3><p id="executiveStoryContribution"></p></div>
+      <div class="commercial-story-block" data-story-block="risk" data-tt="Principal situación operacional abierta según asignación, gestión y política SLA."><h3>Riesgo operativo</h3><p id="executiveStoryRisk"></p><div class="commercial-story-meta" id="executiveStoryRiskMeta"></div></div>
+      <div class="commercial-story-block" data-story-block="action" data-tt="Recomendación generada mediante reglas verificables. No ejecuta cambios en el CRM."><h3>Acción recomendada</h3><p id="executiveStoryAction"></p><div class="commercial-story-meta" id="executiveStoryActionMeta"></div></div>
+    </div>
+  </section>
   <div class="cd-insights" id="insights" hidden></div>
   <div class="cd-grid cd-g-exec">
     <div class="cd-card">
@@ -1022,7 +1039,7 @@ function render(){
   }
   $('metaTxt').textContent=(compact?(upd?upd.replace(' \u00b7 actualizado ',''):'hace instantes')+' \u00b7 '+universeLabel+totalLabel+' leads':universeLabel+totalLabel+' leads'+upd);
   document.querySelector('#metaLine .dot').style.background='var(--cd-ok)';
-  rKPI();rPriorities();rInsights();rev();rsla();rfun();renderOperationalControl(D.executive_summary);
+  rKPI();rPriorities();rInsights();rev();rsla();rfun();renderOperationalControl(D.executive_summary);renderExecutiveStory(D.executive_story);
   FIRST_KPI=false;
 }
 
@@ -1292,6 +1309,28 @@ function renderOperationalControl(summary){
   const speed=(title,median,p90,measured,extra)=>'<div class="commercial-ops-speed"><b>'+title+'</b><div class="commercial-ops-speed-grid"><div class="commercial-ops-metric"><span>Mediana</span><b>'+formatOperationalMinutes(median)+'</b></div><div class="commercial-ops-metric"><span>P90</span><b>'+formatOperationalMinutes(p90)+'</b></div><div class="commercial-ops-metric"><span>Medidos</span><b>'+n(measured)+'</b></div></div>'+(extra||'')+'</div>';
   body.insertAdjacentHTML('beforeend','<section class="commercial-ops-speed"><div class="cd-sec-t">Velocidad de atención</div>'+speed('Lead',mt.lead_median_minutes,mt.lead_p90_minutes,mt.lead_measured)+speed('Lead Hot',mt.hot_median_minutes,mt.hot_p90_minutes,mt.hot_measured)+speed('Primer contacto efectivo',ct.median_minutes,ct.p90_minutes,ct.measured)+'<div class="commercial-ops-chips"><span class="cd-pill">Vencidos abiertos: '+n(c.open_breached)+'</span><span class="cd-pill">Gestionados fuera de SLA: '+n(c.managed_outside_sla)+'</span></div></section>');
   bindTips(panel);bindTips(body);
+}
+
+function renderExecutiveStory(story){
+  const panel=$('executiveStory');
+  if(!panel||!story)return;
+  const o=story.outcome||{},c=story.main_contribution||{},r=story.risk||{},a=story.recommended_action||{},cov=story.coverage||{};
+  const n=v=>v==null?'S/I':F(v),pct=v=>v==null?'S/I':P1(v),signed=v=>v==null?'S/I':(v>0?'+':'')+F(v),signedPct=v=>v==null?'S/I':(v>0?'+':'')+P1(v);
+  const basis=cov.comparable?'':' Sin base comparable.';
+  const receivedVar=o.received_delta_abs==null?'Sin base comparable':signed(o.received_delta_abs)+' leads'+(o.received_delta_pct==null?'':' ('+signedPct(o.received_delta_pct)+')');
+  const outcome='Se recibieron '+n(o.received)+' leads, '+receivedVar+'. La cobertura de gestión alcanzó '+pct(o.management_coverage_pct)+' ('+signedPct(o.management_coverage_delta_pp)+' pp) y la contactabilidad '+pct(o.contactability_pct)+' ('+signedPct(o.contactability_delta_pp)+' pp). El cumplimiento SLA fue '+pct(o.sla_compliance_pct)+' ('+signedPct(o.sla_compliance_delta_pp)+' pp).'+basis;
+  const contribution=c.available?'La '+String(c.dimension||'dimensión').toLowerCase()+' '+E(c.segment)+' presenta la mayor contribución observada: '+n(c.current)+' actuales frente a '+n(c.previous)+' comparables, una diferencia de '+signed(c.delta)+'.':(cov.comparable?'Sin base suficiente para analizar contribuciones.':'Sin base suficiente para analizar contribuciones.');
+  const riskText=r.code==='none'?'No existen riesgos operativos abiertos relevantes.':E(r.label||'Riesgo operativo identificado')+' ('+n(r.affected_leads)+' leads).';
+  const riskMeta=(r.priority||'Controlado')+' · '+pct(r.rate_pct)+' del denominador válido'+(r.delta_abs==null?'':' · variación '+signed(r.delta_abs));
+  const actions={hot_breached_open:'Gestionar prioritariamente los '+n(a.affected_leads)+' Lead Hot vencidos y registrar un resultado válido en el CRM.',lead_breached_open:'Regularizar los '+n(a.affected_leads)+' leads vencidos que todavía no cuentan con gestión registrada.',unassigned:'Asignar los '+n(a.affected_leads)+' leads pendientes de ejecutivo antes de evaluar su cobertura de gestión.',backlog:'Completar la primera gestión válida de los '+n(a.affected_leads)+' leads asignados que permanecen pendientes.',no_effective_contact:'Priorizar seguimiento sobre los '+n(a.affected_leads)+' leads gestionados donde todavía no existe contacto efectivo.',sla_deterioration:'Revisar el segmento con mayor desviación y validar capacidad, carga y cumplimiento operativo.',management_coverage_deterioration:'Revisar el segmento con mayor desviación y validar capacidad, carga y cumplimiento operativo.',none:'Mantener el seguimiento operacional y revisar nuevamente al cierre del próximo periodo.'};
+  $('executiveStoryOutcome').textContent=outcome;
+  $('executiveStoryContribution').innerHTML=contribution;
+  $('executiveStoryRisk').innerHTML=riskText;
+  $('executiveStoryRiskMeta').textContent=riskMeta;
+  $('executiveStoryAction').textContent=actions[a.code]||actions.none;
+  $('executiveStoryActionMeta').textContent=(a.priority||'Controlado')+' · '+(a.affected_leads==null?'S/I':F(a.affected_leads))+' leads afectados · '+(a.status||'Controlado');
+  $('executiveStoryUniverse').textContent=D.meta?.universe?.filtered?'Lectura correspondiente al universo filtrado.':'';
+  panel.hidden=false;bindTips(panel);
 }
 
 function bandIntervalText(band,idx){

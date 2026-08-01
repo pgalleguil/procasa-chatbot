@@ -226,6 +226,119 @@ def get_field_coverage(
     return data
 
 
+def _snapshot_sla_pct(snapshot):
+    risk = (snapshot or {}).get("risk") or {}
+    buckets = [risk.get("lead") or {}, risk.get("lead_hot") or {}]
+    within = sum(bucket.get("managed_within", 0) for bucket in buckets)
+    denominator = within + sum(bucket.get("managed_outside", 0) + bucket.get("breached", 0) for bucket in buckets)
+    return round(within / denominator * 100, 1) if denominator else None
+
+
+def _select_executive_contribution(contribution, current_received, previous_received, filters=None):
+    if not contribution or not contribution.get("available"):
+        return {"available": False, "dimension": None, "segment": None, "current": None, "previous": None, "delta": None, "direction": None}
+    filters = filters or {}
+    blocked = {
+        "source": bool(filters.get("source") or filters.get("prospecto.origen")),
+        "executive": bool(filters.get("ejecutive") or filters.get("ejecutivo_asignado")),
+        "commune": bool(filters.get("commune") or filters.get("prospecto.comuna")),
+    }
+    total_delta = (current_received or 0) - (previous_received or 0)
+    direction = "up" if total_delta > 0 else "down" if total_delta < 0 else "stable"
+    labels = {"source": "Fuente", "executive": "Ejecutivo", "commune": "Comuna"}
+    candidates = []
+    for dimension, payload in (contribution.get("dimensions") or {}).items():
+        if blocked.get(dimension):
+            continue
+        current = {str(row.get("segment")): row.get("count", 0) for row in payload.get("current", [])}
+        previous = {str(row.get("segment")): row.get("count", 0) for row in payload.get("previous", [])}
+        for segment in set(current) | set(previous):
+            cur, prev = current.get(segment, 0), previous.get(segment, 0)
+            delta = cur - prev
+            if (direction == "up" and delta > 0) or (direction == "down" and delta < 0) or (direction == "stable" and delta != 0):
+                candidates.append((abs(delta) if direction == "stable" else delta, dimension, segment, cur, prev, delta))
+    if not candidates:
+        return {"available": False, "dimension": None, "segment": None, "current": None, "previous": None, "delta": None, "direction": direction}
+    selected = max(candidates, key=lambda item: (item[0], item[1], item[2])) if direction != "down" else min(candidates, key=lambda item: (item[0], item[1], item[2]))
+    _, dimension, segment, current, previous, delta = selected
+    return {"available": True, "dimension": labels[dimension], "segment": segment, "current": current, "previous": previous, "delta": delta, "direction": direction}
+
+
+def _build_executive_story(executive_summary, sla, period_info, contribution, filters=None):
+    summary = executive_summary or {}
+    current = summary.get("current") or {}
+    previous = summary.get("previous") or {}
+    variations = summary.get("variations") or {}
+    received = current.get("received", 0)
+    previous_received = previous.get("received") if previous else None
+    received_delta = received - previous_received if previous_received is not None else None
+    received_pct = round(received_delta / previous_received * 100, 1) if previous_received else None
+    current_sla = (sla or {}).get("overall_compliance_pct")
+    previous_sla = _snapshot_sla_pct(previous) if previous else None
+    current_coverage = current.get("management_coverage_pct")
+    current_contactability = current.get("contactability_pct")
+    coverage_pp = (variations.get("management_coverage_pct") or {}).get("pp")
+    contactability_pp = (variations.get("contactability_pct") or {}).get("pp")
+    sla_pp = round(current_sla - previous_sla, 1) if current_sla is not None and previous_sla is not None else None
+
+    hot_breached = (sla or {}).get("lead_hot", {}).get("breached", 0) or 0
+    lead_breached = (sla or {}).get("lead", {}).get("breached", 0) or 0
+    unassigned = current.get("unassigned", 0) or 0
+    backlog = current.get("backlog", 0) or 0
+    no_contact = current.get("managed_without_effective_contact", 0) or 0
+    risk = {
+        "code": "none", "label": "Sin riesgos operativos abiertos relevantes", "priority": "Controlado",
+        "affected_leads": 0, "denominator": None, "rate_pct": None, "delta_abs": None,
+    }
+    if hot_breached:
+        risk.update(code="hot_breached_open", label="Lead Hot vencido abierto", priority="Crítica", affected_leads=hot_breached, denominator=(sla or {}).get("lead_hot", {}).get("eligible"), rate_pct=_pct(hot_breached, (sla or {}).get("lead_hot", {}).get("eligible")), delta_abs=_risk_delta(current, previous, "lead_hot", "breached"))
+    elif lead_breached:
+        risk.update(code="lead_breached_open", label="Lead vencido abierto", priority="Alta", affected_leads=lead_breached, denominator=(sla or {}).get("lead", {}).get("eligible"), rate_pct=_pct(lead_breached, (sla or {}).get("lead", {}).get("eligible")), delta_abs=_risk_delta(current, previous, "lead", "breached"))
+    elif unassigned:
+        risk.update(code="unassigned", label="Leads sin asignación", priority="Media", affected_leads=unassigned, denominator=received, rate_pct=_pct(unassigned, received), delta_abs=_summary_delta(current, previous, "unassigned"))
+    elif backlog:
+        risk.update(code="backlog", label="Backlog pendiente de gestión", priority="Media", affected_leads=backlog, denominator=current.get("assigned"), rate_pct=_pct(backlog, current.get("assigned")), delta_abs=_summary_delta(current, previous, "backlog"))
+    elif no_contact:
+        risk.update(code="no_effective_contact", label="Gestiones sin contacto efectivo", priority="Seguimiento", affected_leads=no_contact, denominator=current.get("managed"), rate_pct=_pct(no_contact, current.get("managed")), delta_abs=_summary_delta(current, previous, "managed_without_effective_contact"))
+    elif sla_pp is not None and sla_pp < 0:
+        risk.update(code="sla_deterioration", label="Deterioro del cumplimiento SLA", priority="Seguimiento", affected_leads=(sla or {}).get("overall_denominator", 0) or 0, denominator=(sla or {}).get("overall_denominator"), rate_pct=current_sla, delta_abs=sla_pp)
+    elif coverage_pp is not None and coverage_pp < 0:
+        risk.update(code="management_coverage_deterioration", label="Deterioro de cobertura de gestión", priority="Seguimiento", affected_leads=current.get("assigned", 0) or 0, denominator=current.get("assigned"), rate_pct=current_coverage, delta_abs=coverage_pp)
+
+    action_map = {
+        "hot_breached_open": ("prioritize_hot_breached", "Pendiente"),
+        "lead_breached_open": ("regularize_breached", "Pendiente"),
+        "unassigned": ("assign_pending_leads", "Pendiente"),
+        "backlog": ("complete_first_management", "En seguimiento"),
+        "no_effective_contact": ("prioritize_follow_up", "En seguimiento"),
+        "sla_deterioration": ("review_operational_deviation", "En seguimiento"),
+        "management_coverage_deterioration": ("review_operational_deviation", "En seguimiento"),
+        "none": ("maintain_operational_follow_up", "Controlado"),
+    }
+    action_code, status = action_map[risk["code"]]
+    selected_contribution = _select_executive_contribution(contribution, received, previous_received, filters)
+    return {
+        "period": {"current_label": (period_info.get("current") or {}).get("label", ""), "comparison_label": (period_info.get("previous") or {}).get("label", "Sin comparación"), "universe": received},
+        "outcome": {"received": received, "received_delta_abs": received_delta, "received_delta_pct": received_pct, "management_coverage_pct": current_coverage, "management_coverage_delta_pp": coverage_pp, "contactability_pct": current_contactability, "contactability_delta_pp": contactability_pp, "sla_compliance_pct": current_sla, "sla_compliance_delta_pp": sla_pp},
+        "main_contribution": selected_contribution,
+        "risk": risk,
+        "recommended_action": {"code": action_code, "priority": risk["priority"], "affected_leads": risk["affected_leads"], "status": status},
+        "coverage": {"comparable": bool(previous), "contribution_analysis_available": bool(selected_contribution.get("available")), "insufficient_data": current.get("insufficient_data", 0) or 0},
+    }
+
+
+def _pct(value, denominator):
+    return round(value / denominator * 100, 1) if denominator else None
+
+
+def _summary_delta(current, previous, key):
+    return None if not previous else (current.get(key, 0) or 0) - (previous.get(key, 0) or 0)
+
+
+def _risk_delta(current, previous, profile, key):
+    return None if not previous else ((current.get("risk") or {}).get(profile) or {}).get(key, 0) - ((previous.get("risk") or {}).get(profile) or {}).get(key, 0)
+
+
 def get_dashboard(
     period_start: str = None,
     period_end: str = None,
@@ -406,6 +519,7 @@ def get_commercial_dashboard(
         query_comparative_trends,
         query_field_coverage,
         query_executive_summary,
+        query_executive_contribution,
         query_executive_load_detail,
     )
 
@@ -483,6 +597,7 @@ def get_commercial_dashboard(
         "properties": _COMMERCIAL_QUERY_POOL.submit(query_commercial_property_ranking, **kwargs),
         "sources": _COMMERCIAL_QUERY_POOL.submit(query_source_performance, **kwargs, **comparison_kwargs),
         "trends": _COMMERCIAL_QUERY_POOL.submit(query_comparative_trends, **kwargs, **comparison_kwargs),
+        "contribution": _COMMERCIAL_QUERY_POOL.submit(query_executive_contribution, **kwargs, **comparison_kwargs),
         "coverage": _COMMERCIAL_QUERY_POOL.submit(
             query_field_coverage,
             period_start=period_start,
@@ -509,6 +624,7 @@ def get_commercial_dashboard(
     properties = futures["properties"].result()
     sources = futures["sources"].result()
     trends = futures["trends"].result()
+    contribution = futures["contribution"].result()
     coverage = futures["coverage"].result()
     try:
         insights = query_commercial_insights(
@@ -547,6 +663,7 @@ def get_commercial_dashboard(
         "funnel": funnel,
         "sla_risk": sla,
         "executive_summary": executive_summary,
+        "executive_story": _build_executive_story(executive_summary, sla, period_info, contribution, merged_filters),
         "demand_by_price": demand_price,
         "executives": executives,
         "properties": properties,

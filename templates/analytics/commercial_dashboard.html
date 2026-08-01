@@ -583,7 +583,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
     <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
     <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
   </div>
-  {% if operational_preview_enabled %}<div id="commercialOpsPanel"></div>{% endif %}
+  <div id="commercialOpsPanel"></div>
   <div class="cd-insights" id="insights" hidden></div>
   <div class="cd-grid cd-g-exec">
     <div class="cd-card">
@@ -905,7 +905,6 @@ async function loadData({historyMode=null}={}){
     /* Build URL search params including visual state section */
     const urlParams=new URL(location);urlParams.search=p.toString();
     ['section','view','selected_executive'].forEach(key=>{const value=currentUrl.searchParams.get(key);if(value)urlParams.searchParams.set(key,value)});
-    if(currentUrl.searchParams.get('ops_preview')==='1')urlParams.searchParams.set('ops_preview','1');
     const usePush=historyMode==='push'?true:historyMode==='replace'?false:PUSH_HISTORY;
     history[usePush?'pushState':'replaceState'](null,'',urlParams.toString());PUSH_HISTORY=false;
     if(RESPONSE_CACHE.has(cacheKey)){
@@ -927,7 +926,7 @@ async function loadData({historyMode=null}={}){
       document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('active',b.dataset.p===FILTERS.period_preset));
       p.set('period_start',current.start);p.set('period_end',current.end);
       p.set('period_preset',FILTERS.period_preset);
-      const syncedUrl=new URL(location);syncedUrl.search=p.toString();if(currentUrl.searchParams.get('ops_preview')==='1')syncedUrl.searchParams.set('ops_preview','1');history.replaceState(null,'',syncedUrl);
+      const syncedUrl=new URL(location);syncedUrl.search=p.toString();history.replaceState(null,'',syncedUrl);
     }
     render();
     const activeTab=document.querySelector('.cd-tabs button[aria-selected="true"]')?.dataset.tab||'exec';
@@ -1023,7 +1022,7 @@ function render(){
   }
   $('metaTxt').textContent=(compact?(upd?upd.replace(' \u00b7 actualizado ',''):'hace instantes')+' \u00b7 '+universeLabel+totalLabel+' leads':universeLabel+totalLabel+' leads'+upd);
   document.querySelector('#metaLine .dot').style.background='var(--cd-ok)';
-  rKPI();rPriorities();rInsights();rev();rsla();rfun();{% if operational_preview_enabled %}renderOperationalControl(D.executive_summary);{% endif %}
+  rKPI();rPriorities();rInsights();rev();rsla();rfun();renderOperationalControl(D.executive_summary);
   FIRST_KPI=false;
 }
 
@@ -1273,7 +1272,7 @@ function rsla(){
   body.innerHTML=h;bindTips(body);
 }
 
-{% if operational_preview_enabled %}function formatOperationalMinutes(value){
+function formatOperationalMinutes(value){
   if(value==null)return'S/I';
   const n=Math.max(0,Math.round(Number(value))),h=Math.floor(n/60),m=n%60;
   return h?m?h+' h '+m+' min':h+' h':n+' min';
@@ -1294,7 +1293,6 @@ function renderOperationalControl(summary){
   body.insertAdjacentHTML('beforeend','<section class="commercial-ops-speed"><div class="cd-sec-t">Velocidad de atención</div>'+speed('Lead',mt.lead_median_minutes,mt.lead_p90_minutes,mt.lead_measured)+speed('Lead Hot',mt.hot_median_minutes,mt.hot_p90_minutes,mt.hot_measured)+speed('Primer contacto efectivo',ct.median_minutes,ct.p90_minutes,ct.measured)+'<div class="commercial-ops-chips"><span class="cd-pill">Vencidos abiertos: '+n(c.open_breached)+'</span><span class="cd-pill">Gestionados fuera de SLA: '+n(c.managed_outside_sla)+'</span></div></section>');
   bindTips(panel);bindTips(body);
 }
-{% endif %}
 
 function bandIntervalText(band,idx){
   const mins=[

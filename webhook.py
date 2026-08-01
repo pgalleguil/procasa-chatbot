@@ -787,14 +787,12 @@ async def _optional_commercial_user(request: Request):
 async def commercial_dashboard_page(request: Request):
     user = await _optional_commercial_user(request)
     privileged = bool(user and user.get("rol") in ("admin", "supervisor"))
-    operational_preview_enabled = request.query_params.get("ops_preview") == "1"
     return templates.TemplateResponse(
         request=request,
         name="analytics/commercial_dashboard.html",
         context={
             "user_role": user.get("rol", "admin") if privileged else "admin",
             "user_name": user.get("nombre", "") if privileged else "",
-            "operational_preview_enabled": operational_preview_enabled,
         },
     )
 

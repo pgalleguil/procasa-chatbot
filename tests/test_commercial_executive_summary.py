@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+from jinja2 import Environment, FileSystemLoader
 
 from analytics.leads_queries import (
     _executive_summary_snapshot,
@@ -119,3 +120,33 @@ def test_frontend_productive_order_is_unchanged_and_operational_renderer_is_call
     assert "function renderOperationalControl(summary)" in html
     assert "renderOperationalControl(D.executive_summary)" in html
     assert "function renderExecutivePreview" not in html
+
+
+def _render_dashboard_template(operational_preview_enabled):
+    root = Path(__file__).parents[1]
+    env = Environment(loader=FileSystemLoader(str(root / "templates")))
+    return env.get_template("analytics/commercial_dashboard.html").render(
+        request=None, user_role="admin", user_name="", operational_preview_enabled=operational_preview_enabled,
+    )
+
+
+def test_operational_preview_gates_only_the_two_candidate_blocks():
+    normal = _render_dashboard_template(False)
+    preview = _render_dashboard_template(True)
+    assert "Control operativo de leads" not in normal
+    assert "Velocidad de atenci" not in normal
+    assert "Control operativo de leads" in preview
+    assert "Velocidad de atenci" in preview
+    for html in (normal, preview):
+        for token in ('id="kpiRow"', 'id="filters"', 'id="tabNav"', 'id="evChart"', 'id="slaBody"', 'id="funnel"'):
+            assert token in html
+
+
+def test_operational_preview_is_not_sent_to_analytics_api_and_persists_in_browser_url():
+    route = (Path(__file__).parents[1] / "webhook.py").read_text(encoding="utf-8")
+    html = (Path(__file__).parents[1] / "templates" / "analytics" / "commercial_dashboard.html").read_text(encoding="utf-8")
+    assert 'request.query_params.get("ops_preview") == "1"' in route
+    assert 'p.set("ops_preview"' not in route
+    assert "currentUrl.searchParams.get('ops_preview')==='1'" in html
+    assert "urlParams.searchParams.set('ops_preview','1')" in html
+    assert "syncedUrl.searchParams.set('ops_preview','1')" in html

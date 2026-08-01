@@ -424,7 +424,6 @@ def get_commercial_dashboard(
     period_start = ps_dt.strftime("%Y-%m-%d")
     period_end = pe_dt.strftime("%Y-%m-%d")
     kwargs = {"period_start": period_start, "period_end": period_end, "filters": merged_filters or None}
-    kwargs_no_filters = {"period_start": period_start, "period_end": period_end}
     period_label = f"{period_start} - {period_end}"
 
     prev_start = ""
@@ -481,12 +480,14 @@ def get_commercial_dashboard(
         "demand": _COMMERCIAL_QUERY_POOL.submit(query_demand_by_price_ranges, **kwargs),
         "executives": _COMMERCIAL_QUERY_POOL.submit(query_commercial_executive_matrix, **kwargs),
         "properties": _COMMERCIAL_QUERY_POOL.submit(query_commercial_property_ranking, **kwargs),
-        "sources": _COMMERCIAL_QUERY_POOL.submit(query_source_performance, **kwargs_no_filters, **comparison_kwargs),
-        "trends": _COMMERCIAL_QUERY_POOL.submit(query_comparative_trends, **kwargs_no_filters, **comparison_kwargs),
+        "sources": _COMMERCIAL_QUERY_POOL.submit(query_source_performance, **kwargs, **comparison_kwargs),
+        "trends": _COMMERCIAL_QUERY_POOL.submit(query_comparative_trends, **kwargs, **comparison_kwargs),
         "coverage": _COMMERCIAL_QUERY_POOL.submit(
             query_field_coverage,
-            executive=exec_filter if exec_filter else None,
-            universe="current_active",
+            period_start=period_start,
+            period_end=period_end,
+            filters=merged_filters or None,
+            universe="received_in_period",
         ),
     }
     kpis = futures["kpis"].result()
@@ -510,6 +511,7 @@ def get_commercial_dashboard(
             kpis=kpis, funnel=funnel, sla=sla,
             sources=sources, demand=demand_price,
             executives=executives,
+            filters=merged_filters or None,
         )
     except Exception as e:
         logger.warning(f"Insights engine error: {e}")
@@ -520,6 +522,12 @@ def get_commercial_dashboard(
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "read_only": True,
         "unit": "lead._id",
+        "universe": {
+            "leads": kpis.get("leads_received", {}).get("value"),
+            "filtered": bool(merged_filters),
+            "filters_applied": sorted(merged_filters),
+            "period_scope": "created_at",
+        },
         "sla_policy": {
             "type": "business_minutes",
             "threshold_minutes": 180,

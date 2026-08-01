@@ -684,15 +684,23 @@ def query_commercial_filter_options() -> dict:
 def query_field_coverage(
     executive: Optional[str] = None,
     universe: str = "current_active",
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    filters: Optional[dict] = None,
 ) -> dict:
     """Cobertura de campos sobre el universo seleccionado."""
     db = get_db()
     match_parts = []
-    if universe != "received_in_period":
+    if period_start and period_end:
+        start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+        match_parts.append(_commercial_cohort_match(start_utc, end_utc, filters))
+    elif universe != "received_in_period":
         match_parts.append(build_active_filter())
     user_filter = _build_user_filter(executive)
     if user_filter:
         match_parts.append(user_filter)
+    if extra and not (period_start and period_end):
+        match_parts.append(extra)
     match = {"$and": match_parts} if match_parts else {}
 
     fields = [
@@ -838,13 +846,40 @@ def _build_extra_filter(filters: Optional[dict]) -> dict:
         conditions["prospecto.comuna"] = str(filters["commune"])
     if filters.get("property_code"):
         conditions["prospecto.codigo"] = str(filters["property_code"])
-    if filters.get("ejecutivo_asignado"):
-        conditions["ejecutivo_asignado"] = str(filters["ejecutivo_asignado"])
+    executive_value = filters.get("ejecutivo_asignado") or filters.get("executive")
+    if executive_value:
+        conditions["ejecutivo_asignado"] = str(executive_value)
     if filters.get("assignment") == "1":
-        conditions["ejecutivo_asignado"] = {"$nin": ["Sin Asignar", "No Asignado", None, ""]}
+        assignment_condition = {"$nin": ["Sin Asignar", "No Asignado", None, ""]}
+        if "ejecutivo_asignado" in conditions:
+            return {"$and": [
+                {"ejecutivo_asignado": conditions.pop("ejecutivo_asignado")},
+                {"ejecutivo_asignado": assignment_condition},
+                *({key: value} for key, value in conditions.items()),
+            ]}
+        conditions["ejecutivo_asignado"] = assignment_condition
     elif filters.get("assignment") == "0":
-        conditions["ejecutivo_asignado"] = {"$in": ["Sin Asignar", "No Asignado", None, ""]}
+        assignment_condition = {"$in": ["Sin Asignar", "No Asignado", None, ""]}
+        if "ejecutivo_asignado" in conditions:
+            return {"$and": [
+                {"ejecutivo_asignado": conditions.pop("ejecutivo_asignado")},
+                {"ejecutivo_asignado": assignment_condition},
+                *({key: value} for key, value in conditions.items()),
+            ]}
+        conditions["ejecutivo_asignado"] = assignment_condition
     return conditions
+
+
+def _build_commercial_cohort_match(start_utc, end_utc, filters: Optional[dict] = None) -> dict:
+    """Canonical commercial cohort: created_at period plus all segment filters."""
+    parts = [{"$expr": {"$and": [
+        {"$gte": ["$_created_normalized", start_utc]},
+        {"$lt": ["$_created_normalized", end_utc]},
+    ]}}]
+    extra = _build_extra_filter(filters)
+    if extra:
+        parts.append(extra)
+    return {"$and": parts}
 
 
 def _build_timeline(lead: dict) -> list:
@@ -1138,6 +1173,7 @@ def query_source_performance(
     comparison_start: Optional[str] = None,
     comparison_end: Optional[str] = None,
     include_comparison: bool = True,
+    filters: Optional[dict] = None,
 ) -> list:
     """Rendimiento de fuentes en el periodo: volumen, %hot, %asignados, %avanzados, variacion."""
     db = get_db()
@@ -1151,12 +1187,10 @@ def query_source_performance(
         prev_start = prev_end - (end_utc - start_utc)
     user_filter = _build_user_filter(executive)
 
-    eff = _effective_stage_expr()
-
     def _per_source(start_dt, end_dt):
         pipeline = [
             _normalized_created_at_stage(),
-            {"$match": {"$expr": {"$and": [{"$gte": ["$_created_normalized", start_dt]}, {"$lt": ["$_created_normalized", end_dt]}]}}},
+            {"$match": _build_commercial_cohort_match(start_dt, end_dt, filters)},
             *([{"$match": user_filter}] if user_filter else []),
             {"$addFields": {
                 "_src": {"$ifNull": ["$prospecto.origen", "Sin informacion"]},
@@ -1410,6 +1444,7 @@ def query_comparative_trends(
     comparison_start: Optional[str] = None,
     comparison_end: Optional[str] = None,
     include_comparison: bool = True,
+    filters: Optional[dict] = None,
 ) -> dict:
     """Tendencia comparativa: periodo actual vs periodo anterior de igual duracion."""
     db = get_db()
@@ -1427,7 +1462,7 @@ def query_comparative_trends(
     def _daily(ps_utc, pe_utc):
         pipeline = [
             _normalized_created_at_stage(),
-            {"$match": {"$expr": {"$and": [{"$gte": ["$_created_normalized", ps_utc]}, {"$lt": ["$_created_normalized", pe_utc]}]}}},
+            {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
             {"$group": {"_id": _format_date_field("$_created_normalized"), "received": {"$sum": 1}}},
             {"$sort": {"_id": 1}},
             {"$project": {"date": "$_id", "received": 1, "_id": 0}},
@@ -1612,10 +1647,7 @@ def _query_temperature_coverage_legacy(period_start=None, period_end=None):
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
     pipeline = [
         _normalized_created_at_stage(),
-        {"$match": {"$expr": {"$and": [
-            {"$gte": ["$_created_normalized", start_utc]},
-            {"$lt": ["$_created_normalized", end_utc]},
-        ]}}},
+        {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
         {"$addFields": {
             "_has_history": {"$cond": [{"$gt": [{"$size": {"$ifNull": ["$temperature_history", []]}}, 0]}, 1, 0]},
             "_has_current": {"$cond": [{"$in": ["$lead_temperature_effective", ["HOT", "COLD"]]}, 1, 0]},
@@ -1865,10 +1897,7 @@ def query_commercial_funnel(period_start=None, period_end=None, filters=None):
     cutoff_utc = end_utc  # Strict cutoff at period end
     pipeline = [
         _normalized_created_at_stage(),
-        {"$match": {"$expr": {"$and": [
-            {"$gte": ["$_created_normalized", start_utc]},
-            {"$lt": ["$_created_normalized", end_utc]},
-        ]}}},
+        {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
         {"$project": {
             "pipeline_stage": 1, "stage": 1, "stage_history": 1,
             "lead_temperature_effective": 1, "temperature_history": 1,
@@ -2077,10 +2106,7 @@ def query_sla_risk_panel(period_start=None, period_end=None, filters=None):
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
     pipeline = [
         _normalized_created_at_stage(),
-        {"$match": {"$expr": {"$and": [
-            {"$gte": ["$_created_normalized", start_utc]},
-            {"$lt": ["$_created_normalized", end_utc]},
-        ]}}},
+        {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
         {"$project": {
             "_id": 1,
             "lifecycle.assigned_at": 1,
@@ -2162,10 +2188,7 @@ def query_demand_by_price_ranges(period_start=None, period_end=None, filters=Non
 
     pipeline = [
         _normalized_created_at_stage(),
-        {"$match": {"$expr": {"$and": [
-            {"$gte": ["$_created_normalized", start_utc]},
-            {"$lt": ["$_created_normalized", end_utc]},
-        ]}}},
+        {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
         {"$addFields": {
             "_operacion": {"$ifNull": ["$prospecto.operacion", "Sin informacion"]},
             "_precio_uf": {"$ifNull": ["$prospecto.precio_uf", None]},
@@ -2258,10 +2281,7 @@ def query_commercial_executive_matrix(period_start=None, period_end=None, filter
 
     pipeline = [
         _normalized_created_at_stage(),
-        {"$match": {"$expr": {"$and": [
-            {"$gte": ["$_created_normalized", start_utc]},
-            {"$lt": ["$_created_normalized", end_utc]},
-        ]}}},
+        {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
         {"$addFields": {
             "_ex": {"$ifNull": ["$ejecutivo_asignado", "Sin Asignar"]},
             "_is_hot": {"$cond": [{"$or": [
@@ -2329,10 +2349,7 @@ def query_commercial_property_ranking(period_start=None, period_end=None, filter
 
     pipeline = [
         _normalized_created_at_stage(),
-        {"$match": {"$expr": {"$and": [
-            {"$gte": ["$_created_normalized", start_utc]},
-            {"$lt": ["$_created_normalized", end_utc]},
-        ]}}},
+        {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
         {"$addFields": {
             "_code": {"$ifNull": ["$prospecto.codigo", None]},
             "_is_hot": {"$cond": [{"$eq": ["$lead_temperature_effective", "HOT"]}, 1, 0]},
@@ -2420,7 +2437,7 @@ def query_commercial_property_ranking(period_start=None, period_end=None, filter
 # 8. INSIGHTS DETERMINISTICOS
 # =============================================================================
 
-def query_commercial_insights(kpis=None, funnel=None, sla=None, sources=None, demand=None, executives=None):
+def query_commercial_insights(kpis=None, funnel=None, sla=None, sources=None, demand=None, executives=None, filters=None):
     """Deterministic insight engine. No AI, no invented data."""
     ins = []
     if sla and sla.get("critical_open", 0) > 0:

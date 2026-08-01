@@ -1002,13 +1002,13 @@ function render(){
   const compact=matchMedia('(max-width:600px)').matches;
   /* canonical period context from backend metadata */
   renderPeriodContext(D);
-  const totalLeads=D.kpis?.leads_received?.value??null,totalLabel=totalLeads==null?'S/I':F(totalLeads);
+  const universe=D.meta?.universe||{},totalLeads=universe.leads??D.kpis?.leads_received?.value??null,totalLabel=totalLeads==null?'S/I':F(totalLeads),universeLabel=universe.filtered?'Universo filtrado: ':'Universo: ';
   let upd='';
   if(D.meta?.generated_at){
     const mins=Math.max(0,Math.round((Date.now()-new Date(D.meta.generated_at).getTime())/60000));
     upd=mins<1?' \u00b7 actualizado hace instantes':mins<60?' \u00b7 actualizado hace '+mins+' min':' \u00b7 actualizado hace '+Math.round(mins/60)+' h';
   }
-  $('metaTxt').textContent=(compact?(upd?upd.replace(' \u00b7 actualizado ',''):'hace instantes')+' \u00b7 '+totalLabel+' leads':totalLabel+' leads analizados'+upd);
+  $('metaTxt').textContent=(compact?(upd?upd.replace(' \u00b7 actualizado ',''):'hace instantes')+' \u00b7 '+universeLabel+totalLabel+' leads':universeLabel+totalLabel+' leads'+upd);
   document.querySelector('#metaLine .dot').style.background='var(--cd-ok)';
   rKPI();rPriorities();rInsights();rev();rsla();rfun();
   FIRST_KPI=false;

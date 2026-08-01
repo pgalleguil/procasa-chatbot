@@ -1302,20 +1302,23 @@ async def get_unique_executives():
     return result
 
 # --- 2. DETALLE DEL LEAD ---
-def get_lead_detail_data(phone, property_code=None):
+def get_lead_detail_data(phone, property_code=None, lead_doc=None):
+    """Build detail data, optionally from an already-resolved lead document."""
     db = get_db()
+    phone = str(phone or "")
     phone_clean = phone.replace(" ", "").replace("+", "").strip()
-    
-    query = {"phone": {"$regex": phone_clean}}
-    if property_code:
-        query["$or"] = [
-            {"prospecto.codigo": property_code},
-            {"prospecto.codigo": str(property_code)},
-            {"datos_propiedad.codigo": property_code},
-            {"datos_propiedad.codigo": str(property_code)}
-        ]
-        
-    lead = db["leads"].find_one(query, sort=[("created_at", -1)])
+
+    lead = lead_doc
+    if lead is None:
+        query = {"phone": {"$regex": phone_clean}}
+        if property_code:
+            query["$or"] = [
+                {"prospecto.codigo": property_code},
+                {"prospecto.codigo": str(property_code)},
+                {"datos_propiedad.codigo": property_code},
+                {"datos_propiedad.codigo": str(property_code)}
+            ]
+        lead = db["leads"].find_one(query, sort=[("created_at", -1)])
     if not lead: return None
     
     codigo = detect_property_code(lead)

@@ -692,7 +692,7 @@
                     document.getElementById('duplicateStatus').innerHTML = `
                         <div class="status-badge" style="display: flex; background: rgba(34, 197, 94, 0.1); color: var(--success-color); border: 1px solid var(--success-color);">
                             <i class="fa-solid fa-check-circle"></i> 
-                            Último lead creado: <a href="/crm/lead/${result.phone}?codigo=${result.property_code}" target="_blank" style="color: inherit; text-decoration: underline;">Ver ficha aquí</a>
+                            Último lead creado: <a href="/crm/lead-id/${result.lead_id}" target="_blank" style="color: inherit; text-decoration: underline;">Ver ficha aquí</a>
                         </div>`;
                 } else {
                     showToast(result.detail || result.message || "Error al crear lead", "error");

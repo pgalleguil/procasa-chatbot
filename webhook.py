@@ -1249,10 +1249,14 @@ async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None
         db = _sync_db()
         from chatbot.crm_metrics import resolve_canonical_lead
         resolution = resolve_canonical_lead(db, phone=phone)
+        if not resolution.lead and str(phone).startswith("no-phone-"):
+            legacy_lead = db["leads"].find_one({"phone": str(phone)})
+            if legacy_lead:
+                resolution = type(resolution)(legacy_lead, "resolved_synthetic_phone", 1)
         if resolution and resolution.lead:
             lead = resolution.lead
             phone_norm = lead.get("phone") or ""
-            detail = get_lead_detail_data(phone_norm)
+            detail = get_lead_detail_data(phone_norm, lead_doc=lead)
             return lead, detail
         return None, None
 
@@ -1289,7 +1293,7 @@ async def view_crm_detail_by_id(request: Request, lead_id: str):
         lead = db["leads"].find_one({"_id": oid})
         if lead:
             phone = lead.get("phone") or ""
-            detail = get_lead_detail_data(phone)
+            detail = get_lead_detail_data(phone, lead_doc=lead)
             return lead, detail
         return None, None
 
@@ -1408,7 +1412,7 @@ async def contact_call(request: Request, lead_id: str):
 def _resolve_lead_by_id(db, oid):
     lead = db["leads"].find_one({"_id": oid})
     if lead:
-        detail = get_lead_detail_data(lead.get("phone", ""))
+        detail = get_lead_detail_data(lead.get("phone", ""), lead_doc=lead)
         return lead, detail
     return None, None
 

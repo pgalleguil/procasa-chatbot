@@ -1535,8 +1535,8 @@ def query_variance_drivers(
         ]
 
     facets = {
-        "current_total": [current_match, {"$group": {"_id": "$_id"}}, {"$count": "count"}],
-        "previous_total": ([previous_match, {"$group": {"_id": "$_id"}}, {"$count": "count"}] if previous_match else []),
+        "current_total": [{"$match": current_match}, {"$group": {"_id": "$_id"}}, {"$count": "count"}],
+        "previous_total": ([{"$match": previous_match}, {"$group": {"_id": "$_id"}}, {"$count": "count"}] if previous_match else []),
     }
     for name, field in dimensions.items():
         facets[f"current_{name}"] = facet(current_match, field)

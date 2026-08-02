@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
@@ -48,6 +49,19 @@ def _cache_get(key: str) -> dict | None:
     return None
 
 
+def _sanitize_non_finite(value):
+    """Replace non-JSON numeric values with null in analytics payloads."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _sanitize_non_finite(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_non_finite(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_non_finite(item) for item in value)
+    return value
+
+
 def _cache_set(key: str, value: dict):
     if len(L1_CACHE) >= MAX_CACHE_ENTRIES:
         oldest = min(L1_CACHE, key=lambda k: L1_CACHE[k][0])
@@ -67,6 +81,8 @@ def get_summary(
     key = _cache_key("summary", ps=period_start, pe=period_end, exec=exec_filter, role=role)
     cached = _cache_get(key)
     if cached:
+        cached = _sanitize_non_finite(cached)
+        _cache_set(key, cached)
         return cached
 
     data = query_summary(
@@ -104,6 +120,7 @@ def get_summary(
         },
         "quality": data["quality"],
     }
+    result = _sanitize_non_finite(result)
     _cache_set(key, result)
     return result
 

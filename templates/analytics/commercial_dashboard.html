@@ -715,10 +715,11 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 /* ================= HELPERS ================= */
 const $=id=>document.getElementById(id);
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const F=v=>new Intl.NumberFormat('es-CL').format(Number(v??0));
-const P=v=>v!=null?Number(v).toLocaleString('es-CL',{maximumFractionDigits:0})+' %':'S/I';
-const P1=v=>v!=null?Number(v).toLocaleString('es-CL',{minimumFractionDigits:1,maximumFractionDigits:1})+' %':'S/I';
-const PV=v=>v==null?'S/I':(v>0?'+':v<0?'':'')+Number(v).toLocaleString('es-CL',{minimumFractionDigits:1,maximumFractionDigits:1})+' %';
+const finiteNumber=v=>{if(v==null)return null;const n=Number(v);return Number.isFinite(n)?n:null};
+const F=v=>{const n=finiteNumber(v);return n==null?'S/I':new Intl.NumberFormat('es-CL').format(n)};
+const P=v=>{const n=finiteNumber(v);return n==null?'S/I':n.toLocaleString('es-CL',{maximumFractionDigits:0})+' %'};
+const P1=v=>{const n=finiteNumber(v);return n==null?'S/I':n.toLocaleString('es-CL',{minimumFractionDigits:1,maximumFractionDigits:1})+' %'};
+const PV=v=>{const n=finiteNumber(v);return n==null?'S/I':(n>0?'+':n<0?'':'')+n.toLocaleString('es-CL',{minimumFractionDigits:1,maximumFractionDigits:1})+' %'};
 const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const FD=v=>{if(!v)return'S/I';try{const d=new Date(String(v).split('T')[0]+'T00:00:00');return d.getDate()+' de '+MESES[d.getMonth()]+' de '+d.getFullYear()}catch(e){return v}};
 const FDS=v=>{if(!v)return'S/I';try{const d=new Date(String(v).split('T')[0]+'T00:00:00');return d.getDate()+' '+MESES[d.getMonth()].slice(0,3)+' '+d.getFullYear()}catch(e){return v}};
@@ -1279,10 +1280,10 @@ function rsla(){
   const pal=PAL(),pct=sla.overall_compliance_pct;
   const col=pct==null?pal.gray:pct>=85?pal.ok:pct>=50?pal.warn:pal.bad;
   const lead=sla.lead||{},hot=sla.lead_hot||{},ex=sla.excluded||{};
-  const val=v=>v==null?'S/I':F(v);
+  const val=v=>finiteNumber(v)==null?'S/I':F(v);
   const metric=(label,value,cls='')=>'<span>'+label+'</span><b class="'+cls+'">'+val(value)+'</b>';
   const profile=(label,b,isHot)=>'<div class="cd-card cd-sla-profile"><div class="cd-card-h"><h3>'+label+'</h3><button class="cd-info" data-tt="'+E(isHot?'Lead Hot: 30/45/60 minutos h\u00e1biles.':'Lead: 120/150/180 minutos h\u00e1biles.')+'" aria-label="Definici\u00f3n '+label+'"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-sla-grid">'
-    +metric('Elegibles',b.eligible)+metric('Normal abiertos',b.open_normal)+metric('Atenci\u00f3n',b.attention)+metric('Pr\u00f3ximo a vencer',b.near_breach)+metric('Vencidos',b.breached,b.breached?'r':'')+metric('Gestionados dentro',b.managed_within)+metric('Gestionados fuera',b.managed_outside)+metric('Mediana',b.median_minutes==null?null:F(b.median_minutes)+' min')+metric('P90',b.p90_minutes==null?null:F(b.p90_minutes)+' min')+'</div></div>';
+    +metric('Elegibles',b.eligible)+metric('Normal abiertos',b.open_normal)+metric('Atenci\u00f3n',b.attention)+metric('Pr\u00f3ximo a vencer',b.near_breach)+metric('Vencidos',b.breached,b.breached?'r':'')+metric('Gestionados dentro',b.managed_within)+metric('Gestionados fuera',b.managed_outside)+metric('Mediana',finiteNumber(b.median_minutes)==null?null:F(b.median_minutes)+' min')+metric('P90',finiteNumber(b.p90_minutes)==null?null:F(b.p90_minutes)+' min')+'</div></div>';
   let h='<div class="cd-sla-top"><div class="cd-sla-main"><div class="cd-sla-pct" style="color:'+col+'">'+P1(pct)+'</div><div class="cd-sla-gap">Cumplimiento definitivo</div></div><div class="cd-sla-stats"><div class="cd-stat"><div class="v">'+val(sla.overall_numerator)+'</div><div class="l">Dentro de plazo</div></div><div class="cd-stat"><div class="v">'+val(sla.overall_denominator)+'</div><div class="l">Denominador</div></div><div class="cd-stat"><div class="v">'+val(ex.historical)+'</div><div class="l">Hist\u00f3ricos excluidos</div></div><div class="cd-stat"><div class="v">'+val((ex.not_assigned||0)+(ex.insufficient_data||0))+'</div><div class="l">Sin cobertura</div></div></div></div>';
   h+='<div class="cd-sec-t">Estado SLA por clasificaci\u00f3n <button class="cd-info" data-tt="'+E(SLA_HELP)+'" aria-label="C\u00f3mo funciona el SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-sla-profile-grid">'+profile('Lead',lead,false)+profile('Lead Hot',hot,true)+'</div>';
   h+='<div class="cd-sla-gap" style="margin-top:10px">Hist\u00f3ricos excluidos: <b>'+val(ex.historical)+'</b> \u00b7 Sin asignaci\u00f3n: <b>'+val(ex.not_assigned)+'</b> \u00b7 Cobertura insuficiente: <b>'+val(ex.insufficient_data)+'</b></div>';
@@ -1290,8 +1291,9 @@ function rsla(){
 }
 
 function formatOperationalMinutes(value){
-  if(value==null)return'S/I';
-  const n=Math.max(0,Math.round(Number(value))),h=Math.floor(n/60),m=n%60;
+  const numeric=finiteNumber(value);
+  if(numeric==null)return'S/I';
+  const n=Math.max(0,Math.round(numeric)),h=Math.floor(n/60),m=n%60;
   return h?m?h+' h '+m+' min':h+' h':n+' min';
 }
 
@@ -1319,7 +1321,8 @@ function renderExecutiveStory(story){
   const basis=cov.comparable?'':' Sin base comparable.';
   const receivedVar=o.received_delta_abs==null?'Sin base comparable':signed(o.received_delta_abs)+' leads'+(o.received_delta_pct==null?'':' ('+signedPct(o.received_delta_pct)+')');
   const outcome='Se recibieron '+n(o.received)+' leads, '+receivedVar+'. La cobertura de gestión alcanzó '+pct(o.management_coverage_pct)+' ('+signedPct(o.management_coverage_delta_pp)+' pp) y la contactabilidad '+pct(o.contactability_pct)+' ('+signedPct(o.contactability_delta_pp)+' pp). El cumplimiento SLA fue '+pct(o.sla_compliance_pct)+' ('+signedPct(o.sla_compliance_delta_pp)+' pp).'+basis;
-  const contribution=c.available?'La '+String(c.dimension||'dimensión').toLowerCase()+' '+E(c.segment)+' presenta la mayor contribución observada: '+n(c.current)+' actuales frente a '+n(c.previous)+' comparables, una diferencia de '+signed(c.delta)+'.':(cov.comparable?'Sin base suficiente para analizar contribuciones.':'Sin base suficiente para analizar contribuciones.');
+  const contributionLabel=c.dimension==='Ejecutivo'?'La persona ejecutiva':('La '+String(c.dimension||'dimensión').toLowerCase());
+  const contribution=c.available?contributionLabel+' '+E(c.segment)+' presenta la mayor contribución observada: '+n(c.current)+' actuales frente a '+n(c.previous)+' comparables, una diferencia de '+signed(c.delta)+'.':(cov.comparable?'Sin base suficiente para analizar contribuciones.':'Sin base suficiente para analizar contribuciones.');
   const riskText=r.code==='none'?'No existen riesgos operativos abiertos relevantes.':E(r.label||'Riesgo operativo identificado')+' ('+n(r.affected_leads)+' leads).';
   const riskMeta=(r.priority||'Controlado')+' · '+pct(r.rate_pct)+' del denominador válido'+(r.delta_abs==null?'':' · variación '+signed(r.delta_abs));
   const actions={hot_breached_open:'Gestionar prioritariamente los '+n(a.affected_leads)+' Lead Hot vencidos y registrar un resultado válido en el CRM.',lead_breached_open:'Regularizar los '+n(a.affected_leads)+' leads vencidos que todavía no cuentan con gestión registrada.',unassigned:'Asignar los '+n(a.affected_leads)+' leads pendientes de ejecutivo antes de evaluar su cobertura de gestión.',backlog:'Completar la primera gestión válida de los '+n(a.affected_leads)+' leads asignados que permanecen pendientes.',no_effective_contact:'Priorizar seguimiento sobre los '+n(a.affected_leads)+' leads gestionados donde todavía no existe contacto efectivo.',sla_deterioration:'Revisar el segmento con mayor desviación y validar capacidad, carga y cumplimiento operativo.',management_coverage_deterioration:'Revisar el segmento con mayor desviación y validar capacidad, carga y cumplimiento operativo.',none:'Mantener el seguimiento operacional y revisar nuevamente al cierre del próximo periodo.'};

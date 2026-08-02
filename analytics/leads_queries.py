@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
+import math
 from typing import Any, Mapping, Optional
 
 from chatbot.constants import CHILE_TZ
@@ -2014,7 +2015,12 @@ def query_commercial_funnel(period_start=None, period_end=None, filters=None):
 # =============================================================================
 
 def _sla_percentile(values, percentile):
-    values = sorted(float(value) for value in values if value is not None)
+    values = sorted(
+        number for value in values
+        if value is not None
+        for number in [float(value)]
+        if math.isfinite(number)
+    )
     if not values:
         return None
     position = (len(values) - 1) * percentile / 100

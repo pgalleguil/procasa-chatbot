@@ -286,7 +286,7 @@ def _select_executive_contribution(contribution, current_received, previous_rece
     return {"available": True, "dimension": labels[dimension], "segment": segment, "current": current, "previous": previous, "delta": delta, "direction": direction}
 
 
-def _build_executive_story(executive_summary, sla, period_info, contribution, filters=None):
+def _build_executive_story(executive_summary, sla, period_info, contribution, filters=None, management_targets=None):
     summary = executive_summary or {}
     current = summary.get("current") or {}
     previous = summary.get("previous") or {}
@@ -339,12 +339,17 @@ def _build_executive_story(executive_summary, sla, period_info, contribution, fi
     }
     action_code, status = action_map[risk["code"]]
     selected_contribution = _select_executive_contribution(contribution, received, previous_received, filters)
+    target_summary = (management_targets or {}).get("summary") or {}
+    target_items = (management_targets or {}).get("items") or []
+    target_metric = target_summary.get("main_deviation_metric")
+    target_deviation = next((item for item in target_items if item.get("metric") == target_metric), None)
     return {
         "period": {"current_label": (period_info.get("current") or {}).get("label", ""), "comparison_label": (period_info.get("previous") or {}).get("label", "Sin comparación"), "universe": received},
         "outcome": {"received": received, "received_delta_abs": received_delta, "received_delta_pct": received_pct, "management_coverage_pct": current_coverage, "management_coverage_delta_pp": coverage_pp, "contactability_pct": current_contactability, "contactability_delta_pp": contactability_pp, "sla_compliance_pct": current_sla, "sla_compliance_delta_pp": sla_pp},
         "main_contribution": selected_contribution,
         "risk": risk,
         "recommended_action": {"code": action_code, "priority": risk["priority"], "affected_leads": risk["affected_leads"], "status": status},
+        "target_deviation": {"metric": target_metric, "label": target_deviation.get("label") if target_deviation else None, "gap": target_deviation.get("gap") if target_deviation else None},
         "coverage": {"comparable": bool(previous), "contribution_analysis_available": bool(selected_contribution.get("available")), "insufficient_data": current.get("insufficient_data", 0) or 0},
     }
 
@@ -634,6 +639,13 @@ def get_commercial_dashboard(
     executive_summary = query_executive_summary(
         **kwargs, **comparison_kwargs, sla_risk=sla,
     )
+    from .management_targets import build_management_targets
+    management_targets = build_management_targets(
+        sla,
+        executive_summary,
+        period_end=period_end,
+        comparable_end=prev_end or None,
+    )
     kpis["sla_compliance"] = {
         "value": sla.get("overall_compliance_pct"),
         "previous": None,
@@ -685,8 +697,9 @@ def get_commercial_dashboard(
         "funnel": funnel,
         "sla_risk": sla,
         "executive_summary": executive_summary,
-        "executive_story": _build_executive_story(executive_summary, sla, period_info, variance_drivers, merged_filters),
+        "executive_story": _build_executive_story(executive_summary, sla, period_info, variance_drivers, merged_filters, management_targets),
         "variance_drivers": variance_drivers,
+        "management_targets": management_targets,
         "demand_by_price": demand_price,
         "executives": executives,
         "properties": properties,

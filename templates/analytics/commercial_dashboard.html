@@ -486,6 +486,16 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 .commercial-story-rows{display:grid;gap:5px;font-size:.78rem}
 .commercial-story-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:5px 7px;background:var(--bg-surface-subtle);border-radius:var(--radius-sm)}
 .commercial-story-reconciliation{margin-top:8px;font-size:.75rem;color:var(--text-muted)}
+.management-targets{margin-top:16px}
+.management-targets-table{display:grid;gap:5px;font-size:.78rem}
+.management-target-row{display:grid;grid-template-columns:minmax(0,1.5fr) repeat(5,minmax(0,1fr));gap:8px;align-items:center;padding:7px 9px;background:var(--bg-surface-subtle);border-radius:var(--radius-sm)}
+.management-target-row.header{color:var(--text-muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;background:transparent}
+.management-target-status{font-weight:600}
+.management-target-status.met{color:var(--ok,#22c55e)}
+.management-target-status.not-met{color:var(--bad,#ef4444)}
+.management-target-status.unconfigured,.management-target-status.not-applicable{color:var(--text-muted)}
+.management-target-source{display:block;color:var(--text-muted);font-size:.68rem;margin-top:2px}
+@media(max-width:600px){.management-target-row{grid-template-columns:1fr 1fr}.management-target-row.header{display:none}.management-target-row>span:first-child{grid-column:1/-1}}
 @media(max-width:991px){.commercial-story-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:600px){.commercial-story-grid{grid-template-columns:1fr}}
 </style>
@@ -608,6 +618,10 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
       <div class="commercial-story-block" data-story-block="risk" data-tt="Principal situación operacional abierta según asignación, gestión y política SLA."><h3>Riesgo operativo</h3><p id="executiveStoryRisk"></p><div class="commercial-story-meta" id="executiveStoryRiskMeta"></div></div>
       <div class="commercial-story-block" data-story-block="action" data-tt="Recomendación generada mediante reglas verificables. No ejecuta cambios en el CRM."><h3>Acción recomendada</h3><p id="executiveStoryAction"></p><div class="commercial-story-meta" id="executiveStoryActionMeta"></div></div>
     </div>
+  </section>
+  <section class="cd-card management-targets" id="managementTargets" hidden aria-labelledby="managementTargetsTitle">
+    <div class="cd-card-h"><h2 id="managementTargetsTitle" data-tt="Compara los resultados observados con objetivos formalmente configurados. La variaciÃ³n histÃ³rica y la brecha contra meta son conceptos distintos.">Metas y desviaciones</h2></div>
+    <div class="management-targets-table" id="managementTargetsTable"></div>
   </section>
   <div class="cd-insights" id="insights" hidden></div>
   <div class="cd-grid cd-g-exec">
@@ -1048,7 +1062,7 @@ function render(){
   }
   $('metaTxt').textContent=(compact?(upd?upd.replace(' \u00b7 actualizado ',''):'hace instantes')+' \u00b7 '+universeLabel+totalLabel+' leads':universeLabel+totalLabel+' leads'+upd);
   document.querySelector('#metaLine .dot').style.background='var(--cd-ok)';
-  rKPI();rPriorities();rInsights();rev();rsla();rfun();renderOperationalControl(D.executive_summary);renderExecutiveStory(D.executive_story);
+  rKPI();rPriorities();rInsights();rev();rsla();rfun();renderOperationalControl(D.executive_summary);renderExecutiveStory(D.executive_story);renderManagementTargets(D.management_targets);
   FIRST_KPI=false;
 }
 
@@ -1329,12 +1343,14 @@ function renderExecutiveStory(story){
   const basis=cov.comparable?'':' Sin base comparable.';
   const receivedVar=o.received_delta_abs==null?'Sin base comparable':signed(o.received_delta_abs)+' leads'+(o.received_delta_pct==null?'':' ('+signedPct(o.received_delta_pct)+')');
   const outcome='Se recibieron '+n(o.received)+' leads, '+receivedVar+'. La cobertura de gestión alcanzó '+pct(o.management_coverage_pct)+' ('+signedPct(o.management_coverage_delta_pp)+' pp) y la contactabilidad '+pct(o.contactability_pct)+' ('+signedPct(o.contactability_delta_pp)+' pp). El cumplimiento SLA fue '+pct(o.sla_compliance_pct)+' ('+signedPct(o.sla_compliance_delta_pp)+' pp).'+basis;
+  const targetDeviation=story.target_deviation?.label&&story.target_deviation?.gap>0?' La principal desviación contra meta corresponde a '+story.target_deviation.gap+' '+story.target_deviation.label.toLowerCase()+'.':'';
+  const finalOutcome=outcome+targetDeviation;
   const contributionLabel=c.dimension==='Ejecutivo'?'La persona ejecutiva':('La '+String(c.dimension||'dimensión').toLowerCase());
   const contribution=c.available?contributionLabel+' '+E(c.segment)+' presenta la mayor contribución observada: '+n(c.current)+' actuales frente a '+n(c.previous)+' comparables, una diferencia de '+signed(c.delta)+'.':(cov.comparable?'Sin base suficiente para analizar contribuciones.':'Sin base suficiente para analizar contribuciones.');
   const riskText=r.code==='none'?'No existen riesgos operativos abiertos relevantes.':E(r.label||'Riesgo operativo identificado')+' ('+n(r.affected_leads)+' leads).';
   const riskMeta=(r.priority||'Controlado')+' · '+pct(r.rate_pct)+' del denominador válido'+(r.delta_abs==null?'':' · variación '+signed(r.delta_abs));
   const actions={hot_breached_open:'Gestionar prioritariamente los '+n(a.affected_leads)+' Lead Hot vencidos y registrar un resultado válido en el CRM.',lead_breached_open:'Regularizar los '+n(a.affected_leads)+' leads vencidos que todavía no cuentan con gestión registrada.',unassigned:'Asignar los '+n(a.affected_leads)+' leads pendientes de ejecutivo antes de evaluar su cobertura de gestión.',backlog:'Completar la primera gestión válida de los '+n(a.affected_leads)+' leads asignados que permanecen pendientes.',no_effective_contact:'Priorizar seguimiento sobre los '+n(a.affected_leads)+' leads gestionados donde todavía no existe contacto efectivo.',sla_deterioration:'Revisar el segmento con mayor desviación y validar capacidad, carga y cumplimiento operativo.',management_coverage_deterioration:'Revisar el segmento con mayor desviación y validar capacidad, carga y cumplimiento operativo.',none:'Mantener el seguimiento operacional y revisar nuevamente al cierre del próximo periodo.'};
-  $('executiveStoryOutcome').textContent=outcome;
+  $('executiveStoryOutcome').textContent=finalOutcome;
   $('executiveStoryContribution').innerHTML=contribution;
   $('executiveStoryRisk').innerHTML=riskText;
   $('executiveStoryRiskMeta').textContent=riskMeta;
@@ -1347,6 +1363,21 @@ function renderExecutiveStory(story){
     contributionToggle.disabled=!EXECUTIVE_VARIANCE?.comparable_available;
     contributionToggle.title=contributionToggle.disabled?'Seleccione un periodo comparable para analizar contribuciones.':'';
   }
+  panel.hidden=false;bindTips(panel);
+}
+
+function renderManagementTargets(targets){
+  const panel=$('managementTargets'),table=$('managementTargetsTable');
+  if(!panel||!table||!targets)return;
+  const statusLabel={MET:'Meta cumplida',NOT_MET:'No cumplida',UNCONFIGURED:'Sin configurar',NOT_APPLICABLE:'No aplicable'};
+  const gapText=item=>{
+    if(item.status!=='NOT_MET')return statusLabel[item.status]||'Sin configurar';
+    const amount=Math.abs(item.gap||0),unit=item.unit||'unidades';
+    return item.direction==='min'?amount+' '+unit+' bajo la meta':amount+' '+unit+' sobre la meta';
+  };
+  const comparable=item=>item.comparable==null?'<span>S/I</span>':('<span>'+F(item.comparable)+'</span>')+(item.comparable_note?'<small class="management-target-source">'+E(item.comparable_note)+'</small>':'');
+  const rows=(targets.items||[]).map(item=>'<div class="management-target-row"><span><b>'+E(item.label)+'</b><small class="management-target-source">'+E(item.source_label||'Sin configurar')+'</small></span><span>'+F(item.actual)+'</span><span>'+(item.target==null?'S/I':F(item.target))+'</span><span>'+E(gapText(item))+'</span><span>'+comparable(item)+'</span><span class="management-target-status '+String(item.status||'').toLowerCase().replace('_','-')+'">'+E(statusLabel[item.status]||item.status)+'</span></div>').join('');
+  table.innerHTML='<div class="management-target-row header"><span>Indicador</span><span>Actual</span><span>Meta</span><span>Brecha</span><span>Comparable</span><span>Estado</span></div>'+rows;
   panel.hidden=false;bindTips(panel);
 }
 

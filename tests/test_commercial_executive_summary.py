@@ -164,7 +164,7 @@ def test_executive_story_contract_and_deterministic_outcome():
     story = _build_executive_story(story_summary(), story_sla(),
                                    {"current": {"label": "julio"}, "previous": {"label": "junio"}},
                                    {"available": False, "dimensions": {}})
-    assert set(story) == {"period", "outcome", "main_contribution", "risk", "recommended_action", "coverage"}
+    assert set(story) == {"period", "outcome", "main_contribution", "risk", "recommended_action", "target_deviation", "coverage"}
     assert story["outcome"]["received_delta_abs"] == 2
     assert story["outcome"]["received_delta_pct"] == 25.0
     assert story["outcome"]["management_coverage_delta_pp"] == 5.0

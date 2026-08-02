@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "effective_from": "2026-07-01",
+  "targets": [
+    {
+      "metric": "hot_open_breached",
+      "label": "Lead Hot vencidos abiertos",
+      "scope": "all",
+      "direction": "max",
+      "target": 0,
+      "unit": "leads",
+      "source": "POLICY"
+    },
+    {
+      "metric": "open_breached",
+      "label": "Leads vencidos abiertos",
+      "scope": "all",
+      "direction": "max",
+      "target": 0,
+      "unit": "leads",
+      "source": "POLICY"
+    },
+    {
+      "metric": "unassigned",
+      "label": "Leads sin asignación",
+      "scope": "all",
+      "direction": "max",
+      "target": 0,
+      "unit": "leads",
+      "source": "POLICY"
+    }
+  ]
+}

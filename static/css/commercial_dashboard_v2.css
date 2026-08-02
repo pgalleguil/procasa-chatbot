@@ -152,6 +152,18 @@
 .commercial-dashboard-v2 .cd-ins { min-height: 110px; padding: 14px; border: 1px solid var(--commercial-border); border-left: 3px solid var(--commercial-info); border-radius: 12px; box-shadow: var(--commercial-shadow-card); background: var(--commercial-card); }
 .commercial-dashboard-v2 .cd-ins-title { font-size: 12px; line-height: 18px; }
 .commercial-dashboard-v2 .cd-ins-body, .commercial-dashboard-v2 .cd-ins-act { font-size: 12px; line-height: 18px; }
+.commercial-dashboard-v2 #tab-exec > * { margin-bottom: 18px; }
+.commercial-dashboard-v2 .cd-priorities { min-height: 52px; margin-bottom: 18px !important; }
+.commercial-dashboard-v2 .cd-priority-head { min-height: 52px; padding: 10px 14px; }
+.commercial-dashboard-v2 .cd-priority-head h2 { font-size: 12px; line-height: 18px; }
+.commercial-dashboard-v2 .cd-priority { min-height: 52px; padding: 10px 14px; }
+.commercial-dashboard-v2 .commercial-ops-panel, .commercial-dashboard-v2 .management-targets { padding: 18px; min-height: 0; }
+.commercial-dashboard-v2 .commercial-ops-panel .cd-card-h, .commercial-dashboard-v2 .management-targets .cd-card-h { margin-bottom: 12px; }
+.commercial-dashboard-v2 .commercial-ops-stage { padding-top: 6px; padding-bottom: 6px; }
+.commercial-dashboard-v2 .commercial-ops-chips .cd-pill { padding: 8px 10px; }
+.commercial-dashboard-v2 .management-target-row { min-height: 38px; }
+.commercial-dashboard-v2 .commercial-story { padding: 18px; }
+.commercial-dashboard-v2 .commercial-story-block { min-height: 104px; padding: 14px 16px; }
 .commercial-dashboard-v2 .cd-loading, .commercial-dashboard-v2 .cd-skeleton-kpi { color: transparent; background: linear-gradient(90deg, #e9eef5 25%, #f5f7fa 50%, #e9eef5 75%); background-size: 200% 100%; animation: commercial-v2-skeleton 1.4s linear infinite; border-radius: 8px; }
 .commercial-dashboard-v2 .cd-loading.done { animation: none; }
 .commercial-dashboard-v2 .cd-skeleton-kpi { min-height: 148px; }

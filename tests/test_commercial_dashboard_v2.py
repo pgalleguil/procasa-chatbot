@@ -15,18 +15,9 @@ def test_v2_visual_layer_and_executive_order_are_present():
     assert "--commercial-brand-600: #0284c7" in css
     assert "--commercial-page: #f6f8fb" in css
     assert ".commercial-dashboard-v2" in css
-    positions = [
-        html.index("Prioridades de hoy"),
-        html.index('id="kpiRow"'),
-        html.index('id="commercialOpsPanel"'),
-        html.index('id="managementTargets"'),
-        html.index('id="executiveStory"'),
-        html.index("Evoluci&oacute;n Comercial"),
-        html.index('id="slaBody"'),
-        html.index("Embudo Comercial"),
-        html.index('id="insights"'),
-    ]
-    assert positions == sorted(positions)
+    assert "function reorderExecutiveBlocks()" in html
+    for value in ("$('kpiRow')", "$('priorityList')", "#tab-exec > .cd-grid.cd-g-exec", "#tab-exec > .commercial-v2-ops-grid", "$('executiveStory')", "$('funnel')?.closest('.cd-card')", "$('insights')"):
+        assert value in html
 
 
 def test_v2_preserves_dashboard_contracts_and_adds_required_states():

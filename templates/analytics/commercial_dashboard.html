@@ -602,13 +602,13 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 
 <!-- TAB exec -->
 <div class="cd-panel active" id="tab-exec" role="tabpanel" aria-labelledby="tab-btn-exec">
-  <section class="cd-card cd-priorities" aria-labelledby="prioritiesTitle"><div class="cd-priority-head"><h2 id="prioritiesTitle">Prioridades de hoy</h2><span class="cd-status-pill" id="refreshState"><i class="fa-solid fa-arrows-rotate"></i> Actualizando resultados&hellip;</span></div><div class="cd-priority-list" id="priorityList"></div></section>
   <div class="cd-kpis" id="kpiRow" aria-busy="true" aria-live="polite">
     <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
     <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
     <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
     <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
   </div>
+  <section class="cd-card cd-priorities" aria-labelledby="prioritiesTitle"><div class="cd-priority-head"><h2 id="prioritiesTitle">Prioridades de hoy</h2><span class="cd-status-pill" id="refreshState"><i class="fa-solid fa-arrows-rotate"></i> Actualizando resultados&hellip;</span></div><div class="cd-priority-list" id="priorityList"></div></section>
   <div class="commercial-v2-ops-grid">
   <div id="commercialOpsPanel"></div>
   <section class="cd-card management-targets" id="managementTargets" hidden aria-labelledby="managementTargetsTitle">
@@ -742,7 +742,7 @@ const $=id=>document.getElementById(id);
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const finiteNumber=v=>{if(v==null)return null;const n=Number(v);return Number.isFinite(n)?n:null};
 const F=v=>{const n=finiteNumber(v);return n==null?'S/I':new Intl.NumberFormat('es-CL').format(n)};
-document.querySelectorAll('#managementTargetsTitle').forEach((node,index)=>{if(index>0)node.remove()});
+document.querySelectorAll('#managementTargetsTitle').forEach((node,index)=>{if(index>0)node.parentElement?.remove()});
 const P=v=>{const n=finiteNumber(v);return n==null?'S/I':n.toLocaleString('es-CL',{maximumFractionDigits:0})+' %'};
 const P1=v=>{const n=finiteNumber(v);return n==null?'S/I':n.toLocaleString('es-CL',{minimumFractionDigits:1,maximumFractionDigits:1})+' %'};
 const PV=v=>{const n=finiteNumber(v);return n==null?'S/I':(n>0?'+':n<0?'':'')+n.toLocaleString('es-CL',{minimumFractionDigits:1,maximumFractionDigits:1})+' %'};
@@ -1055,6 +1055,7 @@ function closeFilterSheet(returnFocus=false){const wasOpen=$('filters').classLis
 /* ================= RENDER GENERAL ================= */
 function render(){
   if(!D)return;
+  reorderExecutiveBlocks();
   const compact=matchMedia('(max-width:600px)').matches;
   /* canonical period context from backend metadata */
   renderPeriodContext(D);
@@ -1398,6 +1399,21 @@ function sanitizeUnavailableUi(){
       el.title='Sin información suficiente para calcular este indicador';
     }
   });
+}
+
+function reorderExecutiveBlocks(){
+  const root=$('tab-exec');
+  if(!root)return;
+  const blocks=[
+    $('kpiRow'),
+    $('priorityList')?.closest('.cd-priorities'),
+    document.querySelector('.commercial-dashboard-v2 #tab-exec > .cd-grid.cd-g-exec'),
+    document.querySelector('.commercial-dashboard-v2 #tab-exec > .commercial-v2-ops-grid'),
+    $('executiveStory'),
+    $('funnel')?.closest('.cd-card'),
+    $('insights')
+  ];
+  blocks.filter(Boolean).forEach(block=>root.appendChild(block));
 }
 
 function renderVarianceDetail(dimension){

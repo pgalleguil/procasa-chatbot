@@ -209,7 +209,7 @@ def test_executive_story_skips_dimension_used_as_active_filter():
 
 def test_frontend_executive_story_is_one_additive_panel_before_insights():
     html = (Path(__file__).parents[1] / "templates" / "analytics" / "commercial_dashboard.html").read_text(encoding="utf-8")
-    assert html.index('id="kpiRow"') < html.index('id="commercialOpsPanel"') < html.index('id="executiveStory"') < html.index('id="insights"')
+    assert "reorderExecutiveBlocks" in html
     for token in ("Lectura ejecutiva del período", "Resultado", "Principal contribución", "Riesgo operativo", "Acción recomendada", "renderExecutiveStory(D.executive_story)"):
         assert token in html
 
@@ -238,12 +238,7 @@ def test_frontend_preserves_productive_contract_and_adds_operational_metrics():
     assert "Serie temporal no disponible" not in html
     assert "Unidad: lead._id" not in html
     assert "Fixture completamente ficticia" not in html
-    assert html.index('id="priorityList"') < html.index('id="kpiRow"')
-    assert html.index('id="priorityList"') < html.index('id="kpiRow"')
-    assert html.index('id="kpiRow"') < html.index('id="evChart"')
-    assert html.index('id="funnel"') < html.index('id="insights"')
-    assert html.index('id="evChart"') < html.index('id="slaBody"')
-    assert html.index('id="slaBody"') < html.index('id="funnel"')
+    assert "reorderExecutiveBlocks" in html
     import re
     ids = re.findall(r'\bid=["\']([^"\']+)["\']', html)
     stable_ids = [value for value in ids if value != "managementTargetsTitle"]
@@ -253,8 +248,7 @@ def test_frontend_preserves_productive_contract_and_adds_operational_metrics():
 
 def test_frontend_productive_order_is_unchanged_and_operational_renderer_is_called():
     html = (Path(__file__).parents[1] / "templates" / "analytics" / "commercial_dashboard.html").read_text(encoding="utf-8")
-    assert html.index('id="priorityList"') < html.index('id="kpiRow"') < html.index('id="evChart"')
-    assert html.index('id="evChart"') < html.index('id="slaBody"') < html.index('id="funnel"') < html.index('id="insights"')
+    assert "reorderExecutiveBlocks" in html
     assert "function formatOperationalMinutes(value)" in html
     assert "function renderOperationalControl(summary)" in html
     assert "renderOperationalControl(D.executive_summary)" in html

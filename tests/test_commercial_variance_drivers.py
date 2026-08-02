@@ -68,6 +68,18 @@ def test_variance_drivers_reconcile_all_dimensions_and_deduplicate(monkeypatch):
     assert pipeline_text.count("prospecto.origen") >= 2
 
 
+def test_variance_drivers_normalizes_string_null_segments(monkeypatch):
+    row = _row()
+    row["current_source"] = [{"segment": "None", "count": 2}]
+    row["previous_source"] = [{"segment": "null", "count": 1}]
+    db = DB(row)
+    from analytics import leads_queries as queries
+    monkeypatch.setattr(queries, "get_db", lambda: db)
+    result = query_variance_drivers("2026-07-01", "2026-07-31", "2026-06-01", "2026-06-30")
+    labels = {item["label"] for item in result["dimensions"]["source"]["segments"]}
+    assert labels == {"Sin fuente"}
+
+
 def test_variance_drivers_without_comparison_preserves_unavailable_state(monkeypatch):
     db = DB(_row())
     from analytics import leads_queries as queries

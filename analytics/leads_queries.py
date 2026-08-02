@@ -1526,6 +1526,12 @@ def query_variance_drivers(
     def segment_expression(field, fallback):
         return {"$cond": [{"$or": [{"$eq": [field, None]}, {"$eq": [field, ""]}]}, fallback, field]}
 
+    def normalize_segment(value, fallback):
+        text = "" if value is None else str(value).strip()
+        if text.lower() in {"", "none", "null", "n/a", "sin informacion", "sin informaciÃ³n"}:
+            return fallback
+        return text
+
     def facet(match, field):
         return [
             {"$match": match},
@@ -1549,8 +1555,9 @@ def query_variance_drivers(
     total_delta = current_total - previous_total if previous_total is not None else None
     result = {}
     for name in dimensions:
-        current = {str(item.get("segment")): item.get("count", 0) for item in row.get(f"current_{name}", [])}
-        previous = {str(item.get("segment")): item.get("count", 0) for item in row.get(f"previous_{name}", [])}
+        fallback = dimensions[name][1]
+        current = {normalize_segment(item.get("segment"), fallback): item.get("count", 0) for item in row.get(f"current_{name}", [])}
+        previous = {normalize_segment(item.get("segment"), fallback): item.get("count", 0) for item in row.get(f"previous_{name}", [])}
         segments = []
         for key in sorted(set(current) | set(previous)):
             current_count, previous_count = current.get(key, 0), previous.get(key, 0)

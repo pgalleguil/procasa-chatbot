@@ -628,7 +628,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
     <div class="cd-card-h"><h2 id="managementTargetsTitle" data-tt="Compara los resultados observados con objetivos formalmente configurados. La variaciÃ³n histÃ³rica y la brecha contra meta son conceptos distintos.">Metas y desviaciones</h2></div>
   <div class="cd-grid cd-g-exec">
     <div class="cd-card">
-      <div class="cd-card-h"><h2>Evoluci&oacute;n Comercial <small>leads recibidos por d&iacute;a</small></h2><span class="cd-kpi-vs" id="evVar"></span></div>
+      <div class="cd-card-h"><div><h2>Evoluci&oacute;n Comercial <small>leads recibidos por d&iacute;a</small></h2><div class="commercial-v2-evolution-legend" id="evolutionLegend" aria-label="Leyenda de evolución comercial"></div></div><span class="cd-kpi-vs" id="evVar"></span></div>
       <div class="cd-chart"><canvas id="evChart"></canvas><div class="cd-loading" id="evLoad"></div></div>
     </div>
     <div class="cd-card">
@@ -1161,8 +1161,9 @@ function rKPI(){
   const slaCls=slaPct==null?'flat':slaPct>=85?'up':slaPct>=50?'flat':'down';
   const slaCol=slaPct==null?pal.gray:slaPct>=85?pal.ok:slaPct>=50?pal.warn:pal.bad;
   const gap=slaPct!=null?(slaPct-90):null;
+  const slaCritical=slaCls==='down';
   const slaTip=SLA_HELP;
-  h+='<div class="cd-kpi cd-kpi-sla" style="--d:'+(FIRST_KPI?6*45:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">Cumplimiento SLA</span><button class="cd-info" data-tt="'+E(slaTip)+'" aria-label="Definici\u00f3n de SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-kpi-val" style="color:'+slaCol+'" data-sla="1">'+(slaPct!=null?P1(slaPct):'S/I')+'</div><div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span class="cd-kpi-meta">Meta <b>90 %</b></span>'+(gap!=null?'<span class="cd-kpi-var '+slaCls+'">'+(gap>=0?'+':'')+P1(gap).replace(' %',' pp')+'</span>':'')+'</div><div class="cd-kpi-foot"><span class="cd-kpi-meta">'+(sla.critical_open!=null?F(sla.critical_open)+' cr\u00edticos abiertos':'')+'</span></div></div>';
+  h+='<div class="cd-kpi cd-kpi-sla'+(slaCritical?' kpi-critical':'')+'" style="--d:'+(FIRST_KPI?6*45:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">Cumplimiento SLA</span>'+(slaCritical?'<span class="commercial-sla-critical-pill">Crítico</span>':'')+'<button class="cd-info" data-tt="'+E(slaTip)+'" aria-label="Definici\u00f3n de SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-kpi-val" style="color:'+slaCol+'" data-sla="1">'+(slaPct!=null?P1(slaPct):'S/I')+'</div><div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span class="cd-kpi-meta">Meta <b>90 %</b></span>'+(gap!=null?'<span class="cd-kpi-var '+slaCls+'">'+(gap>=0?'+':'')+P1(gap).replace(' %',' pp')+'</span>':'')+'</div><div class="cd-kpi-foot"><span class="cd-kpi-meta">'+(sla.critical_open!=null?F(sla.critical_open)+' cr\u00edticos abiertos':'')+'</span></div></div>';
   $('kpiRow').innerHTML=h;
   /* animación de valores solo en primera carga */
   document.querySelectorAll('.cd-kpi-val').forEach(el=>{
@@ -1205,6 +1206,9 @@ function rev(){
   const maxLen=Math.max(cur.length,prev.length);
   const labels=Array.from({length:maxLen},(_,i)=>'D\u00eda '+(i+1));
   const curData=cur.map(d=>d.received),prevData=prev.map(d=>d.received);
+  const showCmp=COMPARE!=='none';
+  const legend=$('evolutionLegend');
+  if(legend)legend.innerHTML='<span><i></i>'+E(currentChartLabel)+'</span>'+(showCmp?'<span><i class="comparable"></i>'+E(comparisonChartLabel||'Periodo comparable')+'</span>':'');
   const curDates=cur.map(d=>d.date),prevDates=prev.map(d=>d.date);
   const tc=curData.reduce((a,b)=>a+b,0),tp=prevData.reduce((a,b)=>a+b,0);
   if(COMPARE!=='none'&&tp>0){
@@ -1218,7 +1222,6 @@ function rev(){
     c.ctx.save();c.ctx.strokeStyle=pal.line;c.ctx.setLineDash([3,3]);c.ctx.lineWidth=1;
     c.ctx.beginPath();c.ctx.moveTo(x,yy.top);c.ctx.lineTo(x,yy.bottom);c.ctx.stroke();c.ctx.restore();
   }};
-  const showCmp=COMPARE!=='none';
   el.dataset.currentLabel=currentChartLabel;el.dataset.comparisonLabel=showCmp?comparisonChartLabel:'';
   const ds=[{label:currentChartLabel,data:curData,borderColor:pal.brand,backgroundColor:pal.brand+'14',fill:true,tension:.32,pointRadius:0,pointHoverRadius:5,pointHoverBackgroundColor:pal.brand,pointHoverBorderColor:'#fff',borderWidth:2.5,_dates:curDates}];
   if(showCmp)ds.push({label:comparisonChartLabel,data:prevData,borderColor:pal.cmp,borderDash:[5,5],tension:.32,pointRadius:0,pointHoverRadius:4,pointHoverBackgroundColor:pal.cmp,borderWidth:1.8,fill:false,_dates:prevDates});
@@ -1229,7 +1232,7 @@ function rev(){
     events:['mousemove','mouseout','click','touchstart','touchmove'],
     onLeave:tipHide,
     plugins:{
-      legend:{position:'top',align:'end',labels:{color:pal.mut,font:{size:12,family:'Inter'},boxWidth:16,boxHeight:2,usePointStyle:true,pointStyle:'line'}},
+      legend:{display:false},
       tooltip:{enabled:false,external:makeExtTip(tt=>{
         const i=tt.dataPoints?.[0]?.dataIndex;if(i==null)return'';
         let h='<div class="tt-t">D\u00eda '+(i+1)+'</div>';
@@ -1300,7 +1303,7 @@ function rslaLegacy(){
   bindTips(body);
 }
 /* Canonical SLA renderer. */
-function rsla(){
+function rslaLegacy(){
   const sla=D.sla_risk||{},body=$('slaBody');
   if(!body)return;
   $('slaPolicy').textContent=D.meta?.sla_policy?.display_label||sla.sla_policy?.display_label||'';
@@ -1314,6 +1317,28 @@ function rsla(){
   let h='<div class="cd-sla-top"><div class="cd-sla-main"><div class="cd-sla-pct" style="color:'+col+'">'+P1(pct)+'</div><div class="cd-sla-gap">Cumplimiento definitivo</div></div><div class="cd-sla-stats"><div class="cd-stat"><div class="v">'+val(sla.overall_numerator)+'</div><div class="l">Dentro de plazo</div></div><div class="cd-stat"><div class="v">'+val(sla.overall_denominator)+'</div><div class="l">Denominador</div></div><div class="cd-stat"><div class="v">'+val(ex.historical)+'</div><div class="l">Hist\u00f3ricos excluidos</div></div><div class="cd-stat"><div class="v">'+val((ex.not_assigned||0)+(ex.insufficient_data||0))+'</div><div class="l">Sin cobertura</div></div></div></div>';
   h+='<div class="cd-sec-t">Estado SLA por clasificaci\u00f3n <button class="cd-info" data-tt="'+E(SLA_HELP)+'" aria-label="C\u00f3mo funciona el SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-sla-profile-grid">'+profile('Lead',lead,false)+profile('Lead Hot',hot,true)+'</div>';
   h+='<div class="cd-sla-gap" style="margin-top:10px">Hist\u00f3ricos excluidos: <b>'+val(ex.historical)+'</b> \u00b7 Sin asignaci\u00f3n: <b>'+val(ex.not_assigned)+'</b> \u00b7 Cobertura insuficiente: <b>'+val(ex.insufficient_data)+'</b></div>';
+  body.innerHTML=h;bindTips(body);
+}
+
+function rsla(){
+  const sla=D.sla_risk||{},body=$('slaBody');
+  if(!body)return;
+  $('slaPolicy').textContent=D.meta?.sla_policy?.display_label||sla.sla_policy?.display_label||'';
+  const pct=sla.overall_compliance_pct,lead=sla.lead||{},hot=sla.lead_hot||{},ex=sla.excluded||{};
+  const val=v=>finiteNumber(v)==null?'S/I':F(v);
+  const states=(b,isHot)=>{
+    const values=[b.open_normal,b.attention,b.near_breach,b.breached],allNull=values.every(v=>v==null),sum=values.reduce((n,v)=>n+(finiteNumber(v)??0),0);
+    if(isHot&&allNull)return '<div class="cd-sla-empty">Sin información suficiente para evaluar Lead Hot</div>';
+    if(isHot&&sum===0)return '<div class="cd-sla-empty">No se registran Lead Hot activos en el período</div>';
+    const labels=['En plazo','Atención','Próximo','Vencido'];
+    return '<div class="cd-sla-states">'+labels.map((label,i)=>'<div class="cd-sla-state"><b>'+val(values[i])+'</b><span>'+label+'</span></div>').join('')+'</div>';
+  };
+  const profile=(label,b,isHot)=>'<div class="cd-sla-profile"><div class="cd-card-h"><h3>'+label+'</h3><button class="cd-info" data-tt="'+E(isHot?'Lead Hot: 30/45/60 minutos hábiles.':'Lead: 120/150/180 minutos hábiles.')+'" aria-label="Definición '+label+'"><i class="fa-solid fa-circle-info"></i></button></div>'+states(b,isHot)+'<div class="cd-sla-extra">'+metricLine('Gestionados dentro',b.managed_within)+' '+metricLine('Gestionados fuera',b.managed_outside)+' '+metricLine('Mediana',finiteNumber(b.median_minutes)==null?null:F(b.median_minutes)+' min')+' '+metricLine('P90',finiteNumber(b.p90_minutes)==null?null:F(b.p90_minutes)+' min')+'</div></div>';
+  const metricLine=(label,value)=>'<span><small>'+label+'</small><b>'+val(value)+'</b></span>';
+  const critical=pct!=null&&pct<50;
+  let h='<div class="cd-sla-top"><div class="cd-sla-main"><div class="cd-sla-pct">'+val(pct)+'</div><div class="cd-sla-gap">Meta 90 %</div></div><div class="cd-sla-stats"><div class="cd-stat"><div class="v">'+val(sla.overall_numerator)+'</div><div class="l">Dentro de plazo</div></div><div class="cd-stat"><div class="v">'+val(sla.overall_denominator)+'</div><div class="l">Denominador</div></div><div class="cd-stat"><div class="v">'+val(ex.historical)+'</div><div class="l">Históricos excluidos</div></div><div class="cd-stat"><div class="v">'+val((ex.not_assigned||0)+(ex.insufficient_data||0))+'</div><div class="l">Sin cobertura</div></div></div></div>';
+  h+='<div class="cd-sec-t">Estado SLA por clasificación <button class="cd-info" data-tt="'+E(SLA_HELP)+'" aria-label="Cómo funciona el SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-sla-profile-grid">'+profile('Lead',lead,false)+profile('Lead Hot',hot,true)+'</div>';
+  h+='<div class="cd-sla-gap cd-sla-foot">Históricos excluidos: <b>'+val(ex.historical)+'</b> · Sin asignación: <b>'+val(ex.not_assigned)+'</b> · Cobertura insuficiente: <b>'+val(ex.insufficient_data)+'</b></div>';
   body.innerHTML=h;bindTips(body);
 }
 
@@ -1359,6 +1384,8 @@ function renderExecutiveStory(story){
   $('executiveStoryContribution').innerHTML=contribution;
   $('executiveStoryRisk').innerHTML=riskText;
   $('executiveStoryRiskMeta').textContent=riskMeta;
+  const riskBlock=panel.querySelector('[data-story-block="risk"]');
+  if(riskBlock){riskBlock.classList.toggle('risk-danger',r.code==='hot_breached_open'||r.code==='lead_breached_open');riskBlock.classList.toggle('risk-warning',r.code!=='none'&&r.code!=='hot_breached_open'&&r.code!=='lead_breached_open');}
   $('executiveStoryAction').textContent=actions[a.code]||actions.none;
   $('executiveStoryActionMeta').textContent=(a.priority||'Controlado')+' · '+(a.affected_leads==null?'S/I':F(a.affected_leads))+' leads afectados · '+(a.status||'Controlado');
   $('executiveStoryUniverse').textContent=D.meta?.universe?.filtered?'Lectura correspondiente al universo filtrado.':'';
@@ -1407,9 +1434,9 @@ function reorderExecutiveBlocks(){
   const blocks=[
     $('kpiRow'),
     $('priorityList')?.closest('.cd-priorities'),
-    document.querySelector('.commercial-dashboard-v2 #tab-exec > .cd-grid.cd-g-exec'),
-    document.querySelector('.commercial-dashboard-v2 #tab-exec > .commercial-v2-ops-grid'),
     $('executiveStory'),
+    document.querySelector('.commercial-dashboard-v2 #tab-exec > .commercial-v2-ops-grid'),
+    document.querySelector('.commercial-dashboard-v2 #tab-exec > .cd-grid.cd-g-exec'),
     $('funnel')?.closest('.cd-card'),
     $('insights')
   ];
@@ -1461,7 +1488,7 @@ function bandIntervalText(band,idx){
 }
 
 /* ================= FUNNEL ================= */
-function rfun(){
+function rfunLegacy(){
   const f=(D.funnel||[]).filter(s=>s.key!=='hot'),box=$('funnel');
   if(!box)return;
   if(!f.length){box.innerHTML='<div class="cd-empty">Sin datos de embudo</div>';$('funBN').innerHTML='';return}
@@ -1493,6 +1520,40 @@ function rfun(){
   $('funBN').innerHTML=bn&&mxLoss>0
     ?'<i class="fa-solid fa-triangle-exclamation" style="color:var(--cd-warn)"></i><span>Mayor p\u00e9rdida secuencial: <b>'+E(bn.from)+' \u2192 '+E(bn.to)+'</b> \u00b7 \u2212'+F(mxLoss)+' leads</span>'
     :'<i class="fa-solid fa-circle-check" style="color:var(--cd-ok)"></i><span>Sin p\u00e9rdidas secuenciales detectadas</span>';
+  bindTips(box);
+}
+
+function rfun(){
+  const f=(D.funnel||[]).filter(s=>s.key!=='hot'),box=$('funnel');
+  if(!box)return;
+  if(!f.length){box.innerHTML='<div class="cd-empty">Sin datos de embudo</div>';return}
+  const numeric=v=>typeof v==='number'&&Number.isFinite(v);
+  const trailing=f.reduceRight((n,s)=>n+(s.count==null&&n===f.length-f.indexOf(s)-1?1:0),0);
+  const collapse=trailing>=2;
+  const visible=collapse?f.slice(0,f.length-trailing):f;
+  const hidden=collapse?f.slice(f.length-trailing):[];
+  const base=visible.find(s=>numeric(s.count))?.count??null;
+  let h='',prev=null,mxLoss=0,bn=null;
+  visible.forEach(s=>{
+    const has=numeric(s.count),previousHas=prev&&numeric(prev.count);
+    const pctW=has&&base>0?Math.max(0,Math.min(100,s.count/base*100)):0;
+    const loss=has&&previousHas?prev.count-s.count:null;
+    const conv=has&&previousHas?Math.round(s.count/prev.count*1000)/10:null;
+    if(prev&&loss!=null&&loss>mxLoss){mxLoss=loss;bn={from:prev.label,to:s.label}}
+    const display=has?F(s.count):'Sin información';
+    let tt='<div class="tt-t">'+E(s.label.toUpperCase())+'</div><div class="tt-row"><span>Leads</span><b>'+E(display)+'</b></div>';
+    if(conv!=null)tt+='<div class="tt-row"><span>Avance</span><b>'+P1(conv)+'</b></div>';
+    h+='<div class="cd-stage'+(!has?' nocov':'')+'" data-tt="'+E(tt)+'"><div class="cd-stage-lbl">'+E(s.label)+(!has?'<small>Sin información</small>':'')+'</div><div class="cd-stage-trk"><div class="cd-stage-fill" style="width:'+(has?pctW:0)+'%"><b>'+E(display)+'</b></div></div><div class="cd-stage-meta">'+(conv!=null?'<span class="cd-pill">'+P1(conv)+' % de avance</span>':'')+(loss!=null&&loss>0?'<span class="cd-pill loss">−'+F(loss)+'</span>':'')+'</div></div>';
+    prev=s;
+  });
+  if(hidden.length){
+    h+='<div class="cd-funnel-collapsed" id="funnelCollapsed"><span>'+hidden.length+' etapas posteriores sin trazabilidad histórica</span><button type="button" class="cd-btn" id="btnFunnelExpand" aria-expanded="false">Ver etapas</button></div>';
+    h+='<div class="cd-funnel-hidden" id="funnelHidden" hidden>'+hidden.map(s=>'<div class="cd-funnel-hidden-row"><span>'+E(s.label)+'</span><span>Sin información suficiente</span></div>').join('')+'</div>';
+  }
+  box.innerHTML=h;
+  const expand=$('btnFunnelExpand');
+  if(expand)expand.onclick=()=>{const hiddenBox=$('funnelHidden'),open=hiddenBox.hidden;hiddenBox.hidden=!open;expand.setAttribute('aria-expanded',String(open));if(open)expand.textContent='Ocultar etapas';else expand.textContent='Ver etapas'};
+  $('funBN').innerHTML=bn&&mxLoss>0?'<span>Mayor pérdida secuencial: <b>'+E(bn.from)+' → '+E(bn.to)+'</b> · −'+F(mxLoss)+' leads</span>':'<span>Sin pérdidas secuenciales detectadas</span>';
   bindTips(box);
 }
 

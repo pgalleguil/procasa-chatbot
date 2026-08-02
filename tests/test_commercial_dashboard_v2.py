@@ -34,6 +34,17 @@ def test_v2_preserves_dashboard_contracts_and_adds_required_states():
     assert "commercial-v2-skeleton" in CSS.read_text(encoding="utf-8")
 
 
+def test_final_executive_refinement_contracts_are_present():
+    html = TEMPLATE.read_text(encoding="utf-8")
+    css = CSS.read_text(encoding="utf-8")
+    order_fn = html.split("function reorderExecutiveBlocks()", 1)[1].split("function sanitizeUnavailableUi", 1)[0]
+    assert order_fn.index("$('executiveStory')") < order_fn.index("commercial-v2-ops-grid") < order_fn.index("cd-grid.cd-g-exec")
+    for value in ("kpi-critical", "commercial-sla-critical-pill", "evolutionLegend", "cd-sla-empty", "cd-funnel-collapsed", "btnFunnelExpand", "Sin información suficiente"):
+        assert value in html
+    for value in ("#fef2f2", "#fecaca", "repeat(3, minmax(0, 1fr))", "height: 260px", "height: 240px", "height: 220px"):
+        assert value in css
+
+
 def test_v2_css_uses_only_scoped_component_selectors():
     css = CSS.read_text(encoding="utf-8")
     selectors = [line.strip() for line in css.splitlines() if "{" in line and not line.lstrip().startswith("@")]

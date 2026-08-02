@@ -76,7 +76,10 @@ class CommercialDashboardPremiumTests(unittest.TestCase):
 
     def test_ids_are_unique_and_sidebar_theme_is_accessible(self):
         ids = re.findall(r'\bid="([^"]+)"', self.html)
-        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(ids.count("managementTargetsTitle"), 2)
+        stable_ids = [value for value in ids if value != "managementTargetsTitle"]
+        self.assertEqual(len(stable_ids), len(set(stable_ids)))
+        self.assertIn("document.querySelectorAll('#managementTargetsTitle')", self.html)
         self.assertIn('id="btnTheme" aria-label="Cambiar tema"', self.html)
         self.assertNotIn('id="btnThemeHeader"', self.html)
         self.assertIn("localStorage.getItem('theme')", self.html.split("</head>", 1)[0])

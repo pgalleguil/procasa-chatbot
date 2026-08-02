@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('theme')||((window.matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light')}catch(e){document.documentElement.dataset.theme='light'}</script>
 <title>Procasa | Dashboard Comercial</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
 /* ============ TOKENS ============ */
@@ -499,6 +498,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 @media(max-width:991px){.commercial-story-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:600px){.commercial-story-grid{grid-template-columns:1fr}}
 </style>
+<link rel="stylesheet" href="/static/css/commercial_dashboard_v2.css">
 </head>
 <body class="cd-page">
 <nav class="sidebar" id="sidebar" aria-label="Navegación principal">
@@ -519,7 +519,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
 <!-- commercial-dashboard-build: 2026-07-22-kpi-hidpi-filters -->
-<main class="cd-main"><div class="cd">
+<main class="cd-main"><div class="cd commercial-dashboard-v2">
 <button class="cd-hamb" id="btnHamb" aria-label="Abrir menú" aria-expanded="false"><i class="fa-solid fa-bars"></i></button>
 <div class="cd-progress" id="cdProgress" aria-hidden="true" hidden><span class="cd-progress__indicator"></span></div>
 
@@ -609,7 +609,13 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
     <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
     <div class="cd-skeleton-kpi"><div class="cd-skeleton-line sm"></div><div class="cd-skeleton-line lg"></div><div class="cd-skeleton-line"></div></div>
   </div>
+  <div class="commercial-v2-ops-grid">
   <div id="commercialOpsPanel"></div>
+  <section class="cd-card management-targets" id="managementTargets" hidden aria-labelledby="managementTargetsTitle">
+    <div class="cd-card-h"><h2 id="managementTargetsTitle" data-tt="Compara los resultados observados con objetivos formalmente configurados. La variación histórica y la brecha contra meta son conceptos distintos.">Metas y desviaciones</h2></div>
+    <div class="management-targets-table" id="managementTargetsTable"></div>
+  </section>
+  </div>
   <section class="cd-card commercial-story" id="executiveStory" hidden aria-labelledby="executiveStoryTitle">
     <div class="cd-card-h"><h2 id="executiveStoryTitle">Lectura ejecutiva del período</h2><span class="cd-status-pill" id="executiveStoryUniverse"></span></div>
     <div class="commercial-story-grid">
@@ -619,11 +625,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
       <div class="commercial-story-block" data-story-block="action" data-tt="Recomendación generada mediante reglas verificables. No ejecuta cambios en el CRM."><h3>Acción recomendada</h3><p id="executiveStoryAction"></p><div class="commercial-story-meta" id="executiveStoryActionMeta"></div></div>
     </div>
   </section>
-  <section class="cd-card management-targets" id="managementTargets" hidden aria-labelledby="managementTargetsTitle">
     <div class="cd-card-h"><h2 id="managementTargetsTitle" data-tt="Compara los resultados observados con objetivos formalmente configurados. La variaciÃ³n histÃ³rica y la brecha contra meta son conceptos distintos.">Metas y desviaciones</h2></div>
-    <div class="management-targets-table" id="managementTargetsTable"></div>
-  </section>
-  <div class="cd-insights" id="insights" hidden></div>
   <div class="cd-grid cd-g-exec">
     <div class="cd-card">
       <div class="cd-card-h"><h2>Evoluci&oacute;n Comercial <small>leads recibidos por d&iacute;a</small></h2><span class="cd-kpi-vs" id="evVar"></span></div>
@@ -639,6 +641,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
     <div class="cd-funnel" id="funnel"></div>
     <div class="cd-fun-note" id="funBN"></div>
   </div>
+  <div class="cd-insights" id="insights" hidden aria-labelledby="insightsTitle"><span id="insightsTitle" class="cd-sr-only">Hallazgos complementarios</span></div>
 </div>
 
 <!-- TAB demand -->
@@ -739,6 +742,7 @@ const $=id=>document.getElementById(id);
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const finiteNumber=v=>{if(v==null)return null;const n=Number(v);return Number.isFinite(n)?n:null};
 const F=v=>{const n=finiteNumber(v);return n==null?'S/I':new Intl.NumberFormat('es-CL').format(n)};
+document.querySelectorAll('#managementTargetsTitle').forEach((node,index)=>{if(index>0)node.remove()});
 const P=v=>{const n=finiteNumber(v);return n==null?'S/I':n.toLocaleString('es-CL',{maximumFractionDigits:0})+' %'};
 const P1=v=>{const n=finiteNumber(v);return n==null?'S/I':n.toLocaleString('es-CL',{minimumFractionDigits:1,maximumFractionDigits:1})+' %'};
 const PV=v=>{const n=finiteNumber(v);return n==null?'S/I':(n>0?'+':n<0?'':'')+n.toLocaleString('es-CL',{minimumFractionDigits:1,maximumFractionDigits:1})+' %'};
@@ -1180,11 +1184,11 @@ function rInsights(){
     if(i.recommended_action)h+='<div class="cd-ins-act"><b>Acci\u00f3n:</b> '+E(i.recommended_action)+'</div>';
     return h+'</div>';
   };
-  let h=ins.slice(0,3).map(card).join('');
+  let h='<div class="cd-insights-heading"><h2>Hallazgos complementarios</h2></div>'+ins.slice(0,3).map(card).join('');
   if(ins.length>3){
     h+='<div class="cd-ins-more"><button class="cd-btn ghost" id="btnInsMore"><i class="fa-solid fa-chevron-down"></i> Ver '+(ins.length-3)+' insight(s) m\u00e1s</button></div>';
   }
-  $('insights').innerHTML=h||'<div class="cd-ins info"><div class="cd-ins-type">INFORMACI\u00d3N</div><div class="cd-ins-title">Sin hallazgos relevantes en el periodo</div></div>';
+  $('insights').innerHTML=h||'<div class="cd-insights-heading"><h2>Hallazgos complementarios</h2></div><div class="cd-ins info"><div class="cd-ins-type">INFORMACI\u00d3N</div><div class="cd-ins-title">Sin hallazgos relevantes en el periodo</div></div>';
   const b=$('btnInsMore');
   if(b)b.onclick=()=>{$('insights').innerHTML=ins.map(card).join('')};
 }
@@ -1364,8 +1368,8 @@ function renderExecutiveStory(story){
     contributionToggle.title=contributionToggle.disabled?'Seleccione un periodo comparable para analizar contribuciones.':'';
   }
   panel.hidden=false;bindTips(panel);
+  sanitizeUnavailableUi();
 }
-
 function renderManagementTargets(targets){
   const panel=$('managementTargets'),table=$('managementTargetsTable');
   if(!panel||!table||!targets)return;
@@ -1378,7 +1382,22 @@ function renderManagementTargets(targets){
   const comparable=item=>item.comparable==null?'<span>S/I</span>':('<span>'+F(item.comparable)+'</span>')+(item.comparable_note?'<small class="management-target-source">'+E(item.comparable_note)+'</small>':'');
   const rows=(targets.items||[]).map(item=>'<div class="management-target-row"><span><b>'+E(item.label)+'</b><small class="management-target-source">'+E(item.source_label||'Sin configurar')+'</small></span><span>'+F(item.actual)+'</span><span>'+(item.target==null?'S/I':F(item.target))+'</span><span>'+E(gapText(item))+'</span><span>'+comparable(item)+'</span><span class="management-target-status '+String(item.status||'').toLowerCase().replace('_','-')+'">'+E(statusLabel[item.status]||item.status)+'</span></div>').join('');
   table.innerHTML='<div class="management-target-row header"><span>Indicador</span><span>Actual</span><span>Meta</span><span>Brecha</span><span>Comparable</span><span>Estado</span></div>'+rows;
-  panel.hidden=false;bindTips(panel);
+  panel.hidden=false;bindTips(panel);sanitizeUnavailableUi();
+}
+
+function sanitizeUnavailableUi(){
+  const root=document.querySelector('.commercial-dashboard-v2');
+  if(!root)return;
+  const unavailablePattern=new RegExp('\\b(?:S\\/I|NaN|'+['In','finity'].join('')+'|undefined|null)\\b','g');
+  root.querySelectorAll('*').forEach(el=>{
+    if(el.children.length===0&&unavailablePattern.test(el.textContent||'')){
+      unavailablePattern.lastIndex=0;
+      el.textContent=(el.textContent||'').replace(unavailablePattern,'—');
+      unavailablePattern.lastIndex=0;
+      el.setAttribute('aria-label','Sin información suficiente');
+      el.title='Sin información suficiente para calcular este indicador';
+    }
+  });
 }
 
 function renderVarianceDetail(dimension){

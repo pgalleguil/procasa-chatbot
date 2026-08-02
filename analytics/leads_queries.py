@@ -1499,7 +1499,7 @@ def query_comparative_trends(
     }
 
 
-def query_executive_contribution(
+def query_variance_drivers(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
     comparison_start: Optional[str] = None,
@@ -1518,32 +1518,73 @@ def query_executive_contribution(
         previous_match = None
 
     dimensions = {
-        "source": ("$prospecto.origen", "Sin informacion"),
-        "executive": ("$ejecutivo_asignado", "Sin asignar"),
-        "commune": ("$prospecto.comuna", "Sin informacion"),
+        "source": ("$prospecto.origen", "Sin fuente"),
+        "executive": ("$ejecutivo_asignado", "Sin ejecutivo"),
+        "commune": ("$prospecto.comuna", "Sin comuna"),
     }
+
+    def segment_expression(field, fallback):
+        return {"$cond": [{"$or": [{"$eq": [field, None]}, {"$eq": [field, ""]}]}, fallback, field]}
 
     def facet(match, field):
         return [
             {"$match": match},
-            {"$group": {"_id": "$_id", "segment": {"$first": {"$ifNull": [field[0], field[1]]}}}},
+            {"$group": {"_id": "$_id", "segment": {"$first": segment_expression(field[0], field[1])}}},
             {"$group": {"_id": "$segment", "count": {"$sum": 1}}},
             {"$project": {"segment": "$_id", "count": 1, "_id": 0}},
         ]
 
-    facets = {}
+    facets = {
+        "current_total": [current_match, {"$group": {"_id": "$_id"}}, {"$count": "count"}],
+        "previous_total": ([previous_match, {"$group": {"_id": "$_id"}}, {"$count": "count"}] if previous_match else []),
+    }
     for name, field in dimensions.items():
         facets[f"current_{name}"] = facet(current_match, field)
         facets[f"previous_{name}"] = facet(previous_match, field) if previous_match else []
 
     raw = list(db["leads"].aggregate([_normalized_created_at_stage(), {"$facet": facets}]))
     row = raw[0] if raw else {}
+    current_total = (row.get("current_total") or [{}])[0].get("count", 0)
+    previous_total = (row.get("previous_total") or [{}])[0].get("count", 0) if previous_match else None
+    total_delta = current_total - previous_total if previous_total is not None else None
     result = {}
     for name in dimensions:
-        current = [{"segment": item.get("segment"), "count": item.get("count", 0)} for item in row.get(f"current_{name}", [])]
-        previous = [{"segment": item.get("segment"), "count": item.get("count", 0)} for item in row.get(f"previous_{name}", [])]
-        result[name] = {"current": current, "previous": previous}
-    return {"available": bool(previous_match), "dimensions": result}
+        current = {str(item.get("segment")): item.get("count", 0) for item in row.get(f"current_{name}", [])}
+        previous = {str(item.get("segment")): item.get("count", 0) for item in row.get(f"previous_{name}", [])}
+        segments = []
+        for key in sorted(set(current) | set(previous)):
+            current_count, previous_count = current.get(key, 0), previous.get(key, 0)
+            segments.append({"key": key, "label": key, "current": current_count, "previous": previous_count, "delta": current_count - previous_count})
+        reconciliation_delta = sum(item["delta"] for item in segments) - total_delta if total_delta is not None else None
+        restricted = bool(filters and (
+            (name == "source" and filters.get("source"))
+            or (name == "executive" and (filters.get("executive") or filters.get("ejecutivo_asignado")))
+            or (name == "commune" and filters.get("commune"))
+        ))
+        result[name] = {
+            "restricted_by_filter": restricted,
+            "reconciliation_delta": reconciliation_delta,
+            "segments": segments,
+        }
+    return {
+        "current_total": current_total,
+        "previous_total": previous_total,
+        "total_delta": total_delta,
+        "comparable_available": bool(previous_match),
+        "dimensions": result,
+    }
+
+
+def query_executive_contribution(*args, **kwargs) -> dict:
+    """Compatibility adapter for callers using the former contribution shape."""
+    variance = query_variance_drivers(*args, **kwargs)
+    dimensions = {}
+    for name, payload in variance["dimensions"].items():
+        dimensions[name] = {
+            "current": [{"segment": item["label"], "count": item["current"]} for item in payload["segments"] if item["current"]],
+            "previous": [{"segment": item["label"], "count": item["previous"]} for item in payload["segments"] if item["previous"]],
+        }
+    return {"available": variance["comparable_available"], "dimensions": dimensions}
 
 
 

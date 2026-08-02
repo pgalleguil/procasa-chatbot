@@ -478,6 +478,14 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 .commercial-story-block h3{margin:0 0 7px;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
 .commercial-story-block p{margin:0;color:var(--text-primary);font-size:.9rem;line-height:1.45}
 .commercial-story-meta{margin-top:9px;font-size:.78rem;color:var(--text-muted)}
+.commercial-story-detail{margin-top:10px;padding-top:10px;border-top:1px solid var(--border-subtle)}
+.commercial-story-detail-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.commercial-story-detail button{border:1px solid var(--border-subtle);border-radius:var(--radius-pill);background:transparent;color:var(--text-muted);padding:5px 9px;font-size:.74rem;cursor:pointer}
+.commercial-story-detail button.active{background:var(--bg-surface-subtle);color:var(--text-primary);border-color:var(--border-hover)}
+.commercial-story-detail button:disabled{cursor:not-allowed;opacity:.6}
+.commercial-story-rows{display:grid;gap:5px;font-size:.78rem}
+.commercial-story-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;padding:5px 7px;background:var(--bg-surface-subtle);border-radius:var(--radius-sm)}
+.commercial-story-reconciliation{margin-top:8px;font-size:.75rem;color:var(--text-muted)}
 @media(max-width:991px){.commercial-story-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:600px){.commercial-story-grid{grid-template-columns:1fr}}
 </style>
@@ -596,7 +604,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
     <div class="cd-card-h"><h2 id="executiveStoryTitle">Lectura ejecutiva del período</h2><span class="cd-status-pill" id="executiveStoryUniverse"></span></div>
     <div class="commercial-story-grid">
       <div class="commercial-story-block" data-story-block="outcome" data-tt="Síntesis de volumen y desempeño operacional frente al periodo comparable."><h3>Resultado</h3><p id="executiveStoryOutcome"></p></div>
-      <div class="commercial-story-block" data-story-block="contribution" data-tt="Segmento con la mayor contribución estadística al cambio observado. No implica causalidad."><h3>Principal contribución</h3><p id="executiveStoryContribution"></p></div>
+      <div class="commercial-story-block" data-story-block="contribution" data-tt="Segmento con la mayor contribución estadística al cambio observado. No implica causalidad."><h3>Principal contribución</h3><p id="executiveStoryContribution"></p><button type="button" class="commercial-story-detail-toggle" id="executiveStoryContributionToggle" aria-expanded="false">Ver detalle de contribuciones</button><div class="commercial-story-detail" id="executiveStoryContributionDetail" hidden><div class="commercial-story-detail-controls" role="group" aria-label="Dimensión de contribuciones"><button type="button" data-variance-dimension="source" class="active">Fuente</button><button type="button" data-variance-dimension="executive">Ejecutivo</button><button type="button" data-variance-dimension="commune">Comuna</button></div><div class="commercial-story-rows" id="executiveStoryContributionRows"></div><div class="commercial-story-reconciliation" id="executiveStoryContributionReconciliation"></div></div></div>
       <div class="commercial-story-block" data-story-block="risk" data-tt="Principal situación operacional abierta según asignación, gestión y política SLA."><h3>Riesgo operativo</h3><p id="executiveStoryRisk"></p><div class="commercial-story-meta" id="executiveStoryRiskMeta"></div></div>
       <div class="commercial-story-block" data-story-block="action" data-tt="Recomendación generada mediante reglas verificables. No ejecuta cambios en el CRM."><h3>Acción recomendada</h3><p id="executiveStoryAction"></p><div class="commercial-story-meta" id="executiveStoryActionMeta"></div></div>
     </div>
@@ -796,7 +804,7 @@ function readSectionFromUrl(){
   activeSection=VALID_SECTIONS.has(requested)?requested:'exec';
   return activeSection;
 }
-let D=null,CH={},FILTERS={},COMPARE='auto',CUR_PRICE_OP='Venta',FIRST_KPI=true,PROP_SORT={k:'leads',dir:-1};
+let D=null,CH={},FILTERS={},COMPARE='auto',CUR_PRICE_OP='Venta',FIRST_KPI=true,PROP_SORT={k:'leads',dir:-1},EXECUTIVE_VARIANCE=null,EXECUTIVE_VARIANCE_DIMENSION='source';
 let REQUEST_CTRL=null,REQUEST_SEQ=0,TEAM_MODE='team',EXEC_DETAIL='';
 let lastValidDashboardPayload=null;
 let PUSH_HISTORY=false;
@@ -1333,7 +1341,46 @@ function renderExecutiveStory(story){
   $('executiveStoryAction').textContent=actions[a.code]||actions.none;
   $('executiveStoryActionMeta').textContent=(a.priority||'Controlado')+' · '+(a.affected_leads==null?'S/I':F(a.affected_leads))+' leads afectados · '+(a.status||'Controlado');
   $('executiveStoryUniverse').textContent=D.meta?.universe?.filtered?'Lectura correspondiente al universo filtrado.':'';
+  EXECUTIVE_VARIANCE=D.variance_drivers||null;
+  const contributionToggle=$('executiveStoryContributionToggle');
+  if(contributionToggle){
+    contributionToggle.disabled=!EXECUTIVE_VARIANCE?.comparable_available;
+    contributionToggle.title=contributionToggle.disabled?'Seleccione un periodo comparable para analizar contribuciones.':'';
+  }
   panel.hidden=false;bindTips(panel);
+}
+
+function renderVarianceDetail(dimension){
+  const detail=$('executiveStoryContributionDetail'),rows=$('executiveStoryContributionRows'),reconciliation=$('executiveStoryContributionReconciliation'),toggle=$('executiveStoryContributionToggle');
+  const variance=EXECUTIVE_VARIANCE||{};
+  const payload=(variance.dimensions||{})[dimension];
+  if(!detail||!rows||!reconciliation||!toggle)return;
+  document.querySelectorAll('[data-variance-dimension]').forEach(b=>b.classList.toggle('active',b.dataset.varianceDimension===dimension));
+  EXECUTIVE_VARIANCE_DIMENSION=dimension;
+  if(!variance.comparable_available){
+    rows.innerHTML='<div class="cd-empty">Seleccione un periodo comparable para analizar contribuciones.</div>';
+    reconciliation.textContent='';
+    return;
+  }
+  if(payload?.restricted_by_filter){
+    rows.innerHTML='<div class="cd-empty">Esta dimensiÃ³n estÃ¡ restringida por los filtros seleccionados.</div>';
+  }else{
+    const segments=payload?.segments||[];
+    const positive=segments.filter(s=>s.delta>0).sort((a,b)=>b.delta-a.delta).slice(0,5);
+    const negative=segments.filter(s=>s.delta<0).sort((a,b)=>a.delta-b.delta).slice(0,5);
+    const visible=[...positive,...negative];
+    rows.innerHTML=visible.length?visible.map(s=>'<div class="commercial-story-row"><span>'+E(s.label)+'</span><span>'+F(s.current)+'</span><span>vs. '+F(s.previous)+'</span><b class="'+(s.delta>0?'up':'down')+'">'+(s.delta>0?'+':'')+F(s.delta)+'</b></div>').join(''):'<div class="cd-empty">Sin variaciones internas observadas.</div>';
+  }
+  const total=variance.total_delta,sign=total>0?'+':'';
+  reconciliation.textContent=payload&&payload.reconciliation_delta===0?'ReconciliaciÃ³n: '+sign+F(payload.segments.reduce((sum,s)=>sum+s.delta,0))+' de '+sign+F(total)+' leads':'ReconciliaciÃ³n no disponible';
+}
+
+function toggleVarianceDetail(){
+  const detail=$('executiveStoryContributionDetail'),toggle=$('executiveStoryContributionToggle');
+  if(!detail||!toggle||toggle.disabled)return;
+  const open=detail.hidden;
+  detail.hidden=!open;toggle.setAttribute('aria-expanded',String(open));
+  if(open)renderVarianceDetail(EXECUTIVE_VARIANCE_DIMENSION);
 }
 
 function bandIntervalText(band,idx){
@@ -1702,6 +1749,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   renderChips();
   loadData();
   /* eventos */
+  $('executiveStoryContributionToggle').addEventListener('click',toggleVarianceDetail);
+  document.querySelectorAll('[data-variance-dimension]').forEach(b=>b.addEventListener('click',()=>renderVarianceDetail(b.dataset.varianceDimension)));
   $('presetSeg').addEventListener('click',e=>{
     const b=e.target.closest('[data-p]');if(!b)return;
     setPeriod(b.dataset.p);if(b.dataset.p!=='custom'){PUSH_HISTORY=true;loadData()}

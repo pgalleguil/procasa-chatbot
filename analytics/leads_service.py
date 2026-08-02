@@ -252,7 +252,8 @@ def _snapshot_sla_pct(snapshot):
 
 
 def _select_executive_contribution(contribution, current_received, previous_received, filters=None):
-    if not contribution or not contribution.get("available"):
+    available = contribution.get("comparable_available", contribution.get("available")) if contribution else False
+    if not contribution or not available:
         return {"available": False, "dimension": None, "segment": None, "current": None, "previous": None, "delta": None, "direction": None}
     filters = filters or {}
     blocked = {
@@ -267,8 +268,12 @@ def _select_executive_contribution(contribution, current_received, previous_rece
     for dimension, payload in (contribution.get("dimensions") or {}).items():
         if blocked.get(dimension):
             continue
-        current = {str(row.get("segment")): row.get("count", 0) for row in payload.get("current", [])}
-        previous = {str(row.get("segment")): row.get("count", 0) for row in payload.get("previous", [])}
+        if payload.get("segments") is not None:
+            current = {str(row.get("label")): row.get("current", 0) for row in payload.get("segments", [])}
+            previous = {str(row.get("label")): row.get("previous", 0) for row in payload.get("segments", [])}
+        else:
+            current = {str(row.get("segment")): row.get("count", 0) for row in payload.get("current", [])}
+            previous = {str(row.get("segment")): row.get("count", 0) for row in payload.get("previous", [])}
         for segment in set(current) | set(previous):
             cur, prev = current.get(segment, 0), previous.get(segment, 0)
             delta = cur - prev
@@ -536,7 +541,7 @@ def get_commercial_dashboard(
         query_comparative_trends,
         query_field_coverage,
         query_executive_summary,
-        query_executive_contribution,
+        query_variance_drivers,
         query_executive_load_detail,
     )
 
@@ -614,7 +619,7 @@ def get_commercial_dashboard(
         "properties": _COMMERCIAL_QUERY_POOL.submit(query_commercial_property_ranking, **kwargs),
         "sources": _COMMERCIAL_QUERY_POOL.submit(query_source_performance, **kwargs, **comparison_kwargs),
         "trends": _COMMERCIAL_QUERY_POOL.submit(query_comparative_trends, **kwargs, **comparison_kwargs),
-        "contribution": _COMMERCIAL_QUERY_POOL.submit(query_executive_contribution, **kwargs, **comparison_kwargs),
+        "variance_drivers": _COMMERCIAL_QUERY_POOL.submit(query_variance_drivers, **kwargs, **comparison_kwargs),
         "coverage": _COMMERCIAL_QUERY_POOL.submit(
             query_field_coverage,
             period_start=period_start,
@@ -641,7 +646,7 @@ def get_commercial_dashboard(
     properties = futures["properties"].result()
     sources = futures["sources"].result()
     trends = futures["trends"].result()
-    contribution = futures["contribution"].result()
+    variance_drivers = futures["variance_drivers"].result()
     coverage = futures["coverage"].result()
     try:
         insights = query_commercial_insights(
@@ -680,7 +685,8 @@ def get_commercial_dashboard(
         "funnel": funnel,
         "sla_risk": sla,
         "executive_summary": executive_summary,
-        "executive_story": _build_executive_story(executive_summary, sla, period_info, contribution, merged_filters),
+        "executive_story": _build_executive_story(executive_summary, sla, period_info, variance_drivers, merged_filters),
+        "variance_drivers": variance_drivers,
         "demand_by_price": demand_price,
         "executives": executives,
         "properties": properties,

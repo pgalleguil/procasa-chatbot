@@ -51,7 +51,7 @@ from contextlib import asynccontextmanager
 from campanas.handler import handle_campana_respuesta
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
-from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, reconcile_invalid_management, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent, normalize_crm_temperature
+from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent, normalize_crm_temperature
 
 # ---- ANALYTICS (READ-ONLY) ----
 from analytics.leads_service import (
@@ -1528,35 +1528,6 @@ async def api_crm_update_lead(request: Request):
     except Exception as e:
         logger.error(f"CRM Update Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/crm/admin/reconcile-invalid-management")
-async def api_crm_admin_reconcile_invalid_management(request: Request):
-    data = await request.json()
-    phone = str(data.get("phone") or "").strip()
-    if not phone:
-        raise HTTPException(status_code=400, detail="Falta teléfono")
-    user, _lead = await _get_authorized_crm_lead(request, phone, administrative=True)
-    actor = user.get("nombre") or user.get("username") or "Administración"
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        _WEB_THREAD_POOL,
-        lambda: reconcile_invalid_management(phone, actor=actor),
-    )
-
-
-@app.get("/api/crm/admin/reconcile-invalid-management")
-@app.get("/crm/admin/reconcile-invalid-management")
-async def api_crm_admin_reconcile_invalid_management_get(request: Request, phone: str):
-    """Temporary authenticated handoff for the one-off production repair."""
-    user, _lead = await _get_authorized_crm_lead(request, phone, administrative=True)
-    actor = user.get("nombre") or user.get("username") or "Administración"
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(
-        _WEB_THREAD_POOL,
-        lambda: reconcile_invalid_management(phone, actor=actor),
-    )
-    return HTMLResponse(f"<html><body><pre>{result}</pre></body></html>")
 
 
 @app.post("/api/crm/admin/reassign")

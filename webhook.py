@@ -1551,10 +1551,11 @@ async def api_crm_admin_reconcile_invalid_management_get(request: Request, phone
     user, _lead = await _get_authorized_crm_lead(request, phone, administrative=True)
     actor = user.get("nombre") or user.get("username") or "Administración"
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
+    result = await loop.run_in_executor(
         _WEB_THREAD_POOL,
         lambda: reconcile_invalid_management(phone, actor=actor),
     )
+    return HTMLResponse(f"<html><body><pre>{result}</pre></body></html>")
 
 
 @app.post("/api/crm/admin/reassign")

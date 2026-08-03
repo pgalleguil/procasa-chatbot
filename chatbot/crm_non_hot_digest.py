@@ -382,9 +382,9 @@ def _recover_stuck_digests(db, *, now):
          "provider_message_id": {"$in": [None]},
          "actually_delivered": {"$ne": True}},
         {"$set": {"state": "failed_retryable", "lease_owner": None,
-                  "lease_expires_at": None, "delivery_token": None,
-                  "provider_call_started_at": None,
-                  "next_attempt_at": current, "updated_at": current}},
+                  "lease_expires_at": None,
+                  "next_attempt_at": current, "updated_at": current},
+         "$unset": {"delivery_token": "", "provider_call_started_at": ""}},
     )
 
 

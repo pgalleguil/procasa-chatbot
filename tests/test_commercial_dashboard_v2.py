@@ -80,3 +80,19 @@ def test_header_comparison_sla_and_initial_scroll_contracts_are_present():
         "cd-sla-managed-row",
     ):
         assert value in css
+
+
+def test_theme_contract_has_one_canonical_control_path():
+    html = TEMPLATE.read_text(encoding="utf-8")
+    assert "localStorage.getItem('theme')" in html
+    assert "storedTheme==='light'||storedTheme==='dark'" in html
+    assert "function applyCommercialTheme(theme)" in html
+    assert "function toggleTheme(){applyCommercialTheme(isDark()?'light':'dark')}" in html
+    assert "aria-label=\"Cambiar a modo oscuro\"" in html
+    assert "id=\"themeLabel\">Modo oscuro" in html
+    assert "aria-pressed" in html
+    assert "style.colorScheme=next" in html
+    assert "chart.update(\"none\")" not in html or "dCharts();" not in html.split("function toggleTheme()", 1)[1].split("function readFiltersAndPeriodFromUrl", 1)[0]
+    assert "--commercial-dark-page:#0b1120" in html
+    assert "--commercial-dark-brand:#38bdf8" in html
+    assert "event.persisted" in html

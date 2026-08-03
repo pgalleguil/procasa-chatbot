@@ -3,9 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<script>try{document.documentElement.dataset.theme=localStorage.getItem('theme')||((window.matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light')}catch(e){document.documentElement.dataset.theme='light'}</script>
+<script>try{const storedTheme=localStorage.getItem('theme');const initialTheme=storedTheme==='light'||storedTheme==='dark'?storedTheme:((window.matchMedia&&matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light');document.documentElement.dataset.theme=initialTheme;document.documentElement.style.colorScheme=initialTheme}catch(e){document.documentElement.dataset.theme='light';document.documentElement.style.colorScheme='light'}</script>
+<meta name="theme-color" content="#f6f7f9">
 <title>Procasa | Dashboard Comercial</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style id="commercial-theme-tokens">
+html[data-theme="dark"]{
+  --commercial-dark-page:#0b1120;--commercial-dark-card:#111827;--commercial-dark-surface:#172033;--commercial-dark-surface-hover:#1e293b;--commercial-dark-border:#273449;--commercial-dark-border-strong:#3b4a63;--commercial-dark-text:#f8fafc;--commercial-dark-text-secondary:#cbd5e1;--commercial-dark-text-muted:#94a3b8;--commercial-dark-text-faint:#64748b;--commercial-dark-brand:#38bdf8;--commercial-dark-brand-strong:#7dd3fc;--commercial-dark-brand-surface:rgba(14,165,233,.12);--accent:#38bdf8;--brand-primary:#38bdf8;--brand-primary-hover:#7dd3fc;--brand-soft:rgba(14,165,233,.12);--bg-canvas:#0b1120;--bg-surface:#111827;--bg-surface-subtle:#172033;--bg-surface-hover:#1e293b;--bg-elevated:#172033;--text-primary:#f8fafc;--text-secondary:#cbd5e1;--text-muted:#94a3b8;--text-disabled:#64748b;--border-subtle:#273449;--border-default:#273449;--border-hover:#3b4a63;--success:#4ade80;--success-soft:rgba(34,197,94,.11);--warning:#fb923c;--warning-soft:rgba(251,146,60,.11);--danger:#f87171;--danger-soft:rgba(248,113,113,.11);--info:#38bdf8;--info-soft:rgba(14,165,233,.12)}
+html[data-theme="dark"] .commercial-dashboard-v2{--commercial-page:#0b1120;--commercial-card:#111827;--commercial-surface-muted:#172033;--commercial-surface-hover:#1e293b;--commercial-border:#273449;--commercial-border-strong:#3b4a63;--commercial-text:#f8fafc;--commercial-text-secondary:#cbd5e1;--commercial-text-muted:#94a3b8;--commercial-text-faint:#64748b;--commercial-brand-500:#38bdf8;--commercial-brand-600:#38bdf8;--commercial-brand-700:#7dd3fc;--commercial-success:#4ade80;--commercial-success-bg:rgba(34,197,94,.11);--commercial-success-border:rgba(74,222,128,.30);--commercial-attention:#facc15;--commercial-attention-bg:rgba(250,204,21,.10);--commercial-attention-border:rgba(250,204,21,.28);--commercial-warning:#fb923c;--commercial-warning-bg:rgba(251,146,60,.11);--commercial-warning-border:rgba(251,146,60,.30);--commercial-danger:#f87171;--commercial-danger-bg:rgba(248,113,113,.11);--commercial-danger-border:rgba(248,113,113,.30);--commercial-info:#38bdf8;--commercial-info-bg:rgba(14,165,233,.12);--commercial-info-border:#7dd3fc}
+html[data-theme="dark"] .commercial-dashboard-v2 .cd-loading,html[data-theme="dark"] .commercial-dashboard-v2 .cd-skeleton-kpi,html[data-theme="dark"] .commercial-dashboard-v2 .cd-skeleton-line{background:#1e293b;color:#cbd5e1}
+html[data-theme="dark"] .commercial-dashboard-v2 .cd-loading::after,html[data-theme="dark"] .commercial-dashboard-v2 .cd-skeleton-line::after{background:linear-gradient(90deg,transparent,#334155,transparent)}
+html[data-theme="dark"] .commercial-dashboard-v2 .cd-progress{background:#38bdf8}html[data-theme="dark"] .commercial-dashboard-v2 .cd-progress__indicator{background:#38bdf8}
+html[data-theme="dark"] #cdTip{background:#f8fafc;color:#0f172a;border-color:#3b4a63}html[data-theme="light"] #cdTip{background:#0f172a;color:#fff}
+.commercial-dashboard-v2 #btnTheme{min-height:40px;gap:8px}.commercial-dashboard-v2 #btnTheme i{font-size:18px}.commercial-dashboard-v2 #btnTheme span{font-size:12px}
+html[data-theme="dark"] #themeIcon{visibility:hidden}html[data-theme="dark"] #themeIcon::after{content:"\\f185";font-family:"Font Awesome 6 Free";font-weight:900;visibility:visible}html[data-theme="dark"] #themeLabel{font-size:0}html[data-theme="dark"] #themeLabel::after{content:"Modo claro";font-size:12px}
+</style>
 <style>
 /* ============ TOKENS ============ */
 :root{
@@ -499,6 +511,16 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 @media(max-width:600px){.commercial-story-grid{grid-template-columns:1fr}}
 </style>
 <link rel="stylesheet" href="/static/css/commercial_dashboard_v2.css">
+<style id="commercial-theme-final-overrides">
+html[data-theme="dark"] body.cd-page,html[data-theme="dark"] .commercial-dashboard-v2{background:#0b1120;color:#f8fafc}
+html[data-theme="dark"] .commercial-dashboard-v2 .cd-card,html[data-theme="dark"] .commercial-dashboard-v2 .cd-kpi,html[data-theme="dark"] .commercial-dashboard-v2 .cd-insights,html[data-theme="dark"] .commercial-dashboard-v2 .cd-demand-note,html[data-theme="dark"] .commercial-dashboard-v2 .cd-quality-intro,html[data-theme="dark"] .commercial-dashboard-v2 .cd-err,html[data-theme="dark"] .commercial-dashboard-v2 .cd-ins,html[data-theme="dark"] .commercial-dashboard-v2 .cd-sla-state,html[data-theme="dark"] .commercial-dashboard-v2 .cd-sla-managed-row{background:#111827!important;color:#f8fafc;border-color:#273449}
+html[data-theme="dark"] .cd-page .sidebar,html[data-theme="dark"] .commercial-dashboard-v2 .cd-command,html[data-theme="dark"] .commercial-dashboard-v2 .cd-tabs{background:#0b1120!important;border-color:#273449}
+html[data-theme="dark"] .commercial-dashboard-v2 .cd-seg,html[data-theme="dark"] .commercial-dashboard-v2 .cd-loading,html[data-theme="dark"] .commercial-dashboard-v2 .cd-skeleton-kpi,html[data-theme="dark"] .commercial-dashboard-v2 .cd-skeleton-line{background:#1e293b!important}
+html[data-theme="dark"] .commercial-dashboard-v2 select,html[data-theme="dark"] .commercial-dashboard-v2 input,html[data-theme="dark"] .commercial-dashboard-v2 .cd-btn{background:#172033!important;color:#f8fafc;border-color:#273449}
+html[data-theme="dark"] .commercial-dashboard-v2 .cd-progress,html[data-theme="dark"] .commercial-dashboard-v2 .cd-progress__indicator{background:#38bdf8!important}
+html[data-theme="dark"] .commercial-dashboard-v2 .cd-chart{background:#111827}
+html[data-theme="dark"] .commercial-dashboard-v2 .commercial-story-block[data-story-block="action"]{background:rgba(14,165,233,.12)}
+</style>
 </head>
 <body class="cd-page">
 <nav class="sidebar" id="sidebar" aria-label="Navegación principal">
@@ -512,7 +534,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
     <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i><span>&Oacute;rdenes de Visita</span></a>
   </div>
   <div class="sidebar-footer">
-    <button id="btnTheme" aria-label="Cambiar tema"><i class="fa-solid fa-sun" id="themeIcon"></i><span>Tema</span></button>
+    <button id="btnTheme" type="button" aria-label="Cambiar a modo oscuro" title="Cambiar a modo oscuro" aria-pressed="false"><i class="fa-solid fa-moon" id="themeIcon" aria-hidden="true"></i><span id="themeLabel">Modo oscuro</span></button>
     <a href="/logout" class="logout"><i class="fa-solid fa-power-off"></i><span>Cerrar Sesi&oacute;n</span></a>
   </div>
 </nav>
@@ -833,7 +855,7 @@ const RESPONSE_CACHE=new Map();
 
 const isDark=()=>document.documentElement.dataset.theme==='dark';
 const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const PAL=()=>({brand:cssVar('--brand-primary'),cmp:cssVar('--text-muted'),ok:cssVar('--success'),warn:cssVar('--warning'),bad:cssVar('--danger'),info:cssVar('--info'),gray:cssVar('--text-muted'),txt:cssVar('--text-primary'),mut:cssVar('--text-muted'),grid:isDark()?'rgba(255,255,255,.075)':'rgba(16,24,40,.075)',line:isDark()?'rgba(255,255,255,.18)':'rgba(16,24,40,.16)'});
+const PAL=()=>({brand:cssVar('--brand-primary'),cmp:isDark()?'#64748b':cssVar('--text-muted'),ok:cssVar('--success'),warn:cssVar('--warning'),bad:cssVar('--danger'),info:cssVar('--info'),gray:cssVar('--text-muted'),txt:cssVar('--text-primary'),mut:cssVar('--text-muted'),grid:isDark()?'rgba(148,163,184,.16)':'#e2e8f0',line:isDark()?'rgba(148,163,184,.30)':'#e2e8f0'});
 
 function dCharts(){Object.values(CH).forEach(c=>{try{c.destroy()}catch(e){}});CH={}}
 
@@ -1852,12 +1874,19 @@ function closeSidebar(){
   $('sidebarOverlay').classList.remove('open');
   $('sidebar').setAttribute('aria-expanded','false');
 }
-function toggleTheme(){
-  document.documentElement.dataset.theme=isDark()?'light':'dark';
-  localStorage.setItem('theme',document.documentElement.dataset.theme);
-  $('themeIcon').className=isDark()?'fa-solid fa-sun':'fa-solid fa-moon';
+function applyCommercialTheme(theme){
+  const next=theme==='dark'?'dark':'light',dark=next==='dark';
+  document.documentElement.dataset.theme=next;
+  document.documentElement.style.colorScheme=next;
+  try{localStorage.setItem('theme',next)}catch(e){}
+  document.querySelectorAll('#btnTheme,[data-theme-control]').forEach(control=>{
+    const label=dark?'Modo claro':'Modo oscuro',action=dark?'Cambiar a modo claro':'Cambiar a modo oscuro';
+    const icon=control.querySelector('i');if(icon)icon.className=dark?'fa-solid fa-sun':'fa-solid fa-moon';
+    const text=control.querySelector('[data-theme-label],#themeLabel,span');if(text)text.textContent=label;
+    control.setAttribute('aria-label',action);control.setAttribute('title',action);control.setAttribute('aria-pressed',String(dark));
+  });
+  const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute('content',dark?'#0b1120':'#f6f7f9');
   if(D){
-    dCharts();
     FIRST_KPI=false;rKPI();rev();rsla();rfun();
     const activeTab=document.querySelector('.cd-tabs button[aria-selected="true"]')?.dataset.tab;
     if(activeTab==='demand')rDemand();
@@ -1865,6 +1894,7 @@ function toggleTheme(){
     if(activeTab==='team')rTeam();
   }
 }
+function toggleTheme(){applyCommercialTheme(isDark()?'light':'dark')}
 function readFiltersAndPeriodFromUrl(){
   const params=new URLSearchParams(location.search);
   const map={executive:'exec',source:'source',operation:'op',property_type:'type',commune:'commune',temperature:'temp',property_code:'prop',assignment:'asgn',stage:'stage'};
@@ -1897,9 +1927,8 @@ function restoreFromURL(){
 
 /* ================= INIT ================= */
 document.addEventListener('DOMContentLoaded',()=>{
-  const s=document.documentElement.dataset.theme||'light';
-  document.documentElement.dataset.theme=s;
-  $('themeIcon').className=s==='light'?'fa-solid fa-moon':'fa-solid fa-sun';
+  const s=document.documentElement.dataset.theme==='dark'?'dark':'light';
+  applyCommercialTheme(s);
   restoreFromURL();
   /* poblar selectores (endpoint público, lógica intacta) */
   fetch('/api/analytics/commercial/filters',{headers:{Accept:'application/json'}}).then(r=>r.json()).then(f=>{

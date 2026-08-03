@@ -617,7 +617,6 @@ html[data-theme="dark"] .commercial-dashboard-v2 .commercial-story-block[data-st
   <button data-tab="demand" role="tab" aria-label="Demanda Inmobiliaria" aria-selected="false" aria-controls="tab-demand" id="tab-btn-demand"><span class="tab-full">Demanda Inmobiliaria</span><span class="tab-short">Demanda</span></button>
   <button data-tab="sources" role="tab" aria-label="Fuentes y Propiedades" aria-selected="false" aria-controls="tab-sources" id="tab-btn-sources"><span class="tab-full">Fuentes y Propiedades</span><span class="tab-short">Fuentes</span></button>
   <button data-tab="team" role="tab" aria-label="Equipo y Cobertura" aria-selected="false" aria-controls="tab-team" id="tab-btn-team"><span class="tab-full">Equipo y Cobertura</span><span class="tab-short">Equipo</span></button>
-  <button data-tab="quality" role="tab" aria-label="Calidad de Datos" aria-selected="false" aria-controls="tab-quality" id="tab-btn-quality"><span class="tab-full">Calidad de Datos</span><span class="tab-short">Calidad</span></button>
 </div>
 
 <div class="cd-err" id="errBox" hidden role="alert"><strong style="color:var(--cd-bad)">Error</strong><span id="errDetail"></span><button id="btnRetry">Reintentar</button></div>
@@ -648,6 +647,7 @@ html[data-theme="dark"] .commercial-dashboard-v2 .commercial-story-block[data-st
     </div>
   </section>
     <div class="cd-card-h"><h2 id="managementTargetsTitle" data-tt="Compara los resultados observados con objetivos formalmente configurados. La variaciÃ³n histÃ³rica y la brecha contra meta son conceptos distintos.">Metas y desviaciones</h2></div>
+  <div class="commercial-v2-evidence-grid">
   <div class="cd-grid cd-g-exec">
     <div class="cd-card">
       <div class="cd-card-h"><div><h2>Evoluci&oacute;n Comercial <small>leads recibidos por d&iacute;a</small></h2><div class="commercial-v2-evolution-legend" id="evolutionLegend" aria-label="Leyenda de evolución comercial"></div></div><span class="cd-kpi-vs" id="evVar"></span></div>
@@ -658,10 +658,11 @@ html[data-theme="dark"] .commercial-dashboard-v2 .commercial-story-block[data-st
       <div id="slaBody"></div>
     </div>
   </div>
-  <div class="cd-card">
+  <div class="cd-card commercial-v2-funnel-card">
     <div class="cd-card-h"><h2>Embudo Comercial <small>flujo secuencial del periodo</small></h2></div>
     <div class="cd-funnel" id="funnel"></div>
     <div class="cd-fun-note" id="funBN"></div>
+  </div>
   </div>
   <div class="cd-insights" id="insights" hidden aria-labelledby="insightsTitle"><span id="insightsTitle" class="cd-sr-only">Hallazgos complementarios</span></div>
 </div>
@@ -670,7 +671,7 @@ html[data-theme="dark"] .commercial-dashboard-v2 .commercial-story-block[data-st
 <div class="cd-panel" id="tab-demand" role="tabpanel" aria-labelledby="tab-btn-demand">
   <div class="cd-demand-note" id="demandConclusion"><strong>Conclusi&oacute;n accionable</strong><p>Evaluando cobertura y concentraci&oacute;n de demanda&hellip;</p></div>
   <div class="cd-grid cd-g-2">
-    <div class="cd-card">
+  <div class="cd-card">
       <div class="cd-card-h"><h2>Por Operaci&oacute;n <small>volumen y cobertura de precio</small></h2></div>
       <div class="cd-chart sm"><canvas id="dmOp"></canvas><div class="cd-loading" id="dmOpLd"></div></div>
     </div>
@@ -731,6 +732,11 @@ html[data-theme="dark"] .commercial-dashboard-v2 .commercial-story-block[data-st
     <div class="cd-seg cd-team-mode" id="teamMode" role="group" aria-label="Modo de gestión comercial"><button data-mode="team" class="active">Equipo</button><button data-mode="executive">Ejecutivo</button></div>
     <label for="execDetailSelect" class="cd-fhide">Seleccionar ejecutivo</label><select id="execDetailSelect" class="cd-sel" aria-label="Seleccionar ejecutivo" hidden><option value="">Seleccionar ejecutivo</option></select>
   </div>
+  <section class="cd-card commercial-sla-accountability" id="slaAccountabilityPanel" aria-labelledby="slaAccountabilityTitle">
+    <div class="cd-card-h"><div><h2 id="slaAccountabilityTitle">SLA y disciplina de registro</h2><small id="slaAccountabilityUniverse"></small></div><select id="slaAccountabilityProfile" class="cd-sel" aria-label="Clasificación SLA"><option value="lead">Lead</option><option value="lead_hot">Lead Hot</option></select></div>
+    <div class="commercial-sla-accountability-reading" id="slaAccountabilityReading"></div>
+    <div class="commercial-sla-accountability-table" id="slaAccountabilityTable"></div>
+  </section>
   <div class="cd-team-mode-panel" id="teamView">
   <div class="cd-team-kpis" id="teamKpis"></div>
   <section class="cd-card cd-priorities" aria-labelledby="teamPrioritiesTitle"><div class="cd-priority-head"><h2 id="teamPrioritiesTitle">Prioridades de hoy</h2></div><div class="cd-priority-list" id="teamPriorityList"></div></section>
@@ -744,12 +750,6 @@ html[data-theme="dark"] .commercial-dashboard-v2 .commercial-story-block[data-st
     <div class="cd-grid cd-g-2"><div class="cd-card"><div class="cd-card-h"><h2>Embudo individual</h2></div><div class="cd-funnel" id="execFunnel"></div></div><div class="cd-card"><div class="cd-card-h"><h2>Casos accionables <small>según evidencia disponible</small></h2></div><div id="execActions"></div></div></div>
     <button class="cd-btn" id="btnBackTeam"><i class="fa-solid fa-arrow-left"></i> Volver a Equipo</button>
   </div>
-</div>
-
-<!-- TAB quality -->
-<div class="cd-panel" id="tab-quality" role="tabpanel" aria-labelledby="tab-btn-quality">
-  <div class="cd-quality-intro"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>La calidad y cobertura se presentan separadas de las alertas comerciales. Un dato S/I nunca se interpreta como cero ni como incumplimiento.</span></div>
-  <div class="cd-card"><div class="cd-card-h"><h2>Cobertura de Datos <small>campos informados en el universo de leads</small></h2></div><div class="cd-cov" id="covGrid"></div></div>
 </div>
 
 </div></main>
@@ -840,7 +840,7 @@ function removeTemporalSkeletonState(){
   ctx.setAttribute('aria-busy','false');
 }
 /* ================= SECTION STATE ================= */
-const VALID_SECTIONS=new Set(['exec','demand','sources','team','quality']);
+const VALID_SECTIONS=new Set(['exec','demand','sources','team']);
 let activeSection='exec';
 function readSectionFromUrl(){
   const requested=new URLSearchParams(location.search).get('section');
@@ -1002,7 +1002,6 @@ async function loadData({historyMode=null}={}){
     if(activeTab==='demand')rDemand();
     if(activeTab==='sources')rSrc();
     if(activeTab==='team'){rTeam();if(EXEC_DETAIL)openExecutive(EXEC_DETAIL)}
-    if(activeTab==='quality')rTeam();
   }catch(e){
     if(e.name==='AbortError')return;
     console.error('[COMMERCIAL_DASHBOARD]',e);
@@ -1115,7 +1114,7 @@ function rPriorities(){
 /* ================= KPI ================= */
 function animVal(el,target,fmt){
   if(RM||!FIRST_KPI){el.textContent=fmt(target);return}
-  const t0=performance.now(),dur=650;
+  const t0=performance.now(),dur=1600;
   function step(t){
     const k=Math.min(1,(t-t0)/dur),e=1-Math.pow(1-k,3);
     el.textContent=fmt(target*e);
@@ -1153,7 +1152,7 @@ function rKPI(){
     if(key==='temperature_at_close'){
       const t=k.temperature_at_close||hotCov,has=t.with_history>0;
       const hot=has&&t.hot!=null?F(t.hot):'S/I',cold=has&&t.cold!=null?F(t.cold):'S/I';
-      h+='<div class="cd-kpi" style="--d:'+(FIRST_KPI?idx*45:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">'+name+'</span><button class="cd-info" data-tt="'+E(tip)+'" aria-label="Definición de '+E(name)+'"><i class="fa-solid fa-'+icon+'"></i></button></div>'
+      h+='<div class="cd-kpi" style="--d:'+(FIRST_KPI?idx*90:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">'+name+'</span><button class="cd-info" data-tt="'+E(tip)+'" aria-label="Definición de '+E(name)+'"><i class="fa-solid fa-'+icon+'"></i></button></div>'
         +'<div class="cd-temp-grid"><span>Hot histórico</span><b class="'+(!has?'unknown':'')+'">'+hot+'</b><span>Por calificar histórico</span><b class="'+(!has?'unknown':'')+'">'+cold+'</b><span>Sin historial</span><b>'+F(t.without_history??t.total??0)+'</b><span>Cobertura histórica</span><b>'+P(t.history_coverage_pct)+'</b></div></div>';
       return;
     }
@@ -1179,7 +1178,7 @@ function rKPI(){
     }else{foot='<span class="cd-kpi-meta">Sin base comparable demostrable</span>'}
     let cov='';
     const info=key==='leads_received'?'<button class="cd-info" data-tt="'+E(tip)+'" aria-label="Definición de '+E(name)+'"><i class="fa-solid fa-circle-info"></i></button>':'';
-    h+='<div class="cd-kpi" style="--d:'+(FIRST_KPI?idx*45:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">'+name+'</span>'+info+'</div><div class="cd-kpi-val" data-val="'+(cur??'')+'">'+(cur!=null?F(cur):'S/I')+'</div><div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'+varHtml+'</div><div class="cd-kpi-foot">'+foot+'</div>'+cov+'</div>';
+    h+='<div class="cd-kpi" style="--d:'+(FIRST_KPI?idx*90:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">'+name+'</span>'+info+'</div><div class="cd-kpi-val" data-val="'+(cur??'')+'" aria-label="'+E(name+': '+(cur!=null?F(cur):'Sin información suficiente'))+'">'+(cur!=null?F(cur):'S/I')+'</div><div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'+varHtml+'</div><div class="cd-kpi-foot">'+foot+'</div>'+cov+'</div>';
   });
   /* SLA card */
   const slaPct=sla.overall_compliance_pct;
@@ -1188,7 +1187,7 @@ function rKPI(){
   const gap=slaPct!=null?(slaPct-90):null;
   const slaCritical=slaCls==='down';
   const slaTip=SLA_HELP;
-  h+='<div class="cd-kpi cd-kpi-sla'+(slaCritical?' kpi-critical':'')+'" style="--d:'+(FIRST_KPI?6*45:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">Cumplimiento SLA</span>'+(slaCritical?'<span class="commercial-sla-critical-pill">Crítico</span>':'')+'<button class="cd-info" data-tt="'+E(slaTip)+'" aria-label="Definici\u00f3n de SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-kpi-val" style="color:'+slaCol+'" data-sla="1">'+(slaPct!=null?P1(slaPct):'S/I')+'</div><div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span class="cd-kpi-meta">Meta <b>90 %</b></span>'+(gap!=null?'<span class="cd-kpi-var '+slaCls+'">'+(gap>=0?'+':'')+P1(gap).replace(' %',' pp')+'</span>':'')+'</div><div class="cd-kpi-foot"><span class="cd-kpi-meta">'+(sla.critical_open!=null?F(sla.critical_open)+' cr\u00edticos abiertos':'')+'</span></div></div>';
+  h+='<div class="cd-kpi cd-kpi-sla'+(slaCritical?' kpi-critical':'')+'" style="--d:'+(FIRST_KPI?3*90:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">Cumplimiento SLA</span>'+(slaCritical?'<span class="commercial-sla-critical-pill">Crítico</span>':'')+'<button class="cd-info" data-tt="'+E(slaTip)+'" aria-label="Definici\u00f3n de SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-kpi-val" style="color:'+slaCol+'" data-sla="1" aria-label="Cumplimiento SLA: '+E(slaPct!=null?P1(slaPct):'Sin información suficiente')+'">'+(slaPct!=null?P1(slaPct):'S/I')+'</div><div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span class="cd-kpi-meta">Meta <b>90 %</b></span>'+(gap!=null?'<span class="cd-kpi-var '+slaCls+'">'+(gap>=0?'+':'')+P1(gap).replace(' %',' pp')+'</span>':'')+'</div><div class="cd-kpi-foot"><span class="cd-kpi-meta">'+(sla.critical_open!=null?F(sla.critical_open)+' cr\u00edticos abiertos':'')+'</span></div></div>';
   $('kpiRow').innerHTML=h;
   /* animación de valores solo en primera carga */
   document.querySelectorAll('.cd-kpi-val').forEach(el=>{
@@ -1399,10 +1398,13 @@ function rsla(){
   h+='<div class="cd-sla-definition"><button type="button" class="cd-btn ghost" id="slaDefinitionToggle" aria-expanded="false" aria-controls="slaDefinition">Cómo se calcula</button><div id="slaDefinition" hidden><p>El SLA mide el tiempo hábil desde la asignación hasta el registro de un resultado válido en el CRM.</p><p>Lead: atención desde 120 minutos, próximo a vencer desde 150 minutos y vencido desde 180 minutos hábiles.</p><p>Lead Hot: atención desde 30 minutos, próximo a vencer desde 45 minutos y vencido desde 60 minutos hábiles.</p><p>El contador opera de lunes a viernes, de 09:00 a 19:00; se pausa fuera de ese horario y durante fines de semana.</p><p>Los leads anteriores al inicio de la política aparecen como históricos y no participan en las métricas nuevas.</p></div></div>';
   h+='<div class="cd-sec-t">Estado SLA por clasificación</div><div class="cd-sla-profile-grid">'+profile('Lead',lead,false)+profile('Lead Hot',hot,true)+'</div>';
   const recon=[['Lead',lead],['Lead Hot',hot]].map(([label,b])=>{const open=[b.open_normal,b.attention,b.near_breach,b.breached].reduce((n,v)=>n+(finiteNumber(v)??0),0),managed=[b.managed_within,b.managed_outside].reduce((n,v)=>n+(finiteNumber(v)??0),0);return finiteNumber(b.eligible)!=null&&(open+managed!==b.eligible)?label:null}).filter(Boolean);
-  h+=(recon.length?'<div class="cd-sla-reconciliation">Cobertura SLA no reconciliada: '+E(recon.join(' y '))+'</div>':'')+'<div class="cd-sla-gap cd-sla-foot">Fuera de vigencia: <b>'+val(ex.historical)+'</b> · Sin asignación: <b>'+val(ex.not_assigned)+'</b> · Sin trazabilidad suficiente: <b>'+val(ex.insufficient_data)+'</b></div>';
+  const accountability=D.sla_accountability?.summary||{};
+  h+=(recon.length?'<div class="cd-sla-reconciliation">Cobertura SLA no reconciliada: '+E(recon.join(' y '))+'</div>':'')+'<div class="commercial-sla-origin"><div class="cd-sec-t">Origen de los vencidos abiertos</div><div class="commercial-sla-origin-grid"><span><b>'+val(accountability.open_breached)+'</b><small>Total vencidos abiertos</small></span><span><b>'+val(accountability.breached_with_activity_without_result)+'</b><small>Con actividad sin resultado</small></span><span><b>'+val(accountability.breached_without_activity)+'</b><small>Sin actividad demostrable</small></span></div><p>Una actividad sin resultado registrado no acredita gestión ni detiene el SLA.</p><button type="button" class="cd-btn ghost" id="btnSlaAccountability">Ver detalle por persona</button></div><div class="cd-sla-gap cd-sla-foot">Fuera de vigencia: <b>'+val(ex.historical)+'</b> · Sin asignación: <b>'+val(ex.not_assigned)+'</b> · Sin trazabilidad suficiente: <b>'+val(ex.insufficient_data)+'</b></div>';
   body.innerHTML=h;
   const toggle=$('slaDefinitionToggle'),definition=$('slaDefinition');
   if(toggle&&definition)toggle.onclick=()=>{const open=definition.hidden;definition.hidden=!open;toggle.setAttribute('aria-expanded',String(open));};
+  const accountabilityButton=$('btnSlaAccountability');
+  if(accountabilityButton)accountabilityButton.onclick=()=>{actTab('team',true);rTeam();setTimeout(()=>$('slaAccountabilityPanel')?.scrollIntoView({behavior:'auto',block:'start'}),0)};
   bindTips(body);
 }
 
@@ -1500,8 +1502,7 @@ function reorderExecutiveBlocks(){
     $('priorityList')?.closest('.cd-priorities'),
     $('executiveStory'),
     document.querySelector('.commercial-dashboard-v2 #tab-exec > .commercial-v2-ops-grid'),
-    document.querySelector('.commercial-dashboard-v2 #tab-exec > .cd-grid.cd-g-exec'),
-    $('funnel')?.closest('.cd-card'),
+    document.querySelector('.commercial-dashboard-v2 #tab-exec > .commercial-v2-evidence-grid'),
     $('insights')
   ];
   blocks.filter(Boolean).forEach(block=>root.appendChild(block));
@@ -1785,8 +1786,20 @@ function rProps(){
 }
 
 /* ================= EQUIPO ================= */
+let SLA_ACCOUNTABILITY_PROFILE='lead';
+function renderSlaAccountability(){
+  const payload=D.sla_accountability||{},summary=payload.summary||{},rows=payload.by_executive||[],profile=SLA_ACCOUNTABILITY_PROFILE==='lead_hot'?'lead_hot':'lead';
+  const name=profile==='lead_hot'?'Lead Hot':'Lead',fmtRate=v=>v==null?'S/I':P1(v),metric=(v,d)=>v==null?'S/I':F(v)+(d||'');
+  const total=summary.open_breached??0,withActivity=summary.breached_with_activity_without_result??0,withoutActivity=summary.breached_without_activity??0;
+  $('slaAccountabilityUniverse').textContent=D.meta?.universe?.filtered&&D.meta?.filters_applied?.includes('ejecutivo_asignado')?'Vista restringida por filtro de persona ejecutiva':'';
+  $('slaAccountabilityReading').innerHTML=total?'<p><b>'+F(withActivity)+'</b> de los <b>'+F(total)+'</b> vencidos abiertos presentan actividad, pero no un resultado válido registrado.</p><p>Esto representa una brecha de registro potencial; no demuestra por sí solo ausencia de gestión comercial.</p>':'<p>No se registran vencidos abiertos evaluables en el período.</p>';
+  const head=['Persona ejecutiva','Asignados','Gestionados dentro','Gestionados fuera','Vencidos abiertos','Actividad sin resultado','Sin actividad demostrable','Cumplimiento SLA','Mediana','Casos'];
+  const cells=r=>{const b=r[profile]||{},cases=(b.managed_within||0)+(b.managed_outside||0),insufficient=cases<5&&cases>0;return [E(r.executive_name),F(r.assigned||0),F(b.managed_within||0),F(b.managed_outside||0),F(b.open_breached||0),F(b.breached_with_activity_without_result||0),F(b.breached_without_activity||0),fmtRate(b.within_rate)+(insufficient?' <small>Muestra insuficiente para comparar</small>':'') ,metric(b.median_business_minutes,' min hábiles'),F(cases)];};
+  $('slaAccountabilityTable').innerHTML='<table><thead><tr>'+head.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cells(r).map((c,i)=>'<td data-label="'+head[i]+'">'+c+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+}
 function rTeam(){
   const ex=D.executives||[],pal=PAL();
+  renderSlaAccountability();
   const received=D.kpis?.leads_received?.value;
   const assigned=ex.reduce((a,e)=>a+(e.assigned||0),0);
   const managed=ex.reduce((a,e)=>a+(e.assigned!=null&&e.sla_fulfilled!=null?Math.round(e.assigned*e.sla_fulfilled/100):0),0);
@@ -1810,29 +1823,6 @@ function rTeam(){
     const open=()=>openExecutive(row.dataset.exec);
     row.addEventListener('click',open);row.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();open()}});
   });
-  /* cobertura */
-  const covAll=D.coverage||{};
-  const nice={'prospecto.nombre':'Nombre','prospecto.email':'Email','prospecto.rut':'RUT','prospecto.origen':'Fuente','prospecto.operacion':'Operaci\u00f3n','prospecto.tipo':'Tipo propiedad','prospecto.comuna':'Comuna','prospecto.codigo':'C\u00f3digo propiedad','ejecutivo_asignado':'Ejecutiva','pipeline_stage':'Etapa pipeline','lead_temperature_effective':'Temperatura actual','created_at':'Fecha creaci\u00f3n','stage_conflict':'Consistencia etapa'};
-  const tempCov=D.kpis?._meta?.temperature_coverage||{};
-  const rows=[];
-  rows.push({n:'Temperatura hist\u00f3rica',t:tempCov.total,p:tempCov.with_history,pc:tempCov.history_coverage_pct});
-  Object.values(covAll).forEach(c=>{
-    if(!c||typeof c!=='object')return;
-    if(c.conflict_count!=null)rows.push({n:nice[c.field]||c.field,t:c.total,p:c.total-c.conflict_count,pc:c.coverage_pct});
-    else rows.push({n:nice[c.field]||c.field,t:c.total,p:c.populated,pc:c.coverage_pct});
-  });
-  const sl=D.sla_risk||{};
-  if(sl.sla_start_coverage){
-    const sc=sl.sla_start_coverage;
-    const pc=sc.determined_pct!=null?sc.determined_pct:(sc.total>0?Math.round(sc.determined/sc.total*1000)/10:null);
-    rows.push({n:'Inicio SLA determinable',t:sc.total,p:sc.determined,pc:pc});
-  }
-  const low=rows.filter(r=>r.pc!=null&&r.pc<50).length;
-  $('covGrid').innerHTML=rows.map(r=>{
-    const st=r.pc==null?'si':r.pc>=90?'alta':r.pc>=70?'media':'baja';
-    const col=st==='alta'?pal.ok:st==='media'?pal.warn:pal.gray;
-    return '<div class="cd-covrow st-'+st+'"><span class="f">'+E(r.n)+'</span><span class="trk"><span style="width:'+(r.pc||0)+'%;background:'+col+'"></span></span><span class="n">'+(r.p!=null?F(r.p)+' / '+F(r.t)+' \u00b7 ':'')+'<b>'+(r.pc!=null?P(r.pc):'S/I')+'</b></span></div>';
-  }).join('')+(low?'<div class="cd-cov-note"><i class="fa-solid fa-triangle-exclamation"></i> La baja cobertura puede subrepresentar los indicadores.</div>':'');
 }
 
 function openExecutive(name){
@@ -1921,7 +1911,7 @@ function restoreFromURL(){
   readFiltersAndPeriodFromUrl();
   const params=new URLSearchParams(location.search);
   const section=params.get('section');
-  if(['exec','demand','sources','team','quality'].includes(section))actTab(section,false);
+  if(['exec','demand','sources','team'].includes(section))actTab(section,false);
   EXEC_DETAIL=params.get('selected_executive')||'';
 }
 
@@ -1983,7 +1973,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(b.dataset.tab==='demand'&&!window._demandLoaded){rDemand();window._demandLoaded=true}
     if(b.dataset.tab==='sources'&&!window._srcLoaded){rSrc();window._srcLoaded=true}
     if(b.dataset.tab==='team'&&!window._teamLoaded){rTeam();window._teamLoaded=true}
-    if(b.dataset.tab==='quality'){rTeam();window._teamLoaded=true}
   });
   $('tabNav').addEventListener('keydown',e=>{
     const tabs=Array.from(document.querySelectorAll('.cd-tabs button[role="tab"]'));
@@ -2009,6 +1998,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     loadData({historyMode:'replace'});
   });
   $('teamMode').addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(!b)return;b.dataset.mode==='team'?showTeam():(EXEC_DETAIL?openExecutive(EXEC_DETAIL):($('execDetailSelect').hidden=false))});
+  $('slaAccountabilityProfile').addEventListener('change',e=>{SLA_ACCOUNTABILITY_PROFILE=e.target.value==='lead_hot'?'lead_hot':'lead';renderSlaAccountability()});
   $('execDetailSelect').addEventListener('change',e=>{if(e.target.value)openExecutive(e.target.value)});
   $('btnBackTeam').addEventListener('click',showTeam);
   /* sticky shadow */

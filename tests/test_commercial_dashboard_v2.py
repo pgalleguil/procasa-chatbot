@@ -16,7 +16,7 @@ def test_v2_visual_layer_and_executive_order_are_present():
     assert "--commercial-page: #f6f8fb" in css
     assert ".commercial-dashboard-v2" in css
     assert "function reorderExecutiveBlocks()" in html
-    for value in ("$('kpiRow')", "$('priorityList')", "#tab-exec > .cd-grid.cd-g-exec", "#tab-exec > .commercial-v2-ops-grid", "$('executiveStory')", "$('funnel')?.closest('.cd-card')", "$('insights')"):
+    for value in ("$('kpiRow')", "$('priorityList')", "commercial-v2-evidence-grid", "#tab-exec > .commercial-v2-ops-grid", "$('executiveStory')", "$('insights')"):
         assert value in html
 
 
@@ -38,11 +38,22 @@ def test_final_executive_refinement_contracts_are_present():
     html = TEMPLATE.read_text(encoding="utf-8")
     css = CSS.read_text(encoding="utf-8")
     order_fn = html.split("function reorderExecutiveBlocks()", 1)[1].split("function sanitizeUnavailableUi", 1)[0]
-    assert order_fn.index("$('executiveStory')") < order_fn.index("commercial-v2-ops-grid") < order_fn.index("cd-grid.cd-g-exec")
+    assert order_fn.index("$('executiveStory')") < order_fn.index("commercial-v2-ops-grid") < order_fn.index("commercial-v2-evidence-grid")
     for value in ("kpi-critical", "commercial-sla-critical-pill", "evolutionLegend", "cd-sla-empty", "cd-funnel-collapsed", "btnFunnelExpand", "Sin información suficiente"):
         assert value in html
-    for value in ("#fef2f2", "#fecaca", "repeat(3, minmax(0, 1fr))", "height: 260px", "height: 240px", "height: 220px"):
+    for value in ("#fef2f2", "#fecaca", "repeat(3, minmax(0, 1fr))", "height: 260px", "height: 240px", "height: 220px", "grid-template-areas: \"evolution sla\" \"funnel sla\""):
         assert value in css
+
+
+def test_accountability_and_quality_tab_contracts_are_present():
+    html = TEMPLATE.read_text(encoding="utf-8")
+    css = CSS.read_text(encoding="utf-8")
+    assert 'data-tab="quality"' not in html
+    assert 'id="tab-quality"' not in html
+    for value in ("sla_accountability", "SLA y disciplina de registro", "slaAccountabilityProfile", "btnSlaAccountability", "Origen de los vencidos abiertos", "Actividad sin resultado", "Sin actividad demostrable", "Vista restringida por filtro de persona ejecutiva"):
+        assert value in html
+    for value in ("commercial-v2-evidence-grid", "commercial-sla-accountability-table", "commercial-sla-origin-grid", "commercial-v2-kpi-in", "dur=1600"):
+        assert value in css or value in html
 
 
 def test_v2_css_uses_only_scoped_component_selectors():

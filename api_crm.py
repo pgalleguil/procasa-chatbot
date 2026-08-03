@@ -378,6 +378,14 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
     db["crm_tasks"].insert_one(task)
 
 # --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
+def _gestionado_chip_enabled(has_real_management: bool, estado_final) -> bool:
+    """Show the 'Gestionado' chip for leads with valid management in the active
+    cycle, except terminal stages where the estado already conveys closure."""
+    return bool(has_real_management and estado_final not in (
+        PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST,
+    ))
+
+
 async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla_priority",
                               user_role="agente", user_name="", ejecutivo_filter=None,
                               temperatura_filter="HOT",
@@ -1254,6 +1262,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "estado": estado_final,
             "estado_badge": config_estado["label"],
             "led_class": config_estado["led"],
+            "gestionado": bool(has_real_management),
+            "gestionado_chip": _gestionado_chip_enabled(has_real_management, estado_final),
             "tiempo_relativo": format_relative_time(last_ts_obj),
             "real_timestamp": last_ts_obj,
             "created_timestamp": lead.get("created_at"),

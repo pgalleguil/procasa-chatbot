@@ -989,21 +989,6 @@
             box-shadow: 0 0 3px rgba(100, 116, 139, 0.5);
         }
 
-        .badge-gestionado {
-            color: #22c55e;
-            font-size: 0.7rem;
-            font-weight: 700;
-            white-space: nowrap;
-            display: inline-flex;
-            align-items: center;
-            gap: 3px;
-            background: rgba(34, 197, 94, 0.12);
-            border: 1px solid rgba(34, 197, 94, 0.35);
-            padding: 1px 6px;
-            border-radius: 10px;
-            margin-right: 6px;
-        }
-
         @keyframes pulse-red {
             0% {
                 transform: scale(1);
@@ -2072,12 +2057,13 @@
                             </td>
                             <td class="col-state" data-label="Estado">
                                 <div class="mobile-cell-value d-flex align-items-center">
-                                    {% if lead.gestionado_chip %}
-                                    <span class="badge-gestionado" title="Gestión registrada por el ejecutivo"><i
-                                            class="fa-solid fa-check-circle"></i> Gestionado</span>
-                                    {% endif %}
+                                    {% if lead.estado_resultado and lead.estado not in ['CLOSED_WON', 'CLOSED_LOST'] %}
+                                    <span class="text-white fw-bold" style="font-size: 0.9rem;">{{ lead.estado_resultado
+                                        }}</span>
+                                    {% else %}
                                     <span class="text-white fw-bold" style="font-size: 0.9rem;">{{ lead.estado_badge
                                         }}</span>
+                                    {% endif %}
                                 </div>
                             </td>
                             <td class="col-last-action" data-label="Última Acción">

@@ -1,6 +1,7 @@
 # from pymongo import MongoClient (Replaced by singleton)
 from config import Config
 from datetime import datetime, timedelta
+from typing import Optional
 import pytz
 import re
 import uuid
@@ -378,12 +379,51 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
     db["crm_tasks"].insert_one(task)
 
 # --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
-def _gestionado_chip_enabled(has_real_management: bool, estado_final) -> bool:
-    """Show the 'Gestionado' chip for leads with valid management in the active
-    cycle, except terminal stages where the estado already conveys closure."""
-    return bool(has_real_management and estado_final not in (
-        PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST,
-    ))
+# Etiquetas cortas para mostrar en la columna Estado qué registró el ejecutivo.
+RESULTADO_LABELS = {
+    "requiere_seguimiento": "En Seguimiento",
+    "visita_agendada": "Visita Agendada",
+    "intento_fallido": "Intento Fallido",
+    "lead_cerrado": "Lead Cerrado",
+    # Gestión Propietario
+    "autoriza_visita": "Autoriza Visita",
+    "acepta_mostrar": "Acepta Mostrar",
+    "confirma_disponibilidad": "Confirma Disponibilidad",
+    "solo_mananas": "Solo Mañanas",
+    "desde_marzo": "Desde Marzo",
+    "con_24h_aviso": "Con 24h de Aviso",
+    "solo_fines_semana": "Solo Finde",
+    "no_acepta_visitas_aun": "No Acepta Visitas",
+    "intento_contacto": "Intento de Contacto",
+    "no_logra_contacto": "Sin Contacto",
+    "no_quiere_mostrar": "No Quiere Mostrar",
+    "no_quiere_visitas": "No Quiere Visitas",
+    "no_baja_precio": "No Baja Precio",
+    "rechaza_visita": "Rechaza Visita",
+    "no_regularizada": "No Regularizada",
+    "doc_incompleta": "Doc. Incompleta",
+    "rol_incorrecto": "Rol Incorrecto",
+    "propietario_retiro": "Retiró Propiedad",
+    "vendio_fuera": "Vendió por Fuera",
+    "no_autoriza_gestion": "No Autoriza Gestión",
+}
+
+
+def _resultado_estado_label(ev) -> Optional[str]:
+    """Short label of what the executive registered, for the Estado column."""
+    if not ev:
+        return None
+    meta = ev.get("meta") or {}
+    result = str(ev.get("result") or meta.get("result") or "").strip().lower()
+    label = RESULTADO_LABELS.get(result)
+    if label:
+        return label
+    action = str(meta.get("action_label") or "").strip()
+    if action:
+        parts = [part.strip() for part in action.split("/") if part.strip()]
+        if parts:
+            return parts[-1]
+    return None
 
 
 async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla_priority",
@@ -1263,7 +1303,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "estado_badge": config_estado["label"],
             "led_class": config_estado["led"],
             "gestionado": bool(has_real_management),
-            "gestionado_chip": _gestionado_chip_enabled(has_real_management, estado_final),
+            "estado_resultado": _resultado_estado_label(
+                recognized_management_ev or commercial_ev
+            ) if has_real_management else None,
             "tiempo_relativo": format_relative_time(last_ts_obj),
             "real_timestamp": last_ts_obj,
             "created_timestamp": lead.get("created_at"),

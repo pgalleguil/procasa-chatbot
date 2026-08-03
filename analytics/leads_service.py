@@ -5,7 +5,9 @@ import logging
 import math
 import time
 import calendar
+import json
 from datetime import date, timedelta
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
@@ -34,6 +36,24 @@ L1_CACHE: dict[str, tuple[float, dict]] = {}
 CACHE_TTL = 120
 MAX_CACHE_ENTRIES = 200
 _COMMERCIAL_QUERY_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="commercial_analytics")
+
+
+def _load_commercial_macro_information():
+    """Read the central macro configuration without making dashboard loading depend on it."""
+    path = Path(__file__).parents[1] / "config" / "commercial_macro.json"
+    fallback = {
+        "available": False,
+        "source": "No configurada",
+        "indicators": {
+            key: {"label": label, "value": None, "as_of": None, "source": "No configurada", "available": False}
+            for key, label in (("uf", "UF Chile"), ("usd", "Dólar observado"), ("tpm", "TPM"))
+        },
+    }
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        return loaded if isinstance(loaded, dict) else fallback
+    except (OSError, ValueError, TypeError):
+        return fallback
 
 
 def _cache_key(prefix: str, **params) -> str:
@@ -390,6 +410,9 @@ def _executive_target_info(period_start, period_end, filters=None, *, today=None
     configured = next((item for item in load_target_configuration().get("targets", []) if item.get("metric") == "received_leads"), None)
     if not configured or configured.get("target") is None:
         return {"available": False, "target": None, "segmented": False, "reason": "unconfigured"}
+    effective_from = configured.get("effective_from")
+    if effective_from and end < date.fromisoformat(str(effective_from)[:10]):
+        return {"available": False, "target": None, "segmented": False, "reason": "not_active"}
     target = float(configured["target"])
     total = 0.0
     cursor = start
@@ -422,6 +445,18 @@ def _build_executive_kpis(kpis, funnel, properties, sla, accountability, trends,
     target = _executive_target_info(period_start, period_end, filters, today=date.today())
     if target.get("available") and target.get("pace_days_elapsed") and received is not None:
         target["pace"] = round(received / target["pace_days_elapsed"] * target["pace_days_total"], 1)
+    raw_daily = ((trends or {}).get("current") or {}).get("daily") or []
+    daily = []
+    for point in raw_daily:
+        item = dict(point)
+        try:
+            point_date = date.fromisoformat(str(point.get("date"))[:10])
+            item["target_daily"] = round(float(target.get("global_target")) / calendar.monthrange(point_date.year, point_date.month)[1], 2) if target.get("available") else None
+            item["partial"] = point_date == date.today()
+        except (TypeError, ValueError):
+            item["target_daily"] = None
+            item["partial"] = False
+        daily.append(item)
     demand = {
         "available": received is not None,
         "received": received,
@@ -431,7 +466,8 @@ def _build_executive_kpis(kpis, funnel, properties, sla, accountability, trends,
         "pace": target.get("pace"),
         "target_applicable": bool(target.get("available")),
         "segmented": bool(target.get("segmented")),
-        "daily": ((trends or {}).get("current") or {}).get("daily") or [],
+        "daily": daily,
+        "pace_variance_pct": round((target.get("pace") / target.get("global_target") - 1) * 100, 1) if target.get("pace") is not None and target.get("global_target") else None,
     }
     visit = next((row for row in (funnel or []) if row.get("key") == "visit_scheduled"), {})
     prev_received = (kpis.get("leads_received") or {}).get("previous")
@@ -446,6 +482,7 @@ def _build_executive_kpis(kpis, funnel, properties, sla, accountability, trends,
         "rate_pct": conversion_rate,
         "variation_pp": round(conversion_rate - previous_rate, 1) if conversion_rate is not None and previous_rate is not None else None,
     }
+    valuation_rows = (properties or {}).get("valuation") or (properties or {}).get("opportunity") or []
     valid = []
     seen_codes = set()
     for row in ((properties or {}).get("opportunity") or []):
@@ -462,16 +499,20 @@ def _build_executive_kpis(kpis, funnel, properties, sla, accountability, trends,
         "net_commission_uf": round(net, 1) if net is not None else None,
         "gross_commission_uf": round(net * 1.19, 1) if net is not None else None,
         "property_count": len(valid), "lead_count": sum(row["leads"] for row in valid),
-        "coverage_pct": round(len(valid) / max(len((properties or {}).get("opportunity") or []), 1) * 100, 1),
-        "by_operation": {op: {"property_count": sum(1 for row in valid if row["operation"] == op), "net_commission_uf": round(sum(row["price_uf"] * 0.04 for row in valid if row["operation"] == op), 1)} for op in ("venta", "arriendo")},
+        "coverage_pct": round(len(valid) / max((properties or {}).get("total_properties") or len(valuation_rows), 1) * 100, 1),
+        "by_operation": {op: {"property_count": sum(1 for row in valid if row["operation"] == op), "net_commission_uf": round(sum(row["price_uf"] * 0.04 for row in valid if row["operation"] == op), 1), "value_pct": round(sum(row["price_uf"] for row in valid if row["operation"] == op) / max(total_value or 1, 1) * 100, 1)} for op in ("venta", "arriendo")},
     }
     lead_sla = (sla or {}).get("lead") or {}
     hot_sla = (sla or {}).get("lead_hot") or {}
-    sla_velocity = {"available": bool(lead_sla or hot_sla), "lead": {"median_minutes": lead_sla.get("median_minutes"), "p90_minutes": lead_sla.get("p90_minutes"), "open_breached": lead_sla.get("breached", 0)}, "lead_hot": {"median_minutes": hot_sla.get("median_minutes"), "p90_minutes": hot_sla.get("p90_minutes"), "open_breached": hot_sla.get("breached", 0)}}
+    sla_velocity = {"available": (sla or {}).get("overall_compliance_pct") is not None, "compliance_pct": (sla or {}).get("overall_compliance_pct"), "lead": {"eligible": lead_sla.get("eligible", 0), "median_minutes": lead_sla.get("median_minutes"), "p90_minutes": lead_sla.get("p90_minutes"), "managed_within": lead_sla.get("managed_within", 0), "managed_outside": lead_sla.get("managed_outside", 0), "open_breached": lead_sla.get("breached", 0)}, "lead_hot": {"eligible": hot_sla.get("eligible", 0), "median_minutes": hot_sla.get("median_minutes"), "p90_minutes": hot_sla.get("p90_minutes"), "managed_within": hot_sla.get("managed_within", 0), "managed_outside": hot_sla.get("managed_outside", 0), "open_breached": hot_sla.get("breached", 0)}}
     summary = (accountability or {}).get("summary") or {}
     by_exec = (accountability or {}).get("by_executive") or []
-    top_exec = max(by_exec, key=lambda row: (row.get("registration_gap_rate") or 0, row.get("executive_name") or ""), default={})
-    registration = {"available": bool(summary), "registration_gap_rate": summary.get("registration_gap_rate"), "activity_without_result": summary.get("breached_with_activity_without_result"), "without_activity": summary.get("breached_without_activity"), "total_breached": summary.get("open_breached"), "highest_concentration": top_exec.get("executive_name")}
+    def executive_breaches(row):
+        lead, hot = row.get("lead") or {}, row.get("lead_hot") or {}
+        return (lead.get("breached_with_activity_without_result", 0) or 0) + (hot.get("breached_with_activity_without_result", 0) or 0)
+    top_exec = max(by_exec, key=lambda row: (executive_breaches(row), row.get("executive_name") or ""), default={})
+    total_breached = summary.get("open_breached")
+    registration = {"available": bool(summary), "activity_count": summary.get("breached_with_activity_without_result"), "registration_gap_rate": summary.get("registration_gap_rate"), "activity_without_result": summary.get("breached_with_activity_without_result"), "without_activity": summary.get("breached_without_activity"), "total_breached": total_breached, "highest_concentration": top_exec.get("executive_name"), "highest_concentration_count": executive_breaches(top_exec) if top_exec else None, "reconciled": total_breached is not None and total_breached == (summary.get("breached_with_activity_without_result", 0) + summary.get("breached_without_activity", 0))}
     return {"demand_pace": demand, "visit_conversion": conversion_card, "pipeline_valuation": pipeline, "sla_velocity": sla_velocity, "registration_discipline": registration}
 
 
@@ -825,6 +866,7 @@ def get_commercial_dashboard(
         "insights": insights,
         "coverage": coverage,
         "executive_kpis": executive_kpis,
+        "macro_indicators": _load_commercial_macro_information(),
     }
     _cache_set(key, result)
     return result

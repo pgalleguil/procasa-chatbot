@@ -752,6 +752,11 @@ html[data-theme="dark"] .commercial-dashboard-v2 .commercial-story-block[data-st
   </div>
 </div>
 
+<aside class="commercial-information-ticker" id="commercialInformationTicker" aria-label="Información comercial y macroeconómica">
+  <div class="commercial-information-ticker__viewport">
+    <div class="commercial-information-ticker__track" id="commercialInformationTickerTrack"></div>
+  </div>
+</aside>
 </div></main>
 
 <div id="cdTip" role="tooltip" aria-label="Información contextual" aria-hidden="true"></div>
@@ -1091,8 +1096,22 @@ function render(){
   }
   $('metaTxt').textContent=(compact?(upd?upd.replace(' \u00b7 actualizado ',''):'hace instantes')+' \u00b7 '+universeLabel+totalLabel+' leads':universeLabel+totalLabel+' leads'+upd);
   document.querySelector('#metaLine .dot').style.background='var(--cd-ok)';
-  rKPI();rPriorities();rInsights();rev();rsla();rfun();renderOperationalControl(D.executive_summary);renderExecutiveStory(D.executive_story);renderManagementTargets(D.management_targets);
+  rKPI();rPriorities();rInsights();rev();rsla();rfun();renderOperationalControl(D.executive_summary);renderExecutiveStory(D.executive_story);renderManagementTargets(D.management_targets);renderCommercialInformationTicker();
   FIRST_KPI=false;
+}
+
+function renderCommercialInformationTicker(){
+  const root=$('commercialInformationTicker'),track=$('commercialInformationTickerTrack');
+  if(!root||!track)return;
+  const macro=D.macro_indicators||{},items=macro.indicators||{};
+  const item=(key,label)=>{const x=items[key]||{};if(x.available!==true||x.value==null)return '';const value=E(String(x.value)),asOf=x.as_of?FD(x.as_of):'No actualizado',source=x.source?' · '+E(x.source):'';return '<span class="commercial-information-ticker__item"><b>'+E(label)+'</b>: '+value+' · '+asOf+source+'</span>'};
+  const macroItems=['uf','usd','tpm'].map(key=>item(key,{uf:'UF Chile',usd:'Dólar observado',tpm:'TPM'}[key])).join('');
+  const macroFallback=macroItems?'':'<span class="commercial-information-ticker__item">Indicadores macroeconómicos pendientes de sincronización</span>';
+  const content='<span class="commercial-information-ticker__item brand"><b>PROCASA</b> · Inteligencia Comercial</span><span class="commercial-information-ticker__item">Información interna de uso analítico</span>'+macroItems+macroFallback+'<span class="commercial-information-ticker__item">Fuentes operacionales: Portal Inmobiliario, Yapo, TocToc y WhatsApp</span>';
+  track.innerHTML='<div class="commercial-information-ticker__content">'+content+'</div><div class="commercial-information-ticker__content" aria-hidden="true">'+content+'</div>';
+  const update=()=>{const contentNode=track.querySelector('.commercial-information-ticker__content');const shouldMove=window.matchMedia('(prefers-reduced-motion: no-preference)').matches&&contentNode&&contentNode.scrollWidth>root.clientWidth;root.classList.toggle('is-marquee',!!shouldMove)};
+  update();
+  if(!root.dataset.tickerBound){root.dataset.tickerBound='true';root.addEventListener('mouseenter',()=>root.classList.add('is-paused'));root.addEventListener('mouseleave',()=>root.classList.remove('is-paused'));root.addEventListener('focusin',()=>root.classList.add('is-paused'));root.addEventListener('focusout',()=>root.classList.remove('is-paused'));document.addEventListener('visibilitychange',()=>root.classList.toggle('is-paused',document.hidden));window.addEventListener('resize',update);window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener?.('change',update)}
 }
 
 function rPriorities(){
@@ -1199,7 +1218,7 @@ function rKPILegacy(){
 }
 
 /* ================= FIVE EXECUTIVE KPIs ================= */
-function rKPI(){
+function rKPIPrevious(){
   const x=D.executive_kpis||{},pal=PAL(),daily=(x.demand_pace?.daily||[]).map(d=>d.received);
   const val=(v,s='')=>v==null||v===0?'—':F(v)+s;
   const info=(label,tip)=>'<button class="cd-info" data-tt="'+E(tip)+'" aria-label="Definición de '+E(label)+'"><i class="fa-solid fa-circle-info"></i></button>';
@@ -1218,6 +1237,36 @@ function rKPI(){
   $('kpiRow').innerHTML=h;
   document.querySelectorAll('[data-spark]').forEach(cv=>sparkline(cv,daily,pal.brand));
   bindTips($('kpiRow'));
+}
+
+function executiveSparkline(cv,series,color){
+  const rect=cv.getBoundingClientRect(),ratio=Math.min(window.devicePixelRatio||1,3),w=Math.max(1,Math.round(rect.width)),h=Math.max(1,Math.round(rect.height));
+  cv.width=Math.round(w*ratio);cv.height=Math.round(h*ratio);const ctx=cv.getContext('2d');ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,w,h);
+  if(!series?.length){cv.title='Sin datos diarios suficientes';return}
+  const vals=series.map(x=>Number(x.received)||0),targets=series.map(x=>Number(x.target_daily)||0),mx=Math.max(...vals,...targets,1),xAt=i=>i/(Math.max(1,vals.length-1))*(w-4)+2,yAt=v=>h-5-(v/mx)*(h-10),pts=vals.map((v,i)=>[xAt(i),yAt(v)]);
+  ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.strokeStyle=color;ctx.lineWidth=1.8;ctx.stroke();ctx.lineTo(pts.at(-1)[0],h);ctx.lineTo(pts[0][0],h);ctx.closePath();const g=ctx.createLinearGradient(0,0,0,h);g.addColorStop(0,color+'2a');g.addColorStop(1,color+'00');ctx.fillStyle=g;ctx.fill();
+  if(targets.some(Boolean)){ctx.beginPath();targets.forEach((v,i)=>i?ctx.lineTo(xAt(i),yAt(v)):ctx.moveTo(xAt(i),yAt(v)));ctx.setLineDash([3,3]);ctx.strokeStyle=color+'88';ctx.lineWidth=1;ctx.stroke();ctx.setLineDash([])}
+  const last=series.at(-1);if(last?.partial){ctx.beginPath();ctx.arc(pts.at(-1)[0],pts.at(-1)[1],3,0,Math.PI*2);ctx.fillStyle=color;ctx.fill()}
+  cv.title=series.map(x=>(x.partial?'Hoy · parcial · ':'')+FD(x.date)+' · '+F(x.received)+' leads · meta diaria '+(x.target_daily==null?'No actualizado':Number(x.target_daily).toLocaleString('es-CL',{minimumFractionDigits:1,maximumFractionDigits:1}))).join('\n');
+}
+
+function rKPI(){
+  const x=D.executive_kpis||{},pal=PAL(),d=x.demand_pace||{},fmt=(v,digits=1)=>v==null?'':Number(v).toLocaleString('es-CL',{minimumFractionDigits:digits,maximumFractionDigits:digits}),display=(v,s='')=>v==null?'No disponible':fmt(v,1)+s,unknown='Sin trazabilidad suficiente';
+  const info=(label,tip)=>'<button class="cd-info" data-tt="'+E(tip)+'" aria-label="Definición de '+E(label)+'"><i class="fa-solid fa-circle-info"></i></button>';
+  const card=(label,tip,body,idx)=>'<div class="cd-kpi" data-executive-kpi="1" style="--d:'+(FIRST_KPI?idx*90:0)+'ms"><div class="cd-kpi-top"><span class="cd-kpi-label">'+label+'</span>'+info(label,tip)+'</div>'+body+'</div>';
+  const demandFooter=d.pace_variance_pct==null?'Meta global no aplicable al segmento filtrado':Math.abs(d.pace_variance_pct)<1?'El ritmo se encuentra alineado con la meta mensual':d.pace_variance_pct>0?'El ritmo proyecta superar la meta mensual en '+fmt(d.pace_variance_pct)+' %':'El ritmo proyecta cerrar '+fmt(Math.abs(d.pace_variance_pct))+' % bajo la meta mensual';
+  let h=card('DEMANDA, META & RITMO','Meta global mensual prorrateada por días calendario y ritmo proyectado.', '<div class="cd-kpi-val">'+(d.target_applicable&&d.compliance_pct!=null?P1(d.compliance_pct):d.received==null?'—':F(d.received))+'</div><div class="cd-kpi-meta">'+(d.target_applicable?'Avance de meta prorrateada':'Meta global no aplicable al segmento filtrado')+'</div><div class="cd-kpi-meta">'+(d.target_applicable?F(d.received)+' leads de una meta prorrateada de '+fmt(d.target)+'<br>Meta mensual: '+fmt(d.global_target,0)+' leads':unknown)+'</div><div class="cd-kpi-foot">'+(d.pace!=null?'Pace proyectado: '+fmt(d.pace)+' de '+fmt(d.global_target,0)+' leads<br>':'')+demandFooter+'</div><canvas class="cd-spark cd-kpi-spark cd-exec-spark" width="120" height="48" aria-label="Evolución diaria de leads"></canvas>',0);
+  const v=x.visit_conversion||{},vr=v.rate_pct,conversionBody=vr==null?'<div class="cd-kpi-val">'+unknown+'</div><div class="cd-kpi-meta">'+unknown+'</div><div class="cd-kpi-foot">Sin trazabilidad suficiente</div>':'<div class="cd-kpi-val">'+P1(vr)+'</div><div class="cd-kpi-meta">Conversión a visita</div><div class="cd-kpi-meta">'+F(v.visited_or_scheduled)+' visitas/citas acreditadas de '+F(v.received)+' leads</div><div class="cd-kpi-foot">'+(v.visited_or_scheduled===0?'No se registraron visitas/citas para la cohorte seleccionada.':'1 visita/cita por cada '+fmt(v.received/v.visited_or_scheduled))+(v.variation_pp!=null?'<br>'+(v.variation_pp>=0?'+':'')+fmt(v.variation_pp)+' pp vs. período comparable':'')+'</div>';
+  h+=card('CONVERSIÓN A VISITA','Conversión canónica de la cohorte recibida a visita o cita acreditada.',conversionBody,1);
+  const p=x.pipeline_valuation||{},venta=p.by_operation?.venta||{},arriendo=p.by_operation?.arriendo||{},coverage=p.coverage_pct;
+  h+=card('PIPELINE & VALORIZACIÓN UF','Estimación teórica sobre propiedades únicas asociadas. No representa ingresos realizados ni probabilidad de cierre.','<div class="cd-kpi-val">'+(p.net_commission_uf==null?unknown:'UF '+fmt(p.net_commission_uf))+'</div><div class="cd-kpi-meta">Comisión neta estimada</div><div class="cd-kpi-meta">UF '+(p.gross_commission_uf==null?'':fmt(p.gross_commission_uf))+' incluida IVA<br>UF '+(p.property_value_uf==null?'':fmt(p.property_value_uf))+' valor de propiedades vinculadas</div><div class="cd-kpi-bars"><span>VENTA · UF '+fmt(venta.net_commission_uf)+' · '+fmt(venta.value_pct,0)+'%</span><span>ARRIENDO · UF '+fmt(arriendo.net_commission_uf)+' · '+fmt(arriendo.value_pct,0)+'%</span></div><div class="cd-kpi-foot">'+(p.property_count==null?unknown:F(p.property_count)+' propiedades únicas valorizadas · '+F(p.lead_count)+' leads asociados · Cobertura '+fmt(coverage,0)+'%')+(coverage!=null&&coverage<80?'<br>Valorización parcial: '+fmt(coverage,0)+' % de propiedades con precio UF válido.':'')+'</div>',2);
+  const s=x.sla_velocity||{},sl=s.lead||{},sh=s.lead_hot||{},slaFooter=F(sl.managed_within||0)+' gestionados dentro · '+F(sl.managed_outside||0)+' gestionados fuera · '+F((sl.open_breached||0)+(sh.open_breached||0))+' vencidos abiertos';
+  const slaDetail=(name,b)=>!b.eligible?'<div><b>'+name+'</b>: Sin '+name+' evaluables en el período</div>':'<div><b>'+name+'</b> · Mediana: '+display(b.median_minutes,' min')+' · P90: '+display(b.p90_minutes,' min')+' · Vencidos abiertos: '+F(b.open_breached||0)+'</div>';
+  h+=card('SLA & VELOCIDAD DE RESPUESTA','Tiempos SLA canónicos en minutos hábiles.','<div class="cd-kpi-val">'+(s.compliance_pct==null?unknown:P1(s.compliance_pct))+'</div><div class="cd-kpi-meta">Cumplimiento SLA</div><div class="cd-kpi-sla-lines">'+slaDetail('LEAD',sl)+slaDetail('LEAD HOT',sh)+'</div><div class="cd-kpi-foot">'+slaFooter+'</div>',3);
+  const r=x.registration_discipline||{},total=r.total_breached,activity=r.activity_count,without=r.without_activity;
+  const regBody=total===0?'<div class="cd-kpi-val">0 de 0</div><div class="cd-kpi-meta">Sin vencidos abiertos en el período</div><div class="cd-kpi-foot">No se registran brechas evaluables.</div>':total==null?'<div class="cd-kpi-val">'+unknown+'</div><div class="cd-kpi-foot">'+unknown+'</div>':'<div class="cd-kpi-val">'+F(activity)+' de '+F(total)+'</div><div class="cd-kpi-meta">Con actividad sin resultado</div><div class="cd-kpi-meta">'+P1(r.registration_gap_rate)+'<br>'+F(activity)+' con actividad sin resultado válido · '+F(without)+' sin actividad demostrable · '+F(total)+' vencidos abiertos</div><div class="cd-kpi-foot">'+(r.reconciled?'Reconciliación: '+F(total)+' = '+F(activity)+' + '+F(without):'Sin reconciliación suficiente')+(r.highest_concentration?'<br>Mayor concentración: '+E(r.highest_concentration)+' · '+F(r.highest_concentration_count)+' de '+F(total)+' vencidos abiertos':'')+'</div>';
+  h+=card('DISCIPLINA DE REGISTRO','Una actividad sin resultado registrado no acredita gestión válida ni detiene el SLA. La métrica no demuestra por sí sola ausencia de trabajo comercial.',regBody,4);
+  $('kpiRow').innerHTML=h;document.querySelectorAll('.cd-exec-spark').forEach(cv=>executiveSparkline(cv,d.daily,pal.brand));bindTips($('kpiRow'));
 }
 
 /* ================= INSIGHTS ================= */

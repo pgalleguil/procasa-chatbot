@@ -2811,7 +2811,7 @@ def query_commercial_property_ranking(period_start=None, period_end=None, filter
             })
     opp.sort(key=lambda x: x["leads"], reverse=True)
     leak.sort(key=lambda x: x["uncoordinated"] + x["unmanaged"], reverse=True)
-    return {"opportunity": opp[:10], "leakage": leak[:10]}
+    return {"opportunity": opp[:10], "valuation": opp, "total_properties": len(opp), "leakage": leak[:10]}
 
 
 # =============================================================================

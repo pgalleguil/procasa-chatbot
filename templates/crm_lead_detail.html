@@ -3578,7 +3578,7 @@
                 const overdueClass = isOverdue ? 'text-danger fw-bold' : 'text-accent';
                 const warningIcon = isOverdue ? '<i class="fa-solid fa-triangle-exclamation me-1 text-warning"></i> <span class="text-warning small me-2">VENCIDO</span>' : '<i class="fa-solid fa-calendar-day me-1 text-accent"></i>';
 
-                nextDateEl.innerHTML = `${warningIcon} <span class="${overdueClass}">${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>`;
+                nextDateEl.innerHTML = `${warningIcon} <span class="${overdueClass}">${d.toLocaleDateString('es-CL', { timeZone: 'America/Santiago' })} ${d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Santiago' })}</span>`;
             } else {
                 nextDateEl.innerHTML = '<span class="text-muted">No programado</span>';
             }
@@ -4379,7 +4379,7 @@
                 document.getElementById('sum_date').innerHTML = '<span class="text-muted">No aplica (Cierre Definitivo)</span>';
             } else if (dateVal) {
                 const dateObj = new Date(dateVal);
-                document.getElementById('sum_date').innerText = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                document.getElementById('sum_date').innerText = dateObj.toLocaleDateString('es-CL', { timeZone: 'America/Santiago' }) + ' ' + dateObj.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Santiago' });
             } else {
                 document.getElementById('sum_date').innerText = 'Pendiente';
             }
@@ -4503,7 +4503,7 @@
                         'CLOSED_WON': 'Cerrado Ganado', 'CLOSED_LOST': 'Cerrado Perdido',
                     }[resData.new_state] || 'Actualizado';
 
-                    const nextDateStr = resData.next_action_date ? new Date(resData.next_action_date).toLocaleDateString() : 'No programada';
+                    const nextDateStr = resData.next_action_date ? new Date(resData.next_action_date).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' }) : 'No programada';
 
                     showStrongToast(
                         "Gestión Registrada Exitosamente",

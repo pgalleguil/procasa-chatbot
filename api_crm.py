@@ -1358,12 +1358,11 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
             
         display_type = "system" if evt_type == "STATUS_CHANGE" else "user"
         
-        ts_obj = evt["timestamp"]
-        if isinstance(ts_obj, str):
-            try: ts_obj = datetime.fromisoformat(ts_obj.replace('Z', ''))
-            except: ts_obj = datetime.min
-        
-        if ts_obj is None: ts_obj = datetime.min
+        ts_obj = coerce_crm_datetime(evt.get("timestamp"))
+        if ts_obj is not None:
+            ts_obj = ts_obj.astimezone(CHILE_TZ)
+        else:
+            ts_obj = datetime.min.replace(tzinfo=CHILE_TZ)
             
         # ETIQUETAS DINÁMICAS PARA EL HISTORIAL (Mejorado para evitar "Evento CRM")
         type_labels = {
@@ -1497,12 +1496,35 @@ def update_lead_crm_data(phone, data):
             print(f"⚠️ RECHAZADO: Intento de guardar 'Hablé' sin próxima fecha. Lead: {phone_clean}")
             return False 
     
+    # A failed attempt and an empty CONTACTED submission are audit events, not
+    # canonical management.  Reject before update_stage so no partial state
+    # transition can be written ahead of the result log.
+    normalized_result = None
+    if result:
+        from chatbot.crm_metrics import normalize_result
+        normalized_result = normalize_result(result)
+    if not normalized_result:
+        logger.warning("CRM management rejected without canonical result: phone=%s", phone_clean)
+        return False
+    if str(result).strip().lower() == "intento_fallido" or normalized_result == "NO_RESPONDIO":
+        log_event(phone_clean, InteractionType.HUMAN_NOTE, actor_name or "unresolved_actor", {
+            "interaction_type": interaction_type,
+            "result": result,
+            "notes": data.get("notas"),
+            "action_label": data.get("action_label") or "Intento Fallido",
+            "details_json": data.get("details_json", {}),
+            "meaningful_change": False,
+            "management_rejected": True,
+        }, lead_id=current_lead["_id"], actor_type="human", result=result,
+           confirmed=True)
+        return False
+
     new_state = data.get("estado_calculado")
     if not new_state:
         res = data.get("resultado_gestion")
         if res == "visita_agendada": new_state = "visita"
         elif res == "lead_cerrado": new_state = "cerrado"
-        elif res in ["lead_pausado", "requiere_seguimiento", "intento_fallido"]: new_state = "gestion"
+        elif res in ["lead_pausado", "requiere_seguimiento"]: new_state = "gestion"
         else: new_state = "gestion"
 
     old_state = current_lead.get("stage") or current_lead.get("crm_estado", PipelineStage.NEW)
@@ -1603,6 +1625,48 @@ def update_lead_crm_data(phone, data):
         "next_action_date": next_date,
         "event_id": "centralized_log"
     }
+
+
+def reconcile_invalid_management(phone, actor="Administración"):
+    """Repair derived management fields without removing immutable events."""
+    db = get_db()
+    phone_clean = phone.replace(" ", "").replace("+", "").strip()
+    lead = db["leads"].find_one({"phone": {"$regex": phone_clean}})
+    if not lead:
+        return {"status": "not_found"}
+
+    events = list(db["crm_events"].find({
+        "$or": [{"lead_id": lead["_id"]}, {"phone": phone_clean}]
+    }))
+    from chatbot.crm_metrics import event_evidence
+    if any(event_evidence(event).get("management") for event in events):
+        return {"status": "valid_management_present"}
+
+    now = datetime.now(CHILE_TZ)
+    db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
+        "pipeline_stage": PipelineStage.NEW,
+        "stage": PipelineStage.NEW,
+        "last_crm_update": now,
+        "lifecycle.first_valid_management_at": None,
+        "lifecycle.first_valid_management_actor": None,
+        "management_status": "unmanaged",
+    }})
+    cycle = db["crm_assignment_cycles"].find_one(
+        {"lead_id": lead["_id"], "cycle_status": "active"}, sort=[("assigned_at", -1)]
+    )
+    if cycle:
+        db["crm_assignment_cycles"].update_one({"_id": cycle["_id"]}, {"$set": {
+            "first_valid_management_at": None,
+            "first_valid_management_actor": None,
+            "sla_first_management_status": "pending",
+        }})
+    log_event(phone_clean, InteractionType.STATUS_CHANGE, actor, {
+        "from": lead.get("pipeline_stage") or lead.get("stage"),
+        "to": PipelineStage.NEW,
+        "reason": "reconcile_invalid_management",
+        "meaningful_change": False,
+    }, lead_id=lead["_id"], actor_type="administrator")
+    return {"status": "repaired", "pipeline_stage": PipelineStage.NEW}
 
 def manage_crm_notes(phone, note_data, action="add"):
     db = get_db()

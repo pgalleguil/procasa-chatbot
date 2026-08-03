@@ -58,6 +58,8 @@ def build_crm_lead_url(lead_data: Dict[str, Any], property_code: Any = None) -> 
 ERIKA_GARRIDO = "Erika Garrido"
 SUSANA_ENSIGNIA = "Susana Ensignia"
 MARIELA_ARRIAGADA = "Mariela Arriagada"
+MARIA_PAZ_GALLEGUILLOS = "María Paz Galleguillos"
+HERNAN_CASTRO = "Hernán Castro"
 RAQUEL_CHENEAUX = "Raquel Cheneaux"
 PAULA_MORALES = "Paula Morales"
 ROCIO_ALIAGA = "Rocío Aliaga"
@@ -132,8 +134,10 @@ def get_active_executive(name: str, norm_comuna: str = "") -> str:
 
     return name
 
-# Lista para Round Robin (Jorge Pablo Caro - RM)
-ROUND_ROBIN_TEAM = [MARIELA_ARRIAGADA, SUSANA_ENSIGNIA, ERIKA_GARRIDO, RAQUEL_CHENEAUX]
+# Lista para Round Robin (Jorge Pablo Caro - RM).
+# Erika deja de recibir propiedades JPC en RM; el reparto queda entre
+# Mariela, Hernán y María Paz.
+ROUND_ROBIN_TEAM = [MARIELA_ARRIAGADA, HERNAN_CASTRO, MARIA_PAZ_GALLEGUILLOS]
 
 # Phone mapping (This should ideally be in a DB or Config, but hardcoding for now as requested/implied)
 # NOTE: You will need to fill in real numbers or ensure they are in the DB users collection.
@@ -150,6 +154,13 @@ def normalize_text(text: str) -> str:
     # Normalize unicode to decompose accents, then filter them out
     text = "".join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
     return text
+
+
+# Comunas RM que Mariela acepta dentro del reparto de Jorge Pablo Caro.
+MARIELA_COMUNAS_RM = frozenset(
+    normalize_text(comuna)
+    for comuna in ("Macul", "Ñuñoa", "Providencia", "Las Condes", "Santiago")
+)
 
 def is_business_hours(dt=None) -> bool:
     """Check if the given time (or now) falls within configured notification hours."""
@@ -206,8 +217,6 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
     """
     db = get_db()
     state_col = db["lead_routing_state"]
-    mariela_comunas = ["macul", "nunoa", "providencia", "las condes", "santiago"]
-    
     # Buscamos el estado actual
     state = state_col.find_one({"id": "jpc_rm_round_robin"})
     last_index = state.get("last_index", -1) if state else -1
@@ -229,7 +238,12 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
     
         # Filtro Mariela: Si es Mariela, debe ser comuna de prioridad
         if candidate == MARIELA_ARRIAGADA:
-            if not any(c in norm_comuna for c in mariela_comunas):
+            comuna = normalize_text(norm_comuna)
+            es_comuna_prioritaria = any(
+                comuna == prioritaria or comuna.startswith(f"{prioritaria} ")
+                for prioritaria in MARIELA_COMUNAS_RM
+            )
+            if not es_comuna_prioritaria:
                 logger.info(f"[ROUTER] Saltando a Mariela para comuna '{norm_comuna}' (No es prioridad).")
                 continue
         
@@ -244,7 +258,8 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
 
     # Fallback extremo (si algo fallara en el loop)
     # Evito llamar a get_active_executive con Erika de nuevo para prevenir recursividad, ERIKA puede ser el default
-    return ERIKA_GARRIDO
+    # Este fallback también debe respetar que Erika no recibe JPC en RM.
+    return HERNAN_CASTRO
 
 from .constants import UNASSIGNED_LABEL
 
@@ -382,7 +397,16 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
 
     # REGLA 0: Si el ejecutivo de la ficha ya es uno de los nuestros, se queda con él (Lo lógico)
     # PERO: Respetamos si está de vacaciones y redirigimos a su reemplazo
-    our_team = [ERIKA_GARRIDO, MARIELA_ARRIAGADA, SUSANA_ENSIGNIA, RAQUEL_CHENEAUX, PAULA_MORALES, ROCIO_ALIAGA]
+    our_team = [
+        ERIKA_GARRIDO,
+        MARIELA_ARRIAGADA,
+        MARIA_PAZ_GALLEGUILLOS,
+        HERNAN_CASTRO,
+        SUSANA_ENSIGNIA,
+        RAQUEL_CHENEAUX,
+        PAULA_MORALES,
+        ROCIO_ALIAGA,
+    ]
     
     # Check if the original executive is active in the users collection
     is_active_user = False
@@ -403,7 +427,7 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
         if "jorge pablo caro" not in norm_exec:
              logger.info(f"[ROUTER] Ejecutivo original '{original_executive}' inactivo o no asignado. Aplicando distribución regional.")
              
-        # 1.1 RM -> Round Robin entre los 4 (Con filtro Mariela interno)
+        # 1.1 RM -> Mariela, Hernán y María Paz (Con filtro de comunas de Mariela)
         if "metropolitana" in norm_region or "xiii" in norm_region:
             target_executive_name = get_next_round_robin_executive(norm_comuna)
         
@@ -412,12 +436,7 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
              logger.info(f"[ROUTER] Propiedad en Maule. Asignando a {PAULA_MORALES}")
              target_executive_name = get_active_executive(PAULA_MORALES, norm_comuna)
              
-        # 1.3 Ñuble (XVI), Bío Bío (VIII) o Valparaíso (V) -> Rocío Aliaga
-        elif any(r in norm_region for r in ["nuble", "bio", "xvi", "viii", "valparaiso", "quinta"]) or " v " in f" {norm_region} ":
-             logger.info(f"[ROUTER] Propiedad en Ñuble/BioBio/Valparaíso. Asignando a {ROCIO_ALIAGA}")
-             target_executive_name = get_active_executive(ROCIO_ALIAGA, norm_comuna)
-
-        # 1.4 Otras Regiones (Físicas/Norte/Otras) -> Erika Garrido
+        # 1.3 Todas las demás regiones -> Erika Garrido
         else:
             logger.info(f"[ROUTER] Propiedad en otra región ({region}). Asignando a {ERIKA_GARRIDO}")
             target_executive_name = get_active_executive(ERIKA_GARRIDO, norm_comuna)

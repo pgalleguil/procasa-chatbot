@@ -29,7 +29,7 @@ from bson import ObjectId
 from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
 from .crm_metrics import (
     INSTRUMENTATION_CUTOVER, calculate_sla, coerce_utc_datetime,
-    event_evidence, utc_now,
+    event_evidence, normalize_result, utc_now,
 )
 from .crm_sla_alert_templates import (
     MESSAGE_DOMAIN, build_sla_message, build_lead_url, build_deadline_display,
@@ -405,7 +405,7 @@ async def evaluate_sla_alerts(
 
         # Check for valid SLA-stop results
         has_valid_result = any(
-            str(m.get("result_type") or "").upper() in SLA_STOP_RESULTS
+            normalize_result(m.get("result_type")) in SLA_STOP_RESULTS
             and coerce_utc_datetime(m.get("occurred_at"))
             and coerce_utc_datetime(m.get("occurred_at")) >= assigned_at
             for m in cycle_mgmts

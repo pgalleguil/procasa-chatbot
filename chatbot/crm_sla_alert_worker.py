@@ -20,7 +20,7 @@ from collections import Counter
 from bson import ObjectId
 
 from .crm_metrics import (
-    calculate_sla, coerce_utc_datetime, event_evidence, utc_now,
+    calculate_sla, coerce_utc_datetime, event_evidence, normalize_result, utc_now,
 )
 from .crm_sla_alert_evaluator import (
     SLA_STOP_RESULTS, _is_test_lead, CLOSED_STAGES, EXCLUDED_ORIGINS,
@@ -94,7 +94,7 @@ async def _revalidate(db, alert: dict) -> str | None:
         return "reassigned"
 
     mgmt = await db["crm_management_results"].find({"assignment_cycle_id": cycle_id}).to_list(length=50)
-    if any(str(m.get("result_type") or "").upper() in SLA_STOP_RESULTS
+    if any(normalize_result(m.get("result_type")) in SLA_STOP_RESULTS
            and coerce_utc_datetime(m.get("occurred_at"))
            and coerce_utc_datetime(m.get("occurred_at")) >= assigned_at for m in mgmt):
         return "management_completed"

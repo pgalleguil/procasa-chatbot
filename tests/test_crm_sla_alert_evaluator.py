@@ -467,14 +467,13 @@ class TestManagementPolicy:
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
         ])
-        fake_db["crm_events"] = FakeCollection([{
-            "lead_id": "lead-1", "type": "HUMAN_NOTE", "actor": "user-1",
-            "actor_type": "human", "result": "intento_fallido",
-            "timestamp": chile_dt(9, 15, 3).astimezone(timezone.utc), "confirmed": True,
-            "meta": {"meaningful_change": True},
-        }])
+        fake_db["crm_events"] = FakeCollection([])
         fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
-        fake_db["crm_management_results"] = FakeCollection([])
+        fake_db["crm_management_results"] = FakeCollection([{
+            "assignment_cycle_id": "cycle-1", "result_type": "intento_fallido",
+            "actor_user_id": "user-1",
+            "occurred_at": chile_dt(9, 15, 3).astimezone(timezone.utc),
+        }])
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT", datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now", lambda: chile_dt(13, 0, 3).astimezone(timezone.utc))

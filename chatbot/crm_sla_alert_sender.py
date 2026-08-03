@@ -13,8 +13,6 @@ import logging
 from dataclasses import dataclass
 from typing import Protocol
 
-from .crm_sla_alert_settings import CRM_SLA_ALERTS_LIVE_SEND
-
 logger = logging.getLogger(__name__)
 
 
@@ -62,7 +60,20 @@ async def _null_sender(phone: str, message: str) -> SenderResult:
 def get_sender(sender: SlaAlertSender | None = None) -> SlaAlertSender:
     if sender is not None:
         return sender
-    if not CRM_SLA_ALERTS_LIVE_SEND:
-        return _null_sender
-    logger.warning("[SLA_ALERT] LIVE_SEND=true but no real sender injected")
-    return _null_sender
+    from .whatsapp_client import send_whatsapp_message_detailed
+
+    async def _live_sender(phone: str, message: str) -> SenderResult:
+        result = await send_whatsapp_message_detailed(phone, message)
+        if result.get("success") and result.get("provider_message_id"):
+            return SenderResult(
+                outcome="confirmed_success",
+                provider_message_id=str(result["provider_message_id"]),
+                http_status=result.get("http_status"),
+            )
+        return SenderResult(
+            outcome="rejected_before_acceptance",
+            error=result.get("error") or result.get("delivery_status") or "provider_rejected",
+            http_status=result.get("http_status"),
+        )
+
+    return _live_sender

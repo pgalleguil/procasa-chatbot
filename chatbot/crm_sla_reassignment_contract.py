@@ -8,11 +8,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from .crm_sla_alert_settings import (
-    CRM_SLA_REASSIGNMENT_ENABLED,
-    CRM_SLA_REASSIGNMENT_POLICY_VERSION,
-    CRM_SLA_REASSIGNMENT_GRACE_BUSINESS_MINUTES_PARSED,
-)
+from .crm_sla_alert_settings import REASSIGNMENT_ENABLED, REASSIGNMENT_POLICY_VERSION
+
+GRACE_BUSINESS_MINUTES = None
 
 # Future collection: crm_lead_reassignment_candidates_v1
 
@@ -55,12 +53,12 @@ def build_reassignment_preview(
                   lead_closed, executive_current.
     """
     # Always disabled in this phase
-    if not CRM_SLA_REASSIGNMENT_ENABLED:
+    if not REASSIGNMENT_ENABLED:
         return {
             "eligible_now": False,
             "state": "disabled",
-            "reason": "CRM_SLA_REASSIGNMENT_ENABLED is false",
-            "policy_version": CRM_SLA_REASSIGNMENT_POLICY_VERSION,
+            "reason": "reassignment_disabled",
+            "policy_version": REASSIGNMENT_POLICY_VERSION,
             "assignment_cycle_id": sla_decision.get("assignment_cycle_id"),
             "lead_id": sla_decision.get("lead_id"),
             "current_recipient_user_id": sla_decision.get("recipient_user_id"),
@@ -69,12 +67,12 @@ def build_reassignment_preview(
         }
 
     # These are the future checks when enabled
-    grace_minutes = CRM_SLA_REASSIGNMENT_GRACE_BUSINESS_MINUTES_PARSED
+    grace_minutes = GRACE_BUSINESS_MINUTES
     breached_at = _coerce_dt(sla_decision.get("sla_breached_at"))
 
     base = {
         "eligible_now": False,
-        "policy_version": CRM_SLA_REASSIGNMENT_POLICY_VERSION,
+        "policy_version": REASSIGNMENT_POLICY_VERSION,
         "assignment_cycle_id": sla_decision.get("assignment_cycle_id"),
         "lead_id": sla_decision.get("lead_id"),
         "current_recipient_user_id": sla_decision.get("recipient_user_id"),
@@ -113,7 +111,7 @@ def build_reassignment_preview(
     # Grace period check
     if grace_minutes is None:
         base["state"] = "grace_not_configured"
-        base["reason"] = "CRM_SLA_REASSIGNMENT_GRACE_BUSINESS_MINUTES not set"
+        base["reason"] = "reassignment_grace_not_configured"
         return base
 
     grace_expires = add_grace_minutes(breached_at, grace_minutes) if breached_at else None

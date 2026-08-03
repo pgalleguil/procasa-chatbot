@@ -38,13 +38,6 @@ class TestFailingSender:
 
 class TestGetSender:
     @pytest.mark.asyncio
-    async def test_live_send_false_null(self):
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_sender.CRM_SLA_ALERTS_LIVE_SEND", False)
-            r: SenderResult = await get_sender()("+56911111111", "test")
-        assert r.outcome == "delivery_unknown"
-
-    @pytest.mark.asyncio
     async def test_injected_used(self):
         fake = FakeSender("confirmed_success", "inj")
         r: SenderResult = await get_sender(fake)("+56911111111", "test")

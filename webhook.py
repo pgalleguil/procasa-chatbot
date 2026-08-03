@@ -255,7 +255,10 @@ async def lifespan(app: FastAPI):
 
     # Iniciar tareas de fondo
     n_task = asyncio.create_task(process_pending_leads_loop())
-    s_task = asyncio.create_task(sla_monitor_loop())
+    # The canonical CRM SLA orchestrator below is the only SLA background
+    # pipeline.  The legacy monitor and worker are intentionally not started:
+    # running both would create duplicate alerts and bypass the fixed policy.
+    s_task = None
     t_task = asyncio.create_task(check_scheduled_tasks_loop())
     cr_task = asyncio.create_task(captacion_reminder_loop())
     c_task = asyncio.create_task(captacion_distribution_loop())
@@ -268,7 +271,7 @@ async def lifespan(app: FastAPI):
     from chatbot.crm_weekly_report import crm_weekly_scheduler_loop
     crm_weekly_task = asyncio.create_task(crm_weekly_scheduler_loop())
     non_hot_digest_task = asyncio.create_task(non_hot_digest_worker_loop())
-    sla_alert_task = asyncio.create_task(sla_alert_worker_loop())
+    sla_alert_task = None
 
     # CRM SLA Alert orchestrator — exclusive domain, behind feature flag
     sla_orch_task = None
@@ -310,7 +313,8 @@ async def lifespan(app: FastAPI):
     # Shutdown logic
     logger.info("Bot PRO Apagando (Lifespan Shutdown)...")
     n_task.cancel()
-    s_task.cancel()
+    if s_task is not None:
+        s_task.cancel()
     t_task.cancel()
     c_task.cancel()
     r_task.cancel()
@@ -327,7 +331,7 @@ async def lifespan(app: FastAPI):
         sla_orch_task.cancel()
     try:
         await asyncio.gather(
-            n_task, s_task, t_task, c_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, c1_task, c2_task,
+            n_task, t_task, c_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, c1_task, c2_task,
             *([sla_orch_task] if sla_orch_task is not None else []),
             return_exceptions=True
         )
@@ -3418,9 +3422,8 @@ async def sla_alert_worker_loop():
             # SLA delivery is intentionally disabled while the independent
             # crm_sla_alert domain is in dry-run.  Do not claim legacy shadow
             # documents or call a provider under either flag state.
-            if (not getattr(Config, "CRM_SLA_ALERTS_ENABLED", False)
-                    or getattr(Config, "CRM_SLA_ALERTS_DRY_RUN", True)):
-                background_tasks_status["sla_alert"].update({"status": "disabled", "mode": "dry_run"})
+            if True:
+                background_tasks_status["sla_alert"].update({"status": "retired", "mode": "canonical_orchestrator"})
                 await asyncio.sleep(60)
                 continue
 

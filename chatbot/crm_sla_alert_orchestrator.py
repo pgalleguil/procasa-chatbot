@@ -16,9 +16,9 @@ from .crm_sla_alert_worker import process_alerts_batch
 from .crm_sla_alert_sender import get_sender
 from .crm_sla_alert_settings import (
     CRM_SLA_ALERTS_ENABLED,
-    CRM_SLA_ALERTS_LIVE_SEND,
-    CRM_SLA_ALERTS_MAX_PER_RUN,
-    CRM_SLA_ALERTS_MAX_PER_RECIPIENT_PER_RUN,
+    LIVE_SEND,
+    MAX_PER_RUN,
+    MAX_PER_RECIPIENT_PER_RUN,
 )
 
 logger = logging.getLogger("sla_alert.orchestrator")
@@ -26,6 +26,8 @@ logger = logging.getLogger("sla_alert.orchestrator")
 
 async def run_sla_alert_cycle(db=None):
     """One complete cycle: evaluate, persist, process. Fully self-contained."""
+    if not CRM_SLA_ALERTS_ENABLED:
+        return {"status": "disabled", "queries": 0, "writes": 0, "claims": 0, "sends": 0}
     if db is None:
         from .storage import get_async_db
         db = get_async_db()
@@ -48,8 +50,8 @@ async def run_sla_alert_cycle(db=None):
         # 3. Process pending alerts (worker)
         worker_report = await process_alerts_batch(
             db=db, worker_id=worker_id,
-            max_total=CRM_SLA_ALERTS_MAX_PER_RUN,
-            max_per_recipient=CRM_SLA_ALERTS_MAX_PER_RECIPIENT_PER_RUN,
+            max_total=MAX_PER_RUN,
+            max_per_recipient=MAX_PER_RECIPIENT_PER_RUN,
         )
         if worker_report.get("status") not in ("send_disabled", "idle"):
             logger.info("[SLA_ALERT][WORKER] processed=%s by_status=%s",
@@ -63,7 +65,7 @@ async def run_sla_alert_cycle(db=None):
 async def sla_alert_orchestrator_loop(sleep_seconds: int = 60):
     """Main loop for crm_sla_alert. Never stops other workers on exception."""
     logger.info("[SLA_ALERT] Orchestrator started. enabled=%s live_send=%s",
-                CRM_SLA_ALERTS_ENABLED, CRM_SLA_ALERTS_LIVE_SEND)
+                CRM_SLA_ALERTS_ENABLED, LIVE_SEND)
 
     if not CRM_SLA_ALERTS_ENABLED:
         logger.info("[SLA_ALERT] Disabled. Exiting loop.")

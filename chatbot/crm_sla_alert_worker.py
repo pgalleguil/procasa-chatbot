@@ -31,10 +31,10 @@ from .crm_sla_alert_repository import (
 )
 from .crm_sla_alert_sender import SenderResult, get_sender, SlaAlertSender
 from .crm_sla_alert_settings import (
-    CRM_SLA_ALERTS_LIVE_SEND,
-    CRM_SLA_ALERTS_MAX_PER_RUN,
-    CRM_SLA_ALERTS_MAX_PER_RECIPIENT_PER_RUN,
-    CRM_SLA_ALERTS_PROVIDER_TIMEOUT_SECONDS,
+    CRM_SLA_ALERTS_ENABLED,
+    MAX_PER_RUN,
+    MAX_PER_RECIPIENT_PER_RUN,
+    PROVIDER_TIMEOUT_SECONDS,
     validate_live_send_config,
 )
 from .storage import get_async_db
@@ -149,7 +149,7 @@ async def process_one_alert(
         try:
             result: SenderResult = await asyncio.wait_for(
                 transport(phone, message),
-                timeout=CRM_SLA_ALERTS_PROVIDER_TIMEOUT_SECONDS,
+                timeout=PROVIDER_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:
             await finalize_alert(db, alert_id=alert_id, state=ST_DELIVERY_UNCERTAIN,
@@ -207,12 +207,12 @@ async def process_alerts_batch(
     db=None, *, worker_id: str, sender: SlaAlertSender | None = None,
     max_total: int | None = None, max_per_recipient: int | None = None,
 ) -> dict:
+    if not CRM_SLA_ALERTS_ENABLED:
+        return {"status": "disabled", "processed": 0, "by_status": {},
+                "reason": "CRM_SLA_ALERTS_ENABLED is false", "claims": 0, "sends": 0}
+
     if db is None:
         db = get_async_db()
-
-    if not CRM_SLA_ALERTS_LIVE_SEND:
-        return {"status": "send_disabled", "processed": 0, "by_status": {},
-                "reason": "CRM_SLA_ALERTS_LIVE_SEND is false"}
 
     config = validate_live_send_config()
     if not config["valid"]:
@@ -220,8 +220,8 @@ async def process_alerts_batch(
         return {"status": "invalid_live_send_configuration", "processed": 0, "by_status": {},
                 "reason": config["reason"]}
 
-    max_total = max_total or CRM_SLA_ALERTS_MAX_PER_RUN
-    max_per_recipient = max_per_recipient or CRM_SLA_ALERTS_MAX_PER_RECIPIENT_PER_RUN
+    max_total = max_total or MAX_PER_RUN
+    max_per_recipient = max_per_recipient or MAX_PER_RECIPIENT_PER_RUN
     results: list[dict] = []
     recipient_counts: Counter = Counter()
 

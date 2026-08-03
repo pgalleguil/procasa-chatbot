@@ -10,7 +10,7 @@ from pymongo.errors import DuplicateKeyError
 
 from .crm_metrics import utc_now
 from .crm_sla_alert_settings import (
-    CRM_SLA_ALERTS_LEASE_SECONDS, CRM_SLA_ALERTS_MAX_ATTEMPTS,
+    LEASE_SECONDS, MAX_ATTEMPTS,
 )
 from .crm_sla_alert_templates import MESSAGE_DOMAIN
 
@@ -129,7 +129,7 @@ async def persist_candidate(db, candidate: dict) -> dict:
 
 async def claim_next_alert(db, *, worker_id: str, now=None) -> dict | None:
     current = now or utc_now()
-    lease_end = current + timedelta(seconds=CRM_SLA_ALERTS_LEASE_SECONDS)
+    lease_end = current + timedelta(seconds=LEASE_SECONDS)
 
     # Phase 1: pending / failed_retryable with expired next_attempt_at
     query = {
@@ -270,7 +270,7 @@ async def finalize_alert(
         alert = await db[COLLECTION].find_one({"_id": alert_id})
         if not alert:
             return None
-        if alert.get("attempt_count", 0) >= CRM_SLA_ALERTS_MAX_ATTEMPTS:
+        if alert.get("attempt_count", 0) >= MAX_ATTEMPTS:
             state = ST_FAILED_FINAL
 
     if state == ST_FAILED_FINAL:

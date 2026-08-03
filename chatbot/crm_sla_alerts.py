@@ -4,7 +4,8 @@ Two-level identity:
 - Member level: prevents the same lead from being alerted twice for the same threshold.
 - Group/notification level: unique identity for the aggregated message document.
 
-All alerts remain in shadow mode until CRM_SLA_ALERTS_SHADOW_MODE=false.
+This legacy module is retained for compatibility but is permanently shadowed.
+The canonical live pipeline is ``crm_sla_alert_orchestrator``.
 No automatic reassignment occurs.
 """
 from __future__ import annotations
@@ -57,8 +58,8 @@ GROUP_SCOPE_IDENTITY_FMT = "{recipient}|{policy}|{threshold}|{recipient_type}|{c
 
 
 def _shadow() -> bool:
-    """Return True if SLA alerts are in shadow mode."""
-    return str(getattr(Config, "CRM_SLA_ALERTS_SHADOW_MODE", "true")).lower() == "true"
+    """Keep the retired legacy producer permanently shadowed."""
+    return True
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
-"""Tests for CRM SLA Alert Evaluator — Phase 1, full coverage.
+﻿"""Tests for CRM SLA Alert Evaluator â€” Phase 1, full coverage.
 
 79 tests covering: templates (uniform text, 8 variants, no duplicates),
-outreach classification (CALL_RESULT excluded, MWR→whatsapp_sent),
+outreach classification (CALL_RESULT excluded, MWRâ†’whatsapp_sent),
 cutover, management policy, async phone, exclusions, business minutes, UTF-8, E2E.
 """
 from datetime import datetime, timedelta, timezone
@@ -24,6 +24,7 @@ from chatbot.crm_sla_alert_evaluator import (
     SLA_PROFILE_STANDARD, SLA_PROFILE_HOT,
 )
 from chatbot.constants import CHILE_TZ
+from chatbot.crm_sla_alert_settings import CUTOVER_AT
 
 
 def _msg(**kw):
@@ -138,7 +139,7 @@ class TestUniformText:
                                   lead_url="http://x")
             w_paras = w.split("\n\n")
             b_paras = b.split("\n\n")
-            # p[2] is the explanation paragraph — must match between warning and breached
+            # p[2] is the explanation paragraph â€” must match between warning and breached
             assert w_paras[2] == b_paras[2], f"explain differs for state={state}"
 
     def test_warning_and_breached_same_action(self):
@@ -244,63 +245,63 @@ class TestTemplateStructure:
 
 
 # ============================================================================
-# 4. Outreach classification (CALL_RESULT removed — fail-closed)
+# 4. Outreach classification (CALL_RESULT removed â€” fail-closed)
 # ============================================================================
 
 
 class TestOutreachClassification:
     def test_click_whatsapp_is_opened(self):
-        start = datetime(2026, 7, 24, 13, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 8, 3, 13, 0, tzinfo=timezone.utc)
         assert classify_outreach_state(
             [{"type": "CLICK_WHATSAPP_LEAD", "timestamp": start}], assigned_at=start
         ) == "whatsapp_opened"
 
     def test_send_wa_confirmed_is_sent(self):
-        start = datetime(2026, 7, 24, 13, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 8, 3, 13, 0, tzinfo=timezone.utc)
         assert classify_outreach_state(
             [{"type": "SEND_WA_LEAD", "timestamp": start, "confirmed": True}], assigned_at=start
         ) == "whatsapp_sent"
 
     def test_click_phone_is_not_call(self):
-        start = datetime(2026, 7, 24, 13, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 8, 3, 13, 0, tzinfo=timezone.utc)
         assert classify_outreach_state(
             [{"type": "CLICK_PHONE_LEAD", "timestamp": start}], assigned_at=start
         ) == "phone_opened"
 
     def test_send_wa_without_confirm_ignored(self):
-        start = datetime(2026, 7, 24, 13, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 8, 3, 13, 0, tzinfo=timezone.utc)
         assert classify_outreach_state(
             [{"type": "SEND_WA_LEAD", "timestamp": start}], assigned_at=start
         ) == "none"
 
     def test_call_completed_no_result_is_call_without_result(self):
-        start = datetime(2026, 7, 24, 13, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 8, 3, 13, 0, tzinfo=timezone.utc)
         assert classify_outreach_state(
             [{"type": "CALL_COMPLETED_LEAD", "timestamp": start}], assigned_at=start
         ) == "call_without_result"
 
     def test_call_completed_with_result_ignored(self):
-        start = datetime(2026, 7, 24, 13, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 8, 3, 13, 0, tzinfo=timezone.utc)
         assert classify_outreach_state(
             [{"type": "CALL_COMPLETED_LEAD", "timestamp": start, "result": "CONTACTADO"}],
             assigned_at=start,
         ) == "none"
 
     def test_call_result_never_classifies(self):
-        """CALL_RESULT has 0 instances in production — fail-closed."""
-        start = datetime(2026, 7, 24, 13, 0, tzinfo=timezone.utc)
+        """CALL_RESULT has 0 instances in production â€” fail-closed."""
+        start = datetime(2026, 8, 3, 13, 0, tzinfo=timezone.utc)
         assert classify_outreach_state(
             [{"type": "CALL_RESULT", "timestamp": start}], assigned_at=start
         ) == "none"
 
     def test_click_phone_never_call_without_result(self):
-        start = datetime(2026, 7, 24, 13, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 8, 3, 13, 0, tzinfo=timezone.utc)
         assert classify_outreach_state(
             [{"type": "CLICK_PHONE_LEAD", "timestamp": start}], assigned_at=start
         ) != "call_without_result"
 
     def test_highest_priority_wins(self):
-        start = datetime(2026, 7, 24, 13, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 8, 3, 13, 0, tzinfo=timezone.utc)
         state = classify_outreach_state([
             {"type": "CLICK_WHATSAPP_LEAD", "timestamp": start + timedelta(minutes=1)},
             {"type": "SEND_WA_LEAD", "timestamp": start + timedelta(minutes=2), "confirmed": True},
@@ -308,14 +309,14 @@ class TestOutreachClassification:
         assert state == "whatsapp_sent"
 
     def test_event_before_assignment_ignored(self):
-        start = datetime(2026, 7, 24, 14, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 8, 3, 14, 0, tzinfo=timezone.utc)
         assert classify_outreach_state(
             [{"type": "CLICK_WHATSAPP_LEAD", "timestamp": start - timedelta(minutes=10)}],
             assigned_at=start,
         ) == "none"
 
     def test_mwr_is_whatsapp_sent(self):
-        start = datetime(2026, 7, 24, 13, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 8, 3, 13, 0, tzinfo=timezone.utc)
         state = classify_outreach_state(
             [], assigned_at=start,
             mgmt_results=[{"result_type": "MESSAGE_SENT_WAITING_RESPONSE",
@@ -324,7 +325,7 @@ class TestOutreachClassification:
         assert state == "whatsapp_sent"
 
     def test_mwr_before_assignment_ignored(self):
-        start = datetime(2026, 7, 24, 13, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 8, 3, 13, 0, tzinfo=timezone.utc)
         state = classify_outreach_state(
             [], assigned_at=start,
             mgmt_results=[{"result_type": "MESSAGE_SENT_WAITING_RESPONSE",
@@ -362,13 +363,13 @@ class TestChannelLabels:
 
 class TestBusinessMinutes:
     def test_same_day(self):
-        start = CHILE_TZ.localize(datetime(2026, 7, 24, 9, 0))
+        start = CHILE_TZ.localize(datetime(2026, 8, 3, 9, 0))
         result = add_business_minutes(start, 60)
         local = result.astimezone(CHILE_TZ)
         assert local.hour == 10 and local.minute == 0
 
     def test_friday_to_monday(self):
-        start = CHILE_TZ.localize(datetime(2026, 7, 24, 18, 30))
+        start = CHILE_TZ.localize(datetime(2026, 8, 7, 18, 30))
         result = add_business_minutes(start, 60)
         local = result.astimezone(CHILE_TZ)
         assert local.weekday() == 0
@@ -411,7 +412,7 @@ class TestCutover:
     @pytest.mark.asyncio
     async def test_missing_cutover_excludes_all(self, fake_db):
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT", None)
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT", None)
             report = await evaluate_sla_alerts(db=fake_db)
         assert "missing_alert_cutover" in report["excluded_by_reason"]
         assert report["included"] == 0
@@ -421,16 +422,16 @@ class TestCutover:
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1",
-                       assigned_at=chile_dt(9, 0, 23).astimezone(timezone.utc))
+                       assigned_at=chile_dt(9, 0, 2).astimezone(timezone.utc))
         ])
         fake_db["crm_events"] = FakeCollection([])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(13, 0, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(13, 0, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert report["excluded_by_reason"].get("before_alert_cutover", 0) == 1
 
@@ -439,16 +440,16 @@ class TestCutover:
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1",
-                       assigned_at=chile_dt(9, 0, 24).astimezone(timezone.utc))
+                       assigned_at=chile_dt(9, 0, 3).astimezone(timezone.utc))
         ])
         fake_db["crm_events"] = FakeCollection([])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(13, 0, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(13, 0, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert report["included"] == 1
 
@@ -461,104 +462,104 @@ class TestCutover:
 class TestManagementPolicy:
     @pytest.mark.asyncio
     async def test_mwr_does_not_stop_sla(self, fake_db):
-        assigned = chile_dt(9, 0, 24).astimezone(timezone.utc)
+        assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
         ])
         fake_db["crm_events"] = FakeCollection([])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([{
             "assignment_cycle_id": "cycle-1",
             "result_type": "MESSAGE_SENT_WAITING_RESPONSE",
             "actor_user_id": "6989c6309dd2ba54e478196d",
-            "occurred_at": chile_dt(9, 15, 24), "source": "crm_send_action",
+            "occurred_at": chile_dt(9, 15, 3), "source": "crm_send_action",
         }])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(13, 0, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(13, 0, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert len(report["alerts"]) == 1
         assert report["alerts"][0]["outreach_state"] == "whatsapp_sent"
 
     @pytest.mark.asyncio
     async def test_first_valid_management_at_alone_not_enough(self, fake_db):
-        assigned = chile_dt(9, 0, 24).astimezone(timezone.utc)
+        assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         cycle = make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
-        cycle["first_valid_management_at"] = chile_dt(9, 15, 24)
+        cycle["first_valid_management_at"] = chile_dt(9, 15, 3)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD")])
         fake_db["crm_assignment_cycles"] = FakeCollection([cycle])
         fake_db["crm_events"] = FakeCollection([])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([{
             "assignment_cycle_id": "cycle-1",
             "result_type": "MESSAGE_SENT_WAITING_RESPONSE",
             "actor_user_id": "human-1",
-            "occurred_at": chile_dt(9, 15, 24), "source": "crm_send_action",
+            "occurred_at": chile_dt(9, 15, 3), "source": "crm_send_action",
         }])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(13, 0, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(13, 0, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert len(report["alerts"]) == 1
 
     @pytest.mark.asyncio
     async def test_valid_result_after_mwr_stops_sla(self, fake_db):
-        assigned = chile_dt(9, 0, 24).astimezone(timezone.utc)
+        assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
         ])
         fake_db["crm_events"] = FakeCollection([])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([
             {"assignment_cycle_id": "cycle-1",
              "result_type": "MESSAGE_SENT_WAITING_RESPONSE",
              "actor_user_id": "human-1",
-             "occurred_at": chile_dt(9, 15, 24), "source": "crm_send_action"},
+             "occurred_at": chile_dt(9, 15, 3), "source": "crm_send_action"},
             {"assignment_cycle_id": "cycle-1",
              "result_type": "EFFECTIVE_CONTACT",
              "actor_user_id": "human-1",
-             "occurred_at": chile_dt(10, 0, 24), "source": "crm_quick_action"},
+             "occurred_at": chile_dt(10, 0, 3), "source": "crm_quick_action"},
         ])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(13, 0, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(13, 0, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert len(report["alerts"]) == 0
 
     @pytest.mark.asyncio
     async def test_valid_result_other_cycle_does_not_stop(self, fake_db):
-        assigned = chile_dt(9, 0, 24).astimezone(timezone.utc)
+        assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
         ])
         fake_db["crm_events"] = FakeCollection([])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([{
             "assignment_cycle_id": "other-cycle",
             "result_type": "EFFECTIVE_CONTACT",
             "actor_user_id": "human-1",
-            "occurred_at": chile_dt(10, 0, 24), "source": "crm_quick_action",
+            "occurred_at": chile_dt(10, 0, 3), "source": "crm_quick_action",
         }])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(13, 0, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(13, 0, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert len(report["alerts"]) == 1
 
     @pytest.mark.asyncio
     async def test_system_actor_not_management(self, fake_db):
-        assigned = chile_dt(9, 0, 24).astimezone(timezone.utc)
+        assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
@@ -566,21 +567,21 @@ class TestManagementPolicy:
         fake_db["crm_events"] = FakeCollection([{
             "lead_id": "lead-1", "type": "SEND_WA_LEAD", "actor": "system",
             "actor_type": "system", "result": "MENSAJE_ENVIADO",
-            "timestamp": chile_dt(9, 15, 24).astimezone(timezone.utc), "confirmed": True,
+            "timestamp": chile_dt(9, 15, 3).astimezone(timezone.utc), "confirmed": True,
         }])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(13, 0, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(13, 0, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert len(report["alerts"]) == 1
 
     @pytest.mark.asyncio
     async def test_human_gestion_log_stops_sla(self, fake_db):
-        assigned = chile_dt(9, 0, 24).astimezone(timezone.utc)
+        assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
@@ -588,15 +589,15 @@ class TestManagementPolicy:
         fake_db["crm_events"] = FakeCollection([{
             "lead_id": "lead-1", "type": "GESTION_LOG", "actor": "user-1",
             "actor_type": "human", "result": "EFFECTIVE_CONTACT",
-            "timestamp": chile_dt(9, 15, 24).astimezone(timezone.utc), "confirmed": True,
+            "timestamp": chile_dt(9, 15, 3).astimezone(timezone.utc), "confirmed": True,
         }])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(13, 0, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(13, 0, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert len(report["alerts"]) == 0
 
@@ -610,7 +611,7 @@ class TestAsyncPhone:
     @pytest.mark.asyncio
     async def test_resolves_phone(self, fake_db):
         fake_db["usuarios"] = FakeCollection([
-            {"nombre": "Erika Garrido", "is_active": True, "telefono": "+56911111111"},
+            {"nombre": "Erika Garrido", "is_active": True, "rol": "agente", "telefono": "+56911111111"},
         ])
         assert await _get_executive_phone_async(fake_db, "Erika Garrido") == "+56911111111"
 
@@ -675,8 +676,8 @@ def fake_db():
     return FakeDB()
 
 
-def chile_dt(hour, minute=0, day=24):
-    return CHILE_TZ.localize(datetime(2026, 7, day, hour, minute))
+def chile_dt(hour, minute=0, day=3):
+    return CHILE_TZ.localize(datetime(2026, 8, day, hour, minute))
 
 
 def make_lead(lid="lead-1", temp="COLD", stage="NEW", phone="56912345678",
@@ -701,97 +702,97 @@ def make_cycle(lid="lead-1", cid="cycle-1", user_id="user-1",
 class TestEvaluatorE2E:
     @pytest.mark.asyncio
     async def test_standard_breached_triggered(self, fake_db):
-        assigned = chile_dt(9, 0, 24).astimezone(timezone.utc)
+        assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
         ])
         fake_db["crm_events"] = FakeCollection([])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(12, 1, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(12, 1, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert report["provider_calls"] == 0 and report["writes"] == 0
         assert len(report["alerts"]) == 1
 
     @pytest.mark.asyncio
     async def test_hot_warning_triggered(self, fake_db):
-        assigned = chile_dt(9, 0, 24).astimezone(timezone.utc)
+        assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "HOT")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
         ])
         fake_db["crm_events"] = FakeCollection([])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(9, 46, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(9, 46, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert len(report["alerts"]) == 1
 
     @pytest.mark.asyncio
     async def test_closed_lead_excluded(self, fake_db):
-        assigned = chile_dt(9, 0, 24).astimezone(timezone.utc)
+        assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD", "CLOSED_WON")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
         ])
         fake_db["crm_events"] = FakeCollection([])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(12, 1, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(12, 1, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert report["excluded_by_reason"].get("lead_closed", 0) == 1
 
     @pytest.mark.asyncio
     async def test_test_lead_excluded(self, fake_db):
-        assigned = chile_dt(9, 0, 24).astimezone(timezone.utc)
+        assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD", phone="56900000000")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
         ])
         fake_db["crm_events"] = FakeCollection([])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(12, 1, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(12, 1, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert report["excluded_by_reason"].get("test_or_synthetic", 0) == 1
 
     @pytest.mark.asyncio
     async def test_message_has_date_and_url(self, fake_db):
-        assigned = chile_dt(9, 0, 24).astimezone(timezone.utc)
+        assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD", nombre="Carlos")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
             make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
         ])
         fake_db["crm_events"] = FakeCollection([])
-        fake_db["usuarios"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([])
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("chatbot.crm_sla_alert_settings.CRM_SLA_ALERT_CUTOVER_AT",
-                       datetime(2026, 7, 24, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT",
+                       datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
-                       lambda: chile_dt(12, 1, 24).astimezone(timezone.utc))
+                       lambda: chile_dt(12, 1, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         msg = report["alerts"][0]["message"]
         assert "Carlos" in msg
         assert "/crm/lead-id/" in msg
-        assert "/07/2026" in msg
+        assert "/08/2026" in msg
 
 
 # ============================================================================
@@ -820,3 +821,4 @@ def test_sla_stop_results_has_valid_types():
               "FOLLOW_UP_REQUESTED", "SCHEDULE_FOLLOW_UP",
               "NOT_INTERESTED", "DISCARDED_VALID_REASON"):
         assert r in SLA_STOP_RESULTS
+

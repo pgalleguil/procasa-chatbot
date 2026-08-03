@@ -1,4 +1,4 @@
-"""Tests for CRM SLA Alert Worker — delivery safety + config."""
+﻿"""Tests for CRM SLA Alert Worker â€” delivery safety + config."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -165,9 +165,9 @@ class TestSendDisabled:
         db["crm_assignment_cycles"]._docs.append(make_cycle())
         db["crm_management_results"]._docs = []
         db["crm_events"]._docs = []
-        with patch("chatbot.crm_sla_alert_worker.CRM_SLA_ALERTS_LIVE_SEND", False):
+        with patch("chatbot.crm_sla_alert_worker.CRM_SLA_ALERTS_ENABLED", False):
             r = await process_alerts_batch(db=db, worker_id="w1", sender=FakeSender())
-        assert r["status"] == "send_disabled"
+        assert r["status"] == "disabled"
         assert db[COLLECTION]._docs[0]["state"] == ST_PENDING
 
     @pytest.mark.asyncio
@@ -175,7 +175,7 @@ class TestSendDisabled:
         db[COLLECTION]._docs.append(_alert_doc())
         db["leads"]._docs.append(make_lead())
         db["crm_assignment_cycles"]._docs.append(make_cycle())
-        with patch("chatbot.crm_sla_alert_worker.CRM_SLA_ALERTS_LIVE_SEND", True), \
+        with patch("chatbot.crm_sla_alert_worker.CRM_SLA_ALERTS_ENABLED", True), \
              patch("chatbot.crm_sla_alert_worker.validate_live_send_config") as vcfg:
             vcfg.return_value = {"valid": False, "reason": "invalid_live_send_configuration: test"}
             r = await process_alerts_batch(db=db, worker_id="w1")
@@ -189,7 +189,7 @@ class TestSendDisabled:
         db["crm_assignment_cycles"]._docs.append(make_cycle())
         db["crm_management_results"]._docs = []
         db["crm_events"]._docs = []
-        with patch("chatbot.crm_sla_alert_worker.CRM_SLA_ALERTS_LIVE_SEND", True), \
+        with patch("chatbot.crm_sla_alert_worker.CRM_SLA_ALERTS_ENABLED", True), \
              patch("chatbot.crm_sla_alert_worker.validate_live_send_config") as vcfg:
             vcfg.return_value = {"valid": True}
             r = await process_alerts_batch(db=db, worker_id="w1", sender=FakeSender(),
@@ -313,7 +313,7 @@ class TestBatch:
             db["crm_assignment_cycles"]._docs.append(make_cycle(f"l{i}", f"c{i}", f"u{i+1}"))
         db["crm_management_results"]._docs = []
         db["crm_events"]._docs = []
-        with patch("chatbot.crm_sla_alert_worker.CRM_SLA_ALERTS_LIVE_SEND", True), \
+        with patch("chatbot.crm_sla_alert_worker.CRM_SLA_ALERTS_ENABLED", True), \
              patch("chatbot.crm_sla_alert_worker.validate_live_send_config") as vcfg:
             vcfg.return_value = {"valid": True}
             r = await process_alerts_batch(db=db, worker_id="w1", sender=FakeSender(),

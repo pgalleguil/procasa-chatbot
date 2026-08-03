@@ -24,6 +24,8 @@ import logging
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
+from bson import ObjectId
+
 from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
 from .crm_metrics import (
     INSTRUMENTATION_CUTOVER, calculate_sla, coerce_utc_datetime,
@@ -223,13 +225,36 @@ async def _get_executive_phone_async(db, executive_name: str) -> str | None:
     if not executive_name:
         return None
     user = await db["usuarios"].find_one(
-        {"nombre": executive_name, "is_active": True},
+        {"nombre": executive_name, "is_active": True, "rol": "agente"},
         {"telefono": 1, "tel": 1, "movil": 1},
     )
     if not user:
         return None
     phone = user.get("telefono") or user.get("tel") or user.get("movil")
     return str(phone).strip() if phone else None
+
+
+async def _get_assigned_agent_async(db, user_id: str) -> dict | None:
+    """Resolve the current recipient strictly from an active agent record."""
+    if not user_id:
+        return None
+    query = {"_id": user_id, "is_active": True, "rol": "agente"}
+    user = await db["usuarios"].find_one(
+        query,
+        {"_id": 1, "nombre": 1, "telefono": 1, "tel": 1, "movil": 1},
+    )
+    if not user:
+        try:
+            query["_id"] = ObjectId(user_id)
+            user = await db["usuarios"].find_one(
+                query,
+                {"_id": 1, "nombre": 1, "telefono": 1, "tel": 1, "movil": 1},
+            )
+        except Exception:
+            user = None
+    if user:
+        return user
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +279,7 @@ async def evaluate_sla_alerts(
 
     if alert_cutover is None:
         import chatbot.crm_sla_alert_settings as _s
-        alert_cutover = _s.CRM_SLA_ALERT_CUTOVER_AT
+        alert_cutover = _s.CUTOVER_AT
     if alert_cutover is None:
         return {
             "as_of": now_utc.isoformat(), "total_cycles_evaluated": 0,
@@ -319,15 +344,16 @@ async def evaluate_sla_alerts(
         assigned_at = coerce_utc_datetime(cycle.get("assigned_at"))
         if not assigned_at:
             excluded["missing_assigned_at"] += 1; continue
+        sla_started_at = coerce_utc_datetime(cycle.get("sla_started_at")) or assigned_at
 
         recipient_user_id = str(cycle.get("assigned_to_user_id") or "")
         if not recipient_user_id:
             excluded["missing_assigned_to_user_id"] += 1; continue
 
         # ---- Cutover ----
-        if assigned_at < alert_cutover:
+        if sla_started_at < alert_cutover:
             excluded["before_alert_cutover"] += 1; continue
-        if assigned_at < mongo_cutover:
+        if sla_started_at < mongo_cutover:
             excluded["pre_operational_cutover"] += 1; continue
 
         # ---- Test / synthetic ----
@@ -376,6 +402,8 @@ async def evaluate_sla_alerts(
             lifecycle = lead.get("lifecycle") or {}
             hs = lifecycle.get("hot_since")
             hot_start = coerce_utc_datetime(hs) if hs else None
+            if hot_start and hot_start < sla_started_at:
+                hot_start = sla_started_at
 
         # ---- Classify outreach (uses events + management_results) ----
         outreach_state = classify_outreach_state(
@@ -384,7 +412,7 @@ async def evaluate_sla_alerts(
 
         # ---- Calculate SLA ----
         sla = calculate_sla(
-            assigned_at=assigned_at, now=now_utc,
+            assigned_at=sla_started_at, now=now_utc,
             temperature=temp, hot_started_at=hot_start,
         )
         sla_status = sla.get("status", "good")
@@ -396,7 +424,7 @@ async def evaluate_sla_alerts(
         sla_profile = SLA_PROFILE_HOT if is_hot else SLA_PROFILE_STANDARD
 
         # ---- Elapsed ----
-        effective_start = hot_start if (is_hot and hot_start) else assigned_at
+        effective_start = hot_start if (is_hot and hot_start) else sla_started_at
         elapsed = int(max(0, sla.get("hot_minutes" if is_hot else "minutes", 0) or 0))
 
         # ---- Deadline ----
@@ -415,8 +443,20 @@ async def evaluate_sla_alerts(
         seen_dedup.add(dedup_key)
 
         # ---- Executive phone (async Motor) ----
-        executive = str(lead.get("ejecutivo_asignado") or "")
-        executive_phone = await _get_executive_phone_async(db, executive)
+        executive_fallback = str(lead.get("ejecutivo_asignado") or "")
+        recipient_user = await _get_assigned_agent_async(
+            db, recipient_user_id,
+        )
+        if not recipient_user:
+            excluded["recipient_not_active_agent"] += 1
+            continue
+        executive = str(recipient_user.get("nombre") or executive_fallback)
+        executive_phone = (
+            recipient_user.get("telefono")
+            or recipient_user.get("tel")
+            or recipient_user.get("movil")
+        )
+        executive_phone = str(executive_phone).strip() if executive_phone else None
 
         # ---- Build message ----
         client_name = _lead_first_name(lead)

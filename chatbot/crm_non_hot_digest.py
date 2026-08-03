@@ -750,7 +750,20 @@ def send_digest(db, *, notification, worker_id, sender=None):
                     phone_display, len(content or ""), delivery_token[:8])
         call_started = utc_now()
         try:
-            receipt = asyncio.run(send_whatsapp_message_detailed(phone, content))
+            async def _send_with_timeout():
+                return await send_whatsapp_message_detailed(phone, content)
+            receipt = asyncio.run(
+                asyncio.wait_for(_send_with_timeout(), timeout=25)
+            )
+        except asyncio.TimeoutError:
+            record_delivery_attempt(db, notification_id=notification["_id"],
+                                    delivery_token=delivery_token,
+                                    attempt_data={"started_at": call_started, "worker_id": worker_id,
+                                                  "http_status": None, "provider_message_id": None,
+                                                  "content_hash": content_hash, "result": "provider_timeout"})
+            finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                             state="failed_retryable", error="provider_timeout")
+            return {"status": "failed_retryable", "error": "provider_timeout"}
         except Exception as exc:
             record_delivery_attempt(db, notification_id=notification["_id"],
                                     delivery_token=delivery_token,

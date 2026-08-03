@@ -527,7 +527,7 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 <div class="cd-command">
 <header class="cd-head">
   <div class="cd-head-l">
-    <div class="cd-title-row"><h1>Dashboard Comercial</h1><div class="cd-head-actions"><button class="cd-icon-btn cd-refresh-btn" id="btnRefreshHeader" type="button" aria-label="Actualizar resultados"><i class="fa-solid fa-rotate"></i><span>Actualizar</span></button></div></div>
+    <div class="commercial-v2-title-block"><div class="commercial-v2-eyebrow">PROCASA · INTELIGENCIA COMERCIAL</div><div class="cd-title-row"><h1 id="dashboardTitle" aria-label="Control Comercial"><span class="commercial-v2-title-text">Control Comercial</span><span class="commercial-v2-title-cursor" aria-hidden="true"></span></h1><div class="cd-head-actions"><button class="cd-icon-btn cd-refresh-btn" id="btnRefreshHeader" type="button" aria-label="Actualizar resultados"><i class="fa-solid fa-rotate"></i><span>Actualizar</span></button></div></div><p class="commercial-v2-subtitle">Leads, gestión, SLA y avance del período</p></div>
     <div class="cd-temporal-context is-loading" id="temporalContext" aria-busy="true">
       <span class="cd-temporal-item"><i class="fa-regular fa-calendar" aria-hidden="true"></i><span><small>Periodo analizado</small><strong id="perCur" class="cd-temporal-skeleton"><span class="cd-sr-only">Cargando periodo</span></strong></span></span>
       <span class="cd-temporal-sep" aria-hidden="true"></span>
@@ -737,6 +737,9 @@ html{background:var(--bg-canvas);color-scheme:light}html[data-theme="dark"]{colo
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script src="/static/js/commercial-periods.js"></script>
 <script>
+if ('scrollRestoration' in history) history.scrollRestoration='manual';
+window.scrollTo({top:0,left:0,behavior:'auto'});
+window.addEventListener('pageshow',event=>{if(event.persisted)window.scrollTo({top:0,left:0,behavior:'auto'})});
 /* ================= HELPERS ================= */
 const $=id=>document.getElementById(id);
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -800,7 +803,7 @@ function renderPeriodContext(data){
   if(curEl){curEl.textContent=ctx.currentLabel;curEl.classList.remove('cd-temporal-skeleton')}
   if(modeEl)modeEl.textContent=ctx.typeLabel;
   if(cmpEl){
-    if(ctx.hasComparison){cmpEl.textContent='vs. '+ctx.previousLabel+' · '+ctx.typeLabel}
+    if(ctx.hasComparison){cmpEl.textContent='vs. '+ctx.previousLabel}
     else{cmpEl.textContent='Sin comparación'}
     cmpEl.classList.remove('cd-temporal-skeleton');
   }
@@ -1320,7 +1323,7 @@ function rslaLegacy(){
   body.innerHTML=h;bindTips(body);
 }
 
-function rsla(){
+function rslaPrevious(){
   const sla=D.sla_risk||{},body=$('slaBody');
   if(!body)return;
   $('slaPolicy').textContent=D.meta?.sla_policy?.display_label||sla.sla_policy?.display_label||'';
@@ -1340,6 +1343,45 @@ function rsla(){
   h+='<div class="cd-sec-t">Estado SLA por clasificación <button class="cd-info" data-tt="'+E(SLA_HELP)+'" aria-label="Cómo funciona el SLA"><i class="fa-solid fa-circle-info"></i></button></div><div class="cd-sla-profile-grid">'+profile('Lead',lead,false)+profile('Lead Hot',hot,true)+'</div>';
   h+='<div class="cd-sla-gap cd-sla-foot">Históricos excluidos: <b>'+val(ex.historical)+'</b> · Sin asignación: <b>'+val(ex.not_assigned)+'</b> · Cobertura insuficiente: <b>'+val(ex.insufficient_data)+'</b></div>';
   body.innerHTML=h;bindTips(body);
+}
+
+function rsla(){
+  const sla=D.sla_risk||{},body=$('slaBody');
+  if(!body)return;
+  $('slaPolicy').textContent=D.meta?.sla_policy?.display_label||sla.sla_policy?.display_label||'';
+  const pct=sla.overall_compliance_pct,lead=sla.lead||{},hot=sla.lead_hot||{},ex=sla.excluded||{};
+  const val=v=>finiteNumber(v)==null?'S/I':F(v);
+  const pctOf=(value,total)=>finiteNumber(value)==null?'S/I':(total>0?P1(value/total*100):'—');
+  const metricLine=(label,value,tip)=>'<span'+(tip?' data-tt="'+E(tip)+'"':'')+'><small>'+label+'</small><b>'+val(value)+'</b></span>';
+  const openState=(label,value,total)=>'<div class="cd-sla-state"><b>'+val(value)+'</b><span>'+label+'</span><small>'+(total>0&&finiteNumber(value)!=null?P1(value/total*100):'—')+'</small></div>';
+  const managedResult=(label,value,total)=>'<div class="cd-sla-managed-row"><span>'+label+'</span><b>'+val(value)+'</b><small>'+(total>0&&finiteNumber(value)!=null?P1(value/total*100):'—')+'</small></div>';
+  const profile=(label,b,isHot)=>{
+    const values=[b.open_normal,b.attention,b.near_breach,b.breached],allNull=values.every(v=>v==null),openTotal=values.reduce((n,v)=>n+(finiteNumber(v)??0),0);
+    const managedValues=[b.managed_within,b.managed_outside],managedTotal=managedValues.reduce((n,v)=>n+(finiteNumber(v)??0),0);
+    let inner='';
+    if(isHot&&allNull) inner='<div class="cd-sla-empty">Sin información suficiente para evaluar Lead Hot</div>';
+    else if(isHot&&openTotal===0) inner='<div class="cd-sla-empty">No hubo Lead Hot evaluables en el período</div>';
+    else inner='<div class="cd-sla-subtitle">Leads abiertos: estado actual</div><div class="cd-sla-states">'+openState('En plazo',values[0],openTotal)+openState('Atención',values[1],openTotal)+openState('Próximo',values[2],openTotal)+openState('Vencido',values[3],openTotal)+'</div>';
+    inner+='<div class="cd-sla-subtitle">Leads ya gestionados: resultado SLA</div>';
+    inner+=managedTotal>0?'<div class="cd-sla-managed">'+managedResult('Gestionados dentro',managedValues[0],managedTotal)+managedResult('Gestionados fuera',managedValues[1],managedTotal)+'</div>':'<div class="cd-sla-empty">Sin gestiones evaluables en el período</div>';
+    inner+='<div class="cd-sla-extra">'+metricLine('Mediana',finiteNumber(b.median_minutes)==null?null:F(b.median_minutes)+' min hábiles','El 50 % de los casos evaluados fue gestionado antes de este tiempo.')+metricLine('P90',finiteNumber(b.p90_minutes)==null?null:F(b.p90_minutes)+' min hábiles','El 90 % de los casos evaluados fue gestionado antes de este tiempo. Refleja la cola de atención más lenta.')+metricLine('Casos',b.eligible,'Número de leads con cobertura temporal suficiente para calcular el indicador.')+'</div>';
+    return '<div class="cd-sla-profile"><div class="cd-card-h"><h3>'+label+'</h3><button class="cd-info" data-tt="'+E(isHot?'Lead Hot: 30/45/60 minutos hábiles.':'Lead: 120/150/180 minutos hábiles.')+'" aria-label="Definición '+label+'"><i class="fa-solid fa-circle-info"></i></button></div>'+inner+'</div>';
+  };
+  const critical=pct!=null&&pct<50;
+  let h='<div class="cd-sla-top"><div class="cd-sla-main"><div class="cd-sla-pct">'+val(pct)+'</div><div class="cd-sla-gap">Cumplimiento definitivo</div></div><div class="cd-sla-stats">'
+    +'<div class="cd-stat" data-tt="Número de leads gestionados dentro del umbral SLA definido."><div class="v">'+val(sla.overall_numerator)+'</div><div class="l">Gestionados dentro</div></div>'
+    +'<div class="cd-stat" data-tt="Total de leads evaluables utilizados como base del cumplimiento SLA."><div class="v">'+val(sla.overall_denominator)+'</div><div class="l">Leads evaluables</div></div>'
+    +'<div class="cd-stat" data-tt="Leads fuera de la vigencia de la política SLA y excluidos del indicador."><div class="v">'+val(ex.historical)+'</div><div class="l">Fuera de vigencia</div></div>'
+    +'<div class="cd-stat" data-tt="Leads sin referencia temporal o cobertura suficiente para evaluar el indicador."><div class="v">'+val((ex.not_assigned||0)+(ex.insufficient_data||0))+'</div><div class="l">Sin trazabilidad suficiente</div></div>'
+    +'</div></div>';
+  h+='<div class="cd-sla-definition"><button type="button" class="cd-btn ghost" id="slaDefinitionToggle" aria-expanded="false" aria-controls="slaDefinition">Cómo se calcula</button><div id="slaDefinition" hidden><p>El SLA mide el tiempo hábil desde la asignación hasta el registro de un resultado válido en el CRM.</p><p>Lead: atención desde 120 minutos, próximo a vencer desde 150 minutos y vencido desde 180 minutos hábiles.</p><p>Lead Hot: atención desde 30 minutos, próximo a vencer desde 45 minutos y vencido desde 60 minutos hábiles.</p><p>El contador opera de lunes a viernes, de 09:00 a 19:00; se pausa fuera de ese horario y durante fines de semana.</p><p>Los leads anteriores al inicio de la política aparecen como históricos y no participan en las métricas nuevas.</p></div></div>';
+  h+='<div class="cd-sec-t">Estado SLA por clasificación</div><div class="cd-sla-profile-grid">'+profile('Lead',lead,false)+profile('Lead Hot',hot,true)+'</div>';
+  const recon=[['Lead',lead],['Lead Hot',hot]].map(([label,b])=>{const open=[b.open_normal,b.attention,b.near_breach,b.breached].reduce((n,v)=>n+(finiteNumber(v)??0),0),managed=[b.managed_within,b.managed_outside].reduce((n,v)=>n+(finiteNumber(v)??0),0);return finiteNumber(b.eligible)!=null&&(open+managed!==b.eligible)?label:null}).filter(Boolean);
+  h+=(recon.length?'<div class="cd-sla-reconciliation">Cobertura SLA no reconciliada: '+E(recon.join(' y '))+'</div>':'')+'<div class="cd-sla-gap cd-sla-foot">Fuera de vigencia: <b>'+val(ex.historical)+'</b> · Sin asignación: <b>'+val(ex.not_assigned)+'</b> · Sin trazabilidad suficiente: <b>'+val(ex.insufficient_data)+'</b></div>';
+  body.innerHTML=h;
+  const toggle=$('slaDefinitionToggle'),definition=$('slaDefinition');
+  if(toggle&&definition)toggle.onclick=()=>{const open=definition.hidden;definition.hidden=!open;toggle.setAttribute('aria-expanded',String(open));};
+  bindTips(body);
 }
 
 function formatOperationalMinutes(value){
@@ -1946,5 +1988,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   /* "Más filtros" inicia oculto en desktop; en móvil todo va dentro de la hoja */
 });
 </script>
+<script>window.addEventListener('load',()=>{const title=document.querySelector('.commercial-v2-title-block');if(title&&!title.dataset.typed){title.dataset.typed='true';title.classList.add('is-typing')}},{once:true});</script>
 </body>
 </html>

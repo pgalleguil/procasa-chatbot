@@ -50,3 +50,33 @@ def test_v2_css_uses_only_scoped_component_selectors():
     selectors = [line.strip() for line in css.splitlines() if "{" in line and not line.lstrip().startswith("@")]
     assert selectors
     assert all(line.startswith(".commercial-dashboard-v2") for line in selectors)
+
+
+def test_header_comparison_sla_and_initial_scroll_contracts_are_present():
+    html = TEMPLATE.read_text(encoding="utf-8")
+    css = CSS.read_text(encoding="utf-8")
+    for value in (
+        "PROCASA · INTELIGENCIA COMERCIAL",
+        "Control Comercial",
+        "Leads, gestión, SLA y avance del período",
+        "history.scrollRestoration='manual'",
+        "window.scrollTo({top:0,left:0,behavior:'auto'})",
+        "event.persisted",
+        "vs. '+ctx.previousLabel",
+        "Leads abiertos: estado actual",
+        "Leads ya gestionados: resultado SLA",
+        "No hubo Lead Hot evaluables en el período",
+        "slaDefinitionToggle",
+        "Sin trazabilidad suficiente",
+        "Cobertura SLA no reconciliada",
+    ):
+        assert value in html
+    for value in (
+        "position: absolute; left: 0; right: 0; bottom: 0",
+        "commercial-v2-type",
+        "min-height: 300px",
+        "height: 260px",
+        "height: 220px",
+        "cd-sla-managed-row",
+    ):
+        assert value in css

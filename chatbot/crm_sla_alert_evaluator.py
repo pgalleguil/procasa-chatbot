@@ -60,6 +60,7 @@ SLA_PROFILE_HOT = "hot"
 # ---------------------------------------------------------------------------
 
 SLA_STOP_RESULTS = frozenset({
+    "NO_RESPONDIO",
     "EFFECTIVE_CONTACT",
     "CALL_NO_ANSWER",
     "INVALID_NUMBER",

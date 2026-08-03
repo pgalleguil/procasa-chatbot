@@ -204,6 +204,43 @@ class TestSendDisabled:
 
 class TestWorker:
     @pytest.mark.asyncio
+    async def test_revalidation_cancels_no_respondio_before_send(self, db):
+        db[COLLECTION]._docs.append(_alert_doc())
+        db["leads"]._docs.append(make_lead())
+        db["crm_assignment_cycles"]._docs.append(make_cycle())
+        db["crm_management_results"]._docs = []
+        db["crm_events"]._docs = [{
+            "lead_id": "lead-1", "assignment_cycle_id": "cycle-1",
+            "type": "HUMAN_NOTE", "actor": "E", "actor_type": "human",
+            "result": "intento_fallido", "confirmed": True,
+            "timestamp": chile_dt(9, 15),
+            "meta": {"meaningful_change": True},
+        }]
+        sender = FakeSender()
+        r = await process_one_alert(db=db, worker_id="w1", sender=sender)
+        assert r == {"status": "cancelled", "reason": "management_completed"}
+        assert db[COLLECTION]._docs[0]["state"] == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_refreshes_lease_during_provider_call(self, db):
+        db[COLLECTION]._docs.append(_alert_doc())
+        db["leads"]._docs.append(make_lead())
+        db["crm_assignment_cycles"]._docs.append(make_cycle())
+        db["crm_management_results"]._docs = []
+        db["crm_events"]._docs = []
+
+        async def slow_sender(phone, message):
+            await asyncio.sleep(1.1)
+            return SenderResult(outcome="confirmed_success", provider_message_id="wa-heartbeat")
+
+        with patch("chatbot.crm_sla_alert_worker.PROVIDER_TIMEOUT_SECONDS", 2), \
+             patch("chatbot.crm_sla_alert_worker.refresh_delivery_lease", autospec=True) as refresh:
+            refresh.return_value = _alert_doc({"state": ST_PROCESSING})
+            r = await process_one_alert(db=db, worker_id="w1", sender=slow_sender)
+        assert r["status"] == "sent"
+        assert refresh.await_count >= 1
+
+    @pytest.mark.asyncio
     async def test_send_success(self, db):
         db[COLLECTION]._docs.append(_alert_doc())
         db["leads"]._docs.append(make_lead())

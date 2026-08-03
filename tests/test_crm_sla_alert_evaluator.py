@@ -461,6 +461,27 @@ class TestCutover:
 
 class TestManagementPolicy:
     @pytest.mark.asyncio
+    async def test_no_respondio_human_note_stops_sla(self, fake_db):
+        assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
+        fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD")])
+        fake_db["crm_assignment_cycles"] = FakeCollection([
+            make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
+        ])
+        fake_db["crm_events"] = FakeCollection([{
+            "lead_id": "lead-1", "type": "HUMAN_NOTE", "actor": "user-1",
+            "actor_type": "human", "result": "intento_fallido",
+            "timestamp": chile_dt(9, 15, 3).astimezone(timezone.utc), "confirmed": True,
+            "meta": {"meaningful_change": True},
+        }])
+        fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
+        fake_db["crm_management_results"] = FakeCollection([])
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT", datetime(2026, 8, 3, 9, 0, tzinfo=timezone.utc))
+            mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now", lambda: chile_dt(13, 0, 3).astimezone(timezone.utc))
+            report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
+        assert len(report["alerts"]) == 0
+
+    @pytest.mark.asyncio
     async def test_mwr_does_not_stop_sla(self, fake_db):
         assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD")])
@@ -817,7 +838,7 @@ def test_outreach_results_includes_mwr():
 
 
 def test_sla_stop_results_has_valid_types():
-    for r in ("EFFECTIVE_CONTACT", "CALL_NO_ANSWER", "INVALID_NUMBER",
+    for r in ("NO_RESPONDIO", "EFFECTIVE_CONTACT", "CALL_NO_ANSWER", "INVALID_NUMBER",
               "FOLLOW_UP_REQUESTED", "SCHEDULE_FOLLOW_UP",
               "NOT_INTERESTED", "DISCARDED_VALID_REASON"):
         assert r in SLA_STOP_RESULTS

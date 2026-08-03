@@ -237,6 +237,18 @@ async def mark_delivery_started(db, *, alert_id: str, worker_id: str, now=None) 
     )
 
 
+async def refresh_delivery_lease(db, *, alert_id: str, worker_id: str,
+                                 delivery_attempt_id: str, now=None) -> dict | None:
+    """Extend the active lease while the provider call is in progress."""
+    current = now or utc_now()
+    lease_end = current + timedelta(seconds=LEASE_SECONDS)
+    return await db[COLLECTION].find_one_and_update(
+        {"_id": alert_id, "state": ST_PROCESSING, "lease_owner": worker_id,
+         "delivery_attempt_id": delivery_attempt_id},
+        {"$set": {"lease_expires_at": lease_end, "updated_at": current}},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Finalize
 # ---------------------------------------------------------------------------

@@ -28,7 +28,7 @@ from .crm_sla_alert_evaluator import (
 from .crm_sla_alert_repository import (
     COLLECTION, ST_PENDING, ST_PROCESSING, ST_SENT, ST_FAILED_RETRYABLE,
     ST_FAILED_FINAL, ST_CANCELLED, ST_DELIVERY_UNCERTAIN,
-    claim_next_alert, mark_delivery_started, finalize_alert,
+    claim_next_alert, mark_delivery_started, refresh_delivery_lease, finalize_alert,
     cancel_alert, cancel_alerts_for_cycle,
 )
 from .crm_sla_alert_sender import SenderResult, get_sender, SlaAlertSender
@@ -162,6 +162,22 @@ async def process_one_alert(
         phone = alert.get("recipient_phone_snapshot", "")
         message = alert.get("rendered_message", "")
 
+        heartbeat_stop = asyncio.Event()
+
+        async def heartbeat():
+            interval = max(1.0, min(30.0, PROVIDER_TIMEOUT_SECONDS / 2))
+            while not heartbeat_stop.is_set():
+                try:
+                    await asyncio.wait_for(heartbeat_stop.wait(), timeout=interval)
+                except asyncio.TimeoutError:
+                    refreshed = await refresh_delivery_lease(
+                        db, alert_id=alert_id, worker_id=worker_id,
+                        delivery_attempt_id=attempt_id,
+                    )
+                    if not refreshed:
+                        logger.warning("[SLA_ALERT] Delivery lease refresh failed for %s", alert_id)
+
+        heartbeat_task = asyncio.create_task(heartbeat())
         try:
             result: SenderResult = await asyncio.wait_for(
                 transport(phone, message),
@@ -172,6 +188,10 @@ async def process_one_alert(
                                  error="provider_timeout", delivery_outcome="timeout",
                                  delivery_attempt_id=attempt_id)
             return {"status": "delivery_uncertain", "reason": "timeout"}
+        finally:
+            heartbeat_stop.set()
+            heartbeat_task.cancel()
+            await asyncio.gather(heartbeat_task, return_exceptions=True)
 
         # 5. Finalize based on typed outcome
         if result.outcome == "confirmed_success" and result.provider_message_id:

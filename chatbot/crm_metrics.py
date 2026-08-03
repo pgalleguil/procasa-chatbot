@@ -47,9 +47,10 @@ EFFECTIVE_CONTACT_RESULTS = frozenset({
     "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED",
 })
 VALID_MANAGEMENT_RESULTS = frozenset({
-    # Failed/no-response attempts are auditable contact attempts, but they
-    # must not stop the management SLA or promote a lead to CONTACTED.
+    # Failed/no-response attempts are auditable contact attempts and stop the
+    # alert SLA, but they must not promote a lead to CONTACTED.
     "OCUPADO", "NUMERO_INVALIDO", "MENSAJE_ENVIADO",
+    "NO_RESPONDIO",
     "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO", "OTRO",
     "MESSAGE_SENT_WAITING_RESPONSE", "CALL_NO_ANSWER", "EMAIL_SENT",
     "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "INVALID_NUMBER",

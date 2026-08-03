@@ -971,7 +971,17 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 "visita": PipelineStage.VISIT_SCHEDULED,
                 "cerrado": PipelineStage.CLOSED_WON
             }
-            estado_db = estado_map_legacy.get(estado_db.lower(), PipelineStage.NEW)
+            estado_key = estado_db.lower()
+            estado_db = estado_map_legacy.get(estado_key)
+            if estado_db is None:
+                # Keep canonical PipelineStage values (CLOSED_WON, CLOSED_LOST,
+                # INTERESTED, OFFER, NEGOTIATION, VISIT_DONE, ...) instead of
+                # collapsing them to NEW.  Only genuinely unknown legacy values
+                # fall back to NEW.
+                try:
+                    estado_db = PipelineStage(estado_key.upper())
+                except ValueError:
+                    estado_db = PipelineStage.NEW
         
         last_ev = events_map.get(raw_phone)
         recognized_management_ev = (
@@ -1073,7 +1083,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "ARCHIVED", "SUPPRESSED",
         ):
             estado_final = PipelineStage.NEW
-        elif recognized_management_ev and estado_final == PipelineStage.NEW:
+        elif (recognized_management_ev or has_real_management) and estado_final == PipelineStage.NEW:
+            # A lead whose active cycle already carries canonical management
+            # evidence (for example an "intento_fallido" that stops the SLA)
+            # must not remain displayed as "Sin Atender".
             estado_final = PipelineStage.CONTACTED
         
         # Identificar ejecutivo y timestamp real para visualización

@@ -386,6 +386,23 @@ def _recover_stuck_digests(db, *, now):
                   "next_attempt_at": current, "updated_at": current},
          "$unset": {"delivery_token": "", "provider_call_started_at": ""}},
     )
+    # A hung attempt also left the assignment cycle reserved ("reserved", never
+    # "delivered").  Release those stale reservations so the retry can pass the
+    # cycle barrier; cycles with a completed delivery are left untouched.
+    stale = list(db[NOTIFICATION_COLLECTION].find(
+        {"digest_type": DIGEST_TYPE,
+         "message_domain": "commercial_notification",
+         "state": "failed_retryable",
+         "provider_message_id": {"$in": [None]},
+         "actually_delivered": {"$ne": True}},
+    ))
+    for digest in stale:
+        for cid in (digest.get("assignment_cycle_ids") or []):
+            db["crm_assignment_cycles"].update_one(
+                {"assignment_cycle_id": cid, "non_hot_delivery_status": "reserved"},
+                {"$unset": {"non_hot_delivery_status": "", "non_hot_delivery_token": "",
+                            "non_hot_digest_id": "", "non_hot_delivery_reserved_at": ""}},
+            )
 
 
 def claim_due_digest(db, *, worker_id, now=None, notification_id=None):

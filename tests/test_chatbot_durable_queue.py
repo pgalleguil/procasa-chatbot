@@ -187,6 +187,27 @@ def test_duplicate_webhook_creates_one_job_and_one_batch():
     assert len(db.collection.find({"kind": queue.KIND_BATCH})) == 1
 
 
+def test_new_inbound_never_reuses_terminal_batch_with_stale_conversation_lock():
+    db = DB()
+    stale_id = "batch:terminal-stale"
+    db.collection.docs[stale_id] = {
+        "_id": stale_id,
+        "kind": queue.KIND_BATCH,
+        "phone": "+56911112222",
+        "active_conversation_key": "phone:+56911112222",
+        "state": queue.ST_FAILED_TERMINAL,
+        "job_ids": [],
+        "created_at": NOW - timedelta(hours=1),
+    }
+
+    job_id = add(db, "wamid-after-terminal", "Arriendo", NOW)
+    job = db.collection.docs[job_id]
+    assert job["state"] == queue.ST_BATCHING
+    assert job["batch_id"] != stale_id
+    assert "active_conversation_key" not in db.collection.docs[stale_id]
+    assert db.collection.docs[job["batch_id"]]["state"] == queue.ST_BATCHING
+
+
 def test_two_messages_in_window_make_one_batch_and_one_response():
     db = DB()
     add(db, "wamid-1", "hola", NOW)

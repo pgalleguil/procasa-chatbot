@@ -31,6 +31,7 @@ ST_FAILED_RETRYABLE = "failed_retryable"
 ST_FAILED_TERMINAL = "failed_terminal"
 ST_DELIVERY_UNKNOWN = "delivery_unknown"
 TERMINAL_STATES = (ST_RESPONDED, ST_FAILED_TERMINAL, ST_DELIVERY_UNKNOWN)
+ACTIVE_BATCH_STATES = (ST_BATCHING, ST_PENDING, ST_PROCESSING, ST_FAILED_RETRYABLE)
 ID_LIKE_RE = re.compile(r"^(?:[0-9a-f]{24}|[0-9a-f-]{32,36}|[A-Za-z0-9_-]{40,})$", re.I)
 
 
@@ -85,6 +86,15 @@ def _batch_settings(max_wait_seconds=None):
 
 def _conversation_key(phone, conversation_id=None):
     return f"conversation:{conversation_id}" if conversation_id else f"phone:{phone}"
+
+
+def _release_terminal_conversation_lock(coll, conversation_key, now):
+    """Release a stale active key left by a terminal batch from older paths."""
+    return coll.update_many(
+        {"kind": KIND_BATCH, "active_conversation_key": conversation_key,
+         "state": {"$in": list(TERMINAL_STATES)}},
+        {"$unset": {"active_conversation_key": ""}, "$set": {"updated_at": now}},
+    )
 
 
 def create_inbound_job(
@@ -146,11 +156,15 @@ def create_inbound_job(
 
     quiet_seconds, maximum_wait_seconds = _batch_settings(max_wait_seconds)
     conversation_key = _conversation_key(phone, conversation_id)
+    # Repair any terminal legacy batch before looking for an active one.  A
+    # terminal result can never accept another inbound message.
+    _release_terminal_conversation_lock(coll, conversation_key, now)
     # The unique partial index makes this insert atomic across processes.  A
     # competing producer gets E11000 and attaches to the winning active batch.
     batch = coll.find_one({
         "kind": KIND_BATCH,
         "active_conversation_key": conversation_key,
+        "state": {"$in": list(ACTIVE_BATCH_STATES)},
     })
     if batch is None:
         batch_id = f"batch:{uuid.uuid4()}"
@@ -181,7 +195,9 @@ def create_inbound_job(
                 "idempotency_key": f"chatbot:batch:{batch_id}",
             })
         except DuplicateKeyError:
-            batch = coll.find_one({"kind": KIND_BATCH, "active_conversation_key": conversation_key})
+            _release_terminal_conversation_lock(coll, conversation_key, now)
+            batch = coll.find_one({"kind": KIND_BATCH, "active_conversation_key": conversation_key,
+                                   "state": {"$in": list(ACTIVE_BATCH_STATES)}})
             if batch is None:
                 raise
         else:
@@ -294,7 +310,7 @@ def claim_pending_batch(db, *, worker_id, lease_seconds=120, now=None):
         coll.update_one(
             {"_id": candidate["_id"], "state": candidate["state"]},
             {"$set": {"state": ST_FAILED_TERMINAL, "last_error": "invalid_or_empty_snapshot",
-                      "updated_at": now}},
+                      "updated_at": now}, "$unset": {"active_conversation_key": ""}},
         )
         return None
     delivery_token = candidate.get("delivery_token") or str(uuid.uuid4())

@@ -50,6 +50,32 @@ class FakeDB:
         return self.col
 
 
+class LegacyCollection:
+    """Small matcher for the real legacy publication fields used in lookup."""
+    def __init__(self, doc):
+        self.doc = doc
+
+    def find_one(self, query):
+        field, expected = next(iter(query.items()))
+        value = self.doc
+        for part in field.split("."):
+            value = value.get(part) if isinstance(value, dict) else None
+        if isinstance(expected, dict) and "$regex" in expected:
+            import re
+            return deepcopy(self.doc) if value and re.search(expected["$regex"], value, re.I) else None
+        if isinstance(expected, dict) and "$in" in expected:
+            return deepcopy(self.doc) if value in expected["$in"] else None
+        return deepcopy(self.doc) if value == expected else None
+
+
+class LegacyDB:
+    def __init__(self, doc):
+        self.col = LegacyCollection(doc)
+
+    def __getitem__(self, name):
+        return self.col
+
+
 def make_doc():
     aliases = [build_property_alias(url, portal, "arriendo", ext) for portal, url, ext in RENTAL]
     aliases += [build_property_alias(url, portal, "venta", ext) for portal, url, ext in SALE]
@@ -91,3 +117,22 @@ def test_legacy_publications_are_untouched_by_alias_model():
     doc = make_doc()
     doc["publicaciones"]["portal_inmobiliario"]["url_pi"] = SALE[1][1]
     assert doc["publicaciones"]["portal_inmobiliario"]["url_pi"] == SALE[1][1]
+
+
+def test_portal_link_resolves_legacy_mercadolibre_url_by_canonical_mlc_identity():
+    # Real producer shape: Portal Inmobiliario sends its domain, while the
+    # historical Prop360 document holds the same MLC identity in the Mercado
+    # Libre URL slot and has no aliases/codigo_pi field.
+    doc = {
+        "codigo": "6811",
+        "publicaciones": {"portal_inmobiliario": {
+            "url_mercado_libre": "http://inmueble.mercadolibre.cl/MLC-3776482990-oficina-en-arriendo-en-santiago-_JM",
+        }},
+    }
+    prop, meta = lookup_property_link(
+        LegacyDB(doc),
+        "https://www.portalinmobiliario.com/MLC-3776482990-oficina-en-arriendo-en-santiago-_JM?utm_source=wa",
+    )
+    assert prop["codigo"] == "6811"
+    assert meta["external_id"] == "MLC-3776482990"
+    assert meta["match_method"] == "legacy_url_external_id"

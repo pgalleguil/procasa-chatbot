@@ -248,7 +248,13 @@ def operation_from_property_url(url: str) -> Optional[str]:
 
 
 def lookup_property_link(db, url: str, collection_name: str = PROPERTY_COLLECTION_NAME):
-    """Resolve aliases first and return (property, match metadata)."""
+    """Resolve a publication using its canonical external identity.
+
+    Alias records are preferred, but production has historical publication
+    documents that predate aliases.  Those documents store the same external
+    identity in portal-specific URL and code fields, so they must be queried
+    before reporting a link as unresolved.
+    """
     portal = canonical_portal(url)
     normalized = normalize_property_url(url)
     external_id = extract_property_external_id(url, portal)
@@ -273,6 +279,68 @@ def lookup_property_link(db, url: str, collection_name: str = PROPERTY_COLLECTIO
             return prop, {"portal": portal, "external_id": alias.get("external_id") or external_id,
                           "operation": alias.get("operacion") or operation_from_property_url(url),
                           "url_normalized": normalized, "match_method": "normalized_alias"}
+
+    # Historical publication schemas.  The portal may have changed domains
+    # (Portal Inmobiliario / Mercado Libre), while the MLC identity remains
+    # stable; resolve it across both URL slots and legacy code fields.
+    shared_mlc_url_fields = (
+        "publicaciones.portal_inmobiliario.url_pi",
+        "publicaciones.portal_inmobiliario.url_mercado_libre",
+    )
+    field_sets = {
+        "portal_inmobiliario": {
+            "url": shared_mlc_url_fields,
+            "id": ("publicaciones.portal_inmobiliario.codigo_pi", "codigo_pi", "codigo_mercadolibre"),
+        },
+        "mercadolibre": {
+            "url": shared_mlc_url_fields,
+            "id": ("publicaciones.portal_inmobiliario.codigo_pi", "codigo_pi", "codigo_mercadolibre"),
+        },
+        "yapo": {
+            "url": ("publicaciones.yapo.url_yapo", "url_yapo"),
+            "id": ("publicaciones.yapo.codigo_yapo", "codigo_yapo"),
+        },
+        "toctoc": {
+            "url": ("publicaciones.toctoc.url_toctoc", "toctoc.enlace"),
+            "id": (),
+        },
+        "procasa": {
+            "url": ("publicaciones.procasa.url_procasa", "source_url", "metadata.source_url"),
+            "id": ("publicaciones.codigo_internacional", "codigo_internacional"),
+        },
+    }
+    fields = field_sets.get(portal, {"url": (), "id": ()})
+    for candidate in (str(url).strip(), normalized):
+        if not candidate:
+            continue
+        for field in fields["url"]:
+            prop = collection.find_one({field: candidate})
+            if prop:
+                return prop, {"portal": portal, "external_id": external_id,
+                              "operation": operation_from_property_url(url),
+                              "url_normalized": normalized, "match_method": "legacy_exact_url"}
+
+    if external_id:
+        compact_id = external_id.replace("-", "").replace("_", "")
+        id_values = tuple(dict.fromkeys((external_id, compact_id)))
+        for field in fields["id"]:
+            prop = collection.find_one({field: {"$in": list(id_values)}})
+            if prop:
+                return prop, {"portal": portal, "external_id": external_id,
+                              "operation": operation_from_property_url(url),
+                              "url_normalized": normalized, "match_method": "legacy_external_id"}
+        # Some early producer documents retained only the external identity
+        # inside a URL field.  Match the identity, not the hostname or slug.
+        if external_id.upper().startswith("MLC-"):
+            external_pattern = r"MLC[-_]?" + re.escape(external_id.split("-", 1)[1])
+        else:
+            external_pattern = re.escape(external_id)
+        for field in fields["url"]:
+            prop = collection.find_one({field: {"$regex": external_pattern, "$options": "i"}})
+            if prop:
+                return prop, {"portal": portal, "external_id": external_id,
+                              "operation": operation_from_property_url(url),
+                              "url_normalized": normalized, "match_method": "legacy_url_external_id"}
     return None, {"portal": portal, "external_id": external_id,
                    "operation": operation_from_property_url(url),
                    "url_normalized": normalized, "match_method": None}

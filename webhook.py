@@ -1545,6 +1545,18 @@ async def api_crm_admin_reconcile_invalid_management(request: Request):
     )
 
 
+@app.get("/api/crm/admin/reconcile-invalid-management")
+async def api_crm_admin_reconcile_invalid_management_get(request: Request, phone: str):
+    """Temporary authenticated handoff for the one-off production repair."""
+    user, _lead = await _get_authorized_crm_lead(request, phone, administrative=True)
+    actor = user.get("nombre") or user.get("username") or "Administración"
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: reconcile_invalid_management(phone, actor=actor),
+    )
+
+
 @app.post("/api/crm/admin/reassign")
 async def api_crm_admin_reassign(request: Request):
     data = await request.json()

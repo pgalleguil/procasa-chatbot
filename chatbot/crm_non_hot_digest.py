@@ -70,6 +70,11 @@ def _business_period_label(assigned_at):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _immediate_send() -> bool:
+    """Temporary override: send the non-HOT digest immediately (no window wait)."""
+    return bool(getattr(Config, "CRM_NON_HOT_DIGEST_IMMEDIATE_SEND", False))
+
+
 def _reference_id(lead_id):
     """Short public reference for a lead (used in message previews)."""
     raw = str(lead_id).encode("utf-8")
@@ -229,8 +234,9 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
                 cycle_origins.append(origin)
             new_count = len(new_ids)
             # Volume threshold: if we just reached the max, mark as ready now.
+            # Temporary immediate-send override also marks it ready now.
             max_before_send = int(getattr(Config, "CRM_NON_HOT_DIGEST_MAX_LEADS_BEFORE_SEND", "0"))
-            if max_before_send > 0 and new_count >= max_before_send:
+            if _immediate_send() or (max_before_send > 0 and new_count >= max_before_send):
                 db[NOTIFICATION_COLLECTION].update_one(
                     {"_id": existing["_id"]},
                     {"$set": {
@@ -262,10 +268,9 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
         return db[NOTIFICATION_COLLECTION].find_one({"_id": existing["_id"]})
 
     # No open window — create one.
-    # The digest window is always 10 minutes from the first lead,
-    # regardless of time of day.  After-hours handling (if any) is
-    # configured separately and does NOT affect window_due_at.
-    send_after = _window_due_at(now, window_minutes=window_minutes)
+    # The digest window is 10 minutes from the first lead (unless temporary
+    # immediate-send is active, in which case it is due right away).
+    send_after = now if _immediate_send() else _window_due_at(now, window_minutes=window_minutes)
     now_iso = now.isoformat()
     send_after_iso = send_after.isoformat()
     payload = {

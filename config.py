@@ -99,6 +99,12 @@ class Config:
     # without waiting for the 10-minute window to expire.  0 = disabled.
     CRM_NON_HOT_DIGEST_MAX_LEADS_BEFORE_SEND = int(os.getenv("CRM_NON_HOT_DIGEST_MAX_LEADS_BEFORE_SEND", "0"))
 
+    # TEMP: envío inmediato de digests no-HOT (pausa temporal de la ventana de
+    # acumulación de 10 min). Mientras esté en "true" el aviso al ejecutivo sale
+    # de inmediato. Para reactivar la ventana: set
+    # CRM_NON_HOT_DIGEST_IMMEDIATE_SEND=false (o revertir este default).
+    CRM_NON_HOT_DIGEST_IMMEDIATE_SEND = os.getenv("CRM_NON_HOT_DIGEST_IMMEDIATE_SEND", "true").lower() == "true"
+
     # === After-hours notification policy ===
     # These flags control whether HOT notifications are deferred outside business
     # hours.  They do NOT affect the digest window, which is always 10 minutes

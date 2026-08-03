@@ -28,6 +28,17 @@
       "target": 0,
       "unit": "leads",
       "source": "POLICY"
+    },
+    {
+      "metric": "received_leads",
+      "label": "Leads recibidos",
+      "scope": "all",
+      "direction": "min",
+      "target": 200,
+      "periodicity": "MONTHLY",
+      "unit": "leads",
+      "source": "BUSINESS",
+      "effective_from": "2026-08-01"
     }
   ]
 }

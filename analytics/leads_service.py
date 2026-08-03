@@ -4,6 +4,8 @@ from __future__ import annotations
 import logging
 import math
 import time
+import calendar
+from datetime import date, timedelta
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
@@ -366,6 +368,113 @@ def _risk_delta(current, previous, profile, key):
     return None if not previous else ((current.get("risk") or {}).get(profile) or {}).get(key, 0) - ((previous.get("risk") or {}).get(profile) or {}).get(key, 0)
 
 
+def _executive_target_info(period_start, period_end, filters=None, *, today=None):
+    """Return the calendar-prorated global received-leads target for KPI cards."""
+    from .management_targets import load_target_configuration
+
+    filters = filters or {}
+    segmented_keys = {
+        "executive", "ejecutive", "ejecutivo_asignado", "source", "prospecto.origen",
+        "operation", "prospecto.operacion", "type", "prospecto.tipo", "commune",
+        "prospecto.comuna", "temperature", "lead_temperature_effective", "property",
+        "prospecto.codigo", "assignment", "stage", "pipeline_stage",
+    }
+    segmented = any(filters.get(key) not in (None, "", [], {}) for key in segmented_keys)
+    try:
+        start = date.fromisoformat(str(period_start)[:10])
+        end = date.fromisoformat(str(period_end)[:10])
+    except (TypeError, ValueError):
+        return {"available": False, "target": None, "segmented": segmented, "reason": "invalid_period"}
+    if end < start or segmented:
+        return {"available": False, "target": None, "segmented": segmented, "reason": "segmented" if segmented else "invalid_period"}
+    configured = next((item for item in load_target_configuration().get("targets", []) if item.get("metric") == "received_leads"), None)
+    if not configured or configured.get("target") is None:
+        return {"available": False, "target": None, "segmented": False, "reason": "unconfigured"}
+    target = float(configured["target"])
+    total = 0.0
+    cursor = start
+    while cursor <= end:
+        month_end = date(cursor.year, cursor.month, calendar.monthrange(cursor.year, cursor.month)[1])
+        included_end = min(end, month_end)
+        days_included = (included_end - cursor).days + 1
+        total += target * days_included / month_end.day
+        cursor = included_end + timedelta(days=1)
+    if total.is_integer():
+        total = int(total)
+    result = {"available": True, "target": total, "global_target": target, "segmented": False, "reason": None}
+    today = today or date.today()
+    current_month = start.day == 1 and end == today and start.month == end.month and start.year == end.year
+    if current_month:
+        elapsed = (today - start).days + 1
+        days_total = calendar.monthrange(today.year, today.month)[1]
+        result["pace"] = None  # filled with the received count by the card contract
+        result["pace_days_elapsed"] = elapsed
+        result["pace_days_total"] = days_total
+    else:
+        result["pace"] = None
+    return result
+
+
+def _build_executive_kpis(kpis, funnel, properties, sla, accountability, trends, filters, period_start, period_end, previous=None):
+    """Build the five-card contract exclusively from already resolved payloads."""
+    received = (kpis.get("leads_received") or {}).get("value")
+    received = received if isinstance(received, (int, float)) else None
+    target = _executive_target_info(period_start, period_end, filters, today=date.today())
+    if target.get("available") and target.get("pace_days_elapsed") and received is not None:
+        target["pace"] = round(received / target["pace_days_elapsed"] * target["pace_days_total"], 1)
+    demand = {
+        "available": received is not None,
+        "received": received,
+        "target": target.get("target"),
+        "global_target": target.get("global_target"),
+        "compliance_pct": round(received / target["target"] * 100, 1) if received is not None and target.get("target") else None,
+        "pace": target.get("pace"),
+        "target_applicable": bool(target.get("available")),
+        "segmented": bool(target.get("segmented")),
+        "daily": ((trends or {}).get("current") or {}).get("daily") or [],
+    }
+    visit = next((row for row in (funnel or []) if row.get("key") == "visit_scheduled"), {})
+    prev_received = (kpis.get("leads_received") or {}).get("previous")
+    prev_visit = (previous or {}).get("visit_scheduled")
+    conversion = visit.get("count") if isinstance(visit.get("count"), (int, float)) else None
+    conversion_rate = round(conversion / received * 100, 1) if conversion is not None and received else None
+    previous_rate = round(prev_visit / prev_received * 100, 1) if prev_visit is not None and prev_received else None
+    conversion_card = {
+        "available": conversion_rate is not None,
+        "visited_or_scheduled": conversion,
+        "received": received,
+        "rate_pct": conversion_rate,
+        "variation_pp": round(conversion_rate - previous_rate, 1) if conversion_rate is not None and previous_rate is not None else None,
+    }
+    valid = []
+    seen_codes = set()
+    for row in ((properties or {}).get("opportunity") or []):
+        code = str(row.get("code") or "").strip()
+        price = row.get("avg_price_uf")
+        operation = str(row.get("operation") or "").strip().lower()
+        if code and code not in seen_codes and isinstance(price, (int, float)) and math.isfinite(float(price)) and float(price) > 0 and operation in {"venta", "arriendo"}:
+            seen_codes.add(code)
+            valid.append({"code": code, "price_uf": float(price), "operation": operation, "leads": row.get("leads") or 0})
+    total_value = sum(row["price_uf"] for row in valid) if valid else None
+    net = total_value * 0.04 if total_value is not None else None
+    pipeline = {
+        "available": bool(valid), "property_value_uf": round(total_value, 1) if total_value is not None else None,
+        "net_commission_uf": round(net, 1) if net is not None else None,
+        "gross_commission_uf": round(net * 1.19, 1) if net is not None else None,
+        "property_count": len(valid), "lead_count": sum(row["leads"] for row in valid),
+        "coverage_pct": round(len(valid) / max(len((properties or {}).get("opportunity") or []), 1) * 100, 1),
+        "by_operation": {op: {"property_count": sum(1 for row in valid if row["operation"] == op), "net_commission_uf": round(sum(row["price_uf"] * 0.04 for row in valid if row["operation"] == op), 1)} for op in ("venta", "arriendo")},
+    }
+    lead_sla = (sla or {}).get("lead") or {}
+    hot_sla = (sla or {}).get("lead_hot") or {}
+    sla_velocity = {"available": bool(lead_sla or hot_sla), "lead": {"median_minutes": lead_sla.get("median_minutes"), "p90_minutes": lead_sla.get("p90_minutes"), "open_breached": lead_sla.get("breached", 0)}, "lead_hot": {"median_minutes": hot_sla.get("median_minutes"), "p90_minutes": hot_sla.get("p90_minutes"), "open_breached": hot_sla.get("breached", 0)}}
+    summary = (accountability or {}).get("summary") or {}
+    by_exec = (accountability or {}).get("by_executive") or []
+    top_exec = max(by_exec, key=lambda row: (row.get("registration_gap_rate") or 0, row.get("executive_name") or ""), default={})
+    registration = {"available": bool(summary), "registration_gap_rate": summary.get("registration_gap_rate"), "activity_without_result": summary.get("breached_with_activity_without_result"), "without_activity": summary.get("breached_without_activity"), "total_breached": summary.get("open_breached"), "highest_concentration": top_exec.get("executive_name")}
+    return {"demand_pace": demand, "visit_conversion": conversion_card, "pipeline_valuation": pipeline, "sla_velocity": sla_velocity, "registration_discipline": registration}
+
+
 def get_dashboard(
     period_start: str = None,
     period_end: str = None,
@@ -663,6 +772,10 @@ def get_commercial_dashboard(
     trends = futures["trends"].result()
     variance_drivers = futures["variance_drivers"].result()
     coverage = futures["coverage"].result()
+    executive_kpis = _build_executive_kpis(
+        kpis, funnel, properties, sla, sla_accountability, trends, merged_filters,
+        period_start, period_end,
+    )
     try:
         insights = query_commercial_insights(
             kpis=kpis, funnel=funnel, sla=sla,
@@ -711,6 +824,7 @@ def get_commercial_dashboard(
         "trends": trends,
         "insights": insights,
         "coverage": coverage,
+        "executive_kpis": executive_kpis,
     }
     _cache_set(key, result)
     return result

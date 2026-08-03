@@ -581,6 +581,15 @@ html[data-theme="dark"] .commercial-dashboard-v2 .commercial-story-block[data-st
   </div>
 </header>
 
+<div class="commercial-mobile-marquee" id="commercialMobileMarquee" aria-label="Indicadores y plataformas integradas a la operación comercial">
+  <div class="commercial-mobile-marquee__viewport">
+    <div class="commercial-mobile-marquee__track" id="commercialMobileMarqueeTrack">
+      <div class="commercial-mobile-marquee__group" id="commercialMobileMarqueeGroup"></div>
+      <div class="commercial-mobile-marquee__group" aria-hidden="true"></div>
+    </div>
+  </div>
+</div>
+
 <!-- FILTROS -->
 <div class="cd-filterbar" id="filterBar">
   <div class="cd-filters" id="filters" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="filtersTitle">
@@ -752,11 +761,6 @@ html[data-theme="dark"] .commercial-dashboard-v2 .commercial-story-block[data-st
   </div>
 </div>
 
-<aside class="commercial-information-ticker" id="commercialInformationTicker" aria-label="Información comercial y macroeconómica">
-  <div class="commercial-information-ticker__viewport">
-    <div class="commercial-information-ticker__track" id="commercialInformationTickerTrack"></div>
-  </div>
-</aside>
 </div></main>
 
 <div id="cdTip" role="tooltip" aria-label="Información contextual" aria-hidden="true"></div>
@@ -1096,22 +1100,17 @@ function render(){
   }
   $('metaTxt').textContent=(compact?(upd?upd.replace(' \u00b7 actualizado ',''):'hace instantes')+' \u00b7 '+universeLabel+totalLabel+' leads':universeLabel+totalLabel+' leads'+upd);
   document.querySelector('#metaLine .dot').style.background='var(--cd-ok)';
-  rKPI();rPriorities();rInsights();rev();rsla();rfun();renderOperationalControl(D.executive_summary);renderExecutiveStory(D.executive_story);renderManagementTargets(D.management_targets);renderCommercialInformationTicker();
+  rKPI();rPriorities();rInsights();rev();rsla();rfun();renderOperationalControl(D.executive_summary);renderExecutiveStory(D.executive_story);renderManagementTargets(D.management_targets);renderCommercialMobileMarquee();
   FIRST_KPI=false;
 }
 
-function renderCommercialInformationTicker(){
-  const root=$('commercialInformationTicker'),track=$('commercialInformationTickerTrack');
-  if(!root||!track)return;
-  const macro=D.macro_indicators||{},items=macro.indicators||{};
-  const item=(key,label)=>{const x=items[key]||{};if(x.available!==true||x.value==null)return '';const value=E(String(x.value)),asOf=x.as_of?FD(x.as_of):'No actualizado',source=x.source?' · '+E(x.source):'';return '<span class="commercial-information-ticker__item"><b>'+E(label)+'</b>: '+value+' · '+asOf+source+'</span>'};
-  const macroItems=['uf','usd','tpm'].map(key=>item(key,{uf:'UF Chile',usd:'Dólar observado',tpm:'TPM'}[key])).join('');
-  const macroFallback=macroItems?'':'<span class="commercial-information-ticker__item">Indicadores macroeconómicos pendientes de sincronización</span>';
-  const content='<span class="commercial-information-ticker__item brand"><b>PROCASA</b> · Inteligencia Comercial</span><span class="commercial-information-ticker__item">Información interna de uso analítico</span>'+macroItems+macroFallback+'<span class="commercial-information-ticker__item">Fuentes operacionales: Portal Inmobiliario, Yapo, TocToc y WhatsApp</span>';
-  track.innerHTML='<div class="commercial-information-ticker__content">'+content+'</div><div class="commercial-information-ticker__content" aria-hidden="true">'+content+'</div>';
-  const update=()=>{const contentNode=track.querySelector('.commercial-information-ticker__content');const shouldMove=window.matchMedia('(prefers-reduced-motion: no-preference)').matches&&contentNode&&contentNode.scrollWidth>root.clientWidth;root.classList.toggle('is-marquee',!!shouldMove)};
-  update();
-  if(!root.dataset.tickerBound){root.dataset.tickerBound='true';root.addEventListener('mouseenter',()=>root.classList.add('is-paused'));root.addEventListener('mouseleave',()=>root.classList.remove('is-paused'));root.addEventListener('focusin',()=>root.classList.add('is-paused'));root.addEventListener('focusout',()=>root.classList.remove('is-paused'));document.addEventListener('visibilitychange',()=>root.classList.toggle('is-paused',document.hidden));window.addEventListener('resize',update);window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener?.('change',update)}
+function renderCommercialMobileMarquee(){
+  if(!matchMedia('(max-width:767px)').matches)return;
+  const group=$('commercialMobileMarqueeGroup'),mirror=document.querySelector('#commercialMobileMarqueeTrack .commercial-mobile-marquee__group[aria-hidden="true"]');
+  if(!group||!mirror)return;
+  const items=D.macro_indicators?.indicators||{},macro=(key,label)=>{const x=items[key]||{};if(x.available!==true||x.value==null)return '';return '<span class="commercial-mobile-marquee__item macro"><b>'+E(label)+'</b> '+E(String(x.value))+(x.as_of?' · '+E(FDS(x.as_of)):'')+'</span>'};
+  const content='<span class="commercial-mobile-marquee__item brand">PROCASA INTELIGENCIA COMERCIAL</span><span class="commercial-mobile-marquee__separator">•</span>'+macro('uf','UF $')+macro('usd','DÓLAR OBSERVADO $')+macro('tpm','TPM')+'<span class="commercial-mobile-marquee__item macro">META MENSUAL 200 LEADS</span><span class="commercial-mobile-marquee__separator">•</span><span class="commercial-mobile-marquee__item">PORTAL INMOBILIARIO</span><span class="commercial-mobile-marquee__separator">•</span><span class="commercial-mobile-marquee__item">YAPO</span><span class="commercial-mobile-marquee__separator">•</span><span class="commercial-mobile-marquee__item">TOCTOC</span><span class="commercial-mobile-marquee__separator">•</span><span class="commercial-mobile-marquee__item">WHATSAPP</span>';
+  group.innerHTML=content;mirror.innerHTML=content;
 }
 
 function rPriorities(){

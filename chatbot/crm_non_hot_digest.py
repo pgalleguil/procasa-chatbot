@@ -363,12 +363,38 @@ def exclude_from_open_digest(db, *, lead_id, assignment_cycle_id=None):
 # Claim due digest windows
 # ---------------------------------------------------------------------------
 
+def _recover_stuck_digests(db, *, now):
+    """Reclaim non-HOT digests stuck in 'sending' with an expired lease.
+
+    A digest can be left in ``sending`` forever if the process restarts during
+    the provider call or the provider call hangs without a recorded outcome.
+    ``claim_next`` only picks up ``pending``/``failed_retryable``, so without
+    this step the executive would never be notified (notification lost).
+    Only digests with no accepted provider message id are recovered; anything
+    with delivery evidence is left untouched.
+    """
+    current = coerce_utc_datetime(now) or utc_now()
+    db[NOTIFICATION_COLLECTION].update_many(
+        {"digest_type": DIGEST_TYPE,
+         "message_domain": "commercial_notification",
+         "state": "sending",
+         "lease_expires_at": {"$lte": current},
+         "provider_message_id": {"$in": [None]},
+         "actually_delivered": {"$ne": True}},
+        {"$set": {"state": "failed_retryable", "lease_owner": None,
+                  "lease_expires_at": None, "delivery_token": None,
+                  "provider_call_started_at": None,
+                  "next_attempt_at": current, "updated_at": current}},
+    )
+
+
 def claim_due_digest(db, *, worker_id, now=None, notification_id=None):
     """Atomically claim one due non-HOT digest for delivery.
 
     Returns the claimed notification or ``None``.
     """
     current = coerce_utc_datetime(now) or utc_now()
+    _recover_stuck_digests(db, now=current)
     extra_filter = {
             "digest_type": DIGEST_TYPE,
             "message_domain": "commercial_notification",

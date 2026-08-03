@@ -632,6 +632,40 @@ def test_two_workers_no_duplicate():
     assert claimed2 is None
 
 
+def test_recover_stuck_digest_requeues_expired_sending():
+    """A digest stuck in 'sending' with an expired lease is reclaimed so the
+    notification is not lost forever."""
+    from datetime import timedelta
+    from chatbot.crm_non_hot_digest import _recover_stuck_digests
+    from chatbot.crm_metrics import utc_now
+
+    now = utc_now()
+    db, _, _ = default_db()
+    db["crm_notifications_v1"].docs = [
+        {"_id": "stuck", "digest_type": "non_hot_digest_v1",
+         "message_domain": "commercial_notification", "state": "sending",
+         "send_after": now - timedelta(seconds=60),
+         "lease_expires_at": now - timedelta(seconds=30),
+         "cycle_reasons": ["manual_lead_created"], "cycle_origins": ["manual_lead"],
+         "provider_message_id": None, "actually_delivered": None},
+        {"_id": "still_locked", "digest_type": "non_hot_digest_v1",
+         "message_domain": "commercial_notification", "state": "sending",
+         "lease_expires_at": now + timedelta(seconds=300),
+         "provider_message_id": None, "actually_delivered": None},
+        {"_id": "delivered", "digest_type": "non_hot_digest_v1",
+         "message_domain": "commercial_notification", "state": "sending",
+         "lease_expires_at": now - timedelta(seconds=30),
+         "provider_message_id": "wa-123", "actually_delivered": True},
+    ]
+
+    _recover_stuck_digests(db, now=now)
+
+    assert db["crm_notifications_v1"].find_one({"_id": "stuck"})["state"] == "failed_retryable"
+    assert db["crm_notifications_v1"].find_one({"_id": "still_locked"})["state"] == "sending"
+    # Never touch a delivery that has provider evidence.
+    assert db["crm_notifications_v1"].find_one({"_id": "delivered"})["state"] == "sending"
+
+
 def test_restart_does_not_drop_pending():
     """A restart does not drop a pending digest."""
     from chatbot.crm_non_hot_digest import accumulate_non_hot_lead

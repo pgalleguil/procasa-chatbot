@@ -17,6 +17,8 @@ import asyncio
 import logging
 from collections import Counter
 
+from bson import ObjectId
+
 from .crm_metrics import (
     calculate_sla, coerce_utc_datetime, event_evidence, utc_now,
 )
@@ -54,11 +56,23 @@ async def _revalidate(db, alert: dict) -> str | None:
     if not all([lead_id, cycle_id, recipient]):
         return "incomplete_alert_data"
 
-    lead = await db["leads"].find_one({"_id": lead_id}, {
+    lead_query_ids = [lead_id]
+    lead_query = {"_id": lead_id}
+    lead = await db["leads"].find_one(lead_query, {
         "pipeline_stage": 1, "stage": 1, "lead_temperature_effective": 1,
         "ejecutivo_asignado": 1, "phone": 1, "lead_origin": 1, "origin": 1,
         "prospecto.origen": 1, "lifecycle.hot_since": 1,
     })
+    try:
+        lead_query_ids.append(ObjectId(lead_id))
+    except Exception:
+        pass
+    if not lead and len(lead_query_ids) > 1:
+        lead = await db["leads"].find_one({"_id": lead_query_ids[1]}, {
+            "pipeline_stage": 1, "stage": 1, "lead_temperature_effective": 1,
+            "ejecutivo_asignado": 1, "phone": 1, "lead_origin": 1, "origin": 1,
+            "prospecto.origen": 1, "lifecycle.hot_since": 1,
+        })
     if not lead:
         return "lead_not_found"
     if _is_test_lead(lead):
@@ -86,6 +100,8 @@ async def _revalidate(db, alert: dict) -> str | None:
         return "management_completed"
 
     events = await db["crm_events"].find({"lead_id": lead_id, "timestamp": {"$gte": assigned_at}}).to_list(length=100)
+    if len(lead_query_ids) > 1:
+        events += await db["crm_events"].find({"lead_id": lead_query_ids[1], "timestamp": {"$gte": assigned_at}}).to_list(length=100)
     if any(event_evidence(e)["management"] for e in events):
         return "management_completed"
 

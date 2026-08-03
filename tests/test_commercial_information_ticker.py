@@ -47,3 +47,16 @@ def test_executive_cards_use_explicit_microcopy_and_balanced_layout():
     assert "repeat(6, minmax(0, 1fr))" in css
     assert "nth-child(5) { grid-column: 1 / -1; }" in css
     assert "valuation" in html or "valuation" in css or "valuation" in (ROOT / "analytics" / "leads_service.py").read_text(encoding="utf-8")
+
+
+def test_card_one_hierarchy_card_four_empty_state_and_desktop_marquee():
+    html = TEMPLATE.read_text(encoding="utf-8")
+    css = CSS.read_text(encoding="utf-8")
+    assert "cd-kpi-demand-pace" in html
+    assert "grid-template-rows: auto auto auto minmax(48px, auto) auto" in css
+    assert "cd-kpi-pace-badge" in html and "cd-kpi-foot" in html
+    assert "NO EVALUABLE" in html and "Cobertura insuficiente" in html
+    assert "No existen casos con trazabilidad suficiente" in html
+    assert "animation: commercial-mobile-marquee-scroll 42s linear infinite" in css
+    assert "animation: commercial-mobile-marquee-scroll 28s linear infinite" in css
+    assert "position: fixed" not in css and "position: sticky" not in css

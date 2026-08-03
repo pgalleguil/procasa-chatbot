@@ -680,16 +680,43 @@ def log_event(phone: str, event_type: str, actor: str = "system", meta: dict = N
         if event["evidence"]["effective_contact"]:
             first_fields["lifecycle.first_effective_contact_at"] = event_at
         for key, value in first_fields.items():
-            db["leads"].update_one({"_id": lead["_id"], key: {"$exists": False}}, {"$set": {key: value}})
+            db["leads"].update_one(
+                {"_id": lead["_id"], "$or": [{key: {"$exists": False}}, {key: None}]},
+                {"$set": {key: value}},
+            )
         if cycle:
             db["crm_assignment_cycles"].update_one(
-                {"_id": cycle["_id"], "first_valid_management_at": {"$exists": False}},
+                {"_id": cycle["_id"], "$or": [
+                    {"first_valid_management_at": {"$exists": False}},
+                    {"first_valid_management_at": None},
+                ]},
                 {"$set": {"first_valid_management_at": event_at, "first_valid_management_actor": actor}},
             )
-        # Any canonical management evidence must stop the lead from remaining
-        # unattended.  Click/send/call events are excluded by event_evidence()
-        # and never reach this block.
-        db[COLLECTION_CONVERSATIONS].update_one(
+        if event["evidence"]["result"] == "NO_RESPONDIO":
+            db[COLLECTION_CONVERSATIONS].update_one(
+                {"_id": lead["_id"]},
+                {"$set": {
+                    "management_status": "managed_waiting_response",
+                    "contact_attempted": True,
+                    "effective_contact": False,
+                    "follow_up_required": True,
+                }},
+            )
+            if cycle:
+                db["crm_assignment_cycles"].update_one(
+                    {"_id": cycle["_id"]},
+                    {"$set": {
+                        "sla_first_management_status": "completed",
+                        "sla_pending_alerts_cancelled_at": event_at,
+                        "last_management_result": "NO_RESPONDIO",
+                        "sla_alert_claims.yellow.status": "suppressed",
+                        "sla_alert_claims.red.status": "suppressed",
+                    }},
+                )
+        # Effective contact may promote the pipeline to CONTACTED. A valid
+        # no-response attempt stops SLA, but remains in the non-contact state.
+        if event["evidence"]["effective_contact"]:
+            db[COLLECTION_CONVERSATIONS].update_one(
             {
                 "_id": lead["_id"],
                 "$or": [
@@ -709,7 +736,7 @@ def log_event(phone: str, event_type: str, actor: str = "system", meta: dict = N
                 "stage": "CONTACTED",
                 "last_crm_update": event_at,
             }},
-        )
+            )
     
     # Precomputación SaaS: Actualizar métricas del lead atómicamente
     try:

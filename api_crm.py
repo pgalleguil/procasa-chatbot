@@ -1506,21 +1506,10 @@ def update_lead_crm_data(phone, data):
     if not normalized_result:
         logger.warning("CRM management rejected without canonical result: phone=%s", phone_clean)
         return False
-    if str(result).strip().lower() == "intento_fallido" or normalized_result == "NO_RESPONDIO":
-        log_event(phone_clean, InteractionType.HUMAN_NOTE, actor_name or "unresolved_actor", {
-            "interaction_type": interaction_type,
-            "result": result,
-            "notes": data.get("notas"),
-            "action_label": data.get("action_label") or "Intento Fallido",
-            "details_json": data.get("details_json", {}),
-            "meaningful_change": False,
-            "management_rejected": True,
-        }, lead_id=current_lead["_id"], actor_type="human", result=result,
-           confirmed=True)
-        return False
-
     new_state = data.get("estado_calculado")
-    if not new_state:
+    if normalized_result == "NO_RESPONDIO":
+        new_state = PipelineStage.NEW
+    elif not new_state:
         res = data.get("resultado_gestion")
         if res == "visita_agendada": new_state = "visita"
         elif res == "lead_cerrado": new_state = "cerrado"
@@ -1531,10 +1520,10 @@ def update_lead_crm_data(phone, data):
     
     # 1. ACTUALIZACIÓN DE ESTADO VIA SERVICE (Prioridad Absoluta)
     # Forzamos promoción si es NEW y hay gestión
-    if (new_state == old_state) and (old_state == PipelineStage.NEW or str(old_state).lower() in ["nuevo", "new"]):
+    if (normalized_result != "NO_RESPONDIO" and new_state == old_state) and (old_state == PipelineStage.NEW or str(old_state).lower() in ["nuevo", "new"]):
         new_state = "gestion"
 
-    if new_state and new_state != old_state:
+    if normalized_result != "NO_RESPONDIO" and new_state and new_state != old_state:
         valid_stage = new_state
         if new_state == "visita": valid_stage = PipelineStage.VISIT_SCHEDULED
         elif new_state == "cerrado":

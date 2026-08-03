@@ -9,6 +9,7 @@ from chatbot.constants import CHILE_TZ
 from chatbot.crm_metrics import (
     calculate_sla,
     coerce_utc_datetime,
+    event_evidence,
     is_pre_visual_cutover,
     resolve_hot_start_at,
 )
@@ -2380,6 +2381,127 @@ def query_sla_risk_panel(period_start=None, period_end=None, filters=None):
         now=datetime.now(timezone.utc),
         cutover_at=getattr(Config, "CRM_SLA_VISUAL_CUTOVER_AT", None),
     )
+
+
+def _sla_accountability_bucket():
+    return {
+        "eligible": 0, "managed_within": 0, "managed_outside": 0,
+        "open_breached": 0, "breached_with_activity_without_result": 0,
+        "breached_without_activity": 0, "within_rate": None,
+        "median_business_minutes": None, "p90_business_minutes": None,
+        "_durations": [],
+    }
+
+
+def query_sla_accountability(period_start=None, period_end=None, filters=None):
+    """Consolidated SLA accountability by executive using canonical CRM evidence."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    raw = list(db["leads"].aggregate([
+        _normalized_created_at_stage(),
+        {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
+        {"$project": {
+            "_id": 1, "ejecutivo_asignado": 1, "lead_temperature_effective": 1,
+            "temperature_history": 1, "lifecycle.assigned_at": 1,
+            "lifecycle.first_valid_management_at": 1,
+        }},
+    ]))
+    unique = {}
+    for lead in raw:
+        unique.setdefault(str(lead.get("_id")), lead)
+    leads = list(unique.values())
+    ids = [lead.get("_id") for lead in leads if lead.get("_id") is not None]
+    events_by_lead = {}
+    if ids:
+        for event in db["crm_events"].find({"lead_id": {"$in": ids}}):
+            events_by_lead.setdefault(str(event.get("lead_id")), []).append(event)
+
+    rows = {}
+    summary = {"open_breached": 0, "breached_with_activity_without_result": 0,
+               "breached_without_activity": 0, "registration_gap_rate": None}
+    now = datetime.now(timezone.utc)
+    cutover = coerce_utc_datetime(getattr(Config, "CRM_SLA_VISUAL_CUTOVER_AT", None))
+
+    def row_for(name):
+        return rows.setdefault(name, {"executive_id": name, "executive_name": name,
+            "assigned": 0, "lead": _sla_accountability_bucket(),
+            "lead_hot": _sla_accountability_bucket()})
+
+    for lead in leads:
+        lifecycle = lead.get("lifecycle") or {}
+        assigned = coerce_utc_datetime(lifecycle.get("assigned_at"))
+        name = lead.get("ejecutivo_asignado") or "Sin asignar"
+        row = row_for(str(name))
+        row["assigned"] += 1
+        if not assigned or (cutover and is_pre_visual_cutover(assigned, cutover=cutover)):
+            continue
+        managed = coerce_utc_datetime(lifecycle.get("first_valid_management_at"))
+        if managed and managed < assigned:
+            continue
+        history = lead.get("temperature_history") or []
+        has_hot = str(lead.get("lead_temperature_effective") or "").upper() == "HOT" or any(
+            str((item or {}).get("value") or (item or {}).get("temperature") or "").upper() == "HOT"
+            for item in history if isinstance(item, Mapping)
+        )
+        hot_start = resolve_hot_start_at(assigned_at=assigned, temperature_history=history,
+            effective_temperature=lead.get("lead_temperature_effective")) if has_hot else None
+        profile = "lead_hot" if hot_start and (not managed or hot_start < managed) else "lead"
+        if has_hot and not hot_start:
+            continue
+        sla = calculate_sla(assigned_at=assigned, first_valid_management_at=managed, now=now,
+            temperature="HOT" if profile == "lead_hot" else "COLD", hot_started_at=hot_start,
+            require_hot_start=profile == "lead_hot")
+        if profile == "lead_hot" and hot_start and hot_start > assigned:
+            pre_hot = calculate_sla(assigned_at=assigned, first_valid_management_at=hot_start,
+                now=now, temperature="COLD")
+            if pre_hot.get("canonical_state") in {"MANAGED_OUTSIDE_SLA", "BREACHED"}:
+                sla["canonical_state"] = "MANAGED_OUTSIDE_SLA" if pre_hot["canonical_state"] == "MANAGED_OUTSIDE_SLA" else "BREACHED"
+        if sla.get("canonical_state") in {"SLA_NOT_STARTED", "INSUFFICIENT_DATA"}:
+            continue
+        bucket = row[profile]
+        bucket["eligible"] += 1
+        minutes = sla.get("hot_minutes") if profile == "lead_hot" else sla.get("minutes")
+        if managed:
+            if sla.get("canonical_state") == "MANAGED_WITHIN_SLA":
+                bucket["managed_within"] += 1
+            else:
+                bucket["managed_outside"] += 1
+            if minutes is not None:
+                bucket["_durations"].append(minutes)
+            continue
+        if sla.get("canonical_state") != "BREACHED":
+            continue
+        bucket["open_breached"] += 1
+        summary["open_breached"] += 1
+        has_activity = any(
+            event_evidence(event).get("contact_attempt")
+            and (event_time := coerce_utc_datetime(event.get("timestamp") or event.get("occurred_at")))
+            and event_time >= assigned and event_time <= now
+            for event in events_by_lead.get(str(lead.get("_id")), [])
+        )
+        key = "breached_with_activity_without_result" if has_activity else "breached_without_activity"
+        bucket[key] += 1
+        summary[key] += 1
+
+    for row in rows.values():
+        for key in ("lead", "lead_hot"):
+            bucket = row[key]
+            managed_total = bucket["managed_within"] + bucket["managed_outside"]
+            bucket["within_rate"] = _coverage_pct(bucket["managed_within"], managed_total)
+            durations = sorted(bucket.pop("_durations"))
+            bucket["median_business_minutes"] = _sla_percentile(durations, 50)
+            bucket["p90_business_minutes"] = _sla_percentile(durations, 90)
+    if summary["open_breached"]:
+        summary["registration_gap_rate"] = _coverage_pct(
+            summary["breached_with_activity_without_result"], summary["open_breached"]
+        )
+    return {"summary": summary, "by_executive": sorted(rows.values(), key=lambda row: (
+        -row["lead"]["open_breached"] - row["lead_hot"]["open_breached"],
+        -row["lead"]["breached_with_activity_without_result"] - row["lead_hot"]["breached_with_activity_without_result"],
+        str(row["executive_name"]).lower(),
+    )), "reconciliation": {"open_breached_delta": summary["open_breached"] - (
+        summary["breached_with_activity_without_result"] + summary["breached_without_activity"]
+    )}}
 
 
 def default_sla_response():

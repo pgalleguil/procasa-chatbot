@@ -538,6 +538,7 @@ def get_commercial_dashboard(
         query_commercial_kpis,
         query_commercial_funnel,
         query_sla_risk_panel,
+        query_sla_accountability,
         query_demand_by_price_ranges,
         query_commercial_executive_matrix,
         query_commercial_property_ranking,
@@ -619,6 +620,7 @@ def get_commercial_dashboard(
         "kpis": _COMMERCIAL_QUERY_POOL.submit(query_commercial_kpis, **kwargs, **comparison_kwargs),
         "funnel": _COMMERCIAL_QUERY_POOL.submit(query_commercial_funnel, **kwargs),
         "sla": _COMMERCIAL_QUERY_POOL.submit(query_sla_risk_panel, **kwargs),
+        "sla_accountability": _COMMERCIAL_QUERY_POOL.submit(query_sla_accountability, **kwargs),
         "demand": _COMMERCIAL_QUERY_POOL.submit(query_demand_by_price_ranges, **kwargs),
         "executives": _COMMERCIAL_QUERY_POOL.submit(query_commercial_executive_matrix, **kwargs),
         "properties": _COMMERCIAL_QUERY_POOL.submit(query_commercial_property_ranking, **kwargs),
@@ -636,6 +638,7 @@ def get_commercial_dashboard(
     kpis = futures["kpis"].result()
     funnel = futures["funnel"].result()
     sla = futures["sla"].result()
+    sla_accountability = futures["sla_accountability"].result()
     executive_summary = query_executive_summary(
         **kwargs, **comparison_kwargs, sla_risk=sla,
     )
@@ -696,6 +699,7 @@ def get_commercial_dashboard(
         "kpis": kpis,
         "funnel": funnel,
         "sla_risk": sla,
+        "sla_accountability": sla_accountability,
         "executive_summary": executive_summary,
         "executive_story": _build_executive_story(executive_summary, sla, period_info, variance_drivers, merged_filters, management_targets),
         "variance_drivers": variance_drivers,

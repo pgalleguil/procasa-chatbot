@@ -193,3 +193,62 @@ async def send_whatsapp_message(number: str, text: str) -> bool:
     """API compatible: conserva el booleano usado por los módulos existentes."""
     result = await send_whatsapp_message_detailed(number, text)
     return bool(result.get("success"))
+
+
+def send_whatsapp_message_detailed_sync(number: str, text: str) -> dict:
+    """Versión síncrona de ``send_whatsapp_message_detailed`` (sin asyncio).
+
+    Para workers que corren en hilos (p. ej. el digest no-HOT): evita el
+    ``asyncio.run()`` en un hilo que puede quedarse colgado.  La lógica HTTP
+    es idéntica a la versión async que sí funciona en los demás flujos.
+    """
+    if not text:
+        return {"success": False, "delivery_status": "rejected_empty_message", "provider_message_id": None}
+    if not number or number in ("+56900000000", "56900000000"):
+        logger.error("[WHATSAPP_SEND_SYNC] rejected_placeholder phone=%s", str(number)[:15])
+        return {"success": False, "delivery_status": "rejected_placeholder", "provider_message_id": None,
+                "http_status": None, "provider_called": False}
+
+    clean = provider_recipient(number)
+    masked = mask_whatsapp_recipient(number)
+    url = f"{Config.WASENDER_BASE_URL}/send-message"
+    payload = {"to": clean, "text": text}
+    headers = {
+        "Authorization": f"Bearer {Config.WASENDER_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=20)
+    except Exception as exc:
+        logger.error(
+            "[WHATSAPP_SEND_SYNC] recipient=%s status=uncertain error_type=%s",
+            masked, type(exc).__name__,
+        )
+        return {"success": False, "delivery_status": "delivery_unknown",
+                "provider_message_id": None, "http_status": None, "provider_call_uncertain": True}
+
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+    success = response.status_code == 200 and body.get("success", True) is not False
+    if success:
+        message_id = _provider_message_id(body)
+        data = body.get("data") if isinstance(body.get("data"), dict) else {}
+        provider_status = normalize_provider_status(data.get("status") or body.get("status"))
+        logger.info("[WHATSAPP_SEND_SYNC] recipient=%s status=accepted provider_message_id=%s",
+                    masked, message_id or "unavailable")
+        return {"success": True,
+                "delivery_status": provider_status if provider_status != "unknown" else "accepted",
+                "provider_message_id": message_id,
+                "http_status": response.status_code}
+    retry_after = None
+    if response.status_code == 429:
+        try:
+            retry_after = max(int(response.headers.get("Retry-After", "60")), 1)
+        except (TypeError, ValueError):
+            retry_after = 60
+    logger.warning("[WHATSAPP_SEND_SYNC] recipient=%s status=failed http_status=%s",
+                   masked, response.status_code)
+    return {"success": False, "delivery_status": "failed",
+            "provider_message_id": None, "http_status": response.status_code, "retry_after": retry_after}

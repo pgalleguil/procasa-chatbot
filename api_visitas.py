@@ -385,13 +385,34 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         if existing:
             visita_doc["version"] = existing.get("version", 1) + 1
             visita_doc["timeline"] = existing.get("timeline", []) + visita_doc["timeline"]
-            visita_doc["created_at"] = existing.get("created_at")
             old_security = existing.get("security", {})
             old_security["original_hash"] = None
             old_security["original_pdf_path"] = str(perm_original_path)
             visita_doc["security"] = old_security
-            visita_doc["status"] = existing.get("status", "created")
-            
+
+            prev_status = existing.get("status", "created")
+            if prev_status in ["sent", "opened"]:
+                # Re-emisión: la orden ya fue enviada al cliente antes. Al crearla
+                # nuevamente se reinicia como borrador para poder reenviarla con un
+                # token nuevo y se actualiza la fecha a hoy, en lugar de conservar
+                # el estado/fecha antiguo (que bloqueaba el reenvío y mostraba una
+                # fecha equivocada en la tabla).
+                visita_doc["status"] = "created"
+                reissue_now = datetime.now(CHILE_TZ)
+                visita_doc["created_at"] = reissue_now
+                visita_doc["created_at_local"] = reissue_now.strftime('%Y-%m-%d %H:%M:%S')
+                old_security["token"] = None
+                old_security["token_expiry"] = None
+                old_security["token_used"] = False
+                old_security["otp"] = None
+                old_security["otp_expiry"] = None
+                old_security["otp_attempts"] = 0
+            else:
+                # Borrador aún no enviado: se mantiene la fecha original de creación.
+                visita_doc["status"] = "created"
+                visita_doc["created_at"] = existing.get("created_at")
+                visita_doc["created_at_local"] = existing.get("created_at_local") or datetime.now(CHILE_TZ).strftime('%Y-%m-%d %H:%M:%S')
+
             await adb["visitas"].replace_one({"visita_code": visita_code}, visita_doc)
         else:
             await adb["visitas"].insert_one(visita_doc)

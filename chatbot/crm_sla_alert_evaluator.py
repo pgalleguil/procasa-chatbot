@@ -97,7 +97,8 @@ _OUTREACH_PRIORITY = {
 }
 
 
-def classify_outreach_state(events, *, assigned_at=None, mgmt_results=None) -> str:
+def classify_outreach_state(events, *, assigned_at=None, mgmt_results=None,
+                            notifications=None) -> str:
     """Select strongest post-assignment outreach evidence.
 
     Events: CLICK_WHATSAPP_LEAD→whatsapp_opened, SEND_WA_LEAD(confirmed)→whatsapp_sent,
@@ -108,6 +109,7 @@ def classify_outreach_state(events, *, assigned_at=None, mgmt_results=None) -> s
 
     mgmt_results: list of crm_management_results dicts.  If any have result_type
     MESSAGE_SENT_WAITING_RESPONSE (post-assignment), force whatsapp_sent.
+    notifications: canonical sent CRM notifications for this assignment cycle.
     """
     start = coerce_utc_datetime(assigned_at) if assigned_at else None
     best, best_rank = "none", 0
@@ -150,6 +152,16 @@ def classify_outreach_state(events, *, assigned_at=None, mgmt_results=None) -> s
             if start and occurred and occurred >= start:
                 if _OUTREACH_PRIORITY["whatsapp_sent"] > best_rank:
                     best, best_rank = "whatsapp_sent", _OUTREACH_PRIORITY["whatsapp_sent"]
+
+    # A legacy SEND_WA_LEAD event may be recorded without confirmation even
+    # though the canonical assignment notification was accepted by WhatsApp.
+    # The durable notification is authoritative for outreach classification.
+    if any(
+        str(n.get("state") or "").lower() == "sent"
+        and n.get("provider_message_id")
+        for n in notifications or ()
+    ) and _OUTREACH_PRIORITY["whatsapp_sent"] > best_rank:
+        best, best_rank = "whatsapp_sent", _OUTREACH_PRIORITY["whatsapp_sent"]
 
     return best
 
@@ -323,6 +335,20 @@ async def evaluate_sla_alerts(
         cid = str(m.get("assignment_cycle_id", ""))
         mgmt_by_cycle.setdefault(cid, []).append(m)
 
+    notification_cursor = db["crm_notifications_v1"].find(
+        {"metadata.assignment_cycle_id": {"$in": cycle_ids}, "state": "sent",
+         "provider_message_id": {"$exists": True}},
+        {"metadata.assignment_cycle_id": 1, "state": 1,
+         "provider_message_id": 1},
+    )
+    sent_notifications = await notification_cursor.to_list(length=limit_mgmt_results)
+    notifications_by_cycle: dict[str, list[dict]] = {}
+    for n in sent_notifications:
+        metadata = n.get("metadata") or {}
+        cid = str(metadata.get("assignment_cycle_id") or "")
+        if cid:
+            notifications_by_cycle.setdefault(cid, []).append(n)
+
     # 4. Evaluate each cycle
     excluded = Counter()
     alerts: list[dict] = []
@@ -408,6 +434,7 @@ async def evaluate_sla_alerts(
         # ---- Classify outreach (uses events + management_results) ----
         outreach_state = classify_outreach_state(
             events, assigned_at=assigned_at, mgmt_results=cycle_mgmts,
+            notifications=notifications_by_cycle.get(cycle_id, []),
         )
 
         # ---- Calculate SLA ----

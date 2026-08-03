@@ -1349,6 +1349,7 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
     }).sort("timestamp", -1)
     
     formatted_new_history = []
+    _last_status_transition = None
     for evt in new_events_cursor:
         meta = evt.get("meta", {})
         # Distincion de tipo para UI y filtro de ruido
@@ -1423,6 +1424,17 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
                 final_icon, final_class = "fa-solid fa-trophy", "tl-win"
             elif any(x in res for x in ["perdido", "descartado", "inválido", "cerrado"]):
                 final_icon, final_class = "fa-solid fa-ban", "tl-loss"
+
+        # Historical de-duplication: the legacy auto-promotion could log two
+        # identical STATUS_CHANGE events back-to-back (same from/to).  Collapse
+        # consecutive duplicates so the history shows one clean transition.
+        if evt_type == "STATUS_CHANGE":
+            transition_key = (meta.get("from"), meta.get("to"))
+            if transition_key == _last_status_transition:
+                continue
+            _last_status_transition = transition_key
+        else:
+            _last_status_transition = None
 
         formatted_new_history.append({
             "timestamp": ts_obj,
@@ -1559,16 +1571,27 @@ def update_lead_crm_data(phone, data):
                 notes=data.get("notas"),
             )
 
-        if not stage_updated:
-            logger.error(
-                "CRM management saved without a valid stage transition: phone=%s target=%s",
+        if stage_updated:
+            refreshed_lead = db["leads"].find_one({"_id": current_lead["_id"]}, {"pipeline_stage": 1})
+            new_state = (refreshed_lead or {}).get("pipeline_stage") or valid_stage
+        else:
+            # The result itself is still a valid human management even if the
+            # milestone promotion was blocked by a required-field rule (for
+            # example VISIT_SCHEDULED without visit_date).  Never discard the
+            # management: keep the current stage and persist the result below so
+            # the lead is not left unattended by a failed transition.
+            logger.warning(
+                "CRM milestone transition skipped (required fields not met); management still recorded: "
+                "phone=%s target=%s old=%s",
                 phone_clean,
                 valid_stage,
+                old_state,
             )
-            return False
-
-        refreshed_lead = db["leads"].find_one({"_id": current_lead["_id"]}, {"pipeline_stage": 1})
-        new_state = (refreshed_lead or {}).get("pipeline_stage") or valid_stage
+            if not (
+                old_state == PipelineStage.NEW
+                or str(old_state).lower() in {"nuevo", "new", "pipelinestage.new"}
+            ):
+                new_state = old_state
 
     # Agendar tarea solo si hay fecha válida
     if next_date:

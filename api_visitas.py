@@ -22,7 +22,7 @@ from chatbot.whatsapp_client import send_whatsapp_message
 
 from services.security_contracts import SecurityContracts
 from services.pdf_generator_visitas import PDFGeneratorVisitas as PDFGenerator
-from services.gdrive_sync import GDriveSync, expedition_folder_name
+from services.gdrive_sync import GDriveSync, expedition_folder_name, sanitize_folder_name
 
 logger = logging.getLogger("procasa-visitas")
 router = APIRouter(prefix="/visitas", tags=["Visitas"])
@@ -447,16 +447,11 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         base_url = str(request.base_url).rstrip('/')
         url_firma = f"{base_url}/visitas/view/{visita_code}"
         
-        resp = {
+        return {
             "status": "success",
             "visita_code": visita_code,
             "url_firma": url_firma,
-            "_debug_gdrive_folder_id": visita_doc["security"].get("gdrive_folder_id"),
-            "_debug_gdrive_file_id": visita_doc["security"].get("original_pdf_drive_id"),
-            "_debug_steps": drive_debug["steps"],
-            "_debug_error": drive_debug["error"],
         }
-        return resp
         
     except Exception as e:
         logger.error(f"Error en /api/create: {e}")

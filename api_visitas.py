@@ -298,22 +298,9 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
 
         property_code = data.get("property_code", "").strip()
         
-        # Verificar si existe orden de visita previo creado (no firmado)
-        existing = None
-        if property_code:
-            existing = await adb["visitas"].find_one({
-                "property_code": property_code, 
-                "status": {"$in": ["created", "sent", "opened"]}
-            })
-            
-        if existing:
-            if existing.get("status") in ["otp_requested", "otp_verified", "signed"]:
-                raise HTTPException(status_code=400, detail="Este orden de visita ya está en proceso de firma o ha sido firmado. No puede ser modificado.")
-            visita_code = existing["visita_code"]
-        else:
-            year = datetime.now().year
-            short_id = str(uuid.uuid4())[:4].upper()
-            visita_code = f"VIS-{year}-{short_id}"
+        year = datetime.now().year
+        short_id = str(uuid.uuid4())[:4].upper()
+        visita_code = f"VIS-{year}-{short_id}"
         # 1. Preparar rutas (PDF se generar\u00e1 as\u00edncronamente)
         data['visita_code'] = visita_code
         perm_dir = BASE_DIR / "visitas_pdf"
@@ -382,40 +369,7 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             "executive": executive
         }
         
-        if existing:
-            visita_doc["version"] = existing.get("version", 1) + 1
-            visita_doc["timeline"] = existing.get("timeline", []) + visita_doc["timeline"]
-            old_security = existing.get("security", {})
-            old_security["original_hash"] = None
-            old_security["original_pdf_path"] = str(perm_original_path)
-            visita_doc["security"] = old_security
-
-            prev_status = existing.get("status", "created")
-            if prev_status in ["sent", "opened"]:
-                # Re-emisión: la orden ya fue enviada al cliente antes. Al crearla
-                # nuevamente se reinicia como borrador para poder reenviarla con un
-                # token nuevo y se actualiza la fecha a hoy, en lugar de conservar
-                # el estado/fecha antiguo (que bloqueaba el reenvío y mostraba una
-                # fecha equivocada en la tabla).
-                visita_doc["status"] = "created"
-                reissue_now = datetime.now(CHILE_TZ)
-                visita_doc["created_at"] = reissue_now
-                visita_doc["created_at_local"] = reissue_now.strftime('%Y-%m-%d %H:%M:%S')
-                old_security["token"] = None
-                old_security["token_expiry"] = None
-                old_security["token_used"] = False
-                old_security["otp"] = None
-                old_security["otp_expiry"] = None
-                old_security["otp_attempts"] = 0
-            else:
-                # Borrador aún no enviado: se mantiene la fecha original de creación.
-                visita_doc["status"] = "created"
-                visita_doc["created_at"] = existing.get("created_at")
-                visita_doc["created_at_local"] = existing.get("created_at_local") or datetime.now(CHILE_TZ).strftime('%Y-%m-%d %H:%M:%S')
-
-            await adb["visitas"].replace_one({"visita_code": visita_code}, visita_doc)
-        else:
-            await adb["visitas"].insert_one(visita_doc)
+        await adb["visitas"].insert_one(visita_doc)
 
         def generate_original_pdf_bg(data_dict, p_code, p_path):
             import time

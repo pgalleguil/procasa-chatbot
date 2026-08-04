@@ -449,17 +449,8 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                         raise RuntimeError("upload_file devolvió ID inválido")
                     contract_doc["security"]["original_pdf_drive_id"] = file_id
 
-                    # Subir copia directamente a la carpeta principal de Convenios
-                    if gdrive_sync.parent_folder_id and gdrive_sync.parent_folder_id != folder_id:
-                        try:
-                            gdrive_sync.upload_file(
-                                gdrive_sync.parent_folder_id, f"{contract_code}_original.pdf", pdf_b, "application/pdf"
-                            )
-                        except Exception as e_parent:
-                            logger.warning(f"[PDF] No se pudo subir copia a carpeta raiz {contract_code}: {e_parent}")
-
                     drive_ok = True
-                    logger.info(f"[PDF] Drive upload OK intento={attempt} code={contract_code} file_id={file_id}")
+                    logger.info(f"[PDF] Drive upload OK en expediente intento={attempt} code={contract_code} file_id={file_id}")
                     break
                 except Exception as e:
                     last_drive_err = e
@@ -575,13 +566,6 @@ async def download_original_pdf(contract_code: str):
                 new_file_id = gdrive_sync.upload_file(
                     folder_id, f"{contract_code}_original.pdf", pdf_bytes, "application/pdf"
                 )
-                if gdrive_sync.parent_folder_id and gdrive_sync.parent_folder_id != folder_id:
-                    try:
-                        gdrive_sync.upload_file(
-                            gdrive_sync.parent_folder_id, f"{contract_code}_original.pdf", pdf_bytes, "application/pdf"
-                        )
-                    except Exception:
-                        pass
                 if new_file_id and new_file_id != "mock_file_id":
                     local_db_dl["contracts"].update_one(
                         {"contract_code": contract_code},
@@ -590,7 +574,7 @@ async def download_original_pdf(contract_code: str):
                             "security.gdrive_folder_id": folder_id
                         }}
                     )
-                    logger.info(f"[DOWNLOAD] PDF regenerado y subido a Drive code={contract_code} file_id={new_file_id}")
+                    logger.info(f"[DOWNLOAD] PDF regenerado y subido a carpeta de expediente code={contract_code} file_id={new_file_id}")
         except Exception as e:
             logger.error(f"[DOWNLOAD] No se pudo subir PDF regenerado a Drive code={contract_code}: {e}")
 

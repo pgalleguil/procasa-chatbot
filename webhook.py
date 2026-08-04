@@ -332,13 +332,6 @@ async def lifespan(app: FastAPI):
                         g_inst.share_item(f_id)
                     if d_id:
                         g_inst.share_item(d_id)
-                        if g_inst.parent_folder_id:
-                            try:
-                                pdf_b = g_inst.download_file(d_id)
-                                if pdf_b:
-                                    g_inst.upload_file(g_inst.parent_folder_id, f"{code}_original.pdf", pdf_b, "application/pdf")
-                            except Exception:
-                                pass
             logger.info("[GDRIVE] Permisos y copias en carpeta principal actualizados correctamente.")
         except Exception as e:
             logger.warning(f"[GDRIVE] Error reparando permisos antiguos de Drive: {e}")

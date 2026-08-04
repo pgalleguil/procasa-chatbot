@@ -62,14 +62,28 @@ class GDriveSync:
         if not self.service or not file_or_folder_id or file_or_folder_id in ["mock_folder_id", "mock_file_id"]:
             return
         try:
+            # 1. Acceso público por enlace (cualquiera con el link puede ver)
             self.service.permissions().create(
                 fileId=file_or_folder_id,
                 body={'type': 'anyone', 'role': 'writer'},
                 supportsAllDrives=True
             ).execute()
-            logger.info(f"[GDRIVE] Permiso otorgado correctamente a {file_or_folder_id}")
         except Exception as e:
-            logger.warning(f"[GDRIVE] No se pudo otorgar permiso compartibilidad a {file_or_folder_id}: {e}")
+            logger.warning(f"[GDRIVE] No se pudo otorgar permiso público a {file_or_folder_id}: {e}")
+
+        # 2. Compartir con el email específico para que aparezca en "Compartido conmigo"
+        share_email = os.getenv("GDRIVE_SHARE_EMAIL", "")
+        if share_email:
+            try:
+                self.service.permissions().create(
+                    fileId=file_or_folder_id,
+                    body={'type': 'user', 'role': 'writer', 'emailAddress': share_email},
+                    supportsAllDrives=True,
+                    sendNotificationEmail=False
+                ).execute()
+                logger.info(f"[GDRIVE] Compartido con {share_email}: {file_or_folder_id}")
+            except Exception as e:
+                logger.warning(f"[GDRIVE] No se pudo compartir con {share_email}: {e}")
 
     def create_folder(self, folder_name: str) -> str:
         """Crea una carpeta y retorna su ID."""

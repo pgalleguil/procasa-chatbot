@@ -227,6 +227,8 @@ class Config:
     GDRIVE_CREDENTIALS_JSON = os.getenv("GDRIVE_CREDENTIALS_JSON")
     GDRIVE_VISITAS_FOLDER_ID = os.getenv("GDRIVE_VISITAS_FOLDER_ID", "195216J83gisBPMcpV6e-Y4yju3GxGnPT")
     GDRIVE_CONVENIOS_FOLDER_ID = os.getenv("GDRIVE_CONVENIOS_FOLDER_ID", "1GYoZXzRWAslZjprwn9980MXPx9rN3bes")
+    # Email con el que se comparten automáticamente las carpetas/archivos creados por el Service Account
+    GDRIVE_SHARE_EMAIL = os.getenv("GDRIVE_SHARE_EMAIL", "")
 
     # === CLAVE SECRETA PARA SESIONES (OBLIGATORIA) ===
     SECRET_KEY = os.getenv("SECRET_KEY", "procasa_stable_secret_session_key_2025_hq")

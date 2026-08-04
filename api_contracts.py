@@ -415,61 +415,39 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             local_db = get_db()
             pdf_b = PDFGenerator.generate_original_contract(data)
             orig_hash = SecurityContracts.hash_document(pdf_b)
+            contract_doc["security"]["original_hash"] = orig_hash
+
+            # Copia local de respaldo
             t_dir = BASE_DIR / "tmp" / "contracts" / contract_code
             t_dir.mkdir(parents=True, exist_ok=True)
             with open(t_dir / "contrato_original.pdf", "wb") as f:
                 f.write(pdf_b)
             with open(perm_original_path, "wb") as f:
                 f.write(pdf_b)
-            contract_doc["security"]["original_hash"] = orig_hash
 
-            # ── Drive upload: OBLIGATORIO con 3 reintentos ────────────────────
-            import time as _time
+            # Subir a carpeta de expediente en Google Drive (síncrono, sin retry loop)
             client_name = data.get("cliente_nombre", "")
             prop_code = data.get("property_code", "") or data.get("propiedad_codigo", "")
-            drive_ok = False
-            last_drive_err = None
-            for attempt in range(1, 4):
-                try:
-                    folder_id = _get_or_create_expedition_folder(
-                        local_db, "contracts", "contract_code", contract_code, client_name, prop_code
-                    )
-                    if not folder_id:
-                        raise RuntimeError("No se pudo obtener/crear carpeta en Drive")
-                    contract_doc["security"]["gdrive_folder_id"] = folder_id
-                    file_id = gdrive_sync.upload_file(
-                        folder_id, f"{contract_code}_original.pdf", pdf_b, "application/pdf"
-                    )
-                    if not file_id or file_id == "mock_file_id":
-                        raise RuntimeError("upload_file devolvió ID inválido")
-                    contract_doc["security"]["original_pdf_drive_id"] = file_id
-
-                    drive_ok = True
-                    logger.info(f"[PDF] Drive upload OK en expediente intento={attempt} code={contract_code} file_id={file_id}")
-                    break
-                except Exception as e:
-                    last_drive_err = e
-                    logger.warning(f"[PDF] Drive upload FALLO intento={attempt}/3 code={contract_code}: {e}")
-                    if attempt < 3:
-                        _time.sleep(2 ** attempt)  # 2s, 4s
-
-            if not drive_ok:
-                logger.critical(
-                    f"[PDF] DRIVE UPLOAD FALLIDO DEFINITIVAMENTE code={contract_code}: {last_drive_err}. "
-                    f"El PDF solo existe en local — verificar Drive y subir manualmente."
+            folder_id = _get_or_create_expedition_folder(
+                local_db, "contracts", "contract_code", contract_code, client_name, prop_code
+            )
+            if folder_id:
+                contract_doc["security"]["gdrive_folder_id"] = folder_id
+                file_id = gdrive_sync.upload_file(
+                    folder_id, f"{contract_code}_original.pdf", pdf_b, "application/pdf"
                 )
+                if file_id and file_id != "mock_file_id":
+                    contract_doc["security"]["original_pdf_drive_id"] = file_id
+                    logger.info(f"[CONTRACTS] PDF subido a Drive de forma síncrona code={contract_code} file_id={file_id}")
 
-            # update in db
-            if existing:
-                await adb["contracts"].replace_one({"contract_code": contract_code}, contract_doc)
-            else:
-                await adb["contracts"].insert_one(contract_doc)
-        except Exception as e:
-            logger.error(f"[PDF] Error generando original sincronamente: {e}")
-            if existing:
-                await adb["contracts"].replace_one({"contract_code": contract_code}, contract_doc)
-            else:
-                await adb["contracts"].insert_one(contract_doc)
+        except Exception as e_pdf:
+            logger.error(f"[CONTRACTS] Error generando original síncronamente: {e_pdf}")
+
+        # Guardar en DB (siempre, aunque Drive falle)
+        if existing:
+            await adb["contracts"].replace_one({"contract_code": contract_code}, contract_doc)
+        else:
+            await adb["contracts"].insert_one(contract_doc)
             
         base_url = str(request.base_url).rstrip('/')
         url_firma = f"{base_url}/contracts/view/{contract_code}"

@@ -304,17 +304,12 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                 detail="Teléfono inválido para WhatsApp. Chile: +569XXXXXXXX o 9XXXXXXXX. Extranjeros: incluye código país."
             )
         
-        # Verificar si existe contrato previo
+        # Verificar si existe contrato previo por código explícito (edición)
         existing = None
         contract_code_in_payload = data.get("contract_code", "").strip()
         if contract_code_in_payload:
             existing = await adb["contracts"].find_one({"contract_code": contract_code_in_payload})
-        elif property_code:
-            existing = await adb["contracts"].find_one({
-                "property_code": property_code, 
-                "status": {"$in": ["created", "sent", "opened"]}
-            })
-            
+
         if existing:
             if existing.get("status") in ["otp_requested", "otp_verified", "signed"]:
                 raise HTTPException(status_code=400, detail="Este contrato ya está en proceso de firma o ha sido firmado. No puede ser modificado.")

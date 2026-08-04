@@ -50,6 +50,29 @@ INDIVIDUAL_IDENTITY_FIELD = "individual_identity"
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _sanitize_surrogates(text: str) -> str:
+    """Normalize UTF-16 surrogate pairs into standard Python Unicode code points."""
+    if not isinstance(text, str) or not text:
+        return text or ""
+    try:
+        return text.encode("utf-16", "surrogatepass").decode("utf-16")
+    except Exception:
+        return text.encode("utf-8", "replace").decode("utf-8", "replace")
+
+
+def _safe_utf8_bytes(text: str) -> bytes:
+    """Safely encode string to UTF-8 bytes, normalizing UTF-16 surrogates if present."""
+    if not text:
+        return b""
+    try:
+        return text.encode("utf-8")
+    except UnicodeEncodeError:
+        try:
+            return text.encode("utf-16", "surrogatepass").decode("utf-16").encode("utf-8", "replace")
+        except Exception:
+            return text.encode("utf-8", "replace")
+
+
 def _window_due_at(started_at, *, window_minutes=None):
     """Return a fixed in-hours window or the next business opening."""
     from .lead_router import get_next_business_slot, is_business_hours
@@ -108,7 +131,7 @@ def _build_grouped_digest_message(*, executive_name, lead_count):
         "orden": "recent_assigned",
     })
     crm_url = f"{base_url}/crm?{query}"
-    return "\n".join([
+    return _sanitize_surrogates("\n".join([
         f"\U0001F4E5 *{lead_count} NUEVOS LEADS ASIGNADOS*",
         "",
         f"Hola {executive_name}, tienes *{lead_count} nuevos leads* para revisar.",
@@ -116,7 +139,7 @@ def _build_grouped_digest_message(*, executive_name, lead_count):
         f"\U0001F517 *Ver mis leads nuevos en CRM:*\n{crm_url}",
         "",
         "\u26A0\uFE0F Registra el resultado de la gesti\u00F3n en el CRM. Abrir WhatsApp o llamar no cuenta como gesti\u00F3n.",
-    ])
+    ]))
 
 
 # ---------------------------------------------------------------------------
@@ -594,13 +617,13 @@ def build_digest_message_content(db, notification):
             context.get("property_code") or "S/N",
             is_new_assignment=True,
         )
-        return content, 1
+        return _sanitize_surrogates(content), 1
 
     content = _build_grouped_digest_message(
         executive_name=exec_name,
         lead_count=len(valid),
     )
-    return content, len(valid)
+    return _sanitize_surrogates(content), len(valid)
 
 
 def _notify_hot_outside_digest(db, lead):
@@ -795,7 +818,8 @@ def send_digest(db, *, notification, worker_id, sender=None):
         refresh_lease(db, notification_id=notification["_id"], worker_id=worker_id, lease_seconds=120)
 
         # --- 4. Call provider ---
-        content_hash = hashlib.sha256((content or "").encode()).hexdigest()
+        content = _sanitize_surrogates(content)
+        content_hash = hashlib.sha256(_safe_utf8_bytes(content)).hexdigest()
         phone_display = phone[-4:] if phone else "?"
         logger.info("[DIGEST_SEND] notif=%s exec=%s phone_end=%s len=%d token=%s",
                     str(notification["_id"])[:12], str(recipient)[:16],

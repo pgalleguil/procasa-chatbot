@@ -45,7 +45,13 @@ def digest_identity(*, recipient_user_id, digest_type, business_period, content_
 
 
 def content_hash(payload) -> str:
-    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    try:
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    except UnicodeEncodeError:
+        try:
+            encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-16", "surrogatepass").decode("utf-16").encode("utf-8", "replace")
+        except Exception:
+            encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 

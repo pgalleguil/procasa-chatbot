@@ -1,12 +1,30 @@
 import os
 import io
 import json
+import re
 import logging
+import unicodedata
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
 logger = logging.getLogger("procasa-gdrive")
+
+
+def sanitize_folder_name(raw: str, default: str = "Sin_Nombre") -> str:
+    """Normaliza un nombre para usarlo como carpeta en Drive (sin acentos, espacios -> _)."""
+    if not raw:
+        return default
+    raw = unicodedata.normalize('NFKD', raw)
+    raw = ''.join(c for c in raw if not unicodedata.combining(c))
+    raw = re.sub(r'[^A-Za-z0-9]+', '_', raw)
+    raw = re.sub(r'_+', '_', raw).strip('_')
+    return raw or default
+
+
+def expedition_folder_name(client_name: str, property_code: str, default: str = "Expediente") -> str:
+    """Nombre de carpeta por expediente: cliente + código de propiedad."""
+    return f"Expediente_{sanitize_folder_name(client_name, 'Cliente')}_{sanitize_folder_name(property_code, 'Propiedad')}"
 
 class GDriveSync:
     SCOPES = ['https://www.googleapis.com/auth/drive']

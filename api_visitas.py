@@ -22,7 +22,7 @@ from chatbot.whatsapp_client import send_whatsapp_message
 
 from services.security_contracts import SecurityContracts
 from services.pdf_generator_visitas import PDFGeneratorVisitas as PDFGenerator
-from services.gdrive_sync import GDriveSync
+from services.gdrive_sync import GDriveSync, expedition_folder_name
 
 logger = logging.getLogger("procasa-visitas")
 router = APIRouter(prefix="/visitas", tags=["Visitas"])
@@ -429,25 +429,23 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                     f.write(pdf_b)
                 with open(p_path, "wb") as f:
                     f.write(pdf_b)
-                local_db["visitas"].update_one(
-                    {"visita_code": p_code},
-                    {"$set": {"security.original_hash": orig_hash}}
-                )
-                # Subir original a Google Drive como respaldo permanente
+                updates = {"security.original_hash": orig_hash}
+                # Subir original a Google Drive dentro de la carpeta de expediente
                 try:
-                    file_id = gdrive_sync.upload_file(
-                        Config.GDRIVE_VISITAS_FOLDER_ID,
-                        f"{p_code}_original.pdf",
-                        pdf_b,
-                        "application/pdf"
-                    )
-                    if file_id and file_id != "mock_file_id":
-                        local_db["visitas"].update_one(
-                            {"visita_code": p_code},
-                            {"$set": {"security.original_pdf_drive_id": file_id}}
-                        )
+                    client_name = data_dict.get("cliente_nombre", "")
+                    prop_code = data_dict.get("property_code", "") or data_dict.get("propiedad_codigo", "")
+                    folder_id = _get_or_create_expedition_folder(local_db, "visitas", "visita_code", p_code, client_name, prop_code)
+                    if folder_id:
+                        updates["security.gdrive_folder_id"] = folder_id
+                        file_id = gdrive_sync.upload_file(folder_id, f"{p_code}_original.pdf", pdf_b, "application/pdf")
+                        if file_id and file_id != "mock_file_id":
+                            updates["security.original_pdf_drive_id"] = file_id
                 except Exception as e:
                     logger.error(f"[BG TASK] Error subiendo original a GDrive {p_code}: {e}")
+                local_db["visitas"].update_one(
+                    {"visita_code": p_code},
+                    {"$set": updates}
+                )
             except Exception as e:
                 logger.error(f"[BG TASK] Error generando original: {e}")
 
@@ -1617,10 +1615,41 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         # Los archivos ya fueron subidos a GDrive y enviados por email antes de llegar aquí
         shutil.rmtree(tmp_dir, ignore_errors=True)
     
+def _get_or_create_expedition_folder(db, collection, code_field, code, client_name, property_code):
+    """Obtiene (o crea) la carpeta de expediente para un documento. Reusa la de la DB si existe."""
+    try:
+        doc = db[collection].find_one({code_field: code})
+        existing_id = (doc or {}).get("security", {}).get("gdrive_folder_id")
+        if existing_id and existing_id != "mock_folder_id":
+            return existing_id
+        folder_id = gdrive_sync.create_folder(expedition_folder_name(client_name, property_code))
+        if folder_id and folder_id != "mock_folder_id":
+            db[collection].update_one(
+                {code_field: code},
+                {"$set": {"security.gdrive_folder_id": folder_id}}
+            )
+            return folder_id
+    except Exception as e:
+        logger.error(f"[GDRIVE] Error obteniendo/creando carpeta expediente {code}: {e}")
+    return None
+
+
 def upload_to_gdrive_bg(visita_code: str, files: dict):
     """Sube archivos a GDrive recibiendo bytes en memoria, sin depender del filesystem."""
     try:
-        folder_id = gdrive_sync.create_folder(f"Expediente_{visita_code}")
+        db = get_db()
+        contract = db["visitas"].find_one({"visita_code": visita_code})
+        if not contract:
+            logger.error(f"[GDRIVE] Orden {visita_code} no encontrada para subir expediente")
+            return
+        client_name = contract.get("client_data", {}).get("nombre", "")
+        property_code = contract.get("property_code", "")
+        folder_id = _get_or_create_expedition_folder(
+            db, "visitas", "visita_code", visita_code, client_name, property_code
+        )
+        if not folder_id:
+            logger.error(f"[GDRIVE] Sin carpeta para expediente {visita_code}")
+            return
         signed_file_id = None
         for filename, content in files.items():
             if isinstance(content, str):
@@ -1631,7 +1660,6 @@ def upload_to_gdrive_bg(visita_code: str, files: dict):
                 signed_file_id = file_id
         # Guardar el file_id del orden de visita firmado en DB para trazabilidad documental
         if signed_file_id:
-            db = get_db()
             db["visitas"].update_one(
                 {"visita_code": visita_code},
                 {"$set": {"security.signed_pdf_drive_id": signed_file_id}}

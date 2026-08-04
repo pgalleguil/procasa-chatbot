@@ -101,7 +101,7 @@ async def health_check():
         
     return JSONResponse(status_dict, status_code=200 if status_dict["status"] == "ok" else 503)
 
-gdrive_sync = GDriveSync()
+gdrive_sync = GDriveSync(parent_folder_id=Config.GDRIVE_VISITAS_FOLDER_ID)
 _VISITAS_DB_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="visitas_db")
 
 
@@ -433,6 +433,21 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                     {"visita_code": p_code},
                     {"$set": {"security.original_hash": orig_hash}}
                 )
+                # Subir original a Google Drive como respaldo permanente
+                try:
+                    file_id = gdrive_sync.upload_file(
+                        Config.GDRIVE_VISITAS_FOLDER_ID,
+                        f"{p_code}_original.pdf",
+                        pdf_b,
+                        "application/pdf"
+                    )
+                    if file_id and file_id != "mock_file_id":
+                        local_db["visitas"].update_one(
+                            {"visita_code": p_code},
+                            {"$set": {"security.original_pdf_drive_id": file_id}}
+                        )
+                except Exception as e:
+                    logger.error(f"[BG TASK] Error subiendo original a GDrive {p_code}: {e}")
             except Exception as e:
                 logger.error(f"[BG TASK] Error generando original: {e}")
 
@@ -478,37 +493,49 @@ async def download_original_pdf(visita_code: str):
                 with open(tmp_path, "rb") as f:
                     pdf_bytes = f.read()
             else:
-                # Prioridad 4: Regenerar dinámicamente si el servidor se reinició (Render)
-                logger.info(f"Regenerando PDF original para {visita_code} dinámicamente...")
-                data_payload = {
-                    "visita_code": contract.get("visita_code"),
-                    "origen": contract.get("origen", ""),
-                    "property_code": contract.get("property_code", ""),
-                    "phone": contract.get("phone", ""),
-                    "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
-                    "cliente_rut": contract.get("client_data", {}).get("rut", ""),
-                    "email": contract.get("client_data", {}).get("email", ""),
-                    "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
-                    "comuna": contract.get("property_data", {}).get("comuna", ""),
-                    "ciudad_firma": contract.get("property_data", {}).get("ciudad_firma", "Santiago de Chile"),
-                    "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
-                    "rol": contract.get("property_data", {}).get("rol", ""),
-                    "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
-                    "precio": contract.get("property_data", {}).get("precio", ""),
-                    "comision": contract.get("property_data", {}).get("comision", ""),
-                    "ejecutivo_nombre": contract.get("executive_data", {}).get("nombre", ""),
-                    "ejecutivo_email": contract.get("executive_data", {}).get("email", ""),
-                    "created_at": contract.get("created_at"),
-                    "version": contract.get("version", 1)
-                }
-                pdf_bytes = PDFGenerator.generate_original_contract(data_payload)
-                # Opcional: Guardar en tmp_path para futuras llamadas rápidas
-                try:
-                    tmp_path.parent.mkdir(parents=True, exist_ok=True)
-                    with open(tmp_path, "wb") as f:
-                        f.write(pdf_bytes)
-                except Exception:
-                    pass
+                # Prioridad 4: Google Drive (respaldo permanente si el servidor se reinició)
+                drive_id = contract.get("security", {}).get("original_pdf_drive_id")
+                if drive_id:
+                    try:
+                        gdrive = GDriveSync()
+                        pdf_bytes = gdrive.download_file(drive_id)
+                        if pdf_bytes:
+                            logger.info(f"[GDRIVE] Original {visita_code} descargado desde Drive")
+                    except Exception as e:
+                        logger.error(f"[GDRIVE] Error descargando original {visita_code}: {e}")
+
+                if not pdf_bytes:
+                    # Prioridad 5: Regenerar dinámicamente si el servidor se reinició (Render)
+                    logger.info(f"Regenerando PDF original para {visita_code} dinámicamente...")
+                    data_payload = {
+                        "visita_code": contract.get("visita_code"),
+                        "origen": contract.get("origen", ""),
+                        "property_code": contract.get("property_code", ""),
+                        "phone": contract.get("phone", ""),
+                        "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
+                        "cliente_rut": contract.get("client_data", {}).get("rut", ""),
+                        "email": contract.get("client_data", {}).get("email", ""),
+                        "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
+                        "comuna": contract.get("property_data", {}).get("comuna", ""),
+                        "ciudad_firma": contract.get("property_data", {}).get("ciudad_firma", "Santiago de Chile"),
+                        "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
+                        "rol": contract.get("property_data", {}).get("rol", ""),
+                        "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
+                        "precio": contract.get("property_data", {}).get("precio", ""),
+                        "comision": contract.get("property_data", {}).get("comision", ""),
+                        "ejecutivo_nombre": contract.get("executive_data", {}).get("nombre", ""),
+                        "ejecutivo_email": contract.get("executive_data", {}).get("email", ""),
+                        "created_at": contract.get("created_at"),
+                        "version": contract.get("version", 1)
+                    }
+                    pdf_bytes = PDFGenerator.generate_original_contract(data_payload)
+                    # Opcional: Guardar en tmp_path para futuras llamadas rápidas
+                    try:
+                        tmp_path.parent.mkdir(parents=True, exist_ok=True)
+                        with open(tmp_path, "wb") as f:
+                            f.write(pdf_bytes)
+                    except Exception:
+                        pass
 
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')

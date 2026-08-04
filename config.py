@@ -223,6 +223,11 @@ class Config:
     GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
     GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 
+    # === GOOGLE DRIVE (cuenta de servicio + Unidad Compartida) ===
+    GDRIVE_CREDENTIALS_JSON = os.getenv("GDRIVE_CREDENTIALS_JSON")
+    GDRIVE_VISITAS_FOLDER_ID = os.getenv("GDRIVE_VISITAS_FOLDER_ID", "195216J83gisBPMcpV6e-Y4yju3GxGnPT")
+    GDRIVE_CONVENIOS_FOLDER_ID = os.getenv("GDRIVE_CONVENIOS_FOLDER_ID", "1GYoZXzRWAslZjprwn9980MXPx9rN3bes")
+
     # === CLAVE SECRETA PARA SESIONES (OBLIGATORIA) ===
     SECRET_KEY = os.getenv("SECRET_KEY", "procasa_stable_secret_session_key_2025_hq")
     # if not SECRET_KEY:

@@ -1,5 +1,6 @@
 import os
 import io
+import json
 import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -8,7 +9,7 @@ from googleapiclient.http import MediaIoBaseUpload
 logger = logging.getLogger("procasa-gdrive")
 
 class GDriveSync:
-    SCOPES = ['https://www.googleapis.com/auth/drive.file']
+    SCOPES = ['https://www.googleapis.com/auth/drive']
     
     def __init__(self, credentials_path: str = 'credentials.json', parent_folder_id: str = None):
         self.credentials_path = credentials_path
@@ -16,8 +17,19 @@ class GDriveSync:
         self.service = self._authenticate()
 
     def _authenticate(self):
+        # Prioridad 1: credenciales en env var GDRIVE_CREDENTIALS_JSON (Render, sin subir el .json al repo)
+        env_json = os.getenv("GDRIVE_CREDENTIALS_JSON")
+        if env_json:
+            try:
+                creds = service_account.Credentials.from_service_account_info(
+                    json.loads(env_json), scopes=self.SCOPES)
+                return build('drive', 'v3', credentials=creds)
+            except Exception as e:
+                logger.error(f"Error autenticando desde GDRIVE_CREDENTIALS_JSON: {e}")
+                return None
+        # Prioridad 2: archivo local (solo desarrollo)
         if not os.path.exists(self.credentials_path):
-            logger.warning(f"No se encontró {self.credentials_path}. GDrive sync estará deshabilitado.")
+            logger.warning(f"No se encontró GDRIVE_CREDENTIALS_JSON ni {self.credentials_path}. GDrive sync estará deshabilitado.")
             return None
         try:
             creds = service_account.Credentials.from_service_account_file(
@@ -40,7 +52,11 @@ class GDriveSync:
             file_metadata['parents'] = [self.parent_folder_id]
             
         try:
-            folder = self.service.files().create(body=file_metadata, fields='id').execute()
+            folder = self.service.files().create(
+                body=file_metadata,
+                fields='id',
+                supportsAllDrives=True
+            ).execute()
             return folder.get('id')
         except Exception as e:
             logger.error(f"Error creando carpeta en GDrive: {e}")
@@ -58,7 +74,12 @@ class GDriveSync:
                 'parents': [folder_id]
             }
             media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mime_type, resumable=True)
-            file = self.service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+            file = self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id',
+                supportsAllDrives=True
+            ).execute()
             return file.get('id')
         except Exception as e:
             logger.error(f"Error subiendo {file_name} a GDrive: {e}")
@@ -72,7 +93,7 @@ class GDriveSync:
             
         try:
             from googleapiclient.http import MediaIoBaseDownload
-            request = self.service.files().get_media(fileId=file_id)
+            request = self.service.files().get_media(fileId=file_id, supportsAllDrives=True)
             file_stream = io.BytesIO()
             downloader = MediaIoBaseDownload(file_stream, request)
             done = False

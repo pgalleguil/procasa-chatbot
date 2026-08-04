@@ -14,6 +14,7 @@ temperature enum ``COLD`` is never exposed in visible content.
 from __future__ import annotations
 
 import logging
+import time
 from collections import Counter, defaultdict
 from datetime import timedelta
 import hashlib
@@ -496,11 +497,12 @@ def _build_source_distribution(leads):
 
 def _build_preview_lines(leads, max_items):
     """Build up to max_items preview lines from lead data."""
+    from .crm_message_context import title_case_name
     lines = []
     for lead in leads[:max_items]:
         name = (
-            lead.get("prospecto", {}).get("nombre")
-            or lead.get("nombre")
+            title_case_name(lead.get("prospecto", {}).get("nombre"))
+            or title_case_name(lead.get("nombre"))
             or _reference_id(lead.get("_id"))
         )
         prop = (
@@ -539,6 +541,7 @@ def build_digest_message_content(db, notification):
     leads = list(db["leads"].find(
         {"_id": {"$in": _normalized_ids}},
         {
+            "phone": 1, "lead_phone": 1,
             "prospecto.nombre": 1, "prospecto.codigo": 1, "prospecto.comuna": 1,
             "codigo": 1, "property_code": 1,
             "nombre": 1, "lead_temperature_effective": 1, "pipeline_stage": 1,
@@ -707,6 +710,41 @@ def resolve_recipient_user(db, recipient: str) -> dict | None:
 CANARY_DIGEST_IDS: set[str] = set()
 CANARY_LEAD_IDS: set[str] = set()
 
+# Serializes real provider sends so two workers cannot burst back-to-back.
+_SEND_LOCK = None
+_LAST_SEND_AT = 0.0
+
+
+def _throttle_provider_send():
+    """Wait so that consecutive sends respect the configured minimum gap.
+
+    Uses a process-global timestamp (and optional lock when threads are used)
+    so that even multiple digests due at the same time are spaced out instead
+    of bursting the unofficial Meta API and getting HTTP 429 / temporary blocks.
+    """
+    global _SEND_LOCK, _LAST_SEND_AT
+    delay = float(getattr(Config, "CRM_NON_HOT_DIGEST_SEND_DELAY_SECONDS", 8))
+    if delay <= 0:
+        return
+    if _SEND_LOCK is None:
+        try:
+            import threading
+            _SEND_LOCK = threading.Lock()
+        except Exception:
+            _SEND_LOCK = False
+    lock = _SEND_LOCK
+    if lock:
+        lock.acquire()
+    try:
+        elapsed = time.monotonic() - _LAST_SEND_AT
+        if elapsed < delay:
+            time.sleep(delay - elapsed)
+        _LAST_SEND_AT = time.monotonic()
+    finally:
+        if lock:
+            lock.release()
+
+
 def send_digest(db, *, notification, worker_id, sender=None):
     """Deliver or shadow-deliver a due digest.  Fully synchronous.
 
@@ -825,6 +863,7 @@ def send_digest(db, *, notification, worker_id, sender=None):
                     str(notification["_id"])[:12], str(recipient)[:16],
                     phone_display, len(content or ""), delivery_token[:8])
         call_started = utc_now()
+        _throttle_provider_send()
         try:
             receipt = send_whatsapp_message_detailed_sync(phone, content)
         except Exception as exc:
@@ -916,6 +955,7 @@ def send_digest(db, *, notification, worker_id, sender=None):
     # Instrumented send
     logger.info("[WASEND] sending digest=%s recipient=%s phone_end=%s len=%d",
                 notification["_id"], recipient[:16], phone[-4:], len(content or ""))
+    _throttle_provider_send()
     try:
         receipt = sender(phone, content)
         success = bool(receipt.get("success"))

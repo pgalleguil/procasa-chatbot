@@ -1292,10 +1292,14 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
 
         leads_procesados.append({
             "phone": raw_phone,
+            "lead_id": str(lead.get("_id") or ""),
+            "phone_is_synthetic": bool(lead.get("phone_is_synthetic")) or str(lead.get("phone", "")).startswith("no-phone-"),
             "sla_status": sla_status,
             "sla_label": sla_label,
             "age_label": age_label,
-            "whatsapp_display": f"+{raw_phone}",
+            "whatsapp_display": ("Sin teléfono" if (str(lead.get("phone", "")).startswith("no-phone-")
+                                                    or lead.get("phone_is_synthetic"))
+                                 else (f"+{raw_phone}" if raw_phone else "Sin teléfono")),
             "nombre": lead.get("prospecto", {}).get("nombre") or "Desconocido",
             "prioridad_badge": prioridad_badge,
             "lead_temperature_effective": temp,

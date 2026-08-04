@@ -104,6 +104,10 @@ class Config:
     # de inmediato. Para reactivar la ventana: set
     # CRM_NON_HOT_DIGEST_IMMEDIATE_SEND=false (o revertir este default).
     CRM_NON_HOT_DIGEST_IMMEDIATE_SEND = os.getenv("CRM_NON_HOT_DIGEST_IMMEDIATE_SEND", "true").lower() == "true"
+    # Minimum seconds to wait between consecutive provider sends.  We use a
+    # non-official Meta API, so sending many automated messages back-to-back can
+    # trigger rate limits (HTTP 429) or a temporary block.
+    CRM_NON_HOT_DIGEST_SEND_DELAY_SECONDS = float(os.getenv("CRM_NON_HOT_DIGEST_SEND_DELAY_SECONDS", "8"))
 
     # === After-hours notification policy ===
     # These flags control whether HOT notifications are deferred outside business

@@ -226,6 +226,26 @@ def _finalize_event(source_system: str, source_event_id: str, lead_id: str, stat
     )
 
 
+def _canal_envio(source_system: str, portal_source: str) -> str:
+    """Traduce el sistema/portal origen al canal comercial de envío.
+
+    Consolida los 3 canales de ingreso del CRM:
+      - whatsapp / wa / chatbot      -> "WhatsApp"
+      - manual / supervisor         -> "Lead Manual"
+      - prop360 / convecta          -> "Convecta (Prop360)"
+    Cualquier otro valor se conserva tal cual (ej. el portal del aviso).
+    """
+    system = str(source_system or "").strip().lower()
+    portal = str(portal_source or "").strip()
+    if system in {"whatsapp", "wa", "wsp", "chatbot", "commercial_intake"}:
+        return "WhatsApp"
+    if system in {"manual", "supervisor", "manual_entry", "crm"}:
+        return "Lead Manual"
+    if system in {"prop360", "convecta", "prop_360", "extractor_prop360"}:
+        return f"Convecta (Prop360)" + (f" - {portal}" if portal and portal.lower() not in {"portal inmobiliario"} else "")
+    return system or portal or "Desconocido"
+
+
 def _enrich_from_cartera(db, property_code: str) -> Dict[str, Any]:
     """Busca una propiedad en las colecciones de cartera y retorna datos enriquecidos."""
     if not _is_valid_property_code(property_code):
@@ -266,6 +286,9 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
     phone_normalized = normalize_phone_strict(phone_raw)
     email, email_valid = _normalize_email(event.email)
     name = (event.name or "").strip()
+    from .crm_message_context import title_case_name
+    if name:
+        name = title_case_name(name)
     message = (event.message or "").strip()
     property_code = str(event.property_code or "").strip()
     portal_source = (event.portal_source or event.metadata.get("medio") or "").strip()
@@ -348,12 +371,13 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
             "last_message_at": now_iso,
             "last_crm_update": now,
             "updated_at": now_iso,
+            "canal_envio": _canal_envio(event.source_system, portal_source),
         }
 
         if email:
             update_fields["prospecto.email"] = email
         if name and len(name) >= 2:
-            update_fields["prospecto.nombre"] = name.title()
+            update_fields["prospecto.nombre"] = name
 
         if property_code and _is_valid_property_code(property_code):
             update_fields["prospecto.codigo"] = property_code
@@ -488,6 +512,7 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         "last_message_at": contact_date,
         "source_type": event.source_system,
         "origen": portal_source or event.source_system,
+        "canal_envio": _canal_envio(event.source_system, portal_source),
         "ejecutivo_asignado": exec_name,
         "pipeline_stage": PipelineStage.NEW,
         "stage": PipelineStage.NEW,

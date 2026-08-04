@@ -516,7 +516,7 @@ def format_hot_whatsapp_template(lead_data: Dict[str, Any], executive_name: str,
     lead_phone = lead_data.get("lead_phone") or lead_data.get("phone") or ""
     created_at = lead_data.get("created_at") or lead_data.get("timestamp") or ""
 
-    crm_url = build_crm_lead_url(lead_data, property_code)
+    crm_url = build_message_crm_url(lead_data, property_code)
 
     ubicacion_lines = ""
     if comuna:
@@ -594,7 +594,7 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
             f"👤 Cliente: {cliente_texto}\n"
             f"📝 Mensaje recibido:\n{comentario_cliente}\n\n"
             f"⚠️ _Por favor, revisa si es necesario actualizar la cartera o si la propiedad fue dada de baja._\n\n"
-            f"🔗 *Ver caso en CRM*:\n{build_crm_lead_url(lead_data, property_code)}"
+            f"🔗 *Ver caso en CRM*:\n{build_message_crm_url(lead_data, property_code)}"
         )
     prop_inline = lead_data.get("property_data", {}) if isinstance(lead_data, dict) else {}
     comuna = (
@@ -629,7 +629,7 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
     if not is_new_assignment:
         contexto_extra = f"⚠️ _Este cliente ya está asignado a ti._\n"
 
-    crm_url = build_crm_lead_url(lead_data, property_code)
+    crm_url = build_message_crm_url(lead_data, property_code)
 
     ubicacion_lines = ""
     if comuna:
@@ -674,7 +674,7 @@ def format_summary_whatsapp_template(leads_list: list, executive_name: str) -> s
         p_code = ld.get("property_code") or "S/N"
         canal = ld.get("canal") or ld.get("source") or ld.get("origen") or "Directo"
         
-        crm_url = build_crm_lead_url(ld, p_code)
+        crm_url = build_message_crm_url(ld, p_code)
         leads_details += (
             f"\n{i}. *{nombre}* - Prop: {p_code} ({canal})"
             f"\n   🔗 {crm_url}"
@@ -706,6 +706,19 @@ def build_secure_crm_url(lead: dict, property_code: str | None = None) -> str:
     base = str(getattr(Config, "CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")).rstrip("/")
     lid = lead.get("_id", "")
     return f"{base}/crm/lead-id/{lid}"
+
+
+def build_message_crm_url(lead_data: Dict[str, Any], property_code: Any = None) -> str:
+    """Build the CRM link used inside WhatsApp messages.
+
+    Prefers the lead ObjectId (``/crm/lead-id/<_id>``), which is the canonical
+    deep link used by manual leads and hot leads.  Falls back to the legacy
+    phone-based URL only when no ``_id`` is available.
+    """
+    lid = lead_data.get("_id")
+    if lid:
+        return build_secure_crm_url(lead_data, property_code)
+    return build_crm_lead_url(lead_data, property_code)
 
 
 # ---------------------------------------------------------------------------

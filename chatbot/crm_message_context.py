@@ -4,6 +4,7 @@ Single source of truth for all WhatsApp message data.
 """
 from __future__ import annotations
 
+import html
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
@@ -28,6 +29,30 @@ def _is_valid_client_name(name: str | None) -> bool:
         return False
     stripped = str(name).strip()
     return bool(stripped) and stripped not in _INVALID_NAMES
+
+
+def title_case_name(name: str | None) -> str | None:
+    """Normaliza un nombre a 'Primera Letra Mayúscula, Resto Minúscula'.
+
+    Aplica a cada palabra (nombres y apellidos): primera letra en mayúscula
+    y el resto en minúscula.  Ej: "MAURICIO HUIDOBRO -" -> "Mauricio Huidobro -".
+    Decodifica entidades HTML (&#243; -> ó) antes de normalizar, ya que fuentes
+    como Prop360 pueden entregar nombres con escapes tipo ``Le&#243;n``.
+    También colapsa tokens duplicados consecutivos: "Nombre X X" -> "Nombre X",
+    "A B A B" -> "A B", típico de nombres duplicados por el portal origen.
+    """
+    if not name:
+        return name
+    raw = str(name).strip()
+    if not raw or raw in _INVALID_NAMES:
+        return raw
+    raw = html.unescape(raw)
+    parts = raw.split()
+    if len(parts) > 1 and len(parts) % 2 == 0:
+        half = len(parts) // 2
+        if parts[:half] == parts[half:]:
+            parts = parts[:half]
+    return " ".join(part.capitalize() for part in parts)
 
 
 # ------------------------------- hot reason mapping -------------------------------
@@ -161,7 +186,7 @@ def build_lead_notification_context(db, lead_id) -> dict:
 
     # --- client name ---
     nombre_raw = prospect.get("nombre") or lead.get("nombre") or None
-    nombre_cliente = str(nombre_raw).strip() if _is_valid_client_name(nombre_raw) else None
+    nombre_cliente = title_case_name(nombre_raw) if _is_valid_client_name(nombre_raw) else None
 
     # --- executive ---
     from .crm_delivery import resolve_executive_user, get_executive_phone

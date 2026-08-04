@@ -1347,10 +1347,19 @@ async def view_crm_detail_by_id(request: Request, lead_id: str):
         # Keep the current ownership gate for lead access, but never leak a raw
         # phone if this route is reused by a read-only authenticated view.
         raise HTTPException(status_code=403, detail="El lead no esta asignado a este ejecutivo")
-    if data.get("phone"):
-        data["phone"] = str(data["phone"]).strip()
+    raw_phone = str(data.get("phone") or "").strip()
+    phone_synthetic = bool(lead.get("phone_is_synthetic")) or raw_phone.startswith("no-phone-")
+    if phone_synthetic:
+        data["phone"] = ""
+        data["phone_masked"] = "Sin teléfono"
+        data["whatsapp_display"] = "Sin teléfono"
+        data["phone_is_synthetic"] = True
+    else:
+        data["phone"] = raw_phone
+        data["phone_masked"] = _mask_phone(raw_phone)
+        data["whatsapp_display"] = f"+{raw_phone}" if raw_phone else "Sin teléfono"
+        data["phone_is_synthetic"] = False
     data.pop("phone_raw", None)
-    data["phone_masked"] = _mask_phone(data.get("phone") or "")
     data["phone_visibility"] = "full"
 
     email = user.get("email") or user.get("username")

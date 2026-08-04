@@ -1991,7 +1991,7 @@
                         {% for lead in leads %}
                         <tr class="clickable-row" tabindex="0" role="link"
                             aria-label="Abrir detalle de {{ lead.nombre }}"
-                            data-lead-url="/crm/lead/{{ lead.phone }}">
+                            data-lead-url="{% if lead.lead_id %}/crm/lead-id/{{ lead.lead_id }}{% else %}/crm/lead/{{ lead.phone }}{% endif %}">
                             {% if show_priority %}
                             <td class="col-type" data-label="Tipo">
                                 <div class="mobile-cell-value fw-bold d-flex align-items-center" style="font-size: 0.95rem;">
@@ -2041,7 +2041,11 @@
                             <td class="col-client" data-label="Cliente">
                                 <div class="mobile-cell-value">
                                     <div class="fw-bold">{{ lead.nombre }}</div>
+                                    {% if lead.phone_is_synthetic %}
+                                    <span class="small text-secondary fst-italic">{{ lead.whatsapp_display }}</span>
+                                    {% else %}
                                     <a class="small phone-link" href="tel:{{ lead.phone }}">{{ lead.whatsapp_display }}</a>
+                                    {% endif %}
                                 </div>
                             </td>
                             <td class="col-property" data-label="Propiedad">

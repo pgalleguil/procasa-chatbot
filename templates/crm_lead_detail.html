@@ -2533,7 +2533,7 @@
                             <div class="info-row">
                                 <div class="info-item">
                                     <span class="info-label">Teléfono</span>
-                                    <span class="info-value">{{ lead.phone }}</span>
+                                    <span class="info-value">{{ lead.whatsapp_display or lead.phone or 'Sin teléfono' }}</span>
                                 </div>
                                 <div class="info-item">
                                     <span class="info-label">Email</span>

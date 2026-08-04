@@ -370,6 +370,7 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         }
         
         # 2. Generar PDF original y subir a Drive SÍNCRONAMENTE antes de insertar en DB
+        drive_error_msg = None
         try:
             from chatbot.storage import get_db
             local_db = get_db()
@@ -391,6 +392,12 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                 if file_id and file_id != "mock_file_id":
                     visita_doc["security"]["original_pdf_drive_id"] = file_id
                     logger.info(f"[VISITAS] PDF subido a Drive de forma síncrona code={visita_code} file_id={file_id}")
+                else:
+                    drive_error_msg = f"upload_file returned invalid id: {file_id}"
+                    logger.error(f"[VISITAS] {drive_error_msg}")
+            else:
+                drive_error_msg = f"_get_or_create_expedition_folder returned None for prop_code={prop_code} client={client_name}"
+                logger.error(f"[VISITAS] {drive_error_msg}")
 
             # Copia local de respaldo
             try:
@@ -403,18 +410,25 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             except Exception as e_local:
                 logger.warning(f"[VISITAS] Error guardando copia local {visita_code}: {e_local}")
         except Exception as e_pdf:
-            logger.error(f"[VISITAS] Error generando original síncronamente: {e_pdf}")
+            import traceback
+            drive_error_msg = f"{type(e_pdf).__name__}: {e_pdf}\n{traceback.format_exc()}"
+            logger.error(f"[VISITAS] Error generando original síncronamente: {drive_error_msg}")
 
         await adb["visitas"].insert_one(visita_doc)
             
         base_url = str(request.base_url).rstrip('/')
         url_firma = f"{base_url}/visitas/view/{visita_code}"
         
-        return {
+        resp = {
             "status": "success",
             "visita_code": visita_code,
-            "url_firma": url_firma
+            "url_firma": url_firma,
+            "_debug_gdrive_folder_id": visita_doc["security"].get("gdrive_folder_id"),
+            "_debug_gdrive_file_id": visita_doc["security"].get("original_pdf_drive_id"),
         }
+        if drive_error_msg:
+            resp["_debug_drive_error"] = drive_error_msg
+        return resp
         
     except Exception as e:
         logger.error(f"Error en /api/create: {e}")

@@ -234,9 +234,26 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
                 cycle_origins.append(origin)
             new_count = len(new_ids)
             # Volume threshold: if we just reached the max, mark as ready now.
-            # Temporary immediate-send override also marks it ready now.
+            # Temporary immediate-send override also marks it ready now, but
+            # only inside business hours.
             max_before_send = int(getattr(Config, "CRM_NON_HOT_DIGEST_MAX_LEADS_BEFORE_SEND", "0"))
-            if _immediate_send() or (max_before_send > 0 and new_count >= max_before_send):
+            if _immediate_send():
+                from .lead_router import should_send_now, get_next_business_slot
+                ready_at = now if should_send_now() else get_next_business_slot(now)
+                db[NOTIFICATION_COLLECTION].update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": {
+                        "lead_ids": new_ids,
+                        "assignment_cycle_ids": existing_cycles,
+                        "updated_at": now,
+                        "lead_count": new_count,
+                        "send_after": ready_at,
+                        "notification_eligible": True,
+                        "cycle_reasons": cycle_reasons,
+                        "cycle_origins": cycle_origins,
+                    }},
+                )
+            elif max_before_send > 0 and new_count >= max_before_send:
                 db[NOTIFICATION_COLLECTION].update_one(
                     {"_id": existing["_id"]},
                     {"$set": {
@@ -268,9 +285,14 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
         return db[NOTIFICATION_COLLECTION].find_one({"_id": existing["_id"]})
 
     # No open window — create one.
-    # The digest window is 10 minutes from the first lead (unless temporary
-    # immediate-send is active, in which case it is due right away).
-    send_after = now if _immediate_send() else _window_due_at(now, window_minutes=window_minutes)
+    # The digest window is 10 minutes from the first lead.  Temporary
+    # immediate-send sends right away only inside business hours; outside
+    # business hours it defers to the next opening.
+    if _immediate_send():
+        from .lead_router import should_send_now, get_next_business_slot
+        send_after = now if should_send_now() else get_next_business_slot(now)
+    else:
+        send_after = _window_due_at(now, window_minutes=window_minutes)
     now_iso = now.isoformat()
     send_after_iso = send_after.isoformat()
     payload = {
@@ -707,6 +729,19 @@ def send_digest(db, *, notification, worker_id, sender=None):
         )
         return {"status": "shadow_sent", "lead_count": lead_count, "suppressed": False,
                 "delivery_mode": "shadow", "actually_delivered": False}
+
+    # Outside business hours, defer a live digest to the next opening instead of
+    # sending a stale notification at night.  It stays pending and the worker
+    # delivers it once business hours resume.
+    from .lead_router import should_send_now, get_next_business_slot
+    if not should_send_now():
+        db[NOTIFICATION_COLLECTION].update_one(
+            {"_id": notification["_id"]},
+            {"$set": {"send_after": get_next_business_slot(utc_now()),
+                      "state": "pending", "lease_owner": None,
+                      "lease_expires_at": None, "updated_at": utc_now()}},
+        )
+        return {"status": "deferred_after_hours", "lead_count": lead_count}
 
     # Live delivery: use internal sender when none provided
     _effective_sender = sender

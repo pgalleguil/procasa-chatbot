@@ -428,18 +428,40 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                 f.write(pdf_b)
             contract_doc["security"]["original_hash"] = orig_hash
 
-            # Subir original a Google Drive dentro de la carpeta de expediente
-            try:
-                client_name = data.get("cliente_nombre", "")
-                prop_code = data.get("property_code", "") or data.get("propiedad_codigo", "")
-                folder_id = _get_or_create_expedition_folder(local_db, "contracts", "contract_code", contract_code, client_name, prop_code)
-                if folder_id:
+            # ── Drive upload: OBLIGATORIO con 3 reintentos ────────────────────
+            import time as _time
+            client_name = data.get("cliente_nombre", "")
+            prop_code = data.get("property_code", "") or data.get("propiedad_codigo", "")
+            drive_ok = False
+            last_drive_err = None
+            for attempt in range(1, 4):
+                try:
+                    folder_id = _get_or_create_expedition_folder(
+                        local_db, "contracts", "contract_code", contract_code, client_name, prop_code
+                    )
+                    if not folder_id:
+                        raise RuntimeError("No se pudo obtener/crear carpeta en Drive")
                     contract_doc["security"]["gdrive_folder_id"] = folder_id
-                    file_id = gdrive_sync.upload_file(folder_id, f"{contract_code}_original.pdf", pdf_b, "application/pdf")
-                    if file_id and file_id != "mock_file_id":
-                        contract_doc["security"]["original_pdf_drive_id"] = file_id
-            except Exception as e:
-                logger.error(f"[PDF] Error subiendo original a GDrive {contract_code}: {e}")
+                    file_id = gdrive_sync.upload_file(
+                        folder_id, f"{contract_code}_original.pdf", pdf_b, "application/pdf"
+                    )
+                    if not file_id or file_id == "mock_file_id":
+                        raise RuntimeError("upload_file devolvió ID inválido")
+                    contract_doc["security"]["original_pdf_drive_id"] = file_id
+                    drive_ok = True
+                    logger.info(f"[PDF] Drive upload OK intento={attempt} code={contract_code} file_id={file_id}")
+                    break
+                except Exception as e:
+                    last_drive_err = e
+                    logger.warning(f"[PDF] Drive upload FALLO intento={attempt}/3 code={contract_code}: {e}")
+                    if attempt < 3:
+                        _time.sleep(2 ** attempt)  # 2s, 4s
+
+            if not drive_ok:
+                logger.critical(
+                    f"[PDF] DRIVE UPLOAD FALLIDO DEFINITIVAMENTE code={contract_code}: {last_drive_err}. "
+                    f"El PDF solo existe en local — verificar Drive y subir manualmente."
+                )
 
             # update in db
             if existing:
@@ -478,67 +500,82 @@ async def download_original_pdf(contract_code: str):
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
 
     pdf_bytes = None
+    security = contract.get("security", {})
 
-    # Prioridad 1: ruta permanente guardada en DB
-    perm_path_str = contract.get("security", {}).get("original_pdf_path")
-    if perm_path_str and os.path.exists(perm_path_str):
-        pdf_path = Path(perm_path_str)
-        with open(pdf_path, "rb") as f:
-            pdf_bytes = f.read()
-    else:
-        # Prioridad 2: directorio permanente por convención
-        perm_path_conv = BASE_DIR / "contracts_pdf" / f"{contract_code}_original.pdf"
-        if perm_path_conv.exists():
-            with open(perm_path_conv, "rb") as f:
-                pdf_bytes = f.read()
-        else:
-            # Prioridad 3: tmp (efímero)
-            tmp_path = BASE_DIR / "tmp" / "contracts" / contract_code / "contrato_original.pdf"
-            if tmp_path.exists():
-                with open(tmp_path, "rb") as f:
-                    pdf_bytes = f.read()
+    # ── Prioridad 1: Google Drive (fuente primaria permanente) ──────────────
+    drive_id = security.get("original_pdf_drive_id")
+    if drive_id:
+        try:
+            gdrive = GDriveSync()
+            pdf_bytes = gdrive.download_file(drive_id)
+            if pdf_bytes:
+                logger.info(f"[DOWNLOAD] PDF servido desde Drive code={contract_code}")
             else:
-                # Prioridad 4: Google Drive (respaldo permanente si el servidor se reinició)
-                drive_id = contract.get("security", {}).get("original_pdf_drive_id")
-                if drive_id:
-                    try:
-                        gdrive = GDriveSync()
-                        pdf_bytes = gdrive.download_file(drive_id)
-                        if pdf_bytes:
-                            logger.info(f"[GDRIVE] Original {contract_code} descargado desde Drive")
-                    except Exception as e:
-                        logger.error(f"[GDRIVE] Error descargando original {contract_code}: {e}")
+                logger.warning(f"[DOWNLOAD] Drive devolvió vacío code={contract_code} drive_id={drive_id}")
+        except Exception as e:
+            logger.error(f"[DOWNLOAD] Error descargando desde Drive code={contract_code}: {e}")
 
-                if not pdf_bytes:
-                    # Prioridad 5: Regenerar dinámicamente si el servidor se reinició (Render)
-                    logger.info(f"Regenerando PDF original para {contract_code} dinámicamente...")
-                    data_payload = {
-                        "contract_code": contract.get("contract_code"),
-                        "origen": contract.get("origen", ""),
-                        "property_code": contract.get("property_code", ""),
-                        "phone": contract.get("phone", ""),
-                        "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
-                        "cliente_rut": contract.get("client_data", {}).get("rut", ""),
-                        "email": contract.get("client_data", {}).get("email", ""),
-                        "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
-                        "comuna": contract.get("property_data", {}).get("comuna", ""),
-                        "ciudad_firma": contract.get("property_data", {}).get("ciudad_firma", "Santiago de Chile"),
-                        "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
-                        "rol": contract.get("property_data", {}).get("rol", ""),
-                        "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
-                        "precio": contract.get("property_data", {}).get("precio", ""),
-                        "comision": contract.get("property_data", {}).get("comision", ""),
-                        "created_at": contract.get("created_at"),
-                        "version": contract.get("version", 1)
-                    }
-                    pdf_bytes = PDFGenerator.generate_original_contract(data_payload)
-                    # Opcional: Guardar en tmp_path para futuras llamadas rápidas
-                    try:
-                        tmp_path.parent.mkdir(parents=True, exist_ok=True)
-                        with open(tmp_path, "wb") as f:
-                            f.write(pdf_bytes)
-                    except Exception:
-                        pass
+    # ── Prioridad 2: caché local (solo si Drive no respondió) ───────────────
+    if not pdf_bytes:
+        for local_path in [
+            Path(security.get("original_pdf_path") or ""),
+            BASE_DIR / "contracts_pdf" / f"{contract_code}_original.pdf",
+            BASE_DIR / "tmp" / "contracts" / contract_code / "contrato_original.pdf",
+        ]:
+            try:
+                if local_path and local_path.exists():
+                    with open(local_path, "rb") as f:
+                        pdf_bytes = f.read()
+                    logger.info(f"[DOWNLOAD] PDF servido desde caché local {local_path}")
+                    break
+            except Exception:
+                pass
+
+    # ── Prioridad 3: Regenerar + subir a Drive para no volver a fallar ──────
+    if not pdf_bytes:
+        logger.warning(f"[DOWNLOAD] PDF no disponible en Drive ni local, regenerando code={contract_code}")
+        data_payload = {
+            "contract_code": contract.get("contract_code"),
+            "origen": contract.get("origen", ""),
+            "property_code": contract.get("property_code", ""),
+            "phone": contract.get("phone", ""),
+            "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
+            "cliente_rut": contract.get("client_data", {}).get("rut", ""),
+            "email": contract.get("client_data", {}).get("email", ""),
+            "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
+            "comuna": contract.get("property_data", {}).get("comuna", ""),
+            "ciudad_firma": contract.get("property_data", {}).get("ciudad_firma", "Santiago de Chile"),
+            "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
+            "rol": contract.get("property_data", {}).get("rol", ""),
+            "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
+            "precio": contract.get("property_data", {}).get("precio", ""),
+            "comision": contract.get("property_data", {}).get("comision", ""),
+            "created_at": contract.get("created_at"),
+            "version": contract.get("version", 1)
+        }
+        pdf_bytes = PDFGenerator.generate_original_contract(data_payload)
+        # Subir a Drive ahora para que próximas solicitudes no vuelvan a regenerar
+        try:
+            local_db_dl = get_db()
+            folder_id = security.get("gdrive_folder_id") or _get_or_create_expedition_folder(
+                local_db_dl, "contracts", "contract_code", contract_code,
+                data_payload["cliente_nombre"], data_payload["property_code"]
+            )
+            if folder_id:
+                new_file_id = gdrive_sync.upload_file(
+                    folder_id, f"{contract_code}_original.pdf", pdf_bytes, "application/pdf"
+                )
+                if new_file_id and new_file_id != "mock_file_id":
+                    local_db_dl["contracts"].update_one(
+                        {"contract_code": contract_code},
+                        {"$set": {
+                            "security.original_pdf_drive_id": new_file_id,
+                            "security.gdrive_folder_id": folder_id
+                        }}
+                    )
+                    logger.info(f"[DOWNLOAD] PDF regenerado y subido a Drive code={contract_code} file_id={new_file_id}")
+        except Exception as e:
+            logger.error(f"[DOWNLOAD] No se pudo subir PDF regenerado a Drive code={contract_code}: {e}")
 
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')

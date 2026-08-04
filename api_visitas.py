@@ -1988,3 +1988,39 @@ async def visita_dashboard(request: Request):
         "executives": executives,
         "executive_filter": executive_filter
     })
+
+@router.get("/api/test_gdrive")
+async def test_gdrive_endpoint():
+    """Endpoint de diagnóstico para probar integración con Google Drive en Render"""
+    db = get_db()
+    result = {"status": "unknown", "logs": []}
+    try:
+        if not gdrive_sync.service:
+            result["status"] = "error"
+            result["logs"].append("gdrive_sync.service es None. Verifique GDRIVE_CREDENTIALS_JSON.")
+            return result
+
+        result["logs"].append(f"GDRIVE_VISITAS_FOLDER_ID: {gdrive_sync.parent_folder_id}")
+
+        prop_id = gdrive_sync.create_folder("TEST_PROPIEDAD_9999")
+        result["logs"].append(f"create_folder TEST_PROPIEDAD_9999 id: {prop_id}")
+
+        client_id = gdrive_sync.create_subfolder(prop_id, "TEST_CLIENTE_PRUEBA")
+        result["logs"].append(f"create_subfolder TEST_CLIENTE_PRUEBA id: {client_id}")
+
+        pdf_test = b"%PDF-1.4 test pdf content for drive verification"
+        file_id = gdrive_sync.upload_file(client_id, "test_document.pdf", pdf_test, "application/pdf")
+        result["logs"].append(f"upload_file test_document.pdf id: {file_id}")
+
+        if file_id and file_id != "mock_file_id":
+            result["status"] = "success"
+            result["drive_folder_url"] = f"https://drive.google.com/drive/folders/{client_id}"
+        else:
+            result["status"] = "failed"
+    except Exception as e:
+        import traceback
+        result["status"] = "exception"
+        result["error"] = str(e)
+        result["traceback"] = traceback.format_exc()
+
+    return result

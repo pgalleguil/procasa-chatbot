@@ -89,7 +89,7 @@ async def health_check():
     db = get_db()
     status_dict = {"status": "ok", "db": "ok", "memory": "ok", "concurrency": ACTIVE_SIGNATURES}
     try:
-        db.command("ping")
+        await _db_call(db.command, "ping")
     except Exception as e:
         logger.error(f"[SERVER_ERROR] Healthcheck DB failed: {e}")
         status_dict["db"] = "failed"
@@ -455,7 +455,7 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
 async def download_original_pdf(visita_code: str):
     """Permite descargar o ver el PDF original"""
     db = get_db()
-    contract = db["visitas"].find_one({"visita_code": visita_code})
+    contract = await _db_call(db["visitas"].find_one, {"visita_code": visita_code})
     if not contract:
         raise HTTPException(status_code=404, detail="Orden de Visita no encontrado")
 
@@ -646,7 +646,7 @@ async def download_signed_pdf(visita_code: str):
 async def view_signed_pdf(visita_code: str):
     """Permite visualizar el PDF firmado dentro del navegador"""
     db = get_db()
-    contract = db["visitas"].find_one({"visita_code": visita_code})
+    contract = await _db_call(db["visitas"].find_one, {"visita_code": visita_code})
     if not contract:
         raise HTTPException(status_code=404, detail="Orden de Visita no encontrado")
 
@@ -1085,7 +1085,7 @@ async def validate_rut(token: str, request: Request):
     rut_ingresado = data.get("rut", "").strip()
     
     db = get_db()
-    contract = db["visitas"].find_one({"security.token": token})
+    contract = await _db_call(db["visitas"].find_one, {"security.token": token})
     if not contract:
         raise HTTPException(status_code=403, detail="DOCUMENT_EXPIRED")
         
@@ -1315,7 +1315,7 @@ async def verify_otp(token: str, request: Request):
 @router.post("/api/{token}/accept_terms")
 async def accept_terms(token: str, request: Request):
     db = get_db()
-    contract = db["visitas"].find_one({"security.token": token})
+    contract = await _db_call(db["visitas"].find_one, {"security.token": token})
     if not contract: return {"status": "error"}
     
     ip = get_client_ip(request)
@@ -1325,7 +1325,8 @@ async def accept_terms(token: str, request: Request):
     data = await request.json()
     checkbox_state = data.get("accepted", False)
     
-    db["visitas"].update_one(
+    await _db_call(
+        db["visitas"].update_one,
         {"visita_code": contract["visita_code"]},
         {"$push": {"timeline": {
             "action": "terms_accepted", 
@@ -1752,7 +1753,8 @@ Equipo Procasa Sucre"""
 async def delete_contract(visita_code: str):
     """Permite eliminar un orden de visita lógicamente (soft delete)."""
     db = get_db()
-    result = db["visitas"].update_one(
+    result = await _db_call(
+        db["visitas"].update_one,
         {"visita_code": visita_code},
         {"$set": {"status": "deleted"}}
     )

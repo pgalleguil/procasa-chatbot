@@ -97,6 +97,30 @@ class GDriveSync:
             logger.error(f"Error creando carpeta en GDrive: {e}")
             return "mock_folder_id"
 
+    def create_subfolder(self, parent_id: str, folder_name: str) -> str:
+        """Crea una subcarpeta dentro de parent_id especificado y otorga permisos."""
+        if not self.service or not parent_id:
+            return "mock_folder_id"
+            
+        file_metadata = {
+            'name': folder_name,
+            'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [parent_id]
+        }
+        try:
+            folder = self.service.files().create(
+                body=file_metadata,
+                fields='id',
+                supportsAllDrives=True
+            ).execute()
+            folder_id = folder.get('id')
+            if folder_id:
+                self.share_item(folder_id)
+            return folder_id
+        except Exception as e:
+            logger.error(f"Error creando subcarpeta {folder_name} en {parent_id}: {e}")
+            return "mock_folder_id"
+
     def upload_file(self, folder_id: str, file_name: str, file_bytes: bytes, mime_type: str = 'application/pdf') -> str:
         """Sube un archivo (desde bytes) a la carpeta especificada."""
         if not self.service:

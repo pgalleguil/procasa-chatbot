@@ -1502,21 +1502,46 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         shutil.rmtree(tmp_dir, ignore_errors=True)
     
 def _get_or_create_expedition_folder(db, collection, code_field, code, client_name, property_code):
-    """Obtiene (o crea) la carpeta de expediente para un documento. Reusa la de la DB si existe."""
+    """
+    Estructura jerárquica de 2 niveles en Drive:
+    Carpeta Raíz (Convenios) -> [Código Propiedad] -> [Nombre Cliente]
+    """
     try:
         doc = db[collection].find_one({code_field: code})
         existing_id = (doc or {}).get("security", {}).get("gdrive_folder_id")
         if existing_id and existing_id != "mock_folder_id":
             return existing_id
-        folder_id = gdrive_sync.create_folder(expedition_folder_name(client_name, property_code))
-        if folder_id and folder_id != "mock_folder_id":
+
+        # 1. Obtener o crear carpeta de la PROPIEDAD
+        prop_folder_name = sanitize_folder_name(property_code, "Propiedad")
+        prop_folder_id = None
+        existing_prop = db["gdrive_property_folders"].find_one({"property_code": property_code})
+        if existing_prop and existing_prop.get("folder_id"):
+            prop_folder_id = existing_prop["folder_id"]
+        else:
+            prop_folder_id = gdrive_sync.create_folder(prop_folder_name)
+            if prop_folder_id and prop_folder_id != "mock_folder_id":
+                db["gdrive_property_folders"].update_one(
+                    {"property_code": property_code},
+                    {"$set": {"folder_id": prop_folder_id}},
+                    upsert=True
+                )
+
+        if not prop_folder_id or prop_folder_id == "mock_folder_id":
+            prop_folder_id = gdrive_sync.parent_folder_id
+
+        # 2. Crear subcarpeta del CLIENTE dentro de la carpeta de la PROPIEDAD
+        client_folder_name = sanitize_folder_name(client_name, "Cliente")
+        client_folder_id = gdrive_sync.create_subfolder(prop_folder_id, client_folder_name)
+        if client_folder_id and client_folder_id != "mock_folder_id":
             db[collection].update_one(
                 {code_field: code},
-                {"$set": {"security.gdrive_folder_id": folder_id}}
+                {"$set": {"security.gdrive_folder_id": client_folder_id}}
             )
-            return folder_id
+            return client_folder_id
+        return prop_folder_id
     except Exception as e:
-        logger.error(f"[GDRIVE] Error obteniendo/creando carpeta expediente {code}: {e}")
+        logger.error(f"[GDRIVE] Error obteniendo/creando carpeta jerárquica {code}: {e}")
     return None
 
 

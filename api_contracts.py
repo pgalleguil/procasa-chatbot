@@ -21,7 +21,7 @@ from chatbot.whatsapp_client import send_whatsapp_message
 
 from services.security_contracts import SecurityContracts
 from services.pdf_generator_contracts import PDFGenerator
-from services.gdrive_sync import GDriveSync, expedition_folder_name
+from services.gdrive_sync import GDriveSync, expedition_folder_name, sanitize_folder_name
 
 logger = logging.getLogger("procasa-contracts")
 router = APIRouter(prefix="/contracts", tags=["Contracts"])
@@ -1503,45 +1503,26 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     
 def _get_or_create_expedition_folder(db, collection, code_field, code, client_name, property_code):
     """
-    Estructura jerárquica de 2 niveles en Drive:
-    Carpeta Raíz (Convenios) -> [Código Propiedad] -> [Nombre Cliente]
+    Estructura limpia de 1 nivel para Convenios:
+    Carpeta Raíz (Convenios) -> [Nombre_Propietario]_[Direccion_Propiedad]
     """
     try:
-        doc = db[collection].find_one({code_field: code})
-        existing_id = (doc or {}).get("security", {}).get("gdrive_folder_id")
+        doc = db[collection].find_one({code_field: code}) or {}
+        existing_id = doc.get("security", {}).get("gdrive_folder_id")
         if existing_id and existing_id != "mock_folder_id":
             return existing_id
 
-        # 1. Obtener o crear carpeta de la PROPIEDAD
-        prop_folder_name = sanitize_folder_name(property_code, "Propiedad")
-        prop_folder_id = None
-        existing_prop = db["gdrive_property_folders"].find_one({"property_code": property_code})
-        if existing_prop and existing_prop.get("folder_id"):
-            prop_folder_id = existing_prop["folder_id"]
-        else:
-            prop_folder_id = gdrive_sync.create_folder(prop_folder_name)
-            if prop_folder_id and prop_folder_id != "mock_folder_id":
-                db["gdrive_property_folders"].update_one(
-                    {"property_code": property_code},
-                    {"$set": {"folder_id": prop_folder_id}},
-                    upsert=True
-                )
-
-        if not prop_folder_id or prop_folder_id == "mock_folder_id":
-            prop_folder_id = gdrive_sync.parent_folder_id
-
-        # 2. Crear subcarpeta del CLIENTE dentro de la carpeta de la PROPIEDAD
-        client_folder_name = sanitize_folder_name(client_name, "Cliente")
-        client_folder_id = gdrive_sync.create_subfolder(prop_folder_id, client_folder_name)
-        if client_folder_id and client_folder_id != "mock_folder_id":
+        address = (doc.get("property_data") or {}).get("direccion", "") or property_code or ""
+        folder_name = f"{sanitize_folder_name(client_name, 'Propietario')}_{sanitize_folder_name(address, 'Direccion')}"
+        folder_id = gdrive_sync.create_folder(folder_name)
+        if folder_id and folder_id != "mock_folder_id":
             db[collection].update_one(
                 {code_field: code},
-                {"$set": {"security.gdrive_folder_id": client_folder_id}}
+                {"$set": {"security.gdrive_folder_id": folder_id}}
             )
-            return client_folder_id
-        return prop_folder_id
+            return folder_id
     except Exception as e:
-        logger.error(f"[GDRIVE] Error obteniendo/creando carpeta jerárquica {code}: {e}")
+        logger.error(f"[GDRIVE] Error creando carpeta de convenio {code}: {e}")
     return None
 
 

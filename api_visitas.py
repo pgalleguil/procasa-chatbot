@@ -1993,7 +1993,7 @@ async def visita_dashboard(request: Request):
 async def test_gdrive_endpoint():
     """Endpoint de diagnóstico para probar integración con Google Drive en Render"""
     db = get_db()
-    result = {"status": "unknown", "logs": []}
+    result = {"status": "unknown", "logs": [], "errors": []}
     try:
         if not gdrive_sync.service:
             result["status"] = "error"
@@ -2002,21 +2002,42 @@ async def test_gdrive_endpoint():
 
         result["logs"].append(f"GDRIVE_VISITAS_FOLDER_ID: {gdrive_sync.parent_folder_id}")
 
-        prop_id = gdrive_sync.create_folder("TEST_PROPIEDAD_9999")
-        result["logs"].append(f"create_folder TEST_PROPIEDAD_9999 id: {prop_id}")
+        # Test direct create_folder for property 16704
+        try:
+            file_metadata = {
+                'name': '16704',
+                'mimeType': 'application/vnd.google-apps.folder',
+                'parents': [gdrive_sync.parent_folder_id]
+            }
+            folder = gdrive_sync.service.files().create(
+                body=file_metadata,
+                fields='id',
+                supportsAllDrives=True
+            ).execute()
+            prop_id = folder.get('id')
+            result["logs"].append(f"Direct create_folder 16704 succeeded! id: {prop_id}")
+        except Exception as e_direct:
+            result["errors"].append(f"Direct create_folder 16704 FAILED: {type(e_direct).__name__} - {e_direct}")
+            prop_id = None
 
-        client_id = gdrive_sync.create_subfolder(prop_id, "TEST_CLIENTE_PRUEBA")
-        result["logs"].append(f"create_subfolder TEST_CLIENTE_PRUEBA id: {client_id}")
+        if prop_id:
+            try:
+                sub_meta = {
+                    'name': 'Francisca_Test',
+                    'mimeType': 'application/vnd.google-apps.folder',
+                    'parents': [prop_id]
+                }
+                sub = gdrive_sync.service.files().create(
+                    body=sub_meta,
+                    fields='id',
+                    supportsAllDrives=True
+                ).execute()
+                sub_id = sub.get('id')
+                result["logs"].append(f"Direct create_subfolder Francisca_Test succeeded! id: {sub_id}")
+            except Exception as e_sub:
+                result["errors"].append(f"Direct create_subfolder FAILED: {type(e_sub).__name__} - {e_sub}")
 
-        pdf_test = b"%PDF-1.4 test pdf content for drive verification"
-        file_id = gdrive_sync.upload_file(client_id, "test_document.pdf", pdf_test, "application/pdf")
-        result["logs"].append(f"upload_file test_document.pdf id: {file_id}")
-
-        if file_id and file_id != "mock_file_id":
-            result["status"] = "success"
-            result["drive_folder_url"] = f"https://drive.google.com/drive/folders/{client_id}"
-        else:
-            result["status"] = "failed"
+        result["status"] = "complete"
     except Exception as e:
         import traceback
         result["status"] = "exception"

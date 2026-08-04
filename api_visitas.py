@@ -369,71 +369,43 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             "executive": executive
         }
         
-        await adb["visitas"].insert_one(visita_doc)
+        # 2. Generar PDF original y subir a Drive SÍNCRONAMENTE antes de insertar en DB
+        try:
+            from chatbot.storage import get_db
+            local_db = get_db()
+            pdf_b = PDFGenerator.generate_original_contract(data)
+            orig_hash = SecurityContracts.hash_document(pdf_b)
+            visita_doc["security"]["original_hash"] = orig_hash
 
-        def generate_original_pdf_bg(data_dict, p_code, p_path):
-            import time
-            try:
-                from chatbot.storage import get_db
-                local_db = get_db()
-                pdf_b = PDFGenerator.generate_original_contract(data_dict)
-                orig_hash = SecurityContracts.hash_document(pdf_b)
-                updates = {"security.original_hash": orig_hash}
-
-                # ── Drive upload: OBLIGATORIO con 3 reintentos ──────────────────
-                client_name = data_dict.get("cliente_nombre", "")
-                prop_code = data_dict.get("property_code", "") or data_dict.get("propiedad_codigo", "")
-                drive_ok = False
-                last_err = None
-                for attempt in range(1, 4):
-                    try:
-                        folder_id = _get_or_create_expedition_folder(
-                            local_db, "visitas", "visita_code", p_code, client_name, prop_code
-                        )
-                        if not folder_id:
-                            raise RuntimeError("No se pudo obtener/crear carpeta en Drive")
-                        updates["security.gdrive_folder_id"] = folder_id
-                        file_id = gdrive_sync.upload_file(
-                            folder_id, f"{p_code}_original.pdf", pdf_b, "application/pdf"
-                        )
-                        if not file_id or file_id == "mock_file_id":
-                            raise RuntimeError("upload_file devolvió ID inválido")
-                        updates["security.original_pdf_drive_id"] = file_id
-
-                        drive_ok = True
-                        logger.info(f"[BG TASK] Drive upload OK en expediente intento={attempt} code={p_code} file_id={file_id}")
-                        break
-                    except Exception as e:
-                        last_err = e
-                        logger.warning(f"[BG TASK] Drive upload FALLO intento={attempt}/3 code={p_code}: {e}")
-                        if attempt < 3:
-                            time.sleep(2 ** attempt)  # 2s, 4s
-
-                if not drive_ok:
-                    logger.critical(
-                        f"[BG TASK] DRIVE UPLOAD FALLIDO DEFINITIVAMENTE code={p_code}: {last_err}. "
-                        f"El PDF solo existe en local — verificar Drive y subir manualmente."
-                    )
-
-                # ── Copia local: caché de respaldo (NO es la fuente primaria) ──
-                try:
-                    t_dir = BASE_DIR / "tmp" / "visitas" / p_code
-                    t_dir.mkdir(parents=True, exist_ok=True)
-                    with open(t_dir / "orden de visita_original.pdf", "wb") as f:
-                        f.write(pdf_b)
-                    with open(p_path, "wb") as f:
-                        f.write(pdf_b)
-                except Exception as e:
-                    logger.warning(f"[BG TASK] Error guardando copia local {p_code}: {e}")
-
-                local_db["visitas"].update_one(
-                    {"visita_code": p_code},
-                    {"$set": updates}
+            # Subir a carpeta de expediente en Google Drive
+            client_name = data.get("cliente_nombre", "")
+            prop_code = property_code or data.get("propiedad_codigo", "")
+            folder_id = _get_or_create_expedition_folder(
+                local_db, "visitas", "visita_code", visita_code, client_name, prop_code
+            )
+            if folder_id:
+                visita_doc["security"]["gdrive_folder_id"] = folder_id
+                file_id = gdrive_sync.upload_file(
+                    folder_id, f"{visita_code}_original.pdf", pdf_b, "application/pdf"
                 )
-            except Exception as e:
-                logger.error(f"[BG TASK] Error generando original: {e}")
+                if file_id and file_id != "mock_file_id":
+                    visita_doc["security"]["original_pdf_drive_id"] = file_id
+                    logger.info(f"[VISITAS] PDF subido a Drive de forma síncrona code={visita_code} file_id={file_id}")
 
-        background_tasks.add_task(generate_original_pdf_bg, data, visita_code, perm_original_path)
+            # Copia local de respaldo
+            try:
+                t_dir = BASE_DIR / "tmp" / "visitas" / visita_code
+                t_dir.mkdir(parents=True, exist_ok=True)
+                with open(t_dir / "orden de visita_original.pdf", "wb") as f:
+                    f.write(pdf_b)
+                with open(perm_original_path, "wb") as f:
+                    f.write(pdf_b)
+            except Exception as e_local:
+                logger.warning(f"[VISITAS] Error guardando copia local {visita_code}: {e_local}")
+        except Exception as e_pdf:
+            logger.error(f"[VISITAS] Error generando original síncronamente: {e_pdf}")
+
+        await adb["visitas"].insert_one(visita_doc)
             
         base_url = str(request.base_url).rstrip('/')
         url_firma = f"{base_url}/visitas/view/{visita_code}"

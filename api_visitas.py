@@ -370,62 +370,31 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         }
         
         # 2. Generar PDF original y subir a Drive SÍNCRONAMENTE antes de insertar en DB
-        drive_debug = {"steps": [], "error": None}
         try:
             from chatbot.storage import get_db
             local_db = get_db()
             pdf_b = PDFGenerator.generate_original_contract(data)
             orig_hash = SecurityContracts.hash_document(pdf_b)
             visita_doc["security"]["original_hash"] = orig_hash
-            drive_debug["steps"].append(f"pdf_generated len={len(pdf_b)}")
 
-            # Subir a carpeta de expediente en Google Drive
+            # Subir a Drive: carpeta plana directamente bajo la raíz [prop_code]_[cliente]
             client_name = data.get("cliente_nombre", "")
             prop_code = property_code or data.get("propiedad_codigo", "")
-            drive_debug["steps"].append(f"client_name={client_name} prop_code={prop_code}")
-            drive_debug["steps"].append(f"gdrive_sync.service is None: {gdrive_sync.service is None}")
-            drive_debug["steps"].append(f"gdrive_sync.parent_folder_id: {gdrive_sync.parent_folder_id}")
+            folder_name = f"{sanitize_folder_name(prop_code, 'Prop')}_{sanitize_folder_name(client_name, 'Cliente')}"
+            folder_id = gdrive_sync.create_subfolder(gdrive_sync.parent_folder_id, folder_name)
 
-            # Paso 1: crear o recuperar carpeta de propiedad
-            prop_folder_name = sanitize_folder_name(prop_code, "Propiedad")
-            existing_prop = local_db["gdrive_property_folders"].find_one({"property_code": prop_code})
-            if existing_prop and existing_prop.get("folder_id"):
-                prop_folder_id = existing_prop["folder_id"]
-                drive_debug["steps"].append(f"prop_folder_id from cache: {prop_folder_id}")
-            else:
-                prop_folder_id = gdrive_sync.create_folder(prop_folder_name)
-                drive_debug["steps"].append(f"create_folder({prop_folder_name}) -> {prop_folder_id}")
-                if prop_folder_id and prop_folder_id != "mock_folder_id":
-                    local_db["gdrive_property_folders"].update_one(
-                        {"property_code": prop_code},
-                        {"$set": {"folder_id": prop_folder_id}},
-                        upsert=True
-                    )
-
-            if not prop_folder_id or prop_folder_id == "mock_folder_id":
-                prop_folder_id = gdrive_sync.parent_folder_id
-                drive_debug["steps"].append(f"prop_folder fallback -> parent_folder_id: {prop_folder_id}")
-
-            # Paso 2: crear subcarpeta del cliente
-            client_folder_name = sanitize_folder_name(client_name, "Cliente")
-            client_folder_id = gdrive_sync.create_subfolder(prop_folder_id, client_folder_name)
-            drive_debug["steps"].append(f"create_subfolder({client_folder_name} in {prop_folder_id}) -> {client_folder_id}")
-
-            folder_id = client_folder_id if (client_folder_id and client_folder_id != "mock_folder_id") else prop_folder_id
-            drive_debug["steps"].append(f"folder_id used for upload: {folder_id}")
-
-            if folder_id:
+            if folder_id and folder_id != "mock_folder_id":
                 visita_doc["security"]["gdrive_folder_id"] = folder_id
                 file_id = gdrive_sync.upload_file(
                     folder_id, f"{visita_code}_original.pdf", pdf_b, "application/pdf"
                 )
-                drive_debug["steps"].append(f"upload_file -> {file_id}")
                 if file_id and file_id != "mock_file_id":
                     visita_doc["security"]["original_pdf_drive_id"] = file_id
-                    logger.info(f"[VISITAS] PDF subido a Drive de forma síncrona code={visita_code} file_id={file_id}")
+                    logger.info(f"[VISITAS] PDF subido a Drive code={visita_code} folder={folder_name} file_id={file_id}")
                 else:
-                    drive_debug["error"] = f"upload_file returned invalid id: {file_id}"
-                    logger.error(f"[VISITAS] {drive_debug['error']}")
+                    logger.error(f"[VISITAS] upload_file devolvio ID invalido para {visita_code}")
+            else:
+                logger.error(f"[VISITAS] No se pudo crear carpeta Drive para {visita_code}")
 
             # Copia local de respaldo
             try:
@@ -439,8 +408,7 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                 logger.warning(f"[VISITAS] Error guardando copia local {visita_code}: {e_local}")
         except Exception as e_pdf:
             import traceback
-            drive_debug["error"] = f"{type(e_pdf).__name__}: {e_pdf}\n{traceback.format_exc()}"
-            logger.error(f"[VISITAS] Error generando original síncronamente: {drive_debug['error']}")
+            logger.error(f"[VISITAS] Error generando original: {e_pdf}\n{traceback.format_exc()}")
 
         await adb["visitas"].insert_one(visita_doc)
             

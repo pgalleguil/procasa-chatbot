@@ -16,6 +16,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from config import Config
+from starlette.concurrency import run_in_threadpool
 from chatbot.constants import CHILE_TZ
 from chatbot.whatsapp_client import send_whatsapp_message
 
@@ -413,7 +414,7 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         try:
             from chatbot.storage import get_db
             local_db = get_db()
-            pdf_b = PDFGenerator.generate_original_contract(data)
+            pdf_b = await run_in_threadpool(PDFGenerator.generate_original_contract, data)
             orig_hash = SecurityContracts.hash_document(pdf_b)
             contract_doc["security"]["original_hash"] = orig_hash
 
@@ -428,12 +429,14 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             # Subir a carpeta de expediente en Google Drive (síncrono, sin retry loop)
             client_name = data.get("cliente_nombre", "")
             prop_code = data.get("property_code", "") or data.get("propiedad_codigo", "")
-            folder_id = _get_or_create_expedition_folder(
+            folder_id = await run_in_threadpool(
+                _get_or_create_expedition_folder,
                 local_db, "contracts", "contract_code", contract_code, client_name, prop_code
             )
             if folder_id:
                 contract_doc["security"]["gdrive_folder_id"] = folder_id
-                file_id = gdrive_sync.upload_file(
+                file_id = await run_in_threadpool(
+                    gdrive_sync.upload_file,
                     folder_id, f"{contract_code}_original.pdf", pdf_b, "application/pdf"
                 )
                 if file_id and file_id != "mock_file_id":
@@ -481,7 +484,7 @@ async def download_original_pdf(contract_code: str):
     if drive_id:
         try:
             gdrive = GDriveSync()
-            pdf_bytes = gdrive.download_file(drive_id)
+            pdf_bytes = await run_in_threadpool(gdrive.download_file, drive_id)
             if pdf_bytes:
                 logger.info(f"[DOWNLOAD] PDF servido desde Drive code={contract_code}")
             else:
@@ -594,7 +597,7 @@ async def download_signed_pdf(contract_code: str):
     if file_id:
         try:
             gdrive = GDriveSync()
-            pdf_bytes = gdrive.download_file(file_id)
+            pdf_bytes = await run_in_threadpool(gdrive.download_file, file_id)
             if pdf_bytes:
                 from fastapi.responses import StreamingResponse
                 import io
@@ -701,7 +704,7 @@ async def view_signed_pdf(contract_code: str):
     if file_id:
         try:
             gdrive = GDriveSync()
-            pdf_bytes = gdrive.download_file(file_id)
+            pdf_bytes = await run_in_threadpool(gdrive.download_file, file_id)
             if pdf_bytes:
                 from fastapi.responses import StreamingResponse
                 import io
@@ -1680,6 +1683,7 @@ Equipo Procasa Sucre"""
         logger.error(f"[EMAIL] Error enviando correo firmado a {email_to}: {e}")
 
 @router.delete("/api/delete/{contract_code}")
+@router.delete("/api/{contract_code}/delete")
 async def delete_contract(contract_code: str):
     """Permite eliminar un contrato lógicamente (soft delete)."""
     db = get_db()

@@ -16,6 +16,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from config import Config
+from starlette.concurrency import run_in_threadpool
 from chatbot.constants import CHILE_TZ
 from chatbot.property_lookup import PROPERTY_COLLECTION_NAME
 from chatbot.whatsapp_client import send_whatsapp_message
@@ -373,7 +374,7 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
         try:
             from chatbot.storage import get_db
             local_db = get_db()
-            pdf_b = PDFGenerator.generate_original_contract(data)
+            pdf_b = await run_in_threadpool(PDFGenerator.generate_original_contract, data)
             orig_hash = SecurityContracts.hash_document(pdf_b)
             visita_doc["security"]["original_hash"] = orig_hash
 
@@ -381,11 +382,12 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             client_name = data.get("cliente_nombre", "")
             prop_code = property_code or data.get("propiedad_codigo", "")
             folder_name = f"{sanitize_folder_name(prop_code, 'Prop')}_{sanitize_folder_name(client_name, 'Cliente')}"
-            folder_id = gdrive_sync.create_subfolder(gdrive_sync.parent_folder_id, folder_name)
+            folder_id = await run_in_threadpool(gdrive_sync.create_subfolder, gdrive_sync.parent_folder_id, folder_name)
 
             if folder_id and folder_id != "mock_folder_id":
                 visita_doc["security"]["gdrive_folder_id"] = folder_id
-                file_id = gdrive_sync.upload_file(
+                file_id = await run_in_threadpool(
+                    gdrive_sync.upload_file,
                     folder_id, f"{visita_code}_original.pdf", pdf_b, "application/pdf"
                 )
                 if file_id and file_id != "mock_file_id":
@@ -441,7 +443,7 @@ async def download_original_pdf(visita_code: str):
     if drive_id:
         try:
             gdrive = GDriveSync()
-            pdf_bytes = gdrive.download_file(drive_id)
+            pdf_bytes = await run_in_threadpool(gdrive.download_file, drive_id)
             if pdf_bytes:
                 logger.info(f"[DOWNLOAD] PDF servido desde Drive code={visita_code}")
             else:
@@ -557,7 +559,7 @@ async def download_signed_pdf(visita_code: str):
     if file_id:
         try:
             gdrive = GDriveSync()
-            pdf_bytes = gdrive.download_file(file_id)
+            pdf_bytes = await run_in_threadpool(gdrive.download_file, file_id)
             if pdf_bytes:
                 from fastapi.responses import StreamingResponse
                 import io
@@ -673,7 +675,7 @@ async def view_signed_pdf(visita_code: str):
     if file_id:
         try:
             gdrive = GDriveSync()
-            pdf_bytes = gdrive.download_file(file_id)
+            pdf_bytes = await run_in_threadpool(gdrive.download_file, file_id)
             if pdf_bytes:
                 from fastapi.responses import StreamingResponse
                 import io
@@ -1466,7 +1468,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
                 "ejecutivo_email": contract.get("executive_data", {}).get("email", ""),
                 "ejecutivo_telefono": contract.get("executive_data", {}).get("telefono", "")
             }
-            original_bytes = PDFGenerator.generate_original_contract(data_payload)
+            original_bytes = await run_in_threadpool(PDFGenerator.generate_original_contract, data_payload)
 
         original_hash = SecurityContracts.hash_document(original_bytes)
         secret_key = getattr(Config, "SECRET_KEY", "default_secret")
@@ -1494,7 +1496,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         }
 
         # 3. Generar PDF Firmado Completo
-        signed_pdf_bytes = PDFGenerator.generate_signed_contract(original_bytes, contract, evidence_data, verify_url)
+        signed_pdf_bytes = await run_in_threadpool(PDFGenerator.generate_signed_contract, original_bytes, contract, evidence_data, verify_url)
         signed_hash = SecurityContracts.hash_document(signed_pdf_bytes)
 
         # Guardar archivos en tmp (para subida a drive)
@@ -1808,6 +1810,7 @@ Equipo Procasa Sucre"""
         logger.error(f"[EMAIL] Error enviando correo firmado a {email_to}: {e}")
 
 @router.delete("/api/delete/{visita_code}")
+@router.delete("/api/{visita_code}/delete")
 async def delete_contract(visita_code: str):
     """Permite eliminar un orden de visita lógicamente (soft delete)."""
     db = get_db()

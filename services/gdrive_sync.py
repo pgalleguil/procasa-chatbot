@@ -22,9 +22,9 @@ def sanitize_folder_name(raw: str, default: str = "Sin_Nombre") -> str:
     return raw or default
 
 
-def expedition_folder_name(client_name: str, property_code: str, default: str = "Expediente") -> str:
-    """Nombre de carpeta por expediente: cliente + código de propiedad."""
-    return f"Expediente_{sanitize_folder_name(client_name, 'Cliente')}_{sanitize_folder_name(property_code, 'Propiedad')}"
+def expedition_folder_name(client_name: str, property_code: str, default: str = "Carpeta") -> str:
+    """Nombre de carpeta por cliente y código de propiedad (sin prefijo Expediente)."""
+    return f"{sanitize_folder_name(client_name, 'Cliente')}_{sanitize_folder_name(property_code, 'Propiedad')}"
 
 class GDriveSync:
     SCOPES = ['https://www.googleapis.com/auth/drive']

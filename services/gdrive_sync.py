@@ -57,6 +57,20 @@ class GDriveSync:
             logger.error(f"Error autenticando con Google Drive: {e}")
             return None
 
+    def share_item(self, file_or_folder_id: str):
+        """Otorga permiso para que el archivo/carpeta sea visible en Google Drive."""
+        if not self.service or not file_or_folder_id or file_or_folder_id in ["mock_folder_id", "mock_file_id"]:
+            return
+        try:
+            self.service.permissions().create(
+                fileId=file_or_folder_id,
+                body={'type': 'anyone', 'role': 'writer'},
+                supportsAllDrives=True
+            ).execute()
+            logger.info(f"[GDRIVE] Permiso otorgado correctamente a {file_or_folder_id}")
+        except Exception as e:
+            logger.warning(f"[GDRIVE] No se pudo otorgar permiso compartibilidad a {file_or_folder_id}: {e}")
+
     def create_folder(self, folder_name: str) -> str:
         """Crea una carpeta y retorna su ID."""
         if not self.service:
@@ -75,7 +89,10 @@ class GDriveSync:
                 fields='id',
                 supportsAllDrives=True
             ).execute()
-            return folder.get('id')
+            folder_id = folder.get('id')
+            if folder_id:
+                self.share_item(folder_id)
+            return folder_id
         except Exception as e:
             logger.error(f"Error creando carpeta en GDrive: {e}")
             return "mock_folder_id"
@@ -98,7 +115,10 @@ class GDriveSync:
                 fields='id',
                 supportsAllDrives=True
             ).execute()
-            return file.get('id')
+            file_id = file.get('id')
+            if file_id:
+                self.share_item(file_id)
+            return file_id
         except Exception as e:
             logger.error(f"Error subiendo {file_name} a GDrive: {e}")
             return "mock_file_id"

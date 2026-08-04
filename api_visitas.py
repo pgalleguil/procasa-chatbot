@@ -445,6 +445,16 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                         if not file_id or file_id == "mock_file_id":
                             raise RuntimeError("upload_file devolvió ID inválido")
                         updates["security.original_pdf_drive_id"] = file_id
+
+                        # Subir copia directamente a la carpeta principal de Ordenes de Visita
+                        if gdrive_sync.parent_folder_id and gdrive_sync.parent_folder_id != folder_id:
+                            try:
+                                gdrive_sync.upload_file(
+                                    gdrive_sync.parent_folder_id, f"{p_code}_original.pdf", pdf_b, "application/pdf"
+                                )
+                            except Exception as e_parent:
+                                logger.warning(f"[BG TASK] No se pudo subir copia a carpeta raiz {p_code}: {e_parent}")
+
                         drive_ok = True
                         logger.info(f"[BG TASK] Drive upload OK intento={attempt} code={p_code} file_id={file_id}")
                         break
@@ -569,6 +579,13 @@ async def download_original_pdf(visita_code: str):
                 new_file_id = gdrive_sync.upload_file(
                     folder_id, f"{visita_code}_original.pdf", pdf_bytes, "application/pdf"
                 )
+                if gdrive_sync.parent_folder_id and gdrive_sync.parent_folder_id != folder_id:
+                    try:
+                        gdrive_sync.upload_file(
+                            gdrive_sync.parent_folder_id, f"{visita_code}_original.pdf", pdf_bytes, "application/pdf"
+                        )
+                    except Exception:
+                        pass
                 if new_file_id and new_file_id != "mock_file_id":
                     local_db["visitas"].update_one(
                         {"visita_code": visita_code},

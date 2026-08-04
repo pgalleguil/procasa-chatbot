@@ -305,6 +305,50 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"No se pudieron invalidar cachés antiguos: {e}")
     
+    # Tarea de fondo: otorgar permisos y copiar expedientes existentes a carpeta raiz de Drive
+    def _fix_existing_drive_permissions():
+        try:
+            from chatbot.storage import get_db
+            from services.gdrive_sync import GDriveSync
+            from config import Config
+            db = get_db()
+            g_visitas = GDriveSync(parent_folder_id=Config.GDRIVE_VISITAS_FOLDER_ID)
+            g_contracts = GDriveSync(parent_folder_id=Config.GDRIVE_CONVENIOS_FOLDER_ID)
+            if not g_visitas.service:
+                return
+            for col_name, g_inst in [("visitas", g_visitas), ("contracts", g_contracts)]:
+                docs = list(db[col_name].find({
+                    "$or": [
+                        {"security.gdrive_folder_id": {"$exists": True, "$ne": None}},
+                        {"security.original_pdf_drive_id": {"$exists": True, "$ne": None}}
+                    ]
+                }))
+                for doc in docs:
+                    sec = doc.get("security") or {}
+                    f_id = sec.get("gdrive_folder_id")
+                    d_id = sec.get("original_pdf_drive_id")
+                    code = doc.get("visita_code") or doc.get("contract_code")
+                    if f_id:
+                        g_inst.share_item(f_id)
+                    if d_id:
+                        g_inst.share_item(d_id)
+                        if g_inst.parent_folder_id:
+                            try:
+                                pdf_b = g_inst.download_file(d_id)
+                                if pdf_b:
+                                    g_inst.upload_file(g_inst.parent_folder_id, f"{code}_original.pdf", pdf_b, "application/pdf")
+                            except Exception:
+                                pass
+            logger.info("[GDRIVE] Permisos y copias en carpeta principal actualizados correctamente.")
+        except Exception as e:
+            logger.warning(f"[GDRIVE] Error reparando permisos antiguos de Drive: {e}")
+
+    try:
+        from chatbot.storage import _WORKER_THREAD_POOL
+        _WORKER_THREAD_POOL.submit(_fix_existing_drive_permissions)
+    except Exception as e:
+        logger.warning(f"[GDRIVE] No se pudo lanzar worker de permisos Drive: {e}")
+
     # El modelo de embeddings se cargará bajo demanda para ahorrar RAM en el arranque
     logger.info("Startup completo. Modelo de embeddings se cargará en el primer uso.")
     

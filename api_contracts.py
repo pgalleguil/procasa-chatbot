@@ -477,6 +477,8 @@ async def download_original_pdf(contract_code: str):
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
 
+    pdf_bytes = None
+
     # Prioridad 1: ruta permanente guardada en DB
     perm_path_str = contract.get("security", {}).get("original_pdf_path")
     if perm_path_str and os.path.exists(perm_path_str):

@@ -53,6 +53,18 @@ def test_run_toctoc_incremental_triggers_distribution():
     assert "total_insert > 0" in src
 
 
+def test_yapo_pipeline_triggers_distribution():
+    src = (ROOT / "scraper_yapo" / "scraping_yapo_proxys_yapo.py").read_text(encoding="utf-8")
+    assert "_run_post_scrape_distribution" in src
+    assert "new_inserted > 0" in src
+
+
+def test_yapo_owner_hunt_triggers_distribution():
+    src = (ROOT / "scraper_yapo" / "run_owner_hunt.py").read_text(encoding="utf-8")
+    assert "_run_post_scrape_distribution" in src
+    assert "write_db and not args.dry_run and processed" in src
+
+
 # ===== el script standalone invoca distribute_sourced_leads =====
 
 def test_standalone_script_executes_distribution(tmp_path, monkeypatch):

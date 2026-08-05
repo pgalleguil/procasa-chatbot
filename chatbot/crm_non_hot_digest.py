@@ -19,8 +19,6 @@ from collections import Counter, defaultdict
 from datetime import timedelta
 import hashlib
 import uuid
-from urllib.parse import urlencode
-
 logger = logging.getLogger(__name__)
 
 from pymongo import ASCENDING, ReturnDocument
@@ -125,13 +123,10 @@ def _build_grouped_digest_message(*, executive_name, lead_count):
     display name embedded in the URL.
     """
     base_url = str(getattr(Config, "CRM_BASE_URL", "")).rstrip("/")
-    query = urlencode({
-        "scope": "mine",
-        "temperatura": "COLD",
-        "estado": "NEW",
-        "orden": "recent_assigned",
-    })
-    crm_url = f"{base_url}/crm?{query}"
+    # Group digests link to the plain CRM list: the executive's own new
+    # non-HOT leads are resolved from the authenticated CRM user, so no
+    # query-parameter filter is needed (and those params are not supported).
+    crm_url = f"{base_url}/crm"
     return _sanitize_surrogates("\n".join([
         f"\U0001F4E5 *{lead_count} NUEVOS LEADS ASIGNADOS*",
         "",

@@ -85,3 +85,5 @@ python scraping/test_classification_fixes.py
 3. **$set only**: All MongoDB updates use `$set`, preserving existing fields.
 4. **Backup before batch ops**: `backups/propiedades_captacion_{timestamp}.json` before reprocess.
 5. **Deprecated scripts blocked**: `improved_scraper.py` exits with error.
+6. **Distribution post-scrape (no hourly loop)**: `distribute_sourced_leads()` runs at the end of a scrape batch, not hourly on the server. Triggered via `scripts/run_distribution_after_scrape.py` from `run_toctoc.py`, `run_territorial_expansion.py`, and `run_toctoc_incremental.py`. Manual trigger: `POST /api/captacion/distribute`. Weekly SLA release stays in `captacion_sla_release_loop` (Sunday 04:00 Chile).
+7. **Never redistribute managed contacts**: `distribute_sourced_leads()` and `release_stale_captaciones()` skip docs with management evidence (`has_management_evidence` in `redistribute_captacion.py`: notas, actividades, `fecha_ultima_gestion`, events in `captacion_management_events`).

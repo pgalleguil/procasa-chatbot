@@ -710,6 +710,32 @@ def cmd_process(args, config):
 
     print(f"\nProcessed {len(processed)} records -> {_processed_path(config, batch_id)}")
 
+    # ---- POST-SCRAPE: distribuir captaciones nuevas ----
+    if args.write_db and not args.dry_run and processed:
+        _run_post_scrape_distribution()
+
+
+def _run_post_scrape_distribution():
+    """Dispara la distribucion de captaciones nuevas tras persistir el lote."""
+    import subprocess
+    import sys as _sys
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "run_distribution_after_scrape.py"
+    if not script.exists():
+        print(f"  [POST-SCRAPE] Script de distribucion no encontrado: {script}")
+        return
+    try:
+        r = subprocess.run(
+            [_sys.executable, str(script)],
+            capture_output=True, text=True, timeout=300,
+        )
+        if r.stdout.strip():
+            print(r.stdout.strip())
+        if r.returncode != 0 and r.stderr.strip():
+            print(f"  [POST-SCRAPE] stderr: {r.stderr.strip()[-400:]}")
+    except Exception as e:
+        print(f"  [POST-SCRAPE] No se pudo distribuir: {e}")
+
 
 def cmd_run_full(args, config):
     from proxy_manager import ProxyManager

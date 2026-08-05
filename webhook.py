@@ -186,7 +186,7 @@ background_tasks_status = {
     "sla_monitor": {"status": "starting", "last_heartbeat": None},
     "task_monitor": {"status": "starting", "last_heartbeat": None},
     "captacion_reminder": {"status": "starting", "last_heartbeat": None},
-    "captacion_distributor": {"status": "starting", "last_heartbeat": None},
+    "captacion_distributor": {"status": "post_scrape_trigger", "last_heartbeat": None},
     "lead_processing": {"status": "starting", "last_heartbeat": None}
 }
 _OAUTH_HTTP_CLIENT = None
@@ -261,7 +261,8 @@ async def lifespan(app: FastAPI):
     s_task = None
     t_task = asyncio.create_task(check_scheduled_tasks_loop())
     cr_task = asyncio.create_task(captacion_reminder_loop())
-    c_task = asyncio.create_task(captacion_distribution_loop())
+    # La distribucion de captaciones ya NO corre en loop horario: se dispara
+    # al terminar el scraping (ver scripts/run_distribution_after_scrape.py).
     sla_c_task = asyncio.create_task(captacion_sla_release_loop())
     r_task = asyncio.create_task(reassign_unassigned_leads_loop()) # Ahora es Productor
     d_task = asyncio.create_task(daily_report_loop())
@@ -353,7 +354,6 @@ async def lifespan(app: FastAPI):
     if s_task is not None:
         s_task.cancel()
     t_task.cancel()
-    c_task.cancel()
     r_task.cancel()
     d_task.cancel()
     nudge_task.cancel()
@@ -369,7 +369,7 @@ async def lifespan(app: FastAPI):
         sla_orch_task.cancel()
     try:
         await asyncio.gather(
-            n_task, t_task, c_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, sla_c_task, c1_task, c2_task,
+            n_task, t_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, sla_c_task, c1_task, c2_task,
             *([sla_orch_task] if sla_orch_task is not None else []),
             return_exceptions=True
         )
@@ -2776,31 +2776,6 @@ async def api_distribute_captacion(request: Request):
     count = await loop.run_in_executor(_WORKER_THREAD_POOL, distribute_sourced_leads)
     app.state.captacion_stats_cache = {}
     return {"status": "ok", "assigned": count, "reassigned_inactive": reassigned}
-
-async def captacion_distribution_loop():
-    logger.info("[BACKGROUND] Iniciando loop de distribución de captaciones...")
-    while True:
-        try:
-            background_tasks_status["captacion_distributor"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
-            background_tasks_status["captacion_distributor"]["status"] = "running"
-            
-            loop = asyncio.get_running_loop()
-            
-            # Distribuir nuevas captaciones sin asignar. El release por SLA
-            # (inactividad >= 5 dias) corre en el loop semanal nocturno.
-            count = await loop.run_in_executor(_WORKER_THREAD_POOL, distribute_sourced_leads)
-            if count > 0:
-                logger.info(f"[BACKGROUND] Se asignaron {count} nuevas captaciones automáticamente.")
-                
-            # Ejecutar cada 1 hora
-            await asyncio.sleep(3600)
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            background_tasks_status["captacion_distributor"]["status"] = "error"
-            logger.error(f"[BACKGROUND] Error en distribuidor de captaciones: {e}")
-            await asyncio.sleep(60)
-
 
 SLA_RELEASE_WEEKDAY = 6  # domingo
 SLA_RELEASE_HOUR = 4  # 04:00 hora Chile

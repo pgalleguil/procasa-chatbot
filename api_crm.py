@@ -1536,8 +1536,15 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
         if len(words) > 2:
             ejec_asignado = f"{words[0]} {words[1]}"
 
+    raw_phone_str = str(lead.get("phone") or "")
+    is_synth = bool(lead.get("phone_is_synthetic")) or raw_phone_str.startswith("no-phone-")
+
     return {
         "phone": lead.get("phone"),
+        "lead_id": str(lead.get("_id") or ""),
+        "raw_phone": raw_phone_str,
+        "synthetic_phone": raw_phone_str if is_synth else "",
+        "phone_is_synthetic": is_synth,
         "timeline": timeline,
         "nombre": prospecto.get("nombre", "Desconocido"),
         "email": prospecto.get("email", "No registrado"),
@@ -1559,10 +1566,27 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
 # --- 3. ACTUALIZAR LEAD (CON VALIDACIÓN ESTRICTA) ---
 def update_lead_crm_data(phone, data):
     db = get_db()
-    phone_clean = phone.replace(" ", "").replace("+", "").strip()
-    
-    current_lead = db["leads"].find_one({"phone": {"$regex": phone_clean}})
-    if not current_lead: return False
+    target = str(phone or "").strip()
+    lead_id = (data.get("lead_id") if isinstance(data, dict) else None) or target
+
+    current_lead = None
+    if len(lead_id) == 24:
+        try:
+            from bson import ObjectId as BsonObjectId
+            current_lead = db["leads"].find_one({"_id": BsonObjectId(lead_id)})
+        except Exception:
+            pass
+
+    if not current_lead and target:
+        current_lead = db["leads"].find_one({"phone": target})
+
+    if not current_lead and target:
+        phone_clean = target.replace(" ", "").replace("+", "").strip()
+        if phone_clean:
+            current_lead = db["leads"].find_one({"phone": {"$regex": re.escape(phone_clean)}})
+
+    if not current_lead:
+        return False
     
     # --- VALIDACIÓN DEL TRIÁNGULO DE CONTROL (CRITICA 1 & 3) ---
     interaction_type = data.get("interaction_type")

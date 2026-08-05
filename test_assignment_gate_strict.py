@@ -47,13 +47,26 @@ def test_int_one_not_eligible():
     assert "classification_not_final_or_not_persisted" in reasons
 
 
-# ===== INCIERTO never eligible =====
+# ===== INCIERTO eligible with proper confidence (owner potential) =====
 
-def test_incierto_with_true_not_eligible():
-    doc = _doc("INCIERTO", True)
+def test_incierto_with_true_eligible():
+    doc = _doc("INCIERTO", True, cls_extra={"owner_probability": 0.6})
+    eligible, reasons = assignment_eligibility(doc)
+    assert eligible is True
+
+
+def test_incierto_wrong_probability_not_eligible():
+    doc = _doc("INCIERTO", True, cls_extra={"owner_probability": 0.3})
     eligible, reasons = assignment_eligibility(doc)
     assert eligible is False
-    assert "classification_not_assignable" in reasons
+    assert "owner_probability_inconsistent_with_state" in reasons
+
+
+def test_legacy_source_rules_accepted():
+    doc = _doc("INCIERTO", True, cls_extra={"owner_probability": 0.6, "source": "rules", "decision_source": None})
+    doc["classification"].pop("decision_source", None)
+    eligible, reasons = assignment_eligibility(doc)
+    assert eligible is True
 
 
 # ===== CORREDOR never eligible =====

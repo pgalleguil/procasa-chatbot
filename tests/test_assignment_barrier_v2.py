@@ -14,14 +14,22 @@ def base_doc():
 def test_valid_persisted_deepseek_can_be_assigned():
     assert assignment_eligibility(base_doc()) == (True, [])
 
-def test_incierto_with_valid_deepseek_is_blocked():
-    """INCIERTO is never assignable, even with valid DeepSeek evidence."""
+def test_incierto_with_valid_deepseek_can_be_assigned():
+    """INCIERTO is assignable: it has owner potential (0.50-0.69)."""
+    doc = base_doc()
+    doc["classification"]["state"] = "INCIERTO"
+    doc["classification"]["owner_probability"] = 0.65
+    eligible, reasons = assignment_eligibility(doc)
+    assert eligible is True
+
+
+def test_incierto_inconsistent_probability_blocked():
     doc = base_doc()
     doc["classification"]["state"] = "INCIERTO"
     doc["classification"]["owner_probability"] = 0.75
     eligible, reasons = assignment_eligibility(doc)
     assert eligible is False
-    assert "classification_not_assignable" in reasons
+    assert "owner_probability_inconsistent_with_state" in reasons
 
 
 def test_pending_or_unpersisted_deepseek_is_blocked():

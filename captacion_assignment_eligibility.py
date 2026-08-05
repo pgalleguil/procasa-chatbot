@@ -14,8 +14,9 @@ def assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]]:
     state = str(cls.get("state") or cls.get("final_state") or "").upper()
     if state not in FINAL_STATES:
         reasons.append("classification_not_assignable")
-    # INCIERTO and CORREDOR are never assignment-eligible regardless of assignment_ready
-    if state in ("INCIERTO",) or state.startswith("CORR"):
+    # CORREDOR (corredor confirmado) nunca es elegible para captación de dueños.
+    # INCIERTO sí es elegible: tiene probabilidad de ser dueño (0.50-0.69).
+    if state.startswith("CORR"):
         reasons.append("classification_not_assignable")
     if cls.get("assignment_ready") is not True:
         reasons.append("classification_not_final_or_not_persisted")
@@ -82,7 +83,7 @@ def assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]]:
     ds_status = str(cls.get("deepseek_status") or "").upper()
     trace = cls.get("trace") or {}
     manual_approved = bool(cls.get("manual_review_approved") or trace.get("manual_review_approved"))
-    deterministic = source in {"structural_rules", "rules_json", "html_validation", "profile_correlation"}
+    deterministic = source in {"structural_rules", "rules_json", "html_validation", "profile_correlation", "rules", "rules_fallback"}
     deepseek_persisted = source == "deepseek" and ds_status == "VALID" and bool(trace.get("deepseek_raw") or cls.get("deepseek_raw"))
     if not (manual_approved or deterministic or deepseek_persisted):
         reasons.append("no_auditable_final_decision")

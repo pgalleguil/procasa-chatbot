@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 {% from "_lead_temperature_visual.html" import lead_temperature_icon, lead_temperature_label %}
 <html lang="es" data-theme="dark">
 
@@ -3386,67 +3386,6 @@
                             </div>
                         </div>
 
-                        <!-- Chips Select -->
-                        <div id="semSelectedChipsModal" class="d-flex gap-2 flex-wrap mb-2"></div>
-
-                        <!-- Results Area -->
-                        <div id="semanticResultsModal" class="sem-results-grid modern-scrollbar p-1"
-                            style="max-height: 300px; overflow-y: auto;">
-                            <div class="text-center py-5">
-                                <div class="mb-3" style="opacity: 0.3;">
-                                    <i class="fa-solid fa-microchip fa-3x"></i>
-                                </div>
-                                <h6 class="text-primary mb-2" style="font-weight: 700;">Asistente de Recomendación
-                                </h6>
-                                <p class="small text-secondary px-4">
-                                    Describa los requerimientos del cliente en lenguaje natural para identificar las
-                                    mejores opciones en nuestra red.
-                                </p>
-                            </div>
-                        </div>
-
-                        <!-- Message Preview for Recommendation -->
-                        <div id="semRecommendAreaModal" class="mt-3 pt-3 border-top border-secondary d-none">
-                            <label class="data-label mb-1">Mensaje de Recomendación:</label>
-                            <textarea class="form-control mb-2 modern-scrollbar" id="semRecommendMsgModal"
-                                rows="4"></textarea>
-                        </div>
-                    </div>
-
-                    <!-- STANDARD MESSAGE CONTAINER -->
-                    <div id="messageContainer">
-                        <label class="data-label mb-1">Mensaje:</label>
-                        <textarea class="form-control modern-scrollbar" id="commMessage" rows="5"></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                    <a href="#" id="btnSendComm" class="btn btn-primary btn-sm" target="_blank">Enviar</a>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-    <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
-    <script>
-        // --- 1. GESTOR DE SESIÓN (ORIGINAL) ---
-        // --- 1. GESTOR DE SESIÓN (MEJORADO: PASIVO) ---
-        const sessionManager = {
-            timeoutSeconds: 1800, // 30 mins
-            warningSeconds: 120,
-            lastActivity: Date.now(),
-            checkInterval: null,
-            modalInstance: null,
-            warningActive: false,
-
-            init: function () {
-                this.modalInstance = new bootstrap.Modal(document.getElementById('sessionModal'));
-
-                // Listeners Pasivos (Teclado, Clic)
-                ['click', 'keydown', 'mousemove'].forEach(evt => {
-                    document.addEventListener(evt, () => this.recordActivity());
                 });
 
                 // Chequeo periódico (cada 1 min)
@@ -3509,6 +3448,29 @@
                     .then(r => console.log("Sesión extendida (Keep-Alive)"))
                     .catch(e => console.error("Error keeping alive", e));
             }
+        };
+
+        // === LEAD DATA GLOBAL (Jinja2 server-side rendered) ===
+        const leadData = {
+            lead_id: "{{ lead.lead_id or '' }}",
+            telefono: "{{ lead.phone if lead.phone and not lead.phone_is_synthetic else '' }}",
+            synthetic_phone: "{{ lead.synthetic_phone or lead.raw_phone or '' }}",
+            phone_is_synthetic: {{ 'true' if lead.phone_is_synthetic else 'false' }},
+            nombre: "{{ lead.nombre | default('') }}",
+            email: "{{ lead.email | default('') }}",
+            rut: "{{ lead.rut | default('') }}",
+            crm_estado: "{{ lead.crm_estado | default('new') }}",
+            next_action_date: "{{ lead.next_action_date or '' }}",
+            last_action_label: "{{ lead.last_action_label or '' }}",
+            last_action_relative: "{{ lead.last_action_relative or '' }}",
+            propiedad: "{{ lead.datos_propiedad.tipo or '' }}",
+            direccion: "{{ lead.datos_propiedad.calle or '' }}",
+            comuna: "{{ lead.datos_propiedad.comuna or '' }}",
+            precio: "{{ lead.datos_propiedad.precio or '' }}",
+            execName: "{{ user_name | default('') }}",
+            ownerName: "{{ lead.datos_propiedad.nombre_propietario or '' }}",
+            ownerPhone: "{{ lead.datos_propiedad.movil_propietario or '' }}",
+            ownerEmail: "{{ lead.datos_propiedad.email_propietario or '' }}",
         };
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -3625,75 +3587,6 @@
                 ${footerHtml}
             `;
             container.appendChild(toast);
-            setTimeout(() => { if (toast.parentElement) toast.remove(); }, 8000);
-        }
-
-        function createToastContainer() {
-            const div = document.createElement('div');
-            div.id = 'toast-container';
-            document.body.appendChild(div);
-            return div;
-        }
-
-
-        // --- LOGGING & ANALYTICS (ORIGINAL) ---
-        const startTime = Date.now();
-        const currentPhone = "{{ lead.phone }}";
-
-        async function logAction(type, meta = {}, target = 'system') {
-            try {
-                const localTime = new Date().toLocaleString('es-CL', { timeZone: 'America/Santiago' });
-                meta.client_local_time = localTime;
-                if (type === 'SEND_WA_LEAD' || type === 'SEND_EMAIL_LEAD' || type === 'CALL_COMPLETED_LEAD') {
-                    meta.idempotency_key = meta.idempotency_key ||
-                        (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
-                }
-
-                const payload = {
-                    phone: currentPhone,
-                    data: {
-                        type: type,
-                        target: target,
-                        meta: meta
-                    }
-                };
-                fetch('/api/crm/log_action', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-            } catch (e) { console.error("Error logging", e); }
-        }
-
-        window.addEventListener('beforeunload', function () {
-            const duration = (Date.now() - startTime) / 1000;
-            logAction('PAGE_EXIT', { duration_seconds: duration });
-        });
-
-        logAction('PAGE_VIEW', { timestamp: new Date().toISOString() });
-
-        // --- DATOS DEL CONTEXTO ---
-        const leadData = {
-            nombre: "{{ lead.nombre }}",
-            telefono: "{{ lead.phone }}",
-            email: "{{ lead.email }}",
-            propiedad: "{{ lead.datos_propiedad.codigo }}",
-            direccion: "{{ lead.datos_propiedad.calle }}",
-            comuna: "{{ lead.datos_propiedad.comuna }}",
-            precio: "{{ lead.datos_propiedad.precio_uf }}",
-            ownerPhone: "{{ lead.datos_propiedad.movil_propietario }}",
-            ownerName: "{{ lead.datos_propiedad.nombre_propietario }}",
-            ownerEmail: "{{ lead.datos_propiedad.email_propietario }}",
-            crm_estado: "{{ lead.crm_estado }}",
-            next_action_date: "{{ lead.next_action_date or '' }}",
-            last_crm_update: "{{ lead.last_crm_update or '' }}",
-            last_action_label: "{{ lead.last_action_label or 'Sin gestión aún' }}",
-            last_action_relative: "{{ lead.last_action_relative or '' }}",
-            param_auth_user: "{{ user_email }}",
-            execName: "{{ lead.ejecutivo_asignado or user_name }}"
-        };
-
-        function toggleMobileMenu() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebarOverlay');
             sidebar.classList.toggle('mobile-open');
@@ -4465,7 +4358,9 @@
             }
 
             const payload = {
-                phone: leadData.telefono,
+                phone: leadData.telefono || leadData.synthetic_phone || leadData.lead_id,
+                lead_id: leadData.lead_id,
+                synthetic_phone: leadData.synthetic_phone,
                 estado: document.getElementById('estado_actual').value,
                 resultado_gestion: document.getElementById('resultado_gestion').value,
                 interaction_type: document.querySelector('input[name="interaction_type"]:checked')?.value,

@@ -7,7 +7,7 @@ import os
 import time
 import hmac
 import hashlib
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import re
 import secrets
 import traceback
@@ -1266,9 +1266,10 @@ async def api_create_manual_lead(request: Request):
 
 async def _get_authorized_crm_lead(
     request: Request,
-    phone: str,
+    phone: Optional[str] = None,
     *,
     administrative: bool = False,
+    lead_id: Optional[str] = None,
 ):
     """Resolve the authenticated user and enforce CRM role/ownership access."""
     user = await get_current_user_doc(request)
@@ -1277,8 +1278,14 @@ async def _get_authorized_crm_lead(
     if administrative and not can_administer_leads(user.get("rol")):
         raise HTTPException(status_code=403, detail="Acción reservada a administración")
 
+    target_ident = (phone or "").strip() or (lead_id or "").strip()
+    if not target_ident:
+        raise HTTPException(status_code=400, detail="Falta identificador de lead")
+
     loop = asyncio.get_running_loop()
-    lead = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: CrmService.get_lead(phone))
+    lead = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: CrmService.get_lead(target_ident))
+    if not lead and lead_id and target_ident != lead_id:
+        lead = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: CrmService.get_lead(lead_id))
     if not lead:
         raise HTTPException(status_code=404, detail="Lead no encontrado")
     if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(lead, user):
@@ -1363,15 +1370,18 @@ async def view_crm_detail_by_id(request: Request, lead_id: str):
         # Keep the current ownership gate for lead access, but never leak a raw
         # phone if this route is reused by a read-only authenticated view.
         raise HTTPException(status_code=403, detail="El lead no esta asignado a este ejecutivo")
-    raw_phone = str(data.get("phone") or "").strip()
+    raw_phone = str(lead.get("phone") or "").strip()
+    data["lead_id"] = str(lead.get("_id"))
     phone_synthetic = bool(lead.get("phone_is_synthetic")) or raw_phone.startswith("no-phone-")
     if phone_synthetic:
         data["phone"] = ""
+        data["synthetic_phone"] = raw_phone
         data["phone_masked"] = "Sin teléfono"
         data["whatsapp_display"] = "Sin teléfono"
         data["phone_is_synthetic"] = True
     else:
         data["phone"] = raw_phone
+        data["synthetic_phone"] = ""
         data["phone_masked"] = _mask_phone(raw_phone)
         display = raw_phone if raw_phone else "Sin teléfono"
         if display != "Sin teléfono" and not display.startswith("+"):
@@ -1490,28 +1500,21 @@ def _resolve_lead_by_id(db, oid):
 async def api_crm_log_action(request: Request):
     try:
         data = await request.json()
-        phone = data.get("phone")
+        phone = data.get("phone") or data.get("synthetic_phone") or data.get("lead_id")
         payload = data.get("data", {})
         event_type = payload.get("type")
-        user, authorized_lead = await _get_authorized_crm_lead(request, phone)
+        user, authorized_lead = await _get_authorized_crm_lead(request, phone, lead_id=data.get("lead_id"))
         actor_user_id = str(user.get("_id") or "")
         actor_name = user.get("nombre") or user.get("username") or actor_user_id
 
+        canonical_phone = authorized_lead.get("phone") or phone or ""
         now_cl = datetime.now(CHILE_TZ)
         if "meta" not in payload:
             payload["meta"] = {}
         payload["meta"]["server_time_cl"] = now_cl.strftime("%Y-%m-%d %H:%M:%S")
 
         def _sync_log_action():
-            from chatbot.storage import get_db
-            db = get_db()
-            lead = db["leads"].find_one({"_id": authorized_lead["_id"]})
-
-            # All click/send/call actions are telemetry only — they never write
-            # first_valid_management_at, stop SLA, or count as gestion valida.
-            # Only a complete management result from /api/crm/update or
-            # /api/crm/management-result can acreditar gestion.
-            log_crm_event(phone=phone, event_type=event_type, agent=actor_name,
+            log_crm_event(phone=canonical_phone, event_type=event_type, agent=actor_name,
                           meta_data=payload.get("meta"))
 
         loop = asyncio.get_running_loop()
@@ -1525,10 +1528,10 @@ async def api_crm_log_action(request: Request):
 @app.post("/api/crm/management-result")
 async def api_crm_management_result(request: Request):
     data = await request.json()
-    phone = str(data.get("phone") or "").strip()
+    phone = str(data.get("phone") or data.get("synthetic_phone") or data.get("lead_id") or "").strip()
     if not phone:
-        raise HTTPException(status_code=400, detail="Falta teléfono")
-    user, lead = await _get_authorized_crm_lead(request, phone)
+        raise HTTPException(status_code=400, detail="Falta teléfono o identificador de lead")
+    user, lead = await _get_authorized_crm_lead(request, phone, lead_id=data.get("lead_id"))
     actor_user_id = str(user.get("_id") or "")
     if not actor_user_id:
         raise HTTPException(status_code=400, detail="Usuario sin identidad canónica")
@@ -1556,15 +1559,17 @@ async def api_crm_management_result(request: Request):
         raise HTTPException(status_code=403, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
 @app.post("/api/crm/update")
 async def api_crm_update_lead(request: Request):
     try:
         data = await request.json()
-        phone = data.get("phone")
+        phone = data.get("phone") or data.get("synthetic_phone") or data.get("lead_id")
         if not phone:
-            raise HTTPException(status_code=400, detail="Falta teléfono")
+            raise HTTPException(status_code=400, detail="Falta teléfono o identificador de lead")
 
-        user, _lead = await _get_authorized_crm_lead(request, phone)
+        user, lead = await _get_authorized_crm_lead(request, phone, lead_id=data.get("lead_id"))
         if (
             not can_administer_leads(user.get("rol"))
             and payload_attempts_reassignment(data)
@@ -1575,12 +1580,11 @@ async def api_crm_update_lead(request: Request):
         data["updated_at_cl"] = datetime.now(CHILE_TZ).isoformat()
         data["_actor_name"] = user.get("nombre") or user.get("username") or ""
 
-        # CRITICO: update_lead_crm_data usa PyMongo sync + log_event/update_metrics sync.
-        # Debe ejecutarse fuera del event loop para evitar bloqueos y MONGO_SYNC_ON_EVENT_LOOP.
+        canonical_phone = lead.get("phone") or phone
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             _WEB_THREAD_POOL,
-            lambda: update_lead_crm_data(phone, data)
+            lambda: update_lead_crm_data(canonical_phone, data)
         )
         if result and isinstance(result, dict) and result.get("status") == "ok":
             return result

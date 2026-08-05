@@ -18,16 +18,32 @@ class CrmService:
     @staticmethod
     def get_lead(phone: str) -> Optional[Dict]:
         """
-        Retrieves a normalized lead object using flexible phone matching.
+        Retrieves a normalized lead object using phone, synthetic phone, or ObjectId.
         Ensures 'stage' exists, defaults to NEW if missing.
         """
+        if not phone:
+            return None
         db = get_db()
-        phone_clean = phone.replace("+", "").strip()
+        target = str(phone).strip()
         
-        # Búsqueda flexible (con o sin +)
-        doc = db[COLLECTION_CONVERSATIONS].find_one({
-            "phone": {"$regex": f"^{re.escape(phone_clean)}|^\\+{re.escape(phone_clean)}"}
-        })
+        doc = None
+        if len(target) == 24:
+            from bson import ObjectId as BsonObjectId
+            from bson.errors import InvalidId
+            try:
+                doc = db[COLLECTION_CONVERSATIONS].find_one({"_id": BsonObjectId(target)})
+            except InvalidId:
+                doc = None
+
+        if not doc:
+            doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": target})
+
+        if not doc:
+            phone_clean = target.replace(" ", "").replace("+", "").strip()
+            if phone_clean:
+                doc = db[COLLECTION_CONVERSATIONS].find_one({
+                    "phone": {"$regex": f"^{re.escape(phone_clean)}|^\\+{re.escape(phone_clean)}"}
+                })
         
         if not doc:
             return None
@@ -168,6 +184,16 @@ class CrmService:
                     "lead_temperature_effective": effective_temperature,
                 }
             }
+        )
+        
+        # Keep the active assignment cycle in sync so the CRM table badge and SLA
+        # policy reflect the current temperature (e.g. COLD -> HOT on a visit
+        # request). No-op unless the cycle actually changed temperature.
+        from .crm_metrics import sync_active_cycle_temperature
+        sync_active_cycle_temperature(
+            db, lead["_id"],
+            temperature=effective_temperature,
+            transition_at=now_iso,
         )
         
         if result.modified_count > 0:

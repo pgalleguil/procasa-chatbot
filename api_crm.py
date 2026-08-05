@@ -1535,16 +1535,9 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
         words = ejec_asignado.strip().split()
         if len(words) > 2:
             ejec_asignado = f"{words[0]} {words[1]}"
-            
-    raw_phone_str = str(lead.get("phone") or "")
-    is_synth = bool(lead.get("phone_is_synthetic")) or raw_phone_str.startswith("no-phone-")
 
     return {
         "phone": lead.get("phone"),
-        "lead_id": str(lead.get("_id") or ""),
-        "raw_phone": raw_phone_str,
-        "synthetic_phone": raw_phone_str if is_synth else "",
-        "phone_is_synthetic": is_synth,
         "timeline": timeline,
         "nombre": prospecto.get("nombre", "Desconocido"),
         "email": prospecto.get("email", "No registrado"),
@@ -1566,47 +1559,17 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
 # --- 3. ACTUALIZAR LEAD (CON VALIDACIÓN ESTRICTA) ---
 def update_lead_crm_data(phone, data):
     db = get_db()
-    target = str(phone or "").strip()
-    lead_id = (data.get("lead_id") if isinstance(data, dict) else None) or target
-
-    current_lead = None
-    if lead_id and len(str(lead_id)) == 24:
-        from bson import ObjectId as BsonObjectId
-        from bson.errors import InvalidId
-        try:
-            current_lead = db["leads"].find_one({"_id": BsonObjectId(str(lead_id))})
-        except InvalidId:
-            pass
-
-    if not current_lead and len(target) == 24:
-        from bson import ObjectId as BsonObjectId
-        from bson.errors import InvalidId
-        try:
-            current_lead = db["leads"].find_one({"_id": BsonObjectId(target)})
-        except InvalidId:
-            pass
-
-    if not current_lead and target:
-        current_lead = db["leads"].find_one({"phone": target})
-
-    if not current_lead and target:
-        phone_clean_temp = target.replace(" ", "").replace("+", "").strip()
-        if phone_clean_temp:
-            current_lead = db["leads"].find_one({"phone": {"$regex": phone_clean_temp}})
-
-    if not current_lead:
-        logger.error("update_lead_crm_data failed to find lead for target=%s, lead_id=%s", target, lead_id)
-        return False
-
-    canonical_phone = current_lead.get("phone") or target
-    phone_clean = canonical_phone.replace(" ", "").replace("+", "").strip()
-
+    phone_clean = phone.replace(" ", "").replace("+", "").strip()
+    
+    current_lead = db["leads"].find_one({"phone": {"$regex": phone_clean}})
+    if not current_lead: return False
+    
     # --- VALIDACIÓN DEL TRIÁNGULO DE CONTROL (CRITICA 1 & 3) ---
     interaction_type = data.get("interaction_type")
     result = data.get("resultado_gestion")
     next_date = data.get("next_action_date")
     actor_name = str(data.get("_actor_name") or "").strip()
-
+    
     # Regla: Si hablé, OBLIGATORIO definir siguiente paso o cerrar
     if interaction_type == "hable" and result != "lead_cerrado":
         if not next_date:

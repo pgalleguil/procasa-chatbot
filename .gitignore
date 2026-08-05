@@ -60,6 +60,7 @@ scripts/*
 !scripts/run_crm_sla_alert_persist_canary.py
 !scripts/run_crm_sla_alert_send_canary.py
 !scripts/report_crm_sla_alerts.py
+!scripts/report_leads_por_canal.py
 scripts_legacy/
 tests/
 !tests/

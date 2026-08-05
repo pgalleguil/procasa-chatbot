@@ -287,6 +287,20 @@ async def lifespan(app: FastAPI):
     from chatbot.chatbot_queue import chatbot_response_worker_loop as _crwl
     cb_task = asyncio.create_task(_crwl())
     
+    # Prop360 (Convecta) periodic ingestion — feature-flagged, self-contained
+    prop360_task = None
+    try:
+        from chatbot.prop360_poll_loop import prop360_poll_loop as _ppl
+        prop360_task = asyncio.create_task(_ppl())
+        logger.info(
+            "[PROP360_POLL] Loop scheduled. enabled=%s interval=%s window_hours=%s",
+            Config.PROP360_POLL_ENABLED,
+            Config.PROP360_POLL_INTERVAL_SECONDS,
+            Config.PROP360_POLL_WINDOW_HOURS,
+        )
+    except Exception:
+        logger.warning("[PROP360_POLL] Loop import failed — disabled", exc_info=True)
+    
     # Iniciar Consumers
     c1_task = asyncio.create_task(lead_consumer_worker(1))
     c2_task = asyncio.create_task(lead_consumer_worker(2))
@@ -1358,7 +1372,10 @@ async def view_crm_detail_by_id(request: Request, lead_id: str):
     else:
         data["phone"] = raw_phone
         data["phone_masked"] = _mask_phone(raw_phone)
-        data["whatsapp_display"] = f"+{raw_phone}" if raw_phone else "Sin teléfono"
+        display = raw_phone if raw_phone else "Sin teléfono"
+        if display != "Sin teléfono" and not display.startswith("+"):
+            display = f"+{display}"
+        data["whatsapp_display"] = display
         data["phone_is_synthetic"] = False
     data.pop("phone_raw", None)
     data["phone_visibility"] = "full"

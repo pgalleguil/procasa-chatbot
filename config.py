@@ -109,6 +109,13 @@ class Config:
     # trigger rate limits (HTTP 429) or a temporary block.
     CRM_NON_HOT_DIGEST_SEND_DELAY_SECONDS = float(os.getenv("CRM_NON_HOT_DIGEST_SEND_DELAY_SECONDS", "8"))
 
+    # === Prop360 (Convecta) periodic ingestion ===
+    # Polls recent leads every PROP360_POLL_INTERVAL_SECONDS and ingests them
+    # through ingest_lead_event (identity-based dedup against `leads`).
+    PROP360_POLL_ENABLED = os.getenv("PROP360_POLL_ENABLED", "false").lower() == "true"
+    PROP360_POLL_INTERVAL_SECONDS = int(os.getenv("PROP360_POLL_INTERVAL_SECONDS", "3600"))
+    PROP360_POLL_WINDOW_HOURS = int(os.getenv("PROP360_POLL_WINDOW_HOURS", "24"))
+
     # === After-hours notification policy ===
     # These flags control whether HOT notifications are deferred outside business
     # hours.  They do NOT affect the digest window, which is always 10 minutes

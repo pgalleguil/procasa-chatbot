@@ -114,13 +114,10 @@ class Config:
     # automation (and trigger 429 / temporary blocks), every outbound send waits
     # a random jittered interval after the previous one.  Applied globally in
     # whatsapp_client so it covers leads, digests and alert messages alike.
-    WHATSAPP_MIN_SEND_INTERVAL_SECONDS = float(
-        os.getenv("WHATSAPP_MIN_SEND_INTERVAL_SECONDS", "12")
-    )
-    WHATSAPP_SEND_JITTER_MAX_SECONDS = float(
-        os.getenv("WHATSAPP_SEND_JITTER_MAX_SECONDS", "8")
-    )
-    WHATSAPP_THROTTLE_ENABLED = os.getenv("WHATSAPP_THROTTLE_ENABLED", "true").lower() == "true"
+    # Hardcoded on purpose (no env): the spacing is a safety constant.
+    WHATSAPP_THROTTLE_ENABLED = True
+    WHATSAPP_MIN_SEND_INTERVAL_SECONDS = 12.0
+    WHATSAPP_SEND_JITTER_MAX_SECONDS = 8.0
 
     # === Prop360 (Convecta) periodic ingestion ===
     # Polls recent leads every PROP360_POLL_INTERVAL_SECONDS and ingests them

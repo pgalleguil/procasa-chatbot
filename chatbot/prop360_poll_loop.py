@@ -26,6 +26,33 @@ def _feature_enabled() -> bool:
     return os.getenv("PROP360_POLL_ENABLED", "false").lower() == "true"
 
 
+def _runtime_diag(enabled: bool | None = None) -> dict:
+    """Snapshot for /health (background_tasks_status) + DB heartbeat."""
+    if enabled is None:
+        enabled = _feature_enabled()
+    return {
+        "enabled": enabled,
+        "interval_seconds": _interval_seconds(),
+        "window_hours": _window_hours(),
+        "has_email": bool(os.getenv("PROP360_EMAIL")),
+        "has_password": bool(os.getenv("PROP360_PASSWORD")),
+    }
+
+
+def _update_health_heartbeat(**extra) -> None:
+    try:
+        import webhook as _wh
+        from chatbot.constants import CHILE_TZ
+        st = getattr(_wh, "background_tasks_status", None)
+        if st is None:
+            return
+        st.setdefault("prop360_poll", {"status": "starting", "last_heartbeat": None})
+        st["prop360_poll"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
+        st["prop360_poll"].update(extra)
+    except Exception:
+        pass
+
+
 def _interval_seconds() -> int:
     return int(os.getenv("PROP360_POLL_INTERVAL_SECONDS", "3600"))
 
@@ -73,14 +100,35 @@ def _norm_has_contact(norm: dict) -> bool:
     return bool(f or em)
 
 
+def _persist_cycle_status(status: str, extra: dict | None = None) -> None:
+    """Persist a heartbeat/doc for observability in all exit paths."""
+    try:
+        from .storage import get_db
+        db = get_db()
+        doc = {
+            "updated_at": datetime.now().isoformat(),
+            "status": status,
+            **_runtime_diag(),
+        }
+        if extra:
+            doc.update(extra)
+        db["prop360_poll_status"].update_one(
+            {"_id": "last"}, {"$set": doc}, upsert=True
+        )
+    except Exception:
+        logger.error("[PROP360_POLL] status persist failed:\n%s", traceback.format_exc())
+
+
 def run_prop360_poll_cycle(db=None) -> dict:
     """One full poll cycle. Returns metrics dict; never raises."""
     if not _feature_enabled():
+        _persist_cycle_status("disabled", {"reason": "flag_off"})
         return {"status": "disabled", "fetched": 0, "created": 0, "updated": 0}
 
     email, password = _credentials()
     if not email or not password:
         logger.error("[PROP360_POLL] missing PROP360_EMAIL/PROP360_PASSWORD env")
+        _persist_cycle_status("error", {"reason": "missing_credentials"})
         return {"status": "error", "reason": "missing_credentials"}
 
     from scraping_convecta.extractor_prop360 import Prop360Extractor
@@ -190,6 +238,12 @@ def run_prop360_poll_cycle(db=None) -> dict:
 
     metrics["finished_at"] = datetime.now().isoformat()
     _save_checkpoint(extractor, metrics, db, max_confirmed_id=max_confirmed_id)
+    _persist_cycle_status("ok", {
+        "fetched": metrics["fetched"],
+        "created": metrics["leads_created"],
+        "updated": metrics["leads_updated"],
+        "errors": metrics["errors"],
+    })
     logger.info(
         "[PROP360_POLL] cycle done: fetched=%s created=%s updated=%s "
         "dupes=%s stale_id=%s notif=%s errors=%s",
@@ -233,17 +287,21 @@ def _save_checkpoint(extractor, metrics: dict, db, max_confirmed_id: int | None 
 
 async def prop360_poll_loop(sleep_seconds: int | None = None) -> None:
     """Main loop for Prop360 ingestion. Feature-flagged and self-contained."""
+    interval = sleep_seconds or _interval_seconds()
     if not _feature_enabled():
+        _update_health_heartbeat(status="disabled")
         logger.info("[PROP360_POLL] Disabled (PROP360_POLL_ENABLED != true). Loop exit.")
         return
 
-    interval = sleep_seconds or _interval_seconds()
+    _update_health_heartbeat(status="running", **{})
     logger.info("[PROP360_POLL] Loop started. interval=%ss window_hours=%s",
                 interval, _window_hours())
 
     while True:
         try:
-            await asyncio.to_thread(run_prop360_poll_cycle)
+            result = await asyncio.to_thread(run_prop360_poll_cycle)
+            _update_health_heartbeat(status="running", last_cycle=result.get("status"))
         except Exception:
+            _update_health_heartbeat(status="error")
             logger.error("[PROP360_POLL] Loop cycle error:\n%s", traceback.format_exc())
         await asyncio.sleep(interval)

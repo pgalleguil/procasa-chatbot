@@ -186,6 +186,7 @@ background_tasks_status = {
     "sla_monitor": {"status": "starting", "last_heartbeat": None},
     "task_monitor": {"status": "starting", "last_heartbeat": None},
     "captacion_reminder": {"status": "starting", "last_heartbeat": None},
+    "prop360_poll": {"status": "starting", "last_heartbeat": None},
     "captacion_distributor": {"status": "post_scrape_trigger", "last_heartbeat": None},
     "lead_processing": {"status": "starting", "last_heartbeat": None}
 }

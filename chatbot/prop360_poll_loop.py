@@ -303,5 +303,7 @@ async def prop360_poll_loop(sleep_seconds: int | None = None) -> None:
             _update_health_heartbeat(status="running", last_cycle=result.get("status"))
         except Exception:
             _update_health_heartbeat(status="error")
-            logger.error("[PROP360_POLL] Loop cycle error:\n%s", traceback.format_exc())
+            tb = traceback.format_exc()
+            _persist_cycle_status("error", {"traceback": tb[-2000:]})
+            logger.error("[PROP360_POLL] Loop cycle error:\n%s", tb)
         await asyncio.sleep(interval)

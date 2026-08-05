@@ -297,7 +297,13 @@ async def prop360_poll_loop(sleep_seconds: int | None = None) -> None:
     logger.info("[PROP360_POLL] Loop started. interval=%ss window_hours=%s",
                 interval, _window_hours())
 
+    first = True
     while True:
+        # First cycle runs immediately (validates the deploy); subsequent
+        # cycles wait until the next aligned slot (top of the hour).
+        if not first:
+            await _sleep_until_next_slot(interval)
+        first = False
         try:
             result = await asyncio.to_thread(run_prop360_poll_cycle)
             _update_health_heartbeat(status="running", last_cycle=result.get("status"))
@@ -306,4 +312,29 @@ async def prop360_poll_loop(sleep_seconds: int | None = None) -> None:
             tb = traceback.format_exc()
             _persist_cycle_status("error", {"traceback": tb[-2000:]})
             logger.error("[PROP360_POLL] Loop cycle error:\n%s", tb)
-        await asyncio.sleep(interval)
+        await _sleep_until_next_slot(interval)
+
+
+def _next_slot_at(interval_seconds: int) -> datetime:
+    """Next aligned slot (UTC) at a round hour boundary.
+
+    The cycle runs at the top of the hour so monitoring is predictable
+    (15:00, 16:00, ...).  ``interval_seconds`` is treated as a target period;
+    the slot is always the next whole hour for 60-minute intervals.
+    """
+    now = datetime.utcnow()
+    if interval_seconds <= 3600:
+        next_slot = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    else:
+        step = timedelta(seconds=interval_seconds)
+        next_slot = now + step
+    return next_slot
+
+
+async def _sleep_until_next_slot(interval_seconds: int) -> None:
+    """Sleep until the next aligned slot, guarding against clock issues."""
+    next_slot = _next_slot_at(interval_seconds)
+    wait = max((next_slot - datetime.utcnow()).total_seconds(), 5)
+    logger.info("[PROP360_POLL] next cycle at %s (%s)",
+                next_slot.isoformat(), f"in {int(wait)}s")
+    await asyncio.sleep(wait)

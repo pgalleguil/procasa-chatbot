@@ -126,33 +126,8 @@ class LeadResolution:
 def resolve_canonical_lead(db, *, lead_id=None, phone=None) -> LeadResolution:
     """Resolve by lead._id; phone fallback is accepted only when unambiguous."""
     if lead_id is not None:
-        target_id = lead_id
-        if isinstance(target_id, str) and len(target_id) == 24:
-            try:
-                from bson import ObjectId as BsonObjectId
-                target_id = BsonObjectId(target_id)
-            except Exception:
-                pass
-        lead = db["leads"].find_one({"_id": target_id})
-        if lead:
-            return LeadResolution(lead, "resolved", 1)
-
-    phone_str = str(phone or "").strip()
-    if phone_str:
-        if len(phone_str) == 24:
-            try:
-                from bson import ObjectId as BsonObjectId
-                lead = db["leads"].find_one({"_id": BsonObjectId(phone_str)})
-                if lead:
-                    return LeadResolution(lead, "resolved_by_id_string", 1)
-            except Exception:
-                pass
-
-        if phone_str.startswith("no-phone-"):
-            lead = db["leads"].find_one({"phone": phone_str})
-            if lead:
-                return LeadResolution(lead, "resolved_synthetic_phone", 1)
-
+        lead = db["leads"].find_one({"_id": lead_id})
+        return LeadResolution(lead, "resolved" if lead else "not_found", int(bool(lead)))
     normalized = normalize_phone(phone)
     if not normalized:
         return LeadResolution(None, "missing_identity", 0)

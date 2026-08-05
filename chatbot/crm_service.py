@@ -21,27 +21,13 @@ class CrmService:
         Retrieves a normalized lead object using flexible phone matching.
         Ensures 'stage' exists, defaults to NEW if missing.
         """
-        target = str(phone or "").strip()
-        if not target:
-            return None
-
-        doc = None
-        if len(target) == 24:
-            try:
-                from bson import ObjectId as BsonObjectId
-                doc = db[COLLECTION_CONVERSATIONS].find_one({"_id": BsonObjectId(target)})
-            except Exception:
-                pass
-
-        if not doc:
-            doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": target})
-
-        if not doc:
-            phone_clean = target.replace("+", "").strip()
-            if phone_clean:
-                doc = db[COLLECTION_CONVERSATIONS].find_one({
-                    "phone": {"$regex": f"^{re.escape(phone_clean)}|^\\+{re.escape(phone_clean)}"}
-                })
+        db = get_db()
+        phone_clean = phone.replace("+", "").strip()
+        
+        # Búsqueda flexible (con o sin +)
+        doc = db[COLLECTION_CONVERSATIONS].find_one({
+            "phone": {"$regex": f"^{re.escape(phone_clean)}|^\\+{re.escape(phone_clean)}"}
+        })
         
         if not doc:
             return None

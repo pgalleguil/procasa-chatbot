@@ -1379,27 +1379,15 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
 
     lead = lead_doc
     if lead is None:
-        target = str(phone or "").strip()
-        if len(target) == 24:
-            try:
-                from bson import ObjectId as BsonObjectId
-                lead = db["leads"].find_one({"_id": BsonObjectId(target)})
-            except Exception:
-                pass
-        if not lead and target:
-            lead = db["leads"].find_one({"phone": target})
-        if not lead and target:
-            phone_lookup = target.replace(" ", "").replace("+", "").strip()
-            if phone_lookup:
-                query = {"phone": {"$regex": re.escape(phone_lookup)}}
-                if property_code:
-                    query["$or"] = [
-                        {"prospecto.codigo": property_code},
-                        {"prospecto.codigo": str(property_code)},
-                        {"datos_propiedad.codigo": property_code},
-                        {"datos_propiedad.codigo": str(property_code)}
-                    ]
-                lead = db["leads"].find_one(query, sort=[("created_at", -1)])
+        query = {"phone": {"$regex": phone_clean}}
+        if property_code:
+            query["$or"] = [
+                {"prospecto.codigo": property_code},
+                {"prospecto.codigo": str(property_code)},
+                {"datos_propiedad.codigo": property_code},
+                {"datos_propiedad.codigo": str(property_code)}
+            ]
+        lead = db["leads"].find_one(query, sort=[("created_at", -1)])
     if not lead: return None
     
     codigo = detect_property_code(lead)
@@ -1548,15 +1536,8 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
         if len(words) > 2:
             ejec_asignado = f"{words[0]} {words[1]}"
 
-    raw_phone_str = str(lead.get("phone") or "")
-    is_synth = bool(lead.get("phone_is_synthetic")) or raw_phone_str.startswith("no-phone-")
-
     return {
         "phone": lead.get("phone"),
-        "lead_id": str(lead.get("_id") or ""),
-        "raw_phone": raw_phone_str,
-        "synthetic_phone": raw_phone_str if is_synth else "",
-        "phone_is_synthetic": is_synth,
         "timeline": timeline,
         "nombre": prospecto.get("nombre", "Desconocido"),
         "email": prospecto.get("email", "No registrado"),
@@ -1578,30 +1559,10 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
 # --- 3. ACTUALIZAR LEAD (CON VALIDACIÓN ESTRICTA) ---
 def update_lead_crm_data(phone, data):
     db = get_db()
-    target = str(phone or "").strip()
-    lead_id = (data.get("lead_id") if isinstance(data, dict) else None) or target
-
-    current_lead = None
-    if len(lead_id) == 24:
-        try:
-            from bson import ObjectId as BsonObjectId
-            current_lead = db["leads"].find_one({"_id": BsonObjectId(lead_id)})
-        except Exception:
-            pass
-
-    if not current_lead and target:
-        current_lead = db["leads"].find_one({"phone": target})
-
-    if not current_lead and target:
-        phone_lookup = target.replace(" ", "").replace("+", "").strip()
-        if phone_lookup:
-            current_lead = db["leads"].find_one({"phone": {"$regex": re.escape(phone_lookup)}})
-
-    if not current_lead:
-        return False
-
-    canonical_phone = str(current_lead.get("phone") or target or "").strip()
-    phone_clean = canonical_phone.replace(" ", "").replace("+", "").strip()
+    phone_clean = phone.replace(" ", "").replace("+", "").strip()
+    
+    current_lead = db["leads"].find_one({"phone": {"$regex": phone_clean}})
+    if not current_lead: return False
     
     # --- VALIDACIÓN DEL TRIÁNGULO DE CONTROL (CRITICA 1 & 3) ---
     interaction_type = data.get("interaction_type")
@@ -1734,9 +1695,9 @@ def update_lead_crm_data(phone, data):
     # NOTA: No actualizamos "crm_estado" manual en DB, update_stage ya lo hizo.
     # Solo actualizamos last_crm_update si no hubo cambio de estado (si hubo, update_stage lo hizo)
     if new_state == old_state:
-        db["leads"].update_one(
-            {"_id": current_lead["_id"]},
-            {"$set": {"last_crm_update": datetime.now()}}
+         db["leads"].update_one(
+            {"phone": {"$regex": phone_clean}},
+            {"$set": {"last_crm_update": datetime.now()}} # Mantenemos datetime.now() para sorting interno de mongo si se usa
         )
 
     return {
@@ -1750,27 +1711,10 @@ def update_lead_crm_data(phone, data):
 def reconcile_invalid_management(phone, actor="Administración"):
     """Repair derived management fields without removing immutable events."""
     db = get_db()
-    target = str(phone or "").strip()
-    lead = None
-    if len(target) == 24:
-        try:
-            from bson import ObjectId as BsonObjectId
-            lead = db["leads"].find_one({"_id": BsonObjectId(target)})
-        except Exception:
-            pass
-
-    if not lead and target:
-        lead = db["leads"].find_one({"phone": target})
-
-    if not lead and target:
-        phone_clean_lookup = target.replace(" ", "").replace("+", "").strip()
-        if phone_clean_lookup:
-            lead = db["leads"].find_one({"phone": {"$regex": re.escape(phone_clean_lookup)}})
-
+    phone_clean = phone.replace(" ", "").replace("+", "").strip()
+    lead = db["leads"].find_one({"phone": {"$regex": phone_clean}})
     if not lead:
         return {"status": "not_found"}
-
-    phone_clean = str(lead.get("phone") or target).replace(" ", "").replace("+", "").strip()
 
     events = list(db["crm_events"].find({
         "$or": [{"lead_id": lead["_id"]}, {"phone": phone_clean}]
@@ -1805,32 +1749,10 @@ def reconcile_invalid_management(phone, actor="Administración"):
     }, lead_id=lead["_id"], actor_type="administrator")
     return {"status": "repaired", "pipeline_stage": PipelineStage.NEW}
 
-
-def manage_crm_notes(phone, action="add", note_data=None):
+def manage_crm_notes(phone, note_data, action="add"):
     db = get_db()
-    target = str(phone or "").strip()
-    current_lead = None
-    if len(target) == 24:
-        try:
-            from bson import ObjectId as BsonObjectId
-            current_lead = db["leads"].find_one({"_id": BsonObjectId(target)})
-        except Exception:
-            pass
-
-    if not current_lead and target:
-        current_lead = db["leads"].find_one({"phone": target})
-
-    if not current_lead and target:
-        phone_lookup = target.replace(" ", "").replace("+", "").strip()
-        if phone_lookup:
-            current_lead = db["leads"].find_one({"phone": {"$regex": re.escape(phone_lookup)}})
-
-    if not current_lead:
-        return False
-
-    query = {"_id": current_lead["_id"]}
-    phone_clean = str(current_lead.get("phone") or target).strip()
-
+    phone_clean = phone.replace(" ", "").replace("+", "").strip()
+    
     if action == "add":
         note_id = str(uuid.uuid4())[:8]
         note = {
@@ -1840,13 +1762,13 @@ def manage_crm_notes(phone, action="add", note_data=None):
             "created_at_str": datetime.now().strftime("%d/%m/%Y"),
             "timestamp_iso": datetime.now().isoformat()
         }
-        result = db["leads"].update_one(query, {"$push": {"sticky_notes": note}})
+        result = db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$push": {"sticky_notes": note}})
         if result.modified_count:
             from chatbot.crm_updates import bump_crm_leads_version
             bump_crm_leads_version(db, reason="note_added", phone=phone_clean)
         return note
     elif action == "delete":
-        result = db["leads"].update_one(query, {"$pull": {"sticky_notes": {"id": note_data.get("id")}}})
+        result = db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$pull": {"sticky_notes": {"id": note_data.get("id")}}})
         if result.modified_count:
             from chatbot.crm_updates import bump_crm_leads_version
             bump_crm_leads_version(db, reason="note_deleted", phone=phone_clean)

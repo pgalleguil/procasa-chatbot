@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 {% from "_lead_temperature_visual.html" import lead_temperature_icon, lead_temperature_label %}
 <html lang="es" data-theme="dark">
 
@@ -3637,9 +3637,8 @@
 
 
         // --- LOGGING & ANALYTICS (ORIGINAL) ---
-        const currentPhone = "{{ lead.phone or lead.synthetic_phone or lead.lead_id or '' }}";
-        const leadId = "{{ lead.lead_id or '' }}";
-        const syntheticPhone = "{{ lead.synthetic_phone or '' }}";
+        const startTime = Date.now();
+        const currentPhone = "{{ lead.phone }}";
 
         async function logAction(type, meta = {}, target = 'system') {
             try {
@@ -3652,8 +3651,6 @@
 
                 const payload = {
                     phone: currentPhone,
-                    lead_id: leadId,
-                    synthetic_phone: syntheticPhone,
                     data: {
                         type: type,
                         target: target,
@@ -3677,8 +3674,6 @@
 
         // --- DATOS DEL CONTEXTO ---
         const leadData = {
-            lead_id: "{{ lead.lead_id or '' }}",
-            synthetic_phone: "{{ lead.synthetic_phone or '' }}",
             nombre: "{{ lead.nombre }}",
             telefono: "{{ lead.phone }}",
             email: "{{ lead.email }}",
@@ -4470,9 +4465,7 @@
             }
 
             const payload = {
-                phone: leadData.telefono || leadData.synthetic_phone || leadData.lead_id,
-                lead_id: leadData.lead_id,
-                synthetic_phone: leadData.synthetic_phone,
+                phone: leadData.telefono,
                 estado: document.getElementById('estado_actual').value,
                 resultado_gestion: document.getElementById('resultado_gestion').value,
                 interaction_type: document.querySelector('input[name="interaction_type"]:checked')?.value,

@@ -337,7 +337,6 @@ async def lifespan(app: FastAPI):
             logger.warning(f"[GDRIVE] Error reparando permisos antiguos de Drive: {e}")
 
     try:
-        from chatbot.storage import _WORKER_THREAD_POOL
         _WORKER_THREAD_POOL.submit(_fix_existing_drive_permissions)
     except Exception as e:
         logger.warning(f"[GDRIVE] No se pudo lanzar worker de permisos Drive: {e}")

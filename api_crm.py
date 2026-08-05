@@ -1581,12 +1581,15 @@ def update_lead_crm_data(phone, data):
         current_lead = db["leads"].find_one({"phone": target})
 
     if not current_lead and target:
-        phone_clean = target.replace(" ", "").replace("+", "").strip()
-        if phone_clean:
-            current_lead = db["leads"].find_one({"phone": {"$regex": re.escape(phone_clean)}})
+        phone_lookup = target.replace(" ", "").replace("+", "").strip()
+        if phone_lookup:
+            current_lead = db["leads"].find_one({"phone": {"$regex": re.escape(phone_lookup)}})
 
     if not current_lead:
         return False
+
+    canonical_phone = str(current_lead.get("phone") or target or "").strip()
+    phone_clean = canonical_phone.replace(" ", "").replace("+", "").strip()
     
     # --- VALIDACIÓN DEL TRIÁNGULO DE CONTROL (CRITICA 1 & 3) ---
     interaction_type = data.get("interaction_type")

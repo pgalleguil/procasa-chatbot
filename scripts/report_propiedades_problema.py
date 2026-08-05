@@ -1,13 +1,22 @@
-"""Reporte de propiedades problemáticas según las notas de gestión del CRM.
+"""Reporte de propiedades problemáticas: distingue notas personales de
+registros formales, y detecta códigos fantasma.
 
-Los ejecutivos registran en el lead (sticky_notes / resultado de gestión)
-cuando una propiedad ya no está disponible, el propietario no atiende, los
-datos no existen, etc.  Este script agrupa por código de propiedad los leads
-afectados y el motivo detectado, para saber cuáles suspender.
+Cómo registran los ejecutivos (y dónde):
+  - sticky_notes:            NOTA PERSONAL (texto libre, no es una respuesta
+                             formal del CRM; no sirve para acreditar la
+                             propiedad como no disponible).
+  - crm_events.result:       RESPUESTA FORMAL (resultado_gestion: lead_cerrado,
+                             propietario_retiro, no_autoriza_gestion, etc.).
+  - crm_management_results:  RESPUESTA FORMAL (result_type canónico).
+
+El reporte agrupa por código de propiedad y muestra:
+  - señales en notas personales  -> solo aviso, NO formal
+  - registros formales           -> válidos para suspender la propiedad
+  - estado en cartera            -> disponible / no disponible / fantasma
 
 Uso:
-  python scripts/report_propiedades_problema.py             # consola
-  python scripts/report_propiedades_problema.py --json      # JSON
+  python scripts/report_propiedades_problema.py            # consola
+  python scripts/report_propiedades_problema.py --json     # JSON
   python scripts/report_propiedades_problema.py --desde 2026-07-01
 """
 from __future__ import annotations
@@ -28,23 +37,26 @@ from chatbot.storage import get_db  # noqa: E402
 MOTIVO_PATTERNS = [
     ("PROPIEDAD_NO_DISPONIBLE", [
         r"no disponible", r"ya no se vende", r"no esta a la venta", r"no está a la venta",
-        r"fuera de la venta", r"no se encuentra disponible",
+        r"fuera de la venta", r"no se encuentra disponible", r"no disponible segun",
     ]),
-    ("VENDIDA", [
-        r"\bvendid[oa]\b", r"vendido hace", r"vendida hace", r"\barrendad[oa]\b", r"arrendado",
+    ("VENDIDA_O_ARRIENDADA", [
+        r"\bvendid[oa]\b", r"vendido hace", r"vendida hace", r"\barrendad[oa]\b",
+        r"\barrendad[oa]\b hace", r"\barrendad[oa]\b",
     ]),
     ("PROPIETARIO_RETIRO", [
         r"propietario_retiro", r"retir[oa]d[oa]", r"propietari[oa].*retir", r"dueñ[oa].*retir",
+        r"ya avise que no esta a la venta", r"ya no esta a la venta",
     ]),
     ("PROPIETARIO_NO_ATIENDE", [
         r"no atiende", r"no responde", r"no contesta", r"fuera de servicio",
         r"no me puedo comunicar", r"no puedo comunicarme", r"no se puede contactar",
-        r"telefono.*no.*existe", r"número telefónico mal ingresado", r"numero telefonico mal ingresado",
-        r"telefono.*fuera de servicio", r"tel[eé]fono inv[áa]lido", r"numero invalido",
+        r"no se puede comunicar", r"aun no responde", r"sin respuesta",
     ]),
     ("DATOS_NO_EXISTEN", [
         r"no existe", r"datos no existen", r"datos del due", r"no me arroja", r"no arroja",
-        r"informaci[oó]n inexistente", r"ficha inexistente",
+        r"informaci[oó]n inexistente", r"ficha inexistente", r"mal ingresado",
+        r"número telefónico mal ingresado", r"numero telefonico mal ingresado",
+        r"telefono.*no.*existe", r"numero invalido", r"tel[eé]fono inv[áa]lido",
     ]),
     ("NO_AUTORIZA_GESTION", [
         r"no_autoriza_gestion", r"no autoriza", r"no autoriz[oa]",
@@ -69,9 +81,9 @@ def _codigo_de(lead: dict) -> str:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Propiedades problemáticas por notas de gestión")
+    ap = argparse.ArgumentParser(description="Propiedades problemáticas por registros del CRM")
     ap.add_argument("--json", action="store_true")
-    ap.add_argument("--desde", type=str, default=None, help="YYYY-MM-DD (fecha de la nota)")
+    ap.add_argument("--desde", type=str, default=None, help="YYYY-MM-DD (fecha del registro)")
     args = ap.parse_args()
 
     db = get_db()
@@ -79,12 +91,22 @@ def main() -> None:
     if args.desde:
         desde = datetime.fromisoformat(args.desde)
 
-    # 1) sticky_notes del lead
-    prop_motivos = defaultdict(Counter)     # codigo -> Counter(motivo)
-    prop_notas = defaultdict(list)          # codigo -> lista de (lead_id, phone, ejecutivo, nota, fecha)
-    prop_ejecutivos = defaultdict(set)
-    prop_origenes = defaultdict(Counter)    # codigo -> Counter(origen)
+    # { codigo: { "notas": Counter, "formales": Counter, "origenes": Counter,
+    #            "ejecutivos": set, "detalle_notas": [...], "detalle_formales": [...] } }
+    props = defaultdict(lambda: {
+        "notas": Counter(), "formales": Counter(), "origenes": Counter(),
+        "ejecutivos": set(), "detalle_notas": [], "detalle_formales": [],
+    })
 
+    def _fecha_ok(fecha) -> bool:
+        if not desde or not fecha:
+            return True
+        try:
+            return datetime.fromisoformat(str(fecha)) >= desde
+        except ValueError:
+            return True
+
+    # 1) NOTAS PERSONALES (sticky_notes)
     for lead in db["leads"].find({}, {
         "phone": 1, "prospecto": 1, "codigo": 1, "property_code": 1,
         "ejecutivo_asignado": 1, "sticky_notes": 1,
@@ -97,82 +119,156 @@ def main() -> None:
             if not motivo:
                 continue
             fecha = n.get("timestamp_iso") or n.get("created_at_str")
-            if desde and fecha:
-                try:
-                    if datetime.fromisoformat(str(fecha)) < desde:
-                        continue
-                except ValueError:
-                    pass
-            prop_motivos[codigo][motivo] += 1
-            prop_origenes[codigo][origen] += 1
-            prop_notas[codigo].append({
-                "lead_id": str(lead.get("_id")), "phone": lead.get("phone"),
-                "ejecutivo": lead.get("ejecutivo_asignado"),
-                "origen": origen,
-                "nota": content, "fecha": fecha,
+            if not _fecha_ok(fecha):
+                continue
+            props[codigo]["notas"][motivo] += 1
+            props[codigo]["origenes"][origen] += 1
+            props[codigo]["ejecutivos"].add(lead.get("ejecutivo_asignado") or "?")
+            props[codigo]["detalle_notas"].append({
+                "tipo": "nota_personal", "motivo": motivo, "fecha": fecha,
+                "phone": lead.get("phone"), "origen": origen,
+                "ejecutivo": lead.get("ejecutivo_asignado"), "texto": content,
             })
-            prop_ejecutivos[codigo].add(lead.get("ejecutivo_asignado") or "?")
 
-    # 2) crm_events con result problemático (propietario_retiro / no_autoriza_gestion)
-    for ev in db["crm_events"].find({
-        "result": {"$in": ["propietario_retiro", "no_autoriza_gestion"]},
-    }, {"lead_id": 1, "result": 1, "notes": 1, "timestamp": 1}):
+    # 2) RESPUESTAS FORMALES vía crm_events.result
+    for ev in db["crm_events"].find({"result": {"$in": [
+        "propietario_retiro", "no_autoriza_gestion", "lead_cerrado", "no_logra_contacto",
+    ]}}, {"lead_id": 1, "result": 1, "notes": 1, "timestamp": 1}):
         lid = ev.get("lead_id")
-        lead = db["leads"].find_one({"_id": lid}, {"prospecto": 1, "codigo": 1, "phone": 1, "ejecutivo_asignado": 1}) if lid else None
+        if not lid:
+            continue
+        lead = db["leads"].find_one({"_id": lid}, {"prospecto": 1, "codigo": 1, "phone": 1, "ejecutivo_asignado": 1})
         if not lead:
             continue
         codigo = _codigo_de(lead)
-        motivo = "PROPIETARIO_RETIRO" if ev.get("result") == "propietario_retiro" else "NO_AUTORIZA_GESTION"
         origen = str((lead.get("prospecto") or {}).get("origen") or lead.get("origen") or "S/I")
-        prop_motivos[codigo][motivo] += 1
-        prop_origenes[codigo][origen] += 1
-        prop_ejecutivos[codigo].add(lead.get("ejecutivo_asignado") or "?")
+        motivo = {
+            "propietario_retiro": "PROPIETARIO_RETIRO",
+            "no_autoriza_gestion": "NO_AUTORIZA_GESTION",
+            "lead_cerrado": "LEAD_CERRADO",
+            "no_logra_contacto": "PROPIETARIO_NO_ATIENDE",
+        }.get(ev.get("result"), str(ev.get("result")).upper())
+        fecha = ev.get("timestamp")
+        if not _fecha_ok(fecha):
+            continue
+        props[codigo]["formales"][motivo] += 1
+        props[codigo]["origenes"][origen] += 1
+        props[codigo]["ejecutivos"].add(lead.get("ejecutivo_asignado") or "?")
+        props[codigo]["detalle_formales"].append({
+            "tipo": "resultado_gestion", "motivo": motivo, "fecha": fecha,
+            "phone": lead.get("phone"), "origen": origen,
+            "ejecutivo": lead.get("ejecutivo_asignado"),
+            "texto": ev.get("notes") or "",
+        })
 
-    # 3) Estado de disponibilidad en cartera
+    # 3) RESPUESTAS FORMALES vía crm_management_results (result_type canónico)
+    for r in db["crm_management_results"].find({}, {
+        "lead_id": 1, "result_type": 1, "occurred_at": 1,
+    }):
+        lid = r.get("lead_id")
+        if not lid:
+            continue
+        lead = db["leads"].find_one({"_id": lid}, {"prospecto": 1, "codigo": 1, "phone": 1, "ejecutivo_asignado": 1})
+        if not lead:
+            continue
+        codigo = _codigo_de(lead)
+        origen = str((lead.get("prospecto") or {}).get("origen") or lead.get("origen") or "S/I")
+        fecha = r.get("occurred_at")
+        if not _fecha_ok(fecha):
+            continue
+        props[codigo]["formales"][str(r.get("result_type"))] += 1
+        props[codigo]["origenes"][origen] += 1
+        props[codigo]["ejecutivos"].add(lead.get("ejecutivo_asignado") or "?")
+        props[codigo]["detalle_formales"].append({
+            "tipo": "management_result", "motivo": str(r.get("result_type")), "fecha": fecha,
+            "phone": lead.get("phone"), "origen": origen,
+            "ejecutivo": lead.get("ejecutivo_asignado"), "texto": "",
+        })
+
+    # 4) Estado en cartera
     disponible = {}
     for d in db["universo_cartera_prop360"].find({}, {"codigo": 1, "disponible_prop360": 1, "estado": 1}):
         c = str(d.get("codigo") or "")
         if c:
-            disponible[c] = {
-                "disponible": d.get("disponible_prop360"),
-                "estado": d.get("estado"),
-            }
+            disponible[c] = {"disponible": d.get("disponible_prop360"), "estado": d.get("estado")}
 
-    codigos = sorted(prop_motivos.keys(), key=lambda c: -sum(prop_motivos[c].values()))
+    codigos = sorted(props.keys(), key=lambda c: -(
+        sum(props[c]["notas"].values()) + sum(props[c]["formales"].values())))
 
     if args.json:
         out = []
         for c in codigos:
+            d = props[c]
             out.append({
                 "codigo": c,
-                "total_notas": sum(prop_motivos[c].values()),
-                "motivos": dict(prop_motivos[c]),
-                "origenes": dict(prop_origenes[c]),
-                "ejecutivos": sorted(prop_ejecutivos[c]),
+                "notas_personales": dict(d["notas"]),
+                "registros_formales": dict(d["formales"]),
+                "total_notas": sum(d["notas"].values()),
+                "total_formales": sum(d["formales"].values()),
+                "origenes": dict(d["origenes"]),
+                "ejecutivos": sorted(d["ejecutivos"]),
                 "disponible_cartera": disponible.get(c),
-                "notas": prop_notas[c],
+                "detalle_notas": d["detalle_notas"],
+                "detalle_formales": d["detalle_formales"],
             })
         print(json.dumps(out, indent=1, ensure_ascii=False))
         return
 
     print("=" * 100)
-    print("REPORTE DE PROPIEDADES PROBLEMÁTICAS (según notas de gestión del CRM)")
+    print("REPORTE DE PROPIEDADES PROBLEMÁTICAS")
+    print("nota personal (sticky_notes) ≠ respuesta formal (resultado_gestion/management)")
     print("=" * 100)
-    print(f"\n{len(codigos)} propiedades con señales. Ordenadas por número de señales.\n")
+    solo_fantasma = [c for c in codigos if c not in disponible]
+    solo_formal = [c for c in codigos if props[c]["formales"] and not props[c]["notas"]]
+    mixto = [c for c in codigos if props[c]["formales"] and props[c]["notas"]]
+    solo_nota = [c for c in codigos if props[c]["notas"] and not props[c]["formales"]]
+
+    print(f"\n{len(codigos)} propiedades con señales:")
+    print(f"  - solo NOTA personal (sin respuesta formal): {len(solo_nota)}")
+    print(f"  - con respuesta FORMAL: {len(solo_formal + mixto)}")
+    print(f"  - código FANTASMA (no existe en cartera): {len(solo_fantasma)}")
+
+    print("\n" + "=" * 100)
+    print("CÓDIGOS A REGULARIZAR / SUSPENDER (con respuesta FORMAL o en cartera disponible)")
+    print("=" * 100)
     for c in codigos:
-        total = sum(prop_motivos[c].values())
+        d = props[c]
+        if not d["formales"]:
+            continue
         disp = disponible.get(c)
         disp_txt = "NO DISPONIBLE" if disp and disp.get("disponible") is False else (
-            "disponible" if disp else "sin registro en cartera")
-        origenes = ", ".join(f"{o} ({n})" for o, n in prop_origenes[c].most_common())
+            "DISPONIBLE ⚠️" if disp else "FANTASMA ⚠️")
+        total = sum(d["notas"].values()) + sum(d["formales"].values())
         print(f"* Propiedad {c}  ({total} señales)  [cartera: {disp_txt}]")
-        print(f"    Ejecutivos: {', '.join(sorted(prop_ejecutivos[c]))}")
-        if origenes:
-            print(f"    Origen lead: {origenes}")
-        for motivo, n in prop_motivos[c].most_common():
-            print(f"    - {motivo}: {n}")
-        for nota in prop_notas[c][:3]:
-            print(f"      > {nota['fecha']} [{nota['ejecutivo']}] {nota['nota'][:130]}")
+        if d["formales"]:
+            print(f"    FORMAL: {', '.join(f'{m} ({n})' for m, n in d['formales'].most_common())}")
+        if d["notas"]:
+            print(f"    notas:  {', '.join(f'{m} ({n})' for m, n in d['notas'].most_common())}")
+        orig = ", ".join(f"{o} ({n})" for o, n in d["origenes"].most_common(3))
+        if orig:
+            print(f"    origen: {orig}")
+        for det in d["detalle_formales"][:2]:
+            print(f"      > {det['fecha']} [{det['ejecutivo']}] {det['tipo']}: {det['motivo']} — {str(det['texto'])[:90]}")
+        print()
+
+    print("=" * 100)
+    print("SOLO NOTA PERSONAL (aviso, SIN respuesta formal — feedback al equipo)")
+    print("=" * 100)
+    for c in codigos:
+        d = props[c]
+        if d["formales"]:
+            continue
+        disp = disponible.get(c)
+        disp_txt = "NO DISPONIBLE" if disp and disp.get("disponible") is False else (
+            "DISPONIBLE ⚠️" if disp else "FANTASMA ⚠️")
+        total = sum(d["notas"].values())
+        print(f"* Propiedad {c}  ({total} señales)  [cartera: {disp_txt}]")
+        print(f"    notas: {', '.join(f'{m} ({n})' for m, n in d['notas'].most_common())}")
+        orig = ", ".join(f"{o} ({n})" for o, n in d["origenes"].most_common(3))
+        if orig:
+            print(f"    origen: {orig}")
+        for det in d["detalle_notas"][:2]:
+            print(f"      > {det['fecha']} [{det['ejecutivo']}] {det['texto'][:110]}")
         print()
 
 

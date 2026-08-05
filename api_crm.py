@@ -1776,10 +1776,32 @@ def reconcile_invalid_management(phone, actor="Administración"):
     }, lead_id=lead["_id"], actor_type="administrator")
     return {"status": "repaired", "pipeline_stage": PipelineStage.NEW}
 
-def manage_crm_notes(phone, note_data, action="add"):
+
+def manage_crm_notes(phone, action="add", note_data=None):
     db = get_db()
-    phone_clean = phone.replace(" ", "").replace("+", "").strip()
-    
+    target = str(phone or "").strip()
+    current_lead = None
+    if len(target) == 24:
+        try:
+            from bson import ObjectId as BsonObjectId
+            current_lead = db["leads"].find_one({"_id": BsonObjectId(target)})
+        except Exception:
+            pass
+
+    if not current_lead and target:
+        current_lead = db["leads"].find_one({"phone": target})
+
+    if not current_lead and target:
+        phone_lookup = target.replace(" ", "").replace("+", "").strip()
+        if phone_lookup:
+            current_lead = db["leads"].find_one({"phone": {"$regex": re.escape(phone_lookup)}})
+
+    if not current_lead:
+        return False
+
+    query = {"_id": current_lead["_id"]}
+    phone_clean = str(current_lead.get("phone") or target).strip()
+
     if action == "add":
         note_id = str(uuid.uuid4())[:8]
         note = {
@@ -1789,13 +1811,13 @@ def manage_crm_notes(phone, note_data, action="add"):
             "created_at_str": datetime.now().strftime("%d/%m/%Y"),
             "timestamp_iso": datetime.now().isoformat()
         }
-        result = db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$push": {"sticky_notes": note}})
+        result = db["leads"].update_one(query, {"$push": {"sticky_notes": note}})
         if result.modified_count:
             from chatbot.crm_updates import bump_crm_leads_version
             bump_crm_leads_version(db, reason="note_added", phone=phone_clean)
         return note
     elif action == "delete":
-        result = db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$pull": {"sticky_notes": {"id": note_data.get("id")}}})
+        result = db["leads"].update_one(query, {"$pull": {"sticky_notes": {"id": note_data.get("id")}}})
         if result.modified_count:
             from chatbot.crm_updates import bump_crm_leads_version
             bump_crm_leads_version(db, reason="note_deleted", phone=phone_clean)

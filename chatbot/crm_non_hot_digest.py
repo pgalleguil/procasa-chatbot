@@ -227,81 +227,69 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
     )
 
     # Try to find an existing open (pending) digest for this executive.
+    # Only ``pending`` digests may be appended to: a digest in ``sending`` has
+    # already been claimed by a worker which snapshotted its lead list, so
+    # appending now would silently drop the new lead from the delivered message.
     existing = db[NOTIFICATION_COLLECTION].find_one({
         "recipient_user_id": recipient,
         "digest_type": DIGEST_TYPE,
         "schema_version": "crm_notification_v1",
-        "state": {"$in": ["pending", "sending"]},
+        "state": "pending",
     }, sort=[("created_at", 1)])
 
-    if existing:
-        # Append this lead if not already present.
-        # Compare canonical string representations for dedup, but store ObjectId.
-        existing_lead_ids = [str(lid) for lid in (existing.get("lead_ids") or [])]
-        str_lead_id = str(lead_id)
-        if str_lead_id not in existing_lead_ids:
-            new_ids = list(existing.get("lead_ids") or []) + [lead_id]
-            existing_cycles = list(existing.get("assignment_cycle_ids") or [])
-            if str(cycle_id) not in existing_cycles:
-                existing_cycles.append(str(cycle_id))
-            cycle_reasons = list(existing.get("cycle_reasons") or [])
-            cycle_origins = list(existing.get("cycle_origins") or [])
-            if db_cycle.get("reason") not in cycle_reasons:
-                cycle_reasons.append(db_cycle.get("reason"))
-            origin = db_cycle.get("cycle_origin") or db_cycle.get("reason")
-            if origin not in cycle_origins:
-                cycle_origins.append(origin)
-            new_count = len(new_ids)
-            # Volume threshold: if we just reached the max, mark as ready now.
-            # Temporary immediate-send override also marks it ready now, but
-            # only inside business hours.
-            max_before_send = int(getattr(Config, "CRM_NON_HOT_DIGEST_MAX_LEADS_BEFORE_SEND", "0"))
-            if _immediate_send():
-                from .lead_router import should_send_now, get_next_business_slot
-                ready_at = now if should_send_now() else get_next_business_slot(now)
-                db[NOTIFICATION_COLLECTION].update_one(
-                    {"_id": existing["_id"]},
-                    {"$set": {
-                        "lead_ids": new_ids,
-                        "assignment_cycle_ids": existing_cycles,
-                        "updated_at": now,
-                        "lead_count": new_count,
-                        "send_after": ready_at,
-                        "notification_eligible": True,
-                        "cycle_reasons": cycle_reasons,
-                        "cycle_origins": cycle_origins,
-                    }},
-                )
-            elif max_before_send > 0 and new_count >= max_before_send:
-                db[NOTIFICATION_COLLECTION].update_one(
-                    {"_id": existing["_id"]},
-                    {"$set": {
-                        "lead_ids": new_ids,
-                        "assignment_cycle_ids": existing_cycles,
-                        "updated_at": now,
-                        "lead_count": new_count,
-                        "send_after": now,
-                        "notification_eligible": True,
-                        "cycle_reasons": cycle_reasons,
-                        "cycle_origins": cycle_origins,
-                    }},
-                )
-            else:
-                db[NOTIFICATION_COLLECTION].update_one(
-                    {"_id": existing["_id"]},
-                    {"$set": {
-                        "lead_ids": new_ids,
-                        "assignment_cycle_ids": existing_cycles,
-                        "updated_at": now,
-                        "lead_count": new_count,
-                        "notification_eligible": True,
-                        "cycle_reasons": cycle_reasons,
-                        "cycle_origins": cycle_origins,
-                    }},
-                )
-        else:
-            new_count = existing.get("lead_count", len(existing.get("lead_ids") or []))
+    if existing and str(lead_id) in [str(lid) for lid in (existing.get("lead_ids") or [])]:
         return db[NOTIFICATION_COLLECTION].find_one({"_id": existing["_id"]})
+
+    if existing:
+        # Append this lead (not already present in the open digest).
+        new_ids = list(existing.get("lead_ids") or []) + [lead_id]
+        existing_cycles = list(existing.get("assignment_cycle_ids") or [])
+        if str(cycle_id) not in existing_cycles:
+            existing_cycles.append(str(cycle_id))
+        cycle_reasons = list(existing.get("cycle_reasons") or [])
+        cycle_origins = list(existing.get("cycle_origins") or [])
+        if db_cycle.get("reason") not in cycle_reasons:
+            cycle_reasons.append(db_cycle.get("reason"))
+        origin = db_cycle.get("cycle_origin") or db_cycle.get("reason")
+        if origin not in cycle_origins:
+            cycle_origins.append(origin)
+        new_count = len(new_ids)
+        # Volume threshold: if we just reached the max, mark as ready now.
+        # Temporary immediate-send override also marks it ready now, but
+        # only inside business hours.
+        max_before_send = int(getattr(Config, "CRM_NON_HOT_DIGEST_MAX_LEADS_BEFORE_SEND", "0"))
+        if _immediate_send():
+            from .lead_router import should_send_now, get_next_business_slot
+            ready_at = now if should_send_now() else get_next_business_slot(now)
+        elif max_before_send > 0 and new_count >= max_before_send:
+            ready_at = now
+        else:
+            ready_at = existing.get("send_after")
+        # Atomic append: only succeeds if the digest is STILL pending.  If a
+        # worker claimed it between the find_one and this update (state
+        # flipped to ``sending``), the lead must get its own digest below
+        # instead of being appended to a snapshot already in flight.
+        res = db[NOTIFICATION_COLLECTION].update_one(
+            {"_id": existing["_id"], "state": "pending"},
+            {"$set": {
+                "lead_ids": new_ids,
+                "assignment_cycle_ids": existing_cycles,
+                "updated_at": now,
+                "lead_count": new_count,
+                "send_after": ready_at,
+                "notification_eligible": True,
+                "cycle_reasons": cycle_reasons,
+                "cycle_origins": cycle_origins,
+            }},
+        )
+        if res.modified_count:
+            return db[NOTIFICATION_COLLECTION].find_one({"_id": existing["_id"]})
+        # Digest was claimed concurrently — fall through and create a fresh
+        # digest for this lead so it is never left without a notification.
+        logger.info(
+            "[NON_HOT_DIGEST] digest claimed concurrently, creating new "
+            "digest for lead=%s cycle=%s", str(lead_id), cycle_id,
+        )
 
     # No open window — create one.
     # The digest window is 10 minutes from the first lead.  Temporary
@@ -512,6 +500,23 @@ def _build_preview_lines(leads, max_items):
     return lines
 
 
+def _record_announced_leads(db, notification, valid_leads) -> None:
+    """Persist which lead ids were actually included in the built message.
+
+    The canonical ``lead_ids`` may grow after the message is built (a lead
+    appended while the digest is being delivered), so reconciliation must
+    compare against the announced set, not the canonical set.
+    """
+    try:
+        announced = [str(lead.get("_id")) for lead in valid_leads if lead.get("_id")]
+        db[NOTIFICATION_COLLECTION].update_one(
+            {"_id": notification["_id"]},
+            {"$set": {"announced_lead_ids": announced, "updated_at": utc_now()}},
+        )
+    except Exception:
+        logger.exception("[NON_HOT_DIGEST] no pudo registrar announced_lead_ids")
+
+
 def build_digest_message_content(db, notification):
     """Build the WhatsApp message text for the digest.
     
@@ -615,12 +620,14 @@ def build_digest_message_content(db, notification):
             context.get("property_code") or "S/N",
             is_new_assignment=True,
         )
+        _record_announced_leads(db, notification, valid)
         return _sanitize_surrogates(content), 1
 
     content = _build_grouped_digest_message(
         executive_name=exec_name,
         lead_count=len(valid),
     )
+    _record_announced_leads(db, notification, valid)
     return _sanitize_surrogates(content), len(valid)
 
 
@@ -1054,3 +1061,123 @@ def ensure_digest_indexes(db):
         return {"created": [index_name]}
     except Exception as exc:
         return {"created": [], "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Reconciliation: guarantee every assigned non-HOT lead is notified
+# ---------------------------------------------------------------------------
+
+def reconcile_missing_notifications(db, *, lookback_minutes=120, dry_run=False):
+    """Safety net: find recently assigned non-HOT leads with NO notification.
+
+    The race between ``accumulate_non_hot_lead`` and the delivery worker can
+    leave a lead assigned but never announced (the executive never gets the
+    WhatsApp message).  This reconciliation re-checks every non-HOT assignment
+    in the lookback window and enqueues a fresh digest for any lead that is
+    neither already in a notification nor already covered by a delivered one.
+
+    Returns a metrics dict; ``dry_run=True`` only reports, never writes.
+    """
+    from .crm_metrics import coerce_utc_datetime
+    now = coerce_utc_datetime(None) or utc_now()
+    cutoff = now - timedelta(minutes=max(int(lookback_minutes), 5))
+
+    # Collect assigned non-HOT leads in the window.
+    candidates = []
+    for cycle in db["crm_assignment_cycles"].find(
+        {
+            "unassigned_at": None,
+            "assigned_at": {"$gte": cutoff, "$lte": now},
+            "reason": {"$in": ["lead_created", "inbound_message", "manual_lead_created"]},
+            "notification_eligible": {"$ne": False},
+            "source_event_type": {"$exists": True},
+        },
+        {"lead_id": 1, "assignment_cycle_id": 1, "assigned_to_user_id": 1,
+         "reason": 1, "assigned_at": 1},
+    ):
+        candidates.append(cycle)
+
+    # Gather all lead_ids already announced to an executive.  Prefer
+    # ``announced_lead_ids`` (the ids actually rendered into the delivered
+    # message) over the canonical ``lead_ids``, which may include leads that
+    # were appended after the message was built and therefore never announced.
+    covered_lead_ids = set()
+    for notif in db[NOTIFICATION_COLLECTION].find(
+        {
+            "digest_type": DIGEST_TYPE,
+            "message_domain": "commercial_notification",
+            "state": {"$nin": ["suppressed"]},
+            "$or": [
+                {"announced_lead_ids": {"$exists": True}},
+                {"lead_ids": {"$exists": True}},
+            ],
+        },
+        {"announced_lead_ids": 1, "lead_ids": 1, "state": 1},
+    ):
+        # ``pending`` digests will announce their full canonical lead list when
+        # delivered, so the canonical set counts as covered.  For terminal
+        # (``sent``) digests prefer ``announced_lead_ids`` (the ids actually
+        # rendered into the delivered message).  A sent digest without that
+        # field is pre-fix and is treated as covered by its canonical set to
+        # avoid double-announcing leads that were already delivered.
+        state = str(notif.get("state") or "")
+        announced = notif.get("announced_lead_ids")
+        if announced:
+            announced = list(announced)
+        elif state == "pending":
+            announced = notif.get("lead_ids") or []
+        else:
+            announced = notif.get("lead_ids") or []
+        for lid in announced:
+            covered_lead_ids.add(str(lid))
+
+    metrics = {
+        "candidates": len(candidates),
+        "already_covered": 0,
+        "missing": 0,
+        "enqueued": 0,
+        "skipped_no_recipient": 0,
+        "errors": 0,
+    }
+
+    for cycle in candidates:
+        lead_id = cycle.get("lead_id")
+        recipient = str(cycle.get("assigned_to_user_id") or "")
+        if not lead_id or not recipient:
+            metrics["skipped_no_recipient"] += 1
+            continue
+        if str(lead_id) in covered_lead_ids:
+            metrics["already_covered"] += 1
+            continue
+
+        lead = db["leads"].find_one({"_id": lead_id}, {"lead_temperature_effective": 1})
+        if not lead:
+            metrics["errors"] += 1
+            continue
+        temp = str(lead.get("lead_temperature_effective") or "").upper()
+        if temp == HOT:
+            metrics["already_covered"] += 1
+            continue
+
+        metrics["missing"] += 1
+        if dry_run:
+            continue
+        try:
+            res = accumulate_non_hot_lead(db, lead=lead, cycle=cycle)
+            if res is not None:
+                metrics["enqueued"] += 1
+            else:
+                metrics["errors"] += 1
+                logger.warning(
+                    "[NON_HOT_DIGEST_RECON] no pudo encolar lead=%s cycle=%s",
+                    str(lead_id), cycle.get("assignment_cycle_id"),
+                )
+        except Exception:
+            metrics["errors"] += 1
+            logger.exception(
+                "[NON_HOT_DIGEST_RECON] error en lead=%s", str(lead_id)
+            )
+
+    if metrics["missing"] or metrics["errors"]:
+        logger.info("[NON_HOT_DIGEST_RECON] %s", metrics)
+    return metrics

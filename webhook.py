@@ -3484,6 +3484,24 @@ async def non_hot_digest_worker_loop():
             db = get_db()
             loop = asyncio.get_running_loop()
 
+            # Safety net: every assigned non-HOT lead must be announced.  Runs
+            # on a light cadence (every ~5 min via a counter) to re-enqueue any
+            # lead that fell through the accumulate/send race.
+            try:
+                _recon_count = getattr(loop, "_nhd_recon_counter", 0) + 1
+                loop._nhd_recon_counter = _recon_count
+                if _recon_count >= 5:
+                    loop._nhd_recon_counter = 0
+                    from chatbot.crm_non_hot_digest import reconcile_missing_notifications
+                    await loop.run_in_executor(
+                        _WORKER_THREAD_POOL,
+                        lambda: reconcile_missing_notifications(
+                            db, lookback_minutes=120, dry_run=False,
+                        ),
+                    )
+            except Exception as _recon_err:
+                logger.warning("[NON_HOT_DIGEST_RECON] error: %s", _recon_err)
+
             try:
                 result = await loop.run_in_executor(
                     _WORKER_THREAD_POOL,

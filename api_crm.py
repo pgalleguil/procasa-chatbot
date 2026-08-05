@@ -1379,15 +1379,27 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
 
     lead = lead_doc
     if lead is None:
-        query = {"phone": {"$regex": phone_clean}}
-        if property_code:
-            query["$or"] = [
-                {"prospecto.codigo": property_code},
-                {"prospecto.codigo": str(property_code)},
-                {"datos_propiedad.codigo": property_code},
-                {"datos_propiedad.codigo": str(property_code)}
-            ]
-        lead = db["leads"].find_one(query, sort=[("created_at", -1)])
+        target = str(phone or "").strip()
+        if len(target) == 24:
+            try:
+                from bson import ObjectId as BsonObjectId
+                lead = db["leads"].find_one({"_id": BsonObjectId(target)})
+            except Exception:
+                pass
+        if not lead and target:
+            lead = db["leads"].find_one({"phone": target})
+        if not lead and target:
+            phone_lookup = target.replace(" ", "").replace("+", "").strip()
+            if phone_lookup:
+                query = {"phone": {"$regex": re.escape(phone_lookup)}}
+                if property_code:
+                    query["$or"] = [
+                        {"prospecto.codigo": property_code},
+                        {"prospecto.codigo": str(property_code)},
+                        {"datos_propiedad.codigo": property_code},
+                        {"datos_propiedad.codigo": str(property_code)}
+                    ]
+                lead = db["leads"].find_one(query, sort=[("created_at", -1)])
     if not lead: return None
     
     codigo = detect_property_code(lead)
@@ -1738,10 +1750,27 @@ def update_lead_crm_data(phone, data):
 def reconcile_invalid_management(phone, actor="Administración"):
     """Repair derived management fields without removing immutable events."""
     db = get_db()
-    phone_clean = phone.replace(" ", "").replace("+", "").strip()
-    lead = db["leads"].find_one({"phone": {"$regex": phone_clean}})
+    target = str(phone or "").strip()
+    lead = None
+    if len(target) == 24:
+        try:
+            from bson import ObjectId as BsonObjectId
+            lead = db["leads"].find_one({"_id": BsonObjectId(target)})
+        except Exception:
+            pass
+
+    if not lead and target:
+        lead = db["leads"].find_one({"phone": target})
+
+    if not lead and target:
+        phone_clean_lookup = target.replace(" ", "").replace("+", "").strip()
+        if phone_clean_lookup:
+            lead = db["leads"].find_one({"phone": {"$regex": re.escape(phone_clean_lookup)}})
+
     if not lead:
         return {"status": "not_found"}
+
+    phone_clean = str(lead.get("phone") or target).replace(" ", "").replace("+", "").strip()
 
     events = list(db["crm_events"].find({
         "$or": [{"lead_id": lead["_id"]}, {"phone": phone_clean}]

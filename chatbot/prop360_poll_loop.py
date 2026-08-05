@@ -94,6 +94,7 @@ def run_prop360_poll_cycle(db=None) -> dict:
 
     metrics = {
         "status": "ok",
+        "started_at": datetime.now().isoformat(),
         "fetched": 0,
         "leads_created": 0,
         "leads_updated": 0,
@@ -104,29 +105,49 @@ def run_prop360_poll_cycle(db=None) -> dict:
         "skipped_internal": 0,
         "skipped_no_contact": 0,
         "skipped_property_inactive": 0,
+        "skipped_stale_id": 0,
     }
 
     try:
         extractor.login()
     except Exception:
         logger.error("[PROP360_POLL] login failed:\n%s", traceback.format_exc())
-        return {"status": "error", "reason": "login_failed", **metrics}
+        metrics["status"] = "error"
+        metrics["reason"] = "login_failed"
+        _save_checkpoint(extractor, metrics, db)
+        return metrics
 
     try:
         from_date = _from_date_iso(window_hours)
         leads = extractor.fetch_leads(from_date=from_date, to_date=None)
     except Exception:
         logger.error("[PROP360_POLL] fetch failed:\n%s", traceback.format_exc())
-        return {"status": "error", "reason": "fetch_failed", **metrics}
+        metrics["status"] = "error"
+        metrics["reason"] = "fetch_failed"
+        _save_checkpoint(extractor, metrics, db)
+        return metrics
 
     metrics["fetched"] = len(leads)
     cartera = _active_cartera_codes()
+    last_id = _last_contacto_id(db)
+    max_confirmed_id = last_id or 0
 
     for raw in leads:
         try:
             norm = extractor.normalize_lead(raw)
         except Exception:
             metrics["errors"] += 1
+            continue
+
+        cid = _norm_id(norm)
+
+        # Monotonic idContacto watermark: leads already seen before are skipped
+        # without any DB lookup. Falls back to the identity dedup below when the
+        # checkpoint is missing or the id is unknown.
+        if cid is not None and last_id is not None and cid <= last_id:
+            metrics["skipped_stale_id"] += 1
+            if cid > max_confirmed_id:
+                max_confirmed_id = cid
             continue
 
         if _is_internal(norm):
@@ -145,6 +166,8 @@ def run_prop360_poll_cycle(db=None) -> dict:
         # _is_duplicate re-checks identity on the leads collection before ingest
         if extractor._is_duplicate(norm):
             metrics["duplicates_skipped"] += 1
+            if cid and cid > max_confirmed_id:
+                max_confirmed_id = cid
             continue
 
         try:
@@ -162,16 +185,50 @@ def run_prop360_poll_cycle(db=None) -> dict:
         metrics["leads_updated"] = m["leads_updated"]
         metrics["events_duplicate"] = m["events_duplicate"]
         metrics["notifications_enqueued"] = m["notifications_enqueued"]
+        if cid and cid > max_confirmed_id:
+            max_confirmed_id = cid
 
     metrics["finished_at"] = datetime.now().isoformat()
+    _save_checkpoint(extractor, metrics, db, max_confirmed_id=max_confirmed_id)
     logger.info(
         "[PROP360_POLL] cycle done: fetched=%s created=%s updated=%s "
-        "dupes=%s notif=%s errors=%s",
+        "dupes=%s stale_id=%s notif=%s errors=%s",
         metrics["fetched"], metrics["leads_created"], metrics["leads_updated"],
-        metrics["duplicates_skipped"], metrics["notifications_enqueued"],
-        metrics["errors"],
+        metrics["duplicates_skipped"], metrics["skipped_stale_id"],
+        metrics["notifications_enqueued"], metrics["errors"],
     )
     return metrics
+
+
+def _norm_id(norm: dict):
+    cid = norm.get("idContacto")
+    try:
+        return int(cid) if cid is not None and str(cid).strip() else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _last_contacto_id(db) -> int | None:
+    """Highest idContacto seen so far (persisted checkpoint, else None)."""
+    try:
+        from scraping_convecta.extractor_prop360 import get_last_extraction_state
+        state = get_last_extraction_state()
+        cid = state.get("last_id_contacto")
+        return int(cid) if cid is not None else None
+    except Exception:
+        return None
+
+
+def _save_checkpoint(extractor, metrics: dict, db, max_confirmed_id: int | None = None) -> None:
+    """Persist run metrics + monotonic id watermark (heartbeat for monitoring)."""
+    try:
+        from scraping_convecta.extractor_prop360 import save_extraction_state
+        if max_confirmed_id is not None:
+            extractor.metrics["last_id_contacto"] = max_confirmed_id
+        extractor.metrics.update(metrics)
+        save_extraction_state(extractor.metrics)
+    except Exception:
+        logger.error("[PROP360_POLL] checkpoint save failed:\n%s", traceback.format_exc())
 
 
 async def prop360_poll_loop(sleep_seconds: int | None = None) -> None:

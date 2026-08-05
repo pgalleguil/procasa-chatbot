@@ -1942,6 +1942,9 @@ def release_stale_captaciones(sla_dias=SLA_CAPTACION_DIAS):
     now_utc = datetime.now(timezone.utc)
     umbral = now_utc - timedelta(days=sla_dias)
 
+    # Solo candidatos: asignados, sin gestión reciente (estado NUEVO/GESTION).
+    # La evidencia real de gestión (notas/actividades/eventos) se valida en
+    # Python con has_management_evidence para no liberar contactos trabajados.
     query = {
         "origen": "toctoc",
         "gestion.ejecutivo_id": {"$exists": True, "$ne": None},
@@ -1952,8 +1955,33 @@ def release_stale_captaciones(sla_dias=SLA_CAPTACION_DIAS):
         ]
     }
 
+    candidates = list(coll.find(query, {"_id": 1}))
+    if not candidates:
+        logger.info("[SLA] Sin captaciones inactivas para liberar.")
+        return 0
+
+    # Filtrar por evidencia real de gestión (notas, actividades, eventos,
+    # fecha_ultima_gestion). Un contacto con gestión previa nunca se libera.
+    try:
+        from redistribute_captacion import has_management_evidence
+        events_coll = db["captacion_management_events"]
+    except Exception:
+        events_coll = None
+
+    to_release = []
+    for c in candidates:
+        prop = coll.find_one({"_id": c["_id"]})
+        if prop is None:
+            continue
+        has_ev, _ = has_management_evidence(prop, events_coll)
+        if not has_ev:
+            to_release.append(c["_id"])
+    if not to_release:
+        logger.info("[SLA] Sin captaciones inactivas para liberar (todas con gestión).")
+        return 0
+
     result = coll.update_many(
-        query,
+        {"_id": {"$in": to_release}},
         {"$set": {
             "gestion.ejecutivo_id": None,
             "gestion.ejecutivo_asignado": None,
@@ -2008,6 +2036,25 @@ def distribute_sourced_leads():
     props = list(coll.find(eligible_query))
     from captacion_assignment_eligibility import assignment_eligibility
     props = [p for p in props if assignment_eligibility(p)[0]]
+    # Nunca redistribuir un contacto que ya tuvo gestión humana (notas,
+    # actividades, fecha_ultima_gestion, eventos). Evita molestar a un
+    # ejecutivo que ya lo trabajó y evitar que pase a otro ejecutivo.
+    try:
+        from redistribute_captacion import has_management_evidence
+        events_coll = db["captacion_management_events"]
+        protected = 0
+        kept = []
+        for p in props:
+            has_ev, _ = has_management_evidence(p, events_coll)
+            if has_ev:
+                protected += 1
+            else:
+                kept.append(p)
+        props = kept
+        if protected > 0:
+            logger.info(f"[DISTRIBUCION] {protected} contactos protegidos por gestión previa (no redistribuidos).")
+    except Exception as e:
+        logger.warning(f"[DISTRIBUCION] No se pudo aplicar guard de gestión previa: {e}")
     logger.info(f"[DISTRIBUCION] {len(props)} propiedades sin asignar.")
 
     assigned = 0

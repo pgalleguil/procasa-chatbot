@@ -1722,9 +1722,9 @@ def update_lead_crm_data(phone, data):
     # NOTA: No actualizamos "crm_estado" manual en DB, update_stage ya lo hizo.
     # Solo actualizamos last_crm_update si no hubo cambio de estado (si hubo, update_stage lo hizo)
     if new_state == old_state:
-         db["leads"].update_one(
-            {"phone": {"$regex": phone_clean}},
-            {"$set": {"last_crm_update": datetime.now()}} # Mantenemos datetime.now() para sorting interno de mongo si se usa
+        db["leads"].update_one(
+            {"_id": current_lead["_id"]},
+            {"$set": {"last_crm_update": datetime.now()}}
         )
 
     return {

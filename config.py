@@ -109,6 +109,19 @@ class Config:
     # trigger rate limits (HTTP 429) or a temporary block.
     CRM_NON_HOT_DIGEST_SEND_DELAY_SECONDS = float(os.getenv("CRM_NON_HOT_DIGEST_SEND_DELAY_SECONDS", "8"))
 
+    # === WhatsApp outbound throttling (anti-bot) ===
+    # We use a non-official Meta API (WASender).  To avoid bursts that look like
+    # automation (and trigger 429 / temporary blocks), every outbound send waits
+    # a random jittered interval after the previous one.  Applied globally in
+    # whatsapp_client so it covers leads, digests and alert messages alike.
+    WHATSAPP_MIN_SEND_INTERVAL_SECONDS = float(
+        os.getenv("WHATSAPP_MIN_SEND_INTERVAL_SECONDS", "12")
+    )
+    WHATSAPP_SEND_JITTER_MAX_SECONDS = float(
+        os.getenv("WHATSAPP_SEND_JITTER_MAX_SECONDS", "8")
+    )
+    WHATSAPP_THROTTLE_ENABLED = os.getenv("WHATSAPP_THROTTLE_ENABLED", "true").lower() == "true"
+
     # === Prop360 (Convecta) periodic ingestion ===
     # Polls recent leads every PROP360_POLL_INTERVAL_SECONDS and ingests them
     # through ingest_lead_event (identity-based dedup against `leads`).

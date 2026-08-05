@@ -723,28 +723,22 @@ def _throttle_provider_send():
     Uses a process-global timestamp (and optional lock when threads are used)
     so that even multiple digests due at the same time are spaced out instead
     of bursting the unofficial Meta API and getting HTTP 429 / temporary blocks.
+
+    Delegates to the global outbound throttle in ``whatsapp_client`` so digest,
+    lead and alert messages all share the same anti-bot spacing.
     """
-    global _SEND_LOCK, _LAST_SEND_AT
-    delay = float(getattr(Config, "CRM_NON_HOT_DIGEST_SEND_DELAY_SECONDS", 8))
-    if delay <= 0:
-        return
-    if _SEND_LOCK is None:
-        try:
-            import threading
-            _SEND_LOCK = threading.Lock()
-        except Exception:
-            _SEND_LOCK = False
-    lock = _SEND_LOCK
-    if lock:
-        lock.acquire()
     try:
+        from .whatsapp_client import throttle_outgoing_message_sync
+        throttle_outgoing_message_sync()
+    except Exception:
+        global _LAST_SEND_AT
+        delay = float(getattr(Config, "CRM_NON_HOT_DIGEST_SEND_DELAY_SECONDS", 8))
+        if delay <= 0:
+            return
         elapsed = time.monotonic() - _LAST_SEND_AT
         if elapsed < delay:
             time.sleep(delay - elapsed)
         _LAST_SEND_AT = time.monotonic()
-    finally:
-        if lock:
-            lock.release()
 
 
 def send_digest(db, *, notification, worker_id, sender=None):
@@ -865,7 +859,8 @@ def send_digest(db, *, notification, worker_id, sender=None):
                     str(notification["_id"])[:12], str(recipient)[:16],
                     phone_display, len(content or ""), delivery_token[:8])
         call_started = utc_now()
-        _throttle_provider_send()
+        # ``send_whatsapp_message_detailed_sync`` applies the global anti-bot
+        # throttle internally, so no separate wait is needed here.
         try:
             receipt = send_whatsapp_message_detailed_sync(phone, content)
         except Exception as exc:

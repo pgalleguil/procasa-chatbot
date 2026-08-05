@@ -262,6 +262,7 @@ async def lifespan(app: FastAPI):
     t_task = asyncio.create_task(check_scheduled_tasks_loop())
     cr_task = asyncio.create_task(captacion_reminder_loop())
     c_task = asyncio.create_task(captacion_distribution_loop())
+    sla_c_task = asyncio.create_task(captacion_sla_release_loop())
     r_task = asyncio.create_task(reassign_unassigned_leads_loop()) # Ahora es Productor
     d_task = asyncio.create_task(daily_report_loop())
     nudge_task = asyncio.create_task(inactive_lead_nudge_loop())
@@ -360,6 +361,7 @@ async def lifespan(app: FastAPI):
     el_task.cancel()
     tp_task.cancel()
     crm_weekly_task.cancel()
+    sla_c_task.cancel()
     c1_task.cancel()
     c2_task.cancel()
     cb_task.cancel()
@@ -367,7 +369,7 @@ async def lifespan(app: FastAPI):
         sla_orch_task.cancel()
     try:
         await asyncio.gather(
-            n_task, t_task, c_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, c1_task, c2_task,
+            n_task, t_task, c_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, sla_c_task, c1_task, c2_task,
             *([sla_orch_task] if sla_orch_task is not None else []),
             return_exceptions=True
         )
@@ -2784,18 +2786,8 @@ async def captacion_distribution_loop():
             
             loop = asyncio.get_running_loop()
             
-            # 1. Liberar captaciones sin gestión por SLA
-            inactive_result = await loop.run_in_executor(
-                _WORKER_THREAD_POOL, lambda: redistribute_inactive_agent_captaciones(dry_run=False)
-            )
-            if inactive_result.get("modified", 0) > 0:
-                logger.info(f"[BACKGROUND] Reasignadas por ejecutivo inactivo: {inactive_result}")
-
-            released = await loop.run_in_executor(_WORKER_THREAD_POOL, release_stale_captaciones)
-            if released > 0:
-                logger.info(f"[BACKGROUND] {released} captaciones liberadas por SLA antes de redistribuir.")
-                
-            # 2. Distribuir
+            # Distribuir nuevas captaciones sin asignar. El release por SLA
+            # (inactividad >= 5 dias) corre en el loop semanal nocturno.
             count = await loop.run_in_executor(_WORKER_THREAD_POOL, distribute_sourced_leads)
             if count > 0:
                 logger.info(f"[BACKGROUND] Se asignaron {count} nuevas captaciones automáticamente.")
@@ -2808,6 +2800,69 @@ async def captacion_distribution_loop():
             background_tasks_status["captacion_distributor"]["status"] = "error"
             logger.error(f"[BACKGROUND] Error en distribuidor de captaciones: {e}")
             await asyncio.sleep(60)
+
+
+SLA_RELEASE_WEEKDAY = 6  # domingo
+SLA_RELEASE_HOUR = 4  # 04:00 hora Chile
+
+
+async def captacion_sla_release_loop():
+    """Libera captaciones sin gestión por SLA (>=5 días) y redistribuye las de
+    ejecutivos inactivos. Corre una vez por semana (domingo 04:00 hora Chile)
+    como proceso nocturno, evitando la carrera horaria con la distribución."""
+    logger.info("[BACKGROUND] Iniciando loop semanal de release SLA de captaciones...")
+    last_run_key = "captacion_sla_release_last_run"
+    while True:
+        try:
+            background_tasks_status.setdefault("captacion_sla_release", {"status": "starting", "last_heartbeat": None})
+            background_tasks_status["captacion_sla_release"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
+            background_tasks_status["captacion_sla_release"]["status"] = "running"
+
+            now_local = datetime.now(CHILE_TZ)
+            due = (now_local.weekday() == SLA_RELEASE_WEEKDAY
+                   and now_local.hour == SLA_RELEASE_HOUR
+                   and 0 <= now_local.minute < 10)
+
+            if due:
+                loop = asyncio.get_running_loop()
+                run_date = now_local.strftime("%Y-%m-%d")
+                from chatbot.storage import get_db
+                db = get_db()
+
+                try:
+                    already_run = db["background_runs"].find_one({"_id": f"{last_run_key}_{run_date}"})
+                except Exception:
+                    already_run = None
+                if already_run:
+                    logger.info(f"[SLA_WEEKLY] Release de {run_date} ya ejecutado. Saltando.")
+                else:
+                    inactive_result = await loop.run_in_executor(
+                        _WORKER_THREAD_POOL, lambda: redistribute_inactive_agent_captaciones(dry_run=False)
+                    )
+                    released = await loop.run_in_executor(_WORKER_THREAD_POOL, release_stale_captaciones)
+                    logger.info(
+                        f"[SLA_WEEKLY] Reasignadas por ejecutivo inactivo: {inactive_result.get('modified', 0)} | "
+                        f"liberadas por SLA: {released}"
+                    )
+                    try:
+                        db["background_runs"].update_one(
+                            {"_id": f"{last_run_key}_{run_date}"},
+                            {"$set": {"run_at": datetime.now(timezone.utc).isoformat(),
+                                      "inactive_reassigned": inactive_result.get("modified", 0),
+                                      "released": released}},
+                            upsert=True,
+                        )
+                    except Exception:
+                        pass
+
+            # Revisar cada hora si llegó el momento (domingo 04:00)
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            background_tasks_status["captacion_sla_release"]["status"] = "error"
+            logger.error(f"[BACKGROUND] Error en loop semanal de release SLA: {e}")
+            await asyncio.sleep(3600)
 
 # ========================= 6. RUTAS CRM (MODIFICADAS PARA HORA LOCAL) =========================
 

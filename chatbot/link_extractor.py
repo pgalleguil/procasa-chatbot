@@ -87,6 +87,22 @@ def extraer_codigo_internacional(mensaje: str) -> Optional[str]:
     return None
 
 
+def extraer_codigo_toctoc_compuesto(mensaje: str) -> Optional[str]:
+    """
+    Extrae el código interno de propiedad desde el código compuesto de 17 dígitos
+    que TocToc incluye en mensajes predefinidos de WhatsApp.
+    Ejemplo: 'Código Propiedad: 10543021020006260' -> '6260'
+    Los últimos 5 dígitos del código compuesto (sin ceros a la izquierda) son el código interno.
+    """
+    if not mensaje:
+        return None
+    match = re.search(r"\b(10543\d{12})\b", mensaje)
+    if match:
+        codigo_interno = str(int(match.group(1)[-5:]))
+        print(f"[EXTRACCION] Codigo compuesto TocToc {match.group(1)} -> interno: {codigo_interno}")
+        return codigo_interno
+    return None
+
 
 def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -> Tuple[bool, Optional[dict], str, Optional[str]]:
     """

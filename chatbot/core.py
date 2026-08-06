@@ -23,7 +23,7 @@ from .crm_service import CrmService
 from .constants import PipelineStage, InteractionType, LeadIntent, CHILE_TZ
 
 from .grok_client import generar_respuesta, generar_respuesta_estructurada
-from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, extraer_contexto_urls, URL_RE
+from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, extraer_codigo_toctoc_compuesto, extraer_contexto_urls, URL_RE
 from .utils import extraer_rut, extraer_email, safe_int_conversion, extraer_nombre_explicito
 from .utils import parse_bool
 from .alert_service import send_alert_once
@@ -479,6 +479,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 continue
             urls_detectadas = URL_RE.findall(fuente)
             candidatos_propiedad.extend(urls_detectadas)
+
+            cod_toctoc = extraer_codigo_toctoc_compuesto(fuente)
+            if cod_toctoc:
+                candidatos_propiedad.append(cod_toctoc)
 
             cod_int = extraer_codigo_internacional(fuente)
             if cod_int:

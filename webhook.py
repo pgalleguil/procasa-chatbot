@@ -187,6 +187,7 @@ background_tasks_status = {
     "task_monitor": {"status": "starting", "last_heartbeat": None},
     "captacion_reminder": {"status": "starting", "last_heartbeat": None},
     "prop360_poll": {"status": "starting", "last_heartbeat": None},
+    "ficha_sync": {"status": "starting", "last_heartbeat": None},
     "captacion_distributor": {"status": "post_scrape_trigger", "last_heartbeat": None},
     "lead_processing": {"status": "starting", "last_heartbeat": None}
 }
@@ -301,6 +302,19 @@ async def lifespan(app: FastAPI):
         )
     except Exception:
         logger.warning("[PROP360_POLL] Loop import failed — disabled", exc_info=True)
+    
+    # PROCASA SUCRE ficha sync — feature-flagged, self-contained
+    ficha_task = None
+    try:
+        from chatbot.ficha_sync_loop import ficha_sync_loop as _fsl
+        ficha_task = asyncio.create_task(_fsl())
+        import os as _os
+        logger.info(
+            "[FICHA_SYNC] Loop scheduled. enabled=%s",
+            _os.getenv("FICHA_SYNC_ENABLED", "false"),
+        )
+    except Exception:
+        logger.warning("[FICHA_SYNC] Loop import failed — disabled", exc_info=True)
     
     # Iniciar Consumers
     c1_task = asyncio.create_task(lead_consumer_worker(1))

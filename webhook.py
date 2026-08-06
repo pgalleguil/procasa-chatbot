@@ -1366,7 +1366,7 @@ async def view_crm_detail_by_id(request: Request, lead_id: str):
     raw_phone = str(data.get("phone") or "").strip()
     phone_synthetic = bool(lead.get("phone_is_synthetic")) or raw_phone.startswith("no-phone-")
     if phone_synthetic:
-        data["phone"] = ""
+        data["phone"] = raw_phone
         data["phone_masked"] = "Sin teléfono"
         data["whatsapp_display"] = "Sin teléfono"
         data["phone_is_synthetic"] = True

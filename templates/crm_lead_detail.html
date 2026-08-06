@@ -4518,14 +4518,26 @@
                     }, 2000);
 
                 } else {
-                    throw new Error("SERVER_ERROR");
+                    let serverDetail = "";
+                    try {
+                        const errBody = await response.json();
+                        if (errBody && errBody.detail) serverDetail = String(errBody.detail);
+                    } catch (_e) { /* body no es JSON */ }
+                    throw new Error(serverDetail ? "SERVER_ERROR: " + serverDetail : "SERVER_ERROR");
                 }
             } catch (err) {
                 btn.disabled = false;
                 btn.innerHTML = originalText;
                 if (err.message === "SESSION_EXPIRED") {
                     alert("⚠️ SU SESIÓN HA EXPIRADO\n\nNo se pudieron guardar los datos.");
+                } else if (err.message.startsWith("SERVER_ERROR")) {
+                    console.error("CRM update failed:", err.message);
+                    const serverDetail = err.message.slice("SERVER_ERROR: ".length);
+                    alert(serverDetail
+                        ? "Error al guardar gestión:\n" + serverDetail
+                        : "Error al guardar gestión. Intente nuevamente.");
                 } else {
+                    console.error("CRM update error:", err);
                     alert("Error al guardar gestión. Intente nuevamente.");
                 }
             }

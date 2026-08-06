@@ -1574,7 +1574,7 @@ def update_lead_crm_data(phone, data):
     if interaction_type == "hable" and result != "lead_cerrado":
         if not next_date:
             # Rechazar gestión incompleta (Backend Enforcement)
-            print(f"⚠️ RECHAZADO: Intento de guardar 'Hablé' sin próxima fecha. Lead: {phone_clean}")
+            logger.warning("CRM management rejected: 'Hablé' sin próxima fecha. phone=%s", phone_clean)
             return False 
     
     # A failed attempt and an empty CONTACTED submission are audit events, not

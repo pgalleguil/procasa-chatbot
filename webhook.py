@@ -1518,7 +1518,10 @@ async def api_crm_log_action(request: Request):
         await loop.run_in_executor(_WEB_THREAD_POOL, _sync_log_action)
         return {"status": "ok"}
     except Exception as e:
-        logger.error(f"Error logging CRM action: {e}")
+        logger.error("Error logging CRM action: phone=%s type=%s -> %s",
+                     data.get("phone") if data else None,
+                     (data.get("data") or {}).get("type") if data else None,
+                     e, exc_info=True)
         return {"status": "error"}
 
 
@@ -1556,8 +1559,13 @@ async def api_crm_management_result(request: Request):
         raise HTTPException(status_code=403, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as e:
+        logger.error("CRM management-result error: phone=%s lead=%s result_type=%s -> %s",
+                     phone, lead.get("_id"), data.get("result_type"), e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 @app.post("/api/crm/update")
 async def api_crm_update_lead(request: Request):
+    data = None
     try:
         data = await request.json()
         phone = data.get("phone")
@@ -1587,11 +1595,27 @@ async def api_crm_update_lead(request: Request):
         elif result is True: # Fallback just in case
             return {"status": "ok"}
         else:
+            logger.warning(
+                "CRM update rejected: phone=%s actor=%s result=%s interaction=%s next_date=%s",
+                phone, data.get("_actor_name"), data.get("resultado_gestion"),
+                data.get("interaction_type"), data.get("next_action_date"),
+            )
             raise HTTPException(status_code=500, detail="No se pudo actualizar")
-    except HTTPException:
+    except HTTPException as exc:
+        logger.error(
+            "CRM update failed: status=%s detail=%s phone=%s actor=%s result=%s",
+            exc.status_code, exc.detail,
+            (data or {}).get("phone"), (data or {}).get("_actor_name"),
+            (data or {}).get("resultado_gestion"),
+        )
         raise
     except Exception as e:
-        logger.error(f"CRM Update Error: {e}")
+        logger.error(
+            "CRM Update Error: phone=%s actor=%s result=%s -> %s",
+            (data or {}).get("phone"), (data or {}).get("_actor_name"),
+            (data or {}).get("resultado_gestion"), e,
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1692,8 +1716,10 @@ async def api_crm_notes(request: Request):
         result = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: manage_crm_notes(phone, note_data, action))
         if result:
             return {"status": "ok", "note": result}
+        logger.warning("CRM notes rejected: action=%s phone=%s", action, phone)
         return {"status": "error"}
     except Exception as e:
+        logger.error("CRM notes error: phone=%s action=%s -> %s", data.get("phone") if data else None, (data or {}).get("action"), e, exc_info=True)
         return {"status": "error", "detail": str(e)}
 
 # --- BÚSQUEDA SEMÁNTICA ---

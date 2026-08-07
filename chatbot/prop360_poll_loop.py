@@ -17,7 +17,7 @@ import asyncio
 import logging
 import os
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger("prop360.poll")
 
@@ -286,7 +286,13 @@ def _save_checkpoint(extractor, metrics: dict, db, max_confirmed_id: int | None 
 
 
 async def prop360_poll_loop(sleep_seconds: int | None = None) -> None:
-    """Main loop for Prop360 ingestion. Feature-flagged and self-contained."""
+    """Main loop for Prop360 ingestion. Feature-flagged and self-contained.
+
+    The interval stays as configured (default 60 min), but cycles only run
+    inside business hours (Mon-Fri 09:00-19:00 Chile). Outside business hours
+    the loop idles until the next opening so no lead sits unread for too long
+    and no bandwidth is wasted polling when nobody can answer anyway.
+    """
     interval = sleep_seconds or _interval_seconds()
     if not _feature_enabled():
         _update_health_heartbeat(status="disabled")
@@ -304,6 +310,11 @@ async def prop360_poll_loop(sleep_seconds: int | None = None) -> None:
         if not first:
             await _sleep_until_next_slot(interval)
         first = False
+        if not _in_business_hours():
+            _update_health_heartbeat(status="idle", reason="outside_business_hours")
+            _persist_cycle_status("idle", {"mode": None, "reason": "outside_business_hours"})
+            logger.info("[PROP360_POLL] Fuera de horario laboral; siguiente ciclo en apertura.")
+            continue
         try:
             result = await asyncio.to_thread(run_prop360_poll_cycle)
             _update_health_heartbeat(status="running", last_cycle=result.get("status"))
@@ -315,26 +326,38 @@ async def prop360_poll_loop(sleep_seconds: int | None = None) -> None:
         await _sleep_until_next_slot(interval)
 
 
+def _in_business_hours(now: datetime | None = None) -> bool:
+    """True when ``now`` falls inside business hours (Mon-Fri 09:00-19:00 Chile)."""
+    from .business_calendar import is_business_time
+    return is_business_time(now or datetime.utcnow().replace(tzinfo=timezone.utc))
+
+
 def _next_slot_at(interval_seconds: int) -> datetime:
     """Next aligned slot (UTC) at a round hour boundary.
 
     The cycle runs at the top of the hour so monitoring is predictable
     (15:00, 16:00, ...).  ``interval_seconds`` is treated as a target period;
-    the slot is always the next whole hour for 60-minute intervals.
+    the slot is always the next whole hour for 60-minute intervals.  Outside
+    business hours the next slot is the next business opening instead.
     """
-    now = datetime.utcnow()
+    from .business_calendar import is_business_time, next_business_slot_utc
+    now = datetime.utcnow().replace(tzinfo=timezone.utc)
+    if not is_business_time(now):
+        return next_business_slot_utc(now)
     if interval_seconds <= 3600:
         next_slot = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     else:
-        step = timedelta(seconds=interval_seconds)
-        next_slot = now + step
+        next_slot = now + timedelta(seconds=interval_seconds)
+    if not is_business_time(next_slot):
+        return next_business_slot_utc(next_slot)
     return next_slot
 
 
 async def _sleep_until_next_slot(interval_seconds: int) -> None:
     """Sleep until the next aligned slot, guarding against clock issues."""
     next_slot = _next_slot_at(interval_seconds)
-    wait = max((next_slot - datetime.utcnow()).total_seconds(), 5)
+    now = datetime.utcnow().replace(tzinfo=timezone.utc)
+    wait = max((next_slot - now).total_seconds(), 5)
     logger.info("[PROP360_POLL] next cycle at %s (%s)",
                 next_slot.isoformat(), f"in {int(wait)}s")
     await asyncio.sleep(wait)

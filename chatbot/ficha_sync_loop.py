@@ -1,20 +1,21 @@
-"""Ficha sync loop — periodic sync of PROCASA SUCRE (ofi=7) property fichas.
+"""Ficha sync loop — monthly sync of property fichas.
 
 Runs on the same in-process pattern as ``prop360_poll_loop``: an asyncio loop
 launched from ``webhook.py``, feature-flagged via env vars.
 
 Schedule (Chile time):
-    - Incremental runs Mon-Fri at 00:00, 12:00 and 18:00 (3x/day).
-    - Full backfill runs on Sunday within ``FICHA_SYNC_BACKFILL_HOUR`` +
-      ``FICHA_SYNC_BACKFILL_WINDOW``, but at most once every
-      ``FICHA_SYNC_BACKFILL_MIN_DAYS`` (default 14 -> ~2x per month).
-    - Saturdays: nothing.
+    - Monthly backfill on Sunday within ``FICHA_SYNC_BACKFILL_HOUR`` +
+      ``FICHA_SYNC_BACKFILL_WINDOW``, at most once every
+      ``FICHA_SYNC_BACKFILL_MIN_DAYS`` (default 30 -> ~1x per month,
+      early morning, end or start of month).
+    - No incremental runs: re-scraping every cycle wastes bandwidth on the
+      Hobby plan, so the full cartera is refreshed once a month.
 
 Env vars:
     FICHA_SYNC_ENABLED              "true"/"false" (default "false")
     FICHA_SYNC_BACKFILL_HOUR        start hour (Chile time) for backfill (default 4)
     FICHA_SYNC_BACKFILL_WINDOW      hours window after start hour (default 3)
-    FICHA_SYNC_BACKFILL_MIN_DAYS    min days between backfills (default 14)
+    FICHA_SYNC_BACKFILL_MIN_DAYS    min days between backfills (default 30)
 
 It is fully isolated: an exception in one cycle never stops the other workers.
 """
@@ -35,8 +36,8 @@ try:
 except Exception:  # pragma: no cover
     CHILE_TZ = None
 
-# Fixed incremental slots (Chile time), Mon-Fri only.
-INCREMENTAL_SLOTS = (0, 12, 18)
+# No incremental slots: only the monthly Sunday backfill runs.
+INCREMENTAL_SLOTS = ()
 
 
 def _feature_enabled() -> bool:
@@ -52,7 +53,7 @@ def _backfill_window_hours() -> int:
 
 
 def _backfill_min_days() -> int:
-    return int(os.getenv("FICHA_SYNC_BACKFILL_MIN_DAYS", "14"))
+    return int(os.getenv("FICHA_SYNC_BACKFILL_MIN_DAYS", "30"))
 
 
 def _now_local() -> datetime:

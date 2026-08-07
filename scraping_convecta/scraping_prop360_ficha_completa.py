@@ -1555,6 +1555,14 @@ def upsert_ficha(coll, doc: dict) -> tuple[bool, bool]:
     current_hash = audit_hash(doc)
     changed = previous_hash != current_hash
 
+    # Reactivación: el doc estaba BAJA (disponible=False) y el nuevo scrape lo
+    # trae disponible. Registra la reactivación y limpia el marcador de baja.
+    if not bool(existing.get("disponible_prop360", True)) and bool(doc.get("disponible_prop360", True)):
+        doc["fecha_reactivacion"] = now_iso()
+        doc["fecha_baja_automatica"] = None
+        doc["baja_origen"] = None
+        changed = True
+
     historial = build_deep_history(existing if existing else None, doc)
     doc["historial_cambios"] = historial
     doc["audit_hash"] = current_hash
@@ -1632,6 +1640,11 @@ def _snapshot_dict(row: dict) -> dict:
 def needs_update(existing: dict, row: dict) -> bool:
     if _row_missing_or_stale(existing):
         return True
+    # Reactivación: un doc marcado BAJA (disponible_prop360=False) que vuelve a
+    # aparecer Activa en el listado debe re-scrapearse para volver a marcarse
+    # disponible, aunque el snapshot del listado no haya cambiado.
+    if not bool(existing.get("disponible_prop360", True)):
+        return True
     resumen = existing.get("resumen") or {}
     snap = resumen.get("snapshot_listado")
     if isinstance(snap, dict):
@@ -1700,12 +1713,18 @@ def mark_bajas(coll, active_codes: set[str], dry_run: bool = False) -> int:
     return count
 
 
-def run(args) -> int:
+def run(args, office_id: int | None = None) -> int:
     email = os.getenv("PROP360_EMAIL")
     password = os.getenv("PROP360_PASSWORD")
     if not email or not password:
         log.error("PROP360_EMAIL y PROP360_PASSWORD deben estar definidos")
         return 2
+
+    # Oficina explícita (multi-oficina) o la del entorno.
+    global OFFICE_ID, OFICINA_NOMBRE
+    if office_id is not None:
+        OFFICE_ID = office_id
+        OFICINA_NOMBRE = OFICINAS.get(office_id, f"OFICINA {office_id}")
 
     mongo_client, coll = get_mongo_collection(COLLECTION_NAME)
     coll.create_index("codigo", unique=True)
@@ -1769,6 +1788,24 @@ def run(args) -> int:
 def run_codigo(client: Prop360Client, coll, codigo: str, listing_row: dict, args) -> int:
     log.info(f"Scrapeando código único: {codigo}")
     return scrape_list_batch(client, coll, [codigo], {codigo: listing_row}, args, None)
+
+
+def run_all_offices(args) -> int:
+    """Corre el ciclo completo para todas las oficinas activas de OFICINAS.
+
+    Detecta nuevas, actualizaciones y bajas por oficina, de modo que la cartera
+    universo queda completa y al día. La oficina 4 está vacía y se omite.
+    """
+    offices = [oid for oid in sorted(OFICINAS) if oid != 4]
+    worst = 0
+    for oid in offices:
+        log.info("=" * 60)
+        log.info(f"OFICINA {oid}: {OFICINAS[oid]}")
+        log.info("=" * 60)
+        code = run(args, office_id=oid)
+        if code:
+            worst = code
+    return worst
 
 
 def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_client) -> int:
@@ -1843,10 +1880,13 @@ def main():
     parser.add_argument("--max-update", type=int, default=None, help="Limitar propiedades a actualizar")
     parser.add_argument("--limit", type=int, default=None, help="Límite total de propiedades a scrapear")
     parser.add_argument("--backfill", action="store_true", help="Re-scrapear todas las propiedades Activa")
+    parser.add_argument("--all-offices", action="store_true", help="Correr todas las oficinas activas de OFICINAS")
     parser.add_argument("--no-bajas", action="store_true", help="No marcar bajas")
     parser.add_argument("--delay", type=float, default=0.3, help="Delay entre peticiones (segundos)")
     args = parser.parse_args()
 
+    if args.all_offices:
+        sys.exit(run_all_offices(args))
     sys.exit(run(args))
 
 

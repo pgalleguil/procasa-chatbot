@@ -165,6 +165,7 @@ def _build_args(backfill: bool) -> argparse.Namespace:
         max_update=None,
         limit=None,
         backfill=backfill,
+        all_offices=True,
         no_bajas=False,
         delay=0.1,
     )
@@ -208,9 +209,9 @@ def run_ficha_sync_cycle(db=None) -> dict:
 
     metrics["mode"] = "backfill" if backfill else "incremental"
     try:
-        from scraping_convecta.scraping_prop360_ficha_completa import run
+        from scraping_convecta.scraping_prop360_ficha_completa import run_all_offices
         args = _build_args(backfill)
-        exit_code = run(args)
+        exit_code = run_all_offices(args)
         metrics["exit_code"] = exit_code
         metrics["status"] = "error" if exit_code else "ok"
         metrics["reason"] = "exit_code_nonzero" if exit_code else None

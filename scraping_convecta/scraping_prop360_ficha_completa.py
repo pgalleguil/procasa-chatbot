@@ -76,9 +76,21 @@ FICHA_URL_TPL = f"{BASE_URL}/backOffice/propiedades/propEditar?i={{codigo}}"
 PROPIETARIO_URL_TPL = f"{BASE_URL}/backOffice/propiedades/propPropietario?i={{codigo}}"
 ESTADO_URL_TPL = f"{BASE_URL}/backOffice/propiedades/propEstado?i={{codigo}}"
 PUBLICACION_URL_TPL = f"{BASE_URL}/backOffice/propiedades/propPublicacion?i={{codigo}}"
+FICHA_PRINT_URL_TPL = f"{BASE_URL}/backOffice/propiedades/propFicha.aspx?print=1&i={{codigo}}"
 
 OFFICE_ID = int(os.getenv("PROP360_OFFICE_ID", "7"))
-OFICINA_NOMBRE = "PROCASA SUCRE"
+
+OFICINAS = {
+    1: "PROCASA CARLOS HURTADO",
+    2: "PROCASA FRANCISCO VIAL",
+    3: "PROCASA GRUPO ORIENTE",
+    4: "OFICINA 4",
+    5: "PROCASA LA GLORIA",
+    6: "PROCASA MAURICIO PINO",
+    7: "PROCASA SUCRE",
+    8: "PROCASA VILLARRICA",
+}
+OFICINA_NOMBRE = OFICINAS.get(OFFICE_ID, f"OFICINA {OFFICE_ID}")
 COLLECTION_NAME = getattr(Config, "PROPERTY_COLLECTION_NAME", "universo_cartera_prop360")
 SCRAPER_VERSION = "2.0.0"
 
@@ -699,6 +711,10 @@ class Prop360Client:
         r = self._get(PUBLICACION_URL_TPL.format(codigo=codigo))
         return r.text
 
+    def get_ficha_imprimible(self, codigo: str) -> str:
+        r = self._get(FICHA_PRINT_URL_TPL.format(codigo=codigo))
+        return r.text
+
     def get_portales(self, codigo: str) -> dict:
         r = self._post(
             PROPIEDAD_FICHA_ASHX,
@@ -1146,6 +1162,158 @@ def parse_listing_price(precio_text: str | None):
 # SCRAPING + DOCUMENTO
 # ──────────────────────────────────────────────────────────────────────────────
 
+_FICHA_PRINT_FIELD_MAP = {
+    "Dormitorios": "dormitorios",
+    "Baños": "banos",
+    "Banos": "banos",
+    "S. construida": "superficie_construida",
+    "S. terreno": "superficie_terreno",
+    "Sup. construida": "superficie_construida",
+    "Sup. de terreno": "superficie_terreno",
+    "Sup. total": "superficie_total",
+    "Orientación": "orientacion",
+    "Orientacion": "orientacion",
+    "Año de construcción": "ano_construccion",
+    "Ano de construcción": "ano_construccion",
+    "Nº de pisos": "numero_pisos",
+    "N de pisos": "numero_pisos",
+    "Tipo de local": "tipo_local",
+    "Recepción final": "prop_recep",
+    "Centro comercial": "centro_comercial",
+    "Tipo de calefacción": "tipo_calefaccion",
+    "Tipo de agua": "tipo_agua",
+    "Alcantarillado": "alcantarillado",
+    "Nº de estacionamientos": "estacionamientos",
+    "N de estacionamientos": "estacionamientos",
+}
+
+
+def _detect_print_price(txt: str | None):
+    """Return (unit, int_value) for a print-ficha price string.
+
+    ``UF 57.836`` → ("uf", 57836); ``$ 2.362.299.274`` → ("clp", ...);
+    ``$ 68,55`` (comma decimal) → ("uf", 6855) to match existing schema.
+    """
+    if not txt:
+        return None, None
+    if "UF" in txt.upper():
+        return "uf", clean_price(txt)
+    num = re.search(r"([\d.,]+)", txt)
+    if not num:
+        return None, None
+    raw = num.group(1)
+    if "," in raw:
+        return "uf", clean_price(raw)
+    return "clp", clean_price(raw)
+
+
+def parse_ficha_imprimible(html: str, audit: dict | None = None) -> dict:
+    """Parse the printable ficha (propFicha.aspx?print=1).
+
+    Used for offices where propEditar does not render the editable form
+    (permission by office). Returns the same section shape as the form-based
+    parsers so ``build_doc`` works unchanged.
+    """
+    start = html.find("<!--Ficha en pantalla-->")
+    end = html.find("//End Ficha en pantalla", start if start >= 0 else 0)
+    seg = html[start:end] if (start >= 0 and end > start) else html
+    soup = _bs(seg)
+
+    tipo_op = {"tipo": None, "venta": False, "arriendo": False,
+               "gastos_comunes": None, "precio_venta": None, "precio_arriendo": None}
+    ubicacion = {k: None for k in ("region", "comuna", "sector", "calle", "numero",
+                                   "unidad", "letra", "etapa", "direccion_referencial")}
+    caracteristicas: dict = {}
+    observaciones = {"descripcion": None, "observaciones_internas": None,
+                     "titulo": None, "forma_visita": None}
+
+    # Header: tipo + comuna from <h2 class='font-blue'>
+    h2 = soup.find("h2", class_="font-blue")
+    if h2:
+        parts = [p.strip() for p in h2.get_text(strip=True).split(",")]
+        if parts:
+            tipo_op["tipo"] = parts[0] or None
+        if len(parts) > 1:
+            ubicacion["comuna"] = parts[1] or None
+    # Region + addresses from the header text
+    for label, key in [("Dirección web", "direccion_referencial"),
+                       ("Dirección exacta", "calle")]:
+        m = re.search(rf"<b>.*?{label}.*?</b>\s*([^<]+)<", seg, re.IGNORECASE)
+        if m:
+            ubicacion[key] = _clean_value(m.group(1).strip()) or None
+    reg_m = re.search(r"Reg\.?\s*([A-ZÁ-Úa-zá-úñÑ]+(?:\s+[A-ZÁ-Úa-zá-úñÑ]+)*)", seg)
+    if reg_m:
+        ubicacion["region"] = reg_m.group(1).strip()
+
+    # Price block: operation word + label (primary) + small (secondary)
+    op_m = re.search(r"<h4[^>]*>([^<]*?)(?:<label|$)", seg, re.S)
+    op_txt = _clean_value(op_m.group(1)) if op_m else None
+    if op_txt:
+        lower = op_txt.lower()
+        if "venta" in lower or "vende" in lower:
+            tipo_op["venta"] = True
+        if "arriendo" in lower or "arrienda" in lower:
+            tipo_op["arriendo"] = True
+    label_m = re.search(r"<label[^>]*>([^<]+)</label>", seg, re.S)
+    small_m = re.search(r"<small[^>]*>([^<]+)</small>", seg, re.S)
+    prices = []
+    if label_m:
+        prices.append(label_m.group(1))
+    if small_m:
+        prices.append(small_m.group(1))
+    venta_p = {"precio_uf": None, "precio_clp": None}
+    arriendo_p = {"precio_uf": None, "precio_clp": None}
+    target = venta_p if tipo_op["venta"] and not tipo_op["arriendo"] else (
+        arriendo_p if tipo_op["arriendo"] and not tipo_op["venta"] else venta_p)
+    for txt in prices:
+        unit, val = _detect_print_price(txt)
+        if unit and val is not None:
+            target[f"precio_{unit}"] = val
+    if any(v is not None for v in venta_p.values()):
+        tipo_op["precio_venta"] = venta_p
+    if any(v is not None for v in arriendo_p.values()):
+        tipo_op["precio_arriendo"] = arriendo_p
+
+    # Caracteristicas: <b>Label: </b>value + checkmark features
+    for bm in re.finditer(r"<b>(.*?):\s*</b>\s*([^<]+)", seg):
+        label = bm.group(1).strip()
+        value = _clean_value(bm.group(2).strip())
+        norm = _FICHA_PRINT_FIELD_MAP.get(label)
+        if norm and value:
+            if norm in ("dormitorios", "banos", "ano_construccion", "numero_pisos",
+                        "estacionamientos"):
+                caracteristicas[norm] = safe_int(value)
+            elif norm in ("superficie_construida", "superficie_terreno", "superficie_total"):
+                caracteristicas[norm] = safe_float(value.replace(".", "").replace(",", "."))
+            else:
+                caracteristicas[norm] = value
+    feats = [f.strip() for f in re.findall(
+        r"<i class='fa fa-check[^>]*></i>\s*([^<]+)", seg)]
+    feats = [f for f in feats if f]
+    if feats:
+        caracteristicas["features"] = sorted(set(feats))
+
+    # Observaciones: sections Descripcion / Forma de visitar / Observaciones internas
+    desc_m = re.search(r">Descripción</h4>.*?</div>\s*<div[^>]*>(.*?)</div>", seg, re.S)
+    if desc_m:
+        observaciones["descripcion"] = _clean_value(re.sub(r"<[^>]+>", " ", desc_m.group(1)))
+    fv_m = re.search(r">Forma de visitar</h4>.*?</div>\s*<div[^>]*>(.*?)</div>", seg, re.S)
+    if fv_m:
+        observaciones["forma_visita"] = _clean_value(re.sub(r"<[^>]+>", " ", fv_m.group(1)))
+    oi_m = re.search(r">Observaciones internas</h4>.*?</div>\s*<div[^>]*>(.*?)</div>", seg, re.S)
+    if oi_m:
+        observaciones["observaciones_internas"] = _clean_value(re.sub(r"<[^>]+>", " ", oi_m.group(1)))
+
+    if audit is not None:
+        audit.setdefault("campos_esperados", []).extend(list(tipo_op) + list(ubicacion))
+    return {
+        "tipo_operacion": tipo_op,
+        "ubicacion": ubicacion,
+        "caracteristicas": caracteristicas,
+        "observaciones": observaciones,
+    }
+
+
 def build_doc(codigo: str, listing_row: dict, parsed: dict) -> dict:
     tipo_op = parsed["tipo_operacion"]
     estado = parsed["estado"]
@@ -1174,6 +1342,8 @@ def build_doc(codigo: str, listing_row: dict, parsed: dict) -> dict:
 
     doc = {
         "codigo": codigo,
+        "oficina_id": OFFICE_ID,
+        "oficina_nombre": OFICINA_NOMBRE,
         "resumen": {
             "oficina": estado.get("oficina") or OFICINA_NOMBRE,
             "ejecutivo": estado.get("ejecutivo"),
@@ -1199,12 +1369,32 @@ def build_doc(codigo: str, listing_row: dict, parsed: dict) -> dict:
     return doc
 
 
+def _form_has_content(html_edit: str) -> bool:
+    """True when propEditar actually rendered the editable form.
+
+    Properties from other offices redirect propEditar and render an empty
+    form-body shell; those are scraped via the printable ficha instead.
+    """
+    if not html_edit:
+        return False
+    if 'id="ddltp"' in html_edit or 'id="tbPrecioVenta"' in html_edit:
+        return True
+    for form_id in ("form_tipo", "form_ubicacion", "form_caracteristicas"):
+        m = re.search(rf'<div id="{form_id}" class="form-body">(.*?)</div>', html_edit, re.S)
+        if m:
+            inner = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+            if inner:
+                return True
+    return False
+
+
 def scrape_propiedad(client: Prop360Client, codigo: str, listing_row: dict) -> dict:
     audit = {"campos_esperados": [], "campos_vacios": [], "selectors_failed": []}
 
     html_edit = client.get_propeditar(codigo)
-    if not html_edit or 'id="form_tipo"' not in html_edit and 'id="form_ubicacion"' not in html_edit:
-        raise RuntimeError("propEditar no cargó el formulario")
+    if not _form_has_content(html_edit):
+        log.info(f"[{codigo}] propEditar sin form (otra oficina) → ficha imprimible.")
+        return scrape_propiedad_imprimible(client, codigo, listing_row)
 
     tipo_op = parse_tipo_operacion(html_edit, audit)
     ubicacion = parse_ubicacion(html_edit, audit)
@@ -1237,6 +1427,7 @@ def scrape_propiedad(client: Prop360Client, codigo: str, listing_row: dict) -> d
         "fecha_scraping": now_iso(),
         "tipo_propiedad": tipo_propiedad,
         "tipo_propiedad_detectado": tipo_propiedad,
+        "origen_ficha": "form_editable",
         "tabs": {
             "tipo_operacion": True,
             "ubicacion": bool(ubicacion),
@@ -1248,6 +1439,74 @@ def scrape_propiedad(client: Prop360Client, codigo: str, listing_row: dict) -> d
         "campos_vacios": sorted(set(audit.get("campos_vacios", []))),
         "selectors_failed": sorted(set(audit.get("selectors_failed", []))),
         "source_url": FICHA_URL_TPL.format(codigo=codigo),
+        "scraper": "scraping_prop360_ficha_completa.py",
+        "version": SCRAPER_VERSION,
+    }
+
+    return build_doc(codigo, listing_row, {
+        "tipo_operacion": tipo_op,
+        "ubicacion": ubicacion,
+        "caracteristicas": caracteristicas,
+        "observaciones": observaciones,
+        "datos_propietario": datos_propietario,
+        "estado": estado,
+        "publicaciones": publicaciones,
+        "bitacora": bitacora,
+        "metadata": metadata,
+    })
+
+
+def scrape_propiedad_imprimible(client: Prop360Client, codigo: str, listing_row: dict) -> dict:
+    """Fallback for offices where propEditar is not editable (permisos por
+    oficina): uses propFicha.aspx?print=1 + propPropietario + portales JSON."""
+    audit = {"campos_esperados": [], "campos_vacios": [], "selectors_failed": []}
+
+    html_print = client.get_ficha_imprimible(codigo)
+    if not html_print or "fichaPropiedad" not in html_print:
+        raise RuntimeError("propFicha imprimible no cargó la ficha")
+
+    parsed = parse_ficha_imprimible(html_print, audit)
+    tipo_op = parsed["tipo_operacion"]
+    ubicacion = parsed["ubicacion"]
+    caracteristicas = parsed["caracteristicas"]
+    observaciones = parsed["observaciones"]
+
+    client._wait()
+    html_prop = client.get_propietario(codigo)
+    datos_propietario = parse_datos_propietario(html_prop, audit)
+
+    estado = {
+        "ejecutivo": listing_row.get("captador"),
+        "oficina": OFICINA_NOMBRE,
+        "disponible_prop360": True,
+        "estado_prop360": listing_row.get("estado") or "Activa",
+        "ultima_actualizacion": None,
+    }
+
+    client._wait()
+    publicaciones = parse_publicaciones_json(client.get_portales(codigo), codigo)
+
+    client._wait()
+    bitacora = client.get_bitacora(codigo)
+
+    tipo_propiedad = tipo_op.get("tipo")
+    metadata = {
+        "status": "ok",
+        "fecha_scraping": now_iso(),
+        "tipo_propiedad": tipo_propiedad,
+        "tipo_propiedad_detectado": tipo_propiedad,
+        "origen_ficha": "ficha_imprimible",
+        "tabs": {
+            "tipo_operacion": True,
+            "ubicacion": bool(ubicacion),
+            "caracteristicas": bool(caracteristicas),
+            "observaciones": bool(observaciones),
+            "portales": True,
+        },
+        "campos_esperados": sorted(set(audit.get("campos_esperados", []))),
+        "campos_vacios": sorted(set(audit.get("campos_vacios", []))),
+        "selectors_failed": sorted(set(audit.get("selectors_failed", []))),
+        "source_url": FICHA_PRINT_URL_TPL.format(codigo=codigo),
         "scraper": "scraping_prop360_ficha_completa.py",
         "version": SCRAPER_VERSION,
     }
@@ -1407,9 +1666,16 @@ def needs_update(existing: dict, row: dict) -> bool:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def mark_bajas(coll, active_codes: set[str], dry_run: bool = False) -> int:
+    # Bajas solo dentro de la oficina actual: evita marcar como baja a las
+    # propiedades de otras oficinas cuando se sincroniza una oficina distinta.
     query = {
         "disponible_prop360": True,
         "codigo": {"$nin": list(active_codes)},
+        "$or": [
+            {"oficina_id": OFFICE_ID},
+            {"resumen.oficina": OFICINA_NOMBRE},
+            {"oficina_nombre": OFICINA_NOMBRE},
+        ],
     }
     count = coll.count_documents(query)
     if count == 0:

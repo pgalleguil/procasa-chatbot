@@ -94,6 +94,7 @@ def get_model():
     """
     global _model_instance, _model_load_attempted
     if _model_instance is not None:
+        log_memory_diagnostics("model_cached")
         return _model_instance
     if _model_load_attempted:
         return None  # Ya falló antes, no reintentar
@@ -118,6 +119,7 @@ def get_model():
         from fastembed import TextEmbedding
         logger.info(f"Cargando modelo de embeddings (FastEmbed): {MODEL_NAME} ...")
         _model_instance = TextEmbedding(model_name=MODEL_NAME)
+        log_memory_diagnostics("after_model_load")
         logger.info("Modelo FastEmbed cargado exitosamente.")
         return _model_instance
     except ImportError:
@@ -310,6 +312,7 @@ def generate_embedding(text: str) -> Optional[List[float]]:
     try:
         embeddings_generator = model.embed([text])
         vector = next(embeddings_generator).tolist()
+        log_memory_diagnostics("after_embedding")
         return vector
     except Exception as e:
         logger.error(f"Error generando embedding con FastEmbed: {e}")

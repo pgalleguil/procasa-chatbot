@@ -1,5 +1,6 @@
 
 import re
+import os
 import logging
 import numpy as np
 from typing import Optional, List
@@ -9,6 +10,69 @@ from config import Config
 from .storage import get_db
 
 logger = logging.getLogger(__name__)
+
+
+def _read_cgroup_file(path: str):
+    """Lee un archivo de cgroup. Retorna su contenido crudo (str) o None si no existe/falla."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def log_memory_diagnostics(stage: str) -> None:
+    """Instrumentación [MEM_DIAG]: RSS del proceso + psutil.virtual_memory() + límites cgroup.
+
+    Tolerante a errores: si un archivo cgroup no existe o no se puede leer, continúa normalmente.
+    No cambia ninguna lógica de carga de FastEmbed.
+    """
+    try:
+        import psutil
+        proc_rss = psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
+        vm = psutil.virtual_memory()
+        psutil_total = vm.total / (1024 * 1024)
+        psutil_available = vm.available / (1024 * 1024)
+        psutil_used = vm.used / (1024 * 1024)
+        psutil_percent = vm.percent
+    except Exception as e:
+        logger.warning(f"[MEM_DIAG] psutil no disponible: {e}")
+        return
+
+    def _parse_cgroup(path):
+        raw = _read_cgroup_file(path)
+        if raw is None:
+            return None, "missing"
+        if raw.lower() == "max":
+            return None, "max"
+        try:
+            return int(raw), "ok"
+        except ValueError:
+            return None, "invalid"
+
+    cg_limit, cg_limit_status = _parse_cgroup("/sys/fs/cgroup/memory.max")  # v2
+    cg_current, cg_current_status = _parse_cgroup("/sys/fs/cgroup/memory.current")  # v2
+    cg_v2 = cg_limit_status != "missing" or cg_current_status != "missing"
+    if cg_limit is None and cg_limit_status == "missing":
+        cg_limit, cg_limit_status = _parse_cgroup("/sys/fs/cgroup/memory/memory.limit_in_bytes")  # v1
+    if cg_current is None and cg_current_status == "missing":
+        cg_current, cg_current_status = _parse_cgroup("/sys/fs/cgroup/memory/memory.usage_in_bytes")  # v1
+
+    def _mb(v):
+        return None if v is None else round(v / (1024 * 1024), 1)
+
+    cg_limit_mb = _mb(cg_limit)
+    cg_current_mb = _mb(cg_current)
+    cg_remaining_mb = round(cg_limit_mb - cg_current_mb, 1) if (cg_limit_mb is not None and cg_current_mb is not None) else None
+
+    logger.info(
+        f"[MEM_DIAG] stage={stage} cgroup_v2={cg_v2} process_rss_mb={proc_rss:.1f} "
+        f"psutil_total_mb={psutil_total:.1f} psutil_available_mb={psutil_available:.1f} "
+        f"psutil_used_mb={psutil_used:.1f} psutil_percent={psutil_percent:.1f} "
+        f"cgroup_limit_mb={cg_limit_mb} cgroup_limit_status={cg_limit_status} "
+        f"cgroup_current_mb={cg_current_mb} cgroup_current_status={cg_current_status} "
+        f"cgroup_remaining_mb={cg_remaining_mb}"
+    )
 
 # --- CONFIGURACIÓN ---
 # NOTA: FastEmbed + ONNX Runtime consume ~200-250MB en carga, causando OOM en Render (512MB).
@@ -37,8 +101,10 @@ def get_model():
     _model_load_attempted = True
     try:
         import psutil
+        log_memory_diagnostics("before_guard")
         available_mb = psutil.virtual_memory().available / (1024 * 1024)
         if available_mb < 250:
+            log_memory_diagnostics("guard_rejected")
             logger.warning(
                 f"[EMBEDDING] Memoria disponible insuficiente ({available_mb:.0f}MB < 250MB). "
                 "Saltando carga del modelo para evitar OOM. "
@@ -331,3 +397,12 @@ def update_embeddings_bulk(batch_size=100):
         return res.modified_count
 
     return 0
+
+
+# Instrumentación [MEM_DIAG] al importar el módulo (stage=import).
+# Solo diagnostica; no carga el modelo ni cambia comportamiento.
+if not os.environ.get("PROCASA_DISABLE_MEM_DIAG"):
+    try:
+        log_memory_diagnostics("import")
+    except Exception:
+        pass

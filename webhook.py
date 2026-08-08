@@ -375,6 +375,13 @@ async def lifespan(app: FastAPI):
     # El modelo de embeddings se cargará bajo demanda para ahorrar RAM en el arranque
     logger.info("Startup completo. Modelo de embeddings se cargará en el primer uso.")
     
+    # Instrumentación [MEM_DIAG] - app completamente inicializada (solo diagnóstico)
+    try:
+        from chatbot.semantic_engine import log_memory_diagnostics
+        log_memory_diagnostics("startup_complete")
+    except Exception as _e:
+        logger.warning(f"[MEM_DIAG] fallback startup_complete: {_e}")
+    
     yield
     
     # Shutdown logic

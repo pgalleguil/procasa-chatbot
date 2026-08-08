@@ -207,13 +207,15 @@ def formatear_resultados_texto(propiedades: List[Dict]) -> str:
         dormitorios = caract.get("dormitorios") or p.get("dormitorios") or "N/D"
         banos = caract.get("banos") or p.get("banos") or "N/D"
         sup_util = caract.get("superficie_util") or p.get("m2_utiles") or "N/D"
+        if sup_util == "N/D" or sup_util in (None, ""):
+            sup_util = caract.get("superficie_construida") or caract.get("superficie_terreno") or "N/D"
         descripcion = obs.get("descripcion") or p.get("descripcion_clean") or ""
         
         texto += (
             f"- Código: {p.get('codigo')}\n"
             f"  Tipo: {prop_op.get('tipo')} en {prop_op.get('operacion')}\n"
             f"  Comuna: {prop_loc.get('comuna')}\n"
-            f"  Precio: UF {prop_op.get('precio_uf')} (aprox CLP {prop_op.get('precio_clp')})\n"
+            f"  Precio: {_format_uf_display(prop_op.get('precio_uf'))} (aprox CLP {prop_op.get('precio_clp')})\n"
             f"  Programa: {dormitorios} dorms, {banos} baños\n"
             f"  Superficie: {sup_util} m2 útiles\n"
             f"  Amenities/Desc: {str(descripcion)[:250]}...\n"
@@ -224,13 +226,28 @@ def formatear_resultados_texto(propiedades: List[Dict]) -> str:
 
 # =======================================================================================================
 
+def _format_uf_display(value) -> str:
+    """Formatea un valor UF con notación chilena para texto de resultados."""
+    if value is None:
+        return "N/D"
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if amount == int(amount):
+        return f"{int(amount):,}".replace(",", ".") + " UF"
+    s = f"{amount:.2f}".rstrip("0").rstrip(".")
+    int_part, _, dec_part = s.partition(".")
+    return f"{int(int_part):,}".replace(",", ".") + (f",{dec_part}" if dec_part else "") + " UF"
+
+
 # Patrones regex para extraer filtros duros del texto libre
 _RE_DORMS = re.compile(r'(\d)\s*(?:dormitorio|dorm|pieza|habitaci[oó]n)', re.IGNORECASE)
 _RE_BANOS = re.compile(r'(\d)\s*(?:ba[ñn]o)', re.IGNORECASE)
 _RE_ESTAC = re.compile(r'(\d)\s*(?:estacionamiento|parking|cochera|estac)', re.IGNORECASE)
 _RE_M2 = re.compile(r'(\d{2,4})\s*(?:m2|metros?\s*cuadrados?|mt2)', re.IGNORECASE)
 _RE_PRECIO_UF = re.compile(r'(\d[\d.]*)\s*(?:a|y|y\s*hasta|-)?\s*(\d[\d.]*)?\s*(?:uf|UF)', re.IGNORECASE)
-_RE_PRECIO_CLP = re.compile(r'(\d[\d.]*)\s*(?:a|y|y\s*hasta|-)?\s*(\d[\d.]*)?\s*(?:millones?|MM|pesos)', re.IGNORECASE)
+_RE_PRECIO_CLP = re.compile(r'(\d[\d.]*)\s*(?:a|y|y\s*hasta|-)?\s*(\d[\d.]*)?\s*(millones?|MM|mil|pesos)', re.IGNORECASE)
 
 def needs_semantic(text: str) -> bool:
     """Retorna True si el texto contiene palabras clave que requieren búsqueda semántica."""
@@ -308,109 +325,258 @@ def extraer_filtros_estructurados(texto: str) -> Dict:
             filtros["precio_uf_min"] = min(val1, val2)
             filtros["precio_uf_max"] = max(val1, val2)
         else:
-            # Una sola cifra: min o max según contexto
+            # Una sola cifra: min o max según contexto. Margen +15% al máximo
+            # (mismo criterio que presupuestos del prospecto en _mezclar_criterios).
             if any(w in q for w in ["desde", "minimo", "min", "superior"]):
                 filtros["precio_uf_min"] = val1
             else:
-                filtros["precio_uf_max"] = val1
+                filtros["precio_uf_max"] = val1 * 1.15
     else:
         m_clp = _RE_PRECIO_CLP.search(texto)
         if m_clp:
+            unid = (m_clp.group(3) or "millones").lower()
+            mult = 1_000_000 if unid.startswith("millo") or unid == "mm" else 1000
             val1 = float(m_clp.group(1).replace(".", "").replace(",", "."))
-            if val1 < 1000: val1 *= 1_000_000
+            if val1 < 1000: val1 *= mult
             
             val2 = m_clp.group(2)
             if val2:
                 val2 = float(val2.replace(".", "").replace(",", "."))
-                if val2 < 1000: val2 *= 1_000_000
+                if val2 < 1000: val2 *= mult
                 filtros["precio_clp_min"] = min(val1, val2)
                 filtros["precio_clp_max"] = max(val1, val2)
             else:
                 if any(w in q for w in ["desde", "minimo", "min", "superior"]):
                     filtros["precio_clp_min"] = val1
                 else:
-                    filtros["precio_clp_max"] = val1
+                    filtros["precio_clp_max"] = val1 * 1.15
 
     return filtros, target_commune
 
 
+def _mezclar_criterios(filtros: Dict, target_commune: str, criterios: Dict) -> tuple[Dict, str]:
+    """Combina criterios estructurados del prospecto con los filtros extraídos del texto.
+    Los criterios del texto tienen prioridad; los del prospecto rellenan lo que falta."""
+    if not criterios:
+        return filtros, target_commune
+
+    if not filtros.get("operacion") and criterios.get("operacion"):
+        filtros["operacion"] = criterios["operacion"]
+    if not filtros.get("tipo") and criterios.get("tipo"):
+        filtros["tipo"] = criterios["tipo"]
+    if not filtros.get("comunas") and criterios.get("comuna"):
+        valor = str(criterios["comuna"]).strip()
+        if valor:
+            comunas = [c.strip() for c in valor.split(",") if c.strip()]
+            if comunas:
+                filtros["comunas"] = comunas
+                if not target_commune:
+                    target_commune = comunas[0]
+    if not filtros.get("dormitorios") and criterios.get("dormitorios"):
+        filtros["dormitorios"] = criterios["dormitorios"]
+    if not filtros.get("banos") and criterios.get("banos"):
+        filtros["banos"] = criterios["banos"]
+    if not filtros.get("estacionamientos") and criterios.get("estacionamientos"):
+        filtros["estacionamientos"] = criterios["estacionamientos"]
+    if not (filtros.get("precio_uf_max") or filtros.get("precio_clp_max")
+            or filtros.get("precio_uf_min") or filtros.get("precio_clp_min")) and criterios.get("presupuesto"):
+        presupuesto = safe_int_conversion(criterios["presupuesto"])
+        if presupuesto > 0:
+            if presupuesto < 30000:
+                filtros["precio_uf_max"] = presupuesto * 1.15
+            else:
+                filtros["precio_clp_max"] = presupuesto * 1.15
+    return filtros, target_commune
+
+
+# Mapeo de nombres de oficina: caller legacy (CRM) -> esquema Prop360 actual.
+OFICINA_MAP = {
+    "INMOBILIARIA SUCRE SPA": "PROCASA SUCRE",
+    "PROCASA SUCRE": "PROCASA SUCRE",
+    "INMOBILIARIA CARLOS HURTADO SPA": "PROCASA CARLOS HURTADO",
+    "PROCASA CARLOS HURTADO": "PROCASA CARLOS HURTADO",
+    "PROCASA FRANCISCO VIAL": "PROCASA FRANCISCO VIAL",
+    "PROCASA GRUPO ORIENTE": "PROCASA GRUPO ORIENTE",
+    "PROCASA LA GLORIA": "PROCASA LA GLORIA",
+    "PROCASA MAURICIO PINO": "PROCASA MAURICIO PINO",
+    "PROCASA VILLARRICA": "PROCASA VILLARRICA",
+}
+
+def _normalizar_oficina(value: str) -> str:
+    v = (value or "").strip()
+    return OFICINA_MAP.get(v, v)
+
+
+def _superficie_paths(tipo: str) -> List[str]:
+    """Campos de superficie relevantes según el tipo de propiedad."""
+    t = (tipo or "").upper()
+    if any(k in t for k in ("SITIO", "PARCELA", "TERRENO")):
+        return ["caracteristicas.superficie_terreno", "caracteristicas.superficie_total", "m2_utiles"]
+    if any(k in t for k in ("LOCAL", "OFICINA", "BODEGA", "INDUSTRIAL", "ESTACIONAMIENTO")):
+        return ["caracteristicas.superficie_util", "caracteristicas.superficie_construida", "m2_utiles"]
+    return ["caracteristicas.superficie_util", "caracteristicas.superficie_construida",
+            "caracteristicas.superficie_total", "caracteristicas.superficie_terreno", "m2_utiles"]
+
+
 def _construir_filtros_mongo(filtros: Dict, comunas: List[str] = None, oficina: str = None) -> Dict:
-    """Convierte los filtros extraídos en un query MongoDB."""
-    query = {"vector_descripcion": {"$exists": True}}
-    
-    # Filtro de oficina obligatorio
+    """Convierte los filtros extraídos en un query MongoDB para el esquema
+    anidado de universo_cartera_prop360 (mantiene fallbacks planos heredados)."""
+    clauses = [{"vector_descripcion": {"$exists": True}}]
+
+    # Filtro de oficina (resumen.oficina / oficina_nombre / estado.oficina / plano)
     if oficina:
-        query["oficina"] = oficina
-    
+        ofi = _normalizar_oficina(oficina)
+        if ofi:
+            clauses.append({"$or": [
+                {"resumen.oficina": {"$regex": re.escape(ofi), "$options": "i"}},
+                {"oficina_nombre": {"$regex": re.escape(ofi), "$options": "i"}},
+                {"estado.oficina": {"$regex": re.escape(ofi), "$options": "i"}},
+                {"oficina": {"$regex": re.escape(ofi), "$options": "i"}},
+            ]})
+
     if filtros.get("operacion"):
-        query["operacion"] = filtros["operacion"]
-    
+        op = filtros["operacion"]
+        if op == "Venta":
+            clauses.append({"$or": [
+                {"tipo_operacion.venta": True},
+                {"operacion": {"$regex": r"^Venta", "$options": "i"}},
+            ]})
+        elif op == "Arriendo":
+            clauses.append({"$or": [
+                {"tipo_operacion.arriendo": True},
+                {"operacion": {"$regex": r"^Arriendo", "$options": "i"}},
+            ]})
+
     if filtros.get("tipo"):
-        query["tipo"] = filtros["tipo"]
-    
+        tipo = filtros["tipo"]
+        clauses.append({"$or": [
+            {"tipo_operacion.tipo": {"$regex": re.escape(tipo), "$options": "i"}},
+            {"metadata.tipo_propiedad": {"$regex": re.escape(tipo), "$options": "i"}},
+            {"resumen.snapshot_listado.tipo": {"$regex": re.escape(tipo), "$options": "i"}},
+            {"tipo": {"$regex": re.escape(tipo), "$options": "i"}},
+        ]})
+
     if comunas:
-        # Usamos regex robusta para encontrar Maipu/Maipú
-        regex_list = []
-        for c in comunas:
-            pattern = get_accent_regex(c)
-            regex_list.append(re.compile(pattern, re.IGNORECASE))
-        query["comuna"] = {"$in": regex_list}
-    
+        # Regex robusta para Maipu/Maipú sobre los campos anidados y planos.
+        regex_list = [re.compile(get_accent_regex(c), re.IGNORECASE) for c in comunas]
+        clauses.append({"$or": [
+            {"ubicacion.comuna": {"$in": regex_list}},
+            {"resumen.snapshot_listado.comuna": {"$in": regex_list}},
+            {"comuna": {"$in": regex_list}},
+        ]})
+
     if filtros.get("dormitorios"):
         d_val = filtros["dormitorios"]
-        # Soporte para int y string: generamos lista ["3", "4", "5", ...] para emular $gte
-        possible_dorms = [str(i) for i in range(d_val, 15)] + [i for i in range(d_val, 15)]
-        query["dormitorios"] = {"$in": possible_dorms}
-    
+        clauses.append({"$or": [
+            {"caracteristicas.dormitorios": {"$gte": d_val}},
+            {"dormitorios": {"$in": [str(i) for i in range(d_val, 15)] + [i for i in range(d_val, 15)]}},
+        ]})
+
     if filtros.get("banos"):
         b_val = filtros["banos"]
-        possible_banos = [str(i) for i in range(b_val, 15)] + [i for i in range(b_val, 15)]
-        query["banos"] = {"$in": possible_banos}
-        
+        clauses.append({"$or": [
+            {"caracteristicas.banos": {"$gte": b_val}},
+            {"banos": {"$in": [str(i) for i in range(b_val, 15)] + [i for i in range(b_val, 15)]}},
+        ]})
+
     if filtros.get("estacionamientos"):
         e_val = filtros["estacionamientos"]
-        possible_estac = [str(i) for i in range(e_val, 15)] + [i for i in range(e_val, 15)]
-        query["estacionamientos"] = {"$in": possible_estac}
-    
+        clauses.append({"$or": [
+            {"caracteristicas.estacionamientos": {"$gte": e_val}},
+            {"caracteristicas.estacionamientos_cubiertos": {"$gte": e_val}},
+            {"caracteristicas.estacionamientos_descubiertos": {"$gte": e_val}},
+            {"estacionamientos": {"$in": [str(i) for i in range(e_val, 15)] + [i for i in range(e_val, 15)]}},
+        ]})
+
     if filtros.get("m2_utiles"):
-        # Superficie es más complejo, pero si suele ser int lo dejamos como $gte.
-        # Si falla, m2_utiles suele ser numérico en la mayoría de DBs.
-        query["m2_utiles"] = {"$gte": filtros["m2_utiles"]}
-    
-    # Precios (Rango no excluyente) - SOLO SI FUERON MENCIONADOS
+        sup = filtros["m2_utiles"]
+        paths = _superficie_paths(filtros.get("tipo"))
+        clauses.append({"$or": [{path: {"$gte": sup}} for path in paths]})
+
+    # Precios (rango no excluyente) - SOLO SI FUERON MENCIONADOS.
+    # Respeta la operación detectada: Venta solo filtra precio_venta, Arriendo solo precio_arriendo.
+    op_filtro = filtros.get("operacion")
+    precio_uf = None
     if filtros.get("precio_uf_max") or filtros.get("precio_uf_min"):
-        query["precio_uf"] = {}
-        if filtros.get("precio_uf_max"): query["precio_uf"]["$lte"] = filtros["precio_uf_max"]
-        if filtros.get("precio_uf_min"): query["precio_uf"]["$gte"] = filtros["precio_uf_min"]
+        precio_uf = {}
+        if filtros.get("precio_uf_max"):
+            precio_uf["$lte"] = filtros["precio_uf_max"]
+        if filtros.get("precio_uf_min"):
+            precio_uf["$gte"] = filtros["precio_uf_min"]
+        if op_filtro == "Venta":
+            clauses.append({"$or": [
+                {"tipo_operacion.precio_venta.precio_uf": precio_uf},
+                {"precio_uf": precio_uf},
+            ]})
+        elif op_filtro == "Arriendo":
+            clauses.append({"$or": [
+                {"tipo_operacion.precio_arriendo.precio_uf": precio_uf},
+                {"precio_uf": precio_uf},
+            ]})
+        else:
+            clauses.append({"$or": [
+                {"tipo_operacion.precio_venta.precio_uf": precio_uf},
+                {"tipo_operacion.precio_arriendo.precio_uf": precio_uf},
+                {"precio_uf": precio_uf},
+            ]})
 
     if filtros.get("precio_clp_max") or filtros.get("precio_clp_min"):
-        query["precio_clp"] = {}
-        if filtros.get("precio_clp_max"): query["precio_clp"]["$lte"] = filtros["precio_clp_max"]
-        if filtros.get("precio_clp_min"): query["precio_clp"]["$gte"] = filtros["precio_clp_min"]
-    
+        precio_clp = {}
+        if filtros.get("precio_clp_max"):
+            precio_clp["$lte"] = filtros["precio_clp_max"]
+        if filtros.get("precio_clp_min"):
+            precio_clp["$gte"] = filtros["precio_clp_min"]
+        if op_filtro == "Venta":
+            clauses.append({"$or": [
+                {"tipo_operacion.precio_venta.precio_clp": precio_clp},
+                {"precio_clp": precio_clp},
+            ]})
+        elif op_filtro == "Arriendo":
+            clauses.append({"$or": [
+                {"tipo_operacion.precio_arriendo.precio_clp": precio_clp},
+                {"precio_clp": precio_clp},
+            ]})
+        else:
+            clauses.append({"$or": [
+                {"tipo_operacion.precio_venta.precio_clp": precio_clp},
+                {"tipo_operacion.precio_arriendo.precio_clp": precio_clp},
+                {"precio_clp": precio_clp},
+            ]})
+
     # CRITICAL: Solamente propiedades disponibles
-    query["disponible"] = True
-    
-    return query
+    clauses.append({"$or": [
+        {"disponible_prop360": True},
+        {"disponible": True},
+    ]})
+
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
 
 
 def buscar_semanticamente(query_text: str, limit: int = 3, 
-                          oficina_filtro: str = "INMOBILIARIA SUCRE SPA",
+                          oficina_filtro: str = "PROCASA SUCRE",
                           exclude_codes: list = None,
-                          include_neighbors: bool = False) -> List[Dict]:
+                          include_neighbors: bool = False,
+                          criterios_estructurados: Dict = None) -> List[Dict]:
     """
     BÚSQUEDA HÍBRIDA:
     1) Extrae filtros duros del texto (tipo, operación, dormitorios, precio, comuna...)
-    2) Filtra MongoDB con esos campos estructurados (rápido y preciso)
-    3) Rankea los resultados filtrados por similaridad semántica (piscina, sol, metro...)
-    4) Fallback geográfico a comunas vecinas si hay pocos resultados
+    2) Combina con criterios estructurados del prospecto (si se entregan)
+    3) Filtra MongoDB con esos campos estructurados (rápido y preciso)
+    4) Rankea los resultados filtrados por similaridad semántica (piscina, sol, metro...)
+    5) Fallback geográfico a comunas vecinas si hay pocos resultados
     """
     db = get_db()
     collection = db[Config.COLLECTION_NAME]
 
     # --- Paso 1: Extraer filtros estructurados ---
     filtros, target_commune = extraer_filtros_estructurados(query_text)
-    
+
+    # Mezcla con criterios estructurados del prospecto (no sobreescribe lo detectado en texto)
+    if criterios_estructurados:
+        filtros, target_commune = _mezclar_criterios(filtros, target_commune, criterios_estructurados)
+
     # Support multiple communes from extraction
     extracted_communes = filtros.get("comunas", [])
     if target_commune and target_commune not in extracted_communes:
@@ -419,20 +585,21 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
     logger.info(f"[RAG-HYBRID] Filtros extraidos: {filtros} | Comunas: {extracted_communes}")
 
     # --- Paso 2: Generar vector del query (Solo si es necesario) ---
-    use_semantic = needs_semantic(query_text)
+    use_semantic = needs_semantic(query_text) or bool(criterios_estructurados)
     query_vector = None
     if use_semantic:
         logger.info("[RAG-HYBRID] Generando embedding para búsqueda semántica...")
         query_vector = generate_embedding(query_text)
-    else:
-        logger.info("[RAG-HYBRID] Saltando embedding (Búsqueda por filtros estructurados)")
+        if query_vector is None:
+            logger.warning("[RAG-HYBRID] Modelo no disponible; bajando a ranking por filtros")
+            use_semantic = False
 
     # --- Paso 3: Helper de búsqueda vectorial con filtros ---
     excluded = set(exclude_codes or [])
 
     def ejecutar_busqueda(comunas: List[str] = None, relajar_filtros: bool = False, global_scope: bool = False):
         nonlocal use_semantic
-        target_office = None if global_scope else oficina_filtro
+        target_office = None if global_scope else _normalizar_oficina(oficina_filtro)
         if relajar_filtros:
             # RELAXED: Remove M2 but KEEP PRICE and BEDROOMS (User requested strict bedrooms)
             filtros_relajados = {k: v for k, v in filtros.items() 
@@ -442,11 +609,12 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
             mongo_query = _construir_filtros_mongo(filtros, comunas, target_office)
 
         projection = {
-            "vector_descripcion": 1, "codigo": 1, "oficina": 1,
+            "vector_descripcion": 1, "codigo": 1, "oficina_nombre": 1,
             "comuna": 1, "operacion": 1, "tipo": 1, "precio_uf": 1, "precio_clp": 1,
             "dormitorios": 1, "banos": 1, "m2_utiles": 1, "descripcion_clean": 1,
             "nombre_calle": 1,
-            "tipo_operacion": 1, "ubicacion": 1, "caracteristicas": 1, "observaciones": 1
+            "resumen": 1, "tipo_operacion": 1, "ubicacion": 1, "caracteristicas": 1,
+            "observaciones": 1, "metadata": 1, "datos_propietario": 1, "publicaciones": 1,
         }
 
         candidatos = list(collection.find(mongo_query, projection).limit(2000))
@@ -463,11 +631,14 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
             sims = cosine_similarity([query_vector], vectors)[0]
             logger.info(f"[RAG-HYBRID] Similaridad calculada en {time.time()-t0:.3f}s")
             
-            for idx, cand in enumerate(candidatos if len(vectors)==len(candidatos) else [c for c in candidatos if c.get("vector_descripcion")]):
+            scored_candidates = candidatos if len(vectors) == len(candidatos) else [c for c in candidatos if c.get("vector_descripcion")]
+            for idx, cand in enumerate(scored_candidates):
                 if cand.get("codigo") in excluded: continue
                 score = float(sims[idx])
                 # Boost comuna exacta (+15% score)
                 if target_commune and cand.get("comuna", "").lower() == target_commune.lower():
+                    score += 0.15
+                elif target_commune and (cand.get("ubicacion") or {}).get("comuna", "").lower() == target_commune.lower():
                     score += 0.15
                 scored.append((score, cand))
         else:
@@ -475,12 +646,10 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
             for cand in candidatos:
                 if cand.get("codigo") in excluded: continue
                 score = 1.0
-                if target_commune and cand.get("comuna", "").lower() == target_commune.lower():
+                comuna_cand = (cand.get("ubicacion") or {}).get("comuna") or cand.get("comuna") or ""
+                if target_commune and comuna_cand.lower() == target_commune.lower():
                     score += 0.20 
                 scored.append((score, cand))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return scored
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return scored

@@ -808,14 +808,14 @@ def parse_tipo_operacion(html: str, audit: dict) -> dict:
     pv = _input_val(soup, "tbPrecioVenta")
     if pv is not None:
         if _radio_checked(soup, "rbDiv2"):
-            result["precio_venta"] = {"precio_uf": clean_price(pv)}
+            result["precio_venta"] = {"precio_uf": clean_price_uf(pv)}
         else:
             result["precio_venta"] = {"precio_clp": clean_price(pv)}
 
     pa = _input_val(soup, "tbPrecioArriendo")
     if pa is not None:
         if _radio_checked(soup, "rbDivA2"):
-            result["precio_arriendo"] = {"precio_uf": clean_price(pa)}
+            result["precio_arriendo"] = {"precio_uf": clean_price_uf(pa)}
         else:
             result["precio_arriendo"] = {"precio_clp": clean_price(pa)}
 
@@ -1189,22 +1189,54 @@ _FICHA_PRINT_FIELD_MAP = {
 
 
 def _detect_print_price(txt: str | None):
-    """Return (unit, int_value) for a print-ficha price string.
+    """Return (unit, value) for a print-ficha price string.
 
     ``UF 57.836`` → ("uf", 57836); ``$ 2.362.299.274`` → ("clp", ...);
-    ``$ 68,55`` (comma decimal) → ("uf", 6855) to match existing schema.
+    ``UF 118,03`` (comma decimal) → ("uf", 118.03) — UF reales, no centésimas.
+    ``$ 68,55`` (comma decimal) → ("uf", 68.55).
     """
     if not txt:
         return None, None
     if "UF" in txt.upper():
-        return "uf", clean_price(txt)
+        return "uf", clean_price_uf(txt)
     num = re.search(r"([\d.,]+)", txt)
     if not num:
         return None, None
     raw = num.group(1)
     if "," in raw:
-        return "uf", clean_price(raw)
+        return "uf", clean_price_uf(raw)
     return "clp", clean_price(raw)
+
+
+def clean_price_uf(raw: str | None) -> float | int | None:
+    """Convierte un precio UF con coma decimal chilena a UF reales.
+
+    ``"118,03"`` → 118.03 ; ``"57.836"`` → 57836 ; ``"50"`` → 50.
+    ``"$ 4.820.910 UF 118,03"`` → 118.03 (extrae el bloque UF).
+    Los valores se guardan como UF reales (sin factor ×100).
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip().upper()
+    m = re.search(r"UF\s*([\d.,]+)", s)
+    if m:
+        s = m.group(1)
+    else:
+        s = s.replace("UF", "").replace("$", "").strip()
+    # Detecta coma decimal: "118,03" → separador decimal = coma
+    if "," in s:
+        s = s.replace(".", "")      # puntos = miles
+        s = s.replace(",", ".")     # coma = decimal
+        try:
+            val = float(s)
+        except Exception:
+            return None
+        return round(val, 2)
+    # Sin coma: entero UF puro ("57.836" → 57836)
+    digits = re.sub(r"[^\d]", "", s)
+    if not digits:
+        return None
+    return int(digits)
 
 
 def parse_ficha_imprimible(html: str, audit: dict | None = None) -> dict:
@@ -1805,7 +1837,36 @@ def run_all_offices(args) -> int:
         code = run(args, office_id=oid)
         if code:
             worst = code
+
+    _generate_embeddings_for_pending()
     return worst
+
+
+def _generate_embeddings_for_pending() -> int:
+    """Genera embeddings de las propiedades nuevas/actualizadas sin vector.
+
+    Se ejecuta al final del ciclo de todas las oficinas. Solo procesa los docs
+    que aún no tienen `vector_descripcion`. Si el modelo no está disponible
+    (ej. memoria insuficiente en Render), no hace nada y lo registra.
+    """
+    try:
+        from chatbot.semantic_engine import update_embeddings_bulk
+    except Exception as exc:
+        log.warning(f"[EMBEDDINGS] No se pudo importar generador de embeddings: {exc}")
+        return 0
+    try:
+        total = 0
+        while True:
+            count = update_embeddings_bulk(batch_size=100)
+            if not count:
+                break
+            total += count
+        if total:
+            log.info(f"[EMBEDDINGS] Vectores generados en este ciclo: {total}")
+        return total
+    except Exception as exc:
+        log.warning(f"[EMBEDDINGS] Error generando embeddings: {exc}")
+        return 0
 
 
 def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_client) -> int:

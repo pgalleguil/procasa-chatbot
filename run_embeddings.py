@@ -30,11 +30,11 @@ def main():
     
     # 1. Verificar dependencias
     try:
-        from sentence_transformers import SentenceTransformer
-        print("[OK] sentence-transformers instalado")
+        from fastembed import TextEmbedding
+        print("[OK] fastembed instalado")
     except ImportError:
-        print("[ERROR] Falta instalar sentence-transformers.")
-        print("  Ejecuta: pip install sentence-transformers")
+        print("[ERROR] Falta instalar fastembed.")
+        print("  Ejecuta: pip install fastembed")
         sys.exit(1)
     
     try:
@@ -68,25 +68,28 @@ def main():
     
     # 3. Limpieza de descripciones
     print("\n--- Paso 1: Limpieza de Descripciones ---")
-    from chatbot.semantic_engine import clean_desc_for_embedding, update_embeddings_bulk
-    
+    from chatbot.semantic_engine import clean_desc_for_embedding, update_embeddings_bulk, build_embedding_text
+
     pending_clean = collection.count_documents({
         "descripcion": {"$exists": True, "$ne": ""},
         "descripcion_clean": {"$exists": False}
     })
     already_clean = collection.count_documents({"descripcion_clean": {"$exists": True}})
     print(f"  Ya limpias: {already_clean}")
-    print(f"  Pendientes: {pending_clean}")
-    
+    print(f"  Pendientes (esquema plano): {pending_clean}")
+
     # 4. Generación de Embeddings
     print("\n--- Paso 2: Generacion de Embeddings ---")
     pending_vectors = collection.count_documents({
-        "descripcion_clean": {"$exists": True, "$ne": ""},
-        "vector_descripcion": {"$exists": False}
+        "vector_descripcion": {"$exists": False},
+        "$or": [
+            {"descripcion_clean": {"$exists": True, "$ne": ""}},
+            {"observaciones.descripcion": {"$exists": True, "$nin": ["", None]}},
+        ],
     })
     already_vectors = collection.count_documents({"vector_descripcion": {"$exists": True}})
     print(f"  Con vector: {already_vectors}")
-    print(f"  Sin vector: {pending_vectors}")
+    print(f"  Sin vector (pendientes): {pending_vectors}")
     
     if pending_clean == 0 and pending_vectors == 0:
         print("\n[OK] Todo actualizado. No hay nada que procesar.")

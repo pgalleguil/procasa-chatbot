@@ -55,6 +55,24 @@ logger = logging.getLogger(__name__)
 # ==========================================
 #   FORMATO FICHA TÉCNICA (RESTITUÍDO)
 # ==========================================
+def format_uf_chilena(value) -> str:
+    """Formatea un valor UF (entero o decimal) con notación chilena.
+
+    ``118.03`` → "118,03" ; ``57836`` → "57.836" ; ``11803`` → "11.803".
+    """
+    if value is None:
+        return "N/D"
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if amount == int(amount):
+        return f"{int(amount):,}".replace(",", ".")
+    s = f"{amount:.2f}".rstrip("0").rstrip(".")
+    int_part, _, dec_part = s.partition(".")
+    return f"{int(int_part):,}".replace(",", ".") + (f",{dec_part}" if dec_part else "")
+
+
 def formatear_ficha_tecnica(propiedad: dict, lead_executive: str = None) -> str:
     """
     Toma un diccionario con datos de propiedad y lo formatea como un texto claro
@@ -99,7 +117,7 @@ def formatear_ficha_tecnica(propiedad: dict, lead_executive: str = None) -> str:
 
     precio_clp     = safe_int_conversion(precio_clp_raw) or 0
     gastos_comunes = safe_int_conversion(gastos_comunes_raw) or 0
-    precio_uf_str  = str(precio_uf_raw) if precio_uf_raw is not None else "N/D"
+    precio_uf_str  = format_uf_chilena(precio_uf_raw) if precio_uf_raw is not None else "N/D"
     precio_clp_str = f"${precio_clp:,}" if precio_clp else "N/D"
 
     # ── Ubicación ─────────────────────────────────────────────────────────────
@@ -796,7 +814,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             resultados_rag = buscar_semanticamente(
                 original_message, 
                 exclude_codes=codigos_vistos, 
-                limit=3
+                limit=3,
+                criterios_estructurados=criterios_rag
             )
             
             texto_rag = formatear_resultados_texto(resultados_rag)

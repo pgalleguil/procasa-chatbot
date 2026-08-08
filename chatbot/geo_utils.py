@@ -94,7 +94,135 @@ NEIGHBOR_MAP_RAW = {
 
     # Interior
     "Casablanca": ["Valparaíso", "Curacaví"],
-    "Curacaví": ["Casablanca"]
+    "Curacaví": ["Casablanca"],
+
+    # ======================
+    # RM SUR / PONIENTE EXTENDIDO
+    # ======================
+    "Talagante": ["Peñaflor", "El Monte", "Isla de Maipo", "Calera de Tango"],
+    "Peñaflor": ["Talagante", "El Monte", "Calera de Tango", "Maipú"],
+    "El Monte": ["Talagante", "Peñaflor", "Isla de Maipo"],
+    "Isla de Maipo": ["El Monte", "Talagante", "Melipilla"],
+    "Melipilla": ["Isla de Maipo", "San Pedro", "Curacaví", "Talagante"],
+    "Calera de Tango": ["Talagante", "Peñaflor", "San Bernardo"],
+    "Buin": ["San Bernardo", "Paine", "Calera de Tango"],
+    "San José de Maipo": ["Puente Alto"],
+
+    # ======================
+    # REGIÓN DE O'HIGGINS
+    # ======================
+    "Rancagua": ["Machalí", "Rengo", "Doñihue", "Codegua"],
+    "Machalí": ["Rancagua", "Codegua"],
+    "Doñihue": ["Rancagua", "Coinco"],
+    "Coinco": ["Doñihue", "Rengo"],
+    "Rengo": ["Rancagua", "Coinco"],
+    "Pichilemu": ["Paredones", "Litueche"],
+    "Litueche": ["Pichilemu"],
+    "Paredones": ["Pichilemu"],
+
+    # ======================
+    # REGIÓN DEL MAULE
+    # ======================
+    "Talca": ["San Clemente", "Pencahue", "Maule", "San Javier", "Empedrado"],
+    "Maule": ["Talca", "San Javier"],
+    "San Javier": ["Maule", "Talca", "Villa Alegre", "Linares"],
+    "Villa Alegre": ["San Javier", "Linares"],
+    "Linares": ["San Javier", "Villa Alegre", "Longaví", "Colbún", "Yerbas Buenas"],
+    "Longaví": ["Linares", "Parral"],
+    "Parral": ["Longaví", "San Javier"],
+    "San Clemente": ["Talca", "Río Claro", "Colbún"],
+    "Río Claro": ["San Clemente", "Talca"],
+    "Pencahue": ["Talca", "Curicó"],
+    "Empedrado": ["Talca", "Cauquenes"],
+    "Cauquenes": ["Empedrado", "Pelluhue"],
+    "Pelluhue": ["Cauquenes"],
+    "Curicó": ["Molina", "Licantén", "Pencahue"],
+    "Molina": ["Curicó", "Licantén"],
+    "Licantén": ["Curicó", "Molina"],
+    "Colbún": ["Linares", "San Clemente"],
+    "Yerbas Buenas": ["Linares", "Colbún"],
+
+    # ======================
+    # REGIÓN DE ÑUBLE
+    # ======================
+    "Chillán": ["Chillán Viejo", "Coihueco", "Pinto", "Quillón", "San Carlos", "San Ignacio"],
+    "Chillán Viejo": ["Chillán", "Quillón"],
+    "Coihueco": ["Chillán", "Pinto"],
+    "Pinto": ["Coihueco", "Chillán"],
+    "Quillón": ["Chillán", "Bulnes", "Chillán Viejo"],
+    "Bulnes": ["Quillón", "Chillán"],
+    "San Carlos": ["Chillán", "San Nicolás", "Ñiquén"],
+    "San Nicolás": ["San Carlos", "Ñiquén"],
+    "Ñiquén": ["San Carlos", "San Nicolás"],
+    "San Ignacio": ["Chillán", "Yungay"],
+    "Cobquecura": ["Quirihue"],
+
+    # ======================
+    # REGIÓN DEL BIOBÍO
+    # ======================
+    "Concepción": ["San Pedro", "Chiguayante", "Talcahuano", "Penco"],
+    "San Pedro": ["Concepción", "Chiguayante", "Hualqui"],
+    "Laja": ["Los Angeles", "San Rosendo", "Nacimiento"],
+    "Los Angeles": ["Laja", "Nacimiento", "Mulchén"],
+    "Arauco": ["Curanilahue", "Lebu", "Cañete"],
+
+    # ======================
+    # REGIÓN DE LA ARAUCANÍA
+    # ======================
+    "Temuco": ["Padre las Casas", "Freire", "Vilcún", "Chol Chol"],
+    "Padre las Casas": ["Temuco"],
+    "Freire": ["Temuco", "Pitrufquén", "Gorbea", "Villarrica"],
+    "Pitrufquén": ["Freire", "Temuco"],
+    "Gorbea": ["Villarrica", "Loncoche", "Freire"],
+    "Loncoche": ["Gorbea", "Villarrica", "Curarrehue"],
+    "Villarrica": ["Pucón", "Freire", "Gorbea", "Loncoche", "Cunco"],
+    "Pucón": ["Villarrica", "Curarrehue", "Caburga"],
+    "Cunco": ["Villarrica", "Loncoche"],
+    "Curarrehue": ["Pucón", "Loncoche"],
+    "Chol Chol": ["Temuco", "Nueva Imperial"],
+    "Los Sauces": ["Angol", "Renaico"],
+
+    # ======================
+    # REGIÓN DE LOS RÍOS
+    # ======================
+    "Valdivia": ["Los Lagos", "Corral", "Máfil"],
+    "Los Lagos": ["Valdivia", "Panguipulli", "Futrono"],
+    "La Unión": ["Río Bueno", "Paillaco"],
+    "Panguipulli": ["Los Lagos", "Futrono"],
+
+    # ======================
+    # REGIÓN DE LOS LAGOS
+    # ======================
+    "Puerto Montt": ["Puerto Varas", "Llanquihue", "Calbuco", "Maullín"],
+    "Puerto Varas": ["Puerto Montt", "Llanquihue", "Frutillar"],
+    "Frutillar": ["Puerto Varas", "Llanquihue"],
+    "Osorno": ["Río Negro", "Puerto Octay", "San Pablo"],
+    "Chonchi": ["Queilén", "Quellón", "Castro"],
+    "Quellón": ["Chonchi", "Queilén"],
+    "Queilén": ["Chonchi", "Quellón"],
+    "Ancud": ["Castro", "Quemchi"],
+
+    # ======================
+    # REGIÓN DE COQUIMBO
+    # ======================
+    "La Serena": ["La Higuera", "Coquimbo", "Vicuña"],
+    "Coquimbo": ["La Serena", "Andacollo", "Ovalle"],
+    "La Higuera": ["La Serena"],
+    "Los Vilos": ["Canela", "Illapel"],
+    "Zapallar": ["Papudo", "La Ligua", "Cabildo"],
+    "Papudo": ["Zapallar"],
+
+    # ======================
+    # REGIÓN DE VALPARAÍSO (EXTENDIDO)
+    # ======================
+    "Hijuelas": ["Quillota", "Limache", "La Calera"],
+    "Quillota": ["Hijuelas", "Limache", "La Calera"],
+
+    # ======================
+    # NORTE GRANDE
+    # ======================
+    "Iquique": ["Alto Hospicio"],
+    "Caldera": ["Copiapó"],
 }
 
 def make_neighbor_map_symmetric(neighbor_map):

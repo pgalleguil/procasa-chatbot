@@ -5004,7 +5004,7 @@
 
         // --- PRE-FILL LOGIC REMOVED ON USER REQUEST ---
 
-        function resetSearchHistory(clearSelection = false) {
+        function resetSearchHistory(clearSelection = false, clearInput = false) {
             console.log("[SEMANTIC] Resetting history/seen codes");
 
             // Clear state
@@ -5027,6 +5027,13 @@
             }
 
             // Clear Results UI but keep input
+            if (clearInput) {
+                const qModal = document.getElementById('semanticQueryModal');
+                const qPage = document.getElementById('semanticQuery');
+                if (qModal) qModal.value = "";
+                if (qPage) qPage.value = "";
+            }
+
             const container = document.getElementById('semanticResultsModal') || document.getElementById('semanticResults');
             if (container) {
                 const examples = [
@@ -5049,9 +5056,9 @@
 
             updateSelectionUI();
 
-            // Trigger search again if query exists
+            // Trigger search again if query exists (unless input was just cleared)
             const qValue = (document.getElementById('semanticQueryModal') || { value: "" }).value.trim();
-            if (qValue.length >= 3) {
+            if (qValue.length >= 3 && !clearInput) {
                 searchSemantic();
             }
         }
@@ -5061,7 +5068,7 @@
             const commModal = document.getElementById('commModal');
             if (commModal) {
                 commModal.addEventListener('hidden.bs.modal', function () {
-                    if (typeof resetSearchHistory === 'function') resetSearchHistory();
+                    if (typeof resetSearchHistory === 'function') resetSearchHistory(true, true);
                 });
             }
         });
@@ -5072,8 +5079,10 @@
 
             semState.scope = switchEl.checked ? 'local' : 'global';
 
-            // Trigger search again if query exists
-            const qValue = (document.getElementById('semanticQueryModal') || { value: "" }).value.trim();
+            // Trigger search again if query exists (modal or page)
+            const qModal = (document.getElementById('semanticQueryModal') || { value: "" }).value.trim();
+            const qPage = (document.getElementById('semanticQuery') || { value: "" }).value.trim();
+            const qValue = qModal.length >= 3 ? qModal : (qPage.length >= 3 ? qPage : "");
             if (qValue.length >= 3) {
                 searchSemantic();
             }
@@ -5115,8 +5124,10 @@
             const neighborTogglePage = document.getElementById('semNeighborsToggle');
             const includeNeighbors = (neighborSwitchModal && neighborSwitchModal.checked) || (neighborTogglePage && neighborTogglePage.checked);
 
-            // EXCLUSION LOGIC: Combine seen codes AND currently selected/pinned codes
-            let excludeCodes = [...semState.seenCodes];
+            // EXCLUSION LOGIC: Cada búsqueda es independiente (no excluir propiedades ya vistas
+            // entre consultas/scopes distintos). Solo se excluyen las actualmente seleccionadas/pineadas.
+            semState.seenCodes = [];
+            let excludeCodes = [];
             if (semState.selected && semState.selected.length > 0) {
                 semState.selected.forEach(s => {
                     if (!excludeCodes.includes(s.codigo)) excludeCodes.push(s.codigo);
@@ -5139,12 +5150,6 @@
 
                 if (data.status === 'ok' && data.results && data.results.length > 0) {
                     semState.lastResults = data.results;
-                    // Accumulate seen codes for rotation
-                    data.results.forEach(p => {
-                        if (!semState.seenCodes.includes(p.codigo)) {
-                            semState.seenCodes.push(p.codigo);
-                        }
-                    });
                     renderSemanticResults(data.results);
                 } else {
                     container.innerHTML = '<div class="sem-empty">No se encontraron propiedades similares.</div>';
@@ -5246,7 +5251,7 @@
                 if (inputPage) inputPage.checked = newState;
                 if (btnModal) btnModal.classList.toggle('active', newState);
                 if (btnPage) btnPage.classList.toggle('active', newState);
-                if (isModal) toggleScope();
+                toggleScope();
             } else if (type === 'neighbors') {
                 const input = isModal ? document.getElementById('neighborsSwitchModal') : document.getElementById('semNeighborsToggle');
                 const btn = isModal ? document.getElementById('btnToggleNeighborsModal') : document.getElementById('btnToggleNeighbors');

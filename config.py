@@ -13,6 +13,10 @@ class Config:
     MONGO_URI = os.getenv("MONGO_URI")
     DB_NAME = os.getenv("DB_NAME", "URLS")
 
+    # === UF (valor para conversión CLP <-> UF) ===
+    UF_VALOR_CLP = float(os.getenv("UF_VALOR_CLP", "0"))
+    UF_FECHA = os.getenv("UF_FECHA", "")
+
     # === PROXIES ===
     USE_PROXIES = os.getenv("USE_PROXIES", "false").lower() == "true"
     PROXIES = os.getenv("PROXIES", "")  # Lista de proxies separados por coma

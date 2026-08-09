@@ -1833,6 +1833,16 @@ def _aplanar_propiedad_crm(prop: dict) -> dict:
     if precio_clp is None:
         precio_clp = prop.get("precio_clp")
 
+    # Si no hay precio_uf pero sí CLP, convertir a UF (valor del Config) para que
+    # el frontend muestre UF por defecto.
+    if precio_uf is None and precio_clp:
+        uf_valor = float(getattr(Config, "UF_VALOR_CLP", 0) or 0)
+        if uf_valor > 0:
+            try:
+                precio_uf = round(float(precio_clp) / uf_valor, 2)
+            except (TypeError, ValueError):
+                precio_uf = None
+
     dormitorios = car.get("dormitorios")
     if dormitorios is None:
         dormitorios = prop.get("dormitorios")

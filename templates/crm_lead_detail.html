@@ -2675,7 +2675,7 @@
                                     <div class="sem-toggle-btn active" id="btnToggleOffice"
                                         onclick="toggleSemOption('office')">
                                         <i class="fa-solid fa-building"></i>
-                                        <span>Oficina JPC</span>
+                                        <span>Solo PROCASA SUCRE</span>
                                     </div>
 
                                     <!-- Neighbors Toggle (Button Type) -->
@@ -3367,7 +3367,7 @@
                                     <div class="sem-toggle-btn active" id="btnToggleOfficeModal"
                                         onclick="toggleSemOption('office', true)">
                                         <i class="fa-solid fa-building"></i>
-                                        <span>Oficina JPC</span>
+                                        <span>Solo PROCASA SUCRE</span>
                                     </div>
 
                                     <!-- Neighbors Toggle (Button Type) -->
@@ -3378,7 +3378,7 @@
                                     </div>
 
                                     <!-- Hidden Inputs for logic -->
-                                    <input class="form-check-input" type="checkbox" id="scopeSwitchModal"
+                                    <input class="form-check-input" type="checkbox" id="scopeSwitchModal" checked
                                         style="display:none;" onchange="toggleScope()">
                                     <input class="form-check-input" type="checkbox" id="neighborsSwitchModal"
                                         style="display:none;" onchange="resetSearchHistory()">
@@ -5019,7 +5019,9 @@
                 if (btnOffice) btnOffice.classList.add('active');
 
                 const officeSwitch = document.getElementById('scopeSwitchModal');
-                if (officeSwitch) officeSwitch.checked = false;
+                if (officeSwitch) officeSwitch.checked = true;
+                const officeSwitchPage = document.getElementById('semScopeToggleModal');
+                if (officeSwitchPage) officeSwitchPage.checked = true;
                 const neighborSwitch = document.getElementById('neighborsSwitchModal');
                 if (neighborSwitch) neighborSwitch.checked = false;
             }
@@ -5068,7 +5070,7 @@
             const switchEl = document.getElementById('scopeSwitchModal');
             if (!switchEl) return;
 
-            semState.scope = switchEl.checked ? 'global' : 'local';
+            semState.scope = switchEl.checked ? 'local' : 'global';
 
             // Trigger search again if query exists
             const qValue = (document.getElementById('semanticQueryModal') || { value: "" }).value.trim();
@@ -5102,10 +5104,12 @@
 
             if (container) container.innerHTML = '<div class="sem-loading"><i class="fa-solid fa-spinner"></i> Buscando...</div>';
 
-            // Detect scope and neighbors from both possible sources
+            // Detect scope: marcado = solo PROCASA SUCRE (local); desmarcado = red global.
+            // Ambos checkboxes (página y modal) comparten la misma convención (checked = local).
             const scopeSwitchModal = document.getElementById('scopeSwitchModal');
             const scopeTogglePage = document.getElementById('semScopeToggleModal');
-            const scope = (scopeSwitchModal && scopeSwitchModal.checked) || (scopeTogglePage && !scopeTogglePage.checked) ? 'global' : 'local';
+            const officeFilterOn = (scopeSwitchModal && scopeSwitchModal.checked) || (scopeTogglePage && scopeTogglePage.checked);
+            const scope = officeFilterOn ? 'local' : 'global';
 
             const neighborSwitchModal = document.getElementById('neighborsSwitchModal');
             const neighborTogglePage = document.getElementById('semNeighborsToggle');
@@ -5127,7 +5131,7 @@
                         query: query,
                         exclude: excludeCodes, // Use the combined list
                         scope: scope,
-                        limit: 3,
+                        limit: 50,
                         include_neighbors: includeNeighbors
                     })
                 });
@@ -5229,17 +5233,19 @@
 
         function toggleSemOption(type, isModal = false) {
             if (type === 'office') {
-                const input = isModal ? document.getElementById('scopeSwitchModal') : document.getElementById('semScopeToggleModal');
-                const btn = isModal ? document.getElementById('btnToggleOfficeModal') : document.getElementById('btnToggleOffice');
+                // Convención unificada: checkbox marcado = botón activo = scope LOCAL (solo PROCASA SUCRE).
+                // Sincronizamos ambos controles (página y modal) para que nunca diverjan.
+                const inputModal = document.getElementById('scopeSwitchModal');
+                const inputPage = document.getElementById('semScopeToggleModal');
+                const btnModal = document.getElementById('btnToggleOfficeModal');
+                const btnPage = document.getElementById('btnToggleOffice');
+                const reference = isModal ? inputModal : inputPage;
 
-                input.checked = !input.checked;
-                if (input.checked) {
-                    btn.classList.add('active');
-                } else {
-                    btn.classList.remove('active');
-                }
-
-                // Update label if needed or just rely on state
+                const newState = reference ? !reference.checked : false;
+                if (inputModal) inputModal.checked = newState;
+                if (inputPage) inputPage.checked = newState;
+                if (btnModal) btnModal.classList.toggle('active', newState);
+                if (btnPage) btnPage.classList.toggle('active', newState);
                 if (isModal) toggleScope();
             } else if (type === 'neighbors') {
                 const input = isModal ? document.getElementById('neighborsSwitchModal') : document.getElementById('semNeighborsToggle');

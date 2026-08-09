@@ -599,7 +599,9 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
 
     def ejecutar_busqueda(comunas: List[str] = None, relajar_filtros: bool = False, global_scope: bool = False):
         nonlocal use_semantic
-        target_office = None if global_scope else _normalizar_oficina(oficina_filtro)
+        # El filtro de oficina se mantiene SIEMPRE que se solicitó (scope local).
+        # global_scope solo amplía la zona geográfica, no la oficina.
+        target_office = _normalizar_oficina(oficina_filtro) if oficina_filtro else None
         if relajar_filtros:
             # RELAXED: Remove M2 but KEEP PRICE and BEDROOMS (User requested strict bedrooms)
             filtros_relajados = {k: v for k, v in filtros.items() 
@@ -620,8 +622,11 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
         candidatos = list(collection.find(mongo_query, projection).limit(2000))
         if use_semantic:
             vectors = [c.get("vector_descripcion") for c in candidatos if c.get("vector_descripcion")]
+            if not candidatos:
+                logger.warning(f"[RAG-HYBRID] Cero candidatos para el filtro (oficina={target_office!r}, comunas={comunas!r}, relajar={relajar_filtros})")
+            elif not vectors:
+                logger.warning("[RAG-HYBRID] Candidatos sin vector_descripcion, bajando a ranking por filtros")
             if not vectors:
-                logger.warning("[RAG-HYBRID] Sin vectores en candidatos, bajando a ranking por filtros")
                 use_semantic = False
                 
         # Ranking

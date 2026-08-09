@@ -1790,10 +1790,76 @@ def get_semantic_recommendations(query: str, exclude_codes: list = None, limit: 
         oficina = "INMOBILIARIA SUCRE SPA" if scope == 'local' else None
         
         results = buscar_semanticamente(query, limit=limit, exclude_codes=exclude_codes, oficina_filtro=oficina, include_neighbors=include_neighbors)
+        # Aplanar esquema anidado Prop360 a campos planos para el frontend CRM.
+        results = [_aplanar_propiedad_crm(r) for r in results]
         return {"status": "ok", "results": results, "count": len(results)}
     except Exception as e:
         logger.error(f"[SEMANTIC] Error en búsqueda semántica: {e}", exc_info=True)
         return {"status": "error", "detail": str(e), "results": []}
+
+
+def _aplanar_propiedad_crm(prop: dict) -> dict:
+    """Aplana el esquema anidado Prop360 (tipo_operacion/ubicacion/caracteristicas)
+    a los campos planos que consume el frontend CRM y los mensajes de WhatsApp:
+    codigo, comuna, tipo, operacion, precio_uf, precio_clp, dormitorios, banos, m2_utiles.
+    Conserva todo lo demás (score, expanded_from, _id, ...)."""
+    out = dict(prop)
+    to = prop.get("tipo_operacion") or {}
+    ubi = prop.get("ubicacion") or {}
+    car = prop.get("caracteristicas") or {}
+    res = prop.get("resumen") or {}
+    snap = res.get("snapshot_listado") or {}
+    meta = prop.get("metadata") or {}
+
+    tipo = to.get("tipo") or meta.get("tipo_propiedad") or snap.get("tipo") or prop.get("tipo")
+    comuna = ubi.get("comuna") or snap.get("comuna") or prop.get("comuna")
+
+    venta = to.get("venta") is True
+    arriendo = to.get("arriendo") is True
+    if venta:
+        operacion = "Venta"
+        precio = to.get("precio_venta") or {}
+    elif arriendo:
+        operacion = "Arriendo"
+        precio = to.get("precio_arriendo") or {}
+    else:
+        operacion = snap.get("operacion") or prop.get("operacion") or ""
+        precio = {}
+
+    precio_uf = precio.get("precio_uf")
+    precio_clp = precio.get("precio_clp")
+    if precio_uf is None:
+        precio_uf = prop.get("precio_uf")
+    if precio_clp is None:
+        precio_clp = prop.get("precio_clp")
+
+    dormitorios = car.get("dormitorios")
+    if dormitorios is None:
+        dormitorios = prop.get("dormitorios")
+    banos = car.get("banos")
+    if banos is None:
+        banos = prop.get("banos")
+
+    m2_utiles = car.get("superficie_util") or car.get("superficie_construida") or car.get("superficie_total") or prop.get("m2_utiles")
+
+    if tipo:
+        out["tipo"] = tipo
+    if comuna:
+        out["comuna"] = comuna
+    if operacion:
+        out["operacion"] = operacion
+    if precio_uf is not None:
+        out["precio_uf"] = precio_uf
+    if precio_clp is not None:
+        out["precio_clp"] = precio_clp
+    if dormitorios is not None:
+        out["dormitorios"] = dormitorios
+    if banos is not None:
+        out["banos"] = banos
+    if m2_utiles is not None:
+        out["m2_utiles"] = m2_utiles
+
+    return out
 
 
 def log_recommendation_sent(phone: str, selected_properties: list, user_email: str):

@@ -1557,8 +1557,10 @@ def query_leads_dashboard_pipeline(
 ) -> dict:
     """Valorización UF del pipeline para el Leads Dashboard (CARD 3).
 
-    Universo: cohorte del período con propiedad vinculada (prospecto.codigo).
-    Agrupa por propiedad única, usando el precio promedio por propiedad.
+    DISTINCT PROPERTY AGGREGATION: agrupa primero por propiedad única
+    (prospecto.codigo) para NO inflar el pipeline cuando varios leads
+    consultan por la misma propiedad. El precio por propiedad es el promedio
+    de los precios registrados en sus leads.
     """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
@@ -1569,65 +1571,47 @@ def query_leads_dashboard_pipeline(
         {"$addFields": {
             "_code": {"$ifNull": ["$prospecto.codigo", ""]},
             "_precio_uf": {"$ifNull": ["$prospecto.precio_uf", None]},
-            "_op": {"$ifNull": ["$prospecto.operacion", "Sin informacion"]},
+            "_op": {"$ifNull": ["$prospecto.operacion", ""]},
         }},
+        {"$match": {"_code": {"$ne": ""}}},
+        # 1. Agrupar por PROPIEDAD ÚNICA
         {"$group": {
             "_id": "$_code",
-            "count": {"$sum": 1},
-            "precios": {"$push": "$_precio_uf"},
+            "precio_uf": {"$avg": "$_precio_uf"},
             "ops": {"$addToSet": "$_op"},
+            "leads_interesados": {"$sum": 1},
+            "con_precio": {"$sum": {"$cond": [{"$ne": ["$_precio_uf", None]}, 1, 0]}},
+        }},
+        {"$project": {
+            "precio_uf": {"$round": [{"$ifNull": ["$precio_uf", 0]}, 1]},
+            "operacion": {"$cond": [
+                {"$in": ["Venta", "$ops"]}, "Venta",
+                {"$cond": [{"$in": ["Arriendo", "$ops"]}, "Arriendo",
+                           {"$arrayElemAt": ["$ops", 0]}]},
+            ]},
+            "leads_interesados": 1,
+            "con_precio": 1,
+        }},
+        # 2. Sumar el inventario real y desglosar Venta vs Arriendo
+        {"$group": {
+            "_id": None,
+            "monto_uf": {"$sum": "$precio_uf"},
+            "propiedades_vinculadas": {"$sum": 1},
+            "propiedades_con_precio": {"$sum": {"$cond": [{"$gte": ["$con_precio", 1]}, 1, 0]}},
+            "leads_vinculados": {"$sum": "$leads_interesados"},
+            "monto_venta_uf": {"$sum": {"$cond": [{"$eq": ["$operacion", "Venta"]}, "$precio_uf", 0]}},
+            "monto_arriendo_uf": {"$sum": {"$cond": [{"$eq": ["$operacion", "Arriendo"]}, "$precio_uf", 0]}},
         }},
     ]
-    raw = list(db["leads"].aggregate(pipeline))
-
-    linked_leads = 0
-    unique_properties = 0
-    venta_uf = 0.0
-    arriendo_uf = 0.0
-    total_uf = 0.0
-    priced = 0
-
-    for r in raw:
-        code = r["_id"]
-        if not code:
-            continue
-        linked_leads += r.get("count", 0)
-        unique_properties += 1
-
-        prices = []
-        for p in r.get("precios", []):
-            if p is not None:
-                try:
-                    prices.append(float(p))
-                except (ValueError, TypeError):
-                    pass
-        if not prices:
-            continue
-        price = round(sum(prices) / len(prices), 1)
-        total_uf += price
-        priced += 1
-
-        ops = set(r.get("ops", []))
-        if "Venta" in ops:
-            op = "Venta"
-        elif "Arriendo" in ops:
-            op = "Arriendo"
-        else:
-            op = next((o for o in ops if o != "Sin informacion"), "Otro")
-        if op == "Venta":
-            venta_uf += price
-        elif op == "Arriendo":
-            arriendo_uf += price
-        else:
-            venta_uf += price  # operación desconocida se contabiliza como valor total
-
+    row = list(db["leads"].aggregate(pipeline))
+    facet = row[0] if row else {}
     return {
-        "leads_vinculados": linked_leads,
-        "propiedades_vinculadas": unique_properties,
-        "propiedades_con_precio": priced,
-        "monto_uf": round(total_uf, 1),
-        "monto_venta_uf": round(venta_uf, 1),
-        "monto_arriendo_uf": round(arriendo_uf, 1),
+        "leads_vinculados": facet.get("leads_vinculados", 0),
+        "propiedades_vinculadas": facet.get("propiedades_vinculadas", 0),
+        "propiedades_con_precio": facet.get("propiedades_con_precio", 0),
+        "monto_uf": round(facet.get("monto_uf", 0.0) or 0.0, 1),
+        "monto_venta_uf": round(facet.get("monto_venta_uf", 0.0) or 0.0, 1),
+        "monto_arriendo_uf": round(facet.get("monto_arriendo_uf", 0.0) or 0.0, 1),
     }
 
 
@@ -2304,6 +2288,9 @@ def build_sla_risk_payload(leads, *, now=None, cutover_at=None):
         bucket.pop("_managed_minutes", None)
         bucket["median_minutes"] = _sla_percentile(managed_durations[profile], 50)
         bucket["p90_minutes"] = _sla_percentile(managed_durations[profile], 90)
+    overall_median_minutes = _sla_percentile(
+        managed_durations["lead"] + managed_durations["lead_hot"], 50
+    )
     overall_numerator = sum(bucket["managed_within"] for bucket in buckets.values())
     overall_denominator = overall_numerator + sum(
         bucket["managed_outside"] + bucket["breached"] for bucket in buckets.values()
@@ -2315,6 +2302,7 @@ def build_sla_risk_payload(leads, *, now=None, cutover_at=None):
         "business_hours": {"days": "lunes-viernes", "start": "09:00", "end": "19:00"},
         "policy_cutover_at": policy_cutover,
         "overall_compliance_pct": overall_pct,
+        "overall_median_minutes": overall_median_minutes,
         "overall_numerator": overall_numerator,
         "overall_denominator": overall_denominator,
         "lead": buckets["lead"], "lead_hot": buckets["lead_hot"],

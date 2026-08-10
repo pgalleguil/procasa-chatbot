@@ -989,6 +989,18 @@ def get_leads_dashboard_overview(
     comision_pct = 2.0  # comisión proyectada (default contratos)
     comision_uf = round(monto_uf * comision_pct / 100, 1)
 
+    from .leads_queries import query_sla_risk_panel
+    sla_panel = query_sla_risk_panel(period_start=period_start, period_end=period_end)
+    sla_data = {
+        "mediana_general_min": sla_panel.get("overall_median_minutes"),
+        "pct_cumplimiento_sla": sla_panel.get("overall_compliance_pct"),
+        "mediana_hot_min": (sla_panel.get("lead_hot") or {}).get("median_minutes"),
+        "mediana_normal_min": (sla_panel.get("lead") or {}).get("median_minutes"),
+        "leads_evaluados": sla_panel.get("eligible_total", 0),
+        "hot_threshold_min": 60,
+        "normal_threshold_min": 180,
+    }
+
     result = _sanitize_non_finite({
         "period": {
             "preset": preset,
@@ -1029,6 +1041,7 @@ def get_leads_dashboard_overview(
             "leads_vinculados": pipeline.get("leads_vinculados", 0),
             "pct_cobertura": cobertura,
         },
+        "sla": sla_data,
         "meta": {
             "target": meta_target,
             "label": "Leads recibidos (meta mensual)",

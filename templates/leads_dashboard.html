@@ -683,6 +683,7 @@
             --conversion-accent: #8B5CF6;
             --pipeline-accent: #F59E0B;
             --pipeline-bronze: #D97706;
+            --sla-accent: #10B981;
         }
 
         [data-theme="light"] {
@@ -691,16 +692,17 @@
             --conversion-accent: #6D28D9;
             --pipeline-accent: #B45309;
             --pipeline-bronze: #B45309;
+            --sla-accent: #059669;
         }
 
         .cd-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
             gap: 16px;
-            max-width: 1440px;
+            max-width: 1920px;
         }
 
-        .cd1, .cd2, .cd3 {
+        .cd1, .cd2, .cd3, .cd4 {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 12px;
@@ -713,7 +715,7 @@
             transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
         }
 
-        .cd1:hover, .cd2:hover, .cd3:hover {
+        .cd1:hover, .cd2:hover, .cd3:hover, .cd4:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
         }
@@ -723,6 +725,8 @@
         .cd2:hover { border-color: var(--conversion-accent); }
 
         .cd3:hover { border-color: var(--pipeline-accent); }
+
+        .cd4:hover { border-color: var(--sla-accent); }
 
         [data-theme="light"] .cd1:hover { box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08); }
 
@@ -976,6 +980,46 @@
         .cd3-bar-venta { background: var(--pipeline-accent); }
 
         .cd3-bar-arriendo { background: var(--pipeline-bronze); }
+
+        /* --- CARD 4: SLA & VELOCIDAD DE RESPUESTA --- */
+        .cd4-info:hover { color: var(--sla-accent); }
+
+        .cd4-value {
+            color: var(--text-primary);
+            font-size: 30px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .cd4-sla-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 10px;
+            border-radius: 99px;
+            font-size: 12px;
+            font-weight: 600;
+            border: 1px solid transparent;
+            white-space: nowrap;
+        }
+
+        .cd4-sla-badge.ok {
+            background: rgba(6, 95, 70, 0.30);
+            color: #34D399;
+            border-color: rgba(5, 150, 105, 0.40);
+        }
+
+        .cd4-sla-badge.bad {
+            background: rgba(127, 29, 29, 0.30);
+            color: #FCA5A5;
+            border-color: rgba(153, 27, 27, 0.40);
+        }
+
+        .cd4-bar-hot { background: #EF4444; }
+
+        .cd4-bar-normal { background: var(--sla-accent); }
     </style>
 </head>
 
@@ -1146,6 +1190,39 @@
 
                         <div class="cd1-footer">
                             <span id="cd3Footer"></span>
+                        </div>
+                    </div>
+
+                    <!-- CARD 4: SLA & VELOCIDAD DE RESPUESTA -->
+                    <div class="cd4" id="cardSla" hidden>
+                        <div class="cd1-header">
+                            <span class="cd1-title">SLA & Velocidad Respuesta</span>
+                            <button type="button" class="cd1-info cd4-info" id="cd4Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
+                            <div class="cd1-tooltip" id="cd4Tooltip" hidden>
+                                Mide la mediana de tiempo transcurrido desde que un lead ingresa hasta el primer contacto humano o asignación efectiva.
+                            </div>
+                        </div>
+
+                        <div class="cd1-kpi-row">
+                            <h2 class="cd1-value cd4-value" id="cd4Value">0 <span class="cd1-unit">min</span></h2>
+                            <span class="cd4-sla-badge" id="cd4Badge">⚡ —% en SLA</span>
+                        </div>
+
+                        <p class="cd1-sub" id="cd4Sub">Mediana de tiempo de primera respuesta comercial</p>
+
+                        <div class="cd2-bars">
+                            <div class="cd3-bar-group">
+                                <div class="cd3-bar-lbl"><span>🔥 Lead HOT (Alta Prioridad)</span><span class="cd3-bar-val" id="cd4HotMin">— min</span></div>
+                                <div class="cd2-bar-track"><div class="cd2-bar cd4-bar-hot" id="cd4BarHot" style="width:0%"></div></div>
+                            </div>
+                            <div class="cd3-bar-group">
+                                <div class="cd3-bar-lbl"><span>📥 Lead Normal</span><span class="cd3-bar-val" id="cd4NormalMin">— min</span></div>
+                                <div class="cd2-bar-track"><div class="cd2-bar cd4-bar-normal" id="cd4BarNormal" style="width:0%"></div></div>
+                            </div>
+                        </div>
+
+                        <div class="cd1-footer">
+                            <span id="cd4Footer"></span>
                         </div>
                     </div>
                 </div>
@@ -1357,6 +1434,7 @@
                     renderDemandCard();
                     renderConversionCard();
                     renderPipelineCard();
+                    renderSlaCard();
                 } catch (e) { console.error("Error cargando datos:", e); }
             }
 
@@ -1526,6 +1604,52 @@
                 animateCountUpUF($('cd3Value'), montoUF);
             }
 
+            // --- CARD 4: SLA & VELOCIDAD DE RESPUESTA ---
+            function renderSlaCard() {
+                const card = $('cardSla');
+                if (!card || !OVERVIEW || !OVERVIEW.sla) return;
+                const s = OVERVIEW.sla;
+                const medianaGeneral = s.mediana_general_min;
+                const slaPct = s.pct_cumplimiento_sla;
+                const hotMin = s.mediana_hot_min;
+                const normalMin = s.mediana_normal_min;
+                const evaluados = s.leads_evaluados || 0;
+                const hotThreshold = s.hot_threshold_min || 60;
+                const normalThreshold = s.normal_threshold_min || 180;
+
+                const badge = $('cd4Badge');
+                badge.className = 'cd4-sla-badge ' + (slaPct === null || slaPct === undefined ? '' : (slaPct >= 90 ? 'ok' : 'bad'));
+                badge.innerHTML = '⚡ ' + (slaPct === null || slaPct === undefined ? '—' : slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 })) + '% en SLA';
+
+                $('cd4HotMin').textContent = (hotMin === null || hotMin === undefined) ? '— min' : hotMin + ' min';
+                $('cd4NormalMin').textContent = (normalMin === null || normalMin === undefined) ? '— min' : normalMin + ' min';
+                $('cd4BarHot').style.width = (hotMin === null || hotMin === undefined) ? '0%' : Math.min((hotMin / hotThreshold) * 100, 100) + '%';
+                $('cd4BarNormal').style.width = (normalMin === null || normalMin === undefined) ? '0%' : Math.min((normalMin / normalThreshold) * 100, 100) + '%';
+
+                $('cd4Footer').innerHTML = evaluados > 0
+                    ? '⏱️ <strong>' + evaluados + ' leads medidos</strong> · SLA Meta: HOT &lt; ' + hotThreshold + 'm'
+                    : '<span style="font-style:italic;color:var(--text-secondary)">⚠️ Sin registros de tiempo en este período</span>';
+
+                card.hidden = false;
+                if (medianaGeneral === null || medianaGeneral === undefined) {
+                    $('cd4Value').innerHTML = '0 <span class="cd1-unit">min</span>';
+                } else {
+                    animateCountUpMin($('cd4Value'), medianaGeneral);
+                }
+            }
+
+            function animateCountUpMin(el, end, duration = 500) {
+                if (!el) return;
+                const startTime = performance.now();
+                const step = (now) => {
+                    const progress = Math.min((now - startTime) / duration, 1);
+                    const value = Math.floor(progress * end);
+                    el.innerHTML = value + ' <span class="cd1-unit">min</span>';
+                    if (progress < 1) requestAnimationFrame(step);
+                };
+                requestAnimationFrame(step);
+            }
+
             // --- 5. INIT ---
             document.addEventListener('DOMContentLoaded', () => {
                 readUrlFilters();
@@ -1565,6 +1689,15 @@
                     cd3Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
                     cd3Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
                     cd3Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
+                }
+
+                // Tooltip de la CARD 4
+                const cd4Info = $('cd4Info');
+                if (cd4Info) {
+                    const tip = $('cd4Tooltip');
+                    cd4Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
+                    cd4Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
+                    cd4Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
                 }
 
                 loadData();

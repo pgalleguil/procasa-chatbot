@@ -680,14 +680,23 @@
         :root {
             --spark-accent: #38BDF8;
             --spark-target: #334155;
+            --conversion-accent: #8B5CF6;
         }
 
         [data-theme="light"] {
             --spark-accent: #0891B2;
             --spark-target: #94A3B8;
+            --conversion-accent: #6D28D9;
         }
 
-        .cd1 {
+        .cd-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+            gap: 16px;
+            max-width: 960px;
+        }
+
+        .cd1, .cd2 {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 12px;
@@ -698,14 +707,16 @@
             gap: 8px;
             position: relative;
             transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
-            max-width: 440px;
         }
 
-        .cd1:hover {
-            border-color: var(--spark-accent);
+        .cd1:hover, .cd2:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
         }
+
+        .cd1:hover { border-color: var(--spark-accent); }
+
+        .cd2:hover { border-color: var(--conversion-accent); }
 
         [data-theme="light"] .cd1:hover { box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08); }
 
@@ -842,6 +853,75 @@
         }
 
         .cd1-footer strong { color: var(--text-primary); font-weight: 600; }
+
+        /* --- CARD 2: EFECTIVIDAD & CONVERSIÓN --- */
+        .cd2-info:hover { color: var(--conversion-accent); }
+
+        .cd2-value { color: var(--text-primary); font-size: 30px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+
+        .cd2-citas-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 10px;
+            border-radius: 99px;
+            font-size: 12px;
+            font-weight: 600;
+            background: rgba(91, 33, 182, 0.30);
+            color: #A78BFA;
+            border: 1px solid rgba(124, 58, 237, 0.4);
+            white-space: nowrap;
+        }
+
+        .cd2-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #A78BFA;
+            flex-shrink: 0;
+        }
+
+        .cd2-bars {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin: 6px 0 8px;
+        }
+
+        .cd2-bar-row {
+            display: grid;
+            grid-template-columns: 92px 1fr;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .cd2-bar-lbl {
+            font-size: 10px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .cd2-bar-lbl strong { color: var(--text-primary); font-weight: 600; }
+
+        .cd2-bar-track {
+            height: 8px;
+            border-radius: 99px;
+            background: var(--border-color);
+            overflow: hidden;
+        }
+
+        .cd2-bar {
+            height: 100%;
+            border-radius: 99px;
+            transition: width 0.6s ease;
+        }
+
+        .cd2-bar-leads { background: var(--spark-accent); }
+
+        .cd2-bar-citas { background: var(--conversion-accent); }
+
+        .cd2-pp-pos { color: #34D399; font-weight: 600; }
+        .cd2-pp-neg { color: #FCA5A5; font-weight: 600; }
     </style>
 </head>
 
@@ -924,27 +1004,62 @@
 
             <!-- Las tarjetas se irán agregando aquí una por una -->
             <div class="cards-container" id="cardsContainer">
-                <!-- CARD 1: DEMANDA & META -->
-                <div class="cd1" id="cardDemandMeta" hidden>
-                    <div class="cd1-header">
-                        <span class="cd1-title">Demanda & Meta</span>
-                        <button type="button" class="cd1-info" id="cd1Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
-                        <div class="cd1-tooltip" id="cd1Tooltip" hidden>
-                            Muestra el total de leads capturados en el rango activo, el % de avance respecto a la meta y la variación vs. el período equivalente anterior.
+                <div class="cd-grid">
+                    <!-- CARD 1: DEMANDA & META -->
+                    <div class="cd1" id="cardDemandMeta" hidden>
+                        <div class="cd1-header">
+                            <span class="cd1-title">Demanda & Meta</span>
+                            <button type="button" class="cd1-info" id="cd1Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
+                            <div class="cd1-tooltip" id="cd1Tooltip" hidden>
+                                Muestra el total de leads capturados en el rango activo, el % de avance respecto a la meta y la variación vs. el período equivalente anterior.
+                            </div>
+                        </div>
+
+                        <div class="cd1-kpi-row">
+                            <h2 class="cd1-value" id="cd1Value">0 <span class="cd1-unit">Leads</span></h2>
+                            <span class="cd1-badge" id="cd1Badge"></span>
+                        </div>
+
+                        <p class="cd1-sub" id="cd1Sub">—% de la meta del período</p>
+
+                        <div class="cd1-spark" id="cd1Spark"></div>
+
+                        <div class="cd1-footer">
+                            <span id="cd1Footer"></span>
                         </div>
                     </div>
 
-                    <div class="cd1-kpi-row">
-                        <h2 class="cd1-value" id="cd1Value">0 <span class="cd1-unit">Leads</span></h2>
-                        <span class="cd1-badge" id="cd1Badge"></span>
-                    </div>
+                    <!-- CARD 2: EFECTIVIDAD & CONVERSIÓN -->
+                    <div class="cd2" id="cardConversion" hidden>
+                        <div class="cd1-header">
+                            <span class="cd1-title">Efectividad & Conversión</span>
+                            <button type="button" class="cd1-info cd2-info" id="cd2Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
+                            <div class="cd1-tooltip" id="cd2Tooltip" hidden>
+                                Mide el % de leads que fueron convertidos exitosamente a visitas o citas agendadas dentro del período seleccionado.
+                            </div>
+                        </div>
 
-                    <p class="cd1-sub" id="cd1Sub">—% de la meta del período</p>
+                        <div class="cd1-kpi-row">
+                            <h2 class="cd1-value cd2-value" id="cd2Value">0,0 %</h2>
+                            <span class="cd2-citas-badge" id="cd2CitasBadge"><span class="cd2-dot"></span>— Citas / Visitas</span>
+                        </div>
 
-                    <div class="cd1-spark" id="cd1Spark"></div>
+                        <p class="cd1-sub" id="cd2Sub">— citas concretadas de — leads totales</p>
 
-                    <div class="cd1-footer">
-                        <span id="cd1Footer"></span>
+                        <div class="cd2-bars">
+                            <div class="cd2-bar-row">
+                                <span class="cd2-bar-lbl">Leads: <strong id="cd2BarLeadsPct">100%</strong></span>
+                                <div class="cd2-bar-track"><div class="cd2-bar cd2-bar-leads" style="width:100%"></div></div>
+                            </div>
+                            <div class="cd2-bar-row">
+                                <span class="cd2-bar-lbl">Citas: <strong id="cd2BarCitasPct">0%</strong></span>
+                                <div class="cd2-bar-track"><div class="cd2-bar cd2-bar-citas" id="cd2BarCitas" style="width:0%"></div></div>
+                            </div>
+                        </div>
+
+                        <div class="cd1-footer">
+                            <span id="cd2Footer"></span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1153,6 +1268,7 @@
                     syncUrl();
                     renderPeriodMeta();
                     renderDemandCard();
+                    renderConversionCard();
                 } catch (e) { console.error("Error cargando datos:", e); }
             }
 
@@ -1231,6 +1347,55 @@
                 animateCountUp($('cd1Value'), total);
             }
 
+            // --- CARD 2: EFECTIVIDAD & CONVERSIÓN ---
+            function animateCountUpFloat(el, end, duration = 500) {
+                if (!el) return;
+                const startTime = performance.now();
+                const step = (now) => {
+                    const progress = Math.min((now - startTime) / duration, 1);
+                    const value = (progress * end).toFixed(1).replace('.', ',');
+                    el.textContent = value + ' %';
+                    if (progress < 1) requestAnimationFrame(step);
+                };
+                requestAnimationFrame(step);
+            }
+
+            function renderConversionCard() {
+                const card = $('cardConversion');
+                if (!card || !OVERVIEW || !OVERVIEW.conversion) return;
+                const c = OVERVIEW.conversion;
+                const leads = c.leads || 0;
+                const citas = c.citas || 0;
+                const convPct = c.conversion_pct || 0;
+                const diffPP = c.diff_pp;
+                const ratio = c.ratio_leads_per_cita;
+                const resolved = (OVERVIEW.period || {}).compare_resolved || 'none';
+
+                const citasText = citas + (citas === 1 ? ' Cita / Visita' : ' Citas / Visitas');
+                $('cd2CitasBadge').innerHTML = '<span class="cd2-dot"></span>' + citasText;
+                $('cd2Sub').innerHTML = citas + ' citas concretadas de ' + leads + ' leads totales';
+
+                const citasPctBar = Math.min(leads > 0 ? (citas / leads) * 100 : 0, 100);
+                $('cd2BarCitas').style.width = Math.min(citasPctBar * 2, 100) + '%';
+                $('cd2BarLeadsPct').textContent = '100%';
+                $('cd2BarCitasPct').textContent = (leads > 0 ? (citas / leads * 100).toFixed(1) : '0.0') + '%';
+
+                let footer;
+                if (citas > 0) {
+                    const ppText = (diffPP === null || diffPP === undefined)
+                        ? ''
+                        : ' <span class="' + (diffPP >= 0 ? 'cd2-pp-pos' : 'cd2-pp-neg') + '">(' +
+                          (diffPP >= 0 ? '▲ +' : '▼ -') + Math.abs(diffPP).toFixed(1) + ' pp)</span>';
+                    footer = '🎯 1 cita cada <strong>' + ratio + ' leads</strong>' + ppText;
+                } else {
+                    footer = '<span style="font-style:italic;color:var(--text-secondary)">⚠️ Sin visitas o citas registradas en el período</span>';
+                }
+                $('cd2Footer').innerHTML = footer;
+
+                card.hidden = false;
+                animateCountUpFloat($('cd2Value'), convPct);
+            }
+
             // --- 5. INIT ---
             document.addEventListener('DOMContentLoaded', () => {
                 readUrlFilters();
@@ -1252,6 +1417,15 @@
                     cd1Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
                     cd1Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
                     cd1Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
+                }
+
+                // Tooltip de la CARD 2
+                const cd2Info = $('cd2Info');
+                if (cd2Info) {
+                    const tip = $('cd2Tooltip');
+                    cd2Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
+                    cd2Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
+                    cd2Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
                 }
 
                 loadData();

@@ -955,6 +955,25 @@ def get_leads_dashboard_overview(
     daily = current.get("daily", []) or []
     meta_target = _load_received_leads_meta_target()
 
+    from .leads_queries import query_leads_dashboard_conversion
+    conversion = query_leads_dashboard_conversion(
+        period_start=period_start,
+        period_end=period_end,
+        comparison_start=prev_start,
+        comparison_end=prev_end,
+        include_comparison=bool(prev_start),
+    )
+    conv_current = conversion.get("current", {})
+    conv_previous = conversion.get("previous", {})
+    conv_total = conv_current.get("total", 0)
+    conv_citas = conv_current.get("citas", 0)
+    prev_total = conv_previous.get("total", 0)
+    prev_citas = conv_previous.get("citas", 0)
+    conv_pct = round(conv_citas / conv_total * 100, 1) if conv_total else 0.0
+    prev_pct = round(prev_citas / prev_total * 100, 1) if prev_total else 0.0
+    diff_pp = round(conv_pct - prev_pct, 1) if prev_start else None
+    ratio = round(conv_total / conv_citas, 1) if conv_citas else None
+
     result = _sanitize_non_finite({
         "period": {
             "preset": preset,
@@ -972,6 +991,16 @@ def get_leads_dashboard_overview(
                 "labels": [d.get("date") for d in daily],
                 "values": [d.get("received", 0) for d in daily],
             },
+        },
+        "conversion": {
+            "leads": conv_total,
+            "leads_previous": prev_total if prev_start else 0,
+            "citas": conv_citas,
+            "citas_previous": prev_citas if prev_start else 0,
+            "conversion_pct": conv_pct,
+            "previous_pct": prev_pct if prev_start else None,
+            "diff_pp": diff_pp,
+            "ratio_leads_per_cita": ratio,
         },
         "meta": {
             "target": meta_target,

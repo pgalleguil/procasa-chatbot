@@ -1500,6 +1500,56 @@ def query_comparative_trends(
     }
 
 
+def query_leads_dashboard_conversion(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    comparison_start: Optional[str] = None,
+    comparison_end: Optional[str] = None,
+    include_comparison: bool = True,
+    filters: Optional[dict] = None,
+) -> dict:
+    """Resumen de conversión para el Leads Dashboard (CARD 2).
+
+    Cuenta el total de leads de la cohorte y cuántos tienen pipeline_stage
+    VISIT_SCHEDULED (citas/visitas agendadas), para el periodo actual y el
+    periodo comparable anterior.
+    """
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+
+    if not include_comparison:
+        prev_start = prev_end = None
+    elif comparison_start and comparison_end:
+        prev_start, prev_end = _build_chile_period_bounds(comparison_start, comparison_end)
+    else:
+        duration = end_utc - start_utc
+        prev_end = start_utc
+        prev_start = prev_end - duration
+
+    def _metrics(ps_utc, pe_utc):
+        pipeline = [
+            _normalized_created_at_stage(),
+            {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
+            {"$facet": {
+                "total": [{"$count": "c"}],
+                "citas": [{"$match": {"pipeline_stage": "VISIT_SCHEDULED"}}, {"$count": "c"}],
+            }},
+        ]
+        row = list(db["leads"].aggregate(pipeline))
+        facet = row[0] if row else {}
+        total = (facet.get("total") or [{}])[0].get("c", 0) if facet.get("total") else 0
+        citas = (facet.get("citas") or [{}])[0].get("c", 0) if facet.get("citas") else 0
+        return {"total": total, "citas": citas}
+
+    current = _metrics(start_utc, end_utc)
+    previous = _metrics(prev_start, prev_end) if include_comparison else {"total": 0, "citas": 0}
+
+    return {
+        "current": current,
+        "previous": previous,
+    }
+
+
 def query_variance_drivers(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,

@@ -1112,7 +1112,7 @@
         }
 
         .animate-glass-card {
-            animation: glassReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation: glassReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             opacity: 0;
             will-change: transform, opacity, filter;
         }
@@ -1136,16 +1136,16 @@
         .cd1-spark .spark-line {
             stroke-dasharray: 500;
             stroke-dashoffset: 500;
-            animation: drawSpark 1.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-            animation-delay: 0.55s;
+            animation: drawSpark 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation-delay: 0.3s;
         }
 
         .cd1-spark .spark-area {
             opacity: 0;
-            animation: sparkFade 1s ease 1.2s forwards;
+            animation: sparkFade 0.5s ease 0.7s forwards;
         }
 
-        .cd2-bar { transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1); }
+        .cd2-bar { transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
 
         /* --- BLOQUE 2: AI EXECUTIVE BRIEFING & DIAGNÓSTICO COMERCIAL (minimalista) --- */
         .ai-briefing { margin: 32px 0; }
@@ -1725,11 +1725,12 @@
                     renderPipelineCard();
                     renderSlaCard();
                     renderInsightsBlock();
+                    ALLOW_ENTRY_ANIM = false;
                 } catch (e) { console.error("Error cargando datos:", e); }
             }
 
             // --- CARD 1: DEMANDA & META ---
-            function animateCountUp(el, end, duration = 1200) {
+            function animateCountUp(el, end, duration = 450) {
                 if (!el) return;
                 if (end === 0) { el.innerHTML = '0 <span class="cd1-unit">Leads</span>'; return; }
                 const startTime = performance.now();
@@ -1795,10 +1796,13 @@
             }
 
             // --- ANIMACIÓN DE CARGA DE LAS TARJETAS (Glass Blur Reveal) ---
+            let ALLOW_ENTRY_ANIM = true;
+
             function showCardReveal(card) {
                 if (!card) return;
-                card.classList.remove('animate-glass-card');
                 card.hidden = false;
+                if (!ALLOW_ENTRY_ANIM) return;
+                card.classList.remove('animate-glass-card');
                 void card.offsetWidth;
                 card.classList.add('animate-glass-card');
                 const onEnd = () => {
@@ -1890,7 +1894,7 @@
             }
 
             // --- CARD 2: EFECTIVIDAD & CONVERSIÓN ---
-            function animateCountUpFloat(el, end, duration = 1200) {
+            function animateCountUpFloat(el, end, duration = 450) {
                 if (!el) return;
                 const startTime = performance.now();
                 const step = (now) => {
@@ -1922,8 +1926,8 @@
                 const citasWidth = Math.min(citasPctBar * 2, 100);
                 $('cd2BarLeads').style.width = '0%';
                 $('cd2BarCitas').style.width = '0%';
-                setTimeout(() => { $('cd2BarLeads').style.width = '100%'; }, 420);
-                setTimeout(() => { $('cd2BarCitas').style.width = citasWidth + '%'; }, 480);
+                setTimeout(() => { $('cd2BarLeads').style.width = '100%'; }, 200);
+                setTimeout(() => { $('cd2BarCitas').style.width = citasWidth + '%'; }, 250);
                 $('cd2BarLeadsPct').textContent = '100%';
                 $('cd2BarCitasPct').textContent = (leads > 0 ? (citas / leads * 100).toFixed(1) : '0.0') + '%';
 
@@ -1944,7 +1948,7 @@
             }
 
             // --- CARD 3: PIPELINE & VALORIZACIÓN UF ---
-            function animateCountUpUF(el, end, duration = 1200) {
+            function animateCountUpUF(el, end, duration = 450) {
                 if (!el) return;
                 const startTime = performance.now();
                 const step = (now) => {
@@ -1977,8 +1981,8 @@
                 $('cd3MontoArriendo').textContent = 'UF ' + Math.round(montoArriendo).toLocaleString('es-CL');
                 $('cd3BarVenta').style.width = '0%';
                 $('cd3BarArriendo').style.width = '0%';
-                setTimeout(() => { $('cd3BarVenta').style.width = Math.min(pctVenta, 100) + '%'; }, 520);
-                setTimeout(() => { $('cd3BarArriendo').style.width = Math.min(pctArriendo, 100) + '%'; }, 580);
+                setTimeout(() => { $('cd3BarVenta').style.width = Math.min(pctVenta, 100) + '%'; }, 260);
+                setTimeout(() => { $('cd3BarArriendo').style.width = Math.min(pctArriendo, 100) + '%'; }, 300);
 
                 $('cd3Footer').innerHTML = montoUF > 0
                     ? '🏡 <strong>' + props + ' propiedades</strong> · Cobertura: ' + cobertura + '%'
@@ -2010,8 +2014,8 @@
                 $('cd4NormalMin').textContent = (normalMin === null || normalMin === undefined) ? '— min' : normalMin + ' min';
                 $('cd4BarHot').style.width = '0%';
                 $('cd4BarNormal').style.width = '0%';
-                setTimeout(() => { $('cd4BarHot').style.width = (hotMin === null || hotMin === undefined) ? '0%' : Math.min((hotMin / hotThreshold) * 100, 100) + '%'; }, 580);
-                setTimeout(() => { $('cd4BarNormal').style.width = (normalMin === null || normalMin === undefined) ? '0%' : Math.min((normalMin / normalThreshold) * 100, 100) + '%'; }, 640);
+                setTimeout(() => { $('cd4BarHot').style.width = (hotMin === null || hotMin === undefined) ? '0%' : Math.min((hotMin / hotThreshold) * 100, 100) + '%'; }, 300);
+                setTimeout(() => { $('cd4BarNormal').style.width = (normalMin === null || normalMin === undefined) ? '0%' : Math.min((normalMin / normalThreshold) * 100, 100) + '%'; }, 330);
 
                 $('cd4Footer').innerHTML = evaluados > 0
                     ? '⏱️ <strong>' + evaluados + ' leads medidos</strong> · SLA Meta: HOT &lt; ' + hotThreshold + 'm'
@@ -2025,7 +2029,7 @@
                 }
             }
 
-            function animateCountUpMin(el, end, duration = 1200) {
+            function animateCountUpMin(el, end, duration = 450) {
                 if (!el) return;
                 const startTime = performance.now();
                 const step = (now) => {

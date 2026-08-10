@@ -882,3 +882,101 @@ def get_commercial_filter_options() -> dict:
     data = query_commercial_filter_options()
     _cache_set(key, data)
     return data
+
+
+def _load_received_leads_meta_target() -> int | None:
+    """Meta de negocio configurada para 'received_leads' (leads recibidos)."""
+    try:
+        from .management_targets import CONFIG_PATH
+        config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        for target in config.get("targets", []):
+            if target.get("metric") == "received_leads" and target.get("target") is not None:
+                return int(target["target"])
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+
+def get_leads_dashboard_overview(
+    period_start: str = None,
+    period_end: str = None,
+    compare: str = None,
+    period_preset: str = None,
+) -> dict:
+    """Resumen para la CARD 1 (Demanda & Meta) del Leads Dashboard.
+
+    Read-only. Calcula leads recibidos en el periodo seleccionado, el periodo
+    equivalente anterior, la tendencia diaria (sparkline) y la meta de negocio.
+    Reutiliza la misma lógica de periodo/comparación del Dashboard Comercial.
+    """
+    from datetime import datetime as dt, timedelta as td
+    from .commercial_periods import canonical_preset, comparison_period, local_today
+
+    today = local_today()
+    try:
+        ps_dt = dt.strptime(period_start, "%Y-%m-%d").date() if period_start else today - td(days=29)
+        pe_dt = dt.strptime(period_end, "%Y-%m-%d").date() if period_end else today
+        pe_dt = min(pe_dt, today)
+        ps_dt = min(ps_dt, pe_dt)
+    except (ValueError, TypeError):
+        pe_dt = today
+        ps_dt = pe_dt - td(days=29)
+
+    period_start = ps_dt.strftime("%Y-%m-%d")
+    period_end = pe_dt.strftime("%Y-%m-%d")
+    mode = compare if compare in ("auto", "prev", "yoy", "none") else "auto"
+    preset = period_preset if period_preset in ("today", "week", "month", "30d", "custom") else "custom"
+    preset = canonical_preset(ps_dt, pe_dt, preset)
+    comp_start, comp_end, comp_type = comparison_period(ps_dt, pe_dt, mode, preset)
+
+    prev_start = prev_end = None
+    if mode != "none" and comp_start and comp_end:
+        prev_start = comp_start.strftime("%Y-%m-%d")
+        prev_end = comp_end.strftime("%Y-%m-%d")
+
+    key = _cache_key(
+        "leads-dashboard-overview", ps=period_start, pe=period_end,
+        cmp=mode, preset=preset, ps_prev=prev_start, pe_prev=prev_end,
+    )
+    cached = _cache_get(key)
+    if cached:
+        return cached
+
+    trends = query_comparative_trends(
+        period_start=period_start,
+        period_end=period_end,
+        comparison_start=prev_start,
+        comparison_end=prev_end,
+        include_comparison=bool(prev_start),
+    )
+
+    current = trends.get("current", {})
+    previous = trends.get("previous", {})
+    daily = current.get("daily", []) or []
+    meta_target = _load_received_leads_meta_target()
+
+    result = _sanitize_non_finite({
+        "period": {
+            "preset": preset,
+            "comparison_mode": mode,
+            "compare_resolved": "none" if mode == "none" else ("yoy" if mode == "yoy" else "prev"),
+            "current": {"start": period_start, "end": period_end},
+            "previous": {"start": prev_start or "", "end": prev_end or ""},
+        },
+        "demand": {
+            "total": current.get("total", 0),
+            "previous": previous.get("total", 0) if prev_start else 0,
+            "variation_pct": trends.get("variation_pct"),
+            "avg_daily": current.get("avg_daily", 0),
+            "daily": {
+                "labels": [d.get("date") for d in daily],
+                "values": [d.get("received", 0) for d in daily],
+            },
+        },
+        "meta": {
+            "target": meta_target,
+            "label": "Leads recibidos (meta mensual)",
+        },
+    })
+    _cache_set(key, result)
+    return result

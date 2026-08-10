@@ -675,6 +675,173 @@
             color: var(--text-secondary);
             font-size: 0.85rem;
         }
+
+        /* --- CARD 1: DEMANDA & META (colores día/noche heredados) --- */
+        :root {
+            --spark-accent: #38BDF8;
+            --spark-target: #334155;
+        }
+
+        [data-theme="light"] {
+            --spark-accent: #0891B2;
+            --spark-target: #94A3B8;
+        }
+
+        .cd1 {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 8px;
+            position: relative;
+            transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+            max-width: 440px;
+        }
+
+        .cd1:hover {
+            border-color: var(--spark-accent);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        }
+
+        [data-theme="light"] .cd1:hover { box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08); }
+
+        .cd1-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2px;
+        }
+
+        .cd1-title {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            user-select: none;
+        }
+
+        .cd1-info {
+            position: relative;
+            background: none;
+            border: 0;
+            padding: 4px;
+            color: var(--text-secondary);
+            font-size: 13px;
+            cursor: help;
+            transition: color 0.15s;
+        }
+
+        .cd1-info:hover { color: var(--spark-accent); }
+
+        .cd1-tooltip {
+            position: absolute;
+            right: 0;
+            top: 24px;
+            width: 224px;
+            padding: 10px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 11px;
+            line-height: 1.45;
+            color: var(--text-secondary);
+            z-index: 50;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            pointer-events: none;
+        }
+
+        [data-theme="light"] .cd1-tooltip { box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12); }
+
+        .cd1-kpi-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .cd1-value {
+            font-size: 30px;
+            font-weight: 800;
+            color: var(--text-primary);
+            letter-spacing: -0.03em;
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .cd1-unit {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-left: 4px;
+        }
+
+        .cd1-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 10px;
+            border-radius: 99px;
+            font-size: 12px;
+            font-weight: 600;
+            border: 1px solid transparent;
+            white-space: nowrap;
+        }
+
+        .cd1-badge-pos {
+            background: rgba(6, 95, 70, 0.4);
+            color: #34D399;
+            border-color: rgba(5, 150, 105, 0.4);
+        }
+
+        .cd1-badge-neg {
+            background: rgba(127, 29, 29, 0.4);
+            color: #FCA5A5;
+            border-color: rgba(153, 27, 27, 0.4);
+        }
+
+        .cd1-badge-neutral {
+            background: rgba(148, 163, 184, 0.15);
+            color: var(--text-secondary);
+        }
+
+        .cd1-badge-vs { font-size: 10px; opacity: 0.7; font-weight: 400; }
+
+        .cd1-sub {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin: 2px 0 4px;
+        }
+
+        .cd1-sub strong { color: var(--spark-accent); font-weight: 600; }
+
+        .cd1-spark {
+            width: 100%;
+            height: 48px;
+            margin: 4px 0;
+        }
+
+        .cd1-spark svg { width: 100%; height: 100%; display: block; overflow: visible; }
+
+        .cd1-footer {
+            border-top: 1px solid var(--border-color);
+            padding-top: 10px;
+            margin-top: 2px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .cd1-footer strong { color: var(--text-primary); font-weight: 600; }
     </style>
 </head>
 
@@ -757,7 +924,29 @@
 
             <!-- Las tarjetas se irán agregando aquí una por una -->
             <div class="cards-container" id="cardsContainer">
-                <div class="cards-placeholder">Las tarjetas se agregarán aquí en los siguientes pasos.</div>
+                <!-- CARD 1: DEMANDA & META -->
+                <div class="cd1" id="cardDemandMeta" hidden>
+                    <div class="cd1-header">
+                        <span class="cd1-title">Demanda & Meta</span>
+                        <button type="button" class="cd1-info" id="cd1Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
+                        <div class="cd1-tooltip" id="cd1Tooltip" hidden>
+                            Muestra el total de leads capturados en el rango activo, el % de avance respecto a la meta y la variación vs. el período equivalente anterior.
+                        </div>
+                    </div>
+
+                    <div class="cd1-kpi-row">
+                        <h2 class="cd1-value" id="cd1Value">0 <span class="cd1-unit">Leads</span></h2>
+                        <span class="cd1-badge" id="cd1Badge"></span>
+                    </div>
+
+                    <p class="cd1-sub" id="cd1Sub">—% de la meta del período</p>
+
+                    <div class="cd1-spark" id="cd1Spark"></div>
+
+                    <div class="cd1-footer">
+                        <span id="cd1Footer"></span>
+                    </div>
+                </div>
             </div>
 
         </div>
@@ -798,9 +987,8 @@
             let FILTERS = { period_start: null, period_end: null, period_preset: '30d' };
             let COMPARE = 'auto';
 
-            // Datos: payload completo y leads filtrados por periodo (para futuras tarjetas)
-            let LAST_API = null;
-            let FILTERED_LEADS = [];
+            // Datos del endpoint de resumen (CARD 1 y siguientes)
+            let OVERVIEW = null;
 
             const PRESET_LABELS = { today: 'Hoy', week: 'Semana', month: 'Mes', '30d': '30 días', custom: 'Personalizado' };
 
@@ -903,11 +1091,11 @@
                 const s = FILTERS.period_start, e = FILTERS.period_end;
                 if (!s || !e) { el.textContent = 'Cargando información…'; return; }
                 const preset = PRESET_LABELS[FILTERS.period_preset] || FILTERS.period_preset;
-                const total = FILTERED_LEADS.length;
+                const total = OVERVIEW && OVERVIEW.demand ? OVERVIEW.demand.total : 0;
                 el.innerHTML =
                     '<span><i class="fa-regular fa-calendar me-1"></i>Periodo analizado: <strong>' + s + ' → ' + e + '</strong> <small style="opacity:.7">(' + preset + ')</small></span>' +
                     '<span><i class="fa-solid fa-code-compare me-1"></i>Comparación: <strong>' + comparisonLabel(COMPARE) + '</strong></span>' +
-                    '<span><i class="fa-regular fa-circle-dot me-1"></i>Leads en el periodo (muestra): <strong>' + total + '</strong></span>';
+                    '<span><i class="fa-regular fa-circle-dot me-1"></i>Leads en el periodo: <strong>' + total + '</strong></span>';
             }
 
             // --- 3. URL ---
@@ -951,28 +1139,96 @@
                 }
             }
 
-            // --- 4. CARGA DE DATOS Y FILTRO POR PERIODO ---
+            // --- 4. CARGA DE DATOS Y RENDER DE TARJETAS ---
             async function loadData() {
                 try {
-                    const res = await fetch('/api/leads-intelligence');
-                    const data = await res.json();
-                    LAST_API = data;
-                    applyPeriodFilter();
+                    const p = new URLSearchParams();
+                    if (FILTERS.period_start) p.set('period_start', FILTERS.period_start);
+                    if (FILTERS.period_end) p.set('period_end', FILTERS.period_end);
+                    if (COMPARE) p.set('compare', COMPARE);
+                    if (FILTERS.period_preset) p.set('period_preset', FILTERS.period_preset);
+                    const res = await fetch('/api/leads-dashboard/overview?' + p.toString(), { headers: { Accept: 'application/json' } });
+                    if (!res.ok) throw new Error('Error ' + res.status);
+                    OVERVIEW = await res.json();
                     syncUrl();
                     renderPeriodMeta();
+                    renderDemandCard();
                 } catch (e) { console.error("Error cargando datos:", e); }
             }
 
-            function applyPeriodFilter() {
-                const start = FILTERS.period_start, end = FILTERS.period_end;
-                if (!start || !end) { FILTERED_LEADS = []; return; }
-                const startDate = new Date(start + 'T00:00:00');
-                const endDate = new Date(end + 'T23:59:59');
-                FILTERED_LEADS = (LAST_API && LAST_API.leads || []).filter(l => {
-                    if (!l.fecha) return false;
-                    const d = new Date(l.fecha + 'T00:00:00');
-                    return d >= startDate && d <= endDate;
-                });
+            // --- CARD 1: DEMANDA & META ---
+            function animateCountUp(el, end, duration = 500) {
+                if (!el) return;
+                if (end === 0) { el.innerHTML = '0 <span class="cd1-unit">Leads</span>'; return; }
+                const startTime = performance.now();
+                const step = (now) => {
+                    const progress = Math.min((now - startTime) / duration, 1);
+                    const value = Math.floor(progress * end);
+                    el.innerHTML = value + ' <span class="cd1-unit">Leads</span>';
+                    if (progress < 1) requestAnimationFrame(step);
+                };
+                requestAnimationFrame(step);
+            }
+
+            function buildSparkline(labels, values, metaTarget) {
+                if (!values || !values.length) {
+                    return '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:11px;color:var(--text-secondary)">Sin datos en el periodo</div>';
+                }
+                const W = 100, H = 40, PAD = 5;
+                const max = Math.max(...values, 1);
+                const days = values.length;
+                const xAt = (i) => days === 1 ? 0 : (i / (days - 1)) * W;
+                const yAt = (v) => H - PAD - (v / max) * (H - 2 * PAD);
+                const pts = values.map((v, i) => xAt(i).toFixed(2) + ',' + yAt(v).toFixed(2)).join(' ');
+                const area = '0,' + H + ' ' + pts + ' ' + W + ',' + H;
+                // Línea punteada de referencia (target pace): meta/día en la escala del gráfico
+                const pacePerDay = metaTarget > 0 ? metaTarget / days : 0;
+                let paceY = pacePerDay > 0 ? yAt(pacePerDay) : H / 2;
+                paceY = Math.max(0, Math.min(H - 1, paceY));
+                return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
+                    '<defs><linearGradient id="cd1Grad" x1="0" y1="0" x2="0" y2="1">' +
+                    '<stop offset="0%" stop-color="var(--spark-accent)" stop-opacity="0.35"/>' +
+                    '<stop offset="100%" stop-color="var(--spark-accent)" stop-opacity="0.0"/>' +
+                    '</linearGradient></defs>' +
+                    '<line x1="0" y1="' + paceY.toFixed(2) + '" x2="' + W + '" y2="' + paceY.toFixed(2) + '" stroke="var(--spark-target)" stroke-width="1" stroke-dasharray="3 3"/>' +
+                    '<polygon points="' + area + '" fill="url(#cd1Grad)"/>' +
+                    '<polyline points="' + pts + '" fill="none" stroke="var(--spark-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+                    '</svg>';
+            }
+
+            function renderDemandCard() {
+                const card = $('cardDemandMeta');
+                if (!card || !OVERVIEW) return;
+                const demand = OVERVIEW.demand || {};
+                const period = OVERVIEW.period || {};
+                const total = demand.total || 0;
+                const previous = demand.previous || 0;
+                const metaTarget = (OVERVIEW.meta && OVERVIEW.meta.target) || 200;
+                const resolved = period.compare_resolved || 'none';
+
+                const pctAvance = metaTarget > 0 ? (total / metaTarget * 100).toFixed(1) : '0.0';
+                const diffLeads = total - previous;
+                const isPositive = diffLeads >= 0;
+                const variation = demand.variation_pct;
+
+                let badge = '<span class="cd1-badge cd1-badge-neutral">Sin comparación</span>';
+                if (resolved !== 'none') {
+                    const varText = (variation === null || variation === undefined) ? '0.0' : Number(variation).toFixed(1);
+                    badge = '<span class="cd1-badge ' + (isPositive ? 'cd1-badge-pos' : 'cd1-badge-neg') + '">' +
+                        '<span>' + (isPositive ? '▲' : '▼') + '</span>' +
+                        '<span>' + (isPositive ? '+' : '') + varText + '%</span>' +
+                        '<span class="cd1-badge-vs">vs. ant.</span></span>';
+                }
+
+                $('cd1Badge').innerHTML = badge;
+                $('cd1Sub').innerHTML = '<strong>' + pctAvance + '%</strong> de la meta del período (' + total + ' / ' + metaTarget + ' leads)';
+                const daily = demand.daily || { labels: [], values: [] };
+                $('cd1Spark').innerHTML = buildSparkline(daily.labels, daily.values, metaTarget);
+                $('cd1Footer').innerHTML = resolved === 'none'
+                    ? '📊 Sin período comparable en este modo'
+                    : '📊 <strong>' + (isPositive ? '+' : '') + diffLeads + ' leads</strong> vs. período equivalente anterior (' + previous + ')';
+                card.hidden = false;
+                animateCountUp($('cd1Value'), total);
             }
 
             // --- 5. INIT ---
@@ -988,6 +1244,15 @@
                     COMPARE = $('pCompare').value;
                     loadData();
                 });
+
+                // Tooltip de la CARD 1
+                const cd1Info = $('cd1Info');
+                if (cd1Info) {
+                    const tip = $('cd1Tooltip');
+                    cd1Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
+                    cd1Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
+                    cd1Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
+                }
 
                 loadData();
             });

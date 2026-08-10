@@ -58,6 +58,7 @@ from analytics.leads_service import (
     get_summary, get_trends, get_distributions, get_table as analytics_get_table,
     get_detail as analytics_get_detail, get_filters, get_field_coverage,
     get_dashboard, get_commercial_dashboard, get_commercial_filter_options,
+    get_leads_dashboard_overview,
 )
 
 from api_captacion import (
@@ -893,6 +894,43 @@ async def ver_leads(request: Request):
         "user_role": user.get("rol", "agente"),
         "user_name": user.get("nombre", "")
     })
+
+
+@app.get("/api/leads-dashboard/overview")
+async def api_leads_dashboard_overview(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    compare: str = Query(None),
+    period_preset: str = Query(None),
+):
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
+    from analytics.commercial_periods import VALID_COMPARISONS, VALID_PRESETS, validate_explicit_range
+    for key in ("period_start", "period_end", "compare", "period_preset"):
+        if len(request.query_params.getlist(key)) > 1:
+            raise HTTPException(status_code=422, detail=f"Parámetro duplicado: {key}")
+    if compare is not None and compare not in VALID_COMPARISONS:
+        raise HTTPException(status_code=422, detail="Comparación inválida")
+    if period_preset is not None and period_preset not in VALID_PRESETS:
+        raise HTTPException(status_code=422, detail="Preset inválido")
+    try:
+        _, _, period_preset = validate_explicit_range(period_start, period_end, period_preset)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_leads_dashboard_overview(
+            period_start=period_start,
+            period_end=period_end,
+            compare=compare,
+            period_preset=period_preset,
+        ),
+    )
 
 # ========================= COMMERCIAL DASHBOARD (READ-ONLY) =========================
 

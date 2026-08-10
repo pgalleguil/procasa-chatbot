@@ -4,7 +4,7 @@ from pathlib import Path
 from chatbot.crm_metrics import (
     build_snapshot_document, calculate_sla, coerce_utc_datetime,
     commercial_sla_start_at, create_assignment_cycle, event_evidence, normalize_result, pipeline_activity_in_period,
-    resolve_canonical_lead, unique_managed_lead_ids, validate_list_parity,
+    resolve_canonical_lead, sync_active_cycle_temperature, unique_managed_lead_ids, validate_list_parity,
 )
 
 
@@ -183,6 +183,31 @@ def test_same_assignment_reuses_cycle_without_duplicate_commercial_opportunity()
     second = create_assignment_cycle(db, lead=lead, assigned_to_user_id="u1",
                                      assigned_by="commercial_intake", reason="inbound_message")
     assert second["assignment_cycle_id"] == first["assignment_cycle_id"]
+    assert len(db["crm_assignment_cycles"].docs) == 1
+
+
+def test_sync_active_cycle_temperature_updates_without_new_cycle():
+    db = FakeDB(crm_assignment_cycles=FakeCollection())
+    lead = {"_id": "lead-4", "lead_temperature_effective": "COLD"}
+    create_assignment_cycle(db, lead=lead, assigned_to_user_id="u1",
+                            assigned_by="commercial_intake", reason="inbound_message")
+    assert len(db["crm_assignment_cycles"].docs) == 1
+    sync_active_cycle_temperature(
+        db, "lead-4", temperature="HOT", transition_at="2026-07-27T15:00:00-04:00")
+    active = db["crm_assignment_cycles"].find_one({"lead_id": "lead-4", "cycle_status": "active"})
+    assert active["temperature_at_assignment"] == "HOT"
+    # No new cycle was created by the escalation.
+    assert len(db["crm_assignment_cycles"].docs) == 1
+
+
+def test_sync_active_cycle_temperature_is_idempotent():
+    db = FakeDB(crm_assignment_cycles=FakeCollection())
+    lead = {"_id": "lead-5", "lead_temperature_effective": "HOT"}
+    create_assignment_cycle(db, lead=lead, assigned_to_user_id="u1",
+                            assigned_by="commercial_intake", reason="inbound_message")
+    sync_active_cycle_temperature(db, "lead-5", temperature="HOT")
+    active = db["crm_assignment_cycles"].find_one({"lead_id": "lead-5", "cycle_status": "active"})
+    assert active["temperature_at_assignment"] == "HOT"
     assert len(db["crm_assignment_cycles"].docs) == 1
 
 

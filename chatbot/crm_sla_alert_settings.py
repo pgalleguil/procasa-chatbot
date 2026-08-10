@@ -18,6 +18,16 @@ def _enabled() -> bool:
 
 CRM_SLA_ALERTS_ENABLED = _enabled()
 
+
+def sla_alerts_enabled() -> bool:
+    """Read the live env flag at call time (not only at import time).
+
+    The orchestrator/worker loops call this every cycle so a change in the
+    Render environment takes effect without a full process restart, and so a
+    disabled state is reported accurately to the health/observability layer.
+    """
+    return _enabled()
+
 # Fixed production policy.
 DRY_RUN = False
 PERSIST = True
@@ -37,6 +47,12 @@ BUSINESS_DAYS = frozenset({0, 1, 2, 3, 4})
 CUTOVER_AT = CHILE_TZ.localize(datetime(2026, 8, 3, 9, 0)).astimezone(timezone.utc)
 POLICY_VERSION = "crm_sla_alert_v1"
 REASSIGNMENT_POLICY_VERSION = "crm_sla_reassignment_v1"
+
+# Catch-up guard: alerts are only produced for cycles whose SLA started at/after
+# this timestamp, so the accumulated backlog (leads that breached while the
+# orchestrator was down) is never re-sent in a burst on recovery.  When unset,
+# the pipeline stores a one-time recovery marker on its first run.
+CATCH_UP_CUTOVER_AT = os.getenv("CRM_SLA_ALERTS_CATCH_UP_CUTOVER_AT", "").strip() or None
 
 # Operational safety constants are also code-owned, not environment-owned.
 LEASE_SECONDS = 120

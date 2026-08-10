@@ -277,11 +277,38 @@ async def lifespan(app: FastAPI):
     non_hot_digest_task = asyncio.create_task(non_hot_digest_worker_loop())
     sla_alert_task = None
 
-    # CRM SLA Alert orchestrator — exclusive domain, behind feature flag
+    # CRM SLA Alert orchestrator — exclusive domain, behind feature flag.
+    # The wrapper below publishes liveness + last-cycle stats to
+    # background_tasks_status["sla_alert"] so the /health endpoint shows
+    # whether the loop is actually running, disabled or failing (previously
+    # a disabled/dead loop was completely invisible).
+    async def _sla_alert_orchestrator_runner():
+        while True:
+            entry = background_tasks_status.setdefault("sla_alert", {})
+            entry["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
+            try:
+                from chatbot.crm_sla_alert_orchestrator import run_sla_alert_cycle
+                from chatbot.crm_sla_alert_settings import sla_alerts_enabled
+                if not sla_alerts_enabled():
+                    entry.update({"status": "disabled",
+                                  "reason": "CRM_SLA_ALERTS_ENABLED != true"})
+                    logger.warning(
+                        "[SLA_ALERT] loop deshabilitado: CRM_SLA_ALERTS_ENABLED != true "
+                        "(heartbeat=%s)", entry["last_heartbeat"])
+                else:
+                    entry["status"] = "running"
+                    report = await run_sla_alert_cycle()
+                    entry.update({"status": "running", "last_report": report})
+                    logger.info("[SLA_ALERT] ciclo ok: %s", report)
+            except Exception as exc:
+                logger.exception("[SLA_ALERT] Orchestrator cycle failed")
+                entry.update({"status": f"error: {type(exc).__name__}",
+                              "last_error": str(exc)})
+            await asyncio.sleep(60)
+
     sla_orch_task = None
     try:
-        from chatbot.crm_sla_alert_orchestrator import sla_alert_orchestrator_loop
-        sla_orch_task = asyncio.create_task(sla_alert_orchestrator_loop())
+        sla_orch_task = asyncio.create_task(_sla_alert_orchestrator_runner())
     except Exception:
         logger.warning("[SLA_ALERT] Orchestrator import failed — disabled", exc_info=True)
 

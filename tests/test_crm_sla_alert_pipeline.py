@@ -42,6 +42,23 @@ class Collection:
         for doc in self.docs:
             if all(doc.get(k) == v for k, v in query.items()): return dict(doc)
         return None
+    async def update_one(self, query, update, upsert=False):
+        for doc in self.docs:
+            if all(doc.get(k) == v for k, v in query.items()):
+                for key, value in (update.get("$set") or {}).items():
+                    doc[key] = value
+                for key, value in (update.get("$setOnInsert") or {}).items():
+                    doc.setdefault(key, value)
+                return True
+        if upsert:
+            new_doc = dict(query)
+            for key, value in (update.get("$set") or {}).items():
+                new_doc[key] = value
+            for key, value in (update.get("$setOnInsert") or {}).items():
+                new_doc.setdefault(key, value)
+            self.docs.append(new_doc)
+            return True
+        return False
     async def insert_one(self, doc):
         if any(x.get("_id") == doc.get("_id") for x in self.docs):
             from pymongo.errors import DuplicateKeyError
@@ -84,6 +101,11 @@ def populated_db():
     db["crm_management_results"] = Collection()
     db["usuarios"] = Collection([user("u-erika", "Erika Garrido")])
     db[COLLECTION] = Collection()
+    # Pre-seed the catch-up recovery marker BEFORE the fixture cycle so the
+    # cycle is not treated as backlog by the catch-up guard.
+    db["crm_sla_alert_meta"] = Collection([
+        {"_id": "catch_up_cutover", "value": cl(0)},
+    ])
     return db
 
 
@@ -142,3 +164,38 @@ def test_fixed_policy_has_no_environment_dependencies():
     assert settings.CANARY_MODE is False
     assert settings.REASSIGNMENT_ENABLED is False
     assert settings.CUTOVER_AT == CUTOVER_AT
+
+
+@pytest.mark.asyncio
+async def test_catch_up_guard_excludes_backlog_before_recovery_marker():
+    db = populated_db()
+    # Fixture cycle c1 starts at cl(10) (after the marker).
+    db["crm_assignment_cycles"].docs[0] = cycle("l1", "c1", assigned=cl(10))
+    # Cycle "c-old" starts at cl(9) (after evaluator cutover but BEFORE marker).
+    db["leads"].docs.append(lead("l-old"))
+    db["crm_assignment_cycles"].docs.append(cycle("l-old", "c-old", assigned=cl(9)))
+    # Recovery marker at cl(9, 30): only cycles started at/after it produce alerts.
+    db["crm_sla_alert_meta"].docs[0]["value"] = cl(9, 30)
+    with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
+        result = await run_evaluation_and_persist_once(db=db, now=cl(11))
+    # c1 (cl(10)) is after the marker -> persisted.  c-old (cl(9)) is before -> backlog.
+    assert result["excluded_by_catch_up"] == 1
+    assert result["persisted"] == 1
+    assert all(d["assignment_cycle_id"] == "c1" for d in db[COLLECTION].docs)
+
+
+@pytest.mark.asyncio
+async def test_catch_up_marker_is_initialized_once_on_first_run():
+    db = populated_db()
+    db["crm_sla_alert_meta"].docs = []  # no marker yet
+    with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
+        result1 = await run_evaluation_and_persist_once(db=db, now=cl(10))
+        result2 = await run_evaluation_and_persist_once(db=db, now=cl(11))
+    assert result1["catch_up_cutover"] is not None
+    assert len(db["crm_sla_alert_meta"].docs) == 1
+    marker = await db["crm_sla_alert_meta"].find_one({"_id": "catch_up_cutover"})
+    assert marker["value"] == cl(10)  # not overwritten by the second run
+    # The fixture cycle (cl(9)) started before the marker cl(10) -> treated as
+    # backlog and excluded on both runs.
+    assert result1["persisted"] == 0
+    assert result2["persisted"] == 0

@@ -10,9 +10,13 @@ from collections import Counter
 from datetime import datetime, timezone
 
 from .crm_sla_alert_evaluator import evaluate_sla_alerts
-from .crm_sla_alert_repository import COLLECTION, persist_candidate
+from .crm_metrics import coerce_utc_datetime
+from .crm_sla_alert_repository import (
+    COLLECTION, persist_candidate, resolve_catch_up_cutover,
+)
 from .crm_sla_alert_settings import (
     CRM_SLA_ALERTS_ENABLED,
+    CATCH_UP_CUTOVER_AT,
     CUTOVER_AT,
     MAX_PER_RECIPIENT_PER_RUN,
     MAX_PER_RUN,
@@ -66,6 +70,13 @@ async def run_evaluation_and_persist_once(
     eval_report = await evaluate_sla_alerts(db=db, limit_cycles=max_cycles,
                                              alert_cutover=CUTOVER_AT, now=now)
     candidates = eval_report.get("alerts", [])
+    logger.info(
+        "[SLA_PIPELINE] eval cycles=%s included=%s excluded=%s as_of=%s",
+        eval_report.get("total_cycles_evaluated"),
+        eval_report.get("included"),
+        eval_report.get("excluded_by_reason"),
+        eval_report.get("as_of"),
+    )
 
     # Production mode: all eligible active agents with valid phones.
     authorized = []
@@ -96,6 +107,29 @@ async def run_evaluation_and_persist_once(
 
     excluded_by_limit = len(authorized) - len(to_persist)
 
+    # Catch-up guard: never re-send the accumulated backlog after a pipeline
+    # outage.  Only cycles whose SLA started at/after the recovery marker
+    # (or the env override) produce alerts.
+    catch_up = await resolve_catch_up_cutover(
+        db, env_cutover=CATCH_UP_CUTOVER_AT, now=now)
+    if catch_up is not None:
+        before = len(to_persist)
+        to_persist = [
+            c for c in to_persist
+            if (c.get("sla_started_at") is not None
+                and coerce_utc_datetime(c.get("sla_started_at")) >= catch_up)
+        ]
+        excluded_by_catch_up = before - len(to_persist)
+        if excluded_by_catch_up:
+            logger.warning(
+                "[SLA_PIPELINE] catch_up guard excluyó %s candidatos backlog "
+                "(cutover=%s). Solo ciclos con sla_started_at >= marcador.",
+                excluded_by_catch_up, catch_up.isoformat(),
+            )
+    else:
+        excluded_by_catch_up = 0
+        logger.warning("[SLA_PIPELINE] catch_up marker no disponible: sin corte anti-backlog.")
+
     # Persist
     persisted = 0
     already_exists = 0
@@ -123,6 +157,8 @@ async def run_evaluation_and_persist_once(
         "excluded_by_allowlist": 0,
         "excluded_no_phone": excluded_no_phone,
         "excluded_by_limit": excluded_by_limit,
+        "excluded_by_catch_up": excluded_by_catch_up,
+        "catch_up_cutover": catch_up.isoformat() if catch_up else None,
         "writes": persisted,
         "provider_calls": 0,
         "allowlist_count": 0,

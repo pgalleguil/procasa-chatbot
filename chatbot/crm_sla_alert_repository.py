@@ -17,6 +17,8 @@ from .crm_sla_alert_templates import MESSAGE_DOMAIN
 logger = logging.getLogger(__name__)
 
 COLLECTION = "crm_sla_alerts_v1"
+META_COLLECTION = "crm_sla_alert_meta"
+META_CATCH_UP = "catch_up_cutover"
 
 ST_PENDING = "pending"
 ST_PROCESSING = "processing"
@@ -78,6 +80,57 @@ async def ensure_crm_sla_alert_indexes(db):
             [("lease_expires_at", ASCENDING)], name="ix_sla_lease", sparse=True,
         )
     return {"created": [], "collection": COLLECTION}
+
+
+# ---------------------------------------------------------------------------
+# Catch-up guard (backlog never re-sent after a pipeline outage)
+# ---------------------------------------------------------------------------
+
+async def get_catch_up_cutover(db):
+    """Return the stored recovery marker, or ``None`` if not yet initialized."""
+    from .crm_metrics import coerce_utc_datetime
+    meta = await db[META_COLLECTION].find_one({"_id": META_CATCH_UP})
+    value = (meta or {}).get("value")
+    if not value:
+        return None
+    return coerce_utc_datetime(value)
+
+
+async def init_catch_up_cutover(db, *, now=None):
+    """Persist the recovery marker exactly once (idempotent via $setOnInsert).
+
+    Returns the effective cutoff datetime.  Alerts are only produced for
+    cycles whose SLA started at/after this marker, so the accumulated backlog
+    (leads that breached while the orchestrator was down) is never re-sent in
+    a burst when the pipeline recovers.
+    """
+    from .crm_metrics import coerce_utc_datetime, utc_now
+    now = now or utc_now()
+    await db[META_COLLECTION].update_one(
+        {"_id": META_CATCH_UP},
+        {"$setOnInsert": {"value": now}},
+        upsert=True,
+    )
+    meta = await db[META_COLLECTION].find_one({"_id": META_CATCH_UP})
+    return coerce_utc_datetime((meta or {}).get("value")) or now
+
+
+async def resolve_catch_up_cutover(db, *, env_cutover=None, now=None):
+    """Resolve the effective catch-up cutoff.
+
+    Precedence:
+      1. ``CRM_SLA_ALERTS_CATCH_UP_CUTOVER_AT`` env override (ISO datetime).
+      2. Stored recovery marker (created on the first run after the fix).
+    """
+    from .crm_metrics import coerce_utc_datetime
+    if env_cutover:
+        parsed = coerce_utc_datetime(env_cutover)
+        if parsed:
+            return parsed
+    stored = await get_catch_up_cutover(db)
+    if stored:
+        return stored
+    return await init_catch_up_cutover(db, now=now)
 
 
 # ---------------------------------------------------------------------------

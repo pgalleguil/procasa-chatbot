@@ -80,22 +80,65 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
     code = str(prop.get("codigo") or raw)
     operation = prop_meta.get("operation")
     location = get_prop_location(prop)
-    executive, _unused, assignment_type = find_responsible_executive(
-        property_code=code, comuna=location.get("comuna"), lead_phone=phone)
-    recipient = db["usuarios"].find_one({"nombre": executive, "is_active": {"$ne": False}})
-    recipient_phone = (recipient or {}).get("telefono") or (recipient or {}).get("tel") or (recipient or {}).get("movil")
+
+    # A lead is assigned to a property only ONCE.  process_inbound runs once per
+    # inbound message, so follow-up messages about the same property must reuse
+    # the existing active cycle and its recipient.  Re-running the router here
+    # would advance the round-robin on every message, rotate the executive,
+    # close the previous cycle and emit a fresh HOT notification to a different
+    # person for the same lead (observed: one conversation notified both Hernán
+    # and María Paz, and the lead ended assigned to the wrong executive).
+    from .crm_metrics import active_assignment_cycle
+    active_cycle = active_assignment_cycle(db, lead["_id"])
+    if active_cycle:
+        cycle_prop = str((active_cycle or {}).get("property_code") or "").strip()
+        if cycle_prop:
+            same_property = cycle_prop == str(code).strip()
+        else:
+            same_property = str(
+                (lead.get("prospecto") or {}).get("codigo") or ""
+            ).strip() == str(code).strip()
+    else:
+        same_property = False
+
+    reuse = bool(active_cycle) and same_property
+    cycle = None
+    if reuse:
+        recipient_user_id = str((active_cycle or {}).get("assigned_to_user_id") or "")
+        try:
+            from bson import ObjectId
+            recipient = db["usuarios"].find_one({"_id": ObjectId(recipient_user_id)})
+        except Exception:
+            recipient = None
+        recipient_phone = (
+            ((recipient or {}).get("telefono") or (recipient or {}).get("tel")
+             or (recipient or {}).get("movil")) if recipient else None
+        )
+        if recipient and recipient_phone:
+            cycle = active_cycle
+            assignment_type = "PROPERTY"
+        else:
+            # Stale cycle (user removed / phone missing). Fall back to a fresh
+            # router assignment instead of leaving the lead stranded.
+            reuse = False
+    if not reuse:
+        executive, _unused, assignment_type = find_responsible_executive(
+            property_code=code, comuna=location.get("comuna"), lead_phone=phone)
+        recipient = db["usuarios"].find_one({"nombre": executive, "is_active": {"$ne": False}})
+        recipient_phone = (recipient or {}).get("telefono") or (recipient or {}).get("tel") or (recipient or {}).get("movil")
     if not recipient or not recipient_phone:
         db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
             "notification_eligible": False, "provider_called": False, "assignment_type": assignment_type}})
         _state(db, event["_id"], FAILED_RECIPIENT, "active_recipient_phone_missing", now)
         return db[COLLECTION].find_one({"_id": event["_id"]})
-    cycle = create_assignment_cycle(db, lead=lead, assigned_to_user_id=str(recipient["_id"]),
-        assigned_by="commercial_intake", reason="inbound_message", assigned_at=now,
-        assigned_to_display_name=recipient["nombre"])
-    db["crm_assignment_cycles"].update_one({"assignment_cycle_id": cycle["assignment_cycle_id"]},
-        {"$set": {"source_inbound_provider_id": str(inbound_provider_id),
-                  "source_event_id": str(inbound_provider_id), "source_event_verified": True}})
-    cycle = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": cycle["assignment_cycle_id"]}) or cycle
+    if cycle is None:
+        cycle = create_assignment_cycle(db, lead=lead, assigned_to_user_id=str(recipient["_id"]),
+            assigned_by="commercial_intake", reason="inbound_message", assigned_at=now,
+            assigned_to_display_name=recipient["nombre"], property_code=code)
+        db["crm_assignment_cycles"].update_one({"assignment_cycle_id": cycle["assignment_cycle_id"]},
+            {"$set": {"source_inbound_provider_id": str(inbound_provider_id),
+                      "source_event_id": str(inbound_provider_id), "source_event_verified": True}})
+        cycle = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": cycle["assignment_cycle_id"]}) or cycle
     db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
         "ejecutivo_asignado": recipient["nombre"], "prospecto.ejecutivo": recipient["nombre"],
         "prospecto.codigo": code,

@@ -259,12 +259,21 @@ def unique_managed_lead_ids(events: Iterable[Mapping[str, Any]]) -> set[Any]:
 
 
 def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
-                            reason, assigned_at=None, assigned_to_display_name=None) -> dict[str, Any]:
+                            reason, assigned_at=None, assigned_to_display_name=None,
+                            property_code=None) -> dict[str, Any]:
     assigned_at = coerce_utc_datetime(assigned_at) or utc_now()
     active = db["crm_assignment_cycles"].find_one({"lead_id": lead["_id"], "unassigned_at": None})
     if (active and active.get("schema_version") == "crm_assignment_cycle_v1"
             and active.get("cycle_status") == "active"
             and str(active.get("assigned_to_user_id")) == str(assigned_to_user_id)):
+        if property_code:
+            prop_code = str(property_code).strip()
+            if str(active.get("property_code") or "").strip() != prop_code:
+                db["crm_assignment_cycles"].update_one(
+                    {"_id": active["_id"]},
+                    {"$set": {"property_code": prop_code}},
+                )
+                active["property_code"] = prop_code
         return active
     if active:
         db["crm_assignment_cycles"].update_one(
@@ -298,6 +307,7 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
         "sla_policy_version": sla_policy,
         "notification_eligible": notification_eligible,
         "cycle_origin": cycle_origin,
+        "property_code": str(property_code).strip() if property_code else None,
     }
     try:
         db["crm_assignment_cycles"].insert_one(cycle)
@@ -308,6 +318,32 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
             return winner
         raise
     return cycle
+
+
+def sync_active_cycle_temperature(db, lead_id, *, temperature, transition_at=None):
+    """Propagate the lead's current temperature to its active assignment cycle.
+
+    Keeps ``temperature_at_assignment`` on the active cycle in sync with the
+    live lead temperature (e.g. COLD -> HOT escalation mid-conversation) so the
+    CRM badge and SLA policy follow the current temperature WITHOUT creating a
+    new assignment cycle or re-assigning the executive.  Idempotent: no-op when
+    the cycle already carries the given temperature.
+    """
+    temp = str(temperature or "").strip().upper()
+    if not temp:
+        return None
+    cycle = db["crm_assignment_cycles"].find_one({
+        "lead_id": lead_id, "cycle_status": "active", "unassigned_at": None,
+    })
+    if not cycle:
+        return None
+    if str(cycle.get("temperature_at_assignment") or "").upper() == temp:
+        return cycle
+    db["crm_assignment_cycles"].update_one(
+        {"_id": cycle["_id"]},
+        {"$set": {"temperature_at_assignment": temp}},
+    )
+    return db["crm_assignment_cycles"].find_one({"_id": cycle["_id"]})
 
 
 def audit_and_ensure_assignment_cycle_indexes(db, *, create=False) -> dict[str, Any]:

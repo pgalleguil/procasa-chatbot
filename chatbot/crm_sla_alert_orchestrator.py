@@ -15,10 +15,10 @@ from .crm_sla_alert_repository import quarantine_stale_started_deliveries
 from .crm_sla_alert_worker import process_alerts_batch
 from .crm_sla_alert_sender import get_sender
 from .crm_sla_alert_settings import (
-    CRM_SLA_ALERTS_ENABLED,
     LIVE_SEND,
     MAX_PER_RUN,
     MAX_PER_RECIPIENT_PER_RUN,
+    sla_alerts_enabled,
 )
 
 logger = logging.getLogger("sla_alert.orchestrator")
@@ -26,8 +26,9 @@ logger = logging.getLogger("sla_alert.orchestrator")
 
 async def run_sla_alert_cycle(db=None):
     """One complete cycle: evaluate, persist, process. Fully self-contained."""
-    if not CRM_SLA_ALERTS_ENABLED:
-        return {"status": "disabled", "queries": 0, "writes": 0, "claims": 0, "sends": 0}
+    if not sla_alerts_enabled():
+        return {"status": "disabled", "queries": 0, "writes": 0, "claims": 0, "sends": 0,
+                "reason": "CRM_SLA_ALERTS_ENABLED != true"}
     if db is None:
         from .storage import get_async_db
         db = get_async_db()
@@ -41,10 +42,16 @@ async def run_sla_alert_cycle(db=None):
         # 2. Evaluate + persist (idempotent)
         persist_report = await run_evaluation_and_persist_once(db=db, max_cycles=500)
         logger.info(
-            "[SLA_ALERT][MONITOR] eval: candidates=%s persisted=%s already_exists=%s",
+            "[SLA_ALERT][MONITOR] candidates=%s persisted=%s already_exists=%s "
+            "excluded_no_phone=%s excluded_by_limit=%s excluded_by_catch_up=%s "
+            "catch_up_cutover=%s",
             persist_report.get("candidates_evaluated", 0),
             persist_report.get("persisted", 0),
             persist_report.get("already_exists", 0),
+            persist_report.get("excluded_no_phone", 0),
+            persist_report.get("excluded_by_limit", 0),
+            persist_report.get("excluded_by_catch_up", 0),
+            persist_report.get("catch_up_cutover"),
         )
 
         # 3. Process pending alerts (worker)
@@ -60,20 +67,25 @@ async def run_sla_alert_cycle(db=None):
 
     except Exception:
         logger.error("[SLA_ALERT][ERROR] Cycle failed:\n%s", traceback.format_exc())
+        return {"status": "error",
+                "persist_report": locals().get("persist_report"),
+                "worker_report": locals().get("worker_report")}
+
+    return {"status": "completed",
+            "persist_report": persist_report,
+            "worker_report": worker_report}
 
 
 async def sla_alert_orchestrator_loop(sleep_seconds: int = 60):
     """Main loop for crm_sla_alert. Never stops other workers on exception."""
     logger.info("[SLA_ALERT] Orchestrator started. enabled=%s live_send=%s",
-                CRM_SLA_ALERTS_ENABLED, LIVE_SEND)
-
-    if not CRM_SLA_ALERTS_ENABLED:
-        logger.info("[SLA_ALERT] Disabled. Exiting loop.")
-        return
+                sla_alerts_enabled(), LIVE_SEND)
 
     while True:
         try:
-            await run_sla_alert_cycle()
+            report = await run_sla_alert_cycle()
+            if report.get("status") not in ("disabled", "idle"):
+                logger.info("[SLA_ALERT][CYCLE] %s", report)
         except Exception:
             logger.error("[SLA_ALERT][ERROR] Orchestrator loop error:\n%s", traceback.format_exc())
         await asyncio.sleep(sleep_seconds)

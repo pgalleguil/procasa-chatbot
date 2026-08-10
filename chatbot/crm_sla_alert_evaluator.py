@@ -502,6 +502,7 @@ async def evaluate_sla_alerts(
             "message_domain": MESSAGE_DOMAIN,
             "assignment_cycle_id": cycle_id,
             "lead_id": str(lid),
+            "sla_started_at": sla_started_at,
             "recipient_user_id": recipient_user_id,
             "alert_level": alert_level,
             "sla_profile": sla_profile,

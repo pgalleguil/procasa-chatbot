@@ -1371,9 +1371,18 @@
                 if (!s || !e) { el.textContent = 'Cargando información…'; return; }
                 const preset = PRESET_LABELS[FILTERS.period_preset] || FILTERS.period_preset;
                 const total = OVERVIEW && OVERVIEW.demand ? OVERVIEW.demand.total : 0;
+                const period = (OVERVIEW && OVERVIEW.period) || {};
+                const prev = period.previous || {};
+                const resolved = period.compare_resolved || (COMPARE === 'none' ? 'none' : 'prev');
+                const cmpLabel = resolved === 'none'
+                    ? 'Sin comparación'
+                    : (resolved === 'yoy' ? 'Mismo periodo del año anterior' : 'Periodo anterior equivalente');
+                const cmpHtml = (prev.start && prev.end)
+                    ? 'Comparación: <strong>' + prev.start + ' → ' + prev.end + '</strong> <small style="opacity:.7">(' + cmpLabel + ')</small>'
+                    : 'Comparación: <strong>Sin comparación</strong>';
                 el.innerHTML =
                     '<span><i class="fa-regular fa-calendar me-1"></i>Periodo analizado: <strong>' + s + ' → ' + e + '</strong> <small style="opacity:.7">(' + preset + ')</small></span>' +
-                    '<span><i class="fa-solid fa-code-compare me-1"></i>Comparación: <strong>' + comparisonLabel(COMPARE) + '</strong></span>' +
+                    '<span><i class="fa-solid fa-code-compare me-1"></i>' + cmpHtml + '</span>' +
                     '<span><i class="fa-regular fa-circle-dot me-1"></i>Leads en el periodo: <strong>' + total + '</strong></span>';
             }
 

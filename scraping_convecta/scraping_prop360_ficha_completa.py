@@ -37,7 +37,6 @@ import random
 import re
 import sys
 import time
-import urllib.request
 from datetime import datetime, timezone
 
 import httpx
@@ -350,53 +349,70 @@ def deduplicate_historial_cambios(historial):
 
 
 def get_uf_rate():
-    env_rate = os.getenv("UF_VALUE")
-    if env_rate:
-        try:
-            return float(str(env_rate).replace(",", "."))
-        except Exception:
-            pass
+    """Último valor UF válido persistido (uf_cache) o configuración.
+
+    NUNCA llama a la API por ficha/propiedad: usa el cache que mantiene el
+    proceso periódico (uf_sync_loop). Devuelve float o None.
+    """
     try:
-        url = "https://mindicador.cl/api/uf"
-        with urllib.request.urlopen(url, timeout=8) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-        valor = payload.get("serie", [{}])[0].get("valor")
-        if valor is not None:
-            return float(valor)
+        from chatbot.uf_service import obtener_uf_cache_o_fallback
+        info = obtener_uf_cache_o_fallback()
+        if info and info.get("valor"):
+            return float(info["valor"])
     except Exception:
-        return None
+        pass
+    # Último recurso sin red: configuración unificada
+    try:
+        from config import Config
+        val = float(getattr(Config, "UF_VALUE", 0) or 0)
+        if val > 0:
+            return val
+    except Exception:
+        pass
     return None
 
 
-def normalize_price_pair(clp_val=None, uf_val=None, uf_rate=None):
-    clp = clean_price(clp_val)
-    uf = None
-    if uf_val is not None:
-        uf_num = normalize_numeric_for_compare(uf_val)
-        if uf_num is not None:
-            uf = round(float(uf_num), 1)
-    if uf is None and clp is not None and uf_rate:
-        try:
-            uf = round(float(clp) / float(uf_rate), 1)
-        except Exception:
-            uf = None
-    if clp is None and uf is not None and uf_rate:
-        try:
-            clp = int(round(float(uf) * float(uf_rate)))
-        except Exception:
-            clp = None
-    return clp, uf
-
-
 def canonicalize_prices(doc: dict):
-    uf_rate = normalize_numeric_for_compare(doc.get("_uf_rate")) or get_uf_rate()
-    clp = doc.get("precio_clp")
-    uf = doc.get("precio_uf")
-    clp_n, uf_n = normalize_price_pair(clp, uf, uf_rate)
-    if clp_n is not None:
-        doc["precio_clp"] = clp_n
-    if uf_n is not None:
-        doc["precio_uf"] = uf_n
+    """Completa la divisa derivada + metadata en cada precio de tipo_operacion.
+
+    Usa el ÚLTIMO valor UF válido persistido (uf_service), nunca llama la API
+    por ficha. Regla: la divisa publicada es ORIGINAL; solo se genera la otra.
+    Si no hay UF cache válida, deja el precio original sin derivado (warning);
+    el proceso periódico (uf_sync_loop) completa el derivado después.
+    """
+    try:
+        from chatbot.uf_service import obtener_uf_cache_o_fallback, completar_precio
+    except Exception:
+        return doc
+
+    uf_info = obtener_uf_cache_o_fallback()
+    uf_valor = uf_info["valor"] if uf_info else None
+    uf_fecha = uf_info.get("fecha") if uf_info else None
+
+    to = doc.get("tipo_operacion")
+    if isinstance(to, dict):
+        for key in ("precio_venta", "precio_arriendo"):
+            precio = to.get(key)
+            if isinstance(precio, dict):
+                to[key] = completar_precio(precio, uf_valor, uf_fecha)
+
+    # Resumen plano heredado: reflejar precios completados (solo informativo)
+    res = doc.get("resumen")
+    if isinstance(res, dict):
+        pv = to.get("precio_venta") if isinstance(to, dict) else None
+        pa = to.get("precio_arriendo") if isinstance(to, dict) else None
+        clp = None
+        uf = None
+        if isinstance(pv, dict):
+            clp = pv.get("precio_clp") or clp
+            uf = pv.get("precio_uf") or uf
+        if isinstance(pa, dict):
+            clp = pa.get("precio_clp") or clp
+            uf = pa.get("precio_uf") or uf
+        if clp is not None:
+            res["precio_clp"] = clp
+        if uf is not None:
+            res["precio_uf"] = uf
     return doc
 
 

@@ -315,6 +315,20 @@ async def lifespan(app: FastAPI):
         )
     except Exception:
         logger.warning("[FICHA_SYNC] Loop import failed — disabled", exc_info=True)
+
+    # UF sync diario — actualiza uf_cache y derivados de precio (BUG E)
+    uf_sync_task = None
+    try:
+        from chatbot.uf_sync_loop import uf_sync_loop as _usl
+        uf_sync_task = asyncio.create_task(_usl())
+        import os as _os
+        logger.info(
+            "[UF_SYNC] Loop scheduled. enabled=%s hour=%s",
+            _os.getenv("UF_SYNC_ENABLED", "false"),
+            _os.getenv("UF_SYNC_HOUR", "4"),
+        )
+    except Exception:
+        logger.warning("[UF_SYNC] Loop import failed — disabled", exc_info=True)
     
     # Iniciar Consumers
     c1_task = asyncio.create_task(lead_consumer_worker(1))

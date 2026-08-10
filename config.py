@@ -14,8 +14,18 @@ class Config:
     DB_NAME = os.getenv("DB_NAME", "URLS")
 
     # === UF (valor para conversión CLP <-> UF) ===
-    UF_VALOR_CLP = float(os.getenv("UF_VALOR_CLP", "0"))
+    # Fuente única: UF_VALUE (env). Se mantiene UF_VALOR_CLP como alias de
+    # compatibilidad; si solo está definida una, se usa esa.
+    _UF_VALUE_ENV = os.getenv("UF_VALUE") or os.getenv("UF_VALOR_CLP") or "0"
+    UF_VALUE = float(_UF_VALUE_ENV.replace(",", ".")) if _UF_VALUE_ENV else 0.0
+    UF_VALOR_CLP = UF_VALUE  # alias heredado (no romper api_crm.py)
     UF_FECHA = os.getenv("UF_FECHA", "")
+    UF_CACHE_COLLECTION = os.getenv("UF_CACHE_COLLECTION", "uf_cache")
+
+    # === UF sync diario ===
+    UF_SYNC_ENABLED = os.getenv("UF_SYNC_ENABLED", "true").lower() == "true"
+    UF_SYNC_HOUR = int(os.getenv("UF_SYNC_HOUR", "4"))
+    UF_SYNC_WINDOW_MINUTES = int(os.getenv("UF_SYNC_WINDOW", "30"))
 
     # === PROXIES ===
     USE_PROXIES = os.getenv("USE_PROXIES", "false").lower() == "true"

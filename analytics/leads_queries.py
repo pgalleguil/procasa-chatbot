@@ -76,6 +76,20 @@ def _normalized_created_at_stage() -> dict:
     }
 
 
+def _cohort_indexed_prefilter(start_utc, end_utc) -> dict:
+    """Pre-filtro sobre created_at (string ISO UTC, indexado) para usar el índice.
+
+    created_at se almacena como string ISO con 'Z'; las strings ISO ordenan
+    lexicográficamente igual que cronológicamente, así que un rango de strings
+    aproxima el rango de fechas y deja que Mongo use el índice existente.
+    El match autoritativo posterior sobre _created_normalized mantiene la
+    exactitud.
+    """
+    start_str = start_utc.strftime("%Y-%m-%dT%H:%M:%S")
+    end_str = end_utc.strftime("%Y-%m-%dT%H:%M:%S")
+    return {"$match": {"created_at": {"$gte": start_str, "$lt": end_str}}}
+
+
 def _format_date_field(field_expr: str, fmt: str = "%Y-%m-%d") -> dict:
     return {
         "$dateToString": {"format": fmt, "date": field_expr}
@@ -1450,7 +1464,10 @@ def query_comparative_trends(
     include_comparison: bool = True,
     filters: Optional[dict] = None,
 ) -> dict:
-    """Tendencia comparativa: periodo actual vs periodo anterior de igual duracion."""
+    """Tendencia comparativa: periodo actual vs periodo anterior de igual duracion.
+
+    Optimizado: una sola agregación con $facet para actual y anterior.
+    """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
 
@@ -1463,18 +1480,44 @@ def query_comparative_trends(
         prev_end = start_utc
         prev_start = prev_end - duration
 
-    def _daily(ps_utc, pe_utc):
+    if include_comparison and prev_start is not None and prev_end is not None:
+        combined_start = min(start_utc, prev_start)
+        combined_end = max(end_utc, prev_end)
+        facets = {
+            "current": [
+                {"$match": {"_created_normalized": {"$gte": start_utc, "$lt": end_utc}}},
+                {"$group": {"_id": _format_date_field("$_created_normalized"), "received": {"$sum": 1}}},
+                {"$sort": {"_id": 1}},
+                {"$project": {"date": "$_id", "received": 1, "_id": 0}},
+            ],
+            "previous": [
+                {"$match": {"_created_normalized": {"$gte": prev_start, "$lt": prev_end}}},
+                {"$group": {"_id": _format_date_field("$_created_normalized"), "received": {"$sum": 1}}},
+                {"$sort": {"_id": 1}},
+                {"$project": {"date": "$_id", "received": 1, "_id": 0}},
+            ],
+        }
         pipeline = [
+            _cohort_indexed_prefilter(combined_start, combined_end),
             _normalized_created_at_stage(),
-            {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
+            {"$match": _build_commercial_cohort_match(combined_start, combined_end, filters)},
+            {"$facet": facets},
+        ]
+        row = list(db["leads"].aggregate(pipeline))
+        row = row[0] if row else {}
+        current_daily = row.get("current", [])
+        previous_daily = row.get("previous", [])
+    else:
+        pipeline = [
+            _cohort_indexed_prefilter(start_utc, end_utc),
+            _normalized_created_at_stage(),
+            {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
             {"$group": {"_id": _format_date_field("$_created_normalized"), "received": {"$sum": 1}}},
             {"$sort": {"_id": 1}},
             {"$project": {"date": "$_id", "received": 1, "_id": 0}},
         ]
-        return list(db["leads"].aggregate(pipeline))
-
-    current_daily = _daily(start_utc, end_utc)
-    previous_daily = _daily(prev_start, prev_end) if include_comparison else []
+        current_daily = list(db["leads"].aggregate(pipeline))
+        previous_daily = []
 
     current_total = sum(d["received"] for d in current_daily)
     previous_total = sum(d["received"] for d in previous_daily) if include_comparison else None
@@ -1528,6 +1571,7 @@ def query_leads_dashboard_conversion(
 
     def _metrics(ps_utc, pe_utc):
         pipeline = [
+            _cohort_indexed_prefilter(ps_utc, pe_utc),
             _normalized_created_at_stage(),
             {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
             {"$facet": {
@@ -1566,6 +1610,7 @@ def query_leads_dashboard_pipeline(
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
 
     pipeline = [
+        _cohort_indexed_prefilter(start_utc, end_utc),
         _normalized_created_at_stage(),
         {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
         {"$addFields": {
@@ -1628,6 +1673,7 @@ def query_leads_dashboard_rescue(
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
     pipeline = [
+        _cohort_indexed_prefilter(start_utc, end_utc),
         _normalized_created_at_stage(),
         {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
         {"$group": {
@@ -2513,6 +2559,7 @@ def query_sla_risk_panel(period_start=None, period_end=None, filters=None):
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
     pipeline = [
+        _cohort_indexed_prefilter(start_utc, end_utc),
         _normalized_created_at_stage(),
         {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
         {"$project": {

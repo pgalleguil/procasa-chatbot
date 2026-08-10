@@ -11,26 +11,82 @@
 
     <style>
         :root {
-            --bg-body: #0f172a;
-            --bg-card: #1e293b;
-            --bg-sidebar: #020617;
+            --bg-body: #0b1220;
+            --bg-card: #182235;
+            --bg-elevated: #202d43;
+            --bg-sidebar: #081426;
+            --sidebar-glass-bg: rgba(8, 20, 38, 0.82);
+            --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(99, 102, 241, 0.025) 48%, rgba(8, 20, 38, 0.02));
+            --sidebar-border: rgba(148, 163, 184, 0.20);
+            --sidebar-shadow: inset -1px 0 rgba(255, 255, 255, 0.04), 8px 0 24px rgba(2, 6, 23, 0.16);
+            --sidebar-shadow-expanded: inset -1px 0 rgba(255, 255, 255, 0.055), 10px 0 28px rgba(2, 6, 23, 0.18);
+            --sidebar-hover-bg: rgba(148, 163, 184, 0.11);
+            --sidebar-active-bg: rgba(99, 102, 241, 0.20);
+            --sidebar-active-color: #a5b4fc;
+            --sidebar-danger: #ef4444;
             --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
+            --text-secondary: #aab8ca;
+            --sidebar-text: #edf4ff;
+            --sidebar-muted: #b9c6d8;
             --accent: #6366f1;
-            --border-color: rgba(255, 255, 255, 0.05);
+            --accent-color: var(--accent);
+            --accent-hover: #4f46e5;
+            --border-color: rgba(148, 163, 184, 0.18);
+            --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.18);
+            --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.16);
             --sidebar-width: 240px;
             --sidebar-width-collapsed: 80px;
             --transition-speed: 0.3s;
+            --input-bg: #243249;
+            --input-border: #52627a;
+            --input-text: #f8fafc;
+            --placeholder-color: #aab8ca;
+            --state-unattended: #f87171;
+            --state-management: #fbbf24;
+            --state-visits: #34d399;
+            --state-closed: #64748b;
+            --lead-normal: #94a3b8;
+            
+            /* Semaforo Colors */
+            --led-red: #ef4444;
+            --led-yellow: #f59e0b;
+            --led-green: #10b981;
+            --led-orange: #f97316;
+            --led-gray: #64748b;
         }
 
         [data-theme="light"] {
-            --bg-body: #f1f5f9;
-            --bg-card: #ffffff;
-            --bg-sidebar: #0f172a;
-            --text-primary: #1e293b;
-            --text-secondary: #475569;
-            --border-color: #e2e8f0;
+            --bg-body: #eaf0f6;
+            --bg-card: #f8fafc;
+            --bg-elevated: #f1f5f9;
+            --bg-sidebar: #f4f7fc;
+            --sidebar-glass-bg: rgba(244, 247, 252, 0.84);
+            --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.52), rgba(79, 70, 229, 0.035) 50%, rgba(226, 232, 240, 0.08));
+            --sidebar-border: rgba(100, 116, 139, 0.24);
+            --sidebar-shadow: inset -1px 0 rgba(255, 255, 255, 0.72), 8px 0 24px rgba(51, 65, 85, 0.10);
+            --sidebar-shadow-expanded: inset -1px 0 rgba(255, 255, 255, 0.82), 10px 0 28px rgba(51, 65, 85, 0.13);
+            --sidebar-hover-bg: rgba(79, 70, 229, 0.08);
+            --sidebar-active-bg: rgba(79, 70, 229, 0.13);
+            --sidebar-active-color: #4338ca;
+            --sidebar-danger: #b91c1c;
+            --text-primary: #172033;
+            --text-secondary: #526178;
+            --sidebar-text: #1e293b;
+            --sidebar-muted: #526178;
+            --border-color: #cbd5e1;
+            --input-bg: #f8fafc;
+            --input-border: #aebdd0;
+            --input-text: #172033;
+            --placeholder-color: #64748b;
+            --state-unattended: #e85d68;
+            --state-management: #d99a08;
+            --state-visits: #168a68;
+            --state-closed: #64748b;
+            --lead-normal: #64748b;
             --accent: #4f46e5;
+            --accent-hover: #4338ca;
+            --shadow-soft: 0 12px 32px rgba(51, 65, 85, 0.12);
+            --shadow-card: 0 4px 14px rgba(51, 65, 85, 0.10);
         }
 
         body {
@@ -42,36 +98,57 @@
         }
 
         /* SIDEBAR - Modern Glassmorphism */
+
         .sidebar {
             width: var(--sidebar-width-collapsed);
-            height: 100vh;
+            height: 100dvh;
+            max-height: 100dvh;
+            box-sizing: border-box;
             position: fixed;
             left: 0;
             top: 0;
-            padding: 30px 0;
-            border-right: 1px solid var(--border-color);
+            padding: max(14px, env(safe-area-inset-top)) 0 max(12px, env(safe-area-inset-bottom));
+            color: var(--sidebar-text);
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--sidebar-border);
             z-index: 1050;
             transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
             display: flex;
             flex-direction: column;
             white-space: nowrap;
-            backdrop-filter: blur(20px);
+            box-shadow: var(--sidebar-shadow);
+        }
+
+        @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+            .sidebar {
+                background: var(--sidebar-glass-highlight), var(--sidebar-glass-bg);
+                -webkit-backdrop-filter: blur(14px) saturate(120%);
+                backdrop-filter: blur(14px) saturate(120%);
+            }
         }
 
         .sidebar:hover {
             width: var(--sidebar-width);
-            box-shadow: 20px 0 40px rgba(0, 0, 0, 0.2);
+            box-shadow: var(--sidebar-shadow-expanded);
+        }
+
+        .main-content {
+            margin-left: var(--sidebar-width-collapsed);
+            padding: 30px;
+            transition: margin-left var(--transition-speed);
         }
 
         .brand {
             font-size: 1.5rem;
             font-weight: 800;
-            color: var(--text-primary);
-            margin-bottom: 2.5rem;
+            color: var(--sidebar-text);
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
-            height: 80px;
+            height: 64px;
+            min-height: 64px;
+            flex: 0 0 auto;
             padding: 0;
             overflow: hidden;
             letter-spacing: -0.02em;
@@ -98,15 +175,17 @@
         }
 
         .nav-link {
-            color: var(--text-secondary);
-            padding: 14px 0;
+            color: var(--sidebar-muted);
+            padding: 11px 0;
             display: flex;
             align-items: center;
             text-decoration: none;
             margin: 4px 12px;
+            border-left: 3px solid transparent;
             border-radius: 16px;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            height: 50px;
+            transition: background-color 180ms ease, color 180ms ease,
+                border-color 180ms ease, box-shadow 180ms ease;
+            height: 46px;
             overflow: hidden;
             width: calc(100% - 24px);
         }
@@ -118,7 +197,9 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            transition: all 0.3s ease-out;
+            opacity: 1;
+            transition: color 180ms ease, background-color 180ms ease,
+                border-color 180ms ease, box-shadow 180ms ease;
         }
 
         .nav-link span {
@@ -136,43 +217,57 @@
         }
 
         .nav-link:hover {
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-primary);
+            background: var(--sidebar-hover-bg);
+            color: var(--sidebar-text);
         }
 
         .nav-link.active {
-            background: rgba(99, 102, 241, 0.1);
-            color: var(--accent) !important;
+            background: var(--sidebar-active-bg);
+            border-left-color: var(--sidebar-active-color);
+            color: var(--sidebar-active-color) !important;
+            box-shadow: 0 0 16px color-mix(in srgb, var(--sidebar-active-color) 12%, transparent);
         }
 
         .nav-link.active i {
-            color: var(--accent);
+            color: var(--sidebar-active-color);
         }
 
-        .nav-link.theme-toggle { margin-top: auto; }
-        .nav-link.theme-toggle:hover i { transform: rotate(180deg) scale(1.1); color: #f59e0b; }
+        .nav-link.theme-toggle { margin-top: 0; }
+        .nav-link.theme-toggle #themeIcon {
+            width: 38px;
+            min-width: 38px;
+            height: 38px;
+            margin-left: 9px;
+            border: 1px solid rgba(251, 191, 36, 0.48);
+            border-radius: 12px;
+            color: #fbbf24;
+            background: rgba(245, 158, 11, 0.18);
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.07);
+        }
+        .nav-link.theme-toggle span { margin-left: 8px; }
+        .nav-link.theme-toggle:hover #themeIcon { color: #fde68a; }
+        [data-theme="light"] .nav-link.theme-toggle #themeIcon {
+            color: #6d28d9;
+            background: rgba(109, 40, 217, 0.12);
+            border-color: rgba(109, 40, 217, 0.38);
+            box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.06);
+        }
         .nav-link.logout { margin-top: 5px; }
-        .nav-link.logout:hover { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
-
-        .main-content {
-            margin-left: var(--sidebar-width-collapsed);
-            padding: 30px;
-            transition: all 0.4s ease;
-        }
+        .nav-link.logout:hover { background: rgba(239, 68, 68, 0.1); color: var(--sidebar-danger); }
 
         /* Media Query para Móviles */
         @media (max-width: 768px) {
             .sidebar {
                 width: 0;
-                left: -260px;
+                height: 100dvh;
+                left: min(-280px, calc(-100vw + 48px));
                 transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             }
 
             .sidebar.mobile-open {
-                width: 260px;
-                left: 0 !important;
+                width: min(280px, calc(100vw - 48px));
+                left: 0;
                 box-shadow: 10px 0 30px rgba(0, 0, 0, 0.8);
-                z-index: 1200;
             }
 
             .main-content {
@@ -187,7 +282,7 @@
             }
 
             .sidebar.mobile-open:hover {
-                width: 260px;
+                width: min(280px, calc(100vw - 48px));
             }
 
             .nav-link span,
@@ -199,57 +294,20 @@
             .nav-link:hover {
                 transform: none !important;
                 background: rgba(99, 102, 241, 0.1);
+                /* Solo color, sin escala */
             }
 
             .nav-link:hover i {
                 transform: none !important;
+                /* Sin escala ni rebote */
             }
 
             .hamburger-mobile {
                 display: flex !important;
             }
-
-            /* --- MOBILE DASHBOARD FIXES --- */
-
-            /* Stack Header Items */
-            .header-container {
-                flex-direction: column;
-                align-items: stretch;
-                gap: 15px;
-            }
-
-            .header-container>div {
-                width: 100%;
-            }
-
-            /* Full Width Filters */
-            .filter-container {
-                width: 100%;
-                justify-content: space-between;
-            }
-
-            .calendar-input {
-                width: 100%;
-                flex: 1;
-            }
-
-            /* Adjust Chart & Table containers padding */
-            .chart-container {
-                padding: 15px;
-            }
-
-            /* Responsive Table Search */
-            .search-container {
-                max-width: 100%;
-                margin-bottom: 10px;
-            }
-
-            .d-flex.justify-content-between.align-items-center.mb-3 {
-                flex-direction: column;
-                align-items: stretch !important;
-                gap: 10px;
-            }
         }
+
+
 
         .hamburger-mobile {
             display: none;
@@ -264,7 +322,26 @@
             cursor: pointer;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             margin-right: 15px;
-            /* Espacio con el título */
+        }
+
+
+
+        
+
+        .sidebar-main-nav {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(159, 176, 198, 0.45) transparent;
+        }
+
+        .sidebar-footer {
+            flex: 0 0 auto;
+            margin-top: auto;
+            padding-top: 8px;
+            border-top: 1px solid rgba(148, 163, 184, 0.14);
         }
 
         /* --- CONTROLES SUPERIORES --- */
@@ -697,9 +774,17 @@
 
         .cd-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
             max-width: 1920px;
+        }
+
+        @media (max-width: 1100px) {
+            .cd-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media (max-width: 640px) {
+            .cd-grid { grid-template-columns: 1fr; }
         }
 
         .cd1, .cd2, .cd3, .cd4 {
@@ -1030,38 +1115,42 @@
                     style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
                     onerror="this.style.display='none'"> <span>MENÚ</span>
             </div>
-            <!-- Dashboard oculto temporalmente -->
-            <!-- <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i> <span>Dashboard</span></a> -->
+            <div class="sidebar-main-nav">
+            {% if user_role in ['supervisor', 'admin'] %}
             <a href="/leads-dashboard" class="nav-link active"><i class="fa-solid fa-chart-line"></i>
                 <span>Dashboard</span></a>
+            {% endif %}
             {% if user_role in ['supervisor', 'admin'] %}
             <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
                     Manual</span></a>
             {% endif %}
             <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+            {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
+            {% endif %}
             <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i>
                 <span>Captaciones</span></a>
             <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
             <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
+            </div>
 
-            <!-- Tema Toggle -->
-            <a href="#" class="nav-link theme-toggle" onclick="toggleTheme(); return false;">
-                <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
-            </a>
-
-            <!-- Logout -->
-            <a href="/logout" class="nav-link logout">
-                <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
-            </a>
+            <div class="sidebar-footer">
+                <a href="#" class="nav-link theme-toggle" aria-label="Cambiar a tema claro" title="Cambiar a tema claro"
+                    onclick="toggleTheme(); return false;">
+                    <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
+                </a>
+                <a href="/logout" class="nav-link logout">
+                    <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
+                </a>
+            </div>
         </nav>
 
         <div class="main-content" id="main-content">
 
             <div class="header-container">
                 <div class="d-flex align-items-center">
-                    <div class="hamburger-mobile" onclick="toggleMobileMenu()">
+                    <button type="button" class="hamburger-mobile" aria-controls="sidebar" aria-expanded="false" onclick="toggleMobileMenu()">
                         <i class="fa-solid fa-bars"></i>
-                    </div>
+                    </button>
                     <div>
                         <h2 class="fw-bold m-0">Leads Intelligence</h2>
                         <p class="text-secondary m-0 small">Rendimiento Comercial & Analytics AI</p>
@@ -1271,45 +1360,75 @@
 
             const PRESET_LABELS = { today: 'Hoy', week: 'Semana', month: 'Mes', '30d': '30 días', custom: 'Personalizado' };
 
-            // --- 1. TEMA ---
-            function toggleTheme() {
-                const html = document.documentElement;
-                const icon = document.getElementById('themeIcon');
-                CURRENT_THEME = (CURRENT_THEME === 'dark') ? 'light' : 'dark';
-                localStorage.setItem('theme', CURRENT_THEME);
-
-                if (CURRENT_THEME === 'light') {
-                    html.setAttribute('data-theme', 'light');
-                    icon.className = 'fa-solid fa-moon';
-                } else {
-                    html.setAttribute('data-theme', 'dark');
-                    icon.className = 'fa-solid fa-sun';
-                }
-            }
-
+            // --- 1. TEMA Y MENÚ (replica del CRM) ---
             function toggleMobileMenu() {
                 const sidebar = document.getElementById('sidebar');
                 const overlay = document.getElementById('sidebarOverlay');
                 sidebar.classList.toggle('mobile-open');
-                overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
+                const isOpen = sidebar.classList.contains('mobile-open');
+                overlay.style.display = isOpen ? 'block' : 'none';
+                document.querySelector('.hamburger-mobile')?.setAttribute('aria-expanded', String(isOpen));
             }
 
+            function closeMobileMenu() {
+                document.getElementById('sidebar')?.classList.remove('mobile-open');
+                const overlay = document.getElementById('sidebarOverlay');
+                if (overlay) overlay.style.display = 'none';
+                document.querySelector('.hamburger-mobile')?.setAttribute('aria-expanded', 'false');
+            }
+
+            window.addEventListener('resize', () => {
+                if (window.innerWidth > 768) closeMobileMenu();
+            });
+
+            document.addEventListener('keydown', event => {
+                if (event.key === 'Escape') closeMobileMenu();
+            });
+
+            // Cerrar al hacer clic en un link (en móvil)
             document.querySelectorAll('.nav-link').forEach(link => {
                 link.addEventListener('click', () => {
                     if (window.innerWidth <= 768) {
-                        toggleMobileMenu();
+                        closeMobileMenu();
                     }
                 });
             });
 
+            // Toggle Theme (Light/Dark)
+            function toggleTheme() {
+                const html = document.documentElement;
+                const icon = document.getElementById('themeIcon');
+                const control = document.querySelector('.theme-toggle');
+                if (html.getAttribute('data-theme') === 'light') {
+                    html.setAttribute('data-theme', 'dark');
+                    icon.classList.remove('fa-moon');
+                    icon.classList.add('fa-sun');
+                    control?.setAttribute('aria-label', 'Cambiar a tema claro');
+                    control?.setAttribute('title', 'Cambiar a tema claro');
+                    localStorage.setItem('theme', 'dark');
+                } else {
+                    html.setAttribute('data-theme', 'light');
+                    icon.classList.remove('fa-sun');
+                    icon.classList.add('fa-moon');
+                    control?.setAttribute('aria-label', 'Cambiar a tema oscuro');
+                    control?.setAttribute('title', 'Cambiar a tema oscuro');
+                    localStorage.setItem('theme', 'light');
+                }
+            }
+
+            // Apply saved theme on load
             (function () {
                 const savedTheme = localStorage.getItem('theme') || 'dark';
-                CURRENT_THEME = savedTheme;
                 document.documentElement.setAttribute('data-theme', savedTheme);
                 const icon = document.getElementById('themeIcon');
+                const control = document.querySelector('.theme-toggle');
                 if (icon) {
-                    icon.className = savedTheme === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+                    icon.classList.remove('fa-sun', 'fa-moon');
+                    icon.classList.add(savedTheme === 'light' ? 'fa-moon' : 'fa-sun');
                 }
+                const nextTheme = savedTheme === 'light' ? 'oscuro' : 'claro';
+                control?.setAttribute('aria-label', `Cambiar a tema ${nextTheme}`);
+                control?.setAttribute('title', `Cambiar a tema ${nextTheme}`);
             })();
 
             // --- 2. PERIODO (lógica del Dashboard Comercial) ---
@@ -1760,8 +1879,8 @@
             }, 5000);
         </script>
         <div id="sidebarOverlay"
-            style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1150;"
-            onclick="toggleMobileMenu()"></div>
+            style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"
+            onclick="closeMobileMenu()"></div>
     </body>
 
 </html>

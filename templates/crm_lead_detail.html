@@ -4999,8 +4999,39 @@
             execName: '{{ user_name }}',
             userEmail: '{{ user_email }}',
             scope: 'local',
+            priceUnit: 'UF',   // 'UF' por defecto; 'CLP' si el usuario busca por pesos chilenos
             currentCategory: '' // Added to track active tab
         };
+
+        function detectPriceUnit(query) {
+            // Si el usuario menciona pesos chilenos ($, millones, miles, clp/pesos)
+            // o un número grande sin unidad (>= 1.000.000, monto típico CLP),
+            // mostramos el precio en CLP. Por defecto: UF (ocupa menos espacio).
+            if (!query) return semState.priceUnit;
+            const q = String(query).toLowerCase();
+            const tieneClp = /\$\s*\d|\b(clp|pesos?|millones?|milllones?)\b|\d[\d.]{6,}\b/.test(q);
+            const tieneUf = /\buf\b|\bufs?\b|\b(ufs?)\b/.test(q);
+            if (tieneUf && !tieneClp) return 'UF';
+            if (tieneClp) return 'CLP';
+            return 'UF';
+        }
+
+        function formatPrice(p) {
+            const unit = semState.priceUnit || 'UF';
+            if (unit === 'CLP') {
+                if (p.precio_clp) {
+                    try {
+                        return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(p.precio_clp);
+                    } catch (e) { return `$${p.precio_clp}`; }
+                }
+                if (p.precio_uf) return `UF ${Math.round(p.precio_uf)}`;
+                return 'A consultar';
+            }
+            if (p.precio_uf) return `UF ${Math.round(p.precio_uf)}`;
+            if (p.precio_clp) return `$${p.precio_clp}`;
+            return 'A consultar';
+        }
+
 
         // --- PRE-FILL LOGIC REMOVED ON USER REQUEST ---
 
@@ -5105,6 +5136,9 @@
 
             if (!query || query.length < 3) return;
 
+            // Fijar moneda de presentación según lo que escribió el usuario
+            semState.priceUnit = detectPriceUnit(query);
+
             if (btn) {
                 btn.disabled = true;
                 btn.dataset.originalHtml = btn.innerHTML;
@@ -5178,7 +5212,7 @@
 
             results.forEach(p => {
                 // FIX: Round UF and handle score display capping
-                const price = p.precio_uf ? `UF ${Math.round(p.precio_uf)}` : (p.precio_clp ? `$${p.precio_clp}` : 'A consultar');
+                const price = formatPrice(p);
 
                 // SYNC: Ensure we check against CURRENT selected state
                 const isSelected = semState.selected && semState.selected.some(sp => sp.codigo === p.codigo);
@@ -5350,14 +5384,7 @@
             });
 
             props.forEach((p, i) => {
-                let priceText = "";
-                if (p.precio_uf) {
-                    priceText = `UF ${Math.round(p.precio_uf)}`;
-                } else if (p.precio_clp) {
-                    priceText = formatter.format(p.precio_clp);
-                } else {
-                    priceText = "A consultar";
-                }
+                const priceText = formatPrice(p);
 
                 msg += `🏠 *${p.codigo}* | ${p.tipo} en ${p.comuna}\n`;
                 msg += `✨ ${p.dormitorios} dorm / ${p.banos} baños / ${p.m2_utiles}m²\n`;

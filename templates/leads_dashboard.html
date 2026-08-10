@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es" data-theme="dark">
 
 <head>
@@ -160,7 +160,7 @@
             transition: all 0.4s ease;
         }
 
-        /* Media Query para Móviles */
+        /* Media Query para MÃ³viles */
         @media (max-width: 768px) {
             .sidebar {
                 width: 0;
@@ -182,7 +182,7 @@
 
             .sidebar:hover {
                 width: 0;
-                /* Desactivar hover expand en móvil */
+                /* Desactivar hover expand en mÃ³vil */
                 box-shadow: none;
             }
 
@@ -264,7 +264,7 @@
             cursor: pointer;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             margin-right: 15px;
-            /* Espacio con el título */
+            /* Espacio con el tÃ­tulo */
         }
 
         /* --- CONTROLES SUPERIORES --- */
@@ -311,7 +311,7 @@
             width: 200px;
         }
 
-        /* Botón de limpiar optimizado */
+        /* BotÃ³n de limpiar optimizado */
         .btn-clear {
             display: none;
             background: #ef4444;
@@ -473,7 +473,7 @@
             border: 1px solid var(--border-color);
             margin-bottom: 24px;
             min-height: 400px;
-            /* Asegura altura mínima para igualar gráficos */
+            /* Asegura altura mÃ­nima para igualar grÃ¡ficos */
         }
 
         .section-title {
@@ -686,6 +686,7 @@
             --sla-accent: #10B981;
             --card-border: #1E293B;
             --card-border-hover: #334155;
+            --card-bg: #0F172A;
         }
 
         [data-theme="light"] {
@@ -697,12 +698,30 @@
             --sla-accent: #059669;
             --card-border: #E2E8F0;
             --card-border-hover: #CBD5E1;
+            --card-bg: #FFFFFF;
         }
+
+        /* Micro-animaciÃ³n de entrada (cascada izquierda â†’ derecha) */
+        @keyframes cardEntry {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-card-entry {
+            animation: cardEntry 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            will-change: transform, opacity;
+        }
+
+        .card-delay-1 { animation-delay: 0.06s; }
+        .card-delay-2 { animation-delay: 0.13s; }
+        .card-delay-3 { animation-delay: 0.20s; }
+        .card-delay-4 { animation-delay: 0.27s; }
 
         .cd-grid {
             display: grid;
             grid-template-columns: 1fr;
-            gap: 14px;
+            gap: 16px;
             max-width: 1920px;
             align-items: stretch;
         }
@@ -711,12 +730,12 @@
             .cd-grid { grid-template-columns: repeat(2, 1fr); }
         }
 
-        @media (min-width: 1200px) {
-            .cd-grid { grid-template-columns: repeat(5, 1fr); }
+        @media (min-width: 1024px) {
+            .cd-grid { grid-template-columns: repeat(4, 1fr); }
         }
 
-        .cd-card-kpi, .cd1, .cd2, .cd3, .cd4, .cd5 {
-            background: var(--bg-card);
+        .cd-card-kpi, .cd1, .cd2, .cd3, .cd4 {
+            background: var(--card-bg);
             border: 1px solid var(--card-border);
             border-radius: 12px;
             padding: 16px;
@@ -728,15 +747,14 @@
             transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
         }
 
-        .cd1:hover, .cd2:hover, .cd3:hover, .cd4:hover, .cd5:hover {
+        .cd1:hover, .cd2:hover, .cd3:hover, .cd4:hover {
             border-color: var(--card-border-hover);
             transform: translateY(-2px);
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
         }
 
         [data-theme="light"] .cd1:hover, [data-theme="light"] .cd2:hover,
-        [data-theme="light"] .cd3:hover, [data-theme="light"] .cd4:hover,
-        [data-theme="light"] .cd5:hover {
+        [data-theme="light"] .cd3:hover, [data-theme="light"] .cd4:hover {
             box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
         }
 
@@ -875,7 +893,7 @@
 
         .cd1-footer strong { color: var(--text-primary); font-weight: 600; }
 
-        /* --- CARD 2: EFECTIVIDAD & CONVERSIÓN --- */
+        /* --- CARD 2: EFECTIVIDAD & CONVERSIÃ“N --- */
         .cd2-info:hover { color: var(--conversion-accent); }
 
         .cd2-value { color: var(--text-primary); font-size: 26px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
@@ -905,8 +923,8 @@
         .cd2-bars {
             display: flex;
             flex-direction: column;
-            gap: 5px;
-            margin: 4px 0 6px;
+            gap: 7px;
+            margin: 4px 0 10px;
         }
 
         .cd2-bar-row {
@@ -946,7 +964,7 @@
         .cd2-pp-pos { color: #34D399; font-weight: 600; }
         .cd2-pp-neg { color: #FCA5A5; font-weight: 600; }
 
-        /* --- CARD 3: PIPELINE & VALORIZACIÓN UF --- */
+        /* --- CARD 3: PIPELINE & VALORIZACIÃ“N UF --- */
         .cd3-info:hover { color: var(--pipeline-accent); }
 
         .cd3-value {
@@ -1032,71 +1050,52 @@
 
         .cd4-gauge {
             width: 100%;
-            margin: 2px 0;
+            margin: 2px 0 6px;
             display: flex;
             align-items: center;
             justify-content: center;
         }
 
-        .cd4-gauge svg { width: 104px; height: 104px; display: block; }
+        .cd4-gauge-box {
+            position: relative;
+            width: 92px;
+            height: 48px;
+        }
 
-        /* --- CARD 5: BOT WHATSAPP & RESCATE --- */
-        .cd5-info:hover { color: #25D366; }
+        .cd4-gauge-svg {
+            width: 92px;
+            height: 92px;
+            display: block;
+            transform: rotate(-180deg);
+        }
 
-        .cd5-value {
+        .cd4-gauge-track {
+            fill: none;
+            stroke: var(--card-border);
+            stroke-width: 9;
+            stroke-dasharray: 125.6 251.2;
+        }
+
+        .cd4-gauge-arc {
+            fill: none;
+            stroke: #10B981;
+            stroke-width: 9;
+            stroke-linecap: round;
+            stroke-dasharray: 0 251.2;
+            transition: stroke-dasharray 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .cd4-gauge-lbl {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 2px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 700;
             color: var(--text-primary);
-            font-size: 26px;
-            font-weight: 800;
-            letter-spacing: -0.03em;
-            line-height: 1;
             font-variant-numeric: tabular-nums;
         }
-
-        .cd5-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 1px 8px;
-            border-radius: 99px;
-            font-size: 11px;
-            font-weight: 600;
-            background: rgba(6, 95, 70, 0.30);
-            color: #34D399;
-            border: 1px solid rgba(5, 150, 105, 0.40);
-            white-space: nowrap;
-        }
-
-        .cd5-status {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 6px 10px;
-            background: var(--card-border);
-            border-radius: 8px;
-            border: 1px solid transparent;
-            margin: 2px 0 4px;
-        }
-
-        .cd5-status-l {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 10px;
-            color: var(--text-secondary);
-        }
-
-        .cd5-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: #25D366;
-            flex-shrink: 0;
-        }
-
-        .cd5-status-r { font-size: 10px; font-weight: 700; color: var(--text-primary); }
-
-        .cd5-footer-ok { color: #34D399; font-weight: 500; }
-        .cd5-footer-bad { color: #FCA5A5; font-weight: 500; }
     </style>
 </head>
 
@@ -1105,7 +1104,7 @@
             <div class="brand">
                 <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
                     style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
-                    onerror="this.style.display='none'"> <span>MENÚ</span>
+                    onerror="this.style.display='none'"> <span>MENÃš</span>
             </div>
             <!-- Dashboard oculto temporalmente -->
             <!-- <a href="/dashboard" class="nav-link"><i class="fa-solid fa-chart-pie"></i> <span>Dashboard</span></a> -->
@@ -1119,7 +1118,7 @@
             <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i>
                 <span>Captaciones</span></a>
             <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
-            <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
+            <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Ã“rdenes de Visita</span></a>
 
             <!-- Tema Toggle -->
             <a href="#" class="nav-link theme-toggle" onclick="toggleTheme(); return false;">
@@ -1128,7 +1127,7 @@
 
             <!-- Logout -->
             <a href="/logout" class="nav-link logout">
-                <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
+                <i class="fa-solid fa-power-off"></i> <span>Cerrar SesiÃ³n</span>
             </a>
         </nav>
 
@@ -1152,16 +1151,16 @@
                     <button data-p="today">Hoy</button>
                     <button data-p="week">Semana</button>
                     <button data-p="month">Mes</button>
-                    <button data-p="30d" class="active">30 días</button>
+                    <button data-p="30d" class="active">30 dÃ­as</button>
                     <button data-p="custom">Personalizado</button>
                 </div>
                 <div class="period-compare">
                     <label for="pCompare">Comparar con</label>
-                    <select id="pCompare" aria-label="Modo de comparación">
+                    <select id="pCompare" aria-label="Modo de comparaciÃ³n">
                         <option value="auto">Periodo comparable</option>
                         <option value="prev">Periodo anterior equivalente</option>
-                        <option value="yoy">Mismo periodo del año anterior</option>
-                        <option value="none">Sin comparación</option>
+                        <option value="yoy">Mismo periodo del aÃ±o anterior</option>
+                        <option value="none">Sin comparaciÃ³n</option>
                     </select>
                 </div>
                 <button class="period-btn" id="btnEditDates" type="button"><i class="fa-regular fa-calendar"></i> Editar fechas</button>
@@ -1175,18 +1174,18 @@
                 <button class="period-btn apply" id="btnApplyPeriod" type="button"><i class="fa-solid fa-check"></i> Aplicar periodo</button>
             </div>
 
-            <div class="period-meta" id="periodMeta">Cargando información…</div>
+            <div class="period-meta" id="periodMeta">Cargando informaciÃ³nâ€¦</div>
 
-            <!-- Las tarjetas se irán agregando aquí una por una -->
+            <!-- Las tarjetas se irÃ¡n agregando aquÃ­ una por una -->
             <div class="cards-container" id="cardsContainer">
                 <div class="cd-grid">
                     <!-- CARD 1: DEMANDA & META -->
-                    <div class="cd-card-kpi cd1" id="cardDemandMeta" hidden>
+                    <div class="cd-card-kpi cd1 card-delay-1" id="cardDemandMeta" hidden>
                         <div class="cd1-header">
                             <span class="cd1-title">Demanda & Meta</span>
-                            <button type="button" class="cd1-info" id="cd1Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
+                            <button type="button" class="cd1-info" id="cd1Info" aria-label="InformaciÃ³n del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd1Tooltip" hidden>
-                                Total de leads capturados en el rango activo, % de avance sobre la meta y variación comparativa.
+                                Total de leads capturados en el rango activo, % de avance sobre la meta y variaciÃ³n comparativa.
                             </div>
                         </div>
 
@@ -1195,7 +1194,7 @@
                             <span class="cd1-badge" id="cd1Badge"></span>
                         </div>
 
-                        <p class="cd1-sub" id="cd1Sub">—% de meta (—/—)</p>
+                        <p class="cd1-sub" id="cd1Sub">â€”% de meta (â€”/â€”)</p>
 
                         <div class="cd1-spark" id="cd1Spark"></div>
 
@@ -1204,22 +1203,22 @@
                         </div>
                     </div>
 
-                    <!-- CARD 2: EFECTIVIDAD & CONVERSIÓN -->
-                    <div class="cd-card-kpi cd2" id="cardConversion" hidden>
+                    <!-- CARD 2: EFECTIVIDAD & CONVERSIÃ“N -->
+                    <div class="cd-card-kpi cd2 card-delay-2" id="cardConversion" hidden>
                         <div class="cd1-header">
-                            <span class="cd1-title">Efectividad & Conversión</span>
-                            <button type="button" class="cd1-info cd2-info" id="cd2Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
+                            <span class="cd1-title">Efectividad & ConversiÃ³n</span>
+                            <button type="button" class="cd1-info cd2-info" id="cd2Info" aria-label="InformaciÃ³n del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd2Tooltip" hidden>
-                                Porcentaje de leads convertidos a citas/visitas concretas en el período.
+                                Porcentaje de leads convertidos a citas/visitas concretas en el perÃ­odo.
                             </div>
                         </div>
 
                         <div class="cd1-kpi-row">
                             <h2 class="cd1-value cd2-value" id="cd2Value">0,0 %</h2>
-                            <span class="cd2-citas-badge" id="cd2CitasBadge">🎯 — Citas</span>
+                            <span class="cd2-citas-badge" id="cd2CitasBadge">ðŸŽ¯ â€” Citas</span>
                         </div>
 
-                        <p class="cd1-sub" id="cd2Sub">— citas concretadas de — leads</p>
+                        <p class="cd1-sub" id="cd2Sub">â€” citas concretadas de â€” leads</p>
 
                         <div class="cd2-bars">
                             <div class="cd2-bar-track"><div class="cd2-bar cd2-bar-leads" style="width:100%"></div></div>
@@ -1231,13 +1230,13 @@
                         </div>
                     </div>
 
-                    <!-- CARD 3: PIPELINE & VALORIZACIÓN UF -->
-                    <div class="cd-card-kpi cd3" id="cardPipeline" hidden>
+                    <!-- CARD 3: PIPELINE & VALORIZACIÃ“N UF -->
+                    <div class="cd-card-kpi cd3 card-delay-3" id="cardPipeline" hidden>
                         <div class="cd1-header">
-                            <span class="cd1-title">Pipeline & Valorización UF</span>
-                            <button type="button" class="cd1-info cd3-info" id="cd3Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
+                            <span class="cd1-title">Pipeline & ValorizaciÃ³n UF</span>
+                            <button type="button" class="cd1-info cd3-info" id="cd3Info" aria-label="InformaciÃ³n del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd3Tooltip" hidden>
-                                Valor de inventario único demandado en UF y la comisión estimada proyectada.
+                                Valor de inventario Ãºnico demandado en UF y la comisiÃ³n estimada proyectada.
                             </div>
                         </div>
 
@@ -1246,7 +1245,7 @@
                             <span class="cd3-comision-badge" id="cd3ComisionBadge">UF 0 Comis.</span>
                         </div>
 
-                        <p class="cd1-sub" id="cd3Sub">Valorización de propiedades únicas</p>
+                        <p class="cd1-sub" id="cd3Sub">ValorizaciÃ³n de propiedades Ãºnicas</p>
 
                         <div class="cd2-bars">
                             <div class="cd3-bar-group">
@@ -1265,10 +1264,10 @@
                     </div>
 
                     <!-- CARD 4: SLA & VELOCIDAD DE RESPUESTA -->
-                    <div class="cd-card-kpi cd4" id="cardSla" hidden>
+                    <div class="cd-card-kpi cd4 card-delay-4" id="cardSla" hidden>
                         <div class="cd1-header">
                             <span class="cd1-title">SLA & Velocidad Respuesta</span>
-                            <button type="button" class="cd1-info cd4-info" id="cd4Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
+                            <button type="button" class="cd1-info cd4-info" id="cd4Info" aria-label="InformaciÃ³n del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd4Tooltip" hidden>
                                 Mediana de tiempo de primera respuesta y cumplimiento sobre el SLA objetivo.
                             </div>
@@ -1276,42 +1275,23 @@
 
                         <div class="cd1-kpi-row">
                             <h2 class="cd1-value cd4-value" id="cd4Value">0 <span class="cd1-unit">min</span></h2>
-                            <span class="cd4-sla-badge" id="cd4Badge">⚡ —% SLA</span>
+                            <span class="cd4-sla-badge" id="cd4Badge">âš¡ â€”% SLA</span>
                         </div>
 
-                        <p class="cd1-sub" id="cd4Sub">Mediana de tiempo en 1ª respuesta</p>
+                        <p class="cd1-sub" id="cd4Sub">Mediana de tiempo en 1Âª respuesta</p>
 
-                        <div class="cd4-gauge" id="cd4Gauge"></div>
-
-                        <div class="cd1-footer">
-                            <span id="cd4Footer"></span>
-                        </div>
-                    </div>
-
-                    <!-- CARD 5: BOT WHATSAPP & RESCATE -->
-                    <div class="cd-card-kpi cd5" id="cardBotRescue" hidden>
-                        <div class="cd1-header">
-                            <span class="cd1-title">Bot WA & Rescate</span>
-                            <button type="button" class="cd1-info cd5-info" id="cd5Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
-                            <div class="cd1-tooltip" id="cd5Tooltip" hidden>
-                                Leads reenganchados automáticamente por IA y control de atenciones vencidas.
+                        <div class="cd4-gauge">
+                            <div class="cd4-gauge-box">
+                                <svg class="cd4-gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
+                                    <circle cx="50" cy="50" r="40" class="cd4-gauge-track"/>
+                                    <circle cx="50" cy="50" r="40" class="cd4-gauge-arc" id="cd4GaugeArc"/>
+                                </svg>
+                                <span class="cd4-gauge-lbl" id="cd4GaugeLbl">â€”%</span>
                             </div>
                         </div>
 
-                        <div class="cd1-kpi-row">
-                            <h2 class="cd1-value cd5-value" id="cd5Value">0 <span class="cd1-unit">Leads</span></h2>
-                            <span class="cd5-badge" id="cd5Badge">🤖 —%</span>
-                        </div>
-
-                        <p class="cd1-sub" id="cd5Sub">Leads reenganchados por IA en WA</p>
-
-                        <div class="cd5-status">
-                            <div class="cd5-status-l"><span class="cd5-dot"></span><span>Interacciones IA</span></div>
-                            <span class="cd5-status-r">Activas</span>
-                        </div>
-
                         <div class="cd1-footer">
-                            <span id="cd5Footer"></span>
+                            <span id="cd4Footer"></span>
                         </div>
                     </div>
                 </div>
@@ -1326,16 +1306,16 @@
                 <div class="modal-content"
                     style="background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary);">
                     <div class="modal-header border-bottom border-secondary">
-                        <h5 class="modal-title"><i class="fa-solid fa-hourglass-half text-warning me-2"></i>Sesión por
+                        <h5 class="modal-title"><i class="fa-solid fa-hourglass-half text-warning me-2"></i>SesiÃ³n por
                             expirar</h5>
                     </div>
                     <div class="modal-body">
-                        <p>Tu sesión expirará en <span id="sessionTimeLeft" class="fw-bold text-danger">120s</span> por
+                        <p>Tu sesiÃ³n expirarÃ¡ en <span id="sessionTimeLeft" class="fw-bold text-danger">120s</span> por
                             inactividad.</p>
                         <p class="small text-muted mb-0">Mueve el mouse o presiona una tecla para mantenerla activa.</p>
                     </div>
                     <div class="modal-footer border-top border-secondary">
-                        <a href="/logout" class="btn btn-outline-danger btn-sm">Cerrar Sesión</a>
+                        <a href="/logout" class="btn btn-outline-danger btn-sm">Cerrar SesiÃ³n</a>
                         <button type="button" class="btn btn-primary btn-sm"
                             onclick="bootstrap.Modal.getInstance(document.getElementById('sessionWarningModal')).hide(); updateActivity();">Mantener
                             Activa</button>
@@ -1351,14 +1331,14 @@
             let CURRENT_THEME = 'dark';
             const $ = (id) => document.getElementById(id);
 
-            // Estado de periodo (misma lógica del Dashboard Comercial)
+            // Estado de periodo (misma lÃ³gica del Dashboard Comercial)
             let FILTERS = { period_start: null, period_end: null, period_preset: '30d' };
             let COMPARE = 'auto';
 
             // Datos del endpoint de resumen (CARD 1 y siguientes)
             let OVERVIEW = null;
 
-            const PRESET_LABELS = { today: 'Hoy', week: 'Semana', month: 'Mes', '30d': '30 días', custom: 'Personalizado' };
+            const PRESET_LABELS = { today: 'Hoy', week: 'Semana', month: 'Mes', '30d': '30 dÃ­as', custom: 'Personalizado' };
 
             // --- 1. TEMA ---
             function toggleTheme() {
@@ -1401,7 +1381,7 @@
                 }
             })();
 
-            // --- 2. PERIODO (lógica del Dashboard Comercial) ---
+            // --- 2. PERIODO (lÃ³gica del Dashboard Comercial) ---
             function openCustomPanel(open) {
                 $('periodCustom').classList.toggle('open', open);
                 $('periodCustom').hidden = !open;
@@ -1447,22 +1427,22 @@
             }
 
             function comparisonLabel(mode) {
-                if (mode === 'none') return 'Sin comparación';
-                if (mode === 'yoy') return 'Mismo periodo del año anterior';
+                if (mode === 'none') return 'Sin comparaciÃ³n';
+                if (mode === 'yoy') return 'Mismo periodo del aÃ±o anterior';
                 if (mode === 'prev') return 'Periodo anterior equivalente';
-                return 'Comparación automática';
+                return 'ComparaciÃ³n automÃ¡tica';
             }
 
             function renderPeriodMeta() {
                 const el = $('periodMeta');
                 if (!el) return;
                 const s = FILTERS.period_start, e = FILTERS.period_end;
-                if (!s || !e) { el.textContent = 'Cargando información…'; return; }
+                if (!s || !e) { el.textContent = 'Cargando informaciÃ³nâ€¦'; return; }
                 const preset = PRESET_LABELS[FILTERS.period_preset] || FILTERS.period_preset;
                 const total = OVERVIEW && OVERVIEW.demand ? OVERVIEW.demand.total : 0;
                 el.innerHTML =
-                    '<span><i class="fa-regular fa-calendar me-1"></i>Periodo analizado: <strong>' + s + ' → ' + e + '</strong> <small style="opacity:.7">(' + preset + ')</small></span>' +
-                    '<span><i class="fa-solid fa-code-compare me-1"></i>Comparación: <strong>' + comparisonLabel(COMPARE) + '</strong></span>' +
+                    '<span><i class="fa-regular fa-calendar me-1"></i>Periodo analizado: <strong>' + s + ' â†’ ' + e + '</strong> <small style="opacity:.7">(' + preset + ')</small></span>' +
+                    '<span><i class="fa-solid fa-code-compare me-1"></i>ComparaciÃ³n: <strong>' + comparisonLabel(COMPARE) + '</strong></span>' +
                     '<span><i class="fa-regular fa-circle-dot me-1"></i>Leads en el periodo: <strong>' + total + '</strong></span>';
             }
 
@@ -1524,11 +1504,22 @@
                     renderConversionCard();
                     renderPipelineCard();
                     renderSlaCard();
-                    renderRescueCard();
                 } catch (e) { console.error("Error cargando datos:", e); }
             }
 
             // --- CARD 1: DEMANDA & META ---
+            function showCardAnimated(card) {
+                if (!card) return;
+                card.classList.remove('animate-card-entry');
+                card.hidden = false;
+                void card.offsetWidth;
+                card.classList.add('animate-card-entry');
+                const onEnd = () => {
+                    card.classList.remove('animate-card-entry');
+                };
+                card.addEventListener('animationend', onEnd, { once: true });
+            }
+
             function animateCountUp(el, end, duration = 500) {
                 if (!el) return;
                 if (end === 0) { el.innerHTML = '0 <span class="cd1-unit">Leads</span>'; return; }
@@ -1553,7 +1544,7 @@
                 const yAt = (v) => H - PAD - (v / max) * (H - 2 * PAD);
                 const pts = values.map((v, i) => xAt(i).toFixed(2) + ',' + yAt(v).toFixed(2)).join(' ');
                 const area = '0,' + H + ' ' + pts + ' ' + W + ',' + H;
-                // Línea punteada de referencia (target pace): meta/día en la escala del gráfico
+                // LÃ­nea punteada de referencia (target pace): meta/dÃ­a en la escala del grÃ¡fico
                 const pacePerDay = metaTarget > 0 ? metaTarget / days : 0;
                 let paceY = pacePerDay > 0 ? yAt(pacePerDay) : H / 2;
                 paceY = Math.max(0, Math.min(H - 1, paceY));
@@ -1583,11 +1574,11 @@
                 const isPositive = diffLeads >= 0;
                 const variation = demand.variation_pct;
 
-                let badge = '<span class="cd1-badge cd1-badge-neutral">Sin comparación</span>';
+                let badge = '<span class="cd1-badge cd1-badge-neutral">Sin comparaciÃ³n</span>';
                 if (resolved !== 'none') {
                     const varText = (variation === null || variation === undefined) ? '0.0' : Number(variation).toFixed(1);
                     badge = '<span class="cd1-badge ' + (isPositive ? 'cd1-badge-pos' : 'cd1-badge-neg') + '">' +
-                        '<span>' + (isPositive ? '▲' : '▼') + '</span>' +
+                        '<span>' + (isPositive ? 'â–²' : 'â–¼') + '</span>' +
                         '<span>' + (isPositive ? '+' : '') + varText + '%</span>' +
                         '<span class="cd1-badge-vs">vs. ant.</span></span>';
                 }
@@ -1597,13 +1588,13 @@
                 const daily = demand.daily || { labels: [], values: [] };
                 $('cd1Spark').innerHTML = buildSparkline(daily.labels, daily.values, metaTarget);
                 $('cd1Footer').innerHTML = resolved === 'none'
-                    ? '📊 Sin comparación'
-                    : '📊 <strong>' + (isPositive ? '+' : '') + diffLeads + ' leads</strong> vs. ant. (' + previous + ')';
-                card.hidden = false;
+                    ? 'ðŸ“Š Sin comparaciÃ³n'
+                    : 'ðŸ“Š <strong>' + (isPositive ? '+' : '') + diffLeads + ' leads</strong> vs. ant. (' + previous + ')';
+                showCardAnimated(card);
                 animateCountUp($('cd1Value'), total);
             }
 
-            // --- CARD 2: EFECTIVIDAD & CONVERSIÓN ---
+            // --- CARD 2: EFECTIVIDAD & CONVERSIÃ“N ---
             function animateCountUpFloat(el, end, duration = 500) {
                 if (!el) return;
                 const startTime = performance.now();
@@ -1628,7 +1619,7 @@
                 const resolved = (OVERVIEW.period || {}).compare_resolved || 'none';
 
                 const citasText = citas + (citas === 1 ? ' Cita' : ' Citas');
-                $('cd2CitasBadge').innerHTML = '🎯 ' + citasText;
+                $('cd2CitasBadge').innerHTML = 'ðŸŽ¯ ' + citasText;
                 $('cd2Sub').innerHTML = citas + ' citas concretadas de ' + leads + ' leads';
 
                 const citasPctBar = Math.min(leads > 0 ? (citas / leads) * 100 : 0, 100);
@@ -1639,18 +1630,18 @@
                     const ppText = (diffPP === null || diffPP === undefined)
                         ? ''
                         : ' <span class="' + (diffPP >= 0 ? 'cd2-pp-pos' : 'cd2-pp-neg') + '">(' +
-                          (diffPP >= 0 ? '▲ +' : '▼ -') + Math.abs(diffPP).toFixed(1) + ' pp)</span>';
-                    footer = '🎯 1 cita / <strong>' + ratio + ' leads</strong>' + ppText;
+                          (diffPP >= 0 ? 'â–² +' : 'â–¼ -') + Math.abs(diffPP).toFixed(1) + ' pp)</span>';
+                    footer = 'ðŸŽ¯ 1 cita / <strong>' + ratio + ' leads</strong>' + ppText;
                 } else {
-                    footer = '<span style="font-style:italic;color:var(--text-secondary)">Sin visitas en el período</span>';
+                    footer = '<span style="font-style:italic;color:var(--text-secondary)">Sin visitas en el perÃ­odo</span>';
                 }
                 $('cd2Footer').innerHTML = footer;
 
-                card.hidden = false;
+                showCardAnimated(card);
                 animateCountUpFloat($('cd2Value'), convPct);
             }
 
-            // --- CARD 3: PIPELINE & VALORIZACIÓN UF ---
+            // --- CARD 3: PIPELINE & VALORIZACIÃ“N UF ---
             function animateCountUpUF(el, end, duration = 500) {
                 if (!el) return;
                 const startTime = performance.now();
@@ -1685,10 +1676,10 @@
                 $('cd3BarArriendo').style.width = Math.min(pctArriendo, 100) + '%';
 
                 $('cd3Footer').innerHTML = montoUF > 0
-                    ? '🏡 <strong>' + props + ' propiedades únicas</strong> · ' + cobertura + '% cob.'
+                    ? 'ðŸ¡ <strong>' + props + ' propiedades Ãºnicas</strong> Â· ' + cobertura + '% cob.'
                     : '<span style="font-style:italic;color:var(--text-secondary)">Sin propiedades vinculadas</span>';
 
-                card.hidden = false;
+                showCardAnimated(card);
                 animateCountUpUF($('cd3Value'), montoUF);
             }
 
@@ -1705,26 +1696,23 @@
                 const isGood = slaPct !== null && slaPct !== undefined && slaPct >= 85;
                 const badge = $('cd4Badge');
                 badge.className = 'cd4-sla-badge ' + (slaPct === null || slaPct === undefined ? '' : (isGood ? 'ok' : 'bad'));
-                badge.innerHTML = '⚡ ' + (slaPct === null || slaPct === undefined ? '—' : slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 })) + '% SLA';
+                badge.innerHTML = 'âš¡ ' + (slaPct === null || slaPct === undefined ? 'â€”' : slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 })) + '% SLA';
 
-                const gauge = $('cd4Gauge');
+                const gauge = $('cd4GaugeArc');
                 if (gauge) {
                     const pct = (slaPct === null || slaPct === undefined) ? 0 : Math.max(0, Math.min(slaPct, 100));
                     const color = isGood ? '#10B981' : '#F87171';
-                    const CIRC = 125.6;
-                    gauge.innerHTML =
-                        '<svg viewBox="0 0 100 100">' +
-                        '<circle cx="50" cy="50" r="40" fill="none" stroke="var(--card-border)" stroke-width="8" stroke-dasharray="' + CIRC + ' ' + (2 * CIRC) + '"/>' +
-                        '<circle cx="50" cy="50" r="40" fill="none" stroke="' + color + '" stroke-width="8" stroke-dasharray="' + (CIRC * pct / 100).toFixed(2) + ' ' + (2 * CIRC) + '" stroke-linecap="round"/>' +
-                        '<text x="50" y="58" text-anchor="middle" font-size="16" font-weight="700" fill="var(--text-primary)">' + (slaPct === null || slaPct === undefined ? '—' : Math.round(slaPct)) + '%</text>' +
-                        '</svg>';
+                    gauge.setAttribute('stroke', color);
+                    gauge.style.strokeDasharray = ((pct / 100) * 125.6).toFixed(2) + ' 251.2';
+                    const lbl = $('cd4GaugeLbl');
+                    if (lbl) lbl.textContent = (slaPct === null || slaPct === undefined ? '—' : Math.round(slaPct)) + '%';
                 }
 
                 $('cd4Footer').innerHTML = (hotMin === null || hotMin === undefined)
                     ? '<span style="font-style:italic;color:var(--text-secondary)">Sin registros de tiempo</span>'
-                    : '🔥 HOT: <strong>' + hotMin + 'm</strong> · Normal: ' + (normalMin === null || normalMin === undefined ? '—' : normalMin) + 'm';
+                    : 'ðŸ”¥ HOT: <strong>' + hotMin + 'm</strong> Â· Normal: ' + (normalMin === null || normalMin === undefined ? 'â€”' : normalMin) + 'm';
 
-                card.hidden = false;
+                showCardAnimated(card);
                 if (medianaGeneral === null || medianaGeneral === undefined) {
                     $('cd4Value').innerHTML = '0 <span class="cd1-unit">min</span>';
                 } else {
@@ -1745,24 +1733,7 @@
             }
 
             // --- CARD 5: BOT WHATSAPP & RESCATE ---
-            function renderRescueCard() {
-                const card = $('cardBotRescue');
-                if (!card || !OVERVIEW || !OVERVIEW.rescue) return;
-                const r = OVERVIEW.rescue;
-                const rescatados = r.leads_rescatados || 0;
-                const pctRescatados = r.pct_rescatados || 0;
-                const vencidos = r.vencidos_abiertos || 0;
-                const pctAlDia = r.pct_al_dia || 0;
-
-                $('cd5Badge').innerHTML = '🤖 ' + pctRescatados.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
-
-                $('cd5Footer').innerHTML = vencidos === 0
-                    ? '<span class="cd5-footer-ok">💬 0 vencidos · ' + pctAlDia.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '% al día</span>'
-                    : '<span class="cd5-footer-bad">⚠️ ' + vencidos + ' vencidos sin atender</span>';
-
-                card.hidden = false;
-                animateCountUp($('cd5Value'), rescatados);
-            }
+            // (retirada de la Fila 1 en la refactorizaciÃ³n a 4 tarjetas)
 
             // --- 5. INIT ---
             document.addEventListener('DOMContentLoaded', () => {
@@ -1812,15 +1783,6 @@
                     cd4Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
                     cd4Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
                     cd4Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
-                }
-
-                // Tooltip de la CARD 5
-                const cd5Info = $('cd5Info');
-                if (cd5Info) {
-                    const tip = $('cd5Tooltip');
-                    cd5Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
-                    cd5Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
-                    cd5Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
                 }
 
                 loadData();

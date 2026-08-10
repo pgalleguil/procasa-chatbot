@@ -1001,6 +1001,20 @@ def get_leads_dashboard_overview(
         "normal_threshold_min": 180,
     }
 
+    from .leads_queries import query_leads_dashboard_rescue
+    rescue = query_leads_dashboard_rescue(period_start=period_start, period_end=period_end)
+    rescatados = rescue.get("recuperabilidad_alta", 0)
+    vencidos = sla_panel.get("critical_open", 0)
+    eligible = sla_panel.get("eligible_total", 0) or 0
+    pct_al_dia = round((1 - vencidos / eligible) * 100, 1) if eligible else 100.0
+    pct_rescatados = round(rescatados / total_leads * 100, 1) if total_leads else 0.0
+    rescue_data = {
+        "leads_rescatados": rescatados,
+        "pct_rescatados": pct_rescatados,
+        "vencidos_abiertos": vencidos,
+        "pct_al_dia": pct_al_dia,
+    }
+
     result = _sanitize_non_finite({
         "period": {
             "preset": preset,
@@ -1042,6 +1056,7 @@ def get_leads_dashboard_overview(
             "pct_cobertura": cobertura,
         },
         "sla": sla_data,
+        "rescue": rescue_data,
         "meta": {
             "target": meta_target,
             "label": "Leads recibidos (meta mensual)",

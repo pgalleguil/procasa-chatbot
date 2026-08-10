@@ -1615,6 +1615,34 @@ def query_leads_dashboard_pipeline(
     }
 
 
+def query_leads_dashboard_rescue(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    filters: Optional[dict] = None,
+) -> dict:
+    """Rescate IA / bot para el Leads Dashboard (CARD 5).
+
+    Cuenta los leads del período con RECUPERABILIDAD ALTA (candidatos a
+    reenganche automático por IA en WhatsApp) y su distribución.
+    """
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
+        {"$group": {
+            "_id": {"$ifNull": ["$bi_analytics_global.RECUPERABILIDAD", "SIN_CLASIFICAR"]},
+            "count": {"$sum": 1},
+        }},
+    ]
+    rows = list(db["leads"].aggregate(pipeline))
+    counts = {str(r["_id"]): r["count"] for r in rows}
+    return {
+        "recuperabilidad_alta": counts.get("ALTA", 0),
+        "distribucion": counts,
+    }
+
+
 def query_variance_drivers(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,

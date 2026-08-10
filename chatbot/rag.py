@@ -242,10 +242,25 @@ def _format_uf_display(value) -> str:
 
 
 # Patrones regex para extraer filtros duros del texto libre
-_RE_DORMS = re.compile(r'(\d)\s*(?:dormitorio|dorm|pieza|habitaci[oó]n)', re.IGNORECASE)
-_RE_BANOS = re.compile(r'(\d)\s*(?:ba[ñn]o)', re.IGNORECASE)
-_RE_ESTAC = re.compile(r'(\d)\s*(?:estacionamiento|parking|cochera|estac)', re.IGNORECASE)
+_RE_DORMS = re.compile(r'(\d{1,2})\s*(?:dormitorio|dorm|pieza|habitaci[oó]n)', re.IGNORECASE)
+_RE_BANOS = re.compile(r'(\d{1,2})\s*(?:ba[ñn]o)', re.IGNORECASE)
+_RE_ESTAC = re.compile(r'(\d{1,2})\s*(?:estacionamiento|parking|cochera|estac)', re.IGNORECASE)
 _RE_M2 = re.compile(r'(\d{2,4})\s*(?:m2|metros?\s*cuadrados?|mt2)', re.IGNORECASE)
+
+# Números en palabras ("un solo dormitorio", "dos baños") para extracción robusta
+_NUMEROS_PALABRA = {
+    "un": 1, "una": 1, "uno": 1, "solo": 1, "sola": 1, "único": 1, "unica": 1, "unico": 1,
+    "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, "seis": 6,
+    "siete": 7, "ocho": 8, "nueve": 9, "diez": 10, "once": 11, "doce": 12,
+}
+_RE_DORMS_PALABRA = re.compile(
+    r'\b(un\s+solo|una\s+sola|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)\s+'
+    r'(?:solo|sola)?\s*(?:dormitorio|dorm|pieza|habitaci[oó]n)',
+    re.IGNORECASE)
+_RE_BANOS_PALABRA = re.compile(
+    r'\b(un\s+solo|una\s+sola|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)\s+'
+    r'(?:solo|sola)?\s*(?:ba[ñn]o)',
+    re.IGNORECASE)
 _RE_PRECIO_UF = re.compile(r'(\d[\d.]*)\s*(?:a|y|y\s*hasta|-)?\s*(\d[\d.]*)?\s*(?:uf|UF)', re.IGNORECASE)
 _RE_PRECIO_CLP = re.compile(r'(\d[\d.]*)\s*(?:a|y|y\s*hasta|-)?\s*(\d[\d.]*)?\s*(millones?|MM|mil|pesos)', re.IGNORECASE)
 
@@ -294,15 +309,29 @@ def extraer_filtros_estructurados(texto: str) -> Dict:
         filtros["comunas"] = target_communes
         target_commune = target_communes[0] # Primaria para boost
 
-    # 4. Dormitorios
+    # 4. Dormitorios (exacto si el usuario pide "N dormitorios"; mínimo solo si dice "desde/al menos")
     m = _RE_DORMS.search(texto)
-    if m:
+    if not m:
+        m = _RE_DORMS_PALABRA.search(texto)
+        if m:
+            filtros["dormitorios"] = _NUMEROS_PALABRA.get(m.group(1).lower().split()[0], 1)
+    else:
         filtros["dormitorios"] = int(m.group(1))
+    if filtros.get("dormitorios") and any(w in q for w in ["desde", "al menos", "minimo", "mínimo", "como minimo", "mas de", "más de", "o mas", "o más", "+"]):
+        filtros["dormitorios_exacto"] = False
+    elif filtros.get("dormitorios"):
+        filtros["dormitorios_exacto"] = True
 
     # 5. Baños
     m = _RE_BANOS.search(texto)
-    if m:
+    if not m:
+        m = _RE_BANOS_PALABRA.search(texto)
+        if m:
+            filtros["banos"] = _NUMEROS_PALABRA.get(m.group(1).lower().split()[0], 1)
+    else:
         filtros["banos"] = int(m.group(1))
+    if filtros.get("banos") and not any(w in q for w in ["desde", "al menos", "minimo", "mínimo", "mas de", "más de", "o mas", "o más", "+"]):
+        filtros["banos_exacto"] = True
 
     # 5b. Estacionamientos
     m = _RE_ESTAC.search(texto)
@@ -418,7 +447,7 @@ def _superficie_paths(tipo: str) -> List[str]:
             "caracteristicas.superficie_total", "caracteristicas.superficie_terreno", "m2_utiles"]
 
 
-def _construir_filtros_mongo(filtros: Dict, comunas: List[str] = None, oficina: str = None) -> Dict:
+def _construir_filtros_mongo(filtros: Dict, comunas: List[str] = None, oficina: str = None, relajar_filtros: bool = False) -> Dict:
     """Convierte los filtros extraídos en un query MongoDB para el esquema
     anidado de universo_cartera_prop360 (mantiene fallbacks planos heredados)."""
     clauses = [{"vector_descripcion": {"$exists": True}}]
@@ -467,17 +496,32 @@ def _construir_filtros_mongo(filtros: Dict, comunas: List[str] = None, oficina: 
 
     if filtros.get("dormitorios"):
         d_val = filtros["dormitorios"]
-        clauses.append({"$or": [
-            {"caracteristicas.dormitorios": {"$gte": d_val}},
-            {"dormitorios": {"$in": [str(i) for i in range(d_val, 15)] + [i for i in range(d_val, 15)]}},
-        ]})
+        # Coincidencia EXACTA por defecto ("departamento 1 dormitorio" → solo de 1 dorm;
+        # "casa 3 dormitorios" → solo de 3). Se respeta incluso en búsquedas relajadas.
+        # Solo usa mínimo (>=) cuando el usuario pide "desde/al menos N dormitorios".
+        if filtros.get("dormitorios_exacto"):
+            clauses.append({"$or": [
+                {"caracteristicas.dormitorios": d_val},
+                {"dormitorios": {"$in": [str(d_val), d_val]}},
+            ]})
+        else:
+            clauses.append({"$or": [
+                {"caracteristicas.dormitorios": {"$gte": d_val}},
+                {"dormitorios": {"$in": [str(i) for i in range(d_val, 15)] + [i for i in range(d_val, 15)]}},
+            ]})
 
     if filtros.get("banos"):
         b_val = filtros["banos"]
-        clauses.append({"$or": [
-            {"caracteristicas.banos": {"$gte": b_val}},
-            {"banos": {"$in": [str(i) for i in range(b_val, 15)] + [i for i in range(b_val, 15)]}},
-        ]})
+        if filtros.get("banos_exacto"):
+            clauses.append({"$or": [
+                {"caracteristicas.banos": b_val},
+                {"banos": {"$in": [str(b_val), b_val]}},
+            ]})
+        else:
+            clauses.append({"$or": [
+                {"caracteristicas.banos": {"$gte": b_val}},
+                {"banos": {"$in": [str(i) for i in range(b_val, 15)] + [i for i in range(b_val, 15)]}},
+            ]})
 
     if filtros.get("estacionamientos"):
         e_val = filtros["estacionamientos"]
@@ -605,10 +649,10 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
         if relajar_filtros:
             # RELAXED: Remove M2 but KEEP PRICE and BEDROOMS (User requested strict bedrooms)
             filtros_relajados = {k: v for k, v in filtros.items() 
-                               if k in ["operacion", "tipo", "precio_uf_max", "precio_uf_min", "precio_clp_max", "precio_clp_min", "dormitorios"]}
-            mongo_query = _construir_filtros_mongo(filtros_relajados, comunas, target_office)
+                               if k in ["operacion", "tipo", "precio_uf_max", "precio_uf_min", "precio_clp_max", "precio_clp_min", "dormitorios", "banos", "dormitorios_exacto", "banos_exacto"]}
+            mongo_query = _construir_filtros_mongo(filtros_relajados, comunas, target_office, relajar_filtros=True)
         else:
-            mongo_query = _construir_filtros_mongo(filtros, comunas, target_office)
+            mongo_query = _construir_filtros_mongo(filtros, comunas, target_office, relajar_filtros=False)
 
         projection = {
             "vector_descripcion": 1, "codigo": 1, "oficina_nombre": 1,

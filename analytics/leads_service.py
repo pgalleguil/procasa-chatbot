@@ -942,27 +942,55 @@ def get_leads_dashboard_overview(
     if cached:
         return cached
 
-    trends = query_comparative_trends(
+    from .leads_queries import (
+        query_leads_dashboard_conversion,
+        query_leads_dashboard_pipeline,
+        query_sla_risk_panel,
+        query_leads_dashboard_rescue,
+    )
+
+    f_trends = _COMMERCIAL_QUERY_POOL.submit(
+        query_comparative_trends,
         period_start=period_start,
         period_end=period_end,
         comparison_start=prev_start,
         comparison_end=prev_end,
         include_comparison=bool(prev_start),
     )
+    f_conv = _COMMERCIAL_QUERY_POOL.submit(
+        query_leads_dashboard_conversion,
+        period_start=period_start,
+        period_end=period_end,
+        comparison_start=prev_start,
+        comparison_end=prev_end,
+        include_comparison=bool(prev_start),
+    )
+    f_pipe = _COMMERCIAL_QUERY_POOL.submit(
+        query_leads_dashboard_pipeline,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    f_sla = _COMMERCIAL_QUERY_POOL.submit(
+        query_sla_risk_panel,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    f_rescue = _COMMERCIAL_QUERY_POOL.submit(
+        query_leads_dashboard_rescue,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    trends = f_trends.result()
+    conversion = f_conv.result()
+    pipeline = f_pipe.result()
+    sla_panel = f_sla.result()
+    rescue = f_rescue.result()
 
     current = trends.get("current", {})
     previous = trends.get("previous", {})
     daily = current.get("daily", []) or []
     meta_target = _load_received_leads_meta_target()
 
-    from .leads_queries import query_leads_dashboard_conversion
-    conversion = query_leads_dashboard_conversion(
-        period_start=period_start,
-        period_end=period_end,
-        comparison_start=prev_start,
-        comparison_end=prev_end,
-        include_comparison=bool(prev_start),
-    )
     conv_current = conversion.get("current", {})
     conv_previous = conversion.get("previous", {})
     conv_total = conv_current.get("total", 0)
@@ -974,11 +1002,6 @@ def get_leads_dashboard_overview(
     diff_pp = round(conv_pct - prev_pct, 1) if prev_start else None
     ratio = round(conv_total / conv_citas, 1) if conv_citas else None
 
-    from .leads_queries import query_leads_dashboard_pipeline
-    pipeline = query_leads_dashboard_pipeline(
-        period_start=period_start,
-        period_end=period_end,
-    )
     total_leads = current.get("total", 0)
     monto_uf = pipeline.get("monto_uf", 0.0)
     venta_uf = pipeline.get("monto_venta_uf", 0.0)
@@ -989,20 +1012,17 @@ def get_leads_dashboard_overview(
     comision_pct = 2.0  # comisión proyectada (default contratos)
     comision_uf = round(monto_uf * comision_pct / 100, 1)
 
-    from .leads_queries import query_sla_risk_panel
-    sla_panel = query_sla_risk_panel(period_start=period_start, period_end=period_end)
     sla_data = {
         "mediana_general_min": sla_panel.get("overall_median_minutes"),
         "pct_cumplimiento_sla": sla_panel.get("overall_compliance_pct"),
         "mediana_hot_min": (sla_panel.get("lead_hot") or {}).get("median_minutes"),
         "mediana_normal_min": (sla_panel.get("lead") or {}).get("median_minutes"),
         "leads_evaluados": sla_panel.get("eligible_total", 0),
+        "no_gestionados": sla_panel.get("no_management", 0),
         "hot_threshold_min": 60,
         "normal_threshold_min": 180,
     }
 
-    from .leads_queries import query_leads_dashboard_rescue
-    rescue = query_leads_dashboard_rescue(period_start=period_start, period_end=period_end)
     rescatados = rescue.get("recuperabilidad_alta", 0)
     vencidos = sla_panel.get("critical_open", 0)
     eligible = sla_panel.get("eligible_total", 0) or 0

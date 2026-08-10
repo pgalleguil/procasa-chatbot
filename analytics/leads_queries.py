@@ -1643,6 +1643,7 @@ def query_leads_dashboard_rescue(
     }
 
 
+
 def query_variance_drivers(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,

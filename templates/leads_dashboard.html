@@ -579,18 +579,19 @@
             flex-wrap: wrap;
             align-items: center;
             gap: 10px;
-            background: var(--bg-card);
+            background: var(--bg-body);
+            backdrop-filter: blur(14px);
             border: 1px solid var(--border-color);
             border-radius: 12px;
-            padding: 12px 16px;
-            margin-bottom: 12px;
+            padding: 8px 12px;
+            margin-bottom: 10px;
         }
 
         .period-presets {
             display: inline-flex;
-            background: rgba(255, 255, 255, 0.04);
+            background: var(--bg-elevated, rgba(30, 41, 59, 0.6));
             border: 1px solid var(--border-color);
-            border-radius: 10px;
+            border-radius: 9px;
             padding: 3px;
             gap: 2px;
             overflow-x: auto;
@@ -600,18 +601,16 @@
 
         .period-presets::-webkit-scrollbar { display: none; }
 
-        [data-theme="light"] .period-presets { background: #eef2f7; }
-
         .period-presets button {
             border: 0;
             background: transparent;
             color: var(--text-secondary);
-            padding: 6px 14px;
-            border-radius: 8px;
-            font-size: 0.78rem;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 12px;
             font-weight: 600;
             cursor: pointer;
-            transition: background 0.18s, color 0.18s;
+            transition: background 0.18s, color 0.18s, box-shadow 0.18s;
             white-space: nowrap;
             font-family: 'Outfit', sans-serif;
         }
@@ -619,30 +618,46 @@
         .period-presets button:hover { color: var(--text-primary); }
 
         .period-presets button.active {
-            background: var(--bg-body);
-            color: var(--accent);
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            background: rgba(139, 92, 246, 0.18);
+            color: #A78BFA;
+            box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.40);
         }
 
-        [data-theme="light"] .period-presets button.active { background: #fff; }
+        .period-summary {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+            font-size: 11px;
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            flex-wrap: wrap;
+        }
+
+        .period-summary strong { color: var(--text-primary); font-weight: 600; }
+
+        .period-summary .ps-sep { opacity: 0.5; }
+
+        .period-summary .ps-count strong { color: #A78BFA; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
         .period-compare {
             display: flex;
             align-items: center;
             gap: 6px;
-            font-size: 0.78rem;
+            font-size: 12px;
             color: var(--text-secondary);
             font-weight: 600;
         }
 
         .period-compare select {
-            height: 34px;
+            height: 32px;
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: 7px;
             padding: 0 8px;
-            background: var(--bg-card);
+            background: var(--bg-elevated, #1E293B);
             color: var(--text-primary);
-            font-size: 0.8rem;
+            font-size: 12px;
             outline: none;
             cursor: pointer;
         }
@@ -654,14 +669,14 @@
         }
 
         .period-btn {
-            height: 34px;
-            padding: 0 14px;
+            height: 32px;
+            padding: 0 12px;
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            background: var(--bg-card);
+            border-radius: 7px;
+            background: var(--bg-elevated, #1E293B);
             color: var(--text-secondary);
             cursor: pointer;
-            font-size: 0.78rem;
+            font-size: 12px;
             font-weight: 600;
             display: inline-flex;
             align-items: center;
@@ -680,30 +695,30 @@
             display: none;
             flex-wrap: wrap;
             align-items: center;
-            gap: 10px;
-            margin: 0 0 12px;
-            padding: 12px 16px;
-            background: var(--bg-card);
+            gap: 8px;
+            margin: 0 0 10px;
+            padding: 8px 12px;
+            background: var(--bg-body);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
+            border-radius: 10px;
         }
 
         .period-custom.open { display: flex; }
 
         .period-custom label {
-            font-size: 0.78rem;
+            font-size: 12px;
             color: var(--text-secondary);
             font-weight: 600;
         }
 
         .period-custom input {
-            height: 34px;
+            height: 32px;
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: 7px;
             padding: 0 10px;
-            background: var(--bg-card);
+            background: var(--bg-elevated, #1E293B);
             color: var(--text-primary);
-            font-size: 0.8rem;
+            font-size: 12px;
             outline: none;
             color-scheme: dark;
         }
@@ -711,34 +726,26 @@
         [data-theme="light"] .period-custom input { color-scheme: light; }
 
         .period-custom .apply {
-            background: var(--accent);
-            border: 1px solid var(--accent);
-            color: #fff;
+            background: var(--bg-elevated, #1E293B);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
         }
 
-        .period-custom .apply:hover { filter: brightness(1.08); color: #fff; }
+        .period-custom .apply:hover { border-color: var(--accent); color: var(--accent); }
 
         .period-meta {
             display: flex;
             align-items: center;
             gap: 16px;
             flex-wrap: wrap;
-            font-size: 0.8rem;
+            font-size: 11px;
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
             color: var(--text-secondary);
-            margin-bottom: 20px;
-            padding: 0 4px;
+            margin-bottom: 18px;
+            padding: 0 2px;
         }
 
         .period-meta strong { color: var(--text-primary); font-weight: 600; }
-
-        .period-meta .meta-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: #f59e0b;
-            display: inline-block;
-            margin-right: 5px;
-        }
 
         .cards-container {
             min-height: 120px;
@@ -755,7 +762,7 @@
 
         /* --- CARD 1: DEMANDA & META (colores día/noche heredados) --- */
         :root {
-            --spark-accent: #38BDF8;
+            --spark-accent: #6366F1;
             --spark-target: #334155;
             --conversion-accent: #8B5CF6;
             --pipeline-accent: #F59E0B;
@@ -764,7 +771,7 @@
         }
 
         [data-theme="light"] {
-            --spark-accent: #0891B2;
+            --spark-accent: #4F46E5;
             --spark-target: #94A3B8;
             --conversion-accent: #6D28D9;
             --pipeline-accent: #B45309;
@@ -805,13 +812,13 @@
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
         }
 
-        .cd1:hover { border-color: var(--spark-accent); }
+        .cd1:hover { border-color: var(--conversion-accent); }
 
         .cd2:hover { border-color: var(--conversion-accent); }
 
-        .cd3:hover { border-color: var(--pipeline-accent); }
+        .cd3:hover { border-color: var(--conversion-accent); }
 
-        .cd4:hover { border-color: var(--sla-accent); }
+        .cd4:hover { border-color: var(--conversion-accent); }
 
         [data-theme="light"] .cd1:hover { box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08); }
 
@@ -891,30 +898,20 @@
             display: inline-flex;
             align-items: center;
             gap: 4px;
-            padding: 2px 10px;
+            padding: 1px 9px;
             border-radius: 99px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
-            border: 1px solid transparent;
-            white-space: nowrap;
-        }
-
-        .cd1-badge-pos {
-            background: rgba(6, 95, 70, 0.4);
-            color: #34D399;
-            border-color: rgba(5, 150, 105, 0.4);
-        }
-
-        .cd1-badge-neg {
-            background: rgba(127, 29, 29, 0.4);
-            color: #FCA5A5;
-            border-color: rgba(153, 27, 27, 0.4);
-        }
-
-        .cd1-badge-neutral {
-            background: rgba(148, 163, 184, 0.15);
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            background: var(--bg-elevated, #1E293B);
             color: var(--text-secondary);
+            white-space: nowrap;
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
         }
+
+        .cd1-badge-pos > span:first-child { color: #34D399; }
+        .cd1-badge-neg > span:first-child { color: #FCA5A5; }
+        .cd1-badge-neutral { color: var(--text-secondary); }
 
         .cd1-badge-vs { font-size: 10px; opacity: 0.7; font-weight: 400; }
 
@@ -957,22 +954,23 @@
         .cd2-citas-badge {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            padding: 2px 10px;
+            gap: 5px;
+            padding: 1px 9px;
             border-radius: 99px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
-            background: rgba(91, 33, 182, 0.30);
-            color: #A78BFA;
-            border: 1px solid rgba(124, 58, 237, 0.4);
+            background: var(--bg-elevated, #1E293B);
+            color: var(--text-secondary);
+            border: 1px solid rgba(148, 163, 184, 0.3);
             white-space: nowrap;
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
         }
 
         .cd2-dot {
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: #A78BFA;
+            background: var(--text-secondary);
             flex-shrink: 0;
         }
 
@@ -1011,7 +1009,8 @@
             transition: width 0.6s ease;
         }
 
-        .cd2-bar-leads { background: var(--spark-accent); }
+        .cd2-bar-leads { background: #38BDF8; }
+        [data-theme="light"] .cd2-bar-leads { background: #0891B2; }
 
         .cd2-bar-citas { background: var(--conversion-accent); }
 
@@ -1034,14 +1033,15 @@
             display: inline-flex;
             align-items: center;
             gap: 4px;
-            padding: 2px 10px;
+            padding: 1px 9px;
             border-radius: 99px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
-            background: rgba(120, 53, 15, 0.30);
-            color: #FBBF24;
-            border: 1px solid rgba(217, 119, 6, 0.4);
+            background: var(--bg-elevated, #1E293B);
+            color: var(--text-secondary);
+            border: 1px solid rgba(148, 163, 184, 0.3);
             white-space: nowrap;
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
         }
 
         .cd3-bar-group {
@@ -1082,29 +1082,160 @@
             display: inline-flex;
             align-items: center;
             gap: 4px;
-            padding: 2px 10px;
+            padding: 1px 9px;
             border-radius: 99px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
-            border: 1px solid transparent;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            background: var(--bg-elevated, #1E293B);
+            color: var(--text-primary);
             white-space: nowrap;
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
         }
 
-        .cd4-sla-badge.ok {
-            background: rgba(6, 95, 70, 0.30);
-            color: #34D399;
-            border-color: rgba(5, 150, 105, 0.40);
-        }
-
+        .cd4-sla-badge.ok,
         .cd4-sla-badge.bad {
-            background: rgba(127, 29, 29, 0.30);
-            color: #FCA5A5;
-            border-color: rgba(153, 27, 27, 0.40);
+            background: var(--bg-elevated, #1E293B);
+            color: var(--text-primary);
+            border-color: rgba(148, 163, 184, 0.3);
         }
 
         .cd4-bar-hot { background: #EF4444; }
 
         .cd4-bar-normal { background: var(--sla-accent); }
+
+        /* --- GLASS BLUR REVEAL + TYPEWRITER (efectos de carga) --- */
+        @keyframes glassReveal {
+            0% { opacity: 0; filter: blur(12px); transform: translateY(18px) scale(0.98); }
+            60% { filter: blur(2px); }
+            100% { opacity: 1; filter: blur(0px); transform: translateY(0) scale(1); }
+        }
+
+        .animate-glass-card {
+            animation: glassReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            will-change: transform, opacity, filter;
+        }
+
+        .card-delay-1 { animation-delay: 0.08s; }
+        .card-delay-2 { animation-delay: 0.16s; }
+        .card-delay-3 { animation-delay: 0.24s; }
+        .card-delay-4 { animation-delay: 0.32s; }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-fade-in { animation: fadeInUp 0.4s ease forwards; }
+
+        /* --- Animaciones de los gráficos de las tarjetas --- */
+        @keyframes drawSpark { to { stroke-dashoffset: 0; } }
+        @keyframes sparkFade { to { opacity: 1; } }
+
+        .cd1-spark .spark-line {
+            stroke-dasharray: 500;
+            stroke-dashoffset: 500;
+            animation: drawSpark 1.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation-delay: 0.55s;
+        }
+
+        .cd1-spark .spark-area {
+            opacity: 0;
+            animation: sparkFade 1s ease 1.2s forwards;
+        }
+
+        .cd2-bar { transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1); }
+
+        /* --- BLOQUE 2: AI EXECUTIVE BRIEFING & DIAGNÓSTICO COMERCIAL (minimalista) --- */
+        .ai-briefing { margin: 32px 0; }
+
+        .ai-briefing-inner {
+            background: var(--bg-card);
+            backdrop-filter: blur(14px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: var(--shadow-card, 0 4px 16px rgba(0, 0, 0, 0.16));
+            transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+        }
+
+        .ai-briefing-inner:hover {
+            border-color: var(--conversion-accent);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        }
+
+        .ai-briefing-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .ai-briefing-title { display: flex; align-items: center; gap: 8px; }
+
+        .ai-briefing-title .ai-emoji { font-size: 13px; color: var(--text-secondary); }
+
+        .ai-briefing-title h3 {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        .ai-briefing-meta {
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+        }
+
+        .ai-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+
+        @media (min-width: 768px) { .ai-grid { grid-template-columns: repeat(3, 1fr); } }
+
+        .ai-ins {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 14px;
+            background: var(--bg-elevated, rgba(30, 41, 59, 0.3));
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+
+        .ai-ins:hover {
+            background: var(--bg-elevated, rgba(30, 41, 59, 0.5));
+            border-color: var(--conversion-accent);
+        }
+
+        .ai-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-top: 5px;
+            flex-shrink: 0;
+            background: #A78BFA;
+        }
+
+        .ai-label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .ai-text { font-size: 12px; color: var(--text-secondary); line-height: 1.55; margin: 0; }
+        .ai-text strong { color: var(--text-primary); font-weight: 600; }
+
     </style>
 </head>
 
@@ -1152,8 +1283,8 @@
                         <i class="fa-solid fa-bars"></i>
                     </button>
                     <div>
-                        <h2 class="fw-bold m-0">Leads Intelligence</h2>
-                        <p class="text-secondary m-0 small">Rendimiento Comercial & Analytics AI</p>
+                        <h2 class="fw-bold m-0" id="pageTitle">Leads Intelligence</h2>
+                        <p class="text-secondary m-0 small" id="pageSubtitle">Rendimiento Comercial & Analytics AI</p>
                     </div>
                 </div>
             </div>
@@ -1165,10 +1296,10 @@
                     <button data-p="week">Semana</button>
                     <button data-p="month">Mes</button>
                     <button data-p="30d" class="active">30 días</button>
-                    <button data-p="custom">Personalizado</button>
+                    <button data-p="custom">📅 Personalizado</button>
                 </div>
                 <div class="period-compare">
-                    <label for="pCompare">Comparar con</label>
+                    <span>Comparar con:</span>
                     <select id="pCompare" aria-label="Modo de comparación">
                         <option value="auto">Periodo comparable</option>
                         <option value="prev">Periodo anterior equivalente</option>
@@ -1177,6 +1308,13 @@
                     </select>
                 </div>
                 <button class="period-btn" id="btnEditDates" type="button"><i class="fa-regular fa-calendar"></i> Editar fechas</button>
+                <div class="period-summary" id="periodSummary">
+                    <span><strong id="psCurrent">—</strong></span>
+                    <span class="ps-sep">·</span>
+                    <span id="psPrev">—</span>
+                    <span class="ps-sep">·</span>
+                    <span class="ps-count">Leads: <strong id="psLeads">—</strong></span>
+                </div>
             </div>
 
             <div class="period-custom" id="periodCustom" hidden>
@@ -1187,15 +1325,13 @@
                 <button class="period-btn apply" id="btnApplyPeriod" type="button"><i class="fa-solid fa-check"></i> Aplicar periodo</button>
             </div>
 
-            <div class="period-meta" id="periodMeta">Cargando información…</div>
-
             <!-- Las tarjetas se irán agregando aquí una por una -->
             <div class="cards-container" id="cardsContainer">
                 <div class="cd-grid">
                     <!-- CARD 1: DEMANDA & META -->
-                    <div class="cd1" id="cardDemandMeta" hidden>
+                    <div class="cd1 animate-glass-card card-delay-1" id="cardDemandMeta" hidden>
                         <div class="cd1-header">
-                            <span class="cd1-title">Demanda & Meta</span>
+                            <span class="cd1-title" id="cd1Title"></span>
                             <button type="button" class="cd1-info" id="cd1Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd1Tooltip" hidden>
                                 Muestra el total de leads capturados en el rango activo, el % de avance respecto a la meta y la variación vs. el período equivalente anterior.
@@ -1204,7 +1340,7 @@
 
                         <div class="cd1-kpi-row">
                             <h2 class="cd1-value" id="cd1Value">0 <span class="cd1-unit">Leads</span></h2>
-                            <span class="cd1-badge" id="cd1Badge"></span>
+                            <span id="cd1Badge"></span>
                         </div>
 
                         <p class="cd1-sub" id="cd1Sub">—% de la meta del período</p>
@@ -1217,9 +1353,9 @@
                     </div>
 
                     <!-- CARD 2: EFECTIVIDAD & CONVERSIÓN -->
-                    <div class="cd2" id="cardConversion" hidden>
+                    <div class="cd2 animate-glass-card card-delay-2" id="cardConversion" hidden>
                         <div class="cd1-header">
-                            <span class="cd1-title">Efectividad & Conversión</span>
+                            <span class="cd1-title" id="cd2Title"></span>
                             <button type="button" class="cd1-info cd2-info" id="cd2Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd2Tooltip" hidden>
                                 Mide el % de leads que fueron convertidos exitosamente a visitas o citas agendadas dentro del período seleccionado.
@@ -1236,7 +1372,7 @@
                         <div class="cd2-bars">
                             <div class="cd2-bar-row">
                                 <span class="cd2-bar-lbl">Leads: <strong id="cd2BarLeadsPct">100%</strong></span>
-                                <div class="cd2-bar-track"><div class="cd2-bar cd2-bar-leads" style="width:100%"></div></div>
+                                <div class="cd2-bar-track"><div class="cd2-bar cd2-bar-leads" id="cd2BarLeads" style="width:0%"></div></div>
                             </div>
                             <div class="cd2-bar-row">
                                 <span class="cd2-bar-lbl">Citas: <strong id="cd2BarCitasPct">0%</strong></span>
@@ -1250,9 +1386,9 @@
                     </div>
 
                     <!-- CARD 3: PIPELINE & VALORIZACIÓN UF -->
-                    <div class="cd3" id="cardPipeline" hidden>
+                    <div class="cd3 animate-glass-card card-delay-3" id="cardPipeline" hidden>
                         <div class="cd1-header">
-                            <span class="cd1-title">Pipeline & Valorización UF</span>
+                            <span class="cd1-title" id="cd3Title"></span>
                             <button type="button" class="cd1-info cd3-info" id="cd3Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd3Tooltip" hidden>
                                 Suma del valor publicado en UF de las propiedades vinculadas a los leads del período, y la comisión proyectada estimada.
@@ -1283,9 +1419,9 @@
                     </div>
 
                     <!-- CARD 4: SLA & VELOCIDAD DE RESPUESTA -->
-                    <div class="cd4" id="cardSla" hidden>
+                    <div class="cd4 animate-glass-card card-delay-4" id="cardSla" hidden>
                         <div class="cd1-header">
-                            <span class="cd1-title">SLA & Velocidad Respuesta</span>
+                            <span class="cd1-title" id="cd4Title"></span>
                             <button type="button" class="cd1-info cd4-info" id="cd4Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd4Tooltip" hidden>
                                 Mide la mediana de tiempo transcurrido desde que un lead ingresa hasta el primer contacto humano o asignación efectiva.
@@ -1316,6 +1452,40 @@
                     </div>
                 </div>
             </div>
+
+            <!-- BLOQUE 2: AI EXECUTIVE BRIEFING & DIAGNÓSTICO COMERCIAL -->
+            <section class="ai-briefing animate-glass-card card-delay-4" id="aiBriefing" hidden>
+                <div class="ai-briefing-inner">
+                    <div class="ai-briefing-head">
+                        <div class="ai-briefing-title"><span class="ai-emoji">🧠</span><h3>AI Executive Briefing & Diagnóstico</h3></div>
+                        <span class="ai-briefing-meta">Procesado en tiempo real</span>
+                    </div>
+
+                    <div class="ai-grid">
+                        <div class="ai-ins" data-kind="growth">
+                            <span class="ai-dot"></span>
+                            <div>
+                                <span class="ai-label">Crecimiento de Demanda</span>
+                                <p class="ai-text" id="aiGrowthText"></p>
+                            </div>
+                        </div>
+                        <div class="ai-ins" data-kind="alert">
+                            <span class="ai-dot"></span>
+                            <div>
+                                <span class="ai-label">Velocidad de Respuesta</span>
+                                <p class="ai-text" id="aiAlertText"></p>
+                            </div>
+                        </div>
+                        <div class="ai-ins" data-kind="action">
+                            <span class="ai-dot"></span>
+                            <div>
+                                <span class="ai-label">Acción Inmediata Sugerida</span>
+                                <p class="ai-text" id="aiActionText"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
         </div>
 
@@ -1465,7 +1635,7 @@
             function applyCustomPeriod() {
                 let sVal = $('pStart').value, eVal = $('pEnd').value;
                 if (!sVal || !eVal) return;
-                if (sVal > eVal) { $('periodMeta').innerHTML = 'Error: fecha inicial posterior a fecha final'; return; }
+                if (sVal > eVal) { const pc = $('psCurrent'); if (pc) pc.textContent = '⚠️ Error: fecha inicial posterior a fecha final'; return; }
                 const safe = CommercialPeriods.clampRange(sVal, eVal);
                 sVal = safe.start; eVal = safe.end;
                 $('pStart').value = sVal; $('pEnd').value = eVal;
@@ -1484,25 +1654,16 @@
             }
 
             function renderPeriodMeta() {
-                const el = $('periodMeta');
-                if (!el) return;
+                const cur = $('psCurrent'), prev = $('psPrev'), leads = $('psLeads');
+                if (!cur || !prev || !leads) return;
                 const s = FILTERS.period_start, e = FILTERS.period_end;
-                if (!s || !e) { el.textContent = 'Cargando información…'; return; }
-                const preset = PRESET_LABELS[FILTERS.period_preset] || FILTERS.period_preset;
+                if (!s || !e) { cur.textContent = '—'; return; }
                 const total = OVERVIEW && OVERVIEW.demand ? OVERVIEW.demand.total : 0;
                 const period = (OVERVIEW && OVERVIEW.period) || {};
-                const prev = period.previous || {};
-                const resolved = period.compare_resolved || (COMPARE === 'none' ? 'none' : 'prev');
-                const cmpLabel = resolved === 'none'
-                    ? 'Sin comparación'
-                    : (resolved === 'yoy' ? 'Mismo periodo del año anterior' : 'Periodo anterior equivalente');
-                const cmpHtml = (prev.start && prev.end)
-                    ? 'Comparación: <strong>' + prev.start + ' → ' + prev.end + '</strong> <small style="opacity:.7">(' + cmpLabel + ')</small>'
-                    : 'Comparación: <strong>Sin comparación</strong>';
-                el.innerHTML =
-                    '<span><i class="fa-regular fa-calendar me-1"></i>Periodo analizado: <strong>' + s + ' → ' + e + '</strong> <small style="opacity:.7">(' + preset + ')</small></span>' +
-                    '<span><i class="fa-solid fa-code-compare me-1"></i>' + cmpHtml + '</span>' +
-                    '<span><i class="fa-regular fa-circle-dot me-1"></i>Leads en el periodo: <strong>' + total + '</strong></span>';
+                const p = period.previous || {};
+                cur.textContent = s + ' → ' + e;
+                prev.textContent = (p.start && p.end) ? 'vs. ' + p.start + ' → ' + p.end : 'sin comparación';
+                leads.textContent = total.toLocaleString('es-CL');
             }
 
             // --- 3. URL ---
@@ -1563,11 +1724,12 @@
                     renderConversionCard();
                     renderPipelineCard();
                     renderSlaCard();
+                    renderInsightsBlock();
                 } catch (e) { console.error("Error cargando datos:", e); }
             }
 
             // --- CARD 1: DEMANDA & META ---
-            function animateCountUp(el, end, duration = 500) {
+            function animateCountUp(el, end, duration = 1200) {
                 if (!el) return;
                 if (end === 0) { el.innerHTML = '0 <span class="cd1-unit">Leads</span>'; return; }
                 const startTime = performance.now();
@@ -1584,26 +1746,111 @@
                 if (!values || !values.length) {
                     return '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:11px;color:var(--text-secondary)">Sin datos en el periodo</div>';
                 }
-                const W = 100, H = 40, PAD = 5;
-                const max = Math.max(...values, 1);
-                const days = values.length;
-                const xAt = (i) => days === 1 ? 0 : (i / (days - 1)) * W;
-                const yAt = (v) => H - PAD - (v / max) * (H - 2 * PAD);
-                const pts = values.map((v, i) => xAt(i).toFixed(2) + ',' + yAt(v).toFixed(2)).join(' ');
-                const area = '0,' + H + ' ' + pts + ' ' + W + ',' + H;
-                // Línea punteada de referencia (target pace): meta/día en la escala del gráfico
+                const W = 100, H = 40, PAD = 6;
+                const nums = values.map(v => Number(v) || 0);
+                const min = Math.min(...nums);
+                const max = Math.max(...nums);
+                const range = max - min;
+                const days = nums.length;
+                const xAt = (i) => days === 1 ? W / 2 : (i / (days - 1)) * W;
+                const yAt = range === 0
+                    ? () => H / 2
+                    : (v) => H - PAD - ((v - min) / range) * (H - 2 * PAD);
+                const pts = nums.map((v, i) => [xAt(i), yAt(v)]);
+
+                // Curva suave (Catmull-Rom -> Bezier)
+                const smooth = (p) => {
+                    if (p.length < 2) return 'M' + p[0][0].toFixed(2) + ',' + p[0][1].toFixed(2);
+                    let d = 'M' + p[0][0].toFixed(2) + ',' + p[0][1].toFixed(2);
+                    for (let i = 0; i < p.length - 1; i++) {
+                        const p0 = p[i - 1] || p[i];
+                        const p1 = p[i];
+                        const p2 = p[i + 1];
+                        const p3 = p[i + 2] || p2;
+                        const cp1x = p1[0] + (p2[0] - p0[0]) / 6;
+                        const cp1y = p1[1] + (p2[1] - p0[1]) / 6;
+                        const cp2x = p2[0] - (p3[0] - p1[0]) / 6;
+                        const cp2y = p2[1] - (p3[1] - p1[1]) / 6;
+                        d += 'C' + cp1x.toFixed(2) + ',' + cp1y.toFixed(2) + ' ' + cp2x.toFixed(2) + ',' + cp2y.toFixed(2) + ' ' + p2[0].toFixed(2) + ',' + p2[1].toFixed(2);
+                    }
+                    return d;
+                };
+
+                const lineD = smooth(pts);
+                const areaD = lineD + ' L' + W + ',' + H + ' L0,' + H + ' Z';
+                // Línea punteada de referencia (target pace) en la escala min-max
                 const pacePerDay = metaTarget > 0 ? metaTarget / days : 0;
-                let paceY = pacePerDay > 0 ? yAt(pacePerDay) : H / 2;
+                let paceY = pacePerDay > 0 ? yAt(min + pacePerDay) : H - PAD;
                 paceY = Math.max(0, Math.min(H - 1, paceY));
+
                 return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
                     '<defs><linearGradient id="cd1Grad" x1="0" y1="0" x2="0" y2="1">' +
-                    '<stop offset="0%" stop-color="var(--spark-accent)" stop-opacity="0.35"/>' +
+                    '<stop offset="0%" stop-color="var(--spark-accent)" stop-opacity="0.30"/>' +
                     '<stop offset="100%" stop-color="var(--spark-accent)" stop-opacity="0.0"/>' +
                     '</linearGradient></defs>' +
                     '<line x1="0" y1="' + paceY.toFixed(2) + '" x2="' + W + '" y2="' + paceY.toFixed(2) + '" stroke="var(--spark-target)" stroke-width="1" stroke-dasharray="3 3"/>' +
-                    '<polygon points="' + area + '" fill="url(#cd1Grad)"/>' +
-                    '<polyline points="' + pts + '" fill="none" stroke="var(--spark-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+                    '<path class="spark-area" d="' + areaD + '" fill="url(#cd1Grad)"/>' +
+                    '<path class="spark-line" d="' + lineD + '" fill="none" stroke="var(--spark-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
                     '</svg>';
+            }
+
+            // --- ANIMACIÓN DE CARGA DE LAS TARJETAS (Glass Blur Reveal) ---
+            function showCardReveal(card) {
+                if (!card) return;
+                card.classList.remove('animate-glass-card');
+                card.hidden = false;
+                void card.offsetWidth;
+                card.classList.add('animate-glass-card');
+                const onEnd = () => {
+                    card.classList.remove('animate-glass-card');
+                    card.removeEventListener('animationend', onEnd);
+                };
+                card.addEventListener('animationend', onEnd);
+            }
+
+            // --- BLOQUE 2: AI EXECUTIVE BRIEFING & DIAGNÓSTICO COMERCIAL ---
+            function renderInsightsBlock() {
+                const block = $('aiBriefing');
+                if (!block || !OVERVIEW) return;
+                const demand = OVERVIEW.demand || {};
+                const sla = OVERVIEW.sla || {};
+                const period = OVERVIEW.period || {};
+                const total = demand.total || 0;
+                const variacion = demand.variation_pct;
+                const mediana = sla.mediana_general_min;
+                const slaPct = sla.pct_cumplimiento_sla;
+                const noGest = sla.no_gestionados || 0;
+                const resolved = period.compare_resolved || 'none';
+
+                let growthText;
+                if (resolved === 'none' || variacion === null || variacion === undefined) {
+                    growthText = 'Captura de <strong>' + total + ' oportunidades</strong> en el período analizado.';
+                } else if (variacion >= 0) {
+                    growthText = 'La captura de leads creció un <strong>+' + variacion.toFixed(1) + '%</strong> vs. el período anterior, alcanzando <strong>' + total + ' oportunidades</strong>.';
+                } else {
+                    growthText = 'La captura de leads cayó un <strong>' + variacion.toFixed(1) + '%</strong> vs. el período anterior, con <strong>' + total + ' oportunidades</strong> en el período.';
+                }
+
+                let alertText;
+                if (mediana === null || mediana === undefined || slaPct === null || slaPct === undefined) {
+                    alertText = 'Sin datos suficientes de tiempos de respuesta en el período.';
+                } else if (slaPct >= 90) {
+                    alertText = 'La mediana de atención es de <strong>' + mediana + ' min</strong> y el <strong>' + slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</strong> cumple el SLA. Buen desempeño operativo.';
+                } else {
+                    alertText = 'La mediana de atención es de <strong>' + mediana + ' min</strong>. Solo el <strong>' + slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</strong> cumple el SLA objetivo (&lt; 180 min). Riesgo de enfriamiento de la demanda.';
+                }
+
+                let actionText;
+                if (noGest > 0) {
+                    actionText = 'Activar reenganche de IA por WhatsApp sobre los <strong>' + noGest + ' leads estancados</strong> para acelerar la agendación de citas sin sobrecargar al equipo.';
+                } else {
+                    actionText = 'Mantener la operación actual; no hay leads sin gestión en el período.';
+                }
+
+                $('aiGrowthText').innerHTML = growthText;
+                $('aiAlertText').innerHTML = alertText;
+                $('aiActionText').innerHTML = actionText;
+                showCardReveal(block);
             }
 
             function renderDemandCard() {
@@ -1630,19 +1877,20 @@
                         '<span class="cd1-badge-vs">vs. ant.</span></span>';
                 }
 
+                const daily = demand.daily || { labels: [], values: [] };
+                $('cd1Title').textContent = 'Demanda & Meta';
                 $('cd1Badge').innerHTML = badge;
                 $('cd1Sub').innerHTML = '<strong>' + pctAvance + '%</strong> de la meta del período (' + total + ' / ' + metaTarget + ' leads)';
-                const daily = demand.daily || { labels: [], values: [] };
                 $('cd1Spark').innerHTML = buildSparkline(daily.labels, daily.values, metaTarget);
                 $('cd1Footer').innerHTML = resolved === 'none'
                     ? '📊 Sin período comparable en este modo'
                     : '📊 <strong>' + (isPositive ? '+' : '') + diffLeads + ' leads</strong> vs. período equivalente anterior (' + previous + ')';
-                card.hidden = false;
+                showCardReveal(card);
                 animateCountUp($('cd1Value'), total);
             }
 
             // --- CARD 2: EFECTIVIDAD & CONVERSIÓN ---
-            function animateCountUpFloat(el, end, duration = 500) {
+            function animateCountUpFloat(el, end, duration = 1200) {
                 if (!el) return;
                 const startTime = performance.now();
                 const step = (now) => {
@@ -1666,11 +1914,16 @@
                 const resolved = (OVERVIEW.period || {}).compare_resolved || 'none';
 
                 const citasText = citas + (citas === 1 ? ' Cita / Visita' : ' Citas / Visitas');
+                $('cd2Title').textContent = 'Efectividad & Conversión';
                 $('cd2CitasBadge').innerHTML = '<span class="cd2-dot"></span>' + citasText;
                 $('cd2Sub').innerHTML = citas + ' citas concretadas de ' + leads + ' leads totales';
 
                 const citasPctBar = Math.min(leads > 0 ? (citas / leads) * 100 : 0, 100);
-                $('cd2BarCitas').style.width = Math.min(citasPctBar * 2, 100) + '%';
+                const citasWidth = Math.min(citasPctBar * 2, 100);
+                $('cd2BarLeads').style.width = '0%';
+                $('cd2BarCitas').style.width = '0%';
+                setTimeout(() => { $('cd2BarLeads').style.width = '100%'; }, 420);
+                setTimeout(() => { $('cd2BarCitas').style.width = citasWidth + '%'; }, 480);
                 $('cd2BarLeadsPct').textContent = '100%';
                 $('cd2BarCitasPct').textContent = (leads > 0 ? (citas / leads * 100).toFixed(1) : '0.0') + '%';
 
@@ -1686,12 +1939,12 @@
                 }
                 $('cd2Footer').innerHTML = footer;
 
-                card.hidden = false;
+                showCardReveal(card);
                 animateCountUpFloat($('cd2Value'), convPct);
             }
 
             // --- CARD 3: PIPELINE & VALORIZACIÓN UF ---
-            function animateCountUpUF(el, end, duration = 500) {
+            function animateCountUpUF(el, end, duration = 1200) {
                 if (!el) return;
                 const startTime = performance.now();
                 const step = (now) => {
@@ -1716,19 +1969,22 @@
                 const props = p.propiedades_vinculadas || 0;
                 const cobertura = p.pct_cobertura || 0;
 
+                $('cd3Title').textContent = 'Pipeline & Valorización UF';
                 $('cd3ComisionBadge').innerHTML = 'UF ' + comisionUF.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' Comis. Est.';
                 $('cd3PctVenta').textContent = pctVenta + '%';
                 $('cd3PctArriendo').textContent = pctArriendo + '%';
                 $('cd3MontoVenta').textContent = 'UF ' + Math.round(montoVenta).toLocaleString('es-CL');
                 $('cd3MontoArriendo').textContent = 'UF ' + Math.round(montoArriendo).toLocaleString('es-CL');
-                $('cd3BarVenta').style.width = Math.min(pctVenta, 100) + '%';
-                $('cd3BarArriendo').style.width = Math.min(pctArriendo, 100) + '%';
+                $('cd3BarVenta').style.width = '0%';
+                $('cd3BarArriendo').style.width = '0%';
+                setTimeout(() => { $('cd3BarVenta').style.width = Math.min(pctVenta, 100) + '%'; }, 520);
+                setTimeout(() => { $('cd3BarArriendo').style.width = Math.min(pctArriendo, 100) + '%'; }, 580);
 
                 $('cd3Footer').innerHTML = montoUF > 0
                     ? '🏡 <strong>' + props + ' propiedades</strong> · Cobertura: ' + cobertura + '%'
                     : '<span style="font-style:italic;color:var(--text-secondary)">⚠️ Sin propiedades vinculadas en el período</span>';
 
-                card.hidden = false;
+                showCardReveal(card);
                 animateCountUpUF($('cd3Value'), montoUF);
             }
 
@@ -1749,16 +2005,19 @@
                 badge.className = 'cd4-sla-badge ' + (slaPct === null || slaPct === undefined ? '' : (slaPct >= 90 ? 'ok' : 'bad'));
                 badge.innerHTML = '⚡ ' + (slaPct === null || slaPct === undefined ? '—' : slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 })) + '% en SLA';
 
+                $('cd4Title').textContent = 'SLA & Velocidad Respuesta';
                 $('cd4HotMin').textContent = (hotMin === null || hotMin === undefined) ? '— min' : hotMin + ' min';
                 $('cd4NormalMin').textContent = (normalMin === null || normalMin === undefined) ? '— min' : normalMin + ' min';
-                $('cd4BarHot').style.width = (hotMin === null || hotMin === undefined) ? '0%' : Math.min((hotMin / hotThreshold) * 100, 100) + '%';
-                $('cd4BarNormal').style.width = (normalMin === null || normalMin === undefined) ? '0%' : Math.min((normalMin / normalThreshold) * 100, 100) + '%';
+                $('cd4BarHot').style.width = '0%';
+                $('cd4BarNormal').style.width = '0%';
+                setTimeout(() => { $('cd4BarHot').style.width = (hotMin === null || hotMin === undefined) ? '0%' : Math.min((hotMin / hotThreshold) * 100, 100) + '%'; }, 580);
+                setTimeout(() => { $('cd4BarNormal').style.width = (normalMin === null || normalMin === undefined) ? '0%' : Math.min((normalMin / normalThreshold) * 100, 100) + '%'; }, 640);
 
                 $('cd4Footer').innerHTML = evaluados > 0
                     ? '⏱️ <strong>' + evaluados + ' leads medidos</strong> · SLA Meta: HOT &lt; ' + hotThreshold + 'm'
                     : '<span style="font-style:italic;color:var(--text-secondary)">⚠️ Sin registros de tiempo en este período</span>';
 
-                card.hidden = false;
+                showCardReveal(card);
                 if (medianaGeneral === null || medianaGeneral === undefined) {
                     $('cd4Value').innerHTML = '0 <span class="cd1-unit">min</span>';
                 } else {
@@ -1766,7 +2025,7 @@
                 }
             }
 
-            function animateCountUpMin(el, end, duration = 500) {
+            function animateCountUpMin(el, end, duration = 1200) {
                 if (!el) return;
                 const startTime = performance.now();
                 const step = (now) => {
@@ -1827,6 +2086,8 @@
                     cd4Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
                     cd4Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
                 }
+
+                // Tooltip del BLOQUE 2 (AI Briefing) — sin tooltip en el diseño minimalista
 
                 loadData();
             });

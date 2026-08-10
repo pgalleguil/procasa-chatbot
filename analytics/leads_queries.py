@@ -1550,6 +1550,87 @@ def query_leads_dashboard_conversion(
     }
 
 
+def query_leads_dashboard_pipeline(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    filters: Optional[dict] = None,
+) -> dict:
+    """Valorización UF del pipeline para el Leads Dashboard (CARD 3).
+
+    Universo: cohorte del período con propiedad vinculada (prospecto.codigo).
+    Agrupa por propiedad única, usando el precio promedio por propiedad.
+    """
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+
+    pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
+        {"$addFields": {
+            "_code": {"$ifNull": ["$prospecto.codigo", ""]},
+            "_precio_uf": {"$ifNull": ["$prospecto.precio_uf", None]},
+            "_op": {"$ifNull": ["$prospecto.operacion", "Sin informacion"]},
+        }},
+        {"$group": {
+            "_id": "$_code",
+            "count": {"$sum": 1},
+            "precios": {"$push": "$_precio_uf"},
+            "ops": {"$addToSet": "$_op"},
+        }},
+    ]
+    raw = list(db["leads"].aggregate(pipeline))
+
+    linked_leads = 0
+    unique_properties = 0
+    venta_uf = 0.0
+    arriendo_uf = 0.0
+    total_uf = 0.0
+    priced = 0
+
+    for r in raw:
+        code = r["_id"]
+        if not code:
+            continue
+        linked_leads += r.get("count", 0)
+        unique_properties += 1
+
+        prices = []
+        for p in r.get("precios", []):
+            if p is not None:
+                try:
+                    prices.append(float(p))
+                except (ValueError, TypeError):
+                    pass
+        if not prices:
+            continue
+        price = round(sum(prices) / len(prices), 1)
+        total_uf += price
+        priced += 1
+
+        ops = set(r.get("ops", []))
+        if "Venta" in ops:
+            op = "Venta"
+        elif "Arriendo" in ops:
+            op = "Arriendo"
+        else:
+            op = next((o for o in ops if o != "Sin informacion"), "Otro")
+        if op == "Venta":
+            venta_uf += price
+        elif op == "Arriendo":
+            arriendo_uf += price
+        else:
+            venta_uf += price  # operación desconocida se contabiliza como valor total
+
+    return {
+        "leads_vinculados": linked_leads,
+        "propiedades_vinculadas": unique_properties,
+        "propiedades_con_precio": priced,
+        "monto_uf": round(total_uf, 1),
+        "monto_venta_uf": round(venta_uf, 1),
+        "monto_arriendo_uf": round(arriendo_uf, 1),
+    }
+
+
 def query_variance_drivers(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,

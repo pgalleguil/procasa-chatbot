@@ -681,22 +681,26 @@
             --spark-accent: #38BDF8;
             --spark-target: #334155;
             --conversion-accent: #8B5CF6;
+            --pipeline-accent: #F59E0B;
+            --pipeline-bronze: #D97706;
         }
 
         [data-theme="light"] {
             --spark-accent: #0891B2;
             --spark-target: #94A3B8;
             --conversion-accent: #6D28D9;
+            --pipeline-accent: #B45309;
+            --pipeline-bronze: #B45309;
         }
 
         .cd-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
             gap: 16px;
-            max-width: 960px;
+            max-width: 1440px;
         }
 
-        .cd1, .cd2 {
+        .cd1, .cd2, .cd3 {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 12px;
@@ -709,7 +713,7 @@
             transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
         }
 
-        .cd1:hover, .cd2:hover {
+        .cd1:hover, .cd2:hover, .cd3:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
         }
@@ -717,6 +721,8 @@
         .cd1:hover { border-color: var(--spark-accent); }
 
         .cd2:hover { border-color: var(--conversion-accent); }
+
+        .cd3:hover { border-color: var(--pipeline-accent); }
 
         [data-theme="light"] .cd1:hover { box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08); }
 
@@ -922,6 +928,54 @@
 
         .cd2-pp-pos { color: #34D399; font-weight: 600; }
         .cd2-pp-neg { color: #FCA5A5; font-weight: 600; }
+
+        /* --- CARD 3: PIPELINE & VALORIZACIÓN UF --- */
+        .cd3-info:hover { color: var(--pipeline-accent); }
+
+        .cd3-value {
+            color: var(--text-primary);
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .cd3-comision-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 10px;
+            border-radius: 99px;
+            font-size: 12px;
+            font-weight: 600;
+            background: rgba(120, 53, 15, 0.30);
+            color: #FBBF24;
+            border: 1px solid rgba(217, 119, 6, 0.4);
+            white-space: nowrap;
+        }
+
+        .cd3-bar-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .cd3-bar-lbl {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-secondary);
+        }
+
+        .cd3-bar-lbl strong { color: var(--text-primary); font-weight: 600; }
+
+        .cd3-bar-val { color: var(--text-primary); font-weight: 600; }
+
+        .cd3-bar-venta { background: var(--pipeline-accent); }
+
+        .cd3-bar-arriendo { background: var(--pipeline-bronze); }
     </style>
 </head>
 
@@ -1059,6 +1113,39 @@
 
                         <div class="cd1-footer">
                             <span id="cd2Footer"></span>
+                        </div>
+                    </div>
+
+                    <!-- CARD 3: PIPELINE & VALORIZACIÓN UF -->
+                    <div class="cd3" id="cardPipeline" hidden>
+                        <div class="cd1-header">
+                            <span class="cd1-title">Pipeline & Valorización UF</span>
+                            <button type="button" class="cd1-info cd3-info" id="cd3Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
+                            <div class="cd1-tooltip" id="cd3Tooltip" hidden>
+                                Suma del valor publicado en UF de las propiedades vinculadas a los leads del período, y la comisión proyectada estimada.
+                            </div>
+                        </div>
+
+                        <div class="cd1-kpi-row">
+                            <h2 class="cd1-value cd3-value" id="cd3Value">UF 0</h2>
+                            <span class="cd3-comision-badge" id="cd3ComisionBadge">UF 0 Comis. Est.</span>
+                        </div>
+
+                        <p class="cd1-sub" id="cd3Sub">Valorización total de propiedades vinculadas</p>
+
+                        <div class="cd2-bars">
+                            <div class="cd3-bar-group">
+                                <div class="cd3-bar-lbl"><span>Venta (<strong id="cd3PctVenta">0%</strong>)</span><span class="cd3-bar-val" id="cd3MontoVenta">UF 0</span></div>
+                                <div class="cd2-bar-track"><div class="cd2-bar cd3-bar-venta" id="cd3BarVenta" style="width:0%"></div></div>
+                            </div>
+                            <div class="cd3-bar-group">
+                                <div class="cd3-bar-lbl"><span>Arriendo (<strong id="cd3PctArriendo">0%</strong>)</span><span class="cd3-bar-val" id="cd3MontoArriendo">UF 0</span></div>
+                                <div class="cd2-bar-track"><div class="cd2-bar cd3-bar-arriendo" id="cd3BarArriendo" style="width:0%"></div></div>
+                            </div>
+                        </div>
+
+                        <div class="cd1-footer">
+                            <span id="cd3Footer"></span>
                         </div>
                     </div>
                 </div>
@@ -1269,6 +1356,7 @@
                     renderPeriodMeta();
                     renderDemandCard();
                     renderConversionCard();
+                    renderPipelineCard();
                 } catch (e) { console.error("Error cargando datos:", e); }
             }
 
@@ -1396,6 +1484,48 @@
                 animateCountUpFloat($('cd2Value'), convPct);
             }
 
+            // --- CARD 3: PIPELINE & VALORIZACIÓN UF ---
+            function animateCountUpUF(el, end, duration = 500) {
+                if (!el) return;
+                const startTime = performance.now();
+                const step = (now) => {
+                    const progress = Math.min((now - startTime) / duration, 1);
+                    const value = Math.floor(progress * end);
+                    el.innerHTML = 'UF ' + value.toLocaleString('es-CL');
+                    if (progress < 1) requestAnimationFrame(step);
+                };
+                requestAnimationFrame(step);
+            }
+
+            function renderPipelineCard() {
+                const card = $('cardPipeline');
+                if (!card || !OVERVIEW || !OVERVIEW.pipeline) return;
+                const p = OVERVIEW.pipeline;
+                const montoUF = p.monto_uf || 0;
+                const comisionUF = p.comision_estimada_uf || 0;
+                const pctVenta = p.pct_venta || 0;
+                const pctArriendo = p.pct_arriendo || 0;
+                const montoVenta = p.monto_venta_uf || 0;
+                const montoArriendo = p.monto_arriendo_uf || 0;
+                const props = p.propiedades_vinculadas || 0;
+                const cobertura = p.pct_cobertura || 0;
+
+                $('cd3ComisionBadge').innerHTML = 'UF ' + comisionUF.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' Comis. Est.';
+                $('cd3PctVenta').textContent = pctVenta + '%';
+                $('cd3PctArriendo').textContent = pctArriendo + '%';
+                $('cd3MontoVenta').textContent = 'UF ' + Math.round(montoVenta).toLocaleString('es-CL');
+                $('cd3MontoArriendo').textContent = 'UF ' + Math.round(montoArriendo).toLocaleString('es-CL');
+                $('cd3BarVenta').style.width = Math.min(pctVenta, 100) + '%';
+                $('cd3BarArriendo').style.width = Math.min(pctArriendo, 100) + '%';
+
+                $('cd3Footer').innerHTML = montoUF > 0
+                    ? '🏡 <strong>' + props + ' propiedades</strong> · Cobertura: ' + cobertura + '%'
+                    : '<span style="font-style:italic;color:var(--text-secondary)">⚠️ Sin propiedades vinculadas en el período</span>';
+
+                card.hidden = false;
+                animateCountUpUF($('cd3Value'), montoUF);
+            }
+
             // --- 5. INIT ---
             document.addEventListener('DOMContentLoaded', () => {
                 readUrlFilters();
@@ -1426,6 +1556,15 @@
                     cd2Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
                     cd2Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
                     cd2Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
+                }
+
+                // Tooltip de la CARD 3
+                const cd3Info = $('cd3Info');
+                if (cd3Info) {
+                    const tip = $('cd3Tooltip');
+                    cd3Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
+                    cd3Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
+                    cd3Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
                 }
 
                 loadData();

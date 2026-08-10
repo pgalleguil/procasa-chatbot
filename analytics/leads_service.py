@@ -974,6 +974,21 @@ def get_leads_dashboard_overview(
     diff_pp = round(conv_pct - prev_pct, 1) if prev_start else None
     ratio = round(conv_total / conv_citas, 1) if conv_citas else None
 
+    from .leads_queries import query_leads_dashboard_pipeline
+    pipeline = query_leads_dashboard_pipeline(
+        period_start=period_start,
+        period_end=period_end,
+    )
+    total_leads = current.get("total", 0)
+    monto_uf = pipeline.get("monto_uf", 0.0)
+    venta_uf = pipeline.get("monto_venta_uf", 0.0)
+    arriendo_uf = pipeline.get("monto_arriendo_uf", 0.0)
+    pct_venta = round(venta_uf / monto_uf * 100, 1) if monto_uf else 0.0
+    pct_arriendo = round(arriendo_uf / monto_uf * 100, 1) if monto_uf else 0.0
+    cobertura = round(pipeline.get("leads_vinculados", 0) / total_leads * 100, 1) if total_leads else 0.0
+    comision_pct = 2.0  # comisión proyectada (default contratos)
+    comision_uf = round(monto_uf * comision_pct / 100, 1)
+
     result = _sanitize_non_finite({
         "period": {
             "preset": preset,
@@ -983,7 +998,7 @@ def get_leads_dashboard_overview(
             "previous": {"start": prev_start or "", "end": prev_end or ""},
         },
         "demand": {
-            "total": current.get("total", 0),
+            "total": total_leads,
             "previous": previous.get("total", 0) if prev_start else 0,
             "variation_pct": trends.get("variation_pct"),
             "avg_daily": current.get("avg_daily", 0),
@@ -1001,6 +1016,18 @@ def get_leads_dashboard_overview(
             "previous_pct": prev_pct if prev_start else None,
             "diff_pp": diff_pp,
             "ratio_leads_per_cita": ratio,
+        },
+        "pipeline": {
+            "monto_uf": monto_uf,
+            "pct_comision": comision_pct,
+            "comision_estimada_uf": comision_uf,
+            "pct_venta": pct_venta,
+            "pct_arriendo": pct_arriendo,
+            "monto_venta_uf": venta_uf,
+            "monto_arriendo_uf": arriendo_uf,
+            "propiedades_vinculadas": pipeline.get("propiedades_vinculadas", 0),
+            "leads_vinculados": pipeline.get("leads_vinculados", 0),
+            "pct_cobertura": cobertura,
         },
         "meta": {
             "target": meta_target,

@@ -910,7 +910,7 @@ def get_leads_dashboard_overview(
     Reutiliza la misma lógica de periodo/comparación del Dashboard Comercial.
     """
     from datetime import datetime as dt, timedelta as td
-    from .commercial_periods import canonical_preset, comparison_period, local_today
+    from .commercial_periods import canonical_preset, comparison_period, local_today, preset_range
 
     today = local_today()
     try:
@@ -922,6 +922,10 @@ def get_leads_dashboard_overview(
         pe_dt = today
         ps_dt = pe_dt - td(days=29)
 
+    # Cuando llega un preset explícito, este manda sobre fechas antiguas que
+    # puedan haber quedado en la URL (por ejemplo, “Semana” con un rango de 2 días).
+    if period_preset in ("today", "week", "month", "30d"):
+        ps_dt, pe_dt = preset_range(period_preset, today)
     period_start = ps_dt.strftime("%Y-%m-%d")
     period_end = pe_dt.strftime("%Y-%m-%d")
     mode = compare if compare in ("auto", "prev", "yoy", "none") else "auto"
@@ -950,6 +954,8 @@ def get_leads_dashboard_overview(
         query_leads_dashboard_sources,
         query_leads_dashboard_executives,
         query_sla_accountability,
+        query_leads_dashboard_funnel,
+        query_leads_dashboard_reconcile_breakdown,
     )
 
     f_trends = _COMMERCIAL_QUERY_POOL.submit(
@@ -1004,6 +1010,16 @@ def get_leads_dashboard_overview(
         period_start=period_start,
         period_end=period_end,
     )
+    f_funnel = _COMMERCIAL_QUERY_POOL.submit(
+        query_leads_dashboard_funnel,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    f_reconcile = _COMMERCIAL_QUERY_POOL.submit(
+        query_leads_dashboard_reconcile_breakdown,
+        period_start=period_start,
+        period_end=period_end,
+    )
 
     trends = f_trends.result()
     conversion = f_conv.result()
@@ -1013,11 +1029,17 @@ def get_leads_dashboard_overview(
     sources = f_sources.result()
     exec_rows = f_exec.result()
     sla_acc = f_sla_acc.result()
+    funnel = f_funnel.result()
+    reconcile_breakdown = f_reconcile.result()
 
     current = trends.get("current", {})
     previous = trends.get("previous", {})
     daily = current.get("daily", []) or []
-    meta_target = _load_received_leads_meta_target()
+    # La meta mensual debe prorratearse según los días calendario realmente
+    # seleccionados. Evita comparar, por ejemplo, 2 días contra la meta total
+    # de 200 leads del mes.
+    target_info = _executive_target_info(period_start, period_end, today=today)
+    meta_target = target_info.get("target") if target_info.get("available") else _load_received_leads_meta_target()
 
     conv_current = conversion.get("current", {})
     conv_previous = conversion.get("previous", {})
@@ -1034,11 +1056,28 @@ def get_leads_dashboard_overview(
     monto_uf = pipeline.get("monto_uf", 0.0)
     venta_uf = pipeline.get("monto_venta_uf", 0.0)
     arriendo_uf = pipeline.get("monto_arriendo_uf", 0.0)
+    otro_uf = pipeline.get("monto_otro_uf", 0.0)
     pct_venta = round(venta_uf / monto_uf * 100, 1) if monto_uf else 0.0
     pct_arriendo = round(arriendo_uf / monto_uf * 100, 1) if monto_uf else 0.0
+    pct_otro = round(otro_uf / monto_uf * 100, 1) if monto_uf else 0.0
     cobertura = round(pipeline.get("leads_vinculados", 0) / total_leads * 100, 1) if total_leads else 0.0
-    comision_pct = 4.0  # comisión proyectada para la oficina (4%)
-    comision_uf = round(monto_uf * comision_pct / 100, 1)
+    comision_pct = 4.0  # comisión para la oficina
+    comision_venta_uf = round(venta_uf * 0.04, 1)       # 4% sobre ventas
+    comision_arriendo_uf = round(arriendo_uf * 0.50 * 2, 1)  # 50% arrendatario + 50% arrendador (1er mes)
+    comision_uf = round(comision_venta_uf + comision_arriendo_uf, 1)
+
+    macro = _load_commercial_macro_information()
+    uf_info = (macro.get("indicators") or {}).get("uf") or {}
+    uf_value = uf_info.get("value")
+    uf_asof = uf_info.get("as_of")
+    try:
+        from chatbot.uf_service import leer_uf_cache
+        _uf = leer_uf_cache()
+        if _uf and _uf.get("valor"):
+            uf_value = _uf["valor"]
+            uf_asof = _uf.get("fecha") or uf_asof
+    except Exception:
+        pass
 
     sla_data = {
         "mediana_general_min": sla_panel.get("overall_median_minutes"),
@@ -1094,6 +1133,7 @@ def get_leads_dashboard_overview(
             return "Top Performer" if leads_count >= 60 else "En Regla"
         return "SLA Crítico"
 
+    _sum_exec = sum(r.get("leads", 0) for r in exec_rows)
     executives_data = {
         "items": [
             {
@@ -1111,6 +1151,13 @@ def get_leads_dashboard_overview(
             for r in exec_rows
         ],
         "total": len(exec_rows),
+        "reconcile": {
+            "contabilizado": _sum_exec,
+            "total": total_leads,
+            "otros": max(total_leads - _sum_exec, 0),
+            "pct": round(_sum_exec / total_leads * 100, 1) if total_leads else 0.0,
+            "desglose_otros": (reconcile_breakdown or {}).get("items", []),
+        },
     }
 
     result = _sanitize_non_finite({
@@ -1149,21 +1196,36 @@ def get_leads_dashboard_overview(
             "monto_uf": monto_uf,
             "pct_comision": comision_pct,
             "comision_estimada_uf": comision_uf,
+            "comision_venta_uf": comision_venta_uf,
+            "comision_arriendo_uf": comision_arriendo_uf,
+            "comision_policy": "4% venta \u00b7 50% arrendatario + 50% arrendador (1er mes arriendo)",
             "pct_venta": pct_venta,
             "pct_arriendo": pct_arriendo,
+            "pct_otro": pct_otro,
             "monto_venta_uf": venta_uf,
             "monto_arriendo_uf": arriendo_uf,
+            "monto_otro_uf": otro_uf,
             "propiedades_vinculadas": pipeline.get("propiedades_vinculadas", 0),
             "leads_vinculados": pipeline.get("leads_vinculados", 0),
             "pct_cobertura": cobertura,
+            "fecha_uf": uf_asof,
+            "valor_uf_clp": uf_value,
+            "monto_clp": round(monto_uf * uf_value, 0) if uf_value else None,
+            "comision_clp": round(comision_uf * uf_value, 0) if uf_value else None,
+            "suma_componentes_uf": round(venta_uf + arriendo_uf + otro_uf, 1),
+            "diferencia_redondeo_uf": round(monto_uf - (venta_uf + arriendo_uf + otro_uf), 1),
+            "pct_conciliacion": round((venta_uf + arriendo_uf + otro_uf) / monto_uf * 100, 1) if monto_uf else 100.0,
         },
+        "funnel": funnel,
         "sla": sla_data,
         "rescue": rescue_data,
         "sources": sources_data,
         "executives": executives_data,
         "meta": {
             "target": meta_target,
-            "label": "Leads recibidos (meta mensual)",
+            "global_target": target_info.get("global_target") if target_info.get("available") else meta_target,
+            "label": "Leads recibidos (meta prorrateada al período)",
+            "days_in_period": (pe_dt - ps_dt).days + 1,
         },
     })
     _cache_set(key, result)

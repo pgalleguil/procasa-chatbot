@@ -28,7 +28,8 @@
   function presetRange(preset, now) {
     const end = parts(now);
     let start = end;
-    if (preset === 'week') start = addDays(end, -(weekday(end) === 0 ? 6 : weekday(end) - 1));
+    // “Semana” representa una ventana móvil de 7 días incluido hoy.
+    if (preset === 'week') start = addDays(end, -6);
     else if (preset === 'month') start = { year: end.year, month: end.month, day: 1 };
     else if (preset === '30d') start = addDays(end, -29);
     return { start: iso(start), end: iso(end) };
@@ -55,7 +56,7 @@
     const days = Math.round((e - s) / 86400000) + 1;
     const matches = {
       today: days === 1,
-      week: s.getUTCDay() === 1 && days >= 1 && days <= 7,
+      week: days === 7,
       month: s.getUTCDate() === 1 && s.getUTCFullYear() === e.getUTCFullYear() && s.getUTCMonth() === e.getUTCMonth(),
       '30d': days === 30,
       custom: true

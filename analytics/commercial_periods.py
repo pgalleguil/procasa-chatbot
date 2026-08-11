@@ -30,7 +30,8 @@ def preset_range(preset, anchor):
     if preset == "today":
         start = anchor
     elif preset == "week":
-        start = anchor - timedelta(days=anchor.weekday())
+        # “Semana” representa una ventana móvil de 7 días incluido hoy.
+        start = anchor - timedelta(days=6)
     elif preset == "month":
         start = anchor.replace(day=1)
     else:
@@ -43,7 +44,7 @@ def canonical_preset(start, end, declared=None):
     days = (end - start).days + 1
     matches = {
         "today": days == 1,
-        "week": start.weekday() == 0 and 1 <= days <= 7,
+        "week": days == 7,
         "month": start.day == 1 and start.year == end.year and start.month == end.month,
         "30d": days == 30,
         "custom": True,

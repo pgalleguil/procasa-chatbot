@@ -98,6 +98,8 @@
             overflow-x: hidden;
         }
 
+        [hidden] { display: none !important; }
+
         /* SIDEBAR - Modern Glassmorphism */
 
         .sidebar {
@@ -136,7 +138,9 @@
 
         .main-content {
             margin-left: var(--sidebar-width-collapsed);
-            padding: 30px;
+            padding: 32px;
+            width: calc(100vw - var(--sidebar-width-collapsed));
+            max-width: 1440px;
             transition: margin-left var(--transition-speed);
         }
 
@@ -226,7 +230,7 @@
             background: var(--sidebar-active-bg);
             border-left-color: var(--sidebar-active-color);
             color: var(--sidebar-active-color) !important;
-            box-shadow: 0 0 16px color-mix(in srgb, var(--sidebar-active-color) 12%, transparent);
+            box-shadow: none;
         }
 
         .nav-link.active i {
@@ -273,7 +277,9 @@
 
             .main-content {
                 margin-left: 0 !important;
-                padding: 15px;
+                padding: 16px !important;
+                width: 100%;
+                max-width: 100%;
             }
 
             .sidebar:hover {
@@ -413,14 +419,14 @@
             border-radius: 16px;
             padding: 24px;
             border: 1px solid var(--border-color);
-            transition: transform 0.3s;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
             height: 100%;
             position: relative;
             overflow: hidden;
         }
 
         .kpi-card:hover {
-            transform: translateY(-5px);
+            transform: translateY(-2px);
         }
 
         .kpi-icon {
@@ -783,8 +789,8 @@
         .cd-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 14px;
-            max-width: 1920px;
+            gap: 16px;
+            max-width: 1440px;
         }
 
         @media (max-width: 1100px) {
@@ -805,7 +811,9 @@
             justify-content: space-between;
             gap: 8px;
             position: relative;
-            transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+            transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+            min-width: 0;
+            overflow-wrap: anywhere;
         }
 
         .cd1:hover, .cd2:hover, .cd3:hover, .cd4:hover {
@@ -828,6 +836,8 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 2px;
+            gap: 8px;
+            min-width: 0;
         }
 
         .cd1-title {
@@ -837,6 +847,9 @@
             text-transform: uppercase;
             color: var(--text-secondary);
             user-select: none;
+            min-width: 0;
+            flex: 1 1 auto;
+            overflow-wrap: anywhere;
         }
 
         .cd1-info {
@@ -877,6 +890,7 @@
             align-items: baseline;
             gap: 8px;
             flex-wrap: wrap;
+            min-width: 0;
         }
 
         .cd1-value {
@@ -911,7 +925,7 @@
         }
 
         .cd1-badge-pos > span:first-child { color: #34D399; }
-        .cd1-badge-neg > span:first-child { color: #FCA5A5; }
+        .cd1-badge-neg > span:first-child { color: #EF4444; }
         .cd1-badge-neutral { color: var(--text-secondary); }
 
         .cd1-badge-vs { font-size: 10px; opacity: 0.7; font-weight: 400; }
@@ -1067,6 +1081,8 @@
 
         .cd3-bar-arriendo { background: var(--pipeline-bronze); }
 
+        .cd3-bar-otro { background: #64748B; }
+
         /* --- CARD 4: SLA & VELOCIDAD DE RESPUESTA --- */
         .cd4-info:hover { color: var(--sla-accent); }
 
@@ -1113,15 +1129,15 @@
         }
 
         .animate-glass-card {
-            animation: glassReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation: glassReveal 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             opacity: 0;
             will-change: transform, opacity, filter;
         }
 
-        .card-delay-1 { animation-delay: 0.08s; }
-        .card-delay-2 { animation-delay: 0.16s; }
-        .card-delay-3 { animation-delay: 0.24s; }
-        .card-delay-4 { animation-delay: 0.32s; }
+        .card-delay-1 { animation-delay: 0.03s; }
+        .card-delay-2 { animation-delay: 0.08s; }
+        .card-delay-3 { animation-delay: 0.13s; }
+        .card-delay-4 { animation-delay: 0.18s; }
 
         /* Reveal ligero (sin blur) para bloques anchos — evita el costo del filtro en Chrome */
         @keyframes lightReveal {
@@ -1130,7 +1146,7 @@
         }
 
         .animate-light-reveal {
-            animation: lightReveal 0.5s ease forwards;
+            animation: lightReveal 0.3s ease forwards;
             opacity: 0;
             will-change: transform, opacity;
         }
@@ -1140,7 +1156,7 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .animate-fade-in { animation: fadeInUp 0.4s ease forwards; }
+        .animate-fade-in { animation: fadeInUp 0.25s ease forwards; }
 
         /* --- Animaciones de los gráficos de las tarjetas --- */
         @keyframes drawSpark { to { stroke-dashoffset: 0; } }
@@ -1149,19 +1165,27 @@
         .cd1-spark .spark-line {
             stroke-dasharray: 500;
             stroke-dashoffset: 500;
-            animation: drawSpark 1.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-            animation-delay: 0.55s;
+            animation: none;
         }
 
         .cd1-spark .spark-area {
             opacity: 0;
-            animation: sparkFade 1s ease 1.2s forwards;
         }
 
-        .cd2-bar { transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1); }
+        #cardDemandMeta.seq-shown .cd1-spark .spark-line,
+        #cardDemandMeta.mobile-card-reveal .cd1-spark .spark-line {
+            animation: drawSpark 1.45s cubic-bezier(0.16, 1, 0.3, 1) 0.16s forwards;
+        }
+
+        #cardDemandMeta.seq-shown .cd1-spark .spark-area,
+        #cardDemandMeta.mobile-card-reveal .cd1-spark .spark-area {
+            animation: sparkFade 0.85s ease 0.42s forwards;
+        }
+
+        .cd2-bar { transition: width 1.05s cubic-bezier(0.16, 1, 0.3, 1); }
 
         /* --- BLOQUE 2: AI EXECUTIVE BRIEFING & DIAGNÓSTICO COMERCIAL (minimalista) --- */
-        .ai-briefing { margin: 32px 0; }
+        .ai-briefing { margin: 24px 0; }
 
         .ai-briefing-inner {
             background: var(--bg-card);
@@ -1170,7 +1194,7 @@
             border-radius: 12px;
             padding: 20px;
             box-shadow: var(--shadow-card, 0 4px 16px rgba(0, 0, 0, 0.16));
-            transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+            transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
         }
 
         .ai-briefing-inner:hover {
@@ -1248,17 +1272,69 @@
 
         .ai-text { font-size: 12px; color: var(--text-secondary); line-height: 1.55; margin: 0; }
         .ai-text strong { color: var(--text-primary); font-weight: 600; }
+        .ai-action-line { display: block; margin-top: 6px; color: var(--text-primary); }
+        .ai-action-line strong { color: var(--conversion-accent); }
+
+        .ai-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+        .ai-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 9px;
+            border-radius: 99px;
+            font-size: 10px;
+            font-weight: 600;
+            border: 1px solid var(--border-color);
+            background: var(--bg-elevated, #1E293B);
+            color: var(--text-secondary);
+            white-space: nowrap;
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+        }
+        .ai-chip.ci-ok { color: #34D399; border-color: rgba(5, 150, 105, 0.35); background: rgba(6, 95, 70, 0.18); }
+        .ai-chip.ci-pending { color: #FBBF24; border-color: rgba(217, 119, 6, 0.4); background: rgba(120, 53, 15, 0.25); }
+        .ai-chip strong { color: var(--text-primary); font-weight: 600; }
+        .ai-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+        .ai-btn {
+            border: 1px solid var(--border-color);
+            background: var(--bg-elevated, #1E293B);
+            color: var(--text-secondary);
+            border-radius: 7px;
+            padding: 4px 10px;
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            text-decoration: none;
+            transition: border-color 0.15s, color 0.15s, background 0.15s;
+            font-family: 'Outfit', sans-serif;
+        }
+        .ai-btn:hover { border-color: var(--conversion-accent); color: var(--conversion-accent); background: rgba(139, 92, 246, 0.08); }
+        .ai-btn.btn-done:hover { border-color: #10B981; color: #34D399; background: rgba(16, 185, 129, 0.08); }
+        .ai-btn.done { border-color: rgba(5, 150, 105, 0.4); color: #34D399; background: rgba(6, 95, 70, 0.18); }
+        .ai-btn.done i { color: #34D399; }
+
+        .ai-briefing-cta { display: flex; justify-content: flex-end; margin-top: 14px; }
+        .ai-btn-primary {
+            border-color: rgba(124, 58, 237, 0.45);
+            color: #C4B5FD;
+            background: rgba(139, 92, 246, 0.14);
+            padding: 7px 14px;
+            font-size: 12px;
+        }
+        .ai-btn-primary:hover { color: #DDD6FE; border-color: var(--conversion-accent); background: rgba(139, 92, 246, 0.22); }
+
+        [data-theme="light"] .modal .btn-close-white { filter: invert(1); }
 
         /* --- SECCIÓN 3: TENDENCIA & CANALES --- */
-        .tc-block { margin: 32px 0; opacity: 0; }
+        .tc-block { margin: 24px 0; }
 
-        .tc-block.entered {
-            animation: glassReveal 0.55s ease forwards;
-        }
-
-        .tc-grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: stretch; }
+        .tc-grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: stretch; min-width: 0; }
 
         @media (min-width: 1024px) { .tc-grid { grid-template-columns: 8fr 4fr; } }
+
+        .tc-grid > * { min-width: 0; }
 
         .tc-card {
             background: var(--bg-card);
@@ -1269,7 +1345,8 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+            min-width: 0;
+            transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
         }
 
         .tc-card:hover {
@@ -1287,6 +1364,7 @@
             border-bottom: 1px solid var(--border-color);
             gap: 8px;
             flex-wrap: wrap;
+            min-width: 0;
         }
 
         .tc-head h3 {
@@ -1296,9 +1374,10 @@
             text-transform: uppercase;
             color: var(--text-secondary);
             margin: 0;
+            overflow-wrap: anywhere;
         }
 
-        .tc-head p { font-size: 12px; color: var(--text-secondary); margin: 2px 0 0; }
+        .tc-head p { font-size: 12px; color: var(--text-secondary); margin: 2px 0 0; overflow-wrap: anywhere; }
 
         .tc-legend {
             display: flex;
@@ -1330,6 +1409,26 @@
 
         .tc-line-wrap svg { width: 100%; height: 100%; display: block; overflow: visible; }
 
+        .tc-chart-tooltip {
+            position: absolute;
+            top: 8px;
+            transform: translateX(-50%);
+            min-width: 92px;
+            padding: 6px 8px;
+            border: 1px solid rgba(167, 139, 250, 0.55);
+            border-radius: 7px;
+            background: var(--bg-elevated, #1E293B);
+            color: var(--text-primary);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+            font-size: 10px;
+            line-height: 1.35;
+            pointer-events: none;
+            z-index: 5;
+            white-space: nowrap;
+        }
+        .tc-chart-tooltip strong { display: block; color: #C4B5FD; font-size: 12px; }
+        .tc-chart-tooltip small { display: block; color: var(--text-secondary); font-size: 9px; margin-top: 2px; }
+
         .tc-line {
             stroke-dasharray: 2000;
             stroke-dashoffset: 2000;
@@ -1341,18 +1440,22 @@
 
         .tc-line-area-prev { opacity: 0; }
 
-        .tc-block.entered .tc-line {
-            animation: drawSpark 3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        .tc-block.entered .tc-line,
+        .tc-trend-card.entered .tc-line {
+            animation: drawSpark 1.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             animation-delay: 0.1s;
         }
 
-        .tc-block.entered .tc-line-area {
-            animation: sparkFade 0.6s ease 0.3s forwards;
+        .tc-block.entered .tc-line-area,
+        .tc-trend-card.entered .tc-line-area {
+            animation: sparkFade 0.4s ease 0.2s forwards;
         }
 
         .tc-block.entered .tc-line-prev,
-        .tc-block.entered .tc-line-area-prev {
-            animation: sparkFade 0.5s ease 0.2s forwards;
+        .tc-block.entered .tc-line-area-prev,
+        .tc-trend-card.entered .tc-line-prev,
+        .tc-trend-card.entered .tc-line-area-prev {
+            animation: sparkFade 0.3s ease 0.15s forwards;
         }
 
         .tc-diff { font-weight: 600; }
@@ -1365,6 +1468,8 @@
             justify-content: space-between;
             margin-top: 6px;
             padding: 0 4px;
+            min-width: 0;
+            overflow: hidden;
         }
 
         .tc-line-labels span {
@@ -1436,18 +1541,36 @@
             border: 0;
             border-bottom: 2px solid transparent;
             background: transparent;
+            appearance: none;
+            -webkit-appearance: none;
             color: var(--text-secondary);
             font-size: 12px;
             font-weight: 500;
             cursor: pointer;
             white-space: nowrap;
-            transition: color 0.2s, border-color 0.2s, background 0.2s;
+            transition: color 0.2s, border-color 0.2s, transform 0.2s;
             font-family: 'Outfit', sans-serif;
         }
 
         .dash-tab .t-ico { color: var(--text-secondary); font-size: 14px; }
 
-        .dash-tab:hover { color: var(--text-primary); background: rgba(148, 163, 184, 0.08); }
+        .dash-tab:hover {
+            color: var(--conversion-accent);
+            transform: translateY(-1px);
+            background: transparent;
+            box-shadow: none;
+            outline: none;
+        }
+
+        .dash-tab:hover .t-ico { color: var(--conversion-accent); }
+
+        .dash-tab:focus,
+        .dash-tab:focus-visible,
+        .dash-tab:active {
+            background: transparent;
+            box-shadow: none;
+            outline: none;
+        }
 
         .dash-tab.active {
             color: var(--text-primary);
@@ -1467,9 +1590,7 @@
         }
 
         /* --- BLOQUE 4: TABLA DE RENDIMIENTO COMERCIAL --- */
-        .exec-table-block { margin: 32px 0; opacity: 0; }
-
-        .exec-table-block.entered { animation: glassReveal 0.55s ease forwards; }
+        .exec-table-block { margin: 24px 0; }
 
         .exec-table-card {
             background: var(--bg-card);
@@ -1477,7 +1598,7 @@
             border: 1px solid var(--border-color);
             border-radius: 12px;
             padding: 20px;
-            transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+            transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
         }
 
         .exec-table-card:hover {
@@ -1495,7 +1616,10 @@
             border-bottom: 1px solid var(--border-color);
             gap: 8px;
             flex-wrap: wrap;
+            min-width: 0;
         }
+
+        .exec-table-head > div { min-width: 0; }
 
         .exec-table-head h3 {
             font-size: 11px;
@@ -1504,9 +1628,10 @@
             text-transform: uppercase;
             color: var(--text-secondary);
             margin: 0;
+            overflow-wrap: anywhere;
         }
 
-        .exec-table-head p { font-size: 12px; color: var(--text-secondary); margin: 2px 0 0; }
+        .exec-table-head p { font-size: 12px; color: var(--text-secondary); margin: 2px 0 0; overflow-wrap: anywhere; }
 
         .exec-count {
             font-size: 11px;
@@ -1519,7 +1644,31 @@
             white-space: nowrap;
         }
 
-        .exec-table-wrap { overflow-x: auto; }
+        .exec-table-wrap {
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(167, 139, 250, 0.78) rgba(148, 163, 184, 0.12);
+            scrollbar-gutter: stable;
+        }
+
+        /* Scroll horizontal interno: discreto, redondeado y visible solo donde corresponde. */
+        .exec-table-wrap::-webkit-scrollbar { height: 8px; }
+        .exec-table-wrap::-webkit-scrollbar-track {
+            background: rgba(148, 163, 184, 0.10);
+            border-radius: 999px;
+        }
+        .exec-table-wrap::-webkit-scrollbar-thumb {
+            background: linear-gradient(90deg, rgba(124, 58, 237, 0.82), rgba(167, 139, 250, 0.92));
+            border: 2px solid transparent;
+            background-clip: padding-box;
+            border-radius: 999px;
+            min-width: 56px;
+        }
+        .exec-table-wrap::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(90deg, #7C3AED, #A78BFA);
+            background-clip: padding-box;
+        }
 
         .exec-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 720px; }
 
@@ -1582,11 +1731,619 @@
         .exec-badge.regla { color: #A78BFA; background: rgba(139, 92, 246, 0.15); border-color: rgba(124, 58, 237, 0.30); }
         .exec-badge.critico { color: #FCA5A5; background: rgba(127, 29, 29, 0.18); border-color: rgba(153, 27, 27, 0.30); }
         .exec-badge.bot { color: var(--text-secondary); background: var(--bg-elevated, #1E293B); border-color: var(--border-color); }
+
+        .exec-reconcile {
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+        }
+
+        .exec-reconcile strong { color: var(--text-primary); font-weight: 600; }
+
+        /* --- EMBUDO COMERCIAL --- */
+        .funnel-block { margin: 24px 0; }
+
+        .funnel-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(14px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+        }
+
+        .funnel-card:hover {
+            border-color: var(--conversion-accent);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        }
+
+        .funnel-bars { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+
+        .funnel-row {
+            display: grid;
+            grid-template-columns: 120px 1fr 150px;
+            align-items: center;
+            gap: 12px;
+            font-size: 12px;
+        }
+
+        .funnel-lbl { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
+
+        .funnel-trk { height: 10px; border-radius: 99px; background: var(--border-color); overflow: hidden; }
+
+        .funnel-fill {
+            height: 100%;
+            border-radius: 99px;
+            background: linear-gradient(90deg, #8B5CF6, #A78BFA);
+            transition: width 0.6s ease;
+        }
+
+        .funnel-val { color: var(--text-secondary); text-align: right; font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; white-space: nowrap; }
+
+        .funnel-val strong { color: var(--text-primary); }
+
+        .funnel-val small { display: block; font-size: 9px; color: var(--text-secondary); }
+
+        .dash-updated {
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+            white-space: nowrap;
+        }
+
+        /* ============================================================
+           MEJORAS: LOADING ATÓMICO, TABLA, SEMÁFORO, FILTROS, MOBILE
+           ============================================================ */
+
+        /* --- Overlay de actualización atómica --- */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            background: color-mix(in srgb, var(--bg-body) 68%, transparent);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: wait;
+        }
+        .loading-overlay[hidden] { display: none; }
+        .loading-overlay .lo-spinner {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--conversion-accent, #8B5CF6);
+            animation: loSpin 0.9s linear infinite;
+        }
+        @keyframes loSpin { to { transform: rotate(360deg); } }
+
+        .dash-updated.loading { color: var(--conversion-accent); }
+
+        /* --- Tabla de ejecutivos: encabezado fijo + sort + semáforo --- */
+        .exec-table thead th {
+            position: sticky;
+            top: 0;
+            background: var(--bg-card);
+            z-index: 2;
+        }
+        .exec-table th.sortable { cursor: pointer; user-select: none; }
+        .exec-table th.sortable:hover { color: var(--text-primary); }
+        .exec-table th .sort-arrow { font-size: 9px; margin-left: 3px; opacity: 0.55; }
+        .exec-table th.sorted-asc .sort-arrow::after { content: '▲'; }
+        .exec-table th.sorted-desc .sort-arrow::after { content: '▼'; }
+
+        .exec-name { vertical-align: middle; }
+
+        .exec-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .btn-export-pdf {
+            height: 30px;
+            padding: 0 10px;
+            font-size: 11px;
+            border-radius: 7px;
+            border-color: rgba(124, 58, 237, 0.45);
+            color: #C4B5FD;
+            background: rgba(139, 92, 246, 0.14);
+        }
+        .btn-export-pdf:hover { color: #DDD6FE; border-color: var(--conversion-accent); background: rgba(139, 92, 246, 0.22); }
+        .exec-export {
+            height: 28px;
+            padding: 0 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 7px;
+            background: var(--bg-elevated, #1E293B);
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+            transition: border-color 0.18s, color 0.18s;
+            font-family: 'Outfit', sans-serif;
+        }
+        .exec-export:hover { border-color: var(--conversion-accent); color: var(--conversion-accent); }
+
+        /* Ajustes específicos del tema claro: hover sobrio y sin parches oscuros. */
+        [data-theme="light"] .nav-link.active {
+            background: var(--sidebar-active-bg);
+            border-left-color: var(--sidebar-active-color);
+            box-shadow: none;
+        }
+
+        [data-theme="light"] .ai-btn-primary:hover,
+        [data-theme="light"] .btn-export-pdf:hover {
+            color: var(--accent-hover);
+            border-color: var(--accent);
+            background: rgba(79, 70, 229, 0.08);
+        }
+
+        [data-theme="light"] .ai-btn-primary,
+        [data-theme="light"] .btn-export-pdf {
+            color: var(--accent-hover);
+            border-color: rgba(79, 70, 229, 0.28);
+            background: rgba(79, 70, 229, 0.07);
+        }
+
+        [data-theme="light"] .ai-btn-primary:hover,
+        [data-theme="light"] .btn-export-pdf:hover {
+            background: rgba(79, 70, 229, 0.13);
+        }
+
+        [data-theme="light"] .ai-btn.done {
+            color: #047857;
+            border-color: rgba(5, 150, 105, 0.28);
+            background: rgba(5, 150, 105, 0.08);
+        }
+
+        [data-theme="light"] .ai-chip.ci-ok {
+            color: #047857;
+            border-color: rgba(5, 150, 105, 0.28);
+            background: rgba(5, 150, 105, 0.08);
+        }
+
+        [data-theme="light"] .ai-chip.ci-pending {
+            color: #92400e;
+            border-color: rgba(217, 119, 6, 0.30);
+            background: rgba(217, 119, 6, 0.09);
+        }
+
+        [data-theme="light"] .t-placeholder {
+            color: var(--accent-hover);
+            background: rgba(79, 70, 229, 0.07);
+        }
+
+        .exec-reconcile { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .exec-method-note {
+            margin: 10px 0 0;
+            color: var(--text-secondary);
+            font-size: 10px;
+            line-height: 1.45;
+            text-align: right;
+        }
+
+        /* --- Hitos comerciales excepcionales (embudo) --- */
+        .funnel-hitos {
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px dashed var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .funnel-hitos-title {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .funnel-hitos-chips { display: flex; gap: 10px; flex-wrap: wrap; }
+        .funnel-hito-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 99px;
+            font-size: 11px;
+            font-weight: 600;
+            border: 1px solid;
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+            white-space: nowrap;
+        }
+        .funnel-hito-chip.oferta,
+        .funnel-hito-chip.cierre {
+            color: var(--text-secondary);
+            background: var(--bg-elevated, #1E293B);
+            border-color: var(--border-color);
+        }
+        .funnel-alert {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 9px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            line-height: 1.5;
+            background: var(--bg-elevated, #1E293B);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+        .funnel-alert i { color: var(--text-secondary); margin-top: 1px; }
+
+        /* --- Placeholder "Próximamente" --- */
+        .t-placeholder {
+            border: 1px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 48px 32px;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+        .t-placeholder .t-ico { font-size: 30px; color: var(--conversion-accent); opacity: 0.7; margin-bottom: 12px; }
+        .t-placeholder h4 { font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0 0 6px; }
+        .t-placeholder p { margin: 0 auto 0; max-width: 460px; line-height: 1.6; font-size: 12px; }
+        .t-soon-badge {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 3px 12px;
+            border-radius: 99px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #A78BFA;
+            background: rgba(139, 92, 246, 0.14);
+            border: 1px solid rgba(124, 58, 237, 0.35);
+        }
+
+        /* --- Selector de vistas (mobile) --- */
+        .mobile-tab-select { display: none; }
+        .mobile-tab-select select {
+            width: 100%;
+            height: 38px;
+            border: 1px solid var(--border-color);
+            border-radius: 9px;
+            padding: 0 10px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 600;
+            outline: none;
+            cursor: pointer;
+            font-family: 'Outfit', sans-serif;
+            color-scheme: dark;
+        }
+        [data-theme="light"] .mobile-tab-select select { color-scheme: light; }
+
+        /* --- UF responsive (no cortar valores) --- */
+        .cd3-value { overflow-wrap: anywhere; }
+
+        /* --- Barra de desplazamiento de pestañas (desktop/tablet) --- */
+        .dash-tabs { position: relative; }
+
+        /* ============================================================
+           SECUENCIA DE APARICIÓN (resumen ejecutivo)
+           ============================================================ */
+        .seq-el { will-change: opacity, filter, transform; }
+        /* Estado oculto SOLO durante la animación inicial */
+        .seq-pending .seq-el:not(.seq-shown) {
+            opacity: 0;
+            filter: blur(6px);
+            transform: translateY(12px);
+            transition: opacity var(--seq-dur, 450ms) ease,
+                        filter var(--seq-dur, 450ms) ease,
+                        transform var(--seq-dur, 450ms) ease;
+        }
+        .seq-pending.seq-refresh .seq-el:not(.seq-shown) {
+            opacity: 0.65;
+            filter: blur(3px);
+            transform: translateY(4px);
+        }
+        /* Una vez revelado: visible de forma permanente */
+        .seq-el.seq-shown {
+            opacity: 1;
+            filter: blur(0px);
+            transform: none;
+        }
+        /* Secciones inferiores: ocultas hasta entrar al viewport */
+        .seq-scroll:not(.seq-shown) {
+            opacity: 0;
+            filter: blur(10px);
+            transform: translateY(24px);
+            visibility: hidden;
+            transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+                        filter 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .seq-scroll.seq-shown { visibility: visible; }
+
+        @keyframes scrollGlassReveal {
+            0% { opacity: 0; filter: blur(14px); transform: translateY(32px) scale(0.985); }
+            55% { opacity: 0.82; filter: blur(4px); }
+            100% { opacity: 1; filter: blur(0); transform: translateY(0) scale(1); }
+        }
+
+        @media (min-width: 769px) {
+            .seq-scroll.seq-reveal-active {
+                animation: scrollGlassReveal 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+                will-change: opacity, filter, transform;
+            }
+
+            #aiBriefing.seq-reveal-active {
+                animation-duration: 0.62s;
+            }
+
+            #execTableBlock.seq-reveal-active {
+                animation-duration: 0.62s;
+            }
+
+        /* Desktop: reveal interno de barras y trazados, sincronizado con el bloque */
+        @media (min-width: 769px) {
+            @keyframes desktopCardGlassReveal {
+                0% { opacity: 0; filter: blur(14px); transform: translateY(24px) scale(0.985); }
+                55% { opacity: 0.82; filter: blur(4px); }
+                100% { opacity: 1; filter: blur(0); transform: translateY(0) scale(1); }
+            }
+
+            /* Las tarjetas se enfocan de forma visible sólo en la carga inicial */
+            .seq-pending:not(.seq-refresh) .cd1.seq-shown,
+            .seq-pending:not(.seq-refresh) .cd2.seq-shown,
+            .seq-pending:not(.seq-refresh) .cd3.seq-shown,
+            .seq-pending:not(.seq-refresh) .cd4.seq-shown {
+                animation: desktopCardGlassReveal 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+                will-change: opacity, filter, transform;
+            }
+
+            @keyframes desktopCardRefreshReveal {
+                0% { opacity: 0.55; filter: blur(5px); transform: translateY(5px); }
+                100% { opacity: 1; filter: blur(0); transform: translateY(0); }
+            }
+
+            /* Al volver al resumen o cambiar filtros: sólo se reaniman las tarjetas */
+            .seq-pending.seq-refresh .cd1.seq-shown,
+            .seq-pending.seq-refresh .cd2.seq-shown,
+            .seq-pending.seq-refresh .cd3.seq-shown,
+            .seq-pending.seq-refresh .cd4.seq-shown {
+                animation: desktopCardGlassReveal 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+                will-change: opacity, filter, transform;
+            }
+
+            /* Al volver desde otra pestaña, las tarjetas parten totalmente ocultas,
+               igual que en la carga inicial; no deben quedar pre-renderizadas. */
+            .seq-pending.seq-refresh .cd1:not(.seq-shown),
+            .seq-pending.seq-refresh .cd2:not(.seq-shown),
+            .seq-pending.seq-refresh .cd3:not(.seq-shown),
+            .seq-pending.seq-refresh .cd4:not(.seq-shown) {
+                opacity: 0;
+                filter: blur(14px);
+                transform: translateY(24px) scale(0.985);
+            }
+
+            .seq-pending.seq-refresh #aiBriefing:not(.seq-shown) {
+                opacity: 0;
+                filter: blur(14px);
+                transform: translateY(24px) scale(0.985);
+            }
+
+            /* Orden fijo de aparición: izquierda → derecha, también al volver a la pestaña */
+            .seq-pending .cd1.seq-shown { animation-delay: 0ms !important; }
+            .seq-pending .cd2.seq-shown { animation-delay: 120ms !important; }
+            .seq-pending .cd3.seq-shown { animation-delay: 240ms !important; }
+            .seq-pending .cd4.seq-shown { animation-delay: 360ms !important; }
+
+            @keyframes desktopHeaderGlassReveal {
+                0% { opacity: 0; filter: blur(10px); transform: translateY(16px); }
+                60% { opacity: 0.86; filter: blur(3px); }
+                100% { opacity: 1; filter: blur(0); transform: translateY(0); }
+            }
+
+            /* Título, fecha, pestañas y filtros: sólo durante la carga inicial */
+            .seq-pending:not(.seq-refresh) #seqHeader.seq-shown,
+            .seq-pending:not(.seq-refresh) .header-right.seq-shown,
+            .seq-pending:not(.seq-refresh) #dashTabs.seq-shown,
+            .seq-pending:not(.seq-refresh) .mobile-tab-select.seq-shown,
+            .seq-pending:not(.seq-refresh) .period-filterbar.seq-shown,
+            .seq-pending:not(.seq-refresh) #periodCustom.seq-shown {
+                animation: desktopHeaderGlassReveal 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+                will-change: opacity, filter, transform;
+            }
+
+            @keyframes desktopBarGrow {
+                from { transform: scaleX(0); }
+                to { transform: scaleX(1); }
+            }
+
+            @keyframes desktopTrendDraw {
+                from { stroke-dashoffset: 2000; }
+                to { stroke-dashoffset: 0; }
+            }
+
+            .cd2-bar,
+            .funnel-fill,
+            .tc-src-bar {
+                transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+                transform-origin: left center;
+            }
+
+            .cd2-bar {
+                transition-duration: 1.75s;
+            }
+
+            .funnel-block.entered .funnel-fill,
+            .tc-block.entered .tc-src-bar,
+            .tc-source-card.entered .tc-src-bar {
+                animation: desktopBarGrow 1.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+            }
+
+            .tc-block.entered .tc-line,
+            .tc-trend-card.entered .tc-line {
+                animation-name: desktopTrendDraw;
+                animation-duration: 2.4s;
+                animation-delay: 0.25s;
+                animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+                animation-fill-mode: forwards;
+            }
+
+            .tc-block.entered .tc-line-area,
+            .tc-trend-card.entered .tc-line-area {
+                animation-duration: 0.8s;
+                animation-delay: 0.35s;
+            }
+
+            .tc-block.entered .tc-line-prev,
+            .tc-block.entered .tc-line-area-prev,
+            .tc-trend-card.entered .tc-line-prev,
+            .tc-trend-card.entered .tc-line-area-prev {
+                animation-duration: 0.7s;
+                animation-delay: 0.3s;
+            }
+        }
+        }
+
+        /* ============================================================
+           MOBILE (<= 768px)
+           ============================================================ */
+        @media (max-width: 768px) {
+            @keyframes mobileCardGlassReveal {
+                0% { opacity: 0; filter: blur(14px); transform: translateY(24px) scale(0.985); }
+                55% { opacity: 0.82; filter: blur(4px); }
+                100% { opacity: 1; filter: blur(0); transform: translateY(0) scale(1); }
+            }
+
+            /* En móvil las tarjetas se revelan individualmente al entrar al viewport. */
+            .cards-container .cd1:not(.seq-shown),
+            .cards-container .cd2:not(.seq-shown),
+            .cards-container .cd3:not(.seq-shown),
+            .cards-container .cd4:not(.seq-shown) {
+                opacity: 0;
+                filter: blur(14px);
+                transform: translateY(24px) scale(0.985);
+            }
+
+            .cards-container .mobile-card-reveal {
+                animation: mobileCardGlassReveal 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+                will-change: opacity, filter, transform;
+            }
+
+            .seq-scroll.seq-reveal-active {
+                animation: scrollGlassReveal 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+                will-change: opacity, filter, transform;
+            }
+
+            .main-content { padding: 16px !important; }
+
+            .dash-tabs { display: none; }
+            .mobile-tab-select { display: block; margin-bottom: 12px; }
+
+            .period-filterbar { padding: 8px; gap: 8px; }
+            .period-presets { width: 100%; }
+            .period-compare { width: 100%; }
+            .period-compare select { width: 100%; }
+            .period-btn { flex: 1; justify-content: center; }
+            .period-summary { width: 100%; margin-left: 0; font-size: 10px; white-space: normal; }
+            .period-custom { flex-direction: column; align-items: stretch; }
+            .period-custom .apply { width: 100%; justify-content: center; }
+
+            .cd1-value, .cd2-value, .cd3-value, .cd4-value { font-size: 26px; }
+            .cd3-value { font-size: 22px; letter-spacing: -0.02em; }
+            .cd1-sub, .cd1-footer, .cd2-bars, .cd3-bar-group { min-width: 0; overflow-wrap: anywhere; }
+            .cd1-header { flex-wrap: wrap; }
+            .cd1-title { white-space: normal; }
+            .cd2-bar-row { grid-template-columns: 1fr; }
+            .funnel-row { grid-template-columns: 84px 1fr 96px; gap: 8px; font-size: 11px; }
+            .funnel-lbl { font-size: 11px; }
+            .exec-table { min-width: 640px; }
+            .exec-table-wrap { max-width: 100%; }
+            .exec-table-head { align-items: flex-start; }
+            .exec-table-head p { font-size: 11px; }
+            .tc-head { flex-direction: column; align-items: flex-start; }
+            .tc-legend { flex-wrap: wrap; }
+            .tc-line-labels span { font-size: 8px; }
+            .tc-foot { flex-direction: column; align-items: flex-start; gap: 4px; }
+            .ai-grid { grid-template-columns: 1fr; }
+            .ai-briefing-cta { justify-content: stretch; }
+            .ai-briefing-cta .ai-btn-primary { width: 100%; justify-content: center; }
+            .header-container { gap: 10px; }
+            .header-right { width: 100%; flex-wrap: wrap; }
+            .exec-export.btn-export-pdf {
+                width: auto;
+                max-width: 100%;
+                white-space: nowrap;
+                justify-content: center;
+                height: 32px;
+                min-height: 32px;
+                padding: 0 10px;
+                font-size: 11px;
+            }
+            .dash-updated { width: 100%; text-align: left; }
+
+            .sidebar-footer { display: flex; flex-direction: column; }
+            .sidebar-close {
+                display: flex !important;
+                position: absolute;
+                top: 12px;
+                right: 10px;
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                border: 1px solid var(--border-color);
+                background: var(--bg-elevated, #1E293B);
+                color: var(--text-secondary);
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                z-index: 2;
+            }
+        }
+
+        @media (min-width: 769px) {
+            .sidebar-close { display: none; }
+        }
+
+        /* ============================================================
+           ANIMACIONES: prefers-reduced-motion
+           ============================================================ */
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+            .loading-overlay .lo-spinner { animation: none; }
+        }
+
+        /* Móvil: eliminar efectos hover */
+        @media (hover: none), (max-width: 768px) {
+            .kpi-card:hover, .cd1:hover, .cd2:hover, .cd3:hover, .cd4:hover,
+            .ai-briefing-inner:hover, .tc-card:hover, .exec-table-card:hover,
+            .funnel-card:hover { transform: none; box-shadow: none; }
+        }
     </style>
 </head>
 
-<body>
-        <nav class="sidebar" id="sidebar">
+<body class="seq-pending">
+        <nav class="sidebar seq-el seq-static" id="sidebar">
+            <button type="button" class="sidebar-close" aria-label="Cerrar menú" onclick="closeMobileMenu()"><i class="fa-solid fa-xmark"></i></button>
             <div class="brand">
                 <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
                     style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
@@ -1624,7 +2381,7 @@
         <div class="main-content" id="main-content">
 
             <div class="header-container">
-                <div class="d-flex align-items-center">
+                <div class="d-flex align-items-center seq-el seq-static" id="seqHeader">
                     <button type="button" class="hamburger-mobile" aria-controls="sidebar" aria-expanded="false" onclick="toggleMobileMenu()">
                         <i class="fa-solid fa-bars"></i>
                     </button>
@@ -1633,18 +2390,30 @@
                         <p class="text-secondary m-0 small" id="pageSubtitle">Rendimiento Comercial & Analytics AI</p>
                     </div>
                 </div>
+                <div class="header-right seq-el seq-static">
+                    <button type="button" class="exec-export btn-export-pdf" id="btnExportPdf" title="Exportar informe ejecutivo en PDF"><i class="fa-solid fa-file-pdf"></i> Exportar PDF</button>
+                    <span class="dash-updated" id="dashUpdated">Actualizando…</span>
+                </div>
             </div>
 
             <!-- NAVEGACIÓN DE PESTAÑAS -->
-            <nav class="dash-tabs" id="dashTabs" aria-label="Vistas del dashboard">
+            <nav class="dash-tabs seq-el seq-static" id="dashTabs" aria-label="Vistas del dashboard">
                 <button class="dash-tab active" data-tab="executive"><span>Resumen Ejecutivo</span></button>
                 <button class="dash-tab" data-tab="leads"><span>CRM & Gestión de Leads</span></button>
                 <button class="dash-tab" data-tab="properties"><span>Propiedades & Inventario</span></button>
                 <button class="dash-tab" data-tab="channels"><span>Portales & ROI</span></button>
             </nav>
+            <div class="mobile-tab-select seq-el seq-static" aria-label="Vista del dashboard">
+                <select id="mobileTabSelect">
+                    <option value="executive">Resumen Ejecutivo</option>
+                    <option value="leads">CRM & Gestión de Leads</option>
+                    <option value="properties">Propiedades & Inventario</option>
+                    <option value="channels">Portales & ROI</option>
+                </select>
+            </div>
 
             <!-- FILTROS DE PERIODO (estilo Dashboard Comercial) -->
-            <div class="period-filterbar">
+            <div class="period-filterbar seq-el seq-static">
                 <div class="period-presets" id="presetSeg" role="group" aria-label="Periodo">
                     <button data-p="today">Hoy</button>
                     <button data-p="week">Semana</button>
@@ -1662,16 +2431,15 @@
                     </select>
                 </div>
                 <button class="period-btn" id="btnEditDates" type="button"><i class="fa-regular fa-calendar"></i> Editar fechas</button>
+                <button class="period-btn" id="btnResetFilters" type="button" title="Restablecer filtros (30 días, comparación automática)"><i class="fa-solid fa-rotate-left"></i> Restablecer</button>
                 <div class="period-summary" id="periodSummary">
                     <span><strong id="psCurrent">—</strong></span>
-                    <span class="ps-sep">·</span>
+                    <span class="ps-sep"></span>
                     <span id="psPrev">—</span>
-                    <span class="ps-sep">·</span>
-                    <span class="ps-count">Leads: <strong id="psLeads">—</strong></span>
                 </div>
             </div>
 
-            <div class="period-custom" id="periodCustom" hidden>
+            <div class="period-custom seq-el seq-static" id="periodCustom" hidden>
                 <label for="pStart">Desde</label>
                 <input type="date" id="pStart">
                 <label for="pEnd">Hasta</label>
@@ -1686,12 +2454,17 @@
             <div class="cards-container" id="cardsContainer">
                 <div class="cd-grid">
                     <!-- CARD 1: DEMANDA & META -->
-                    <div class="cd1 animate-glass-card card-delay-1" id="cardDemandMeta" hidden>
+                    <div class="cd1 seq-el" id="cardDemandMeta" hidden>
                         <div class="cd1-header">
                             <span class="cd1-title" id="cd1Title"></span>
                             <button type="button" class="cd1-info" id="cd1Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd1Tooltip" hidden>
-                                Muestra el total de leads capturados en el rango activo, el % de avance respecto a la meta y la variación vs. el período equivalente anterior.
+                                <strong>Demanda & Meta</strong><br>
+                                Lead: oportunidad ingresada por cualquier canal (WhatsApp, portales, manual).<br>
+                                Deduplicación: 1 lead = 1 teléfono normalizado.<br>
+                                Meta: objetivo mensual prorrateado por días del período (configuración comercial).<br>
+                                Fórmula: (leads del período / meta del período) × 100.<br>
+                                Variación: vs. período equivalente anterior de igual duración.
                             </div>
                         </div>
 
@@ -1710,25 +2483,25 @@
                     </div>
 
                     <!-- CARD 2: EFECTIVIDAD & CONVERSIÓN -->
-                    <div class="cd2 animate-glass-card card-delay-2" id="cardConversion" hidden>
+                    <div class="cd2 seq-el" id="cardConversion" hidden>
                         <div class="cd1-header">
                             <span class="cd1-title" id="cd2Title"></span>
                             <button type="button" class="cd1-info cd2-info" id="cd2Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd2Tooltip" hidden>
-                                Mide el % de leads que fueron convertidos exitosamente a visitas o citas agendadas dentro del período seleccionado.
+                                Mide el % de leads del período que alcanzaron el estado de visita agendada (VISIT_SCHEDULED). Un 0% puede reflejar falta de registro, leads recientes o ausencia de visitas; se distingue en la metodología.
                             </div>
                         </div>
 
                         <div class="cd1-kpi-row">
                             <h2 class="cd1-value cd2-value" id="cd2Value">0,0 %</h2>
-                            <span class="cd2-citas-badge" id="cd2CitasBadge"><span class="cd2-dot"></span>— Citas / Visitas</span>
+                            <span class="cd2-citas-badge" id="cd2CitasBadge"><span class="cd2-dot"></span>— Visitas</span>
                         </div>
 
-                        <p class="cd1-sub" id="cd2Sub">— citas concretadas de — leads totales</p>
+                        <p class="cd1-sub" id="cd2Sub">— visitas concretadas de — leads totales</p>
 
                         <div class="cd2-bars">
                             <div class="cd2-bar-row">
-                                <span class="cd2-bar-lbl">Citas: <strong id="cd2BarCitasPct">0%</strong></span>
+                                <span class="cd2-bar-lbl">Visitas: <strong id="cd2BarCitasPct">0%</strong></span>
                                 <div class="cd2-bar-track"><div class="cd2-bar cd2-bar-citas" id="cd2BarCitas" style="width:0%"></div></div>
                             </div>
                         </div>
@@ -1738,22 +2511,23 @@
                         </div>
                     </div>
 
-                    <!-- CARD 3: PIPELINE & VALORIZACIÓN UF -->
-                    <div class="cd3 animate-glass-card card-delay-3" id="cardPipeline" hidden>
+                    <!-- CARD 3: CARTERA POTENCIAL & VALORIZACIÓN -->
+                    <div class="cd3 seq-el" id="cardPipeline" hidden>
                         <div class="cd1-header">
                             <span class="cd1-title" id="cd3Title"></span>
                             <button type="button" class="cd1-info cd3-info" id="cd3Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd3Tooltip" hidden>
-                                Suma del valor publicado en UF de las propiedades vinculadas a los leads del período, y la comisión proyectada estimada.
+                                Valorización del inventario vinculado a los leads del período (precio publicado por propiedad única, sin duplicar por lead).<br>
+                                No representa ingreso realizado de la corredora; la comisión esperada y el equivalente en CLP se detallan según la UF del período.
                             </div>
                         </div>
 
                         <div class="cd1-kpi-row">
                             <h2 class="cd1-value cd3-value" id="cd3Value">UF 0</h2>
-                            <span class="cd3-comision-badge" id="cd3ComisionBadge">UF 0 Comis. Est.</span>
+                            <span class="cd3-comision-badge" id="cd3ComisionBadge" aria-label="Comisión estimada">Comisión estimada · UF 0</span>
                         </div>
 
-                        <p class="cd1-sub" id="cd3Sub">Valorización total de propiedades vinculadas</p>
+                        <p class="cd1-sub" id="cd3Sub">Valor potencial del inventario vinculado</p>
 
                         <div class="cd2-bars">
                             <div class="cd3-bar-group">
@@ -1764,6 +2538,10 @@
                                 <div class="cd3-bar-lbl"><span>Arriendo (<strong id="cd3PctArriendo">0%</strong>)</span><span class="cd3-bar-val" id="cd3MontoArriendo">UF 0</span></div>
                                 <div class="cd2-bar-track"><div class="cd2-bar cd3-bar-arriendo" id="cd3BarArriendo" style="width:0%"></div></div>
                             </div>
+                            <div class="cd3-bar-group" id="cd3OtroGroup" hidden>
+                                <div class="cd3-bar-lbl"><span>Otros (<strong id="cd3PctOtro">0%</strong>)</span><span class="cd3-bar-val" id="cd3MontoOtro">UF 0</span></div>
+                                <div class="cd2-bar-track"><div class="cd2-bar cd3-bar-otro" id="cd3BarOtro" style="width:0%"></div></div>
+                            </div>
                         </div>
 
                         <div class="cd1-footer">
@@ -1772,12 +2550,13 @@
                     </div>
 
                     <!-- CARD 4: SLA & VELOCIDAD DE RESPUESTA -->
-                    <div class="cd4 animate-glass-card card-delay-4" id="cardSla" hidden>
+                    <div class="cd4 seq-el" id="cardSla" hidden>
                         <div class="cd1-header">
                             <span class="cd1-title" id="cd4Title"></span>
                             <button type="button" class="cd1-info cd4-info" id="cd4Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd4Tooltip" hidden>
-                                Mide la mediana de tiempo transcurrido desde que un lead ingresa hasta el primer contacto humano o asignación efectiva.
+                                Mide la mediana de tiempo transcurrido desde que un lead ingresa hasta el primer contacto humano o asignación efectiva.<br>
+                                Meta HOT: primera respuesta en menos de 60 minutos. El porcentaje en SLA muestra la proporción de leads atendidos dentro del estándar definido.
                             </div>
                         </div>
 
@@ -1807,44 +2586,63 @@
             </div>
 
             <!-- BLOQUE 2: AI EXECUTIVE BRIEFING & DIAGNÓSTICO COMERCIAL -->
-            <section class="ai-briefing animate-glass-card card-delay-4" id="aiBriefing" hidden>
+            <section class="ai-briefing seq-el seq-scroll" id="aiBriefing" hidden>
                 <div class="ai-briefing-inner">
                     <div class="ai-briefing-head">
-                        <div class="ai-briefing-title"><h3>AI Executive Briefing & Diagnóstico</h3></div>
+                        <div class="ai-briefing-title"><h3>Resumen Ejecutivo y Diagnóstico</h3></div>
                         <span class="ai-briefing-meta">Procesado en tiempo real</span>
                     </div>
 
                     <div class="ai-grid">
                         <div class="ai-ins" data-kind="growth">
                             <span class="ai-dot"></span>
-                            <div>
+                            <div class="ai-ins-body">
                                 <span class="ai-label">Crecimiento de Demanda</span>
                                 <p class="ai-text" id="aiGrowthText"></p>
                             </div>
                         </div>
                         <div class="ai-ins" data-kind="alert">
                             <span class="ai-dot"></span>
-                            <div>
+                            <div class="ai-ins-body">
                                 <span class="ai-label">Velocidad de Respuesta</span>
                                 <p class="ai-text" id="aiAlertText"></p>
                             </div>
                         </div>
                         <div class="ai-ins" data-kind="action">
                             <span class="ai-dot"></span>
-                            <div>
-                                <span class="ai-label">Acción Inmediata Sugerida</span>
+                            <div class="ai-ins-body">
+                                <span class="ai-label">Decisión Recomendada</span>
                                 <p class="ai-text" id="aiActionText"></p>
                             </div>
                         </div>
                     </div>
+
+                    <div class="ai-briefing-cta">
+                        <a class="ai-btn ai-btn-primary" href="/crm"><i class="fa-solid fa-list-check"></i> Ver acciones recomendadas</a>
+                    </div>
+                </div>
+            </section>
+
+            <!-- EMBUDO COMERCIAL -->
+            <section class="funnel-block seq-el seq-scroll" id="funnelBlock" hidden>
+                <div class="funnel-card">
+                    <div class="exec-table-head">
+                        <div>
+                            <h3>Embudo Comercial</h3>
+                            <p>Conversión por etapa sobre los leads del período</p>
+                        </div>
+                        <span class="exec-count" id="funnelRecv">—</span>
+                    </div>
+                    <div class="funnel-bars" id="funnelBars"></div>
+                    <div class="funnel-hitos" id="funnelHitos" hidden></div>
                 </div>
             </section>
 
             <!-- SECCIÓN 3: TENDENCIA & CANALES -->
-            <section class="tc-block" id="trendsBlock" data-reveal="animate-light-reveal" hidden>
+            <section class="tc-block" id="trendsBlock" hidden>
                 <div class="tc-grid">
                     <!-- TENDENCIA TEMPORAL (8 col / 70%) -->
-                    <div class="tc-card">
+                    <div class="tc-card tc-trend-card seq-el seq-scroll" id="trendCardBlock">
                         <div class="tc-head">
                             <div>
                                 <h3>Tendencia de Captura</h3>
@@ -1863,7 +2661,7 @@
                     </div>
 
                     <!-- ORIGEN DE LA DEMANDA (4 col / 30%) -->
-                    <div class="tc-card">
+                    <div class="tc-card tc-source-card seq-el seq-scroll" id="sourceBlock">
                         <div class="tc-head">
                             <div>
                                 <h3>Origen de la Demanda</h3>
@@ -1880,38 +2678,65 @@
             </section>
 
             <!-- BLOQUE 4: TABLA DE RENDIMIENTO COMERCIAL -->
-            <section class="exec-table-block" id="execTableBlock" data-reveal="animate-light-reveal" hidden>
+            <section class="exec-table-block seq-el seq-scroll" id="execTableBlock" hidden>
                 <div class="exec-table-card">
                     <div class="exec-table-head">
                         <div>
                             <h3>Rendimiento Comercial por Ejecutivo</h3>
                             <p>Control individual de asignación de leads, tiempo de respuesta (SLA) y cartera en UF</p>
+                            <p class="exec-muted" style="margin:2px 0 0;font-size:10px;color:var(--text-secondary)">SLA = mediana de primera respuesta (min hábiles). Verde: &lt; 30 min · Rojo: ≥ 30 min · Gris: sin datos.</p>
                         </div>
-                        <span class="exec-count" id="execCount">—</span>
+                        <div class="exec-tools">
+                            <span class="exec-count" id="execCount">—</span>
+                        </div>
                     </div>
                     <div class="exec-table-wrap">
-                        <table class="exec-table">
+                        <table class="exec-table" id="execTable">
                             <thead>
                                 <tr>
-                                    <th>Ejecutivo</th>
-                                    <th>Leads Asignados</th>
-                                    <th>vs. Período Anterior</th>
-                                    <th>Mediana SLA (1ª Resp.)</th>
-                                    <th>Citas / Conversión</th>
+                                    <th class="sortable" data-sort="nombre">Ejecutivo<span class="sort-arrow"></span></th>
+                                    <th class="sortable r" data-sort="leads">Leads Asignados<span class="sort-arrow"></span></th>
+                                    <th class="sortable r" data-sort="leads_prev">vs. Período Anterior<span class="sort-arrow"></span></th>
+                                    <th class="sortable r" data-sort="sla_median">Mediana SLA (1ª Resp.)<span class="sort-arrow"></span></th>
+                                    <th class="sortable r" data-sort="citas">Visitas / Conversión<span class="sort-arrow"></span></th>
                                 </tr>
                             </thead>
                             <tbody id="execTableBody"></tbody>
                         </table>
                     </div>
+                    <div class="exec-reconcile" id="execReconcile"></div>
                 </div>
             </section>
 
+            <p class="exec-method-note">Fuente: CRM comercial. Período según filtros seleccionados. Valores UF corresponden a valorización potencial sobre propiedades únicas vinculadas.</p>
+
             </div>
 
-            <!-- VISTAS PENDIENTES (placeholder) -->
-            <div id="viewLeads" hidden><div class="t-placeholder">CRM & Gestión de Leads — en construcción.</div></div>
-            <div id="viewProperties" hidden><div class="t-placeholder">Propiedades & Inventario — en construcción.</div></div>
-            <div id="viewChannels" hidden><div class="t-placeholder">Portales & ROI — en construcción.</div></div>
+            <!-- VISTAS PENDIENTES (Próximamente) -->
+            <div id="viewLeads" hidden>
+                <div class="t-placeholder">
+                    <div class="t-ico"><i class="fa-solid fa-users-gear"></i></div>
+                    <h4>CRM & Gestión de Leads</h4>
+                    <p>Ranking de leads por prioridad, estado de gestión por ejecutivo, bandeja de rescate y flujo de seguimiento comercial.</p>
+                    <span class="t-soon-badge">Próximamente</span>
+                </div>
+            </div>
+            <div id="viewProperties" hidden>
+                <div class="t-placeholder">
+                    <div class="t-ico"><i class="fa-solid fa-building"></i></div>
+                    <h4>Propiedades & Inventario</h4>
+                    <p>Inventario vinculado a la demanda, valorización por tipo de operación, cobertura de precios y rotación de propiedades.</p>
+                    <span class="t-soon-badge">Próximamente</span>
+                </div>
+            </div>
+            <div id="viewChannels" hidden>
+                <div class="t-placeholder">
+                    <div class="t-ico"><i class="fa-solid fa-chart-pie"></i></div>
+                    <h4>Portales & ROI</h4>
+                    <p>Rendimiento por portal: leads, costo, tiempo de respuesta, tasa de contacto y comisión generada por canal.</p>
+                    <span class="t-soon-badge">Próximamente</span>
+                </div>
+            </div>
 
         </div>
 
@@ -1940,6 +2765,12 @@
             </div>
         </div>
 
+        <!-- LOADING OVERLAY (actualización atómica) -->
+        <div class="loading-overlay" id="loadingOverlay" hidden role="status" aria-live="polite">
+            <div class="lo-spinner"></div>
+            <span>Actualizando indicadores…</span>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
         <script src="/static/js/commercial-periods.js"></script>
 
@@ -1964,6 +2795,10 @@
                 const isOpen = sidebar.classList.contains('mobile-open');
                 overlay.style.display = isOpen ? 'block' : 'none';
                 document.querySelector('.hamburger-mobile')?.setAttribute('aria-expanded', String(isOpen));
+                if (isOpen) {
+                    const closeBtn = sidebar.querySelector('.sidebar-close');
+                    if (closeBtn) closeBtn.focus();
+                }
             }
 
             function closeMobileMenu() {
@@ -1972,6 +2807,18 @@
                 if (overlay) overlay.style.display = 'none';
                 document.querySelector('.hamburger-mobile')?.setAttribute('aria-expanded', 'false');
             }
+
+            // Focus trap básico dentro del menú móvil
+            document.addEventListener('keydown', event => {
+                const sidebar = document.getElementById('sidebar');
+                if (!sidebar || !sidebar.classList.contains('mobile-open')) return;
+                if (event.key !== 'Tab') return;
+                const focusables = Array.from(sidebar.querySelectorAll('a, button')).filter(el => el.offsetParent !== null || el === sidebar.querySelector('.sidebar-close'));
+                if (!focusables.length) return;
+                const first = focusables[0], last = focusables[focusables.length - 1];
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+            });
 
             window.addEventListener('resize', () => {
                 if (window.innerWidth > 768) closeMobileMenu();
@@ -2055,7 +2902,7 @@
                 $('pStart').value = range.start;
                 $('pEnd').value = range.end;
                 document.querySelectorAll('#presetSeg button').forEach(b => b.classList.toggle('active', b.dataset.p === preset));
-                loadData();
+                loadData('refresh');
             }
 
             function applyCustomPeriod() {
@@ -2069,7 +2916,7 @@
                 FILTERS.period_end = eVal;
                 FILTERS.period_preset = 'custom';
                 document.querySelectorAll('#presetSeg button').forEach(b => b.classList.toggle('active', b.dataset.p === 'custom'));
-                loadData();
+                loadData('refresh');
             }
 
             function comparisonLabel(mode) {
@@ -2080,16 +2927,14 @@
             }
 
             function renderPeriodMeta() {
-                const cur = $('psCurrent'), prev = $('psPrev'), leads = $('psLeads');
-                if (!cur || !prev || !leads) return;
+                const cur = $('psCurrent'), prev = $('psPrev');
+                if (!cur || !prev) return;
                 const s = FILTERS.period_start, e = FILTERS.period_end;
                 if (!s || !e) { cur.textContent = '—'; return; }
-                const total = OVERVIEW && OVERVIEW.demand ? OVERVIEW.demand.total : 0;
                 const period = (OVERVIEW && OVERVIEW.period) || {};
                 const p = period.previous || {};
                 cur.textContent = s + ' → ' + e;
                 prev.textContent = (p.start && p.end) ? 'vs. ' + p.start + ' → ' + p.end : 'sin comparación';
-                leads.textContent = total.toLocaleString('es-CL');
             }
 
             // --- 3. URL ---
@@ -2110,7 +2955,16 @@
                 COMPARE = CommercialPeriods.validComparison(params.get('compare')) || 'auto';
                 $('pCompare').value = COMPARE;
 
-                if (ps && pe) {
+                if (urlPreset && urlPreset !== 'custom') {
+                    // El preset es la fuente de verdad: evita conservar un rango
+                    // antiguo de 2 días cuando la URL indica “Semana”.
+                    const range = CommercialPeriods.presetRange(urlPreset);
+                    FILTERS.period_start = range.start;
+                    FILTERS.period_end = range.end;
+                    FILTERS.period_preset = urlPreset;
+                    $('pStart').value = range.start;
+                    $('pEnd').value = range.end;
+                } else if (ps && pe) {
                     const safe = CommercialPeriods.clampRange(ps, pe);
                     FILTERS.period_start = safe.start;
                     FILTERS.period_end = safe.end;
@@ -2134,7 +2988,256 @@
             }
 
             // --- 4. CARGA DE DATOS Y RENDER DE TARJETAS ---
-            async function loadData() {
+            let SEQUENCE_MODE = 'full';
+            const SCROLL_REVEAL_SELECTOR = '#aiBriefing, #funnelBlock, #trendCardBlock, #sourceBlock, #execTableBlock';
+            const SCROLL_REVEAL_DEPENDENCIES = {
+                funnelBlock: 'aiBriefing',
+                trendCardBlock: 'funnelBlock',
+                sourceBlock: 'trendCardBlock',
+                execTableBlock: 'sourceBlock'
+            };
+            let seqObservers = {};
+            let seqTimers = [];
+            let cardSlaRevealComplete = false;
+            let cardRevealObserver = null;
+            let mobileCardObserver = null;
+            let scrollRevealReady = {};
+
+            function clearRevealTimers() {
+                seqTimers.forEach(timer => clearTimeout(timer));
+                seqTimers = [];
+                scrollRevealReady = {};
+                if (cardRevealObserver) {
+                    cardRevealObserver.disconnect();
+                    cardRevealObserver = null;
+                }
+                if (mobileCardObserver) {
+                    mobileCardObserver.disconnect();
+                    mobileCardObserver = null;
+                }
+            }
+
+            function observeMobileCards() {
+                if (!window.matchMedia('(max-width: 768px)').matches) return;
+                const cards = Array.from(document.querySelectorAll('#cardDemandMeta, #cardConversion, #cardPipeline, #cardSla'))
+                    .filter(card => !card.classList.contains('seq-shown'));
+                if (!cards.length) return;
+                if (!('IntersectionObserver' in window)) {
+                    cards.forEach(card => {
+                        card.classList.add('seq-shown', 'mobile-card-reveal');
+                    });
+                    return;
+                }
+                mobileCardObserver = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (!entry.isIntersecting) return;
+                        const card = entry.target;
+                        card.classList.add('seq-shown');
+                        requestAnimationFrame(() => card.classList.add('mobile-card-reveal'));
+                        mobileCardObserver.unobserve(card);
+                    });
+                }, { threshold: 0.12, rootMargin: '0px 0px -10% 0px' });
+                cards.forEach(card => mobileCardObserver.observe(card));
+            }
+
+            function scheduleScrollRevealReady(el) {
+                if (!el) return;
+                scrollRevealReady[el.id] = false;
+                seqTimers.push(setTimeout(() => {
+                    if (el.classList.contains('seq-shown')) {
+                        scrollRevealReady[el.id] = true;
+                        observeScrollEls();
+                    }
+                }, 850));
+            }
+
+            function revealBriefingAfterCard() {
+                cardSlaRevealComplete = true;
+                const ai = $('aiBriefing');
+                if (!ai || ai.classList.contains('seq-shown')) return;
+                const rect = ai.getBoundingClientRect();
+                if (rect.bottom > 0 && rect.top < window.innerHeight) {
+                    ai.classList.add('seq-shown', 'entered');
+                    requestAnimationFrame(() => ai.classList.add('seq-reveal-active'));
+                    growBarsIn(ai);
+                    scheduleScrollRevealReady(ai);
+                    observeScrollEls();
+                } else {
+                    observeScrollEls();
+                }
+            }
+
+            function isScrollEl(el) {
+                return el.matches(SCROLL_REVEAL_SELECTOR);
+            }
+
+            function growBarsIn(el) {
+                setTimeout(() => {
+                    el.querySelectorAll('.funnel-fill, .tc-src-bar').forEach(b => {
+                        const w = b.getAttribute('data-w');
+                        if (w !== null) b.style.width = w + '%';
+                    });
+                }, 250);
+            }
+
+            // Revela secciones inferiores al entrar al viewport (una sola vez, permanente)
+            function observeScrollEls() {
+                Object.values(seqObservers).forEach(ob => { try { ob.disconnect(); } catch (e) { /* noop */ } });
+                seqObservers = {};
+                document.querySelectorAll(SCROLL_REVEAL_SELECTOR).forEach(el => {
+                    if (el.classList.contains('seq-shown')) return;
+                    const dependencyId = SCROLL_REVEAL_DEPENDENCIES[el.id];
+                    if (dependencyId && (!$(dependencyId)?.classList.contains('seq-shown') || scrollRevealReady[dependencyId] === false)) return;
+                    const cardSla = $('cardSla');
+                    const cardSlaAnimating = cardSla && cardSla.getAnimations
+                        ? cardSla.getAnimations().some(animation => animation.playState === 'running')
+                        : false;
+                    if (el.id === 'aiBriefing' && cardSla && (!cardSla.classList.contains('seq-shown') || cardSlaAnimating || !cardSlaRevealComplete)) return;
+                    const rect = el.getBoundingClientRect();
+                    if (window.scrollY > 0 && rect.bottom < 0) {
+                        // Si el usuario saltÃ³ mÃ¡s abajo, revela la secciÃ³n en segundo plano
+                        // para evitar un bloque vacÃ­o al llegar al final.
+                        el.classList.add('seq-shown', 'entered');
+                        requestAnimationFrame(() => el.classList.add('seq-reveal-active'));
+                        growBarsIn(el);
+                        scheduleScrollRevealReady(el);
+                        observeScrollEls();
+                        return;
+                    }
+                    if (!('IntersectionObserver' in window)) {
+                        el.classList.add('seq-shown', 'entered');
+                        scheduleScrollRevealReady(el);
+                        growBarsIn(el);
+                        return;
+                    }
+                    const ob = new IntersectionObserver((entries) => {
+                        entries.forEach(e => {
+                            if (e.isIntersecting) {
+                                e.target.classList.add('seq-shown', 'entered');
+                                requestAnimationFrame(() => e.target.classList.add('seq-reveal-active'));
+                                growBarsIn(e.target);
+                                scheduleScrollRevealReady(e.target);
+                                ob.unobserve(e.target);
+                                delete seqObservers[e.target.id];
+                                observeScrollEls();
+                            }
+                        });
+                    }, { threshold: 0.2, rootMargin: '0px 0px -15% 0px' });
+                    seqObservers[el.id] = ob;
+                    ob.observe(el);
+                });
+            }
+
+            // Anima los bloques superiores (header, filtros, tarjetas) en secuencia
+            function runRevealSequence(mode) {
+                const all = Array.from(document.querySelectorAll('.seq-el'));
+                if (!all.length) return;
+                clearRevealTimers();
+                const isRefresh = mode === 'refresh';
+                const isMobile = window.matchMedia('(max-width: 768px)').matches;
+                cardSlaRevealComplete = false;
+                // Misma velocidad visual en carga inicial y retorno al resumen.
+                const step = 60;
+                const dur = 450;
+                document.body.style.setProperty('--seq-dur', dur + 'ms');
+                document.body.classList.add('seq-pending');
+                document.body.classList.toggle('seq-refresh', isRefresh);
+                // Refresh: no re-animar elementos estructurales ni secciones inferiores
+                const els = all.filter(el => {
+                    if (isRefresh && el.classList.contains('seq-static')) return false;
+                    if (isScrollEl(el)) return false;
+                    if (isMobile && el.matches('#cardDemandMeta, #cardConversion, #cardPipeline, #cardSla')) return false;
+                    return true;
+                });
+                els.forEach(el => el.classList.remove('seq-shown'));
+                void document.body.offsetWidth;
+                els.forEach((el, i) => {
+                    seqTimers.push(setTimeout(() => el.classList.add('seq-shown'), (i + 1) * step));
+                });
+                const cardSla = $('cardSla');
+                if (cardSla) {
+                    cardRevealObserver = new MutationObserver(() => {
+                        if (!cardSla.classList.contains('seq-shown')) return;
+                        cardRevealObserver.disconnect();
+                        cardRevealObserver = null;
+                        seqTimers.push(setTimeout(revealBriefingAfterCard, 760));
+                    });
+                    cardRevealObserver.observe(cardSla, { attributes: true, attributeFilter: ['class'] });
+                }
+                observeScrollEls();
+                observeMobileCards();
+                seqTimers.push(setTimeout(() => {
+                    document.body.classList.remove('seq-pending', 'seq-refresh');
+                    document.body.style.removeProperty('--seq-dur');
+                    growBars('.funnel-fill');
+                    growBars('.tc-src-bar');
+                    observeScrollEls();
+                    seqTimers = [];
+                }, els.length * step + dur + 120));
+            }
+
+            function resetExecutiveReveal(startSequence = true) {
+                // Activar primero el estado de refresh evita el flash nítido antes del blur.
+                document.body.classList.add('seq-pending', 'seq-refresh');
+                // Reconstruir el contenido dinámico para repetir también contadores,
+                // barras, trazado, embudo y tabla al volver al resumen.
+                renderDemandCard();
+                renderConversionCard();
+                renderPipelineCard();
+                renderSlaCard();
+                renderInsightsBlock();
+                renderTrendsAndChannels();
+                renderFunnel();
+                renderExecutivesTable();
+                document.querySelectorAll('.seq-el').forEach(el => {
+                    if (el.classList.contains('seq-static')) {
+                        // Estructura superior estable al volver a la pestaña.
+                        el.classList.add('seq-shown');
+                        return;
+                    }
+                    el.classList.remove('seq-shown');
+                    el.classList.remove('seq-reveal-active');
+                    el.classList.remove('entered');
+                    el.classList.remove('mobile-card-reveal');
+                });
+                Object.values(seqObservers).forEach(ob => { try { ob.disconnect(); } catch (e) { /* noop */ } });
+                seqObservers = {};
+                window.scrollTo({ top: 0, behavior: 'auto' });
+                // Sólo reanima tarjetas y contenido; título, fecha, pestañas y filtros quedan estables.
+                if (startSequence) runRevealSequence('refresh');
+            }
+
+            function prepareRefreshReveal() {
+                // Reinicia el contenido dinamico sin reanimar la estructura estatica.
+                clearRevealTimers();
+                document.body.classList.add('seq-pending', 'seq-refresh');
+                cardSlaRevealComplete = false;
+                document.querySelectorAll('.seq-el').forEach(el => {
+                    if (el.classList.contains('seq-static')) {
+                        el.classList.add('seq-shown');
+                        return;
+                    }
+                    el.classList.remove('seq-shown', 'seq-reveal-active', 'entered', 'mobile-card-reveal');
+                });
+                Object.values(seqObservers).forEach(ob => { try { ob.disconnect(); } catch (e) { /* noop */ } });
+                seqObservers = {};
+                window.scrollTo({ top: 0, behavior: 'auto' });
+            }
+
+            function growBars(selector) {
+                document.querySelectorAll(selector).forEach(b => {
+                    const w = b.getAttribute('data-w');
+                    if (w !== null) b.style.width = w + '%';
+                });
+            }
+
+            async function loadData(mode) {
+                const overlay = $('loadingOverlay');
+                if (overlay) overlay.hidden = false;
+                const upd = $('dashUpdated');
+                if (upd) { upd.textContent = 'Actualizando indicadores…'; upd.classList.add('loading'); }
+                const seqMode = (mode === 'refresh') ? 'refresh' : 'full';
+                if (seqMode === 'refresh') prepareRefreshReveal();
                 try {
                     const p = new URLSearchParams();
                     if (FILTERS.period_start) p.set('period_start', FILTERS.period_start);
@@ -2152,8 +3255,16 @@
                     renderSlaCard();
                     renderInsightsBlock();
                     renderTrendsAndChannels();
+                    renderFunnel();
                     renderExecutivesTable();
+                    const now = new Date();
+                    $('dashUpdated').textContent = 'Actualizado ' + now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+                    runRevealSequence(seqMode);
                 } catch (e) { console.error("Error cargando datos:", e); }
+                finally {
+                    if (overlay) overlay.hidden = true;
+                    if (upd) upd.classList.remove('loading');
+                }
             }
 
             // --- CARD 1: DEMANDA & META ---
@@ -2168,6 +3279,14 @@
                     if (progress < 1) requestAnimationFrame(step);
                 };
                 requestAnimationFrame(step);
+            }
+
+            function formatLeadTarget(value) {
+                const n = Number(value);
+                if (!Number.isFinite(n)) return '—';
+                return Number.isInteger(n)
+                    ? String(n)
+                    : n.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
             }
 
             function buildSparkline(labels, values, metaTarget) {
@@ -2225,16 +3344,7 @@
             // --- ANIMACIÓN DE CARGA DE LAS TARJETAS (Glass Blur Reveal) ---
             function showCardReveal(card) {
                 if (!card) return;
-                const cls = card.dataset.reveal || 'animate-glass-card';
-                card.classList.remove('animate-glass-card', 'animate-light-reveal');
                 card.hidden = false;
-                void card.offsetWidth;
-                card.classList.add(cls);
-                const onEnd = () => {
-                    card.classList.remove('animate-glass-card', 'animate-light-reveal');
-                    card.removeEventListener('animationend', onEnd);
-                };
-                card.addEventListener('animationend', onEnd);
             }
 
             // --- BLOQUE 2: AI EXECUTIVE BRIEFING & DIAGNÓSTICO COMERCIAL ---
@@ -2253,35 +3363,59 @@
 
                 let growthText;
                 if (resolved === 'none' || variacion === null || variacion === undefined) {
-                    growthText = 'Captura de <strong>' + total + ' oportunidades</strong> en el período analizado.';
+                    growthText = 'Se capturaron <strong>' + total + ' oportunidades</strong> en el período.';
                 } else if (variacion >= 0) {
-                    growthText = 'La captura de leads creció un <strong>+' + variacion.toFixed(1) + '%</strong> vs. el período anterior, alcanzando <strong>' + total + ' oportunidades</strong>.';
+                    growthText = 'Los leads aumentaron <strong>+' + variacion.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</strong>, alcanzando <strong>' + total + ' oportunidades</strong>.';
                 } else {
-                    growthText = 'La captura de leads cayó un <strong>' + variacion.toFixed(1) + '%</strong> vs. el período anterior, con <strong>' + total + ' oportunidades</strong> en el período.';
+                    growthText = 'Los leads cayeron <strong>' + variacion.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</strong> vs. el período anterior, con <strong>' + total + ' oportunidades</strong>.';
                 }
 
                 let alertText;
+                const medianaTxt = (mediana === null || mediana === undefined) ? '' : mediana.toLocaleString('es-CL', { maximumFractionDigits: 1 });
                 if (mediana === null || mediana === undefined || slaPct === null || slaPct === undefined) {
                     alertText = 'Sin datos suficientes de tiempos de respuesta en el período.';
                 } else if (slaPct >= 90) {
-                    alertText = 'La mediana de atención es de <strong>' + mediana + ' min</strong> y el <strong>' + slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</strong> cumple el SLA. Buen desempeño operativo.';
+                    alertText = 'Mediana de atención de <strong>' + medianaTxt + ' min</strong> con <strong>' + slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</strong> dentro de SLA.';
                 } else {
-                    alertText = 'La mediana de atención es de <strong>' + mediana + ' min</strong>. Solo el <strong>' + slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</strong> cumple el SLA objetivo (&lt; 180 min). Riesgo de enfriamiento de la demanda.';
+                    alertText = 'Mediana de atención de <strong>' + medianaTxt + ' min</strong>; solo el <strong>' + slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</strong> cumple el SLA objetivo (&lt; 180 min).';
                 }
 
                 let actionText;
                 const vencidos = sla.vencidos || 0;
-                if (vencidos > 0) {
-                    actionText = 'Priorizar la atención inmediata de los <strong>' + vencidos + ' leads con SLA vencido</strong> para reducir el riesgo de enfriamiento de la demanda.';
+                const execItems = ((OVERVIEW.executives || {}).items) || [];
+                const topExec = execItems.slice(0, 2);
+                if (vencidos > 0 && topExec.length >= 2) {
+                    const s1 = Math.ceil(vencidos / 2);
+                    const s2 = vencidos - s1;
+                    actionText = 'Contactar hoy los <strong>' + vencidos + ' leads con SLA vencido</strong>: asignar ' + s1 + ' a <strong>' + topExec[0].nombre + '</strong> y ' + s2 + ' a <strong>' + topExec[1].nombre + '</strong>, con meta de contacto en menos de 60 minutos.';
+                } else if (vencidos > 0) {
+                    actionText = 'Contactar hoy los <strong>' + vencidos + ' leads con SLA vencido</strong> para evitar el enfriamiento de la demanda.';
                 } else if (noGest > 0) {
-                    actionText = 'Dar seguimiento a los <strong>' + noGest + ' leads sin gestión</strong> para acelerar la agendación de citas.';
+                    actionText = 'Dar seguimiento a los <strong>' + noGest + ' leads sin gestión</strong> para acelerar la agendación de visitas.';
                 } else {
-                    actionText = 'Mantener la operación actual; no hay leads en riesgo en el período.';
+                    actionText = 'Operación estable: sin leads en riesgo en el período.';
                 }
 
-                $('aiGrowthText').innerHTML = growthText;
-                $('aiAlertText').innerHTML = alertText;
+                $('aiGrowthText').innerHTML = growthText + ' <span class="ai-action-line"><strong>Acción:</strong> revisar capacidad de atención y distribución de nuevos leads.</span>';
+                $('aiAlertText').innerHTML = alertText + ' <span class="ai-action-line"><strong>Acción:</strong> priorizar la respuesta de leads vencidos y revisar la cobertura de registro.</span>';
                 $('aiActionText').innerHTML = actionText;
+                const growthAction = resolved === 'none'
+                    ? 'Validar si la capacidad comercial acompaña el volumen capturado.'
+                    : (variacion >= 0
+                        ? 'Asegurar capacidad de respuesta para absorber el crecimiento sin deteriorar el SLA.'
+                        : 'Revisar fuentes de captación y activar acciones para recuperar el volumen.' );
+                const alertAction = (slaPct !== null && slaPct !== undefined && slaPct < 90)
+                    ? 'Priorizar leads vencidos y corregir la asignación de primera respuesta.'
+                    : 'Mantener el estándar y monitorear diariamente los casos fuera de SLA.';
+                $('aiGrowthText').innerHTML = growthText + ' <span class="ai-action-line"><strong>Acción:</strong> ' + growthAction + '</span>';
+                $('aiAlertText').innerHTML = alertText + ' <span class="ai-action-line"><strong>Acción:</strong> ' + alertAction + '</span>';
+                if (vencidos > 0) {
+                    $('aiActionText').innerHTML = '<strong>Prioridad inmediata:</strong> contactar ' + vencidos + ' leads vencidos y registrar el resultado en CRM.';
+                } else if (noGest > 0) {
+                    $('aiActionText').innerHTML = '<strong>Prioridad operativa:</strong> gestionar ' + noGest + ' leads sin actividad y llevarlos a visita.';
+                } else {
+                    $('aiActionText').innerHTML = '<strong>Control:</strong> mantener seguimiento diario de SLA y conversión.';
+                }
                 showCardReveal(block);
             }
 
@@ -2303,11 +3437,13 @@
                 const labels = (demand.daily || {}).labels || [];
                 const values = (demand.daily || {}).values || [];
                 const sources = ((OVERVIEW.sources || {}).items) || [];
+                const resolved = (OVERVIEW.period || {}).compare_resolved || 'none';
+                const hasCmp = resolved !== 'none';
 
                 const chart = $('tcTrendChart');
                 const nums = values.map(v => Number(v) || 0);
-                const prevNums = ((demand.previous_daily || {}).values || []).map(v => Number(v) || 0);
-                const prevLabels = ((demand.previous_daily || {}).labels || []);
+                const prevNums = hasCmp ? ((demand.previous_daily || {}).values || []).map(v => Number(v) || 0) : [];
+                const prevLabels = hasCmp ? ((demand.previous_daily || {}).labels || []) : [];
                 const allNums = nums.concat(prevNums);
                 const rawMax = Math.max(...allNums, 1);
                 const yMax = rawMax * 1.15;
@@ -2341,6 +3477,9 @@
                 const areaD = lineD + ' L' + W + ',' + H + ' L0,' + H + ' Z';
                 const prevLineD = prevPts.length > 1 ? smooth(prevPts) : '';
                 const prevAreaD = prevLineD ? prevLineD + ' L' + W + ',' + H + ' L0,' + H + ' Z' : '';
+                const pointsHtml = curPts.map((pt, i) =>
+                    '<circle class="tc-hit" cx="' + pt[0].toFixed(2) + '" cy="' + pt[1].toFixed(2) + '" r="3.2" data-index="' + i + '" fill="transparent" stroke="none"/>'
+                ).join('');
                 const step = Math.max(1, Math.ceil(days / 10));
                 let labelsHtml = '';
                 for (let i = 0; i < days; i += step) {
@@ -2357,18 +3496,49 @@
                         '<stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.25"/>' +
                         '<stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.0"/>' +
                         '</linearGradient>' +
-                        '<linearGradient id="tcGradPrev" x1="0" y1="0" x2="0" y2="1">' +
+                        (hasCmp ? '<linearGradient id="tcGradPrev" x1="0" y1="0" x2="0" y2="1">' +
                         '<stop offset="0%" stop-color="#64748B" stop-opacity="0.18"/>' +
                         '<stop offset="100%" stop-color="#64748B" stop-opacity="0.0"/>' +
-                        '</linearGradient>' +
+                        '</linearGradient>' : '') +
                         '</defs>' +
-                        (prevAreaD ? '<path class="tc-line-area-prev" d="' + prevAreaD + '" fill="url(#tcGradPrev)"/>' : '') +
-                        (prevLineD ? '<path class="tc-line-prev" d="' + prevLineD + '" fill="none" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '') +
+                        (hasCmp && prevAreaD ? '<path class="tc-line-area-prev" d="' + prevAreaD + '" fill="url(#tcGradPrev)"/>' : '') +
+                        (hasCmp && prevLineD ? '<path class="tc-line-prev" d="' + prevLineD + '" fill="none" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '') +
                         '<path class="tc-line-area" d="' + areaD + '" fill="url(#tcGrad)"/>' +
                         '<path class="tc-line" d="' + lineD + '" fill="none" stroke="#8B5CF6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
-                        '</svg></div>' +
+                        pointsHtml +
+                        '</svg><div class="tc-chart-tooltip" id="tcTrendTooltip" hidden></div></div>' +
                         '<div class="tc-line-labels">' + labelsHtml + '</div>';
                 }
+
+                const trendTooltip = chart ? chart.querySelector('#tcTrendTooltip') : null;
+                if (chart && trendTooltip) {
+                    const totalCurrent = nums.reduce((sum, value) => sum + value, 0);
+                    const peakCurrent = Math.max(...nums, 0);
+                    const formatTrendDate = (iso) => {
+                        const dt = new Date(String(iso || '') + 'T12:00:00');
+                        return Number.isNaN(dt.getTime()) ? String(iso || '') : dt.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
+                    };
+                    chart.querySelectorAll('.tc-hit').forEach(hit => {
+                        hit.addEventListener('mouseenter', () => {
+                            const idx = Number(hit.getAttribute('data-index'));
+                            const previousValue = hasCmp && prevNums[idx] !== undefined ? prevNums[idx] : null;
+                            const delta = previousValue === null ? null : nums[idx] - previousValue;
+                            const share = totalCurrent > 0 ? (nums[idx] / totalCurrent * 100).toLocaleString('es-CL', { maximumFractionDigits: 1 }) : '0,0';
+                            const deltaText = delta === null ? '' : 'Vs. período anterior: ' + (delta >= 0 ? '+' : '') + delta + ' leads';
+                            const peakText = nums[idx] === peakCurrent ? '<small>Pico del período</small>' : '';
+                            trendTooltip.innerHTML = '<span>' + formatTrendDate(labels[idx]) + '</span>' +
+                                '<strong>' + nums[idx] + ' leads</strong>' +
+                                '<small>' + share + '% del período</small>' +
+                                (deltaText ? '<small>' + deltaText + '</small>' : '') + peakText;
+                            trendTooltip.style.left = Math.max(12, Math.min(88, curPts[idx][0])) + '%';
+                            trendTooltip.hidden = false;
+                        });
+                        hit.addEventListener('mouseleave', () => { trendTooltip.hidden = true; });
+                    });
+                }
+
+                const prevLegend = $('tcTrendChart') ? document.querySelector('.tc-leg-prev') : null;
+                if (prevLegend) prevLegend.style.display = hasCmp ? '' : 'none';
 
                 const peakIdx = nums.indexOf(Math.max(...nums));
                 const peakVal = nums[peakIdx] || 0;
@@ -2376,11 +3546,13 @@
                 const prevPeakVal = prevNums[prevPeakIdx] || 0;
                 const avg = nums.length ? (nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
                 const variation = demand.variation_pct;
-                const varText = (variation !== null && variation !== undefined)
-                    ? ' (' + (variation >= 0 ? '+' : '') + variation.toFixed(1) + '% vs. ant.)'
+                const varText = (hasCmp && variation !== null && variation !== undefined)
+                    ? ' (' + (variation >= 0 ? '+' : '') + variation.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '% vs. ant.)'
                     : '';
-                $('tcPeak').innerHTML = 'Pico máximo: <strong>' + tcShortLabel(labels[peakIdx]) + ' (' + peakVal + ' leads)</strong> vs. <strong>' + tcShortLabel(prevLabels[prevPeakIdx]) + ' (' + prevPeakVal + ')</strong>';
-                $('tcAvg').innerHTML = 'Promedio diario: <strong>' + avg.toFixed(1) + ' leads/día</strong>' + varText;
+                $('tcPeak').innerHTML = hasCmp
+                    ? 'Pico máximo: <strong>' + tcShortLabel(labels[peakIdx]) + ' (' + peakVal + ' leads)</strong> vs. <strong>' + tcShortLabel(prevLabels[prevPeakIdx]) + ' (' + prevPeakVal + ')</strong>'
+                    : 'Pico máximo: <strong>' + tcShortLabel(labels[peakIdx]) + ' (' + peakVal + ' leads)</strong>';
+                $('tcAvg').innerHTML = 'Promedio diario: <strong>' + avg.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' leads/día</strong>' + varText;
 
                 const list = $('tcSourcesList');
                 if (list) {
@@ -2394,7 +3566,7 @@
                         html += '<div class="tc-src">' +
                             '<div class="tc-src-top">' +
                             '<span class="tc-src-name"><span class="tc-src-dot" style="background:' + color + '"></span>' + (src.nombre || 'Otro') + '</span>' +
-                            '<span class="tc-src-val"><strong>' + src.cantidad + '</strong> (' + pct.toFixed(1).replace('.', ',') + '%) <span class="tc-diff ' + diffClass + '">[' + diffText + ']</span></span>' +
+                            '<span class="tc-src-val"><strong>' + src.cantidad + '</strong> (' + pct.toFixed(1).replace('.', ',') + '%) ' + (hasCmp ? '<span class="tc-diff ' + diffClass + '">[' + diffText + ']</span>' : '') + '</span>' +
                             '</div>' +
                             '<div class="tc-src-track"><div class="tc-src-bar" style="width:0%;background:' + color + '" data-w="' + Math.min(pct, 100) + '"></div></div>' +
                             '</div>';
@@ -2405,51 +3577,39 @@
                 const leader = sources.length ? sources[0] : null;
                 const leaderDiff = leader ? (leader.diff || 0) : 0;
                 const leaderDiffText = leaderDiff > 0 ? '+' + leaderDiff : leaderDiff;
-                $('tcLeader').innerHTML = 'Canal líder: <strong>' + (leader ? leader.nombre : '—') + '</strong> (' + leaderDiffText + ' leads)';
+                $('tcLeader').innerHTML = 'Canal líder: <strong>' + (leader ? leader.nombre : '—') + '</strong>' + (hasCmp ? ' (' + leaderDiffText + ' leads)' : '');
                 $('tcSourcesCount').innerHTML = sources.length + ' fuentes activas';
 
-                // Reveal al hacer scroll (borroso → nítido) + línea izq→der
                 block.hidden = false;
-                block.classList.remove('entered');
-                observeTrendsBlock();
-            }
-
-            // Observa una sección y anima (borroso → nítido) al entrar al viewport
-            let scrollObservers = {};
-            function observeScrollReveal(block, growSelector) {
-                if (!block) return;
-                if (!('IntersectionObserver' in window)) {
-                    block.classList.add('entered');
-                    return;
-                }
-                if (!scrollObservers[block.id]) {
-                    scrollObservers[block.id] = new IntersectionObserver((entries) => {
-                        entries.forEach(e => {
-                            if (e.isIntersecting) {
-                                e.target.classList.add('entered');
-                                if (growSelector) {
-                                    setTimeout(() => {
-                                        e.target.querySelectorAll(growSelector).forEach(b => { b.style.width = b.getAttribute('data-w') + '%'; });
-                                    }, 300);
-                                }
-                                scrollObservers[e.target.id].unobserve(e.target);
-                            }
-                        });
-                    }, { threshold: 0.2 });
-                }
-                scrollObservers[block.id].observe(block);
-            }
-
-            function observeTrendsBlock() {
-                observeScrollReveal($('trendsBlock'), '.tc-src-bar');
             }
 
             // --- BLOQUE 4: TABLA DE RENDIMIENTO COMERCIAL ---
+            let EXEC_SORT = { key: 'leads', dir: 'desc' };
+
             function renderExecutivesTable() {
                 const block = $('execTableBlock');
                 if (!block || !OVERVIEW || !OVERVIEW.executives) return;
-                const items = OVERVIEW.executives.items || [];
+                const items = (OVERVIEW.executives.items || []).slice();
                 const body = $('execTableBody');
+                const resolved = (OVERVIEW.period || {}).compare_resolved || 'none';
+                const hasCmp = resolved !== 'none';
+
+                // Ordenamiento
+                const sk = EXEC_SORT.key;
+                const sd = EXEC_SORT.dir === 'asc' ? 1 : -1;
+                items.sort((a, b) => {
+                    let va = a[sk], vb = b[sk];
+                    if (sk === 'nombre') { va = (va || '').toLowerCase(); vb = (vb || '').toLowerCase(); return va < vb ? -sd : va > vb ? sd : 0; }
+                    if (va === null || va === undefined) va = -Infinity;
+                    if (vb === null || vb === undefined) vb = -Infinity;
+                    return (va - vb) * sd;
+                });
+
+                // Actualizar indicadores de sort en el thead
+                document.querySelectorAll('#execTable th.sortable').forEach(th => {
+                    th.classList.remove('sorted-asc', 'sorted-desc');
+                    if (th.dataset.sort === sk) th.classList.add(sd === 1 ? 'sorted-asc' : 'sorted-desc');
+                });
 
                 $('execCount').innerHTML = items.length + ' Ejecutivos';
 
@@ -2467,18 +3627,82 @@
                         const diffClass = diff > 0 ? 'exec-sla-ok' : (diff < 0 ? 'exec-sla-bad' : 'exec-muted');
                         const diffText = diff > 0 ? '+' + diff : diff;
                         html += '<tr>' +
-                            '<td><span class="exec-avatar">' + (r.nombre ? r.nombre.charAt(0) : 'S/A') + '</span><span class="exec-name">' + r.nombre + '</span></td>' +
+                            '<td><span class="exec-name">' + r.nombre + '</span></td>' +
                             '<td class="exec-mono"><strong>' + r.leads + '</strong> <span class="exec-muted">(' + pctLeads + '%)</span></td>' +
-                            '<td class="exec-mono"><strong>' + r.leads_prev + '</strong> <span class="' + diffClass + '">(' + diffText + ')</span></td>' +
-                            '<td class="exec-mono ' + (slaOk ? 'exec-sla-ok' : 'exec-sla-bad') + '">' + slaText + '</td>' +
-                            '<td class="exec-mono"><strong>' + r.citas + ' citas</strong> <span class="exec-muted">(' + conv + '%)</span></td>' +
+                            '<td class="exec-mono">' + (hasCmp
+                                ? '<strong>' + r.leads_prev + '</strong> <span class="' + diffClass + '">(' + diffText + ')</span>'
+                                : '<span class="exec-muted">—</span>') + '</td>' +
+                            '<td class="exec-mono ' + (slaOk ? 'exec-sla-ok' : 'exec-sla-bad') + '" title="SLA: mediana de 1ª respuesta en minutos hábiles (umbral 30 min).">' + slaText + '</td>' +
+                            '<td class="exec-mono"><strong>' + r.citas + ' visitas</strong> <span class="exec-muted">(' + conv + '%)</span></td>' +
                             '</tr>';
                     });
                     body.innerHTML = html;
                 }
+                const rec = OVERVIEW.executives.reconcile;
+                if (rec) {
+                    const pctTxt = (rec.pct != null) ? rec.pct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) : '—';
+                    $('execReconcile').innerHTML =
+                        'Total dashboard: <strong>' + rec.total + '</strong> leads · Ejecutivos: <strong>' + rec.contabilizado + '</strong> (' + pctTxt + '%) · Otros (admin/pruebas/sin asignar): <strong>' + rec.otros + '</strong>';
+                }
                 block.hidden = false;
-                block.classList.remove('entered');
-                observeScrollReveal(block, null);
+            }
+
+            // --- EMBUDO COMERCIAL ---
+            const FUNNEL_MAIN_LABELS = { contactados: 'Contactados', calificados: 'Calificados', visitas: 'Visitas' };
+
+            function renderFunnel() {
+                const block = $('funnelBlock');
+                if (!block || !OVERVIEW || !OVERVIEW.funnel) return;
+                const f = OVERVIEW.funnel;
+                const received = f.received || 0;
+                $('funnelRecv').innerHTML = received + ' leads';
+                const bars = $('funnelBars');
+                const allStages = f.stages || [];
+                const visitas = (allStages.find(s => s.key === 'visitas') || {}).count || 0;
+                const ofertas = (allStages.find(s => s.key === 'ofertas') || {}).count || 0;
+                const cierres = (allStages.find(s => s.key === 'cierres') || {}).count || 0;
+
+                // Embudo descendente hasta Visitas
+                const mainStages = allStages.filter(s => s.key in FUNNEL_MAIN_LABELS);
+                const stages = [{ key: 'received', label: 'Recibidos', count: received, pct: 100.0 }].concat(mainStages);
+                if (bars) {
+                    let html = '';
+                    stages.forEach((s, i) => {
+                        const w = received > 0 ? Math.max((s.count / received) * 100, 0.5) : 0;
+                        const conv = i === 0 ? '' : '<small>' + s.pct.toFixed(1).replace('.', ',') + '% del total</small>';
+                        html += '<div class="funnel-row">' +
+                            '<span class="funnel-lbl">' + s.label + '</span>' +
+                            '<div class="funnel-trk"><div class="funnel-fill" data-w="' + w + '" style="width:0%"></div></div>' +
+                            '<span class="funnel-val"><strong>' + s.count + '</strong>' + conv + '</span>' +
+                            '</div>';
+                    });
+                    bars.innerHTML = html;
+                }
+
+                // Hitos comerciales excepcionales: ofertas/cierres sin visita registrada
+                const hitos = $('funnelHitos');
+                const ofertasSinVisita = ofertas;
+                const cierresSinVisita = cierres;
+                if (hitos) {
+                    if (ofertasSinVisita === 0 && cierresSinVisita === 0) {
+                        hitos.hidden = true;
+                        hitos.innerHTML = '';
+                    } else {
+                        hitos.hidden = false;
+                        let chips = '';
+                        if (ofertasSinVisita > 0) {
+                            chips += '<span class="funnel-hito-chip oferta"><i class="fa-solid fa-handshake"></i> Ofertas sin visita registrada: ' + ofertasSinVisita + '</span>';
+                        }
+                        if (cierresSinVisita > 0) {
+                            chips += '<span class="funnel-hito-chip cierre"><i class="fa-solid fa-circle-check"></i> Cierres sin visita registrada: ' + cierresSinVisita + '</span>';
+                        }
+                        hitos.innerHTML =
+                            '<div class="funnel-hitos-title"><i class="fa-solid fa-asterisk"></i> Hitos comerciales excepcionales</div>' +
+                            '<div class="funnel-hitos-chips">' + chips + '</div>' +
+                            '<div class="funnel-alert"><i class="fa-solid fa-triangle-exclamation"></i> <span>Existen negocios avanzados con visita no registrada o con origen comercial alternativo. Revisar trazabilidad.</span></div>';
+                    }
+                }
+                block.hidden = false;
             }
 
             function renderDemandCard() {
@@ -2489,16 +3713,17 @@
                 const total = demand.total || 0;
                 const previous = demand.previous || 0;
                 const metaTarget = (OVERVIEW.meta && OVERVIEW.meta.target) || 200;
+                const metaTargetDisplay = formatLeadTarget(metaTarget);
                 const resolved = period.compare_resolved || 'none';
 
-                const pctAvance = metaTarget > 0 ? (total / metaTarget * 100).toFixed(1) : '0.0';
+                const pctAvance = metaTarget > 0 ? (total / metaTarget * 100).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '0,0';
                 const diffLeads = total - previous;
                 const isPositive = diffLeads >= 0;
                 const variation = demand.variation_pct;
 
                 let badge = '<span class="cd1-badge cd1-badge-neutral">Sin comparación</span>';
                 if (resolved !== 'none') {
-                    const varText = (variation === null || variation === undefined) ? '0.0' : Number(variation).toFixed(1);
+                    const varText = (variation === null || variation === undefined) ? '0,0' : Number(variation).toLocaleString('es-CL', { maximumFractionDigits: 1 });
                     badge = '<span class="cd1-badge ' + (isPositive ? 'cd1-badge-pos' : 'cd1-badge-neg') + '">' +
                         '<span>' + (isPositive ? '▲' : '▼') + '</span>' +
                         '<span>' + (isPositive ? '+' : '') + varText + '%</span>' +
@@ -2508,11 +3733,11 @@
                 const daily = demand.daily || { labels: [], values: [] };
                 $('cd1Title').textContent = 'Demanda & Meta';
                 $('cd1Badge').innerHTML = badge;
-                $('cd1Sub').innerHTML = '<strong>' + pctAvance + '%</strong> de la meta del período (' + total + ' / ' + metaTarget + ' leads)';
+                $('cd1Sub').innerHTML = '<strong>' + pctAvance + '%</strong> de cumplimiento de la meta (' + total + ' de ' + metaTargetDisplay + ' leads)';
                 $('cd1Spark').innerHTML = buildSparkline(daily.labels, daily.values, metaTarget);
                 $('cd1Footer').innerHTML = resolved === 'none'
                     ? 'Sin período comparable en este modo'
-                    : '<strong>' + (isPositive ? '+' : '') + diffLeads + ' leads</strong> vs. período equivalente anterior (' + previous + ')';
+                    : '<strong>' + (isPositive ? '+' : '') + diffLeads + ' leads</strong> frente al período comparable (' + previous + ')';
                 showCardReveal(card);
                 animateCountUp($('cd1Value'), total);
             }
@@ -2541,15 +3766,15 @@
                 const ratio = c.ratio_leads_per_cita;
                 const resolved = (OVERVIEW.period || {}).compare_resolved || 'none';
 
-                const citasText = citas + (citas === 1 ? ' Cita / Visita' : ' Citas / Visitas');
+                const citasText = citas + (citas === 1 ? ' Visita' : ' Visitas');
                 $('cd2Title').textContent = 'Efectividad & Conversión';
                 $('cd2CitasBadge').innerHTML = '<span class="cd2-dot"></span>' + citasText;
-                $('cd2Sub').innerHTML = citas + ' citas concretadas de ' + leads + ' leads totales';
+                $('cd2Sub').innerHTML = citas + ' visitas registradas de ' + leads + ' leads recibidos';
 
                 const citasPctBar = Math.min(leads > 0 ? (citas / leads) * 100 : 0, 100);
                 $('cd2BarCitas').style.width = '0%';
-                setTimeout(() => { $('cd2BarCitas').style.width = citasPctBar + '%'; }, 420);
-                $('cd2BarCitasPct').textContent = citasPctBar.toFixed(1) + '%';
+                setTimeout(() => { $('cd2BarCitas').style.width = citasPctBar + '%'; }, 860);
+                $('cd2BarCitasPct').textContent = citasPctBar.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
 
                 let footer;
                 if (citas > 0) {
@@ -2557,9 +3782,11 @@
                         ? ''
                         : ' <span class="' + (diffPP >= 0 ? 'cd2-pp-pos' : 'cd2-pp-neg') + '">(' +
                           (diffPP >= 0 ? '▲ +' : '▼ -') + Math.abs(diffPP).toFixed(1) + ' pp)</span>';
-                    footer = '1 cita cada <strong>' + ratio + ' leads</strong>' + ppText;
+                    footer = '1 visita cada <strong>' + ratio + ' leads</strong>' + ppText;
+                } else if (leads > 0) {
+                    footer = '<span style="font-style:italic;color:var(--text-secondary)">Sin registros suficientes de visitas</span>';
                 } else {
-                    footer = '<span style="font-style:italic;color:var(--text-secondary)">Sin visitas o citas registradas en el período</span>';
+                    footer = '<span style="font-style:italic;color:var(--text-secondary)">Sin leads en el período</span>';
                 }
                 $('cd2Footer').innerHTML = footer;
 
@@ -2588,25 +3815,59 @@
                 const comisionUF = p.comision_estimada_uf || 0;
                 const pctVenta = p.pct_venta || 0;
                 const pctArriendo = p.pct_arriendo || 0;
+                const pctOtro = p.pct_otro || 0;
                 const montoVenta = p.monto_venta_uf || 0;
                 const montoArriendo = p.monto_arriendo_uf || 0;
+                const montoOtro = p.monto_otro_uf || 0;
                 const props = p.propiedades_vinculadas || 0;
-                const cobertura = p.pct_cobertura || 0;
 
-                $('cd3Title').textContent = 'Pipeline & Valorización UF';
-                $('cd3ComisionBadge').innerHTML = 'UF ' + comisionUF.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' Comis. Est.';
-                $('cd3PctVenta').textContent = pctVenta + '%';
-                $('cd3PctArriendo').textContent = pctArriendo + '%';
+                $('cd3Title').textContent = 'Cartera Potencial & Valorización';
+                const fmtCLP = (n) => {
+                    if (n === null || n === undefined) return null;
+                    if (n >= 1000000000) return '$' + (n / 1000000000).toFixed(2).replace('.', ',') + ' mil millones';
+                    if (n >= 1000000) return '$' + (n / 1000000).toFixed(1).replace('.', ',') + ' millones';
+                    return '$' + Math.round(n).toLocaleString('es-CL');
+                };
+                const comClp = fmtCLP(p.comision_clp);
+                const montoClp = fmtCLP(p.monto_clp);
+                const tip3 = $('cd3Tooltip');
+                if (tip3) {
+                    const ufFecha = p.fecha_uf ? String(p.fecha_uf).slice(0, 10) : '—';
+                    tip3.innerHTML = 'Valorización del <strong>inventario vinculado</strong> (precio publicado en UF por propiedad única), no ingreso realizado por la corredora.<br>' +
+                        'Comisión estimada sobre la mesa: <strong>UF ' + comisionUF.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '</strong> (' + (p.comision_policy || '') + ') · ≈ <strong>' + comClp + ' CLP</strong>.<br>' +
+                        '<strong>Importante:</strong> es una comisión potencial; no corresponde a ingresos cobrados ni cerrados.<br>' +
+                        'Equivalente total ≈ <strong>' + montoClp + ' CLP</strong>.<br>' +
+                        'UF aplicada: <strong>' + (p.valor_uf_clp || '—') + ' CLP</strong> (fecha ' + ufFecha + ').';
+                }
+                $('cd3PctVenta').textContent = pctVenta.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
+                $('cd3PctArriendo').textContent = pctArriendo.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
+                const comisionBadge = $('cd3ComisionBadge');
+                if (comisionBadge) {
+                    comisionBadge.textContent = 'Comisión estimada · UF ' + Math.round(comisionUF).toLocaleString('es-CL');
+                }
                 $('cd3MontoVenta').textContent = 'UF ' + Math.round(montoVenta).toLocaleString('es-CL');
                 $('cd3MontoArriendo').textContent = 'UF ' + Math.round(montoArriendo).toLocaleString('es-CL');
                 $('cd3BarVenta').style.width = '0%';
                 $('cd3BarArriendo').style.width = '0%';
-                setTimeout(() => { $('cd3BarVenta').style.width = Math.min(pctVenta, 100) + '%'; }, 520);
-                setTimeout(() => { $('cd3BarArriendo').style.width = Math.min(pctArriendo, 100) + '%'; }, 580);
+                setTimeout(() => { $('cd3BarVenta').style.width = Math.min(pctVenta, 100) + '%'; }, 920);
+                setTimeout(() => { $('cd3BarArriendo').style.width = Math.min(pctArriendo, 100) + '%'; }, 980);
 
+                if (montoOtro > 0) {
+                    $('cd3OtroGroup').hidden = false;
+                    $('cd3PctOtro').textContent = pctOtro + '%';
+                    $('cd3MontoOtro').textContent = 'UF ' + Math.round(montoOtro).toLocaleString('es-CL');
+                    $('cd3BarOtro').style.width = '0%';
+                    setTimeout(() => { $('cd3BarOtro').style.width = Math.min(pctOtro, 100) + '%'; }, 1040);
+                } else {
+                    $('cd3OtroGroup').hidden = true;
+                }
+
+                $('cd3Sub').textContent = 'Valor potencial del inventario vinculado';
                 $('cd3Footer').innerHTML = montoUF > 0
-                    ? '<strong>' + props + ' propiedades</strong> · Cobertura: ' + cobertura + '%'
-                    : '<span style="font-style:italic;color:var(--text-secondary)">Sin propiedades vinculadas en el período</span>';
+                    ? '<strong>' + props + ' propiedades únicas vinculadas</strong>'
+                    : (props > 0
+                        ? '<strong>' + props + ' propiedades únicas vinculadas</strong> · sin valor UF publicado'
+                        : '<span style="font-style:italic;color:var(--text-secondary)">Sin propiedades vinculadas en el período</span>');
 
                 showCardReveal(card);
                 animateCountUpUF($('cd3Value'), montoUF);
@@ -2634,12 +3895,13 @@
                 $('cd4NormalMin').textContent = (normalMin === null || normalMin === undefined) ? '— min' : normalMin + ' min';
                 $('cd4BarHot').style.width = '0%';
                 $('cd4BarNormal').style.width = '0%';
-                setTimeout(() => { $('cd4BarHot').style.width = (hotMin === null || hotMin === undefined) ? '0%' : Math.min((hotMin / hotThreshold) * 100, 100) + '%'; }, 580);
-                setTimeout(() => { $('cd4BarNormal').style.width = (normalMin === null || normalMin === undefined) ? '0%' : Math.min((normalMin / normalThreshold) * 100, 100) + '%'; }, 640);
+                setTimeout(() => { $('cd4BarHot').style.width = (hotMin === null || hotMin === undefined) ? '0%' : Math.min((hotMin / hotThreshold) * 100, 100) + '%'; }, 1000);
+                setTimeout(() => { $('cd4BarNormal').style.width = (normalMin === null || normalMin === undefined) ? '0%' : Math.min((normalMin / normalThreshold) * 100, 100) + '%'; }, 1060);
 
+                $('cd4Sub').textContent = 'Mediana desde el ingreso hasta la primera respuesta efectiva';
                 $('cd4Footer').innerHTML = evaluados > 0
-                    ? '<strong>' + evaluados + ' leads medidos</strong> · SLA Meta: HOT &lt; ' + hotThreshold + 'm'
-                    : '<span style="font-style:italic;color:var(--text-secondary)">Sin registros de tiempo en este período</span>';
+                    ? '<strong>' + evaluados + ' leads evaluados</strong> · Meta HOT: &lt; ' + hotThreshold + ' min'
+                    : '<span style="font-style:italic;color:var(--text-secondary)">Sin registros suficientes de tiempo</span>';
 
                 showCardReveal(card);
                 if (medianaGeneral === null || medianaGeneral === undefined) {
@@ -2661,6 +3923,209 @@
                 requestAnimationFrame(step);
             }
 
+            // --- EXPORTAR INFORME EJECUTIVO PDF ---
+            function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+            function exportExecutivePDF() {
+                if (!OVERVIEW) return;
+                const win = window.open('', '_blank', 'width=1000,height=700');
+                if (!win) { alert('Permite ventanas emergentes para exportar el informe.'); return; }
+
+                const demand = OVERVIEW.demand || {};
+                const period = OVERVIEW.period || {};
+                const conv = OVERVIEW.conversion || {};
+                const pipe = OVERVIEW.pipeline || {};
+                const sla = OVERVIEW.sla || {};
+                const total = demand.total || 0;
+                const prev = demand.previous || 0;
+                const diffLeads = total - prev;
+                const metaTarget = (OVERVIEW.meta && OVERVIEW.meta.target) || 200;
+                const metaTargetDisplay = formatLeadTarget(metaTarget);
+                const pctAvance = metaTarget > 0 ? (total / metaTarget * 100).toFixed(1).replace('.', ',') : '0,0';
+                const variacion = demand.variation_pct;
+                const varTxt = (period.compare_resolved === 'none' || variacion === null || variacion === undefined)
+                    ? '—' : ((variacion >= 0 ? '+' : '') + variacion.toFixed(1).replace('.', ',') + '%');
+                const periodTxt = (period.current ? (period.current.start + ' → ' + period.current.end) : '—');
+                const prevPeriodTxt = (period.previous && period.previous.start) ? (period.previous.start + ' → ' + period.previous.end) : 'Sin comparación';
+
+                const fmtUf = (n) => 'UF ' + Math.round(n || 0).toLocaleString('es-CL');
+                const fmtClpReport = (n) => {
+                    if (n == null) return '—';
+                    if (n >= 1000000000) return '$' + (n / 1000000000).toFixed(1).replace('.', ',') + ' mil millones';
+                    if (n >= 1000000) return '$' + (n / 1000000).toFixed(1).replace('.', ',') + ' millones';
+                    return '$' + Math.round(n).toLocaleString('es-CL');
+                };
+                const props = pipe.propiedades_vinculadas || 0;
+                const avgPropertyUf = props > 0 ? Math.round((pipe.monto_uf || 0) / props) : 0;
+                const executiveHeadline = total >= metaTarget
+                    ? 'La demanda supera la meta del período'
+                    : 'La demanda se encuentra bajo la meta del período';
+                const executiveReading = total >= metaTarget
+                    ? 'El volumen capturado entrega una base comercial suficiente; la prioridad es proteger la velocidad de respuesta y convertir la demanda en visitas.'
+                    : 'El principal foco de gestión es recuperar volumen de leads y asegurar que la menor demanda no oculte brechas de seguimiento comercial.';
+                const executiveRisk = (sla.pct_cumplimiento_sla != null && sla.pct_cumplimiento_sla < 90)
+                    ? 'Cumplimiento SLA bajo el estándar'
+                    : 'Monitorear conversión a visita';
+
+                // Tarjetas
+                const cardsHtml = `
+                    <div class="report-card">
+                        <h4>Demanda & Meta</h4>
+                        <div class="kpi">${total} <small>Leads</small></div>
+                        <div class="kpi-sub">Variación: <strong>${varTxt}</strong> vs. período anterior</div>
+                        <div class="kpi-sub">Meta: <strong>${pctAvance}%</strong> de la meta del período (${total} / ${metaTargetDisplay} leads)</div>
+                        <div class="kpi-sub">${diffLeads >= 0 ? '+' : ''}${diffLeads} leads vs. período equivalente anterior (${prev})</div>
+                    </div>
+                    <div class="report-card">
+                        <h4>Efectividad & Conversión</h4>
+                        <div class="kpi">${conv.conversion_pct != null ? String(conv.conversion_pct).replace('.', ',') : '0,0'} <small>%</small></div>
+                        <div class="kpi-sub">${conv.citas || 0} visitas concretadas de ${conv.leads || 0} leads totales</div>
+                    </div>
+                    <div class="report-card">
+                        <h4>Cartera Potencial & Valorización</h4>
+                        <div class="kpi">${fmtUf(pipe.monto_uf)}</div>
+                        <div class="kpi-sub">Valorización total de propiedades vinculadas (${pipe.propiedades_vinculadas || 0} propiedades)</div>
+                        <div class="kpi-sub">Venta: ${fmtUf(pipe.monto_venta_uf)} · Arriendo: ${fmtUf(pipe.monto_arriendo_uf)}</div>
+                        <div class="kpi-sub">Promedio por propiedad: <strong>${fmtUf(avgPropertyUf)}</strong></div>
+                        <div class="kpi-sub">Comisión estimada: <strong>${fmtUf(pipe.comision_estimada_uf)}</strong></div>
+                    </div>
+                    <div class="report-card">
+                        <h4>SLA & Velocidad de Respuesta</h4>
+                        <div class="kpi">${sla.mediana_general_min != null ? Math.round(sla.mediana_general_min) : '—'} <small>min</small></div>
+                        <div class="kpi-sub">Cumplimiento SLA: <strong>${sla.pct_cumplimiento_sla != null ? String(sla.pct_cumplimiento_sla).replace('.', ',') : '—'}%</strong></div>
+                        <div class="kpi-sub">HOT: ${sla.mediana_hot_min != null ? Math.round(sla.mediana_hot_min) : '—'} min · Normal: ${sla.mediana_normal_min != null ? Math.round(sla.mediana_normal_min) : '—'} min</div>
+                        <div class="kpi-sub">${sla.leads_evaluados || 0} leads medidos · HOT &lt; ${sla.hot_threshold_min || 60} min</div>
+                    </div>`;
+
+                const executiveSummary = `
+                    <div class="report-summary">
+                        <div class="summary-kicker">Lectura ejecutiva</div>
+                        <div class="summary-title">${executiveHeadline}</div>
+                        <p>${executiveReading}</p>
+                        <div class="summary-grid">
+                            <div><span>Situación</span><strong>${pctAvance}% de meta</strong></div>
+                            <div><span>Comisión estimada sobre la mesa</span><strong>${fmtClpReport(pipe.comision_clp)} CLP</strong></div>
+                            <div><span>Riesgo de gestión</span><strong>${executiveRisk}</strong></div>
+                        </div>
+                    </div>`;
+
+                // Briefing
+                const briefing = [
+                    ['Crecimiento de Demanda', (document.getElementById('aiGrowthText') || {}).textContent || ''],
+                    ['Velocidad de Respuesta', (document.getElementById('aiAlertText') || {}).textContent || ''],
+                    ['Acción Recomendada', (document.getElementById('aiActionText') || {}).textContent || ''],
+                ].map(row => '<li><strong>' + esc(row[0]) + ':</strong> ' + esc(row[1]) + '</li>').join('');
+
+                // Embudo
+                const funnelRows = Array.from(document.querySelectorAll('#funnelBars .funnel-row')).map(r => {
+                    const lbl = (r.querySelector('.funnel-lbl') || {}).textContent || '';
+                    const val = (r.querySelector('.funnel-val strong') || {}).textContent || '';
+                    return '<li>' + esc(lbl) + ': <strong>' + esc(val) + '</strong></li>';
+                }).join('');
+                const hitosTxt = (document.getElementById('funnelHitos') && !document.getElementById('funnelHitos').hidden)
+                    ? esc((document.getElementById('funnelHitos').textContent || '').replace(/\s+/g, ' ').trim())
+                    : '';
+
+                // Tendencia
+                const trendTxt = esc(((document.getElementById('tcPeak') || {}).textContent || '') + ' · ' + ((document.getElementById('tcAvg') || {}).textContent || ''));
+                const trendSvg = (document.querySelector('#tcTrendChart svg') || {}).outerHTML || '';
+
+                // Origen de demanda
+                const sourcesHtml = Array.from(document.querySelectorAll('#tcSourcesList .tc-src')).map(s => {
+                    const name = (s.querySelector('.tc-src-name') || {}).textContent || '';
+                    const val = (s.querySelector('.tc-src-val') || {}).textContent || '';
+                    return '<li>' + esc(name) + ': ' + esc(val) + '</li>';
+                }).join('');
+
+                // Tabla ejecutiva
+                const execBody = Array.from(document.querySelectorAll('#execTableBody tr')).map(tr =>
+                    '<tr>' + Array.from(tr.children).map(td => '<td>' + esc(td.textContent) + '</td>').join('') + '</tr>'
+                ).join('');
+                const execReconcile = esc((document.getElementById('execReconcile') || {}).textContent || '');
+
+                const updated = ((document.getElementById('dashUpdated') || {}).textContent || '');
+
+                const doc = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<title>Informe Ejecutivo — Leads Intelligence</title>
+<style>
+    :root { --ink: #172033; --muted: #64748b; --line: #dbe3ee; --violet: #6d28d9; --violet-soft: #f5f3ff; --green: #047857; --red: #b91c1c; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: var(--ink); margin: 32px; font-size: 13px; line-height: 1.45; }
+    h1 { font-size: 24px; line-height: 1.15; margin: 0; letter-spacing: -.02em; }
+    h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .09em; color: var(--violet); border-left: 3px solid #7c3aed; padding-left: 8px; margin: 26px 0 10px; page-break-after: avoid; }
+    h4 { margin: 0 0 7px; font-size: 10px; text-transform: uppercase; color: var(--muted); letter-spacing: .07em; }
+    .meta { color: var(--muted); font-size: 11px; margin-top: 5px; }
+    .cover { border-top: 6px solid var(--violet); padding-top: 16px; margin-bottom: 18px; }
+    .cover-mark { color: var(--violet); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 8px; }
+    .period { background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; margin: 14px 0 18px; color: #334155; }
+    .period strong { color: var(--ink); }
+    .report-summary { margin-top: 18px; border: 1px solid #c4b5fd; border-radius: 12px; padding: 16px 18px; background: linear-gradient(135deg, var(--violet-soft), #ffffff 72%); page-break-inside: avoid; }
+    .summary-kicker { color: var(--violet); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .summary-title { color: var(--ink); font-size: 19px; font-weight: 800; margin-top: 4px; }
+    .report-summary p { color: #475569; margin: 5px 0 12px; max-width: 760px; }
+    .summary-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+    .summary-grid > div { flex: 1 1 180px; border-left: 2px solid #a78bfa; padding-left: 9px; }
+    .summary-grid span { display: block; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+    .summary-grid strong { display: block; color: var(--ink); font-size: 12px; margin-top: 2px; }
+    .cards { display: flex; gap: 12px; flex-wrap: wrap; }
+    .report-card { flex: 1 1 220px; border: 1px solid var(--line); border-radius: 10px; padding: 13px; background: #fff; page-break-inside: avoid; }
+    .kpi { font-size: 23px; font-weight: 800; color: var(--ink); letter-spacing: -.02em; }
+    .kpi small { font-size: 11px; font-weight: 600; color: var(--muted); }
+    .kpi-sub { font-size: 11px; color: #475569; margin-top: 4px; }
+    .kpi-sub strong { color: var(--ink); }
+    ul { padding-left: 18px; line-height: 1.65; margin-top: 6px; }
+    li { margin: 3px 0; }
+    .section-block { page-break-inside: avoid; }
+    .section-note { color: var(--muted); font-size: 11px; margin: -3px 0 8px; }
+    .report-chart { height: 125px; margin: 8px 0 2px; border: 1px solid #eef2f7; border-radius: 8px; padding: 8px 10px; background: #fbfcfe; }
+    .report-chart svg { width: 100%; height: 100%; display: block; overflow: visible; }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; page-break-inside: auto; }
+    tr { page-break-inside: avoid; }
+    th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-bottom: 2px solid #cbd5e1; padding: 7px 8px; }
+    td { padding: 7px 8px; border-bottom: 1px solid #eef2f7; color: #334155; }
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    .reconcile { color: var(--muted); font-size: 10px; margin-top: 9px; }
+    .foot { margin-top: 28px; padding-top: 10px; border-top: 1px solid var(--line); color: #94a3b8; font-size: 10px; display: flex; justify-content: space-between; }
+    @page { size: A4; margin: 14mm 13mm 16mm; }
+    @media print { body { margin: 0; } .report-card { break-inside: avoid; } }
+</style></head>
+<body>
+    <div class="cover">
+        <div class="cover-mark">Procasa · Comité de Gestión Comercial</div>
+        <h1>Informe Ejecutivo de Rendimiento</h1>
+        <div class="meta">Leads Intelligence · Preparado para gerencia</div>
+    </div>
+    <div class="period">
+        <strong>Período analizado:</strong> ${esc(periodTxt)}<br>
+        <strong>Comparación:</strong> ${esc(prevPeriodTxt)}<br>
+        <strong>Actualización:</strong> ${esc(updated)}
+    </div>
+    <h2>Resumen de indicadores</h2>
+    <div class="cards">${cardsHtml}</div>
+    ${executiveSummary}
+    <h2>Resumen Ejecutivo y Diagnóstico</h2>
+    <ul>${briefing}</ul>
+    <h2>Embudo Comercial</h2>
+    <ul>${funnelRows}</ul>
+    ${hitosTxt ? '<p><em>' + hitosTxt + '</em></p>' : ''}
+    <h2>Tendencia de Captura</h2>
+    <p>${trendTxt}</p>
+    ${trendSvg ? '<div class="report-chart">' + trendSvg + '</div>' : ''}
+    <h2>Origen de la Demanda</h2>
+    <ul>${sourcesHtml}</ul>
+    <h2>Rendimiento Comercial por Ejecutivo</h2>
+    <table><thead><tr>
+        <th>Ejecutivo</th><th>Leads</th><th>vs. Período</th><th>Mediana SLA</th><th>Visitas / Conversión</th>
+    </tr></thead><tbody>${execBody}</tbody></table>
+    ${execReconcile ? '<div class="reconcile">' + execReconcile + '</div>' : ''}
+    <div class="foot"><span>Informe generado automáticamente desde el dashboard ejecutivo.</span><span>Uso gerencial · Confidencial</span></div>
+</body></html>`;
+                win.document.write(doc);
+                win.document.close();
+                setTimeout(() => { win.focus(); win.print(); }, 400);
+            }
+
             // --- 5. INIT ---
             document.addEventListener('DOMContentLoaded', () => {
                 readUrlFilters();
@@ -2668,25 +4133,88 @@
                 // Navegación por pestañas
                 function switchTab(tabId) {
                     document.querySelectorAll('#dashTabs .dash-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
+                    const enteringExecutive = tabId === 'executive' && OVERVIEW;
+                    const execView = $('viewExecutive');
+                    if (enteringExecutive && execView) {
+                        execView.style.visibility = 'hidden';
+                        resetExecutiveReveal(false);
+                    }
                     const ids = ['executive', 'leads', 'properties', 'channels'];
                     ids.forEach(id => {
                         const el = document.getElementById('view' + id.charAt(0).toUpperCase() + id.slice(1));
                         if (el) el.hidden = (id !== tabId);
                     });
+                    const msel = $('mobileTabSelect');
+                    if (msel) msel.value = tabId;
+                    const tabsNav = $('dashTabs');
+                    const activeTab = tabsNav ? tabsNav.querySelector('.dash-tab[data-tab="' + tabId + '"]') : null;
+                    if (tabsNav && activeTab && tabsNav.scrollWidth > tabsNav.clientWidth) {
+                        const targetLeft = Math.max(0, activeTab.offsetLeft - (tabsNav.clientWidth - activeTab.offsetWidth) / 2);
+                        tabsNav.scrollTo({ left: targetLeft, behavior: 'smooth' });
+                    }
+                    if (enteringExecutive && execView) {
+                        requestAnimationFrame(() => {
+                            window.scrollTo({ top: 0, behavior: 'auto' });
+                            setTimeout(() => {
+                                window.scrollTo({ top: 0, behavior: 'auto' });
+                                execView.style.visibility = '';
+                                runRevealSequence('refresh');
+                            }, 500);
+                        });
+                    }
+                        // Reiniciar en el mismo evento evita que el resumen se pinte nítido antes del blur.
                 }
                 document.querySelectorAll('#dashTabs .dash-tab').forEach(btn => {
                     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
                 });
+                const msel = $('mobileTabSelect');
+                if (msel) {
+                    msel.addEventListener('change', () => switchTab(msel.value));
+                }
 
                 document.querySelectorAll('#presetSeg button').forEach(btn => {
                     btn.addEventListener('click', () => setPeriod(btn.dataset.p));
                 });
                 $('btnApplyPeriod').addEventListener('click', applyCustomPeriod);
                 $('btnEditDates').addEventListener('click', () => setPeriod('custom'));
+                const btnReset = $('btnResetFilters');
+                if (btnReset) {
+                    btnReset.addEventListener('click', () => {
+                        COMPARE = 'auto';
+                        $('pCompare').value = 'auto';
+                        openCustomPanel(false);
+                        const range = CommercialPeriods.presetRange('30d');
+                        FILTERS.period_start = range.start;
+                        FILTERS.period_end = range.end;
+                        FILTERS.period_preset = '30d';
+                        $('pStart').value = range.start;
+                        $('pEnd').value = range.end;
+                        document.querySelectorAll('#presetSeg button').forEach(b => b.classList.toggle('active', b.dataset.p === '30d'));
+                        loadData('refresh');
+                    });
+                }
                 $('pCompare').addEventListener('change', () => {
                     COMPARE = $('pCompare').value;
-                    loadData();
+                    loadData('refresh');
                 });
+
+                // Ordenamiento de la tabla de ejecutivos
+                document.querySelectorAll('#execTable th.sortable').forEach(th => {
+                    th.addEventListener('click', () => {
+                        const key = th.dataset.sort;
+                        if (EXEC_SORT.key === key) {
+                            EXEC_SORT.dir = EXEC_SORT.dir === 'asc' ? 'desc' : 'asc';
+                        } else {
+                            EXEC_SORT.key = key;
+                            EXEC_SORT.dir = (key === 'nombre' || key === 'leads') ? 'desc' : 'asc';
+                        }
+                        if (OVERVIEW) renderExecutivesTable();
+                    });
+                });
+
+                // Exportar informe ejecutivo PDF
+                const btnPdf = $('btnExportPdf');
+                if (btnPdf) btnPdf.addEventListener('click', exportExecutivePDF);
 
                 // Tooltip de la CARD 1
                 const cd1Info = $('cd1Info');
@@ -2715,21 +4243,12 @@
                     cd3Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
                 }
 
-                // Tooltip de la CARD 4
-                const cd4Info = $('cd4Info');
-                if (cd4Info) {
-                    const tip = $('cd4Tooltip');
-                    cd4Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
-                    cd4Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
-                    cd4Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
-                }
-
                 // Tooltip del BLOQUE 2 (AI Briefing) — sin tooltip en el diseño minimalista
 
-                loadData();
+                loadData('full');
             });
 
-            setInterval(loadData, 300000);
+            setInterval(() => loadData('refresh'), 300000);
 
             // --- SMART SESSION CONTROL ---
             // 120 min session. Passive renew every 10 mins if active. Warning at 118 mins.

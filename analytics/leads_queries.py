@@ -1635,14 +1635,19 @@ def query_leads_dashboard_pipeline(
         {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
         {"$addFields": {
             "_code": {"$ifNull": ["$prospecto.codigo", ""]},
-            "_precio_uf": {"$ifNull": ["$prospecto.precio_uf", None]},
+            "_precio_uf": {"$convert": {
+                "input": {"$ifNull": ["$prospecto.precio_uf", None]},
+                "to": "double",
+                "onError": None,
+                "onNull": None,
+            }},
             "_op": {"$ifNull": ["$prospecto.operacion", ""]},
         }},
         {"$match": {"_code": {"$ne": ""}}},
         # 1. Agrupar por PROPIEDAD ÚNICA
         {"$group": {
             "_id": "$_code",
-            "precio_uf": {"$avg": "$_precio_uf"},
+            "precio_uf": {"$max": "$_precio_uf"},
             "ops": {"$addToSet": "$_op"},
             "leads_interesados": {"$sum": 1},
             "con_precio": {"$sum": {"$cond": [{"$ne": ["$_precio_uf", None]}, 1, 0]}},

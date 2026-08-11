@@ -1037,7 +1037,7 @@ def get_leads_dashboard_overview(
     pct_venta = round(venta_uf / monto_uf * 100, 1) if monto_uf else 0.0
     pct_arriendo = round(arriendo_uf / monto_uf * 100, 1) if monto_uf else 0.0
     cobertura = round(pipeline.get("leads_vinculados", 0) / total_leads * 100, 1) if total_leads else 0.0
-    comision_pct = 2.0  # comisión proyectada (default contratos)
+    comision_pct = 4.0  # comisión proyectada para la oficina (4%)
     comision_uf = round(monto_uf * comision_pct / 100, 1)
 
     sla_data = {
@@ -1047,6 +1047,7 @@ def get_leads_dashboard_overview(
         "mediana_normal_min": (sla_panel.get("lead") or {}).get("median_minutes"),
         "leads_evaluados": sla_panel.get("eligible_total", 0),
         "no_gestionados": sla_panel.get("no_management", 0),
+        "vencidos": sla_panel.get("critical_open", 0),
         "hot_threshold_min": 60,
         "normal_threshold_min": 180,
     }

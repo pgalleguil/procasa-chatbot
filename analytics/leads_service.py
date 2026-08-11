@@ -947,6 +947,9 @@ def get_leads_dashboard_overview(
         query_leads_dashboard_pipeline,
         query_sla_risk_panel,
         query_leads_dashboard_rescue,
+        query_leads_dashboard_sources,
+        query_leads_dashboard_executives,
+        query_sla_accountability,
     )
 
     f_trends = _COMMERCIAL_QUERY_POOL.submit(
@@ -980,11 +983,36 @@ def get_leads_dashboard_overview(
         period_start=period_start,
         period_end=period_end,
     )
+    f_sources = _COMMERCIAL_QUERY_POOL.submit(
+        query_leads_dashboard_sources,
+        period_start=period_start,
+        period_end=period_end,
+        comparison_start=prev_start,
+        comparison_end=prev_end,
+        include_comparison=bool(prev_start),
+    )
+    f_exec = _COMMERCIAL_QUERY_POOL.submit(
+        query_leads_dashboard_executives,
+        period_start=period_start,
+        period_end=period_end,
+        comparison_start=prev_start,
+        comparison_end=prev_end,
+        include_comparison=bool(prev_start),
+    )
+    f_sla_acc = _COMMERCIAL_QUERY_POOL.submit(
+        query_sla_accountability,
+        period_start=period_start,
+        period_end=period_end,
+    )
+
     trends = f_trends.result()
     conversion = f_conv.result()
     pipeline = f_pipe.result()
     sla_panel = f_sla.result()
     rescue = f_rescue.result()
+    sources = f_sources.result()
+    exec_rows = f_exec.result()
+    sla_acc = f_sla_acc.result()
 
     current = trends.get("current", {})
     previous = trends.get("previous", {})
@@ -1035,6 +1063,55 @@ def get_leads_dashboard_overview(
         "pct_al_dia": pct_al_dia,
     }
 
+    src_items = sources.get("current", [])
+    src_prev = sources.get("previous", {}) or {}
+    src_total = sources.get("total", 0) or 0
+    sources_data = {
+        "items": [
+            {
+                "nombre": s.get("nombre", "Otro"),
+                "cantidad": s.get("cantidad", 0),
+                "pct": round(s.get("cantidad", 0) / src_total * 100, 1) if src_total else 0.0,
+                "diff": s.get("cantidad", 0) - src_prev.get(s.get("nombre", ""), 0),
+            }
+            for s in src_items
+        ],
+        "total": src_total,
+    }
+
+    sla_by_exec = {
+        str(r.get("executive_name")): (r.get("lead") or {}).get("median_business_minutes")
+        for r in (sla_acc.get("by_executive") or [])
+    }
+
+    def _estado(name, leads_count, sla_median):
+        if name == "Sin Asignar":
+            return "Auto Rescate"
+        if sla_median is None:
+            return "En Regla"
+        if sla_median < 30:
+            return "Top Performer" if leads_count >= 60 else "En Regla"
+        return "SLA Crítico"
+
+    executives_data = {
+        "items": [
+            {
+                "nombre": r.get("ejecutivo", "Sin Asignar"),
+                "leads": r.get("leads", 0),
+                "leads_prev": r.get("leads_prev", 0),
+                "diff_leads": r.get("diff_leads", 0),
+                "pct_leads": round(r.get("leads", 0) / total_leads * 100, 1) if total_leads else 0.0,
+                "citas": r.get("citas", 0),
+                "conversion_pct": round(r.get("citas", 0) / r.get("leads", 0) * 100, 1) if r.get("leads", 0) else 0.0,
+                "uf": r.get("uf", 0.0),
+                "sla_median": sla_by_exec.get(r.get("ejecutivo", "Sin Asignar")),
+                "estado": _estado(r.get("ejecutivo", "Sin Asignar"), r.get("leads", 0), sla_by_exec.get(r.get("ejecutivo", "Sin Asignar"))),
+            }
+            for r in exec_rows
+        ],
+        "total": len(exec_rows),
+    }
+
     result = _sanitize_non_finite({
         "period": {
             "preset": preset,
@@ -1051,6 +1128,10 @@ def get_leads_dashboard_overview(
             "daily": {
                 "labels": [d.get("date") for d in daily],
                 "values": [d.get("received", 0) for d in daily],
+            },
+            "previous_daily": {
+                "labels": [d.get("date") for d in previous.get("daily", [])],
+                "values": [d.get("received", 0) for d in previous.get("daily", [])],
             },
         },
         "conversion": {
@@ -1077,6 +1158,8 @@ def get_leads_dashboard_overview(
         },
         "sla": sla_data,
         "rescue": rescue_data,
+        "sources": sources_data,
+        "executives": executives_data,
         "meta": {
             "target": meta_target,
             "label": "Leads recibidos (meta mensual)",

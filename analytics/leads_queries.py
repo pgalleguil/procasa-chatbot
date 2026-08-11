@@ -1519,6 +1519,26 @@ def query_comparative_trends(
         current_daily = list(db["leads"].aggregate(pipeline))
         previous_daily = []
 
+    # Rellenar días sin leads con 0 para que ambas series sean continuas y
+    # alineadas por fecha (evita cortes en la curva spline).
+    from datetime import date as _date, timedelta as _td
+
+    def _fill_daily(daily_rows, start_str, end_str):
+        by_date = {d["date"]: d["received"] for d in daily_rows}
+        filled = []
+        cur = _date.fromisoformat(start_str)
+        end = _date.fromisoformat(end_str)
+        while cur <= end:
+            key = cur.strftime("%Y-%m-%d")
+            filled.append({"date": key, "received": by_date.get(key, 0)})
+            cur += _td(days=1)
+        return filled
+
+    if period_start and period_end:
+        current_daily = _fill_daily(current_daily, period_start, period_end)
+    if include_comparison and comparison_start and comparison_end:
+        previous_daily = _fill_daily(previous_daily, comparison_start, comparison_end)
+
     current_total = sum(d["received"] for d in current_daily)
     previous_total = sum(d["received"] for d in previous_daily) if include_comparison else None
     pct_var = round(
@@ -1688,6 +1708,179 @@ def query_leads_dashboard_rescue(
         "distribucion": counts,
     }
 
+
+
+def query_leads_dashboard_sources(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    comparison_start: Optional[str] = None,
+    comparison_end: Optional[str] = None,
+    include_comparison: bool = True,
+    filters: Optional[dict] = None,
+) -> dict:
+    """Distribución por canal/origen (SECCIÓN 3) con comparativa anterior.
+
+    Combina prospecto.origen (WhatsApp, MercadoLibre, etc.) con
+    prospecto.canal_origen (origen de scraping Prop360 / manuales) y los
+    códigos de portal en los leads WhatsApp.
+    """
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+
+    if include_comparison and comparison_start and comparison_end:
+        prev_start, prev_end = _build_chile_period_bounds(comparison_start, comparison_end)
+    else:
+        prev_start = prev_end = None
+
+    _origin_expr = {"$ifNull": [
+        # 1. Si prospecto.origen es un portal real (no WhatsApp), usarlo
+        {"$cond": [
+            {"$and": [
+                {"$ne": ["$prospecto.origen", ""]},
+                {"$ne": ["$prospecto.origen", "WhatsApp"]},
+            ]},
+            "$prospecto.origen",
+            None,
+        ]},
+        # 2. canal_origen (portal de scraping / manuales)
+        {"$ifNull": [
+            {"$cond": [{"$ne": ["$prospecto.canal_origen", ""]}, "$prospecto.canal_origen", None]},
+            # 3. WhatsApp con propiedad de MercadoLibre
+            {"$ifNull": [
+                {"$cond": [{"$ne": ["$prospecto.codigo_mercadolibre", ""]}, "MercadoLibre", None]},
+                # 4. WhatsApp con propiedad de Yapo
+                {"$ifNull": [
+                    {"$cond": [{"$ne": ["$prospecto.codigo_yapo", ""]}, "Yapo", None]},
+                    # 5. WhatsApp sin portal detectado (canal)
+                    {"$cond": [{"$eq": ["$prospecto.origen", "WhatsApp"]}, "WhatsApp", "Sin informacion"]},
+                ]},
+            ]},
+        ]},
+    ]}
+
+    def _counts(ps_utc, pe_utc):
+        pipeline = [
+            _cohort_indexed_prefilter(ps_utc, pe_utc),
+            _normalized_created_at_stage(),
+            {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
+            {"$addFields": {"_origin": _origin_expr}},
+            {"$group": {"_id": "$_origin", "count": {"$sum": 1}}},
+        ]
+        rows = list(db["leads"].aggregate(pipeline))
+        merged: dict = {}
+        for r in rows:
+            name = _normalize_source_name(r["_id"])
+            merged[name] = merged.get(name, 0) + r["count"]
+        return merged
+
+    current = _counts(start_utc, end_utc)
+    previous = _counts(prev_start, prev_end) if prev_start else {}
+    current_total = sum(current.values())
+
+    current_items = [
+        {"nombre": name, "cantidad": count}
+        for name, count in sorted(current.items(), key=lambda item: -item[1])[:8]
+    ]
+    return {
+        "current": current_items,
+        "previous": previous,
+        "total": current_total,
+    }
+
+
+def _normalize_source_name(value) -> str:
+    """Normaliza nombres de canal/origen de captura para el dashboard."""
+    text = str(value or "").strip()
+    low = text.lower()
+    if low in {"", "sin informacion", "sin información", "sin info", "sin informacion", "n/a", "null", "none", "desconocido", "-", "no informado", "e2e_test"}:
+        return "Directo"
+    mapping = {
+        "portal inmobiliario": "Portal Inmobiliario",
+        "portalinmobiliario": "Portal Inmobiliario",
+        "portal inmobiliario (mlc code)": "Portal Inmobiliario",
+        "mercadolibre": "MercadoLibre",
+        "toctoc": "TocToc",
+        "otro portal": "Otro Portal",
+        "otro portal (mlc code)": "Otro Portal",
+        "chilepropiedades": "ChilePropiedades",
+        "sitio web": "Sitio Web",
+        "otro": "Otro",
+    }
+    return mapping.get(low, text)
+
+
+def query_leads_dashboard_executives(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    comparison_start: Optional[str] = None,
+    comparison_end: Optional[str] = None,
+    include_comparison: bool = True,
+    filters: Optional[dict] = None,
+) -> dict:
+    """Rendimiento por ejecutivo (BLOQUE 4) con comparativa del período anterior."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    if include_comparison and comparison_start and comparison_end:
+        prev_start, prev_end = _build_chile_period_bounds(comparison_start, comparison_end)
+    else:
+        prev_start = prev_end = None
+    _exec = {"$ifNull": ["$ejecutivo_asignado", "Sin Asignar"]}
+
+    def _counts(ps, pe):
+        pipeline = [
+            _cohort_indexed_prefilter(ps, pe),
+            _normalized_created_at_stage(),
+            {"$match": _build_commercial_cohort_match(ps, pe, filters)},
+            {"$facet": {
+                "leads": [
+                    {"$group": {
+                        "_id": _exec,
+                        "leads": {"$sum": 1},
+                        "citas": {"$sum": {"$cond": [{"$eq": ["$pipeline_stage", "VISIT_SCHEDULED"]}, 1, 0]}},
+                    }},
+                ],
+                "uf": [
+                    {"$group": {
+                        "_id": {"exec": _exec, "code": {"$ifNull": ["$prospecto.codigo", ""]}},
+                        "uf": {"$max": {"$ifNull": ["$prospecto.precio_uf", 0]}},
+                    }},
+                    {"$group": {"_id": "$_id.exec", "uf": {"$sum": "$uf"}}},
+                ],
+            }},
+        ]
+        row = list(db["leads"].aggregate(pipeline))
+        row = row[0] if row else {}
+        leads_map = {str(r["_id"]): {"leads": r["leads"], "citas": r["citas"]} for r in row.get("leads", [])}
+        uf_map = {str(r["_id"]): r["uf"] for r in row.get("uf", [])}
+        return leads_map, uf_map
+
+    cur_leads, cur_uf = _counts(start_utc, end_utc)
+    prev_leads, prev_uf = _counts(prev_start, prev_end) if prev_start else ({}, {})
+
+    # Solo ejecutivos con rol agente y activos en la colección "usuarios"
+    active = {
+        str(u.get("nombre", "")).strip().lower()
+        for u in db["usuarios"].find({"rol": "agente", "is_active": True}, {"nombre": 1})
+    }
+    # Excluir al administrador
+    active.discard("pablo galleguillos")
+
+    rows = []
+    for name, l in cur_leads.items():
+        if str(name).strip().lower() not in active:
+            continue
+        pl = prev_leads.get(name, {"leads": 0, "citas": 0})
+        rows.append({
+            "ejecutivo": name,
+            "leads": l["leads"],
+            "leads_prev": pl["leads"],
+            "diff_leads": l["leads"] - pl["leads"],
+            "citas": l["citas"],
+            "citas_prev": pl["citas"],
+            "uf": round(cur_uf.get(name, 0.0) or 0.0, 1),
+        })
+    rows.sort(key=lambda r: -r["leads"])
+    return rows
 
 
 def query_variance_drivers(

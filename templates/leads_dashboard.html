@@ -1122,6 +1122,18 @@
         .card-delay-3 { animation-delay: 0.24s; }
         .card-delay-4 { animation-delay: 0.32s; }
 
+        /* Reveal ligero (sin blur) para bloques anchos — evita el costo del filtro en Chrome */
+        @keyframes lightReveal {
+            from { opacity: 0; transform: translateY(14px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-light-reveal {
+            animation: lightReveal 0.5s ease forwards;
+            opacity: 0;
+            will-change: transform, opacity;
+        }
+
         @keyframes fadeInUp {
             from { opacity: 0; transform: translateY(4px); }
             to { opacity: 1; transform: translateY(0); }
@@ -1236,6 +1248,339 @@
         .ai-text { font-size: 12px; color: var(--text-secondary); line-height: 1.55; margin: 0; }
         .ai-text strong { color: var(--text-primary); font-weight: 600; }
 
+        /* --- SECCIÓN 3: TENDENCIA & CANALES --- */
+        .tc-block { margin: 32px 0; opacity: 0; }
+
+        .tc-block.entered {
+            animation: glassReveal 0.55s ease forwards;
+        }
+
+        .tc-grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: stretch; }
+
+        @media (min-width: 1024px) { .tc-grid { grid-template-columns: 8fr 4fr; } }
+
+        .tc-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(14px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+        }
+
+        .tc-card:hover {
+            border-color: var(--conversion-accent);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        }
+
+        .tc-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 12px;
+            margin-bottom: 14px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .tc-head h3 {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        .tc-head p { font-size: 12px; color: var(--text-secondary); margin: 2px 0 0; }
+
+        .tc-legend {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 11px;
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+        }
+
+        .tc-leg-item { display: flex; align-items: center; gap: 6px; }
+
+        .tc-leg-item.tc-leg-cur { color: var(--text-primary); }
+
+        .tc-leg-item.tc-leg-prev { color: var(--text-secondary); }
+
+        .tc-swatch { width: 10px; height: 10px; border-radius: 2px; background: #8B5CF6; }
+
+        .tc-dash { width: 14px; height: 0; border-top: 2px dashed #64748B; }
+
+        .tc-chart {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 200px;
+            padding: 6px 2px;
+        }
+
+        .tc-line-wrap { flex: 1; min-height: 0; position: relative; }
+
+        .tc-line-wrap svg { width: 100%; height: 100%; display: block; overflow: visible; }
+
+        .tc-line {
+            stroke-dasharray: 2000;
+            stroke-dashoffset: 2000;
+        }
+
+        .tc-line-area { opacity: 0; }
+
+        .tc-line-prev { opacity: 0; }
+
+        .tc-line-area-prev { opacity: 0; }
+
+        .tc-block.entered .tc-line {
+            animation: drawSpark 3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation-delay: 0.1s;
+        }
+
+        .tc-block.entered .tc-line-area {
+            animation: sparkFade 0.6s ease 0.3s forwards;
+        }
+
+        .tc-block.entered .tc-line-prev,
+        .tc-block.entered .tc-line-area-prev {
+            animation: sparkFade 0.5s ease 0.2s forwards;
+        }
+
+        .tc-diff { font-weight: 600; }
+        .tc-diff.pos { color: #34D399; }
+        .tc-diff.neg { color: #FCA5A5; }
+        .tc-diff.zero { color: #64748B; }
+
+        .tc-line-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+            padding: 0 4px;
+        }
+
+        .tc-line-labels span {
+            font-size: 9px;
+            color: var(--text-secondary);
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+            white-space: nowrap;
+        }
+
+        .tc-foot {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 10px;
+            margin-top: 12px;
+            border-top: 1px solid var(--border-color);
+            font-size: 10px;
+            color: var(--text-secondary);
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .tc-foot strong { color: var(--text-primary); font-weight: 600; }
+
+        .tc-sources-list { flex: 1; display: flex; flex-direction: column; gap: 12px; margin: 4px 0 12px; }
+
+        .tc-src { display: flex; flex-direction: column; gap: 5px; }
+
+        .tc-src-top { display: flex; justify-content: space-between; align-items: center; font-size: 12px; gap: 8px; }
+
+        .tc-src-name {
+            color: var(--text-primary);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .tc-src-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+        .tc-src-val { color: var(--text-secondary); font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; font-size: 11px; white-space: nowrap; }
+
+        .tc-src-val strong { color: var(--text-primary); }
+
+        .tc-src-track { height: 6px; border-radius: 99px; background: var(--border-color); overflow: hidden; }
+
+        .tc-src-bar { height: 100%; border-radius: 99px; transition: width 0.5s ease; }
+
+        /* --- NAVEGACIÓN DE TABS (iconos monocromáticos) --- */
+        .dash-tabs {
+            display: flex;
+            gap: 4px;
+            overflow-x: auto;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 16px;
+            scrollbar-width: none;
+        }
+
+        .dash-tabs::-webkit-scrollbar { display: none; }
+
+        .dash-tab {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border: 0;
+            border-bottom: 2px solid transparent;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: color 0.2s, border-color 0.2s, background 0.2s;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .dash-tab .t-ico { color: var(--text-secondary); font-size: 14px; }
+
+        .dash-tab:hover { color: var(--text-primary); background: rgba(148, 163, 184, 0.08); }
+
+        .dash-tab.active {
+            color: var(--text-primary);
+            border-bottom-color: var(--conversion-accent);
+            font-weight: 600;
+        }
+
+        .dash-tab.active .t-ico { color: var(--conversion-accent); }
+
+        .t-placeholder {
+            border: 1px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 48px;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        /* --- BLOQUE 4: TABLA DE RENDIMIENTO COMERCIAL --- */
+        .exec-table-block { margin: 32px 0; opacity: 0; }
+
+        .exec-table-block.entered { animation: glassReveal 0.55s ease forwards; }
+
+        .exec-table-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(14px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+        }
+
+        .exec-table-card:hover {
+            border-color: var(--conversion-accent);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        }
+
+        .exec-table-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 12px;
+            margin-bottom: 14px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .exec-table-head h3 {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        .exec-table-head p { font-size: 12px; color: var(--text-secondary); margin: 2px 0 0; }
+
+        .exec-count {
+            font-size: 11px;
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+            color: #A78BFA;
+            background: var(--bg-elevated, #1E293B);
+            padding: 4px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            white-space: nowrap;
+        }
+
+        .exec-table-wrap { overflow-x: auto; }
+
+        .exec-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 720px; }
+
+        .exec-table thead th {
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 0 10px;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            text-align: left;
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+            white-space: nowrap;
+        }
+
+        .exec-table thead th.r, .exec-table tbody td.r { text-align: right; }
+
+        .exec-table tbody tr { border-bottom: 1px solid rgba(148, 163, 184, 0.08); transition: background 0.15s; }
+
+        .exec-table tbody tr:hover { background: rgba(148, 163, 184, 0.06); }
+
+        .exec-table tbody td { padding: 12px 0; color: var(--text-primary); white-space: nowrap; }
+
+        .exec-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--bg-elevated, #1E293B);
+            border: 1px solid var(--border-color);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        .exec-sla-ok { color: #34D399; }
+        .exec-sla-bad { color: #FCA5A5; }
+        .exec-uf { color: #A78BFA; font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; }
+        .exec-mono { font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; }
+        .exec-muted { color: var(--text-secondary); font-size: 10px; }
+
+        .exec-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 10px;
+            border-radius: 99px;
+            font-size: 10px;
+            font-weight: 600;
+            border: 1px solid;
+            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+            white-space: nowrap;
+        }
+
+        .exec-badge.top { color: #34D399; background: rgba(6, 95, 70, 0.18); border-color: rgba(5, 150, 105, 0.30); }
+        .exec-badge.regla { color: #A78BFA; background: rgba(139, 92, 246, 0.15); border-color: rgba(124, 58, 237, 0.30); }
+        .exec-badge.critico { color: #FCA5A5; background: rgba(127, 29, 29, 0.18); border-color: rgba(153, 27, 27, 0.30); }
+        .exec-badge.bot { color: var(--text-secondary); background: var(--bg-elevated, #1E293B); border-color: var(--border-color); }
     </style>
 </head>
 
@@ -1289,6 +1634,14 @@
                 </div>
             </div>
 
+            <!-- NAVEGACIÓN DE PESTAÑAS -->
+            <nav class="dash-tabs" id="dashTabs" aria-label="Vistas del dashboard">
+                <button class="dash-tab active" data-tab="executive"><span>Resumen Ejecutivo</span></button>
+                <button class="dash-tab" data-tab="leads"><span>CRM & Gestión de Leads</span></button>
+                <button class="dash-tab" data-tab="properties"><span>Propiedades & Inventario</span></button>
+                <button class="dash-tab" data-tab="channels"><span>Portales & ROI</span></button>
+            </nav>
+
             <!-- FILTROS DE PERIODO (estilo Dashboard Comercial) -->
             <div class="period-filterbar">
                 <div class="period-presets" id="presetSeg" role="group" aria-label="Periodo">
@@ -1296,7 +1649,7 @@
                     <button data-p="week">Semana</button>
                     <button data-p="month">Mes</button>
                     <button data-p="30d" class="active">30 días</button>
-                    <button data-p="custom">📅 Personalizado</button>
+                    <button data-p="custom">Personalizado</button>
                 </div>
                 <div class="period-compare">
                     <span>Comparar con:</span>
@@ -1326,6 +1679,9 @@
             </div>
 
             <!-- Las tarjetas se irán agregando aquí una por una -->
+            <!-- VISTA: RESUMEN EJECUTIVO -->
+            <div id="viewExecutive">
+
             <div class="cards-container" id="cardsContainer">
                 <div class="cd-grid">
                     <!-- CARD 1: DEMANDA & META -->
@@ -1437,11 +1793,11 @@
 
                         <div class="cd2-bars">
                             <div class="cd3-bar-group">
-                                <div class="cd3-bar-lbl"><span>🔥 Lead HOT (Alta Prioridad)</span><span class="cd3-bar-val" id="cd4HotMin">— min</span></div>
+                                <div class="cd3-bar-lbl"><span>Lead HOT (Alta Prioridad)</span><span class="cd3-bar-val" id="cd4HotMin">— min</span></div>
                                 <div class="cd2-bar-track"><div class="cd2-bar cd4-bar-hot" id="cd4BarHot" style="width:0%"></div></div>
                             </div>
                             <div class="cd3-bar-group">
-                                <div class="cd3-bar-lbl"><span>📥 Lead Normal</span><span class="cd3-bar-val" id="cd4NormalMin">— min</span></div>
+                                <div class="cd3-bar-lbl"><span>Lead Normal</span><span class="cd3-bar-val" id="cd4NormalMin">— min</span></div>
                                 <div class="cd2-bar-track"><div class="cd2-bar cd4-bar-normal" id="cd4BarNormal" style="width:0%"></div></div>
                             </div>
                         </div>
@@ -1457,7 +1813,7 @@
             <section class="ai-briefing animate-glass-card card-delay-4" id="aiBriefing" hidden>
                 <div class="ai-briefing-inner">
                     <div class="ai-briefing-head">
-                        <div class="ai-briefing-title"><span class="ai-emoji">🧠</span><h3>AI Executive Briefing & Diagnóstico</h3></div>
+                        <div class="ai-briefing-title"><h3>AI Executive Briefing & Diagnóstico</h3></div>
                         <span class="ai-briefing-meta">Procesado en tiempo real</span>
                     </div>
 
@@ -1486,6 +1842,79 @@
                     </div>
                 </div>
             </section>
+
+            <!-- SECCIÓN 3: TENDENCIA & CANALES -->
+            <section class="tc-block" id="trendsBlock" data-reveal="animate-light-reveal" hidden>
+                <div class="tc-grid">
+                    <!-- TENDENCIA TEMPORAL (8 col / 70%) -->
+                    <div class="tc-card">
+                        <div class="tc-head">
+                            <div>
+                                <h3>Tendencia de Captura</h3>
+                                <p>Evolución del volumen de leads ingresados en el período</p>
+                            </div>
+                            <div class="tc-legend">
+                                <span class="tc-leg-item tc-leg-cur"><span class="tc-swatch"></span> Período Actual</span>
+                                <span class="tc-leg-item tc-leg-prev"><span class="tc-dash"></span> Período Anterior</span>
+                            </div>
+                        </div>
+                        <div class="tc-chart" id="tcTrendChart"></div>
+                        <div class="tc-foot">
+                            <span id="tcPeak">—</span>
+                            <span id="tcAvg">—</span>
+                        </div>
+                    </div>
+
+                    <!-- ORIGEN DE LA DEMANDA (4 col / 30%) -->
+                    <div class="tc-card">
+                        <div class="tc-head">
+                            <div>
+                                <h3>Origen de la Demanda</h3>
+                                <p>Distribución por portal o canal de captura</p>
+                            </div>
+                        </div>
+                        <div class="tc-sources-list" id="tcSourcesList"></div>
+                        <div class="tc-foot">
+                            <span id="tcLeader">—</span>
+                            <span id="tcSourcesCount">—</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- BLOQUE 4: TABLA DE RENDIMIENTO COMERCIAL -->
+            <section class="exec-table-block" id="execTableBlock" data-reveal="animate-light-reveal" hidden>
+                <div class="exec-table-card">
+                    <div class="exec-table-head">
+                        <div>
+                            <h3>Rendimiento Comercial por Ejecutivo</h3>
+                            <p>Control individual de asignación de leads, tiempo de respuesta (SLA) y cartera en UF</p>
+                        </div>
+                        <span class="exec-count" id="execCount">—</span>
+                    </div>
+                    <div class="exec-table-wrap">
+                        <table class="exec-table">
+                            <thead>
+                                <tr>
+                                    <th>Ejecutivo</th>
+                                    <th>Leads Asignados</th>
+                                    <th>vs. Período Anterior</th>
+                                    <th>Mediana SLA (1ª Resp.)</th>
+                                    <th>Citas / Conversión</th>
+                                </tr>
+                            </thead>
+                            <tbody id="execTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            </div>
+
+            <!-- VISTAS PENDIENTES (placeholder) -->
+            <div id="viewLeads" hidden><div class="t-placeholder">CRM & Gestión de Leads — en construcción.</div></div>
+            <div id="viewProperties" hidden><div class="t-placeholder">Propiedades & Inventario — en construcción.</div></div>
+            <div id="viewChannels" hidden><div class="t-placeholder">Portales & ROI — en construcción.</div></div>
 
         </div>
 
@@ -1635,7 +2064,7 @@
             function applyCustomPeriod() {
                 let sVal = $('pStart').value, eVal = $('pEnd').value;
                 if (!sVal || !eVal) return;
-                if (sVal > eVal) { const pc = $('psCurrent'); if (pc) pc.textContent = '⚠️ Error: fecha inicial posterior a fecha final'; return; }
+                if (sVal > eVal) { const pc = $('psCurrent'); if (pc) pc.textContent = 'Error: fecha inicial posterior a fecha final'; return; }
                 const safe = CommercialPeriods.clampRange(sVal, eVal);
                 sVal = safe.start; eVal = safe.end;
                 $('pStart').value = sVal; $('pEnd').value = eVal;
@@ -1725,6 +2154,8 @@
                     renderPipelineCard();
                     renderSlaCard();
                     renderInsightsBlock();
+                    renderTrendsAndChannels();
+                    renderExecutivesTable();
                 } catch (e) { console.error("Error cargando datos:", e); }
             }
 
@@ -1797,12 +2228,13 @@
             // --- ANIMACIÓN DE CARGA DE LAS TARJETAS (Glass Blur Reveal) ---
             function showCardReveal(card) {
                 if (!card) return;
-                card.classList.remove('animate-glass-card');
+                const cls = card.dataset.reveal || 'animate-glass-card';
+                card.classList.remove('animate-glass-card', 'animate-light-reveal');
                 card.hidden = false;
                 void card.offsetWidth;
-                card.classList.add('animate-glass-card');
+                card.classList.add(cls);
                 const onEnd = () => {
-                    card.classList.remove('animate-glass-card');
+                    card.classList.remove('animate-glass-card', 'animate-light-reveal');
                     card.removeEventListener('animationend', onEnd);
                 };
                 card.addEventListener('animationend', onEnd);
@@ -1853,6 +2285,202 @@
                 showCardReveal(block);
             }
 
+            // --- SECCIÓN 3: TENDENCIA & CANALES ---
+            const TC_MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+            const TC_COLORS = ['#8B5CF6', '#A78BFA', '#6366F1', '#4C1D95', '#7C3AED', '#6D28D9', '#5B21B6', '#4338CA'];
+
+            function tcShortLabel(iso) {
+                if (!iso) return '';
+                const parts = String(iso).split('-');
+                if (parts.length < 3) return iso;
+                return parseInt(parts[2], 10) + ' ' + TC_MONTHS[parseInt(parts[1], 10) - 1];
+            }
+
+            function renderTrendsAndChannels() {
+                const block = $('trendsBlock');
+                if (!block || !OVERVIEW) return;
+                const demand = OVERVIEW.demand || {};
+                const labels = (demand.daily || {}).labels || [];
+                const values = (demand.daily || {}).values || [];
+                const sources = ((OVERVIEW.sources || {}).items) || [];
+
+                const chart = $('tcTrendChart');
+                const nums = values.map(v => Number(v) || 0);
+                const prevNums = ((demand.previous_daily || {}).values || []).map(v => Number(v) || 0);
+                const prevLabels = ((demand.previous_daily || {}).labels || []);
+                const allNums = nums.concat(prevNums);
+                const rawMax = Math.max(...allNums, 1);
+                const yMax = rawMax * 1.15;
+                const min = Math.min(...allNums, 0);
+                const range = (yMax - min) || 1;
+                const days = Math.max(nums.length, 1);
+                const W = 100, H = 40, PAD = 4;
+                const xAt = (i) => days === 1 ? W / 2 : (i / (days - 1)) * W;
+                const yAt = (v) => H - PAD - ((v - min) / range) * (H - 2 * PAD);
+
+                const smooth = (p) => {
+                    if (p.length < 2) return 'M' + p[0][0].toFixed(2) + ',' + p[0][1].toFixed(2);
+                    let d = 'M' + p[0][0].toFixed(2) + ',' + p[0][1].toFixed(2);
+                    for (let i = 0; i < p.length - 1; i++) {
+                        const p0 = p[i - 1] || p[i];
+                        const p1 = p[i];
+                        const p2 = p[i + 1];
+                        const p3 = p[i + 2] || p2;
+                        const cp1x = p1[0] + (p2[0] - p0[0]) / 6;
+                        const cp1y = p1[1] + (p2[1] - p0[1]) / 6;
+                        const cp2x = p2[0] - (p3[0] - p1[0]) / 6;
+                        const cp2y = p2[1] - (p3[1] - p1[1]) / 6;
+                        d += 'C' + cp1x.toFixed(2) + ',' + cp1y.toFixed(2) + ' ' + cp2x.toFixed(2) + ',' + cp2y.toFixed(2) + ' ' + p2[0].toFixed(2) + ',' + p2[1].toFixed(2);
+                    }
+                    return d;
+                };
+
+                const curPts = nums.map((v, i) => [xAt(i), yAt(v)]);
+                const prevPts = prevNums.map((v, i) => [xAt(i), yAt(v)]);
+                const lineD = smooth(curPts);
+                const areaD = lineD + ' L' + W + ',' + H + ' L0,' + H + ' Z';
+                const prevLineD = prevPts.length > 1 ? smooth(prevPts) : '';
+                const prevAreaD = prevLineD ? prevLineD + ' L' + W + ',' + H + ' L0,' + H + ' Z' : '';
+                const step = Math.max(1, Math.ceil(days / 10));
+                let labelsHtml = '';
+                for (let i = 0; i < days; i += step) {
+                    labelsHtml += '<span>' + tcShortLabel(labels[i]) + '</span>';
+                }
+                if (days > 1 && (days - 1) % step !== 0) {
+                    labelsHtml += '<span>' + tcShortLabel(labels[days - 1]) + '</span>';
+                }
+                if (chart) {
+                    chart.innerHTML =
+                        '<div class="tc-line-wrap"><svg viewBox="0 0 100 40" preserveAspectRatio="none">' +
+                        '<defs>' +
+                        '<linearGradient id="tcGrad" x1="0" y1="0" x2="0" y2="1">' +
+                        '<stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.25"/>' +
+                        '<stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.0"/>' +
+                        '</linearGradient>' +
+                        '<linearGradient id="tcGradPrev" x1="0" y1="0" x2="0" y2="1">' +
+                        '<stop offset="0%" stop-color="#64748B" stop-opacity="0.18"/>' +
+                        '<stop offset="100%" stop-color="#64748B" stop-opacity="0.0"/>' +
+                        '</linearGradient>' +
+                        '</defs>' +
+                        (prevAreaD ? '<path class="tc-line-area-prev" d="' + prevAreaD + '" fill="url(#tcGradPrev)"/>' : '') +
+                        (prevLineD ? '<path class="tc-line-prev" d="' + prevLineD + '" fill="none" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '') +
+                        '<path class="tc-line-area" d="' + areaD + '" fill="url(#tcGrad)"/>' +
+                        '<path class="tc-line" d="' + lineD + '" fill="none" stroke="#8B5CF6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
+                        '</svg></div>' +
+                        '<div class="tc-line-labels">' + labelsHtml + '</div>';
+                }
+
+                const peakIdx = nums.indexOf(Math.max(...nums));
+                const peakVal = nums[peakIdx] || 0;
+                const prevPeakIdx = prevNums.indexOf(Math.max(...prevNums));
+                const prevPeakVal = prevNums[prevPeakIdx] || 0;
+                const avg = nums.length ? (nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
+                const variation = demand.variation_pct;
+                const varText = (variation !== null && variation !== undefined)
+                    ? ' (' + (variation >= 0 ? '+' : '') + variation.toFixed(1) + '% vs. ant.)'
+                    : '';
+                $('tcPeak').innerHTML = 'Pico máximo: <strong>' + tcShortLabel(labels[peakIdx]) + ' (' + peakVal + ' leads)</strong> vs. <strong>' + tcShortLabel(prevLabels[prevPeakIdx]) + ' (' + prevPeakVal + ')</strong>';
+                $('tcAvg').innerHTML = 'Promedio diario: <strong>' + avg.toFixed(1) + ' leads/día</strong>' + varText;
+
+                const list = $('tcSourcesList');
+                if (list) {
+                    let html = '';
+                    sources.forEach((src, i) => {
+                        const color = TC_COLORS[i % TC_COLORS.length];
+                        const pct = src.pct || 0;
+                        const diff = src.diff || 0;
+                        const diffClass = diff > 0 ? 'pos' : (diff < 0 ? 'neg' : 'zero');
+                        const diffText = diff > 0 ? '+' + diff : diff;
+                        html += '<div class="tc-src">' +
+                            '<div class="tc-src-top">' +
+                            '<span class="tc-src-name"><span class="tc-src-dot" style="background:' + color + '"></span>' + (src.nombre || 'Otro') + '</span>' +
+                            '<span class="tc-src-val"><strong>' + src.cantidad + '</strong> (' + pct.toFixed(1).replace('.', ',') + '%) <span class="tc-diff ' + diffClass + '">[' + diffText + ']</span></span>' +
+                            '</div>' +
+                            '<div class="tc-src-track"><div class="tc-src-bar" style="width:0%;background:' + color + '" data-w="' + Math.min(pct, 100) + '"></div></div>' +
+                            '</div>';
+                    });
+                    list.innerHTML = html;
+                }
+
+                const leader = sources.length ? sources[0] : null;
+                const leaderDiff = leader ? (leader.diff || 0) : 0;
+                const leaderDiffText = leaderDiff > 0 ? '+' + leaderDiff : leaderDiff;
+                $('tcLeader').innerHTML = 'Canal líder: <strong>' + (leader ? leader.nombre : '—') + '</strong> (' + leaderDiffText + ' leads)';
+                $('tcSourcesCount').innerHTML = sources.length + ' fuentes activas';
+
+                // Reveal al hacer scroll (borroso → nítido) + línea izq→der
+                block.hidden = false;
+                block.classList.remove('entered');
+                observeTrendsBlock();
+            }
+
+            // Observa una sección y anima (borroso → nítido) al entrar al viewport
+            let scrollObservers = {};
+            function observeScrollReveal(block, growSelector) {
+                if (!block) return;
+                if (!('IntersectionObserver' in window)) {
+                    block.classList.add('entered');
+                    return;
+                }
+                if (!scrollObservers[block.id]) {
+                    scrollObservers[block.id] = new IntersectionObserver((entries) => {
+                        entries.forEach(e => {
+                            if (e.isIntersecting) {
+                                e.target.classList.add('entered');
+                                if (growSelector) {
+                                    setTimeout(() => {
+                                        e.target.querySelectorAll(growSelector).forEach(b => { b.style.width = b.getAttribute('data-w') + '%'; });
+                                    }, 300);
+                                }
+                                scrollObservers[e.target.id].unobserve(e.target);
+                            }
+                        });
+                    }, { threshold: 0.2 });
+                }
+                scrollObservers[block.id].observe(block);
+            }
+
+            function observeTrendsBlock() {
+                observeScrollReveal($('trendsBlock'), '.tc-src-bar');
+            }
+
+            // --- BLOQUE 4: TABLA DE RENDIMIENTO COMERCIAL ---
+            function renderExecutivesTable() {
+                const block = $('execTableBlock');
+                if (!block || !OVERVIEW || !OVERVIEW.executives) return;
+                const items = OVERVIEW.executives.items || [];
+                const body = $('execTableBody');
+
+                $('execCount').innerHTML = items.length + ' Ejecutivos';
+
+                if (body) {
+                    let html = '';
+                    items.forEach(r => {
+                        const sla = r.sla_median;
+                        const slaOk = sla !== null && sla !== undefined && sla < 30;
+                        const slaText = (sla === null || sla === undefined)
+                            ? '— min'
+                            : sla.toLocaleString('es-CL', { maximumFractionDigits: 0 }) + ' min';
+                        const pctLeads = (r.pct_leads || 0).toFixed(1).replace('.', ',');
+                        const conv = (r.conversion_pct || 0).toFixed(1).replace('.', ',');
+                        const diff = r.diff_leads || 0;
+                        const diffClass = diff > 0 ? 'exec-sla-ok' : (diff < 0 ? 'exec-sla-bad' : 'exec-muted');
+                        const diffText = diff > 0 ? '+' + diff : diff;
+                        html += '<tr>' +
+                            '<td><span class="exec-avatar">' + (r.nombre ? r.nombre.charAt(0) : 'S/A') + '</span><span class="exec-name">' + r.nombre + '</span></td>' +
+                            '<td class="exec-mono"><strong>' + r.leads + '</strong> <span class="exec-muted">(' + pctLeads + '%)</span></td>' +
+                            '<td class="exec-mono"><strong>' + r.leads_prev + '</strong> <span class="' + diffClass + '">(' + diffText + ')</span></td>' +
+                            '<td class="exec-mono ' + (slaOk ? 'exec-sla-ok' : 'exec-sla-bad') + '">' + slaText + '</td>' +
+                            '<td class="exec-mono"><strong>' + r.citas + ' citas</strong> <span class="exec-muted">(' + conv + '%)</span></td>' +
+                            '</tr>';
+                    });
+                    body.innerHTML = html;
+                }
+                block.hidden = false;
+                block.classList.remove('entered');
+                observeScrollReveal(block, null);
+            }
+
             function renderDemandCard() {
                 const card = $('cardDemandMeta');
                 if (!card || !OVERVIEW) return;
@@ -1883,8 +2511,8 @@
                 $('cd1Sub').innerHTML = '<strong>' + pctAvance + '%</strong> de la meta del período (' + total + ' / ' + metaTarget + ' leads)';
                 $('cd1Spark').innerHTML = buildSparkline(daily.labels, daily.values, metaTarget);
                 $('cd1Footer').innerHTML = resolved === 'none'
-                    ? '📊 Sin período comparable en este modo'
-                    : '📊 <strong>' + (isPositive ? '+' : '') + diffLeads + ' leads</strong> vs. período equivalente anterior (' + previous + ')';
+                    ? 'Sin período comparable en este modo'
+                    : '<strong>' + (isPositive ? '+' : '') + diffLeads + ' leads</strong> vs. período equivalente anterior (' + previous + ')';
                 showCardReveal(card);
                 animateCountUp($('cd1Value'), total);
             }
@@ -1933,9 +2561,9 @@
                         ? ''
                         : ' <span class="' + (diffPP >= 0 ? 'cd2-pp-pos' : 'cd2-pp-neg') + '">(' +
                           (diffPP >= 0 ? '▲ +' : '▼ -') + Math.abs(diffPP).toFixed(1) + ' pp)</span>';
-                    footer = '🎯 1 cita cada <strong>' + ratio + ' leads</strong>' + ppText;
+                    footer = '1 cita cada <strong>' + ratio + ' leads</strong>' + ppText;
                 } else {
-                    footer = '<span style="font-style:italic;color:var(--text-secondary)">⚠️ Sin visitas o citas registradas en el período</span>';
+                    footer = '<span style="font-style:italic;color:var(--text-secondary)">Sin visitas o citas registradas en el período</span>';
                 }
                 $('cd2Footer').innerHTML = footer;
 
@@ -1981,8 +2609,8 @@
                 setTimeout(() => { $('cd3BarArriendo').style.width = Math.min(pctArriendo, 100) + '%'; }, 580);
 
                 $('cd3Footer').innerHTML = montoUF > 0
-                    ? '🏡 <strong>' + props + ' propiedades</strong> · Cobertura: ' + cobertura + '%'
-                    : '<span style="font-style:italic;color:var(--text-secondary)">⚠️ Sin propiedades vinculadas en el período</span>';
+                    ? '<strong>' + props + ' propiedades</strong> · Cobertura: ' + cobertura + '%'
+                    : '<span style="font-style:italic;color:var(--text-secondary)">Sin propiedades vinculadas en el período</span>';
 
                 showCardReveal(card);
                 animateCountUpUF($('cd3Value'), montoUF);
@@ -2014,8 +2642,8 @@
                 setTimeout(() => { $('cd4BarNormal').style.width = (normalMin === null || normalMin === undefined) ? '0%' : Math.min((normalMin / normalThreshold) * 100, 100) + '%'; }, 640);
 
                 $('cd4Footer').innerHTML = evaluados > 0
-                    ? '⏱️ <strong>' + evaluados + ' leads medidos</strong> · SLA Meta: HOT &lt; ' + hotThreshold + 'm'
-                    : '<span style="font-style:italic;color:var(--text-secondary)">⚠️ Sin registros de tiempo en este período</span>';
+                    ? '<strong>' + evaluados + ' leads medidos</strong> · SLA Meta: HOT &lt; ' + hotThreshold + 'm'
+                    : '<span style="font-style:italic;color:var(--text-secondary)">Sin registros de tiempo en este período</span>';
 
                 showCardReveal(card);
                 if (medianaGeneral === null || medianaGeneral === undefined) {
@@ -2040,6 +2668,19 @@
             // --- 5. INIT ---
             document.addEventListener('DOMContentLoaded', () => {
                 readUrlFilters();
+
+                // Navegación por pestañas
+                function switchTab(tabId) {
+                    document.querySelectorAll('#dashTabs .dash-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
+                    const ids = ['executive', 'leads', 'properties', 'channels'];
+                    ids.forEach(id => {
+                        const el = document.getElementById('view' + id.charAt(0).toUpperCase() + id.slice(1));
+                        if (el) el.hidden = (id !== tabId);
+                    });
+                }
+                document.querySelectorAll('#dashTabs .dash-tab').forEach(btn => {
+                    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+                });
 
                 document.querySelectorAll('#presetSeg button').forEach(btn => {
                     btn.addEventListener('click', () => setPeriod(btn.dataset.p));

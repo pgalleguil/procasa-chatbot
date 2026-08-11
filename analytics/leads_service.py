@@ -1029,8 +1029,16 @@ def get_leads_dashboard_overview(
     sources = f_sources.result()
     exec_rows = f_exec.result()
     sla_acc = f_sla_acc.result()
-    funnel = f_funnel.result()
-    reconcile_breakdown = f_reconcile.result()
+    try:
+        funnel = f_funnel.result()
+    except Exception as exc:
+        logger.warning("Leads dashboard funnel unavailable: %s", exc)
+        funnel = {"received": 0, "stages": []}
+    try:
+        reconcile_breakdown = f_reconcile.result()
+    except Exception as exc:
+        logger.warning("Leads dashboard reconciliation unavailable: %s", exc)
+        reconcile_breakdown = {"items": [], "total": 0}
 
     current = trends.get("current", {})
     previous = trends.get("previous", {})

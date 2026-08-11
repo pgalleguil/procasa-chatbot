@@ -552,6 +552,7 @@ def query_detail(lead_id: str) -> dict | None:
             "prospecto.comuna": 1,
             "prospecto.codigo": 1,
             "prospecto.precio_uf": 1,
+            "cartera_data.precio_uf": 1,
             "pipeline_stage": 1,
             "stage": 1,
             "ejecutivo_asignado": 1,
@@ -582,7 +583,7 @@ def query_detail(lead_id: str) -> dict | None:
                 "comuna": (lead.get("prospecto", {}) or {}).get("comuna"),
                 "tipo": (lead.get("prospecto", {}) or {}).get("tipo"),
                 "operacion": (lead.get("prospecto", {}) or {}).get("operacion"),
-                "precio_uf": (lead.get("prospecto", {}) or {}).get("precio_uf"),
+                "precio_uf": (lead.get("prospecto", {}) or {}).get("precio_uf") or (lead.get("cartera_data", {}) or {}).get("precio_uf"),
             },
         },
         "management": {
@@ -1636,12 +1637,15 @@ def query_leads_dashboard_pipeline(
         {"$addFields": {
             "_code": {"$ifNull": ["$prospecto.codigo", ""]},
             "_precio_uf": {"$convert": {
-                "input": {"$ifNull": ["$prospecto.precio_uf", None]},
+                "input": {"$ifNull": ["$prospecto.precio_uf", "$cartera_data.precio_uf", None]},
                 "to": "double",
                 "onError": None,
                 "onNull": None,
             }},
-            "_op": {"$ifNull": ["$prospecto.operacion", ""]},
+            "_op": {"$toUpper": {"$ifNull": [
+                {"$ifNull": ["$prospecto.operacion", {"$ifNull": ["$operacion", ""]}]},
+                "",
+            ]}},
         }},
         {"$match": {"_code": {"$ne": ""}}},
         # 1. Agrupar por PROPIEDAD ÚNICA
@@ -1655,9 +1659,14 @@ def query_leads_dashboard_pipeline(
         {"$project": {
             "precio_uf": {"$round": [{"$ifNull": ["$precio_uf", 0]}, 1]},
             "operacion": {"$cond": [
-                {"$in": ["Venta", "$ops"]}, "Venta",
-                {"$cond": [{"$in": ["Arriendo", "$ops"]}, "Arriendo",
-                           {"$arrayElemAt": ["$ops", 0]}]},
+                {"$in": ["VENTA", "$ops"]}, "Venta",
+                {"$cond": [
+                    {"$in": ["V", "$ops"]}, "Venta",
+                    {"$cond": [
+                        {"$in": ["ARRIENDO", "$ops"]}, "Arriendo",
+                        {"$cond": [{"$in": ["A", "$ops"]}, "Arriendo", {"$arrayElemAt": ["$ops", 0]}]},
+                    ]},
+                ]},
             ]},
             "leads_interesados": 1,
             "con_precio": 1,
@@ -1671,6 +1680,10 @@ def query_leads_dashboard_pipeline(
             "leads_vinculados": {"$sum": "$leads_interesados"},
             "monto_venta_uf": {"$sum": {"$cond": [{"$eq": ["$operacion", "Venta"]}, "$precio_uf", 0]}},
             "monto_arriendo_uf": {"$sum": {"$cond": [{"$eq": ["$operacion", "Arriendo"]}, "$precio_uf", 0]}},
+            "monto_otro_uf": {"$sum": {"$cond": [
+                {"$and": [{"$ne": ["$operacion", "Venta"]}, {"$ne": ["$operacion", "Arriendo"]}]},
+                "$precio_uf", 0,
+            ]}},
         }},
     ]
     row = list(db["leads"].aggregate(pipeline))
@@ -1682,6 +1695,7 @@ def query_leads_dashboard_pipeline(
         "monto_uf": round(facet.get("monto_uf", 0.0) or 0.0, 1),
         "monto_venta_uf": round(facet.get("monto_venta_uf", 0.0) or 0.0, 1),
         "monto_arriendo_uf": round(facet.get("monto_arriendo_uf", 0.0) or 0.0, 1),
+        "monto_otro_uf": round(facet.get("monto_otro_uf", 0.0) or 0.0, 1),
     }
 
 
@@ -1847,7 +1861,7 @@ def query_leads_dashboard_executives(
                 "uf": [
                     {"$group": {
                         "_id": {"exec": _exec, "code": {"$ifNull": ["$prospecto.codigo", ""]}},
-                        "uf": {"$max": {"$ifNull": ["$prospecto.precio_uf", 0]}},
+                        "uf": {"$max": {"$ifNull": ["$prospecto.precio_uf", "$cartera_data.precio_uf", 0]}},
                     }},
                     {"$group": {"_id": "$_id.exec", "uf": {"$sum": "$uf"}}},
                 ],
@@ -1886,6 +1900,132 @@ def query_leads_dashboard_executives(
         })
     rows.sort(key=lambda r: -r["leads"])
     return rows
+
+
+def query_leads_dashboard_funnel(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    filters: Optional[dict] = None,
+) -> dict:
+    """Embudo comercial completo para el Leads Dashboard (Fila embudo)."""
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    pipeline = [
+        _cohort_indexed_prefilter(start_utc, end_utc),
+        _normalized_created_at_stage(),
+        {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
+        {"$group": {"_id": None,
+            "received": {"$sum": 1},
+            "contactados": {"$sum": {"$cond": [{"$ne": [{"$type": "$lifecycle.first_valid_management_at"}, "missing"]}, 1, 0]}},
+            "calificados": {"$sum": {"$cond": [{
+                "$and": [
+                    {"$ne": [{"$ifNull": ["$prospecto.email", ""]}, ""]},
+                    {"$ne": [{"$ifNull": ["$prospecto.rut", ""]}, ""]},
+                ]}, 1, 0]}},
+            "visitas": {"$sum": {"$cond": [{
+                "$or": [
+                    {"$in": [{"$ifNull": ["$bi_analytics_global.RESULTADO_CHAT", ""]}, ["VISITA_SOLICITADA", "VISITA_AGENDADA"]]},
+                    {"$in": [{"$ifNull": ["$pipeline_stage", ""]}, ["VISIT_SCHEDULED", "VISIT_DONE"]]},
+                ]}, 1, 0]}},
+            "ofertas": {"$sum": {"$cond": [
+                {"$in": [{"$ifNull": ["$pipeline_stage", ""]}, ["OFFER", "NEGOTIATION", "CLOSED_WON"]]}, 1, 0]}},
+            "cierres": {"$sum": {"$cond": [{"$eq": ["$pipeline_stage", "CLOSED_WON"]}, 1, 0]}},
+        }},
+    ]
+    row = list(db["leads"].aggregate(pipeline))
+    row = row[0] if row else {}
+    received = row.get("received", 0)
+    steps = [
+        ("contactados", "Contactados"),
+        ("calificados", "Calificados"),
+        ("visitas", "Visitas"),
+        ("ofertas", "Ofertas"),
+        ("cierres", "Cierres"),
+    ]
+    stages = [
+        {"key": key, "label": label, "count": row.get(key, 0),
+         "pct": round(row.get(key, 0) / received * 100, 1) if received else 0.0}
+        for key, label in steps
+    ]
+    return {"received": received, "stages": stages}
+
+
+def query_leads_dashboard_reconcile_breakdown(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    filters: Optional[dict] = None,
+) -> dict:
+    """Desglose de los leads NO contabilizados en la tabla de ejecutivos.
+
+    Replica la regla de la tabla de ejecutivos (solo agentes activos) y
+    clasifica el remanente en categorías de gobierno de datos:
+    Pruebas, Duplicados, Rechazados, Sin asignar, Administrativo y Otros.
+    El total del desglose debe reconciliar contra `reconcile.otros`.
+    """
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+
+    match: dict = {
+        "created_at": {
+            "$gte": start_utc.strftime("%Y-%m-%dT%H:%M:%S"),
+            "$lt": end_utc.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+    }
+    extra = _build_extra_filter(filters)
+    if extra:
+        match.update(extra)
+
+    docs = db["leads"].find(
+        match,
+        {
+            "_test_lead": 1,
+            "is_duplicate": 1,
+            "archive_reason": 1,
+            "ejecutivo_asignado": 1,
+        },
+    )
+
+    active = {
+        str(u.get("nombre", "")).strip().lower()
+        for u in db["usuarios"].find({"rol": "agente", "is_active": True}, {"nombre": 1})
+    }
+    active.discard("pablo galleguillos")
+    known_users = {
+        str(u.get("nombre", "")).strip().lower()
+        for u in db["usuarios"].find({}, {"nombre": 1})
+    }
+
+    counters = {"Pruebas": 0, "Duplicados": 0, "Rechazados": 0,
+                "Sin asignar": 0, "Administrativo": 0, "Otros": 0}
+    agentes = 0
+    total = 0
+    for doc in docs:
+        total += 1
+        exec_name = str(doc.get("ejecutivo_asignado") or "").strip()
+        exec_key = exec_name.lower()
+        if exec_key in active:
+            agentes += 1
+            continue
+        if doc.get("_test_lead") is True:
+            counters["Pruebas"] += 1
+        elif doc.get("is_duplicate") is True:
+            counters["Duplicados"] += 1
+        elif "rechazad" in str(doc.get("archive_reason") or "").lower():
+            counters["Rechazados"] += 1
+        elif exec_key in {"", "sin asignar", "no asignado"}:
+            counters["Sin asignar"] += 1
+        elif exec_key in {"pablo galleguillos"} or (exec_key and exec_key not in known_users):
+            counters["Administrativo"] += 1
+        else:
+            counters["Otros"] += 1
+
+    items = [{"categoria": name, "cantidad": count} for name, count in counters.items() if count > 0]
+    return {
+        "agentes": agentes,
+        "items": items,
+        "total_desglose": sum(counters.values()),
+        "total_cohort": total,
+    }
 
 
 def query_variance_drivers(
@@ -2965,8 +3105,8 @@ def query_demand_by_price_ranges(period_start=None, period_end=None, filters=Non
         {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
         {"$addFields": {
             "_operacion": {"$ifNull": ["$prospecto.operacion", "Sin informacion"]},
-            "_precio_uf": {"$ifNull": ["$prospecto.precio_uf", None]},
-            "_precio_clp": {"$ifNull": ["$prospecto.precio_clp", None]},
+            "_precio_uf": {"$ifNull": ["$prospecto.precio_uf", "$cartera_data.precio_uf", None]},
+            "_precio_clp": {"$ifNull": ["$prospecto.precio_clp", "$cartera_data.precio_clp", None]},
             "_tipo": {"$ifNull": ["$prospecto.tipo", "Sin informacion"]},
         }},
     ]
@@ -3139,7 +3279,7 @@ def query_commercial_property_ranking(period_start=None, period_end=None, filter
             "_tipo": {"$ifNull": ["$prospecto.tipo", "Sin informacion"]},
             "_comuna": {"$ifNull": ["$prospecto.comuna", "Sin informacion"]},
             "_op": {"$ifNull": ["$prospecto.operacion", "Sin informacion"]},
-            "_precio_uf": {"$ifNull": ["$prospecto.precio_uf", None]},
+            "_precio_uf": {"$ifNull": ["$prospecto.precio_uf", "$cartera_data.precio_uf", None]},
             "_has_mgmt": {"$cond": [{"$ne": [{"$ifNull": ["$lifecycle.first_valid_management_at", None]}, None]}, 1, 0]},
         }},
         {"$match": {"_code": {"$ne": None, "$ne": ""}}},

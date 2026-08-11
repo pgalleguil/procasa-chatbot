@@ -2338,8 +2338,39 @@
             .ai-briefing-inner:hover, .tc-card:hover, .exec-table-card:hover,
             .funnel-card:hover { transform: none; box-shadow: none; }
         }
+
+        /* Chrome: conserva la estética, pero evita capas costosas de composición GPU. */
+        html.chrome-performance .sidebar,
+        html.chrome-performance .ai-briefing-inner,
+        html.chrome-performance .tc-card,
+        html.chrome-performance .exec-table-card,
+        html.chrome-performance .funnel-card,
+        html.chrome-performance .loading-overlay {
+            -webkit-backdrop-filter: none !important;
+            backdrop-filter: none !important;
+        }
+
+        html.chrome-performance .ai-briefing-inner:hover,
+        html.chrome-performance .tc-card:hover,
+        html.chrome-performance .exec-table-card:hover,
+        html.chrome-performance .funnel-card:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-card) !important;
+        }
+
+        html.chrome-performance body {
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
     </style>
 </head>
+
+<script>
+    (function () {
+        var ua = navigator.userAgent || '';
+        var isChrome = (/Chrome\//.test(ua) || /CriOS\//.test(ua)) && !/Edg\//.test(ua) && !/OPR\//.test(ua) && !/Opera/.test(ua);
+        if (isChrome) document.documentElement.classList.add('chrome-performance');
+    })();
+</script>
 
 <body class="seq-pending">
         <nav class="sidebar seq-el seq-static" id="sidebar">
@@ -2708,7 +2739,6 @@
                 </div>
             </section>
 
-            <p class="exec-method-note">Fuente: CRM comercial. Período según filtros seleccionados. Valores UF corresponden a valorización potencial sobre propiedades únicas vinculadas.</p>
 
             </div>
 

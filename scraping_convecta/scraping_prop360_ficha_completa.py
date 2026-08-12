@@ -1685,6 +1685,22 @@ def _snapshot_dict(row: dict) -> dict:
     }
 
 
+def _snapshot_price_key(precio_text) -> tuple:
+    """Clave de comparación de precio para el snapshot del listado.
+
+    Compara SOLO el monto en UF cuando está presente (referencia estable),
+    ignorando el equivalente en CLP que fluctúa a diario con el valor de la UF.
+    Solo cae a CLP cuando el listado no trae UF.
+    """
+    if precio_text:
+        uf, clp = parse_listing_price(precio_text)
+        if uf is not None:
+            return ("uf", uf)
+        if clp is not None:
+            return ("clp", clp)
+    return None
+
+
 def needs_update(existing: dict, row: dict) -> bool:
     if _row_missing_or_stale(existing):
         return True
@@ -1696,7 +1712,11 @@ def needs_update(existing: dict, row: dict) -> bool:
     resumen = existing.get("resumen") or {}
     snap = resumen.get("snapshot_listado")
     if isinstance(snap, dict):
-        return normalize_text_for_compare(snap) != normalize_text_for_compare(_snapshot_dict(row))
+        stored = {k: normalize_text_for_compare(v) for k, v in snap.items()}
+        fresh = {k: normalize_text_for_compare(v) for k, v in _snapshot_dict(row).items()}
+        stored["precio"] = _snapshot_price_key(snap.get("precio"))
+        fresh["precio"] = _snapshot_price_key(row.get("precio"))
+        return stored != fresh
 
     checks = [
         (resumen.get("ejecutivo"), row.get("captador")),
@@ -1815,11 +1835,22 @@ def run(args, office_id: int | None = None) -> int:
         scrape_list = sorted(active_codes)
         log.info("Modo backfill: re-scrapeando todas las propiedades Activa.")
     else:
+        # Incremental fast path (2x/día): solo se scrapean las propiedades NUEVAS.
+        # Las existentes que cambiaron (a_actualizar) SOLO se DETECTAN contra el
+        # listado y se difieren al backfill mensual, para no re-scrapear toda la
+        # cartera ni gastar banda cada ciclo.
+        if a_actualizar:
+            muestra = ", ".join(a_actualizar[:15])
+            if len(a_actualizar) > 15:
+                muestra += f" ... (+{len(a_actualizar)-15})"
+            log.info(
+                "[INCREMENTAL] %s propiedad(es) detectada(s) como CAMBIADA(s) "
+                "(no re-scrapeadas; se actualizan en el backfill mensual): %s",
+                len(a_actualizar), muestra,
+            )
         if args.max_new is not None:
             nuevas = nuevas[: args.max_new]
-        if args.max_update is not None:
-            a_actualizar = a_actualizar[: args.max_update]
-        scrape_list = nuevas + a_actualizar
+        scrape_list = nuevas
 
     if args.limit:
         scrape_list = scrape_list[: args.limit]
@@ -1854,7 +1885,8 @@ def run_all_offices(args) -> int:
         if code:
             worst = code
 
-    _generate_embeddings_for_pending()
+    if getattr(args, "backfill", False):
+        _generate_embeddings_for_pending()
     return worst
 
 

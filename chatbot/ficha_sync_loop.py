@@ -1,15 +1,15 @@
-"""Ficha sync loop — monthly sync of property fichas.
+"""Ficha sync loop — periodic sync of property fichas.
 
 Runs on the same in-process pattern as ``prop360_poll_loop``: an asyncio loop
 launched from ``webhook.py``, feature-flagged via env vars.
 
 Schedule (Chile time):
-    - Monthly backfill on Sunday within ``FICHA_SYNC_BACKFILL_HOUR`` +
+    - Incremental runs Mon-Fri at 08:00 and 18:00 (2x/day).
+    - Full backfill runs on Sunday within ``FICHA_SYNC_BACKFILL_HOUR`` +
       ``FICHA_SYNC_BACKFILL_WINDOW``, at most once every
       ``FICHA_SYNC_BACKFILL_MIN_DAYS`` (default 30 -> ~1x per month,
       early morning, end or start of month).
-    - No incremental runs: re-scraping every cycle wastes bandwidth on the
-      Hobby plan, so the full cartera is refreshed once a month.
+    - Saturdays: nothing.
 
 Env vars:
     FICHA_SYNC_ENABLED              "true"/"false" (default "false")
@@ -36,8 +36,8 @@ try:
 except Exception:  # pragma: no cover
     CHILE_TZ = None
 
-# No incremental slots: only the monthly Sunday backfill runs.
-INCREMENTAL_SLOTS = ()
+# Fixed incremental slots (Chile time), Mon-Fri only: 08:00 and 18:00 (2x/day).
+INCREMENTAL_SLOTS = (8, 18)
 
 
 def _feature_enabled() -> bool:

@@ -1869,17 +1869,19 @@ def run_codigo(client: Prop360Client, coll, codigo: str, listing_row: dict, args
     return scrape_list_batch(client, coll, [codigo], {codigo: listing_row}, args, None)
 
 
-def run_all_offices(args) -> int:
-    """Corre el ciclo completo para todas las oficinas activas de OFICINAS.
+def run_all_offices(args, offices: list[int] | None = None) -> int:
+    """Corre el ciclo para las oficinas indicadas (o todas las activas).
 
     Detecta nuevas, actualizaciones y bajas por oficina, de modo que la cartera
     universo queda completa y al día. La oficina 4 está vacía y se omite.
+    ``offices=None`` corre todas las oficinas (backfill mensual / CLI).
     """
-    offices = [oid for oid in sorted(OFICINAS) if oid != 4]
+    if offices is None:
+        offices = [oid for oid in sorted(OFICINAS) if oid != 4]
     worst = 0
     for oid in offices:
         log.info("=" * 60)
-        log.info(f"OFICINA {oid}: {OFICINAS[oid]}")
+        log.info(f"OFICINA {oid}: {OFICINAS.get(oid, f'OFICINA {oid}')}")
         log.info("=" * 60)
         code = run(args, office_id=oid)
         if code:

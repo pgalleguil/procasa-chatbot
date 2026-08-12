@@ -4,11 +4,13 @@ Runs on the same in-process pattern as ``prop360_poll_loop``: an asyncio loop
 launched from ``webhook.py``, feature-flagged via env vars.
 
 Schedule (Chile time):
-    - Incremental runs Mon-Fri at 08:00 and 18:00 (2x/day).
-    - Full backfill runs on Sunday within ``FICHA_SYNC_BACKFILL_HOUR`` +
-      ``FICHA_SYNC_BACKFILL_WINDOW``, at most once every
-      ``FICHA_SYNC_BACKFILL_MIN_DAYS`` (default 30 -> ~1x per month,
-      early morning, end or start of month).
+    - Incremental SUCRE (oficina 7) Mon-Fri at 08:00 and 18:00 (2x/day).
+      Solo SUCRE para ahorrar banda; detecta nuevas/bajas/cambios y re-scrapea
+      únicamente las propiedades nuevas de esa oficina.
+    - Sunday at ``FICHA_SYNC_BACKFILL_HOUR``: si venció el backfill mensual
+      (``FICHA_SYNC_BACKFILL_MIN_DAYS``, default 30) corre el backfill completo
+      de TODA la cartera; si aún no vence, corre incremental de las oficinas
+      restantes (todas excepto SUCRE).
     - Saturdays: nothing.
 
 Env vars:
@@ -37,7 +39,12 @@ except Exception:  # pragma: no cover
     CHILE_TZ = None
 
 # Fixed incremental slots (Chile time), Mon-Fri only: 08:00 and 18:00 (2x/day).
+# En estos slots solo se sincroniza SUCRE (oficina 7) para ahorrar banda.
 INCREMENTAL_SLOTS = (8, 18)
+
+# Oficina principal sincronizada 2x/día y resto de oficinas (semanal, domingo).
+OFFICE_SUCRE = 7
+OFFICES_OTHER = [1, 2, 3, 5, 6, 8]
 
 
 def _feature_enabled() -> bool:
@@ -157,7 +164,7 @@ def _backfill_due(db) -> bool:
         return True
 
 
-def _build_args(backfill: bool) -> argparse.Namespace:
+def _build_args(backfill: bool, offices: list[int] | None = None) -> argparse.Namespace:
     return SimpleNamespace(
         dry_run=False,
         codigo=None,
@@ -165,7 +172,8 @@ def _build_args(backfill: bool) -> argparse.Namespace:
         max_update=None,
         limit=None,
         backfill=backfill,
-        all_offices=True,
+        all_offices=offices is None,
+        offices=offices,
         no_bajas=False,
         delay=0.1,
     )
@@ -200,18 +208,26 @@ def run_ficha_sync_cycle(db=None) -> dict:
         db = get_db()
 
     backfill = False
+    offices = None
     if mode == "backfill":
         if not _backfill_due(db):
-            logger.info("[FICHA_SYNC] backfill not due yet; skipping.")
-            _persist_cycle_status("skipped_backfill", {"mode": "backfill"})
-            return {"status": "skipped_backfill", "mode": "backfill"}
-        backfill = True
+            # Domingo sin backfill mensual vencido: incremental de las demás
+            # oficinas (todas excepto SUCRE) para mantenerlas al día semanalmente.
+            mode = "incremental"
+            offices = OFFICES_OTHER
+            logger.info("[FICHA_SYNC] backfill no vence aún; incremental semanal de otras oficinas: %s", OFFICES_OTHER)
+        else:
+            backfill = True
+            offices = None  # backfill completo: toda la cartera
+    elif mode == "incremental":
+        offices = [OFFICE_SUCRE]
+        logger.info("[FICHA_SYNC] incremental SUCRE (ofi=%s) 2x/día.", OFFICE_SUCRE)
 
     metrics["mode"] = "backfill" if backfill else "incremental"
     try:
         from scraping_convecta.scraping_prop360_ficha_completa import run_all_offices
-        args = _build_args(backfill)
-        exit_code = run_all_offices(args)
+        args = _build_args(backfill, offices=offices)
+        exit_code = run_all_offices(args, offices=offices)
         metrics["exit_code"] = exit_code
         metrics["status"] = "error" if exit_code else "ok"
         metrics["reason"] = "exit_code_nonzero" if exit_code else None
@@ -222,7 +238,7 @@ def run_ficha_sync_cycle(db=None) -> dict:
         _persist_cycle_status("error", {"reason": "exception", "mode": metrics["mode"]})
         return metrics
 
-    extra = {"mode": metrics["mode"], "exit_code": exit_code}
+    extra = {"mode": metrics["mode"], "exit_code": exit_code, "offices": offices}
     if backfill:
         extra["last_backfill_at"] = datetime.utcnow().isoformat()
     _persist_cycle_status(metrics["status"], extra)

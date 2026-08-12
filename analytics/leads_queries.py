@@ -2042,7 +2042,14 @@ def query_leads_operational_dashboard(
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
     filters = filters or {}
-    match = _build_commercial_cohort_match(start_utc, end_utc, filters)
+    # En la vista de equipo el período se define por la asignación al ejecutivo,
+    # no por la creación del lead. Así no se atribuyen leads antiguos que no
+    # fueron asignados durante el período seleccionado.
+    match = _build_extra_filter(filters) or {}
+    assigned_period_match = {"$expr": {"$and": [
+        {"$gte": ["$_assigned_normalized", start_utc]},
+        {"$lt": ["$_assigned_normalized", end_utc]},
+    ]}}
     projection = {
         "phone": 1, "created_at": 1, "_created_normalized": 1,
         "prospecto.nombre": 1, "prospecto.codigo": 1,
@@ -2054,8 +2061,14 @@ def query_leads_operational_dashboard(
         "stage_history": {"$slice": ["$stage_history", -1]},
     }
     docs = list(db["leads"].aggregate([
-        _cohort_indexed_prefilter(start_utc, end_utc),
         _normalized_created_at_stage(),
+        {"$set": {"_assigned_normalized": {"$convert": {
+            "input": "$lifecycle.assigned_at",
+            "to": "date",
+            "onError": None,
+            "onNull": None,
+        }}}},
+        {"$match": assigned_period_match},
         {"$match": match},
         {"$project": projection},
     ]))
@@ -2063,8 +2076,9 @@ def query_leads_operational_dashboard(
     now = datetime.now(timezone.utc)
     rows = []
     by_exec = {}
-    age_buckets = {"0_30": 0, "31_60": 0, "61_180": 0, "180_plus": 0}
-    counters = {"pending": 0, "overdue": 0, "near_due": 0, "unassigned": 0}
+    response_times = {"HOT": [], "NORMAL": []}
+    age_buckets = {"0_60": 0, "61_180": 0, "181_360": 0, "361_1440": 0, "1440_plus": 0}
+    counters = {"active_assigned": 0, "pending": 0, "no_first_management": 0, "overdue": 0, "near_due": 0, "unassigned": 0, "hot_overdue": 0, "normal_overdue": 0, "hot_near_due": 0, "hot_risk": 0, "sla_hot_pct": None, "sla_normal_pct": None, "carryover": 0}
     unassigned_values = {str(value).strip().lower() for value in UNASSIGNED_VALUES if value is not None}
 
     def is_unassigned(value):
@@ -2078,16 +2092,24 @@ def query_leads_operational_dashboard(
         executive = str(doc.get("ejecutivo_asignado") or "Sin asignar").strip()
         temperature = str(doc.get("lead_temperature_effective") or "NORMAL").upper()
         threshold = 60 if temperature == "HOT" else 180
-        elapsed = max(0, round((now - (assigned or created)).total_seconds() / 60)) if (assigned or created) else 0
-        if elapsed <= 30:
-            age_buckets["0_30"] += 1
-        elif elapsed <= 60:
-            age_buckets["31_60"] += 1
+        sla_start = assigned or created
+        elapsed = round(calculate_business_minutes(
+            sla_start.astimezone(CHILE_TZ), now.astimezone(CHILE_TZ)
+        )) if sla_start else 0
+        elapsed = max(0, elapsed)
+        if elapsed <= 60:
+            age_buckets["0_60"] += 1
         elif elapsed <= 180:
             age_buckets["61_180"] += 1
+        elif elapsed <= 360:
+            age_buckets["181_360"] += 1
+        elif elapsed <= 1440:
+            age_buckets["361_1440"] += 1
         else:
-            age_buckets["180_plus"] += 1
+            age_buckets["1440_plus"] += 1
 
+        if created and created < start_utc:
+            counters["carryover"] += 1
         unassigned = is_unassigned(doc.get("ejecutivo_asignado"))
         if unassigned:
             priority, priority_label = "unassigned", "Sin asignar"
@@ -2098,7 +2120,7 @@ def query_leads_operational_dashboard(
             priority, priority_label = "overdue", "SLA vencido"
             counters["overdue"] += 1
             counters["pending"] += 1
-        elif temperature == "HOT" and elapsed >= max(threshold - 30, 1):
+        elif elapsed / max(threshold, 1) >= 0.75:
             priority, priority_label = "near_due", "Hot próximo a vencer"
             counters["near_due"] += 1
             counters["pending"] += 1
@@ -2106,6 +2128,16 @@ def query_leads_operational_dashboard(
             priority, priority_label = "pending", "Pendiente"
             counters["pending"] += 1
 
+        if not unassigned:
+            counters["active_assigned"] += 1
+        if priority != "managed" and not unassigned:
+            counters["no_first_management"] += 1
+        if priority == "overdue":
+            counters["hot_overdue" if temperature == "HOT" else "normal_overdue"] += 1
+        if temperature == "HOT" and priority in {"overdue", "near_due"}:
+            counters["hot_risk"] += 1
+        if temperature == "HOT" and priority == "near_due":
+            counters["hot_near_due"] += 1
         if filters.get("priority") and filters["priority"] != priority:
             continue
         if filters.get("assignment") == "assigned" and unassigned:
@@ -2125,6 +2157,18 @@ def query_leads_operational_dashboard(
         if history and isinstance(history[-1], Mapping):
             last_action = history[-1].get("to") or history[-1].get("notes") or "Cambio de estado"
         property_data = doc.get("prospecto") or {}
+        if managed:
+            measured = round(calculate_business_minutes(
+                (assigned or created).astimezone(CHILE_TZ), managed.astimezone(CHILE_TZ)
+            )) if (assigned or created) else 0
+            sla_status = "COMPLIED" if measured <= threshold else "BREACHED"
+            sla_delta = measured - threshold
+        elif unassigned:
+            sla_status = "UNASSIGNED"
+            sla_delta = elapsed - threshold
+        else:
+            sla_status = "EXPIRED" if elapsed >= threshold else ("NEAR_SLA" if elapsed / max(threshold, 1) >= 0.75 else "WITHIN_SLA")
+            sla_delta = elapsed - threshold
         row = {
             "id": str(doc.get("_id")),
             "priority": priority, "priority_label": priority_label,
@@ -2134,27 +2178,53 @@ def query_leads_operational_dashboard(
             "property_type": property_data.get("tipo") or "", "operation": property_data.get("operacion") or "",
             "stage": stage, "executive": executive, "last_action": str(last_action),
             "created_at": created.isoformat() if created else None,
+            "sla_status": sla_status,
+            "sla_delta_minutes": sla_delta,
+            "sla_delta_label": ("Vencido +%s min" % abs(sla_delta)) if sla_delta >= 0 else ("%s min restantes" % abs(sla_delta)),
         }
         rows.append(row)
-        bucket = by_exec.setdefault(executive, {"executive": executive, "assigned": 0, "pending": 0, "overdue": 0, "managed": 0})
+        bucket = by_exec.setdefault(executive, {"executive": executive, "assigned": 0, "pending": 0, "overdue": 0, "managed": 0, "hot_managed": 0, "hot_complied": 0, "normal_managed": 0, "normal_complied": 0, "critical": 0})
         bucket["assigned"] += 1
         if unassigned:
             continue
         if managed:
             bucket["managed"] += 1
+            managed_elapsed = round(calculate_business_minutes(
+                (assigned or created).astimezone(CHILE_TZ), managed.astimezone(CHILE_TZ)
+            )) if (assigned or created) else 0
+            metric = "hot" if temperature == "HOT" else "normal"
+            bucket[metric + "_managed"] += 1
+            if managed_elapsed <= threshold:
+                bucket[metric + "_complied"] += 1
+            response_times["HOT" if temperature == "HOT" else "NORMAL"].append(managed_elapsed)
         else:
             bucket["pending"] += 1
             if priority == "overdue":
                 bucket["overdue"] += 1
+        if priority in {"overdue", "near_due", "unassigned"}:
+            bucket["critical"] += 1 if priority == "overdue" and temperature == "HOT" else 0
 
     order = {"overdue": 0, "near_due": 1, "unassigned": 2, "pending": 3, "managed": 4}
-    rows.sort(key=lambda row: (order.get(row["priority"], 9), -row["sla_minutes"]))
+    rows.sort(key=lambda row: (
+        0 if row["priority"] == "overdue" and row["temperature"] == "HOT" else order.get(row["priority"], 9),
+        1 if row["temperature"] != "HOT" else 0,
+        -max(row.get("sla_delta_minutes", 0), 0),
+    ))
     for bucket in by_exec.values():
         denominator = bucket["managed"] + bucket["overdue"]
         bucket["sla_compliance_pct"] = round(bucket["managed"] / denominator * 100, 1) if denominator else None
+        bucket["hot_sla_pct"] = round(bucket["hot_complied"] / bucket["hot_managed"] * 100, 1) if bucket["hot_managed"] else None
+        bucket["normal_sla_pct"] = round(bucket["normal_complied"] / bucket["normal_managed"] * 100, 1) if bucket["normal_managed"] else None
+    hot_managed = sum(row["hot_managed"] for row in by_exec.values())
+    hot_complied = sum(row["hot_complied"] for row in by_exec.values())
+    normal_managed = sum(row["normal_managed"] for row in by_exec.values())
+    normal_complied = sum(row["normal_complied"] for row in by_exec.values())
+    counters["sla_hot_pct"] = round(hot_complied / hot_managed * 100, 1) if hot_managed else None
+    counters["sla_normal_pct"] = round(normal_complied / normal_managed * 100, 1) if normal_managed else None
     return {
         "counters": counters,
         "age_buckets": age_buckets,
+        "response_times": response_times,
         "executives": sorted(by_exec.values(), key=lambda item: (-item["pending"], -item["assigned"], item["executive"])),
         "rows": rows[:200],
         "total_rows": len(rows),

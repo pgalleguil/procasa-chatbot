@@ -2014,22 +2014,50 @@
 
         /* --- CRM & GESTIÓN DE LEADS: tablero operativo --- */
         .ops-dashboard { display:flex; flex-direction:column; gap:18px; }
-        .ops-head { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; }
+        .ops-dashboard > .ops-panel:last-of-type { order:3; }
+        .ops-dashboard > .ops-panel:last-of-type { display:none; }
+        .ops-dashboard > .ops-grid-3 { order:4; }
+        .ops-dashboard > .ops-insights { order:5; }
+        .ops-head { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; order:-1; }
         .ops-kicker { color:var(--conversion-accent); text-transform:uppercase; letter-spacing:.12em; font-size:10px; font-weight:700; }
         .ops-title { margin:3px 0 0; color:var(--text-primary); font-size:24px; font-weight:800; }
         .ops-meta,.ops-panel-sub { color:var(--text-secondary); font-size:10px; }
         .ops-meta { margin-top:5px; }
         .ops-refresh,.ops-filter { border:1px solid var(--border-color); background:var(--bg-card); color:var(--text-primary); border-radius:8px; padding:9px 11px; font-size:11px; }
         .ops-refresh { font-weight:700; cursor:pointer; } .ops-refresh:hover { border-color:var(--conversion-accent); color:var(--conversion-accent); }
-        .ops-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+        .ops-kpis { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
         .ops-kpi,.ops-panel { background:var(--bg-card); border:1px solid var(--border-color); border-radius:12px; }
         .ops-kpi { padding:15px; min-width:0; } .ops-kpi-label { color:var(--text-secondary); font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
+        .ops-kpi.urgent .ops-kpi-value { color:var(--text-primary); }
+        .ops-kpi-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+        .ops-info { border:0; background:transparent; color:var(--text-secondary); cursor:help; padding:3px; font-size:12px; }
+        .ops-info:hover { color:var(--conversion-accent); }
+        .ops-tooltip { position:absolute; z-index:60; top:42px; right:12px; width:245px; padding:11px 12px; border:1px solid var(--border-color); border-radius:9px; background:var(--bg-card); color:var(--text-secondary); font-size:10px; line-height:1.5; box-shadow:0 10px 28px rgba(0,0,0,.28); opacity:0; pointer-events:none; transform:translateY(-4px); transition:opacity .16s ease,transform .16s ease; }
+        .ops-kpi { position:relative; }
+        .ops-kpi:focus-within .ops-tooltip, .ops-kpi:hover .ops-tooltip { opacity:1; transform:translateY(0); }
         .ops-kpi-value { color:var(--text-primary); font-size:28px; font-weight:800; line-height:1.1; margin-top:7px; font-variant-numeric:tabular-nums; }
-        .ops-kpi-note { color:var(--text-secondary); font-size:10px; margin-top:5px; } .ops-kpi.urgent .ops-kpi-value{color:#fb7185}.ops-kpi.warning .ops-kpi-value{color:#fbbf24}.ops-kpi.info .ops-kpi-value{color:#a78bfa}
+        .ops-kpi-note { color:var(--text-secondary); font-size:10px; margin-top:5px; } .ops-kpi.urgent .ops-kpi-value{color:var(--text-primary)}.ops-kpi.warning .ops-kpi-value{color:#fbbf24}.ops-kpi.info .ops-kpi-value{color:#a78bfa}
         .ops-panel { padding:16px; min-width:0; } .ops-panel-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:13px}.ops-panel-title{margin:0;font-size:13px;color:var(--text-primary);font-weight:750}
         .ops-priority-list{display:grid;gap:8px}.ops-priority-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border-radius:8px;background:var(--bg-elevated)}.ops-priority-name{font-size:11px;color:var(--text-primary);font-weight:650}.ops-priority-count{font-size:18px;font-weight:800;color:var(--text-primary)}.ops-mini-btn{border:0;background:transparent;color:var(--conversion-accent);font-size:10px;font-weight:700;cursor:pointer;padding:4px 0}
-        .ops-grid-3{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:12px}.ops-bars{display:grid;gap:9px}.ops-bar-row{display:grid;grid-template-columns:minmax(76px,1fr) 1.5fr auto;align-items:center;gap:8px;font-size:10px}.ops-bar-name{color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ops-track{height:7px;border-radius:99px;background:var(--bg-elevated);overflow:hidden}.ops-fill{height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#8b5cf6,#38bdf8);transition:width 700ms cubic-bezier(.22,1,.36,1)}.ops-bar-num{color:var(--text-secondary);font-variant-numeric:tabular-nums}
+        .ops-grid-3{display:grid;grid-template-columns:1fr 1.25fr 1fr;gap:12px}.ops-bars{display:grid;gap:9px}.ops-bar-row{display:grid;grid-template-columns:minmax(76px,1fr) 1.5fr auto;align-items:center;gap:8px;font-size:10px}.ops-bar-name{color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ops-track{height:7px;border-radius:99px;background:var(--bg-elevated);overflow:hidden}.ops-fill{height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#8b5cf6,#38bdf8);transition:width 700ms cubic-bezier(.22,1,.36,1)}.ops-bar-num{color:var(--text-secondary);font-variant-numeric:tabular-nums}
         .ops-age-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;align-items:end;min-height:108px}.ops-age-col{display:flex;flex-direction:column;align-items:center;gap:5px;height:100%;justify-content:flex-end}.ops-age-bar{width:100%;max-width:34px;height:0;min-height:4px;border-radius:5px 5px 2px 2px;background:#64748b;transition:height 700ms cubic-bezier(.22,1,.36,1)}.ops-age-col:nth-child(2) .ops-age-bar{background:#38bdf8}.ops-age-col:nth-child(3) .ops-age-bar{background:#fbbf24}.ops-age-col:nth-child(4) .ops-age-bar{background:#fb7185}.ops-age-label{font-size:9px;color:var(--text-secondary);text-align:center}.ops-age-num{font-size:10px;color:var(--text-primary);font-weight:700}
+        .ops-age-grid:has(.ops-boxplot) { display:block; min-height:0; }
+        .ops-boxplot { display:grid; width:100%; gap:30px; padding:12px 2px 6px; }
+        .ops-box-row { display:grid; grid-template-columns:44px minmax(0,1fr) 92px; min-height:52px; align-items:center; gap:9px; font-size:10px; }
+        .ops-box-label { color:var(--text-primary); font-weight:700; }
+        .ops-box-track { position:relative; height:44px; min-width:0; border-bottom:1px solid var(--border-color); background:linear-gradient(to bottom,transparent 0,transparent 78%,rgba(148,163,184,.06) 78%,rgba(148,163,184,.06) 100%); }
+        .ops-box-axis { position:absolute; left:0; right:0; bottom:-1px; display:flex; justify-content:space-between; color:var(--text-secondary); font-size:8px; }
+        .ops-box-line { position:absolute; top:21px; height:3px; background:#64748b; border-radius:99px; cursor:help; }
+        .ops-box-iqr { position:absolute; top:10px; height:22px; border-radius:5px; background:rgba(56,189,248,.45); border:1px solid #38bdf8; box-shadow:0 0 10px rgba(56,189,248,.12); cursor:help; }
+        .ops-box-row.normal .ops-box-iqr { background:rgba(167,139,250,.42); border-color:#a78bfa; }
+        .ops-box-median { position:absolute; top:7px; height:28px; width:4px; background:var(--text-primary); border-radius:2px; box-shadow:0 0 8px rgba(255,255,255,.35); cursor:help; }
+        .ops-box-sla { position:absolute; top:0; bottom:0; border-left:1px dashed #fbbf24; opacity:.9; cursor:help; }
+        .ops-box-sla-label { position:absolute; top:-12px; transform:translateX(-50%); color:#fbbf24; font-size:8px; white-space:nowrap; }
+        .ops-box-summary { color:var(--text-secondary); font-size:8.5px; text-align:right; line-height:1.35; white-space:nowrap; }
+        .ops-chart-tooltip { position:fixed; z-index:120; width:238px; padding:11px 13px; border:1px solid rgba(167,139,250,.5); border-radius:11px; background:rgba(15,23,42,.97); color:#cbd5e1; font-size:10px; line-height:1.45; box-shadow:0 14px 34px rgba(0,0,0,.38),0 0 0 1px rgba(255,255,255,.04) inset; pointer-events:none; opacity:0; transform:translateY(5px) scale(.98); transition:opacity .14s ease,transform .14s ease; }
+        .ops-chart-tooltip.visible { opacity:1; transform:translateY(0) scale(1); }
+        .ops-chart-tooltip strong { display:block; margin-bottom:4px; color:#f8fafc; font-size:11px; }
+        .ops-chart-tooltip em { display:block; margin-top:5px; color:#94a3b8; font-size:9px; font-style:normal; }
         .ops-insights{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.ops-insight{padding:13px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:10px}.ops-insight strong{display:block;font-size:11px;color:var(--text-primary);margin-bottom:5px}.ops-insight p{margin:0 0 8px;color:var(--text-secondary);font-size:10px;line-height:1.45}.ops-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.ops-filter{min-width:120px}.ops-filter.search{flex:1 1 180px;min-width:180px}.ops-table-wrap{overflow:auto;border:1px solid var(--border-color);border-radius:9px}.ops-table{width:100%;min-width:920px;border-collapse:collapse;font-size:10px}.ops-table th{text-align:left;color:var(--text-secondary);font-size:9px;text-transform:uppercase;letter-spacing:.05em;padding:10px;background:var(--bg-elevated);white-space:nowrap}.ops-table td{padding:10px;border-top:1px solid var(--border-color);color:var(--text-primary);white-space:nowrap}.ops-priority-pill{display:inline-flex;padding:3px 7px;border-radius:99px;font-size:9px;font-weight:750}.ops-priority-pill.overdue{color:#fb7185;background:rgba(244,63,94,.12)}.ops-priority-pill.near_due{color:#fbbf24;background:rgba(245,158,11,.12)}.ops-priority-pill.unassigned{color:#a78bfa;background:rgba(139,92,246,.12)}.ops-priority-pill.pending{color:#38bdf8;background:rgba(56,189,248,.12)}.ops-priority-pill.managed{color:#94a3b8;background:rgba(148,163,184,.12)}.ops-empty{padding:30px;text-align:center;color:var(--text-secondary);font-size:12px}
         @media(max-width:900px){.ops-kpis{grid-template-columns:repeat(2,1fr)}.ops-grid-3{grid-template-columns:1fr}.ops-insights{grid-template-columns:1fr}.ops-head{align-items:flex-start;flex-direction:column}}
         @media(max-width:520px){.ops-kpi-value{font-size:23px}.ops-filter{flex:1 1 140px;min-width:0}}
@@ -2453,14 +2481,14 @@
             <!-- NAVEGACIÓN DE PESTAÑAS -->
             <nav class="dash-tabs seq-el seq-static" id="dashTabs" aria-label="Vistas del dashboard">
                 <button class="dash-tab active" data-tab="executive"><span>Resumen Ejecutivo</span></button>
-                <button class="dash-tab" data-tab="leads"><span>CRM & Gestión de Leads</span></button>
+                <button class="dash-tab" data-tab="leads"><span>Gestión del Equipo Comercial</span></button>
                 <button class="dash-tab" data-tab="properties"><span>Propiedades & Inventario</span></button>
                 <button class="dash-tab" data-tab="channels"><span>Portales & ROI</span></button>
             </nav>
             <div class="mobile-tab-select seq-el seq-static" aria-label="Vista del dashboard">
                 <select id="mobileTabSelect">
                     <option value="executive">Resumen Ejecutivo</option>
-                    <option value="leads">CRM & Gestión de Leads</option>
+                    <option value="leads">Gestión del Equipo Comercial</option>
                     <option value="properties">Propiedades & Inventario</option>
                     <option value="channels">Portales & ROI</option>
                 </select>
@@ -2768,10 +2796,11 @@
             <!-- VISTAS PENDIENTES (Próximamente) -->
             <div id="viewLeads" hidden>
                 <div class="ops-dashboard" id="opsDashboard">
-                    <div class="ops-head"><div><div class="ops-kicker">CONTROL OPERATIVO</div><h3 class="ops-title">Gesti&oacute;n Operativa de Leads</h3><div class="ops-meta" id="opsPeriodMeta">Periodo seleccionado - —</div></div><button class="ops-refresh" id="opsRefresh" type="button"><i class="fa-solid fa-rotate-right"></i> Actualizar datos</button></div>
+                    <div class="ops-kpis"><div class="ops-kpi"><div class="ops-kpi-label">Carga activa</div><div class="ops-kpi-value" id="opsActiveAssigned">—</div><div class="ops-kpi-note">Leads abiertos asignados al equipo</div></div><div class="ops-kpi"><div class="ops-kpi-label">Cumplimiento SLA</div><div class="ops-kpi-value" id="opsSlaSplit">—</div><div class="ops-kpi-note">Hot / Normal · 60 / 180 min hábiles</div></div></div>
+                    <div class="ops-head"><div><div class="ops-kicker">CONTROL DE GESTIÓN COMERCIAL</div><h3 class="ops-title">Gestión del Equipo Comercial</h3><div class="ops-meta" id="opsPeriodMeta">Visibilidad de leads asignados, carga y cumplimiento del equipo</div></div><button class="ops-refresh" id="opsRefresh" type="button"><i class="fa-solid fa-rotate-right"></i> Actualizar datos</button></div>
                     <div class="ops-kpis"><div class="ops-kpi"><div class="ops-kpi-label">Pendientes de gestion</div><div class="ops-kpi-value" id="opsPending">—</div><div class="ops-kpi-note">Asignados sin primera gestion</div></div><div class="ops-kpi urgent"><div class="ops-kpi-label">Vencidos por SLA</div><div class="ops-kpi-value" id="opsOverdue">—</div><div class="ops-kpi-note">Requieren atencion inmediata</div></div><div class="ops-kpi warning"><div class="ops-kpi-label">Proximos a vencer</div><div class="ops-kpi-value" id="opsNearDue">—</div><div class="ops-kpi-note">Lead Hot dentro de 30 min</div></div><div class="ops-kpi info"><div class="ops-kpi-label">Sin asignar</div><div class="ops-kpi-value" id="opsUnassigned">—</div><div class="ops-kpi-note">Pendientes de distribucion</div></div></div>
                     <div class="ops-panel"><div class="ops-panel-head"><h4 class="ops-panel-title">Prioridad de atencion</h4><span class="ops-panel-sub">Orden recomendado para el equipo</span></div><div class="ops-priority-list"><div class="ops-priority-row"><div><div class="ops-priority-name">Atencion inmediata - SLA vencido</div><button class="ops-mini-btn" data-ops-priority="overdue">Ver leads</button></div><div class="ops-priority-count" id="opsPriorityOverdue">—</div></div><div class="ops-priority-row"><div><div class="ops-priority-name">Atencion prioritaria - Hot proximo a vencer</div><button class="ops-mini-btn" data-ops-priority="near_due">Ver leads</button></div><div class="ops-priority-count" id="opsPriorityNear">—</div></div><div class="ops-priority-row"><div><div class="ops-priority-name">Atencion normal - Nuevos sin gestion</div><button class="ops-mini-btn" data-ops-priority="pending">Ver leads</button></div><div class="ops-priority-count" id="opsPriorityPending">—</div></div></div></div>
-                    <div class="ops-grid-3"><div class="ops-panel"><div class="ops-panel-head"><h4 class="ops-panel-title">Carga por ejecutivo</h4><span class="ops-panel-sub">Pendientes / vencidos</span></div><div class="ops-bars" id="opsExecBars"><div class="ops-empty">Cargando...</div></div></div><div class="ops-panel"><div class="ops-panel-head"><h4 class="ops-panel-title">Antiguedad SLA</h4><span class="ops-panel-sub">Desde asignacion</span></div><div class="ops-age-grid" id="opsAgeChart"></div></div><div class="ops-panel"><div class="ops-panel-head"><h4 class="ops-panel-title">Lectura operativa</h4><span class="ops-panel-sub">Decision sugerida</span></div><div id="opsOperationalNote" class="ops-panel-sub" style="line-height:1.6">—</div></div></div>
+                    <div class="ops-grid-3"><div class="ops-panel"><div class="ops-panel-head"><h4 class="ops-panel-title">Carga por ejecutivo</h4><span class="ops-panel-sub">Pendientes / vencidos</span></div><div class="ops-bars" id="opsExecBars"><div class="ops-empty">Cargando...</div></div></div><div class="ops-panel"><div class="ops-panel-head"><h4 class="ops-panel-title">Antigüedad SLA</h4><span class="ops-panel-sub">Lead Hot: 60 min · Lead Normal: 180 min</span></div><div class="ops-age-grid" id="opsAgeChart"></div></div><div class="ops-panel"><div class="ops-panel-head"><h4 class="ops-panel-title">Lectura operativa</h4><span class="ops-panel-sub">Decisión sugerida</span></div><div id="opsOperationalNote" class="ops-panel-sub" style="line-height:1.6">—</div></div></div>
                     <div class="ops-insights" id="opsInsights"></div>
                     <div class="ops-panel"><div class="ops-panel-head"><div><h4 class="ops-panel-title">Bandeja priorizada</h4><span class="ops-panel-sub">SLA vencido - Hot proximo a vencer - nuevos mas antiguos</span></div><span class="ops-panel-sub" id="opsRowCount">—</span></div><div class="ops-filters"><select class="ops-filter" id="opsExecutiveFilter"><option value="">Todos los ejecutivos</option></select><select class="ops-filter" id="opsTemperatureFilter"><option value="">Todos los tipos</option><option value="HOT">Lead Hot</option><option value="NORMAL">Lead Normal</option></select><select class="ops-filter" id="opsPriorityFilter"><option value="">Todas las prioridades</option><option value="overdue">SLA vencido</option><option value="near_due">Hot proximo</option><option value="pending">Pendiente</option><option value="unassigned">Sin asignar</option></select><select class="ops-filter" id="opsAssignmentFilter"><option value="">Toda asignacion</option><option value="assigned">Asignados</option><option value="unassigned">Sin asignar</option></select><input class="ops-filter search" id="opsSearch" placeholder="Buscar cliente o telefono" type="search"></div><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Prioridad</th><th>SLA / transcurrido</th><th>Tipo</th><th>Cliente</th><th>Propiedad</th><th>Estado</th><th>Ultima accion</th><th>Ejecutivo</th><th></th></tr></thead><tbody id="opsTableBody"></tbody></table><div class="ops-empty" id="opsEmpty" hidden>No hay leads que coincidan con los filtros.</div></div></div>
                 </div>
@@ -3296,6 +3325,91 @@
             function opsEscape(value) {
                 return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
             }
+            function normalizeOpsEncoding() {
+                const root = $('viewLeads');
+                if (!root) return;
+                root.innerHTML = root.innerHTML
+                    .replace(/GestiÃ³n/g, 'Gesti\\u00f3n').replace(/gestiÃ³n/g, 'gesti\\u00f3n')
+                    .replace(/atenciÃ³n/g, 'atenci\\u00f3n').replace(/PrÃ³ximamente/g, 'Pr\\u00f3ximamente')
+                    .replace(/AntigÃ¼edad/g, 'Antig\\u00fcedad').replace(/asignaciÃ³n/g, 'asignaci\\u00f3n')
+                    .replace(/distribuciÃ³n/g, 'distribuci\\u00f3n').replace(/DecisiÃ³n/g, 'Decisi\\u00f3n')
+                    .replace(/OperaciÃ³n/g, 'Operaci\\u00f3n').replace(/â€”/g, '\\u2014')
+                    .replace(/â†’/g, '\\u2192').replace(/â€“/g, '\\u2013').replace(/Â·/g, '\\u00b7')
+                    .replace(/Âª/g, '\\u00aa').replace(/â‰¥/g, '\\u2265');
+            }
+            // Normaliza iterativamente el texto heredado con doble codificacion.
+            function normalizeOpsEncoding() {
+                const root = $('viewLeads');
+                if (!root) return;
+                const detailPanel = root.querySelector('.ops-table-wrap')?.closest('.ops-panel');
+                if (detailPanel) detailPanel.remove();
+                let html = root.innerHTML;
+                for (let i = 0; i < 3 && /Ã|Â|â/.test(html); i++) {
+                    try {
+                        const decoded = decodeURIComponent(escape(html));
+                        if (decoded === html) break;
+                        html = decoded;
+                    } catch (e) { break; }
+                }
+                const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+                const textNodes = [];
+                while (walker.nextNode()) textNodes.push(walker.currentNode);
+                textNodes.forEach(node => {
+                    let value = node.nodeValue;
+                    for (let i = 0; i < 3 && /Ã|Â|â/.test(value); i++) {
+                        try { const decoded = decodeURIComponent(escape(value)); if (decoded === value) break; value = decoded; } catch (e) { break; }
+                    }
+                    node.nodeValue = value;
+                });
+                const labels = {
+                    opsPending: 'Sin primera gestión',
+                    opsOverdue: 'SLA vencidos',
+                    opsNearDue: 'Hot en riesgo',
+                    opsUnassigned: 'Sin asignar',
+                    opsActiveAssigned: 'Carga activa',
+                    opsSlaSplit: 'Cumplimiento SLA'
+                };
+                Object.entries(labels).forEach(([id, label]) => {
+                    const value = $(id);
+                    const cardLabel = value?.closest('.ops-kpi')?.querySelector('.ops-kpi-label');
+                    if (cardLabel) cardLabel.textContent = label;
+                });
+            }
+            function enhanceOperationalCards() {
+                ['opsPending', 'opsNearDue', 'opsUnassigned'].forEach(id => {
+                    const card = $(id)?.closest('.ops-kpi');
+                    if (card) card.remove();
+                });
+                const cardGrid = $('opsDashboard')?.querySelector('.ops-kpis');
+                const cardOrder = ['opsActiveAssigned', 'opsOverdue', 'opsSlaSplit'];
+                if (cardGrid) {
+                    cardOrder.forEach(id => {
+                        const card = $(id)?.closest('.ops-kpi');
+                        if (card) cardGrid.appendChild(card);
+                    });
+                    $('opsDashboard')?.querySelectorAll('.ops-kpis').forEach(grid => {
+                        if (!grid.querySelector('.ops-kpi')) grid.remove();
+                    });
+                }
+                const definitions = {
+                    opsActiveAssigned: ['Carga activa', 'Leads abiertos y asignados a un ejecutivo. Es el stock que el equipo debe administrar, no la captación del período.', 'Leads abiertos asignados al equipo'],
+                    opsSlaSplit: ['Cumplimiento SLA', 'Se informa por separado: Lead Hot dentro de 60 minutos hábiles y Lead Normal dentro de 180 minutos hábiles.', 'Hot / Normal · 60 / 180 min hábiles'],
+                    opsPending: ['Sin primera gestión', 'Leads asignados que todavía no tienen una primera gestión válida registrada.', 'Asignados sin primera gestión válida'],
+                    opsOverdue: ['SLA vencidos', 'La primera gestión superó el límite aplicable: 60 minutos Hot o 180 minutos Normal.', 'Hot ≥ 60 min · Normal ≥ 180 min'],
+                    opsNearDue: ['Hot en riesgo', 'Leads Hot vencidos o que alcanzaron al menos el 75% de su límite de 60 minutos hábiles.', 'Hot vencidos + próximos a vencer'],
+                    opsUnassigned: ['Sin asignar', 'Leads abiertos sin ejecutivo responsable. Es una responsabilidad de distribución del equipo.', 'Sin ejecutivo responsable']
+                };
+                Object.entries(definitions).forEach(([id, values]) => {
+                    const value = $(id), card = value?.closest('.ops-kpi');
+                    if (!card || card.querySelector('.ops-info')) return;
+                    card.querySelector('.ops-kpi-label').textContent = values[0];
+                    const note = card.querySelector('.ops-kpi-note'); if (note) note.textContent = values[2];
+                    const head = document.createElement('div'); head.className = 'ops-kpi-head';
+                    const label = card.querySelector('.ops-kpi-label'); label.parentNode.insertBefore(head, label); head.appendChild(label);
+                    const info = document.createElement('button'); info.className = 'ops-info'; info.type = 'button'; info.setAttribute('aria-label', 'Qué significa ' + values[0]); info.innerHTML = '<i class="fa-solid fa-circle-info"></i>'; head.appendChild(info);
+                    const tip = document.createElement('div'); tip.className = 'ops-tooltip'; tip.innerHTML = '<strong>' + values[0] + '</strong><br>' + values[1]; card.insertBefore(tip, card.firstChild);
+                });
+            }
             function opsParams() {
                 const p = new URLSearchParams();
                 if (FILTERS.period_start) p.set('period_start', FILTERS.period_start);
@@ -3319,7 +3433,9 @@
                 if($('opsAgeChart')) $('opsAgeChart').innerHTML=ageRows.map(x=>'<div class="ops-age-col"><span class="ops-age-num">'+(ages[x[0]]||0)+'</span><div class="ops-age-bar" style="height:0" data-ops-height="'+Math.max(4,Math.round((ages[x[0]]||0)/ageMax*78))+'px"></div><span class="ops-age-label">'+x[1]+' min</span></div>').join('');
                 requestAnimationFrame(()=>document.querySelectorAll('[data-ops-height]').forEach(el=>el.style.height=el.dataset.opsHeight));
                 const overdue=c.overdue||0, near=c.near_due||0, unassigned=c.unassigned||0;
-                if($('opsOperationalNote')) $('opsOperationalNote').innerHTML=overdue?'Prioriza los leads vencidos y reasigna capacidad antes de continuar con la gestión normal.':near?'La cola está próxima al umbral: protege primero los leads Hot.':unassigned?'Hay leads sin ejecutivo: distribuirlos evita que el SLA comience tarde.':'La operación está controlada; mantener seguimiento de los pendientes.';
+                const matrixTitle = $('opsOperationalNote')?.closest('.ops-panel')?.querySelector('.ops-panel-title');
+                if (matrixTitle) matrixTitle.textContent = 'Cumplimiento SLA por ejecutivo';
+                if($('opsOperationalNote')) $('opsOperationalNote').innerHTML = execs.length ? execs.slice(0,8).map(x => '<div style="display:grid;grid-template-columns:minmax(80px,1fr) 52px 58px 50px;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border-color);font-size:10px"><strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+opsEscape(x.executive)+'">'+opsEscape(x.executive)+'</strong><span>Hot '+(x.hot_sla_pct==null?'—':x.hot_sla_pct+'%')+'</span><span>Normal '+(x.normal_sla_pct==null?'—':x.normal_sla_pct+'%')+'</span><span>Venc. '+x.overdue+'</span></div>').join('') : 'Sin datos SLA por ejecutivo';
                 if($('opsInsights')) $('opsInsights').innerHTML='<div class="ops-insight"><strong>'+overdue+' leads vencidos</strong><p>Casos fuera del estándar de respuesta y con riesgo de pérdida.</p><button class="ops-mini-btn" data-ops-priority="overdue">Ver vencidos →</button></div><div class="ops-insight"><strong>'+near+' Hot próximos a vencer</strong><p>Oportunidades que requieren contacto antes de cruzar el umbral.</p><button class="ops-mini-btn" data-ops-priority="near_due">Ver Hot →</button></div><div class="ops-insight"><strong>'+unassigned+' leads sin asignar</strong><p>La distribución es el primer control para iniciar el SLA.</p><button class="ops-mini-btn" data-ops-priority="unassigned">Revisar asignación →</button></div>';
                 const rows=OPS_DATA.rows||[]; if($('opsRowCount')) $('opsRowCount').textContent=rows.length+' de '+(OPS_DATA.total_rows||rows.length)+' leads';
                 if($('opsTableBody')) $('opsTableBody').innerHTML=rows.length?rows.map(r=>'<tr><td><span class="ops-priority-pill '+opsEscape(r.priority)+'">'+opsEscape(r.priority_label)+'</span></td><td>'+r.sla_minutes+' / '+r.sla_limit_minutes+' min</td><td>'+opsEscape(r.temperature)+'</td><td><strong>'+opsEscape(r.nombre)+'</strong><br><span class="ops-panel-sub">'+opsEscape(r.phone)+'</span></td><td>'+opsEscape(r.property)+'</td><td>'+opsEscape(r.stage)+'</td><td>'+opsEscape(r.last_action)+'</td><td>'+opsEscape(r.executive)+'</td><td><button class="ops-mini-btn" data-lead-id="'+opsEscape(r.id)+'">Abrir</button></td></tr>').join(''):'');
@@ -3328,20 +3444,46 @@
                 */
             }
             function renderOperational(data) {
+                normalizeOpsEncoding();
+                enhanceOperationalCards();
                 OPS_DATA = data || {counters:{}, age_buckets:{}, executives:[], rows:[]};
                 const c = OPS_DATA.counters || {};
+                const agePanel = $('opsAgeChart')?.closest('.ops-panel');
+                if (agePanel) {
+                    const title = agePanel.querySelector('.ops-panel-title');
+                    const sub = agePanel.querySelector('.ops-panel-sub');
+                    if (title) title.textContent = 'Distribución del tiempo de gestión';
+                    if (sub) sub.textContent = 'Mediana, dispersión y SLA';
+                }
                 [['Pending','pending'],['Overdue','overdue'],['NearDue','near_due'],['Unassigned','unassigned']].forEach(([id,key]) => { const el=$('ops'+id); if(el) el.textContent=Number(c[key]||0).toLocaleString('es-CL'); });
+                if ($('opsActiveAssigned')) $('opsActiveAssigned').textContent = Number(c.active_assigned || 0).toLocaleString('es-CL');
+                if ($('opsSlaSplit')) $('opsSlaSplit').textContent = (c.sla_hot_pct == null ? '—' : c.sla_hot_pct.toLocaleString('es-CL') + '%') + ' / ' + (c.sla_normal_pct == null ? '—' : c.sla_normal_pct.toLocaleString('es-CL') + '%');
                 ['opsPriorityOverdue','opsPriorityNear','opsPriorityPending'].forEach((id,i) => { const el=$(id); if(el) el.textContent=Number([c.overdue,c.near_due,c.pending][i]||0).toLocaleString('es-CL'); });
-                if($('opsPeriodMeta')) $('opsPeriodMeta').textContent='Periodo seleccionado - '+(FILTERS.period_start||'—')+' al '+(FILTERS.period_end||'—');
+                if($('opsPeriodMeta')) $('opsPeriodMeta').textContent='Periodo de asignación - '+(FILTERS.period_start||'—')+' al '+(FILTERS.period_end||'—')+' · Solo leads asignados en el período';
                 const execs=OPS_DATA.executives||[], max=Math.max(...execs.map(x=>x.pending||0),1);
                 if($('opsExecBars')) $('opsExecBars').innerHTML=execs.length ? execs.slice(0,8).map(x=>'<div class="ops-bar-row"><span class="ops-bar-name">'+opsEscape(x.executive)+'</span><div class="ops-track"><div class="ops-fill" data-ops-width="'+Math.round((x.pending||0)/max*100)+'"></div></div><span class="ops-bar-num">'+(x.pending||0)+' / '+(x.overdue||0)+'</span></div>').join('') : '<div class="ops-empty">Sin carga operativa</div>';
                 requestAnimationFrame(()=>document.querySelectorAll('[data-ops-width]').forEach(el=>el.style.width=el.dataset.opsWidth+'%'));
-                const ages=OPS_DATA.age_buckets||{}, ageRows=[['0_30','0-30'],['31_60','31-60'],['61_180','61-180'],['180_plus','180+']], ageMax=Math.max(...ageRows.map(x=>ages[x[0]]||0),1);
+                const ages=OPS_DATA.age_buckets||{}, ageRows=[['0_60','0-60'],['61_180','61-180'],['181_360','3-6 h'],['361_1440','6-24 h'],['1440_plus','24 h+']], ageMax=Math.max(...ageRows.map(x=>ages[x[0]]||0),1);
                 if($('opsAgeChart')) $('opsAgeChart').innerHTML=ageRows.map(x=>'<div class="ops-age-col"><span class="ops-age-num">'+(ages[x[0]]||0)+'</span><div class="ops-age-bar" data-ops-height="'+Math.max(4,Math.round((ages[x[0]]||0)/ageMax*78))+'px"></div><span class="ops-age-label">'+x[1]+' min</span></div>').join('');
                 requestAnimationFrame(()=>document.querySelectorAll('[data-ops-height]').forEach(el=>el.style.height=el.dataset.opsHeight));
+                const box = OPS_DATA.response_times || {};
+                const boxStats = values => {
+                    const v = (values || []).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+                    if (!v.length) return null;
+                    const q = p => v[Math.min(v.length-1, Math.floor((v.length-1)*p))];
+                    const q1=q(.25), med=q(.5), q3=q(.75), iqr=q3-q1;
+                    return {n:v.length,q1,med,q3,min:v[0],max:v[v.length-1],lo:Math.max(v[0],q1-1.5*iqr),hi:Math.min(v[v.length-1],q3+1.5*iqr)};
+                };
+                const bs=[['HOT','Hot',60,'normal'],['NORMAL','Normal',180,'normal']].map(([key,label,sla,klass])=>[label, sla, boxStats(box[key]), klass]);
+                if($('opsAgeChart')) $('opsAgeChart').innerHTML='<div class="ops-boxplot">'+bs.map(([label,sla,s])=>{if(!s)return '<div class="ops-empty">'+label+': sin gestiones medidas</div>';const rowMax=Math.max(sla*1.25,s.q3*1.35,1),pos=v=>Math.max(0,Math.min(100,v/rowMax*100));return '<div class="ops-box-row '+label.toLowerCase()+'"><span class="ops-box-label">'+label+'</span><div class="ops-box-track"><span class="ops-box-sla" data-ops-tip="<strong>SLA objetivo</strong>'+label+' debe tener su primera gestión dentro de '+sla+' minutos.<em>La marca amarilla indica el límite de cumplimiento.</em>" style="left:'+pos(sla)+'%"><span class="ops-box-sla-label">SLA '+sla+' min</span></span><span class="ops-box-line" data-ops-tip="<strong>Rango observado</strong>Los tiempos se ubican entre '+Math.round(s.lo)+' y '+Math.round(s.hi)+' minutos.<em>La línea muestra la dispersión de los casos.</em>" style="left:'+pos(s.lo)+'%;width:'+Math.max(0,pos(s.hi)-pos(s.lo))+'%"></span><span class="ops-box-iqr" data-ops-tip="<strong>Rango central del 50%</strong>La mitad de los casos está entre '+Math.round(s.q1)+' y '+Math.round(s.q3)+' minutos.<em>La barra coloreada excluye los casos más extremos.</em>" style="left:'+pos(s.q1)+'%;width:'+Math.max(1,pos(s.q3)-pos(s.q1))+'%"></span><span class="ops-box-median" data-ops-tip="<strong>Mediana (P50)</strong>La mitad de los casos fue gestionada antes de '+Math.round(s.med)+' minutos y la otra mitad después." style="left:'+pos(s.med)+'%"></span><div class="ops-box-axis"><span>0</span><span>'+Math.round(rowMax)+' min</span></div></div><span class="ops-box-summary">P50 '+Math.round(s.med)+' min · Máx '+Math.round(s.hi)+' · n='+s.n+'</span></div>';}).join('')+'</div>';
+                const opsChartTip = document.getElementById('opsChartTooltip') || (() => { const el=document.createElement('div'); el.id='opsChartTooltip'; el.className='ops-chart-tooltip'; document.body.appendChild(el); return el; })();
+                document.querySelectorAll('#opsAgeChart [data-ops-tip]').forEach(target => { target.addEventListener('mouseenter', () => { opsChartTip.innerHTML=target.dataset.opsTip; opsChartTip.classList.add('visible'); }); target.addEventListener('mousemove', event => { const x=Math.min(event.clientX+16, window.innerWidth-254); const y=Math.min(event.clientY+16, window.innerHeight-120); opsChartTip.style.left=Math.max(10,x)+'px'; opsChartTip.style.top=Math.max(10,y)+'px'; }); target.addEventListener('mouseleave', () => opsChartTip.classList.remove('visible')); });
+                const overdueCount=Number(c.overdue||0), nearCount=Number(c.near_due||0), unassignedCount=Number(c.unassigned||0), focusExec=execs.slice().sort((a,b)=>(b.overdue||0)-(a.overdue||0)||(b.pending||0)-(a.pending||0))[0];
+                if($('opsOperationalNote')) { const noteTitle=overdueCount?'AtenciÃ³n inmediata':nearCount?'ProtecciÃ³n de leads Hot':unassignedCount?'Revisar asignaciÃ³n':'OperaciÃ³n controlada'; const noteText=overdueCount?overdueCount+' leads superaron su SLA. Prioriza su gestiÃ³n y reasigna capacidad.':nearCount?nearCount+' leads Hot estÃ¡n cerca del lÃ­mite. AtiÃ©ndelos antes de que venzan.':unassignedCount?unassignedCount+' leads no tienen ejecutivo. Completa la asignaciÃ³n para iniciar el control SLA.':'No hay alertas crÃ­ticas en el perÃ­odo. MantÃ©n el seguimiento del equipo.'; const focusText=focusExec&&((focusExec.overdue||0)||(focusExec.pending||0))?' Principal foco: '+focusExec.executive+'.':''; $('opsOperationalNote').innerHTML='<strong style="display:block;color:var(--text-primary);font-size:12px;margin-bottom:6px">'+noteTitle+'</strong><span>'+noteText+focusText+'</span>'; }
                 const rows=OPS_DATA.rows||[];
                 if($('opsRowCount')) $('opsRowCount').textContent=rows.length+' de '+(OPS_DATA.total_rows||rows.length)+' leads';
                 if($('opsTableBody')) { $('opsTableBody').innerHTML=rows.map(r=>'<tr><td><span class="ops-priority-pill '+opsEscape(r.priority)+'">'+opsEscape(r.priority_label)+'</span></td><td>'+r.sla_minutes+' / '+r.sla_limit_minutes+' min</td><td>'+opsEscape(r.temperature)+'</td><td><strong>'+opsEscape(r.nombre)+'</strong><br><span class="ops-panel-sub">'+opsEscape(r.phone)+'</span></td><td>'+opsEscape(r.property)+'</td><td>'+opsEscape(r.stage)+'</td><td>'+opsEscape(r.last_action)+'</td><td>'+opsEscape(r.executive)+'</td><td><button class="ops-mini-btn" data-lead-id="'+opsEscape(r.id)+'">Abrir</button></td></tr>').join(''); }
+                rows.forEach((r, i) => { const cell = document.querySelectorAll('#opsTableBody tr')[i]?.cells[1]; if (cell) cell.innerHTML = r.sla_minutes + ' / ' + r.sla_limit_minutes + ' min<br><span class="ops-panel-sub">' + opsEscape(r.sla_delta_label || '') + '</span>'; });
                 if($('opsEmpty')) $('opsEmpty').hidden=!!rows.length;
                 if($('opsOperationalNote')) $('opsOperationalNote').textContent=(c.overdue||0)?'Prioriza los leads vencidos y reasigna capacidad.':(c.near_due||0)?'Protege primero los leads Hot próximos al umbral.':(c.unassigned||0)?'Distribuye los leads sin ejecutivo.':'Operación controlada; mantener seguimiento.';
                 if($('opsInsights')) $('opsInsights').innerHTML='<div class="ops-insight"><strong>'+(c.overdue||0)+' leads vencidos</strong><p>Casos fuera del estándar de respuesta.</p><button class="ops-mini-btn" data-ops-priority="overdue">Ver vencidos →</button></div><div class="ops-insight"><strong>'+(c.near_due||0)+' Hot próximos</strong><p>Oportunidades cerca de cruzar el SLA.</p><button class="ops-mini-btn" data-ops-priority="near_due">Ver Hot →</button></div><div class="ops-insight"><strong>'+(c.unassigned||0)+' sin asignar</strong><p>La distribución inicia el control operativo.</p><button class="ops-mini-btn" data-ops-priority="unassigned">Revisar asignación →</button></div>';
@@ -3350,6 +3492,7 @@
                 const res=await fetch('/api/leads-dashboard/operations?'+opsParams().toString(),{headers:{Accept:'application/json'}});
                 if(!res.ok) throw new Error('Error operativo '+res.status);
                 renderOperational(await res.json());
+                normalizeOpsEncoding();
             }
 
             async function loadData(mode) {

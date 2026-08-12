@@ -58,7 +58,7 @@ from analytics.leads_service import (
     get_summary, get_trends, get_distributions, get_table as analytics_get_table,
     get_detail as analytics_get_detail, get_filters, get_field_coverage,
     get_dashboard, get_commercial_dashboard, get_commercial_filter_options,
-    get_leads_dashboard_overview,
+    get_leads_dashboard_overview, get_leads_operational_dashboard,
 )
 
 from api_captacion import (
@@ -929,6 +929,36 @@ async def api_leads_dashboard_overview(
             period_end=period_end,
             compare=compare,
             period_preset=period_preset,
+        ),
+    )
+
+
+@app.get("/api/leads-dashboard/operations")
+async def api_leads_dashboard_operations(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    executive: str = Query(None),
+    temperature: str = Query(None),
+    stage: str = Query(None),
+    priority: str = Query(None),
+    assignment: str = Query(None),
+    search: str = Query(None),
+):
+    """Datos operativos para la segunda pestaña del dashboard ejecutivo."""
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    filters = {key: value for key, value in {
+        "executive": executive, "temperature": temperature, "stage": stage,
+        "priority": priority, "assignment": assignment, "search": search,
+    }.items() if value}
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_leads_operational_dashboard(
+            period_start=period_start, period_end=period_end,
+            role=user.get("rol"), user_name=user.get("nombre"), filters=filters,
         ),
     )
 

@@ -30,6 +30,7 @@ from .leads_queries import (
     query_property_ranking,
     query_executive_load_detail,
     query_source_performance,
+    query_leads_operational_dashboard,
 )
 
 L1_CACHE: dict[str, tuple[float, dict]] = {}
@@ -221,6 +222,26 @@ def get_table(
         period_start=period_start,
         period_end=period_end,
     )
+    return data
+
+
+def get_leads_operational_dashboard(
+    period_start: str = None,
+    period_end: str = None,
+    role: str = None,
+    user_name: str = None,
+    filters: dict = None,
+) -> dict:
+    """Dashboard operativo: bandeja priorizada, SLA y carga de trabajo."""
+    filters = dict(filters or {})
+    if role not in ("admin", "supervisor") and user_name:
+        filters["executive"] = user_name
+    key = _cache_key("leads-operational", ps=period_start, pe=period_end, filters=repr(sorted(filters.items())))
+    cached = _cache_get(key)
+    if cached:
+        return cached
+    data = query_leads_operational_dashboard(period_start=period_start, period_end=period_end, filters=filters)
+    _cache_set(key, data)
     return data
 
 

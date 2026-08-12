@@ -21,7 +21,7 @@ from jinja2 import Environment, FileSystemLoader
 
 templates = Environment(loader=FileSystemLoader(str(ROOT / "templates")))
 
-from analytics.leads_service import get_leads_dashboard_overview
+from analytics.leads_service import get_leads_dashboard_overview, get_leads_operational_dashboard
 
 app = FastAPI(title="Leads Dashboard - Preview local (solo lectura)")
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
@@ -40,6 +40,20 @@ async def overview(period_start=None, period_end=None, compare=None, period_pres
         period_end=period_end,
         compare=compare,
         period_preset=period_preset,
+    )
+
+
+@app.get("/api/leads-dashboard/operations")
+async def operations(period_start=None, period_end=None, executive=None,
+                     temperature=None, stage=None, priority=None,
+                     assignment=None, search=None):
+    filters = {key: value for key, value in {
+        "executive": executive, "temperature": temperature, "stage": stage,
+        "priority": priority, "assignment": assignment, "search": search,
+    }.items() if value}
+    return get_leads_operational_dashboard(
+        period_start=period_start, period_end=period_end,
+        role="supervisor", user_name="Preview", filters=filters,
     )
 
 

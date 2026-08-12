@@ -2028,6 +2028,140 @@ def query_leads_dashboard_reconcile_breakdown(
     }
 
 
+def query_leads_operational_dashboard(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    filters: Optional[dict] = None,
+) -> dict:
+    """Bandeja operativa del dashboard: SLA, asignación y prioridad de acción.
+
+    Este universo es deliberadamente distinto del resumen ejecutivo: devuelve
+    leads recibidos en el período con evidencia de gestión y asignación para
+    ordenar el trabajo pendiente del equipo.
+    """
+    db = get_db()
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    filters = filters or {}
+    match = _build_commercial_cohort_match(start_utc, end_utc, filters)
+    projection = {
+        "phone": 1, "created_at": 1, "_created_normalized": 1,
+        "prospecto.nombre": 1, "prospecto.codigo": 1,
+        "prospecto.tipo": 1, "prospecto.operacion": 1,
+        "prospecto.comuna": 1, "pipeline_stage": 1, "stage": 1,
+        "ejecutivo_asignado": 1, "lead_temperature_effective": 1,
+        "lifecycle.assigned_at": 1,
+        "lifecycle.first_valid_management_at": 1,
+        "stage_history": {"$slice": ["$stage_history", -1]},
+    }
+    docs = list(db["leads"].aggregate([
+        _cohort_indexed_prefilter(start_utc, end_utc),
+        _normalized_created_at_stage(),
+        {"$match": match},
+        {"$project": projection},
+    ]))
+
+    now = datetime.now(timezone.utc)
+    rows = []
+    by_exec = {}
+    age_buckets = {"0_30": 0, "31_60": 0, "61_180": 0, "180_plus": 0}
+    counters = {"pending": 0, "overdue": 0, "near_due": 0, "unassigned": 0}
+    unassigned_values = {str(value).strip().lower() for value in UNASSIGNED_VALUES if value is not None}
+
+    def is_unassigned(value):
+        return value is None or str(value).strip().lower() in unassigned_values
+
+    for doc in docs:
+        lifecycle = doc.get("lifecycle") or {}
+        created = coerce_utc_datetime(doc.get("_created_normalized") or doc.get("created_at"))
+        assigned = coerce_utc_datetime(lifecycle.get("assigned_at"))
+        managed = coerce_utc_datetime(lifecycle.get("first_valid_management_at"))
+        executive = str(doc.get("ejecutivo_asignado") or "Sin asignar").strip()
+        temperature = str(doc.get("lead_temperature_effective") or "NORMAL").upper()
+        threshold = 60 if temperature == "HOT" else 180
+        elapsed = max(0, round((now - (assigned or created)).total_seconds() / 60)) if (assigned or created) else 0
+        if elapsed <= 30:
+            age_buckets["0_30"] += 1
+        elif elapsed <= 60:
+            age_buckets["31_60"] += 1
+        elif elapsed <= 180:
+            age_buckets["61_180"] += 1
+        else:
+            age_buckets["180_plus"] += 1
+
+        unassigned = is_unassigned(doc.get("ejecutivo_asignado"))
+        if unassigned:
+            priority, priority_label = "unassigned", "Sin asignar"
+            counters["unassigned"] += 1
+        elif managed:
+            priority, priority_label = "managed", "Gestionado"
+        elif elapsed >= threshold:
+            priority, priority_label = "overdue", "SLA vencido"
+            counters["overdue"] += 1
+            counters["pending"] += 1
+        elif temperature == "HOT" and elapsed >= max(threshold - 30, 1):
+            priority, priority_label = "near_due", "Hot próximo a vencer"
+            counters["near_due"] += 1
+            counters["pending"] += 1
+        else:
+            priority, priority_label = "pending", "Pendiente"
+            counters["pending"] += 1
+
+        if filters.get("priority") and filters["priority"] != priority:
+            continue
+        if filters.get("assignment") == "assigned" and unassigned:
+            continue
+        if filters.get("assignment") == "unassigned" and not unassigned:
+            continue
+        if filters.get("search"):
+            term = str(filters["search"]).strip().lower()
+            name = str((doc.get("prospecto") or {}).get("nombre") or "").lower()
+            phone = str(doc.get("phone") or "").lower()
+            if term not in name and term not in phone:
+                continue
+
+        stage = doc.get("pipeline_stage") or doc.get("stage") or "Sin estado"
+        history = doc.get("stage_history") or []
+        last_action = "Sin gestión registrada"
+        if history and isinstance(history[-1], Mapping):
+            last_action = history[-1].get("to") or history[-1].get("notes") or "Cambio de estado"
+        property_data = doc.get("prospecto") or {}
+        row = {
+            "id": str(doc.get("_id")),
+            "priority": priority, "priority_label": priority_label,
+            "sla_minutes": elapsed, "sla_limit_minutes": threshold,
+            "temperature": temperature, "nombre": property_data.get("nombre") or "Sin nombre",
+            "phone": doc.get("phone") or "", "property": property_data.get("codigo") or "Sin propiedad",
+            "property_type": property_data.get("tipo") or "", "operation": property_data.get("operacion") or "",
+            "stage": stage, "executive": executive, "last_action": str(last_action),
+            "created_at": created.isoformat() if created else None,
+        }
+        rows.append(row)
+        bucket = by_exec.setdefault(executive, {"executive": executive, "assigned": 0, "pending": 0, "overdue": 0, "managed": 0})
+        bucket["assigned"] += 1
+        if unassigned:
+            continue
+        if managed:
+            bucket["managed"] += 1
+        else:
+            bucket["pending"] += 1
+            if priority == "overdue":
+                bucket["overdue"] += 1
+
+    order = {"overdue": 0, "near_due": 1, "unassigned": 2, "pending": 3, "managed": 4}
+    rows.sort(key=lambda row: (order.get(row["priority"], 9), -row["sla_minutes"]))
+    for bucket in by_exec.values():
+        denominator = bucket["managed"] + bucket["overdue"]
+        bucket["sla_compliance_pct"] = round(bucket["managed"] / denominator * 100, 1) if denominator else None
+    return {
+        "counters": counters,
+        "age_buckets": age_buckets,
+        "executives": sorted(by_exec.values(), key=lambda item: (-item["pending"], -item["assigned"], item["executive"])),
+        "rows": rows[:200],
+        "total_rows": len(rows),
+        "updated_at": now.isoformat(),
+    }
+
+
 def query_variance_drivers(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,

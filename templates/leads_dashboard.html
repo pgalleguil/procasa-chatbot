@@ -2769,8 +2769,7 @@
                     <div class="exec-table-head">
                         <div>
                             <h3>Rendimiento Comercial por Ejecutivo</h3>
-                            <p>Control individual de asignación de leads, tiempo de respuesta (SLA) y cartera en UF</p>
-                            <p class="exec-muted" style="margin:2px 0 0;font-size:10px;color:var(--text-secondary)">SLA = mediana de primera respuesta (min hábiles). El cumplimiento SLA se evalúa según el tipo de lead: Hot 60 min · Normal 180 min. La mediana agregada no se clasifica con un umbral único.</p>
+                            <p>Resultados comerciales de la cartera bajo responsabilidad de cada ejecutivo al cierre del período</p>
                         </div>
                         <div class="exec-tools">
                             <span class="exec-count" id="execCount">—</span>
@@ -2781,10 +2780,9 @@
                             <thead>
                                 <tr>
                                     <th class="sortable" data-sort="nombre">Ejecutivo<span class="sort-arrow"></span></th>
-                                    <th class="sortable r" data-sort="leads">Leads Asignados<span class="sort-arrow"></span></th>
-                                    <th class="sortable r" data-sort="leads_prev">vs. Período Anterior<span class="sort-arrow"></span></th>
-                                    <th class="sortable r" data-sort="sla_median">Mediana SLA (1ª Resp.)<span class="sort-arrow"></span></th>
-                                    <th class="sortable r" data-sort="citas">Visitas / Conversión<span class="sort-arrow"></span></th>
+                                    <th class="sortable r" data-sort="leads">Leads<span class="sort-arrow"></span></th>
+                                    <th class="sortable r" data-sort="citas">Visitas Agendadas<span class="sort-arrow"></span></th>
+                                    <th class="sortable r" data-sort="conversion_pct">Conversión<span class="sort-arrow"></span></th>
                                 </tr>
                             </thead>
                             <tbody id="execTableBody"></tbody>
@@ -3853,7 +3851,7 @@
             }
 
             // --- BLOQUE 4: TABLA DE RENDIMIENTO COMERCIAL ---
-            let EXEC_SORT = { key: 'leads', dir: 'desc' };
+            let EXEC_SORT = { key: 'citas', dir: 'desc' };
 
             function renderExecutivesTable() {
                 const block = $('execTableBlock');
@@ -3863,21 +3861,30 @@
                 const resolved = (OVERVIEW.period || {}).compare_resolved || 'none';
                 const hasCmp = resolved !== 'none';
 
-                // Ordenamiento
-                const sk = EXEC_SORT.key;
-                const sd = EXEC_SORT.dir === 'asc' ? 1 : -1;
+                // "Sin asignar" siempre al final del ranking.
                 items.sort((a, b) => {
-                    let va = a[sk], vb = b[sk];
-                    if (sk === 'nombre') { va = (va || '').toLowerCase(); vb = (vb || '').toLowerCase(); return va < vb ? -sd : va > vb ? sd : 0; }
+                    const aUn = (a.nombre || '').trim().toLowerCase() === 'sin asignar';
+                    const bUn = (b.nombre || '').trim().toLowerCase() === 'sin asignar';
+                    if (aUn !== bUn) return aUn ? 1 : -1;
+                    if (EXEC_SORT.key === 'nombre') {
+                        const va = (a.nombre || '').toLowerCase(), vb = (b.nombre || '').toLowerCase();
+                        return va < vb ? -1 : va > vb ? 1 : 0;
+                    }
+                    let va = a[EXEC_SORT.key], vb = b[EXEC_SORT.key];
                     if (va === null || va === undefined) va = -Infinity;
                     if (vb === null || vb === undefined) vb = -Infinity;
-                    return (va - vb) * sd;
+                    const r = (va - vb);
+                    if (r !== 0) return EXEC_SORT.dir === 'asc' ? r : -r;
+                    // Desempate: conversión descendente
+                    const ca = (a.conversion_pct == null ? -Infinity : a.conversion_pct);
+                    const cb = (b.conversion_pct == null ? -Infinity : b.conversion_pct);
+                    return (cb - ca) || (b.leads - a.leads);
                 });
 
                 // Actualizar indicadores de sort en el thead
                 document.querySelectorAll('#execTable th.sortable').forEach(th => {
                     th.classList.remove('sorted-asc', 'sorted-desc');
-                    if (th.dataset.sort === sk) th.classList.add(sd === 1 ? 'sorted-asc' : 'sorted-desc');
+                    if (th.dataset.sort === EXEC_SORT.key) th.classList.add(EXEC_SORT.dir === 'asc' ? 'sorted-asc' : 'sorted-desc');
                 });
 
                 $('execCount').innerHTML = items.length + ' Ejecutivos';
@@ -3885,25 +3892,41 @@
                 if (body) {
                     let html = '';
                     items.forEach(r => {
-                        const sla = r.sla_median;
-                        const slaText = (sla === null || sla === undefined)
-                            ? '— min'
-                            : sla.toLocaleString('es-CL', { maximumFractionDigits: 0 }) + ' min';
                         const pctLeads = (r.pct_leads != null ? r.pct_leads : 0).toFixed(1).replace('.', ',');
-                        const convVal = (r.conversion_pct != null && r.conversion_pct !== undefined)
-                            ? r.conversion_pct.toFixed(1).replace('.', ',')
-                            : '—';
-                        const diff = r.diff_leads != null ? r.diff_leads : 0;
-                        const diffClass = diff > 0 ? 'exec-sla-ok' : (diff < 0 ? 'exec-sla-bad' : 'exec-muted');
-                        const diffText = diff > 0 ? '+' + diff : diff;
+                        const isUnasig = (r.nombre || '').trim().toLowerCase() === 'sin asignar';
+                        // Conversión: N/D si leads=0 o null; si no, porcentaje.
+                        let convText = '—';
+                        if (r.leads > 0 && r.conversion_pct != null) {
+                            convText = r.conversion_pct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
+                        }
+                        // Comparación vs período anterior (pp) dentro de la celda de conversión
+                        let ppText = '';
+                        if (hasCmp && r.diff_pp !== null && r.diff_pp !== undefined && r.leads > 0 && r.leads_prev > 0) {
+                            const cls = r.diff_pp >= 0 ? 'cd2-pp-pos' : 'cd2-pp-neg';
+                            const arrow = r.diff_pp >= 0 ? '▲ +' : '▼ -';
+                            ppText = ' <span class="' + cls + '">' + arrow + Math.abs(r.diff_pp).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' pp</span>';
+                        }
+                        // Visitas: valor + sub-línea con anterior
+                        let visitText = '<strong>' + r.citas + '</strong>';
+                        if (hasCmp) {
+                            const prevDiff = (r.citas || 0) - (r.citas_prev || 0);
+                            const cls = prevDiff >= 0 ? 'cd2-pp-pos' : 'cd2-pp-neg';
+                            const arrow = prevDiff >= 0 ? '▲ +' : '▼ -';
+                            visitText += ' <span class="exec-muted">prev ' + (r.citas_prev || 0) + ' (' + arrow + Math.abs(prevDiff) + ')</span>';
+                        }
+                        // Leads: valor + sub-línea con previo
+                        let leadsText = '<strong>' + r.leads + '</strong> <span class="exec-muted">(' + pctLeads + '%)</span>';
+                        if (hasCmp && r.leads_prev != null) {
+                            const ldiff = (r.leads || 0) - (r.leads_prev || 0);
+                            const lcls = ldiff > 0 ? 'exec-sla-ok' : (ldiff < 0 ? 'exec-sla-bad' : 'exec-muted');
+                            leadsText += ' <span class="exec-muted">prev ' + (r.leads_prev || 0) + ' <span class="' + lcls + '">(' + (ldiff > 0 ? '+' + ldiff : ldiff) + ')</span></span>';
+                        }
+                        const nameClass = isUnasig ? ' exec-muted' : '';
                         html += '<tr>' +
-                            '<td><span class="exec-name">' + r.nombre + '</span></td>' +
-                            '<td class="exec-mono"><strong>' + r.leads + '</strong> <span class="exec-muted">(' + pctLeads + '%)</span></td>' +
-                            '<td class="exec-mono">' + (hasCmp
-                                ? '<strong>' + r.leads_prev + '</strong> <span class="' + diffClass + '">(' + diffText + ')</span>'
-                                : '<span class="exec-muted">—</span>') + '</td>' +
-                            '<td class="exec-mono" title="Mediana de primera respuesta en minutos hábiles. El cumplimiento SLA se evalúa según el tipo de lead: Hot 60 min y Normal 180 min. Esta mediana agregada no se clasifica con un umbral único.">' + slaText + '</td>' +
-                            '<td class="exec-mono"><strong>' + r.citas + ' visitas</strong> <span class="exec-muted">(' + convVal + '%)</span></td>' +
+                            '<td><span class="exec-name' + nameClass + '">' + r.nombre + '</span></td>' +
+                            '<td class="exec-mono">' + leadsText + '</td>' +
+                            '<td class="exec-mono">' + visitText + '</td>' +
+                            '<td class="exec-mono">' + convText + ppText + '</td>' +
                             '</tr>';
                     });
                     body.innerHTML = html;
@@ -3912,7 +3935,7 @@
                 if (rec) {
                     const pctTxt = (rec.pct != null) ? rec.pct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) : '—';
                     $('execReconcile').innerHTML =
-                        'Total dashboard: <strong>' + rec.total + '</strong> leads · Ejecutivos: <strong>' + rec.contabilizado + '</strong> (' + pctTxt + '%) · Otros (admin/pruebas/sin asignar): <strong>' + rec.otros + '</strong>';
+                        'Total: <strong>' + rec.total + '</strong> leads · Ejecutivos comerciales: <strong>' + rec.comerciales + '</strong> (' + pctTxt + '%) · Sin asignar: <strong>' + rec.sin_asignar + '</strong> · Otros (admin/pruebas): <strong>' + rec.otros + '</strong>';
                 }
                 block.hidden = false;
             }
@@ -4406,7 +4429,7 @@
     <ul>${sourcesHtml}</ul>
     <h2>Rendimiento Comercial por Ejecutivo</h2>
     <table><thead><tr>
-        <th>Ejecutivo</th><th>Leads</th><th>vs. Período</th><th>Mediana SLA</th><th>Visitas / Conversión</th>
+        <th>Ejecutivo</th><th>Leads</th><th>Visitas Agendadas</th><th>Conversión</th>
     </tr></thead><tbody>${execBody}</tbody></table>
     ${execReconcile ? '<div class="reconcile">' + execReconcile + '</div>' : ''}
     <div class="foot"><span>Informe generado automáticamente desde el dashboard ejecutivo.</span><span>Uso gerencial · Confidencial</span></div>

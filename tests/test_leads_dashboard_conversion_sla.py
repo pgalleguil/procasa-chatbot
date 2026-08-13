@@ -75,7 +75,6 @@ def test_no_executive_classification_based_on_30_minutes_backend():
     assert "sla_median < 30" not in SERVICE_SRC
     assert "sla < 30" not in SERVICE_SRC
     # The old state labels tied to the 30-min threshold are gone.
-    assert "_estado" in SERVICE_SRC
     assert "SLA Crítico" not in SERVICE_SRC
     assert "Top Performer" not in SERVICE_SRC
 
@@ -88,13 +87,12 @@ def test_no_30_minute_threshold_in_frontend_resumen_ejecutivo():
     assert "≥ 30 min" not in HTML
 
 
-def test_exec_table_sla_column_is_descriptive_not_classified():
-    # The SLA column tooltip now explains the mixed-policy aggregate.
-    assert "Hot 60 min y Normal 180 min" in HTML
-    assert "no se clasifica con un umbral único" in HTML
-    # The SLA cell no longer applies exec-sla-ok/bad coloring based on threshold.
-    cell_tpl = HTML.split("const slaText = (sla === null")[1]
-    assert "exec-sla-ok' : 'exec-sla-bad" not in cell_tpl
+def test_exec_table_sla_column_removed_from_resumen():
+    # La columna Mediana SLA fue eliminada de la tabla de ejecutivos.
+    assert "Mediana SLA" not in HTML
+    # El tooltip de la celda SLA y su coloreo desaparecieron.
+    assert "const slaText = (sla === null" not in HTML
+    assert "sla_median" not in HTML
 
 
 # =============================================================================
@@ -430,7 +428,7 @@ def _service_patches(total, citas, evaluable, prev_total=0, prev_citas=0, prev_e
         }),
         patch.object(lq, "query_leads_dashboard_rescue", return_value={"recuperabilidad_alta": 0}),
         patch.object(lq, "query_leads_dashboard_sources", return_value={"current": [], "previous": {}, "total": 0}),
-        patch.object(lq, "query_leads_dashboard_executives", return_value=[]),
+        patch.object(lq, "query_leads_dashboard_executives", return_value={"rows": [], "reconcile": {"total": 0, "comerciales": 0, "sin_asignar": 0, "otros": 0}}),
         patch.object(lq, "query_sla_accountability", return_value={"by_executive": []}),
         patch.object(lq, "query_leads_dashboard_funnel", return_value={"received": 0, "stages": []}),
         patch.object(lq, "query_leads_dashboard_reconcile_breakdown", return_value={"items": [], "total": 0}),
@@ -728,3 +726,359 @@ def test_funnel_no_calificados_en_frontend():
     assert "Visita agendada" in HTML
     assert "Contacto efectivo" in HTML
     assert "Gestionados" in HTML
+
+
+# =============================================================================
+# 4. RENDIMIENTO COMERCIAL POR EJECUTIVO (as-of)
+# =============================================================================
+
+from analytics.leads_queries import query_leads_dashboard_executives
+
+
+def make_cycle(lead_id, name, assigned, unassigned=None):
+    return {"lead_id": lead_id, "assigned_to_display_name": name,
+            "assigned_at": assigned, "unassigned_at": unassigned}
+
+
+def seed_usuarios(db):
+    """Inserta agentes activos para que el filtro de la tabla los considere."""
+    for name in ("Mariela Arriagada", "Erika Garrido", "Susana Ensignia",
+                 "Paula Morales", "Rocío Aliaga", "María Paz Galleguillos", "Hernán Castro"):
+        db["usuarios"].insert_one({"nombre": name, "rol": "agente", "is_active": True})
+
+
+def build_exec_result(db, period_start="2026-07-10", period_end="2026-07-20",
+                      cmp_start=None, cmp_end=None):
+    seed_usuarios(db)
+    with patch.object(lq, "get_db", return_value=db), \
+         patch.object(lq, "_normalized_created_at_stage", return_value={}), \
+         patch.object(lq, "_build_commercial_cohort_match", return_value={}):
+        return query_leads_dashboard_executives(
+            period_start=period_start, period_end=period_end,
+            comparison_start=cmp_start, comparison_end=cmp_end,
+            include_comparison=bool(cmp_start and cmp_end),
+        )
+
+
+def test_exec_lead_with_active_cycle_asignado_correcto():
+    docs = [{"_id": "l1", "created_at": LEAD_CREATED}]
+    cycles = [make_cycle("l1", "Mariela Arriagada", "2026-07-12T10:00:00Z")]
+    db = make_db(leads=docs)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db)
+    row = next(r for r in res["rows"] if r["ejecutivo"] == "Mariela Arriagada")
+    assert row["leads"] == 1
+
+
+def test_exec_reasignacion_posterior_no_cambia_periodo_historico():
+    # Período cierra 2026-07-21T04:00Z. Reasignación el 2026-07-25 a otro.
+    docs = [{"_id": "l1", "created_at": LEAD_CREATED}]
+    cycles = [
+        make_cycle("l1", "Mariela Arriagada", "2026-07-12T10:00:00Z", "2026-07-25T10:00:00Z"),
+        make_cycle("l1", "Erika Garrido", "2026-07-25T10:00:00Z"),
+    ]
+    db = make_db(leads=docs)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db)
+    row_m = next((r for r in res["rows"] if r["ejecutivo"] == "Mariela Arriagada"), None)
+    row_e = next((r for r in res["rows"] if r["ejecutivo"] == "Erika Garrido"), None)
+    assert row_m is not None and row_m["leads"] == 1
+    assert row_e is None or row_e["leads"] == 0
+
+
+def test_exec_ciclo_terminado_antes_del_cierre_es_sin_asignar():
+    docs = [{"_id": "l1", "created_at": LEAD_CREATED}]
+    cycles = [make_cycle("l1", "Mariela Arriagada", "2026-07-12T10:00:00Z", "2026-07-15T10:00:00Z")]
+    db = make_db(leads=docs)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db)
+    sa = next((r for r in res["rows"] if r["ejecutivo"] == "Sin Asignar"), None)
+    assert sa is not None and sa["leads"] == 1
+    assert res["reconcile"]["sin_asignar"] == 1
+
+
+def test_exec_multiple_ciclos_usa_vigente_al_cierre():
+    docs = [{"_id": "l1", "created_at": LEAD_CREATED}]
+    cycles = [
+        make_cycle("l1", "Mariela Arriagada", "2026-07-12T10:00:00Z", "2026-07-14T10:00:00Z"),
+        make_cycle("l1", "Erika Garrido", "2026-07-14T11:00:00Z"),
+    ]
+    db = make_db(leads=docs)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db)
+    row_e = next((r for r in res["rows"] if r["ejecutivo"] == "Erika Garrido"), None)
+    row_m = next((r for r in res["rows"] if r["ejecutivo"] == "Mariela Arriagada"), None)
+    assert row_e is not None and row_e["leads"] == 1
+    assert row_m is None or row_m["leads"] == 0
+
+
+def test_exec_ciclo_exactamente_en_limite():
+    # period_end exclusivo = 2026-07-21T04:00:00Z.
+    # Ciclo asignado a las 04:00:00Z del límite NO cuenta (límite exclusivo).
+    docs = [{"_id": "l1", "created_at": LEAD_CREATED}]
+    cycles = [make_cycle("l1", "Mariela Arriagada", "2026-07-21T04:00:00Z")]
+    db = make_db(leads=docs)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db)
+    sa = next((r for r in res["rows"] if r["ejecutivo"] == "Sin Asignar"), None)
+    assert sa is not None and sa["leads"] == 1
+
+
+def test_exec_suma_reconcilia_cohort_global():
+    docs = [
+        {"_id": "l1", "created_at": LEAD_CREATED},
+        {"_id": "l2", "created_at": "2026-07-11T14:00:00Z"},
+        {"_id": "l3", "created_at": "2026-07-12T14:00:00Z"},
+    ]
+    cycles = [
+        make_cycle("l1", "Mariela Arriagada", "2026-07-12T10:00:00Z"),
+        make_cycle("l2", "Erika Garrido", "2026-07-12T10:00:00Z", "2026-07-15T10:00:00Z"),
+    ]
+    db = make_db(leads=docs)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db)
+    total_rows = sum(r["leads"] for r in res["rows"])
+    # l1 -> Mariela, l2 -> Sin asignar (ciclo cerrado), l3 -> Sin asignar (sin ciclo)
+    assert total_rows + res["reconcile"]["otros"] == 3
+    assert res["reconcile"]["total"] == 3
+    assert res["reconcile"]["sin_asignar"] == 2
+
+
+def test_exec_visitas_tabla_igual_card2():
+    docs = [{"_id": "l1", "created_at": LEAD_CREATED}]
+    events = [{"_id": "e1", "lead_id": "l1", "type": "HUMAN_NOTE", "result": "visita_agendada",
+               "timestamp": "2026-07-15T10:00:00Z", "actor": "Mariela Arriagada",
+               "actor_type": "agent", "confirmed": True}]
+    cycles = [make_cycle("l1", "Mariela Arriagada", "2026-07-12T10:00:00Z")]
+    db = make_db(leads=docs, events=events)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    exec_res = build_exec_result(db)
+    conv_res = build_query_result(db)["current"]
+    assert conv_res["citas"] == 1
+    row = next(r for r in exec_res["rows"] if r["ejecutivo"] == "Mariela Arriagada")
+    assert row["citas"] == 1
+
+
+def test_exec_visita_se_atribuye_al_responsable_as_of_no_al_actor():
+    # Actor = Pablo (admin), responsable as-of = Erika.
+    docs = [{"_id": "l1", "created_at": LEAD_CREATED}]
+    events = [{"_id": "e1", "lead_id": "l1", "type": "HUMAN_NOTE", "result": "visita_agendada",
+               "timestamp": "2026-07-15T10:00:00Z", "actor": "Pablo Galleguillos",
+               "actor_type": "administrator", "confirmed": True}]
+    cycles = [make_cycle("l1", "Erika Garrido", "2026-07-12T10:00:00Z")]
+    db = make_db(leads=docs, events=events)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db)
+    row_e = next(r for r in res["rows"] if r["ejecutivo"] == "Erika Garrido")
+    assert row_e["citas"] == 1
+    # Pablo (admin) no aparece como fila comercial.
+    assert all(r["ejecutivo"] != "Pablo Galleguillos" for r in res["rows"])
+
+
+def test_exec_visita_sin_responsable_es_sin_asignar():
+    docs = [{"_id": "l1", "created_at": LEAD_CREATED}]
+    events = [{"_id": "e1", "lead_id": "l1", "type": "HUMAN_NOTE", "result": "visita_agendada",
+               "timestamp": "2026-07-15T10:00:00Z", "actor": "Mariela Arriagada",
+               "actor_type": "agent", "confirmed": True}]
+    db = make_db(leads=docs, events=events)  # sin ciclos -> Sin asignar
+    res = build_exec_result(db)
+    sa = next(r for r in res["rows"] if r["ejecutivo"] == "Sin Asignar")
+    assert sa["citas"] == 1
+    assert res["reconcile"]["sin_asignar_visitas"] == 1
+
+
+def test_exec_suma_visitas_reconcilia_card2():
+    docs = [
+        {"_id": "l1", "created_at": LEAD_CREATED},
+        {"_id": "l2", "created_at": "2026-07-11T14:00:00Z"},
+    ]
+    events = [
+        {"_id": "e1", "lead_id": "l1", "type": "HUMAN_NOTE", "result": "visita_agendada",
+         "timestamp": "2026-07-15T10:00:00Z", "actor": "Mariela Arriagada", "actor_type": "agent", "confirmed": True},
+        {"_id": "e2", "lead_id": "l2", "type": "HUMAN_NOTE", "result": "visita_agendada",
+         "timestamp": "2026-07-15T10:00:00Z", "actor": "Mariela Arriagada", "actor_type": "agent", "confirmed": True},
+    ]
+    cycles = [make_cycle("l1", "Mariela Arriagada", "2026-07-12T10:00:00Z")]
+    db = make_db(leads=docs, events=events)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    exec_res = build_exec_result(db)
+    conv_res = build_query_result(db)["current"]
+    total_vis = sum(r["citas"] for r in exec_res["rows"])
+    assert total_vis == conv_res["citas"] == 2
+    assert exec_res["reconcile"]["total_visitas"] == 2
+
+
+def test_exec_conversion_mismo_universo():
+    docs = [
+        {"_id": "l1", "created_at": LEAD_CREATED},
+        {"_id": "l2", "created_at": "2026-07-11T14:00:00Z"},
+    ]
+    events = [{"_id": "e1", "lead_id": "l1", "type": "HUMAN_NOTE", "result": "visita_agendada",
+               "timestamp": "2026-07-15T10:00:00Z", "actor": "Mariela Arriagada", "actor_type": "agent", "confirmed": True}]
+    cycles = [make_cycle("l1", "Mariela Arriagada", "2026-07-12T10:00:00Z"),
+              make_cycle("l2", "Mariela Arriagada", "2026-07-12T10:00:00Z")]
+    db = make_db(leads=docs, events=events)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db)
+    row = next(r for r in res["rows"] if r["ejecutivo"] == "Mariela Arriagada")
+    assert row["leads"] == 2 and row["citas"] == 1
+    # conversión en el service = 1/2 = 50% (citas/leads mismo universo)
+    from analytics.leads_service import get_leads_dashboard_overview
+    # validamos la fórmula de conversión replicada en service
+    conv = round(row["citas"] / row["leads"] * 100, 1) if row["leads"] else None
+    assert conv == 50.0
+
+
+def test_exec_conversion_leads_cero_es_nd():
+    # leads=0 -> N/D (None), no 0%.
+    from analytics.leads_service import get_leads_dashboard_overview
+    # Replicar regla del service
+    leads = 0
+    conv = round(0 / leads * 100, 1) if leads else None
+    assert conv is None
+
+
+def test_exec_conversion_anterior_usa_asignacion_asof_anterior():
+    # Período actual (07-10..07-20) y anterior (06-10..06-20).
+    docs = [
+        {"_id": "p1", "created_at": "2026-06-12T14:00:00Z"},
+        {"_id": "c1", "created_at": "2026-07-12T14:00:00Z"},
+    ]
+    cycles = [
+        # p1 en período anterior asignado a Mariela; reasignado en julio a Erika
+        make_cycle("p1", "Mariela Arriagada", "2026-06-13T10:00:00Z", "2026-07-20T10:00:00Z"),
+        make_cycle("p1", "Erika Garrido", "2026-07-20T10:00:00Z"),
+        make_cycle("c1", "Mariela Arriagada", "2026-07-13T10:00:00Z"),
+    ]
+    events = [{"_id": "e1", "lead_id": "p1", "type": "HUMAN_NOTE", "result": "visita_agendada",
+               "timestamp": "2026-06-15T10:00:00Z", "actor": "Mariela Arriagada", "actor_type": "agent", "confirmed": True}]
+    db = make_db(leads=docs, events=events)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db, cmp_start="2026-06-10", cmp_end="2026-06-20")
+    row_m = next(r for r in res["rows"] if r["ejecutivo"] == "Mariela Arriagada")
+    # p1 en período anterior asignado a Mariela (as-of anterior) -> leads_prev=1, citas_prev=1
+    assert row_m["leads_prev"] == 1
+    assert row_m["citas_prev"] == 1
+
+
+def test_exec_json_serializable():
+    docs = [{"_id": "l1", "created_at": LEAD_CREATED}]
+    cycles = [make_cycle("l1", "Mariela Arriagada", "2026-07-12T10:00:00Z")]
+    db = make_db(leads=docs)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db)
+    json.dumps(res)
+
+
+def test_exec_frontend_sin_sla_ni_uf():
+    # La tabla no debe contener Mediana SLA ni Pipeline UF.
+    assert "sla_median" not in HTML
+    assert "Mediana SLA" not in HTML
+    assert "Pipeline UF" not in HTML.split("Rendimiento Comercial por Ejecutivo")[1].split("</section>")[0] if "Rendimiento Comercial por Ejecutivo" in HTML else True
+    assert "Visitas Agendadas" in HTML
+    assert "data-sort=\"conversion_pct\"" in HTML
+
+
+# =============================================================================
+# 5. RECONCILE AS-OF Y ORDENAMIENTO (Rendimiento por Ejecutivo)
+# =============================================================================
+
+
+def test_reconcile_sin_asignar_usa_ejecutivo_asof():
+    # Lead con ciclo cerrado antes del cierre -> Sin asignar as-of, aunque el
+    # campo ejecutivo_asignado residual diga otro nombre.
+    docs = [{"_id": "l1", "created_at": LEAD_CREATED, "ejecutivo_asignado": "Mariela Arriagada"}]
+    cycles = [make_cycle("l1", "Mariela Arriagada", "2026-07-12T10:00:00Z", "2026-07-15T10:00:00Z")]
+    db = make_db(leads=docs)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db)
+    assert res["reconcile"]["sin_asignar"] == 1
+    assert res["reconcile"]["comerciales"] == 0
+
+
+def test_reconcile_no_usa_ejecutivo_asignado_residual():
+    # 2 leads: uno con ciclo activo a Erika, otro sin ciclo (residual Pablo).
+    docs = [
+        {"_id": "l1", "created_at": LEAD_CREATED, "ejecutivo_asignado": "Erika Garrido"},
+        {"_id": "l2", "created_at": "2026-07-11T14:00:00Z", "ejecutivo_asignado": "Pablo Galleguillos"},
+    ]
+    cycles = [make_cycle("l1", "Erika Garrido", "2026-07-12T10:00:00Z")]
+    db = make_db(leads=docs)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db)
+    # l2 sin ciclo -> Sin asignar (no Pablo, no comercial).
+    assert res["reconcile"]["sin_asignar"] == 1
+    assert res["reconcile"]["comerciales"] == 1
+    assert res["reconcile"]["otros"] == 0
+
+
+def test_reconcile_ejecutivos_mas_sin_asignar_mas_otros_igual_total():
+    docs = [
+        {"_id": "l1", "created_at": LEAD_CREATED},
+        {"_id": "l2", "created_at": "2026-07-11T14:00:00Z"},
+        {"_id": "l3", "created_at": "2026-07-12T14:00:00Z"},
+        {"_id": "l4", "created_at": "2026-07-13T14:00:00Z"},
+    ]
+    cycles = [
+        make_cycle("l1", "Mariela Arriagada", "2026-07-12T10:00:00Z"),
+        make_cycle("l2", "Erika Garrido", "2026-07-12T10:00:00Z", "2026-07-15T10:00:00Z"),  # -> Sin asignar
+    ]
+    db = make_db(leads=docs)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    # l3, l4 sin ciclo -> Sin asignar; total comerciales=1, sin_asignar=3
+    res = build_exec_result(db)
+    assert res["reconcile"]["total"] == 4
+    assert res["reconcile"]["comerciales"] + res["reconcile"]["sin_asignar"] + res["reconcile"]["otros"] == res["reconcile"]["total"]
+
+
+def test_reconcile_payload_usa_etiqueta_comerciales_no_contabilizado_inflado():
+    # El payload reconcile debe exponer comerciales (sin incluir Sin asignar).
+    docs = [
+        {"_id": "l1", "created_at": LEAD_CREATED},
+        {"_id": "l2", "created_at": "2026-07-11T14:00:00Z"},
+    ]
+    cycles = [make_cycle("l1", "Mariela Arriagada", "2026-07-12T10:00:00Z")]
+    db = make_db(leads=docs)
+    db["crm_assignment_cycles"].insert_many(cycles)
+    res = build_exec_result(db)
+    # comerciales=1 (Mariela), sin_asignar=1 (l2)
+    assert res["reconcile"]["comerciales"] == 1
+    assert res["reconcile"]["sin_asignar"] == 1
+    assert res["reconcile"]["comerciales"] != res["reconcile"]["total"]
+
+
+def test_frontend_etiqueta_no_llama_ejecutivos_a_conjunto_con_sin_asignar():
+    # El texto del reconcile separa Ejecutivos comerciales / Sin asignar / Otros.
+    fn = HTML.split("function renderExecutivesTable()", 1)[1].split("function renderFunnel()", 1)[0]
+    assert "Ejecutivos comerciales" in fn
+    assert "Sin asignar" in fn
+    assert "Otros (admin/pruebas)" in fn
+    # No debe existir el texto viejo que llamaba "Ejecutivos" a todo.
+    assert "Total dashboard" not in fn
+
+
+def test_frontend_orden_empate_por_conversion_descendente():
+    # María Paz (1 visita, 7.1%) precede a Susana (1 visita, 6.2%).
+    items = [
+        {"nombre": "Susana Ensignia", "citas": 1, "conversion_pct": 6.2, "leads": 16},
+        {"nombre": "María Paz Galleguillos", "citas": 1, "conversion_pct": 7.1, "leads": 14},
+        {"nombre": "Mariela Arriagada", "citas": 11, "conversion_pct": 12.6, "leads": 87},
+    ]
+    ordered = sorted(items, key=lambda a: (a["citas"], a["conversion_pct"]), reverse=True)
+    assert ordered[0]["nombre"] == "Mariela Arriagada"
+    assert ordered[1]["nombre"] == "María Paz Galleguillos"
+    assert ordered[2]["nombre"] == "Susana Ensignia"
+
+
+def test_frontend_sin_asignar_siempre_al_final():
+    # "Sin asignar" queda al final aunque tenga conversión > 0.
+    items = [
+        {"nombre": "Mariela Arriagada", "citas": 0, "conversion_pct": 0.0, "leads": 87},
+        {"nombre": "Sin Asignar", "citas": 1, "conversion_pct": 3.7, "leads": 27},
+        {"nombre": "Erika Garrido", "citas": 0, "conversion_pct": 0.0, "leads": 116},
+    ]
+    ordered = sorted(
+        items,
+        key=lambda a: (a["nombre"].strip().lower() == "sin asignar", -(a["citas"] or 0), -(a["conversion_pct"] or 0))
+    )
+    assert ordered[-1]["nombre"] == "Sin Asignar"

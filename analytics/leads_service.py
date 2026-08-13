@@ -1048,7 +1048,14 @@ def get_leads_dashboard_overview(
     sla_panel = f_sla.result()
     rescue = f_rescue.result()
     sources = f_sources.result()
-    exec_rows = f_exec.result()
+    _exec_payload = f_exec.result()
+    if isinstance(_exec_payload, dict):
+        exec_rows = _exec_payload.get("rows") or []
+        exec_reconcile = _exec_payload.get("reconcile") or {}
+    else:
+        # Compatibilidad si otra ruta devuelve lista (no debería ocurrir).
+        exec_rows = _exec_payload or []
+        exec_reconcile = {}
     sla_acc = f_sla_acc.result()
     try:
         funnel = f_funnel.result()
@@ -1157,19 +1164,14 @@ def get_leads_dashboard_overview(
         "total": src_total,
     }
 
-    sla_by_exec = {
-        str(r.get("executive_name")): (r.get("lead") or {}).get("median_business_minutes")
-        for r in (sla_acc.get("by_executive") or [])
-    }
-
-    def _estado(name, leads_count, sla_median):
-        if name == "Sin Asignar":
-            return "Auto Rescate"
-        # Estado neutral: el cumplimiento SLA no se clasifica con un umbral único
-        # porque existen políticas distintas (Hot 60 min y Normal 180 min).
-        return "Neutral"
-
     _sum_exec = sum(r.get("leads", 0) for r in exec_rows)
+    # Reconciliación con la MISMA atribución as-of de las filas (no
+    # ejecutivo_asignado actual). Ejecutivos comerciales, Sin asignar y Otros
+    # (admin/pruebas/no comerciales) son mutuamente excluyentes y suman el total.
+    _rec_total = exec_reconcile.get("total", total_leads) if isinstance(exec_reconcile, dict) else total_leads
+    _rec_comerciales = exec_reconcile.get("comerciales", 0) if isinstance(exec_reconcile, dict) else max(_sum_exec - exec_reconcile.get("sin_asignar", 0) if isinstance(exec_reconcile, dict) else _sum_exec, 0)
+    _rec_sin_asignar = exec_reconcile.get("sin_asignar", 0) if isinstance(exec_reconcile, dict) else 0
+    _rec_otros = exec_reconcile.get("otros", 0) if isinstance(exec_reconcile, dict) else max(_rec_total - _sum_exec, 0)
     executives_data = {
         "items": [
             {
@@ -1179,20 +1181,25 @@ def get_leads_dashboard_overview(
                 "diff_leads": r.get("diff_leads", 0),
                 "pct_leads": round(r.get("leads", 0) / total_leads * 100, 1) if total_leads else 0.0,
                 "citas": r.get("citas", 0),
-                "conversion_pct": round(r.get("citas", 0) / r.get("leads", 0) * 100, 1) if r.get("leads", 0) else 0.0,
-                "uf": r.get("uf", 0.0),
-                "sla_median": sla_by_exec.get(r.get("ejecutivo", "Sin Asignar")),
-                "estado": _estado(r.get("ejecutivo", "Sin Asignar"), r.get("leads", 0), sla_by_exec.get(r.get("ejecutivo", "Sin Asignar"))),
+                "citas_prev": r.get("citas_prev", 0),
+                "visitas_prev": r.get("visitas_prev", 0),
+                "conversion_pct": round(r.get("citas", 0) / r.get("leads", 0) * 100, 1) if r.get("leads", 0) else None,
+                "conversion_prev_pct": round(r.get("citas_prev", 0) / r.get("leads_prev", 0) * 100, 1) if r.get("leads_prev", 0) else None,
+                "diff_pp": round(
+                    (r.get("citas", 0) / r.get("leads", 0) - r.get("citas_prev", 0) / r.get("leads_prev", 0)) * 100, 1
+                ) if r.get("leads", 0) and r.get("leads_prev", 0) else None,
+                "estado": "Neutral",
             }
             for r in exec_rows
         ],
         "total": len(exec_rows),
         "reconcile": {
             "contabilizado": _sum_exec,
-            "total": total_leads,
-            "otros": max(total_leads - _sum_exec, 0),
-            "pct": round(_sum_exec / total_leads * 100, 1) if total_leads else 0.0,
-            "desglose_otros": (reconcile_breakdown or {}).get("items", []),
+            "comerciales": _rec_comerciales,
+            "sin_asignar": _rec_sin_asignar,
+            "otros": _rec_otros,
+            "total": _rec_total,
+            "pct": round(_rec_comerciales / _rec_total * 100, 1) if _rec_total else 0.0,
         },
     }
 

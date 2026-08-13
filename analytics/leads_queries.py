@@ -2060,6 +2060,31 @@ def _normalize_source_name(value) -> str:
     return mapping.get(low, text)
 
 
+def _executive_as_of(cycles_by_lead: dict, lead_id: str, at) -> Optional[str]:
+    """Ejecutivo responsable del lead al cierre del período (as-of).
+
+    Regla: ciclo con assigned_at < period_end y
+    (unassigned_at IS NULL OR unassigned_at >= period_end).
+    Si hay múltiples ciclos candidatos (anomalía), se elige el ciclo vigente
+    más reciente (mayor assigned_at) de forma determinística — NO el más largo.
+    Si no existe ciclo activo al cierre -> None (Sin asignar).
+    """
+    candidates = []
+    for c in cycles_by_lead.get(lead_id, []):
+        assigned = coerce_utc_datetime(c.get("assigned_at"))
+        if assigned is None or not (assigned < at):
+            continue
+        unassigned = coerce_utc_datetime(c.get("unassigned_at"))
+        if unassigned is not None and unassigned < at:
+            continue
+        candidates.append((assigned, c))
+    if not candidates:
+        return None
+    # Ciclo vigente más reciente al cierre.
+    best = max(candidates, key=lambda item: item[0])[1]
+    return best.get("assigned_to_display_name") or str(best.get("assigned_to_user_id"))
+
+
 def query_leads_dashboard_executives(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
@@ -2068,45 +2093,53 @@ def query_leads_dashboard_executives(
     include_comparison: bool = True,
     filters: Optional[dict] = None,
 ) -> dict:
-    """Rendimiento por ejecutivo (BLOQUE 4) con comparativa del período anterior."""
+    """Rendimiento comercial por ejecutivo (BLOQUE 4).
+
+    Mide el RESULTADO comercial de la cartera bajo responsabilidad de cada
+    ejecutivo al cierre del período (crm_assignment_cycles as-of), no quién
+    ejecutó la gestión.
+
+    - Leads: cohort por created_at, agrupados por ejecutivo_as_of(period_end).
+    - Visitas: exactamente el conjunto CARD 2 (Conversión a Visita Agendada
+      as-of), atribuido al ejecutivo responsable del LEAD al cierre del período
+      (nunca al actor del evento).
+    - Conversión: visitas_as_of / leads_as_of del mismo universo.
+    La comparación con el período anterior se reconstruye con la asignación
+    as-of del cierre ANTERIOR (independiente).
+    """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
     if include_comparison and comparison_start and comparison_end:
         prev_start, prev_end = _build_chile_period_bounds(comparison_start, comparison_end)
     else:
         prev_start = prev_end = None
-    _exec = {"$ifNull": ["$ejecutivo_asignado", "Sin Asignar"]}
 
-    def _counts(ps, pe):
-        pipeline = [
+    def _cohort(ps, pe):
+        pipe = [
             _cohort_indexed_prefilter(ps, pe),
             _normalized_created_at_stage(),
             {"$match": _build_commercial_cohort_match(ps, pe, filters)},
-            {"$facet": {
-                "leads": [
-                    {"$group": {
-                        "_id": _exec,
-                        "leads": {"$sum": 1},
-                        "citas": {"$sum": {"$cond": [{"$eq": ["$pipeline_stage", "VISIT_SCHEDULED"]}, 1, 0]}},
-                    }},
-                ],
-                "uf": [
-                    {"$group": {
-                        "_id": {"exec": _exec, "code": {"$ifNull": ["$prospecto.codigo", ""]}},
-                        "uf": {"$max": {"$ifNull": ["$prospecto.precio_uf", "$cartera_data.precio_uf", 0]}},
-                    }},
-                    {"$group": {"_id": "$_id.exec", "uf": {"$sum": "$uf"}}},
-                ],
-            }},
+            {"$project": {"_id": 1, "created_at": 1, "phone": 1, "prospecto.codigo": 1,
+                          "pipeline_stage": 1, "stage": 1, "stage_history": 1,
+                          "lifecycle.visit_scheduled_at": 1}},
         ]
-        row = list(db["leads"].aggregate(pipeline))
-        row = row[0] if row else {}
-        leads_map = {str(r["_id"]): {"leads": r["leads"], "citas": r["citas"]} for r in row.get("leads", [])}
-        uf_map = {str(r["_id"]): r["uf"] for r in row.get("uf", [])}
-        return leads_map, uf_map
+        leads = list(db["leads"].aggregate(pipe))
+        lead_ids = {str(l["_id"]) for l in leads}
+        # ciclos de la cohorte
+        cycles_by_lead: dict = {}
+        for c in db["crm_assignment_cycles"].find({"lead_id": {"$in": [l["_id"] for l in leads]}}):
+            cycles_by_lead.setdefault(str(c.get("lead_id")), []).append(c)
+        # visitas CARD 2 as-of (misma definición aprobada)
+        visitas = _scheduled_visit_lead_ids(leads, lead_ids, pe)
+        # ejecutivo responsable as-of por lead
+        lead_exec = {}
+        for l in leads:
+            lid = str(l["_id"])
+            lead_exec[lid] = _executive_as_of(cycles_by_lead, lid, pe) or "Sin Asignar"
+        return leads, lead_exec, visitas
 
-    cur_leads, cur_uf = _counts(start_utc, end_utc)
-    prev_leads, prev_uf = _counts(prev_start, prev_end) if prev_start else ({}, {})
+    cur_leads, cur_exec, cur_visitas = _cohort(start_utc, end_utc)
+    prev_leads, prev_exec, prev_visitas = _cohort(prev_start, prev_end) if prev_start else ([], {}, set())
 
     # Solo ejecutivos con rol agente y activos en la colección "usuarios"
     active = {
@@ -2116,22 +2149,65 @@ def query_leads_dashboard_executives(
     # Excluir al administrador
     active.discard("pablo galleguillos")
 
+    from collections import defaultdict
+    cur_leads_by_exec = defaultdict(int)
+    cur_visitas_by_exec = defaultdict(int)
+    for lid, exec_name in cur_exec.items():
+        cur_leads_by_exec[exec_name] += 1
+        if lid in cur_visitas:
+            cur_visitas_by_exec[exec_name] += 1
+    prev_leads_by_exec = defaultdict(int)
+    prev_visitas_by_exec = defaultdict(int)
+    for lid, exec_name in prev_exec.items():
+        prev_leads_by_exec[exec_name] += 1
+        if lid in prev_visitas:
+            prev_visitas_by_exec[exec_name] += 1
+
+    exec_names = set(cur_leads_by_exec) | set(prev_leads_by_exec)
     rows = []
-    for name, l in cur_leads.items():
-        if str(name).strip().lower() not in active:
+    for name in exec_names:
+        low = str(name).strip().lower()
+        is_sin_asignar = low == "sin asignar"
+        # Comerciales: agentes activos (o fila neutral Sin asignar).
+        if not is_sin_asignar and low not in active:
             continue
-        pl = prev_leads.get(name, {"leads": 0, "citas": 0})
+        leads = cur_leads_by_exec.get(name, 0)
+        citas = cur_visitas_by_exec.get(name, 0)
+        prev_leads = prev_leads_by_exec.get(name, 0)
+        prev_citas = prev_visitas_by_exec.get(name, 0)
         rows.append({
             "ejecutivo": name,
-            "leads": l["leads"],
-            "leads_prev": pl["leads"],
-            "diff_leads": l["leads"] - pl["leads"],
-            "citas": l["citas"],
-            "citas_prev": pl["citas"],
-            "uf": round(cur_uf.get(name, 0.0) or 0.0, 1),
+            "leads": leads,
+            "leads_prev": prev_leads,
+            "diff_leads": leads - prev_leads,
+            "citas": citas,
+            "citas_prev": prev_citas,
+            "visitas_prev": prev_citas,
         })
-    rows.sort(key=lambda r: -r["leads"])
-    return rows
+    rows.sort(key=lambda r: (-r["citas"], -r["leads"]))
+
+    # Reconciliación: categorías no comerciales
+    otros_names = set(cur_leads_by_exec) | set(prev_leads_by_exec)
+    otros_names = {n for n in otros_names
+                   if str(n).strip().lower() not in active and str(n).strip().lower() != "sin asignar"}
+    otros_leads = sum(cur_leads_by_exec.get(n, 0) for n in otros_names)
+    otros_visitas = sum(cur_visitas_by_exec.get(n, 0) for n in otros_names)
+    sin_asignar_leads = cur_leads_by_exec.get("Sin Asignar", 0)
+    sin_asignar_visitas = cur_visitas_by_exec.get("Sin Asignar", 0)
+
+    return {
+        "rows": rows,
+        "reconcile": {
+            "total": len(cur_leads),
+            "comerciales": sum(r["leads"] for r in rows if str(r["ejecutivo"]).strip().lower() != "sin asignar"),
+            "sin_asignar": sin_asignar_leads,
+            "otros": otros_leads,
+            "otros_visitas": otros_visitas,
+            "sin_asignar_visitas": sin_asignar_visitas,
+            "total_visitas": len(cur_visitas),
+            "comerciales_visitas": sum(r["citas"] for r in rows if str(r["ejecutivo"]).strip().lower() != "sin asignar"),
+        },
+    }
 
 
 def query_leads_dashboard_funnel(

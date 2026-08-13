@@ -345,7 +345,10 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
     occurred_at = now or datetime.now(timezone.utc)
     if occurred_at.tzinfo is None:
         occurred_at = occurred_at.replace(tzinfo=timezone.utc)
-    if occurred_at.astimezone(timezone.utc) > attempt["expires_at"]:
+    expires_at = attempt["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if occurred_at.astimezone(timezone.utc) > expires_at:
         db[ATTEMPT_COLLECTION].update_one(
             {"attempt_id": attempt["attempt_id"], "status": "pending_confirmation"},
             {"$set": {"status": "expired", "resolved_at": occurred_at.astimezone(timezone.utc)}},

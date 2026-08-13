@@ -1967,7 +1967,8 @@
             white-space: nowrap;
         }
         .funnel-hito-chip.oferta,
-        .funnel-hito-chip.cierre {
+        .funnel-hito-chip.cierre,
+        .funnel-hito-chip.trazabilidad {
             color: var(--text-secondary);
             background: var(--bg-elevated, #1E293B);
             border-color: var(--border-color);
@@ -2564,13 +2565,16 @@
                         </div>
                     </div>
 
-                    <!-- CARD 2: EFECTIVIDAD & CONVERSIÓN -->
+                    <!-- CARD 2: CONVERSIÓN A VISITA AGENDADA -->
                     <div class="cd2 seq-el" id="cardConversion" hidden>
                         <div class="cd1-header">
                             <span class="cd1-title" id="cd2Title"></span>
                             <button type="button" class="cd1-info cd2-info" id="cd2Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd2Tooltip" hidden>
-                                Mide el % de leads del período que alcanzaron el estado de visita agendada (VISIT_SCHEDULED). Un 0% puede reflejar falta de registro, leads recientes o ausencia de visitas; se distingue en la metodología.
+                                Porcentaje de leads del período que ya tenían una visita agendada registrada al cierre del período (pipeline, resultado de gestión en CRM u orden de visita firmada).<br>
+                                <strong>0%</strong>: ningún lead del período tenía una visita agendada registrada al cierre.<br>
+                                <strong>N/D</strong>: no hay leads en el período.<br>
+                                La cobertura de trazabilidad del pipeline se reporta como contexto de calidad de datos, no como denominador.
                             </div>
                         </div>
 
@@ -2579,7 +2583,7 @@
                             <span class="cd2-citas-badge" id="cd2CitasBadge"><span class="cd2-dot"></span>— Visitas</span>
                         </div>
 
-                        <p class="cd1-sub" id="cd2Sub">— visitas concretadas de — leads totales</p>
+                        <p class="cd1-sub" id="cd2Sub">— visitas agendadas de — leads</p>
 
                         <div class="cd2-bars">
                             <div class="cd2-bar-row">
@@ -2711,7 +2715,7 @@
                     <div class="exec-table-head">
                         <div>
                             <h3>Embudo Comercial</h3>
-                            <p>Conversión por etapa sobre los leads del período</p>
+                            <p>Conversión etapa a etapa sobre los leads del período</p>
                         </div>
                         <span class="exec-count" id="funnelRecv">—</span>
                     </div>
@@ -2766,7 +2770,7 @@
                         <div>
                             <h3>Rendimiento Comercial por Ejecutivo</h3>
                             <p>Control individual de asignación de leads, tiempo de respuesta (SLA) y cartera en UF</p>
-                            <p class="exec-muted" style="margin:2px 0 0;font-size:10px;color:var(--text-secondary)">SLA = mediana de primera respuesta (min hábiles). Verde: &lt; 30 min · Rojo: ≥ 30 min · Gris: sin datos.</p>
+                            <p class="exec-muted" style="margin:2px 0 0;font-size:10px;color:var(--text-secondary)">SLA = mediana de primera respuesta (min hábiles). El cumplimiento SLA se evalúa según el tipo de lead: Hot 60 min · Normal 180 min. La mediana agregada no se clasifica con un umbral único.</p>
                         </div>
                         <div class="exec-tools">
                             <span class="exec-count" id="execCount">—</span>
@@ -3882,13 +3886,14 @@
                     let html = '';
                     items.forEach(r => {
                         const sla = r.sla_median;
-                        const slaOk = sla !== null && sla !== undefined && sla < 30;
                         const slaText = (sla === null || sla === undefined)
                             ? '— min'
                             : sla.toLocaleString('es-CL', { maximumFractionDigits: 0 }) + ' min';
-                        const pctLeads = (r.pct_leads || 0).toFixed(1).replace('.', ',');
-                        const conv = (r.conversion_pct || 0).toFixed(1).replace('.', ',');
-                        const diff = r.diff_leads || 0;
+                        const pctLeads = (r.pct_leads != null ? r.pct_leads : 0).toFixed(1).replace('.', ',');
+                        const convVal = (r.conversion_pct != null && r.conversion_pct !== undefined)
+                            ? r.conversion_pct.toFixed(1).replace('.', ',')
+                            : '—';
+                        const diff = r.diff_leads != null ? r.diff_leads : 0;
                         const diffClass = diff > 0 ? 'exec-sla-ok' : (diff < 0 ? 'exec-sla-bad' : 'exec-muted');
                         const diffText = diff > 0 ? '+' + diff : diff;
                         html += '<tr>' +
@@ -3897,8 +3902,8 @@
                             '<td class="exec-mono">' + (hasCmp
                                 ? '<strong>' + r.leads_prev + '</strong> <span class="' + diffClass + '">(' + diffText + ')</span>'
                                 : '<span class="exec-muted">—</span>') + '</td>' +
-                            '<td class="exec-mono ' + (slaOk ? 'exec-sla-ok' : 'exec-sla-bad') + '" title="SLA: mediana de 1ª respuesta en minutos hábiles (umbral 30 min).">' + slaText + '</td>' +
-                            '<td class="exec-mono"><strong>' + r.citas + ' visitas</strong> <span class="exec-muted">(' + conv + '%)</span></td>' +
+                            '<td class="exec-mono" title="Mediana de primera respuesta en minutos hábiles. El cumplimiento SLA se evalúa según el tipo de lead: Hot 60 min y Normal 180 min. Esta mediana agregada no se clasifica con un umbral único.">' + slaText + '</td>' +
+                            '<td class="exec-mono"><strong>' + r.citas + ' visitas</strong> <span class="exec-muted">(' + convVal + '%)</span></td>' +
                             '</tr>';
                     });
                     body.innerHTML = html;
@@ -3913,7 +3918,7 @@
             }
 
             // --- EMBUDO COMERCIAL ---
-            const FUNNEL_MAIN_LABELS = { contactados: 'Contactados', calificados: 'Calificados', visitas: 'Visitas' };
+            const FUNNEL_MAIN_LABELS = { gestionados: 'Gestionados', contacto_efectivo: 'Contacto efectivo', visita_agendada: 'Visita agendada' };
 
             function renderFunnel() {
                 const block = $('funnelBlock');
@@ -3923,48 +3928,55 @@
                 $('funnelRecv').innerHTML = received + ' leads';
                 const bars = $('funnelBars');
                 const allStages = f.stages || [];
-                const visitas = (allStages.find(s => s.key === 'visitas') || {}).count || 0;
-                const ofertas = (allStages.find(s => s.key === 'ofertas') || {}).count || 0;
-                const cierres = (allStages.find(s => s.key === 'cierres') || {}).count || 0;
+                const visitas = (allStages.find(s => s.key === 'visita_agendada') || {}).count || 0;
 
-                // Embudo descendente hasta Visitas
-                const mainStages = allStages.filter(s => s.key in FUNNEL_MAIN_LABELS);
-                const stages = [{ key: 'received', label: 'Recibidos', count: received, pct: 100.0 }].concat(mainStages);
+                // Embudo descendente: Recibidos → Gestionados → Contacto efectivo → Visita agendada
+                const stages = allStages; // backend ya entrega las 4 etapas ordenadas
                 if (bars) {
                     let html = '';
                     stages.forEach((s, i) => {
                         const w = received > 0 ? Math.max((s.count / received) * 100, 0.5) : 0;
-                        const conv = i === 0 ? '' : '<small>' + s.pct.toFixed(1).replace('.', ',') + '% del total</small>';
+                        const tPct = (s.transition_pct === null || s.transition_pct === undefined)
+                            ? ''
+                            : '<small class="funnel-transition">↓ ' + s.transition_pct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</small>';
+                        const acc = (i === 0 || s.pct_of_received === null || s.pct_of_received === undefined)
+                            ? ''
+                            : '<small class="funnel-acc">' + s.pct_of_received.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '% del total</small>';
                         html += '<div class="funnel-row">' +
                             '<span class="funnel-lbl">' + s.label + '</span>' +
                             '<div class="funnel-trk"><div class="funnel-fill" data-w="' + w + '" style="width:0%"></div></div>' +
-                            '<span class="funnel-val"><strong>' + s.count + '</strong>' + conv + '</span>' +
+                            '<span class="funnel-val"><strong>' + s.count + '</strong>' + tPct + acc + '</span>' +
                             '</div>';
                     });
                     bars.innerHTML = html;
                 }
 
-                // Hitos comerciales excepcionales: ofertas/cierres sin visita registrada
+                // Excepciones de trazabilidad + hitos comerciales excepcionales
                 const hitos = $('funnelHitos');
-                const ofertasSinVisita = ofertas;
-                const cierresSinVisita = cierres;
+                const exc = f.exceptions || {};
+                const hitosExc = f.hitos_excepcionales || {};
+                const chips = [];
+                if (exc.visitas_sin_contacto_efectivo > 0) {
+                    chips.push('<span class="funnel-hito-chip trazabilidad"><i class="fa-solid fa-triangle-exclamation"></i> ' + exc.visitas_sin_contacto_efectivo + ' visitas sin contacto efectivo previo</span>');
+                }
+                if (exc.visitas_sin_gestion > 0) {
+                    chips.push('<span class="funnel-hito-chip trazabilidad"><i class="fa-solid fa-triangle-exclamation"></i> ' + exc.visitas_sin_gestion + ' visitas sin gestión registrada</span>');
+                }
+                if (hitosExc.avanzados_sin_visita > 0) {
+                    chips.push('<span class="funnel-hito-chip oferta"><i class="fa-solid fa-handshake"></i> Hitos avanzados sin visita: ' + hitosExc.avanzados_sin_visita + '</span>');
+                }
+                if (hitosExc.cierres_sin_visita > 0) {
+                    chips.push('<span class="funnel-hito-chip cierre"><i class="fa-solid fa-circle-check"></i> Cierres sin visita: ' + hitosExc.cierres_sin_visita + '</span>');
+                }
                 if (hitos) {
-                    if (ofertasSinVisita === 0 && cierresSinVisita === 0) {
+                    if (chips.length === 0) {
                         hitos.hidden = true;
                         hitos.innerHTML = '';
                     } else {
                         hitos.hidden = false;
-                        let chips = '';
-                        if (ofertasSinVisita > 0) {
-                            chips += '<span class="funnel-hito-chip oferta"><i class="fa-solid fa-handshake"></i> Ofertas sin visita registrada: ' + ofertasSinVisita + '</span>';
-                        }
-                        if (cierresSinVisita > 0) {
-                            chips += '<span class="funnel-hito-chip cierre"><i class="fa-solid fa-circle-check"></i> Cierres sin visita registrada: ' + cierresSinVisita + '</span>';
-                        }
                         hitos.innerHTML =
                             '<div class="funnel-hitos-title"><i class="fa-solid fa-asterisk"></i> Hitos comerciales excepcionales</div>' +
-                            '<div class="funnel-hitos-chips">' + chips + '</div>' +
-                            '<div class="funnel-alert"><i class="fa-solid fa-triangle-exclamation"></i> <span>Existen negocios avanzados con visita no registrada o con origen comercial alternativo. Revisar trazabilidad.</span></div>';
+                            '<div class="funnel-hitos-chips">' + chips.join('') + '</div>';
                     }
                 }
                 block.hidden = false;
@@ -4026,17 +4038,30 @@
                 const c = OVERVIEW.conversion;
                 const leads = c.leads || 0;
                 const citas = c.citas || 0;
-                const convPct = c.conversion_pct || 0;
+                const convPct = c.conversion_pct; // null => N/D (denominador 0)
                 const diffPP = c.diff_pp;
                 const ratio = c.ratio_leads_per_cita;
                 const resolved = (OVERVIEW.period || {}).compare_resolved || 'none';
 
                 const citasText = citas + (citas === 1 ? ' Visita' : ' Visitas');
-                $('cd2Title').textContent = 'Efectividad & Conversión';
-                $('cd2CitasBadge').innerHTML = '<span class="cd2-dot"></span>' + citasText;
-                $('cd2Sub').innerHTML = citas + ' visitas registradas de ' + leads + ' leads recibidos';
+                $('cd2Title').textContent = 'Conversión a Visita Agendada';
 
-                const citasPctBar = Math.min(leads > 0 ? (citas / leads) * 100 : 0, 100);
+                if (leads === 0) {
+                    // Denominador 0: no tiene sentido una tasa.
+                    $('cd2CitasBadge').innerHTML = '<span class="cd2-dot"></span>Sin leads';
+                    $('cd2Sub').innerHTML = 'Sin leads en el período';
+                    $('cd2Value').textContent = 'N/D';
+                    $('cd2BarCitas').style.width = '0%';
+                    $('cd2BarCitasPct').textContent = '—';
+                    $('cd2Footer').innerHTML = '<span style="font-style:italic;color:var(--text-secondary)">No hay leads en el período para calcular la conversión.</span>';
+                    showCardReveal(card);
+                    return;
+                }
+
+                $('cd2CitasBadge').innerHTML = '<span class="cd2-dot"></span>' + citasText;
+                $('cd2Sub').innerHTML = citas + ' visitas agendadas registradas de ' + leads + ' leads';
+
+                const citasPctBar = Math.min((citas / leads) * 100, 100);
                 $('cd2BarCitas').style.width = '0%';
                 setTimeout(() => { $('cd2BarCitas').style.width = citasPctBar + '%'; }, 860);
                 $('cd2BarCitasPct').textContent = citasPctBar.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
@@ -4047,16 +4072,16 @@
                         ? ''
                         : ' <span class="' + (diffPP >= 0 ? 'cd2-pp-pos' : 'cd2-pp-neg') + '">(' +
                           (diffPP >= 0 ? '▲ +' : '▼ -') + Math.abs(diffPP).toFixed(1) + ' pp)</span>';
-                    footer = '1 visita cada <strong>' + ratio + ' leads</strong>' + ppText;
+                    footer = '1 visita agendada cada <strong>' + ratio + ' leads</strong>' + ppText;
                 } else if (leads > 0) {
-                    footer = '<span style="font-style:italic;color:var(--text-secondary)">Sin registros suficientes de visitas</span>';
+                    footer = '<span style="font-style:italic;color:var(--text-secondary)">0 visitas agendadas registradas de ' + leads + ' leads</span>';
                 } else {
                     footer = '<span style="font-style:italic;color:var(--text-secondary)">Sin leads en el período</span>';
                 }
                 $('cd2Footer').innerHTML = footer;
 
                 showCardReveal(card);
-                animateCountUpFloat($('cd2Value'), convPct);
+                animateCountUpFloat($('cd2Value'), convPct || 0);
             }
 
             // --- CARD 3: PIPELINE & VALORIZACIÓN UF ---
@@ -4242,9 +4267,9 @@
                         <div class="kpi-sub">${diffLeads >= 0 ? '+' : ''}${diffLeads} leads vs. período equivalente anterior (${prev})</div>
                     </div>
                     <div class="report-card">
-                        <h4>Efectividad & Conversión</h4>
-                        <div class="kpi">${conv.conversion_pct != null ? String(conv.conversion_pct).replace('.', ',') : '0,0'} <small>%</small></div>
-                        <div class="kpi-sub">${conv.citas || 0} visitas concretadas de ${conv.leads || 0} leads totales</div>
+                        <h4>Conversión a Visita Agendada</h4>
+                        <div class="kpi">${conv.conversion_pct != null ? String(conv.conversion_pct).replace('.', ',') : 'N/D'} <small>%</small></div>
+                        <div class="kpi-sub">${conv.citas || 0} visitas agendadas registradas de ${conv.leads || 0} leads</div>
                     </div>
                     <div class="report-card">
                         <h4>Cartera Potencial & Valorización</h4>

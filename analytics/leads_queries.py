@@ -1564,6 +1564,250 @@ def query_comparative_trends(
     }
 
 
+# Evidencia canónica de que la visita de un lead es trazable (permite afirmar
+# que si hubo una visita, quedó registrada). Se conserva como métrica de
+# calidad de datos (evaluable_leads / traceability_pct), NO como denominador
+# de la conversión (decisión BI: el denominador es el total del período).
+_VISIT_TRACEABILITY_MATCH = {
+    "$or": [
+        {"pipeline_stage": {"$exists": True, "$nin": [None, ""]}},
+        {"stage": {"$exists": True, "$nin": [None, ""]}},
+        {"stage_history": {"$exists": True, "$ne": []}},
+        {"bi_analytics_global.RESULTADO_CHAT": {"$exists": True, "$nin": [None, ""]}},
+        {"lifecycle.visit_scheduled_at": {"$exists": True, "$ne": None}},
+    ]
+}
+
+# =============================================================================
+# CONVERSIÓN A VISITA AGENDADA
+# =============================================================================
+
+# Fuente B — resultados de gestión en crm_events que significan inequívocamente
+# "visita agendada". Valor real observado en producción: 'visita_agendada'.
+# Se compara en mayúsculas contra la forma canónica. NO incluye intención
+# (ASK_VISIT, VISITA_SOLICITADA) ni frases del cliente.
+CANONICAL_SCHEDULED_VISIT_RESULTS = frozenset({"VISITA_AGENDADA"})
+
+# Fuente C — estados de orden de visita que representan confirmación firme.
+# Por decisión BI solo 'signed' (firma del cliente) cuenta; sent/opened/
+# otp_requested NO demuestran confirmación.
+CANONICAL_SIGNED_ORDER_STATUSES = frozenset({"signed"})
+
+
+def _normalize_match_phone(raw: str) -> str:
+    """Normalización determinística para emparejar orden de visita <-> lead."""
+    from chatbot.phone_utils import extract_digits
+    digits = extract_digits(raw or "")
+    if digits.startswith("56") and len(digits) > 9:
+        digits = digits[2:]
+    return digits
+
+
+def _order_accepted_timestamp(order: dict) -> Optional[datetime]:
+    """Timestamp canónico de confirmación de una orden firmada.
+
+    Se toma del timeline con action == 'accepted' (server_timestamp).
+    Si no existe accepted con timestamp válido, NO se inventa fecha
+    (reportado como problema de calidad de datos).
+    """
+    for entry in order.get("timeline") or []:
+        if (entry or {}).get("action") == "accepted":
+            ts = coerce_utc_datetime((entry or {}).get("server_timestamp"))
+            if ts:
+                return ts
+    return None
+
+
+def _match_signed_orders_to_leads(orders: list, leads: list) -> tuple:
+    """Asocia órdenes de visita firmadas a leads de la cohorte de forma
+    determinística (sin heurísticas probabilísticas).
+
+    Estrategia por orden firmada:
+      1. Candidatos por teléfono normalizado + property_code (ambos disponibles):
+         si hay exactamente 1 candidato, se atribuye.
+      2. Si el match por teléfono+propiedad no resuelve, se cae a teléfono
+         normalizado SOLO si identifica inequívocamente a un único lead.
+      3. Múltiples candidatos sin poder determinar -> ambiguo, NO se atribuye.
+
+    Retorna (lead_id -> [accepted_utc, ...], ordenes_ambiguas). El mapa de
+    confirmación agrega el timestamp 'accepted' de cada orden atribuida; los
+    leads cuyo único valor es None quedan sin timestamp verificable.
+    """
+    from collections import defaultdict
+    by_phone = defaultdict(list)
+    for lead in leads:
+        ph = _normalize_match_phone(lead.get("phone") or "")
+        if ph:
+            by_phone[ph].append(lead)
+
+    attributed: dict = defaultdict(list)
+    ambiguous = []
+    for order in orders:
+        ophone = _normalize_match_phone(order.get("phone") or "")
+        ocod = str(order.get("property_code") or "").strip()
+        if not ophone:
+            continue
+        candidates = by_phone.get(ophone, [])
+        if not candidates:
+            continue
+
+        # 1. Teléfono + property_code cuando ambos están disponibles.
+        if ocod:
+            cand_pp = [c for c in candidates
+                       if str((c.get("prospecto") or {}).get("codigo") or "").strip() == ocod]
+            if len(cand_pp) == 1:
+                ts = _order_accepted_timestamp(order)
+                attributed[str(cand_pp[0]["_id"])].append(ts)
+                continue
+            if len(cand_pp) > 1:
+                ambiguous.append(order.get("visita_code"))
+                continue
+
+        # 2. Teléfono solo si identifica inequívocamente a un único lead.
+        if len(candidates) == 1:
+            ts = _order_accepted_timestamp(order)
+            attributed[str(candidates[0]["_id"])].append(ts)
+            continue
+
+        # 3. Múltiples candidatos no resolubles -> ambigüedad (no atribuir).
+        ambiguous.append(order.get("visita_code"))
+
+    return dict(attributed), ambiguous
+
+
+def _scheduled_visit_lead_ids(cohort_leads: list, lead_ids: set, pe_utc) -> set:
+    """Leads de la cohorte con evidencia canónica de visita agendada as-of.
+
+    Definición EXACTA de CARD 2 (Conversión a Visita Agendada), reutilizada por
+    el embudo para que ambos niveles reconcilien:
+      - stage_history / lifecycle.visit_scheduled_at con timestamp válido;
+      - crm_events.result == VISITA_AGENDADA con timestamp;
+      - orden firmada con timeline accepted.server_timestamp (matching conservador).
+    Regla temporal: lead.created_at <= evidencia < period_end (exclusivo).
+    """
+    from collections import defaultdict
+
+    db = get_db()
+    scheduled = set()
+
+    # Fuente A — stage_history / lifecycle con timestamps reales (as-of).
+    for lead in cohort_leads:
+        lid = str(lead["_id"])
+        created_utc = coerce_utc_datetime(lead.get("created_at"))
+        if created_utc is None:
+            continue
+        visit_at = coerce_utc_datetime((lead.get("lifecycle") or {}).get("visit_scheduled_at"))
+        if visit_at is not None and created_utc <= visit_at < pe_utc:
+            scheduled.add(lid)
+            continue
+        for entry in lead.get("stage_history") or []:
+            to_stage = str((entry or {}).get("to") or "").upper()
+            if to_stage not in {"VISIT_SCHEDULED", "VISIT_DONE"}:
+                continue
+            ts = coerce_utc_datetime((entry or {}).get("timestamp"))
+            if ts is not None and created_utc <= ts < pe_utc:
+                scheduled.add(lid)
+                break
+
+    # Fuente B — crm_events con resultado canónico de visita agendada (as-of).
+    if lead_ids:
+        by_created = {str(l["_id"]): l.get("created_at") for l in cohort_leads}
+        for event in db["crm_events"].find({"lead_id": {"$in": [l["_id"] for l in cohort_leads]}},
+                                           {"lead_id": 1, "result": 1, "meta": 1, "timestamp": 1}):
+            raw = event.get("result") or (event.get("meta") or {}).get("result") or ""
+            if str(raw).strip().upper() not in CANONICAL_SCHEDULED_VISIT_RESULTS:
+                continue
+            eid = str(event.get("lead_id"))
+            if eid not in lead_ids:
+                continue
+            lead_created = coerce_utc_datetime(by_created.get(eid))
+            if lead_created is None:
+                continue
+            event_ts = coerce_utc_datetime(event.get("timestamp"))
+            if event_ts is not None and lead_created <= event_ts < pe_utc:
+                scheduled.add(eid)
+
+    # Fuente C — órdenes de visita firmadas con accepted timestamp (as-of).
+    signed_orders = list(db["visitas"].find(
+        {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
+        {"visita_code": 1, "phone": 1, "property_code": 1, "timeline": 1, "created_at": 1},
+    ))
+    order_matches, _ambiguous = _match_signed_orders_to_leads(signed_orders, cohort_leads)
+    by_created = {str(l["_id"]): l.get("created_at") for l in cohort_leads}
+    for lid, accepted_list in order_matches.items():
+        if lid not in lead_ids:
+            continue
+        lead_created = coerce_utc_datetime(by_created.get(lid))
+        if lead_created is None:
+            continue
+        if any(ts is not None and lead_created <= ts < pe_utc for ts in accepted_list):
+            scheduled.add(lid)
+
+    return scheduled
+
+
+def _cohort_conversion_metrics(db, ps_utc, pe_utc, filters):
+    """Conversión as-of al cierre del período.
+
+    Numerador: COUNT(DISTINCT lead) del período cuya evidencia canónica de
+    visita agendada es temporalmente válida al cierre del período:
+        lead.created_at <= evidence_timestamp < period_end
+    El límite period_end es EXCLUSIVO (una evidencia en el límite pertenece al
+    período siguiente). La evidencia nunca puede ser anterior a la creación
+    del lead. El pipeline_stage/stage ACTUAL no se usa como fuente temporal
+    porque no permite reconstruir cuándo ocurrió la transición (evitaría
+    look-ahead histórico).
+
+    Denominador: TODOS los leads del período (sin excluir no-trazados).
+    """
+    pipeline = [
+        _cohort_indexed_prefilter(ps_utc, pe_utc),
+        _normalized_created_at_stage(),
+        {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
+        {"$facet": {
+            "total": [{"$count": "c"}],
+            "evaluable": [{"$match": _VISIT_TRACEABILITY_MATCH}, {"$count": "c"}],
+        }},
+        {"$project": {
+            "total": {"$ifNull": [{"$arrayElemAt": ["$total.c", 0]}, 0]},
+            "evaluable": {"$ifNull": [{"$arrayElemAt": ["$evaluable.c", 0]}, 0]},
+        }},
+    ]
+    row = list(db["leads"].aggregate(pipeline))
+    total = row[0].get("total", 0) if row else 0
+    evaluable = row[0].get("evaluable", 0) if row else 0
+
+    # Cargar los leads de la cohorte (proyección mínima) para las fuentes A/C.
+    lead_pipe = [
+        _cohort_indexed_prefilter(ps_utc, pe_utc),
+        _normalized_created_at_stage(),
+        {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
+        {"$project": {
+            "_id": 1, "phone": 1,
+            "prospecto.codigo": 1,
+            "created_at": 1,
+            "pipeline_stage": 1, "stage": 1,
+            "stage_history": 1,
+            "lifecycle.visit_scheduled_at": 1,
+        }},
+    ]
+    cohort_leads = list(db["leads"].aggregate(lead_pipe))
+    lead_ids = {str(l["_id"]) for l in cohort_leads}
+
+    scheduled = _scheduled_visit_lead_ids(cohort_leads, lead_ids, pe_utc)
+
+    return {
+        "total": total,
+        "citas": len(scheduled),
+        "evaluable": evaluable,
+        "orders_ambiguous": len(_match_signed_orders_to_leads(
+            list(db["visitas"].find(
+                {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
+                {"visita_code": 1, "phone": 1, "property_code": 1, "timeline": 1, "created_at": 1},
+            )), cohort_leads)[1]),
+    }
+
+
 def query_leads_dashboard_conversion(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
@@ -1572,11 +1816,13 @@ def query_leads_dashboard_conversion(
     include_comparison: bool = True,
     filters: Optional[dict] = None,
 ) -> dict:
-    """Resumen de conversión para el Leads Dashboard (CARD 2).
+    """Conversión a Visita Agendada para el Leads Dashboard (CARD 2).
 
-    Cuenta el total de leads de la cohorte y cuántos tienen pipeline_stage
-    VISIT_SCHEDULED (citas/visitas agendadas), para el periodo actual y el
-    periodo comparable anterior.
+    Numerador: COUNT(DISTINCT lead) del período con evidencia canónica de
+    visita agendada (pipeline/stage_history/lifecycle + crm_events con resultado
+    'visita_agendada' + orden de visita firmada asociada de forma determinística).
+
+    Denominador: TODOS los leads del período (sin excluir no-trazados).
     """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
@@ -1590,24 +1836,10 @@ def query_leads_dashboard_conversion(
         prev_end = start_utc
         prev_start = prev_end - duration
 
-    def _metrics(ps_utc, pe_utc):
-        pipeline = [
-            _cohort_indexed_prefilter(ps_utc, pe_utc),
-            _normalized_created_at_stage(),
-            {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
-            {"$facet": {
-                "total": [{"$count": "c"}],
-                "citas": [{"$match": {"pipeline_stage": "VISIT_SCHEDULED"}}, {"$count": "c"}],
-            }},
-        ]
-        row = list(db["leads"].aggregate(pipeline))
-        facet = row[0] if row else {}
-        total = (facet.get("total") or [{}])[0].get("c", 0) if facet.get("total") else 0
-        citas = (facet.get("citas") or [{}])[0].get("c", 0) if facet.get("citas") else 0
-        return {"total": total, "citas": citas}
-
-    current = _metrics(start_utc, end_utc)
-    previous = _metrics(prev_start, prev_end) if include_comparison else {"total": 0, "citas": 0}
+    current = _cohort_conversion_metrics(db, start_utc, end_utc, filters)
+    previous = _cohort_conversion_metrics(db, prev_start, prev_end, filters) if include_comparison else {
+        "total": 0, "citas": 0, "evaluable": 0, "orders_ambiguous": 0,
+    }
 
     return {
         "current": current,
@@ -1907,47 +2139,128 @@ def query_leads_dashboard_funnel(
     period_end: Optional[str] = None,
     filters: Optional[dict] = None,
 ) -> dict:
-    """Embudo comercial completo para el Leads Dashboard (Fila embudo)."""
+    """Embudo comercial (Recibidos → Gestionados → Contacto efectivo → Visita).
+
+    - Recibidos: cohorte (created_at ∈ [period_start, period_end)).
+    - Gestionados: lifecycle.first_valid_management_at con corte as-of.
+    - Contacto efectivo: event_evidence()["effective_contact"] con corte as-of
+      (misma clasificación canónica que usa SLA).
+    - Visita agendada: MISMA definición de CARD 2 (reconcilia exactamente).
+    - Transiciones por conjuntos de lead_id (intersecciones), nunca restas de
+      cantidades. Se entregan excepciones de trazabilidad y hitos avanzados.
+    Todas las etapas respetan: lead.created_at <= evidencia < period_end.
+    """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
-    pipeline = [
+
+    lead_pipe = [
         _cohort_indexed_prefilter(start_utc, end_utc),
         _normalized_created_at_stage(),
         {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
-        {"$group": {"_id": None,
-            "received": {"$sum": 1},
-            "contactados": {"$sum": {"$cond": [{"$ne": [{"$type": "$lifecycle.first_valid_management_at"}, "missing"]}, 1, 0]}},
-            "calificados": {"$sum": {"$cond": [{
-                "$and": [
-                    {"$ne": [{"$ifNull": ["$prospecto.email", ""]}, ""]},
-                    {"$ne": [{"$ifNull": ["$prospecto.rut", ""]}, ""]},
-                ]}, 1, 0]}},
-            "visitas": {"$sum": {"$cond": [{
-                "$or": [
-                    {"$in": [{"$ifNull": ["$bi_analytics_global.RESULTADO_CHAT", ""]}, ["VISITA_SOLICITADA", "VISITA_AGENDADA"]]},
-                    {"$in": [{"$ifNull": ["$pipeline_stage", ""]}, ["VISIT_SCHEDULED", "VISIT_DONE"]]},
-                ]}, 1, 0]}},
-            "ofertas": {"$sum": {"$cond": [
-                {"$in": [{"$ifNull": ["$pipeline_stage", ""]}, ["OFFER", "NEGOTIATION", "CLOSED_WON"]]}, 1, 0]}},
-            "cierres": {"$sum": {"$cond": [{"$eq": ["$pipeline_stage", "CLOSED_WON"]}, 1, 0]}},
+        {"$project": {
+            "_id": 1, "phone": 1, "created_at": 1,
+            "prospecto.codigo": 1,
+            "pipeline_stage": 1, "stage": 1, "stage_history": 1,
+            "lifecycle.first_valid_management_at": 1,
+            "lifecycle.visit_scheduled_at": 1,
         }},
     ]
-    row = list(db["leads"].aggregate(pipeline))
-    row = row[0] if row else {}
-    received = row.get("received", 0)
-    steps = [
-        ("contactados", "Contactados"),
-        ("calificados", "Calificados"),
-        ("visitas", "Visitas"),
-        ("ofertas", "Ofertas"),
-        ("cierres", "Cierres"),
-    ]
+    cohort = list(db["leads"].aggregate(lead_pipe))
+    ids = {str(l["_id"]) for l in cohort}
+    received = len(cohort)
+    by_created = {lid: l.get("created_at") for lid, l in [(str(l["_id"]), l) for l in cohort]}
+    created_utc = {lid: coerce_utc_datetime(l.get("created_at")) for lid, l in
+                   [(str(l["_id"]), l) for l in cohort]}
+
+    # ---- Gestionados (as-of) ----
+    gestionados = set()
+    for lid, l in [(str(l["_id"]), l) for l in cohort]:
+        c = created_utc[lid]
+        if c is None:
+            continue
+        mgmt = coerce_utc_datetime((l.get("lifecycle") or {}).get("first_valid_management_at"))
+        if mgmt is not None and c <= mgmt < end_utc:
+            gestionados.add(lid)
+
+    # ---- Contacto efectivo (as-of, clasificación canónica) ----
+    contacto_efectivo = set()
+    if ids:
+        for event in db["crm_events"].find({"lead_id": {"$in": [l["_id"] for l in cohort]}},
+                                           {"lead_id": 1, "result": 1, "meta": 1, "type": 1,
+                                            "timestamp": 1, "confirmed": 1, "actor": 1, "actor_type": 1}):
+            if not event_evidence(event).get("effective_contact"):
+                continue
+            eid = str(event.get("lead_id"))
+            if eid not in ids:
+                continue
+            c = created_utc.get(eid)
+            if c is None:
+                continue
+            ts = coerce_utc_datetime(event.get("timestamp"))
+            if ts is not None and c <= ts < end_utc:
+                contacto_efectivo.add(eid)
+
+    # ---- Visita agendada (definición CARD 2, reconcilia exactamente) ----
+    visita_agendada = _scheduled_visit_lead_ids(cohort, ids, end_utc)
+
+    # ---- Hitos avanzados / cierres históricos as-of ----
+    avanzados = set()
+    cierres = set()
+    for lid, l in [(str(l["_id"]), l) for l in cohort]:
+        c = created_utc[lid]
+        if c is None:
+            continue
+        for entry in l.get("stage_history") or []:
+            to_stage = str((entry or {}).get("to") or "").upper()
+            ts = coerce_utc_datetime((entry or {}).get("timestamp"))
+            if ts is None or not (c <= ts < end_utc):
+                continue
+            if to_stage in {"OFFER", "NEGOTIATION", "CLOSED_WON"}:
+                avanzados.add(lid)
+            if to_stage == "CLOSED_WON":
+                cierres.add(lid)
+
+    # ---- Transiciones por conjuntos ----
+    rec_gestion = len(gestionados & ids)          # = gestionados (⊆ cohort)
+    gest_contacto = len(contacto_efectivo & gestionados)
+    contacto_visita = len(contacto_efectivo & visita_agendada)
+
+    def _pct(num, den):
+        return round(num / den * 100, 1) if den else None
+
     stages = [
-        {"key": key, "label": label, "count": row.get(key, 0),
-         "pct": round(row.get(key, 0) / received * 100, 1) if received else 0.0}
-        for key, label in steps
+        {"key": "received", "label": "Recibidos", "count": received,
+         "pct_of_received": 100.0, "transition_pct": None},
+        {"key": "gestionados", "label": "Gestionados", "count": len(gestionados),
+         "pct_of_received": _pct(len(gestionados), received),
+         "transition_pct": _pct(rec_gestion, received)},
+        {"key": "contacto_efectivo", "label": "Contacto efectivo", "count": len(contacto_efectivo),
+         "pct_of_received": _pct(len(contacto_efectivo), received),
+         "transition_pct": _pct(gest_contacto, len(gestionados))},
+        {"key": "visita_agendada", "label": "Visita agendada", "count": len(visita_agendada),
+         "pct_of_received": _pct(len(visita_agendada), received),
+         "transition_pct": _pct(contacto_visita, len(contacto_efectivo))},
     ]
-    return {"received": received, "stages": stages}
+
+    return {
+        "received": received,
+        "stages": stages,
+        "transitions": {
+            "received_to_gestionados": rec_gestion,
+            "gestionados_to_contacto_efectivo": gest_contacto,
+            "contacto_efectivo_to_visita_agendada": contacto_visita,
+        },
+        "exceptions": {
+            "visitas_sin_contacto_efectivo": len(visita_agendada - contacto_efectivo),
+            "visitas_sin_gestion": len(visita_agendada - gestionados),
+        },
+        "hitos_excepcionales": {
+            "avanzados_sin_visita": len(avanzados - visita_agendada),
+            "cierres_sin_visita": len(cierres - visita_agendada),
+            "avanzados": len(avanzados),
+            "cierres": len(cierres),
+        },
+    }
 
 
 def query_leads_dashboard_reconcile_breakdown(

@@ -1074,12 +1074,21 @@ def get_leads_dashboard_overview(
     conv_previous = conversion.get("previous", {})
     conv_total = conv_current.get("total", 0)
     conv_citas = conv_current.get("citas", 0)
+    conv_evaluable = conv_current.get("evaluable", 0)
     prev_total = conv_previous.get("total", 0)
     prev_citas = conv_previous.get("citas", 0)
-    conv_pct = round(conv_citas / conv_total * 100, 1) if conv_total else 0.0
-    prev_pct = round(prev_citas / prev_total * 100, 1) if prev_total else 0.0
-    diff_pp = round(conv_pct - prev_pct, 1) if prev_start else None
+    prev_evaluable = conv_previous.get("evaluable", 0)
+    orders_ambiguous = conv_current.get("orders_ambiguous", 0)
+    # Conversión a visita agendada: citas / TODOS los leads del período.
+    # El denominador NO excluye leads sin trazabilidad (decisión BI).
+    # diff_pp se calcula sobre tasas SIN redondear para evitar doble redondeo.
+    _conv_rate = conv_citas / conv_total if conv_total else None
+    _prev_rate = prev_citas / prev_total if (prev_start and prev_total) else None
+    conv_pct = round(_conv_rate * 100, 1) if _conv_rate is not None else None
+    prev_pct = round(_prev_rate * 100, 1) if _prev_rate is not None else None
+    diff_pp = round((_conv_rate - _prev_rate) * 100, 1) if (_conv_rate is not None and _prev_rate is not None) else None
     ratio = round(conv_total / conv_citas, 1) if conv_citas else None
+    traceability_pct = round(conv_evaluable / conv_total * 100, 1) if conv_total else None
 
     total_leads = current.get("total", 0)
     monto_uf = pipeline.get("monto_uf", 0.0)
@@ -1156,11 +1165,9 @@ def get_leads_dashboard_overview(
     def _estado(name, leads_count, sla_median):
         if name == "Sin Asignar":
             return "Auto Rescate"
-        if sla_median is None:
-            return "En Regla"
-        if sla_median < 30:
-            return "Top Performer" if leads_count >= 60 else "En Regla"
-        return "SLA Crítico"
+        # Estado neutral: el cumplimiento SLA no se clasifica con un umbral único
+        # porque existen políticas distintas (Hot 60 min y Normal 180 min).
+        return "Neutral"
 
     _sum_exec = sum(r.get("leads", 0) for r in exec_rows)
     executives_data = {
@@ -1214,6 +1221,10 @@ def get_leads_dashboard_overview(
         "conversion": {
             "leads": conv_total,
             "leads_previous": prev_total if prev_start else 0,
+            "evaluable_leads": conv_evaluable,
+            "evaluable_leads_previous": prev_evaluable if prev_start else 0,
+            "traceability_pct": traceability_pct,
+            "orders_ambiguous": orders_ambiguous,
             "citas": conv_citas,
             "citas_previous": prev_citas if prev_start else 0,
             "conversion_pct": conv_pct,

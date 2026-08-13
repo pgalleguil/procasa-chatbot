@@ -68,7 +68,7 @@ EXECUTIVES_ON_VACATION = []
 
 # Ejecutivas temporalmente inactivas.
 # Para revertir el desvío, basta con quitar el nombre de esta lista.
-TEMPORARILY_INACTIVE_EXECUTIVES = [ROCIO_ALIAGA, RAQUEL_CHENEAUX]
+TEMPORARILY_INACTIVE_EXECUTIVES = [RAQUEL_CHENEAUX]
 
 # Reemplazo por defecto cuando una ejecutiva está ausente.
 DEFAULT_VACATION_REPLACEMENT = ERIKA_GARRIDO
@@ -436,7 +436,12 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
              logger.info(f"[ROUTER] Propiedad en Maule. Asignando a {PAULA_MORALES}")
              target_executive_name = get_active_executive(PAULA_MORALES, norm_comuna)
              
-        # 1.3 Todas las demás regiones -> Erika Garrido
+        # 1.3 Ñuble (XVI), Bío Bío (VIII) o Valparaíso (V) -> Rocío Aliaga
+        elif any(r in norm_region for r in ["nuble", "bio", "xvi", "viii", "valparaiso", "quinta"]) or " v " in f" {norm_region} ":
+            logger.info(f"[ROUTER] Propiedad en Ñuble/BioBio/Valparaíso. Asignando a {ROCIO_ALIAGA}")
+            target_executive_name = get_active_executive(ROCIO_ALIAGA, norm_comuna)
+
+        # 1.4 Otras Regiones (Físicas/Norte/Otras) -> Erika Garrido
         else:
             logger.info(f"[ROUTER] Propiedad en otra región ({region}). Asignando a {ERIKA_GARRIDO}")
             target_executive_name = get_active_executive(ERIKA_GARRIDO, norm_comuna)

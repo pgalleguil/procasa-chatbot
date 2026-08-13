@@ -2,7 +2,12 @@ from datetime import date, datetime
 
 import pytz
 
-from captacion_workforce import applicable_target, compliance_status, membership_is_active
+from captacion_workforce import (
+    applicable_target,
+    compliance_status,
+    get_active_captacion_team,
+    membership_is_active,
+)
 
 
 CHILE = pytz.timezone("America/Santiago")
@@ -109,3 +114,109 @@ def test_day_is_not_failed_before_close_hour():
     assert compliance_status(count=7, target=10, local_day=date(2026, 7, 20), now=after_close) == "INCUMPLIDO"
     assert compliance_status(count=10, target=10, local_day=date(2026, 7, 20), now=before_close) == "CUMPLIDO"
     assert compliance_status(count=0, target=0, local_day=date(2026, 7, 20), now=before_close, exempt=True) == "EXENTO"
+
+
+def _matches(doc, query):
+    for key, cond in (query or {}).items():
+        if key == "$or":
+            if not any(_matches(doc, sub) for sub in cond):
+                return False
+            continue
+        val = doc.get(key)
+        if isinstance(cond, dict):
+            for op, operand in cond.items():
+                if op == "$in" and val not in operand:
+                    return False
+                elif op == "$lte" and (val is None or val > operand):
+                    return False
+                elif op == "$gte" and (val is None or val < operand):
+                    return False
+                elif op == "$exists" and (val is None) == bool(operand):
+                    return False
+        elif val != cond:
+            return False
+    return True
+
+
+class _Cursor:
+    def __init__(self, rows):
+        self.rows = list(rows)
+
+    def sort(self, *args, **kwargs):
+        return self
+
+    def __iter__(self):
+        return iter(self.rows)
+
+    def __len__(self):
+        return len(self.rows)
+
+
+class _ListCollection:
+    def __init__(self, rows=None):
+        self.rows = list(rows or [])
+
+    def find(self, query=None, projection=None):
+        return _Cursor([row for row in self.rows if _matches(row, query)])
+
+    def find_one(self, query=None):
+        for row in self.rows:
+            if _matches(row, query):
+                return row
+        return None
+
+    def create_index(self, *args, **kwargs):
+        return None
+
+
+class _TeamDb:
+    def __init__(self, memberships=None, usuarios=None):
+        self.collections = {
+            "captacion_team_memberships": _ListCollection(memberships),
+            "captacion_work_calendar": _ListCollection(),
+            "captacion_work_exceptions": _ListCollection(),
+            "captacion_workforce_audit": _ListCollection(),
+            "usuarios": _ListCollection(usuarios),
+        }
+
+    def __getitem__(self, name):
+        return self.collections[name]
+
+
+def _membership_row(user_id, enabled=True):
+    return {
+        "user_id": user_id,
+        "enabled": enabled,
+        "start_date": "2026-07-01",
+        "end_date": None,
+        "daily_target": 10,
+        "workdays": [0, 1, 2, 3, 4],
+        "timezone": "America/Santiago",
+        "close_hour": 19,
+    }
+
+
+def test_team_auto_includes_active_agents_without_membership():
+    usuarios = [
+        {"_id": "u1", "nombre": "Ana", "rol": "agente", "is_active": True},
+        {"_id": "u2", "nombre": "Rocio", "rol": "agente", "is_active": True},
+        {"_id": "u3", "nombre": "Inactiva", "rol": "agente", "is_active": False},
+        {"_id": "u4", "nombre": "Jefe", "rol": "admin", "is_active": True},
+    ]
+    db = _TeamDb(memberships=[_membership_row("u1")], usuarios=usuarios)
+    team = get_active_captacion_team(db, date(2026, 7, 20))
+    by_id = {member["id"]: member for member in team}
+    assert set(by_id) == {"u1", "u2"}
+    inferred = by_id["u2"]["membership"]
+    assert inferred["auto_inferred"] is True
+    assert inferred["daily_target"] == 10
+    assert applicable_target(db, inferred, date(2026, 7, 20))["target"] == 10
+
+
+def test_explicit_membership_blocks_auto_inclusion_even_when_disabled():
+    db = _TeamDb(
+        memberships=[_membership_row("u2", enabled=False)],
+        usuarios=[{"_id": "u2", "nombre": "Rocio", "rol": "agente", "is_active": True}],
+    )
+    team = get_active_captacion_team(db, date(2026, 7, 20))
+    assert team == []

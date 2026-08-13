@@ -123,12 +123,63 @@ def resolve_membership_users(db, memberships: Iterable[dict]) -> list[dict]:
     return result
 
 
+def _auto_agents_without_membership(db, memberships: list[dict], day: date) -> list[dict]:
+    explicit_user_ids = {
+        clean_id(item.get("user_id")) for item in db[MEMBERSHIP_COLLECTION].find({}, {"user_id": 1})
+    }
+    membership_user_ids = {clean_id(item.get("user_id")) for item in memberships}
+    auto_ids = []
+    for user in db["usuarios"].find({"rol": "agente"}):
+        user_id = clean_id(user.get("_id"))
+        if user.get("is_active") is False:
+            continue
+        if user_id in membership_user_ids or user_id in explicit_user_ids:
+            continue
+        auto_ids.append(user_id)
+    if not auto_ids:
+        return []
+    object_ids = []
+    for value in auto_ids:
+        try:
+            object_ids.append(ObjectId(value))
+        except Exception:
+            pass
+    users = list(db["usuarios"].find({"_id": {"$in": auto_ids + object_ids}}))
+    result = []
+    for user in users:
+        user_id = clean_id(user.get("_id"))
+        result.append(
+            {
+                "id": user_id,
+                "name": user.get("nombre") or user.get("username") or user_id,
+                "email": user.get("email") or "",
+                "membership": {
+                    "user_id": user_id,
+                    "enabled": True,
+                    "start_date": day.isoformat(),
+                    "end_date": None,
+                    "daily_target": DEFAULT_DAILY_TARGET,
+                    "workdays": list(DEFAULT_WORKDAYS),
+                    "supervisor_id": None,
+                    "timezone": DEFAULT_TIMEZONE,
+                    "close_hour": DEFAULT_CLOSE_HOUR,
+                    "auto_inferred": True,
+                },
+            }
+        )
+    return result
+
+
 def get_active_captacion_team(db, local_day: date | str) -> list[dict]:
-    """Retorna solo membresías explícitas; nunca infiere pertenencia por comunas."""
+    """Equipo del dashboard: membresías explícitas activas + agentes activos sin
+    membresía (inferido por `rol=agente`; nunca por comunas). Crear/desactivar la
+    membresía sigue siendo la vía para controlar la inclusión."""
     _t0 = _perf_time.perf_counter()
-    memberships = get_active_memberships(db, local_day)
+    day = parse_local_date(local_day)
+    memberships = get_active_memberships(db, day)
     _t1 = _perf_time.perf_counter()
     result = resolve_membership_users(db, memberships)
+    result.extend(_auto_agents_without_membership(db, memberships, day))
     _t2 = _perf_time.perf_counter()
     logger.debug(
         f"[CAPTACION_GOAL_PERF] team: memberships={(_t1-_t0)*1000:.0f}ms "

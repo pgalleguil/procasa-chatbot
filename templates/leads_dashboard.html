@@ -1678,6 +1678,40 @@
 
         .tc-foot strong { color: var(--text-primary); font-weight: 600; }
 
+        /* Microcomparación para período de 1 día (Hoy) */
+        .tc-today {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 96px;
+            height: 100%;
+        }
+
+        .tc-today-row {
+            display: flex;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .tc-today-row strong {
+            color: var(--text-primary);
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .tc-today-delta {
+            font-size: 13px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .tc-today-delta.pos { color: #34D399; }
+        .tc-today-delta.neg { color: #FCA5A5; }
+        .tc-today-delta.neutral { color: var(--text-secondary); }
+
         .tc-sources-list { flex: 1; display: flex; flex-direction: column; gap: 12px; margin: 4px 0 12px; }
 
         .tc-src { display: flex; flex-direction: column; gap: 5px; }
@@ -3907,16 +3941,78 @@
                 const resolved = (OVERVIEW.period || {}).compare_resolved || 'none';
                 const hasCmp = resolved !== 'none';
 
-                const chart = $('tcTrendChart');
                 const nums = values.map(v => Number(v) || 0);
                 const prevNums = hasCmp ? ((demand.previous_daily || {}).values || []).map(v => Number(v) || 0) : [];
-                const prevLabels = hasCmp ? ((demand.previous_daily || {}).labels || []) : [];
-                const allNums = nums.concat(prevNums);
+                const days = Math.max(nums.length, 1);
+
+                const sub = block.querySelector('.tc-head p');
+                if (sub) sub.textContent = 'Evolución acumulada de leads vs. período comparable';
+
+                const chart = $('tcTrendChart');
+
+                // CASO "HOY" (1 día): microcomparación textual, sin curva.
+                if (days === 1) {
+                    const curVal = nums[0] || 0;
+                    const prevVal = hasCmp ? (prevNums[0] || 0) : null;
+                    const delta = prevVal === null ? null : curVal - prevVal;
+                    const dir = delta === null ? '' : (delta > 0 ? '▲' : (delta < 0 ? '▼' : '·'));
+                    const cls = delta === null ? 'neutral' : (delta > 0 ? 'pos' : (delta < 0 ? 'neg' : 'neutral'));
+                    if (chart) {
+                        chart.innerHTML =
+                            '<div class="tc-today">' +
+                            '<div class="tc-today-row"><span>Hoy</span><strong>' + curVal + ' leads</strong></div>' +
+                            (hasCmp ? '<div class="tc-today-row"><span>Comparable</span><strong>' + prevVal + ' leads</strong></div>' : '') +
+                            (delta !== null ? '<div class="tc-today-delta ' + cls + '">' + dir + ' ' + (delta >= 0 ? '+' : '-') + Math.abs(delta) + ' leads vs. comparable</div>' : '') +
+                            '</div>';
+                    }
+                    $('tcPeak').innerHTML = 'Hoy: <strong>' + curVal + ' leads</strong>' +
+                        (prevVal !== null ? ' · mismo día comparable: <strong>' + prevVal + '</strong>' : '');
+                    $('tcAvg').innerHTML = (delta !== null && hasCmp)
+                        ? '<strong>' + (delta >= 0 ? '+' : '-') + Math.abs(delta) + ' leads</strong> vs. comparable'
+                        : '';
+                    const prevLegend = document.querySelector('.tc-leg-prev');
+                    if (prevLegend) prevLegend.style.display = hasCmp ? '' : 'none';
+                    const list = $('tcSourcesList');
+                    if (list) {
+                        let html = '';
+                        sources.forEach((src, i) => {
+                            const color = TC_COLORS[i % TC_COLORS.length];
+                            const pct = src.pct || 0;
+                            const diff = src.diff || 0;
+                            const diffClass = diff > 0 ? 'pos' : (diff < 0 ? 'neg' : 'zero');
+                            const diffText = diff > 0 ? '+' + diff : diff;
+                            html += '<div class="tc-src">' +
+                                '<div class="tc-src-top">' +
+                                '<span class="tc-src-name"><span class="tc-src-dot" style="background:' + color + '"></span>' + (src.nombre || 'Otro') + '</span>' +
+                                '<span class="tc-src-val"><strong>' + src.cantidad + '</strong> (' + pct.toFixed(1).replace('.', ',') + '%) ' + (hasCmp ? '<span class="tc-diff ' + diffClass + '">[' + diffText + ']</span>' : '') + '</span>' +
+                                '</div>' +
+                                '<div class="tc-src-track"><div class="tc-src-bar" style="width:0%;background:' + color + '" data-w="' + Math.min(pct, 100) + '"></div></div>' +
+                                '</div>';
+                        });
+                        list.innerHTML = html;
+                    }
+                    const leader = sources.length ? sources[0] : null;
+                    const leaderDiff = leader ? (leader.diff || 0) : 0;
+                    const leaderDiffText = leaderDiff > 0 ? '+' + leaderDiff : leaderDiff;
+                    $('tcLeader').innerHTML = 'Canal líder: <strong>' + (leader ? leader.nombre : '—') + '</strong>' + (hasCmp ? ' (' + leaderDiffText + ' leads)' : '');
+                    $('tcSourcesCount').innerHTML = sources.length + ' fuentes activas';
+                    block.hidden = false;
+                    return;
+                }
+
+                // Acumulados: cada punto = suma acumulada hasta la misma posición.
+                const cum = [];
+                let acc = 0;
+                for (const v of nums) { acc += v; cum.push(acc); }
+                const prevCum = [];
+                let pacc = 0;
+                for (const v of prevNums) { pacc += v; prevCum.push(pacc); }
+
+                const allNums = cum.concat(prevCum);
                 const rawMax = Math.max(...allNums, 1);
                 const yMax = rawMax * 1.15;
                 const min = Math.min(...allNums, 0);
                 const range = (yMax - min) || 1;
-                const days = Math.max(nums.length, 1);
                 const W = 100, H = 40, PAD = 4;
                 const xAt = (i) => days === 1 ? W / 2 : (i / (days - 1)) * W;
                 const yAt = (v) => H - PAD - ((v - min) / range) * (H - 2 * PAD);
@@ -3938,12 +4034,11 @@
                     return d;
                 };
 
-                const curPts = nums.map((v, i) => [xAt(i), yAt(v)]);
-                const prevPts = prevNums.map((v, i) => [xAt(i), yAt(v)]);
+                const curPts = cum.map((v, i) => [xAt(i), yAt(v)]);
+                const prevPts = prevCum.map((v, i) => [xAt(i), yAt(v)]);
                 const lineD = smooth(curPts);
                 const areaD = lineD + ' L' + W + ',' + H + ' L0,' + H + ' Z';
                 const prevLineD = prevPts.length > 1 ? smooth(prevPts) : '';
-                const prevAreaD = prevLineD ? prevLineD + ' L' + W + ',' + H + ' L0,' + H + ' Z' : '';
                 const pointsHtml = curPts.map((pt, i) =>
                     '<circle class="tc-hit" cx="' + pt[0].toFixed(2) + '" cy="' + pt[1].toFixed(2) + '" r="3.2" data-index="' + i + '" fill="transparent" stroke="none"/>'
                 ).join('');
@@ -3960,15 +4055,10 @@
                         '<div class="tc-line-wrap"><svg viewBox="0 0 100 40" preserveAspectRatio="none">' +
                         '<defs>' +
                         '<linearGradient id="tcGrad" x1="0" y1="0" x2="0" y2="1">' +
-                        '<stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.25"/>' +
+                        '<stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.20"/>' +
                         '<stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.0"/>' +
                         '</linearGradient>' +
-                        (hasCmp ? '<linearGradient id="tcGradPrev" x1="0" y1="0" x2="0" y2="1">' +
-                        '<stop offset="0%" stop-color="#64748B" stop-opacity="0.18"/>' +
-                        '<stop offset="100%" stop-color="#64748B" stop-opacity="0.0"/>' +
-                        '</linearGradient>' : '') +
                         '</defs>' +
-                        (hasCmp && prevAreaD ? '<path class="tc-line-area-prev" d="' + prevAreaD + '" fill="url(#tcGradPrev)"/>' : '') +
                         (hasCmp && prevLineD ? '<path class="tc-line-prev" d="' + prevLineD + '" fill="none" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '') +
                         '<path class="tc-line-area" d="' + areaD + '" fill="url(#tcGrad)"/>' +
                         '<path class="tc-line" d="' + lineD + '" fill="none" stroke="#8B5CF6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
@@ -3979,8 +4069,6 @@
 
                 const trendTooltip = chart ? chart.querySelector('#tcTrendTooltip') : null;
                 if (chart && trendTooltip) {
-                    const totalCurrent = nums.reduce((sum, value) => sum + value, 0);
-                    const peakCurrent = Math.max(...nums, 0);
                     const formatTrendDate = (iso) => {
                         const dt = new Date(String(iso || '') + 'T12:00:00');
                         return Number.isNaN(dt.getTime()) ? String(iso || '') : dt.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -3988,15 +4076,13 @@
                     chart.querySelectorAll('.tc-hit').forEach(hit => {
                         hit.addEventListener('mouseenter', () => {
                             const idx = Number(hit.getAttribute('data-index'));
-                            const previousValue = hasCmp && prevNums[idx] !== undefined ? prevNums[idx] : null;
-                            const delta = previousValue === null ? null : nums[idx] - previousValue;
-                            const share = totalCurrent > 0 ? (nums[idx] / totalCurrent * 100).toLocaleString('es-CL', { maximumFractionDigits: 1 }) : '0,0';
-                            const deltaText = delta === null ? '' : 'Vs. período anterior: ' + (delta >= 0 ? '+' : '') + delta + ' leads';
-                            const peakText = nums[idx] === peakCurrent ? '<small>Pico del período</small>' : '';
+                            const prevVal = hasCmp && prevCum[idx] !== undefined ? prevCum[idx] : null;
+                            const delta = prevVal === null ? null : cum[idx] - prevVal;
+                            const deltaText = delta === null ? '' : '<small>Brecha: ' + (delta >= 0 ? '+' : '-') + Math.abs(delta) + ' leads</small>';
                             trendTooltip.innerHTML = '<span>' + formatTrendDate(labels[idx]) + '</span>' +
-                                '<strong>' + nums[idx] + ' leads</strong>' +
-                                '<small>' + share + '% del período</small>' +
-                                (deltaText ? '<small>' + deltaText + '</small>' : '') + peakText;
+                                '<strong>Actual acumulado: ' + cum[idx] + ' leads</strong>' +
+                                (prevVal !== null ? '<small>Comparable acumulado: ' + prevVal + ' leads</small>' : '') +
+                                deltaText;
                             trendTooltip.style.left = Math.max(12, Math.min(88, curPts[idx][0])) + '%';
                             trendTooltip.hidden = false;
                         });
@@ -4007,19 +4093,12 @@
                 const prevLegend = $('tcTrendChart') ? document.querySelector('.tc-leg-prev') : null;
                 if (prevLegend) prevLegend.style.display = hasCmp ? '' : 'none';
 
+                // Footer: Ritmo promedio + Mejor día (desde la serie diaria, no acumulada).
+                const avg = nums.length ? (nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
                 const peakIdx = nums.indexOf(Math.max(...nums));
                 const peakVal = nums[peakIdx] || 0;
-                const prevPeakIdx = prevNums.indexOf(Math.max(...prevNums));
-                const prevPeakVal = prevNums[prevPeakIdx] || 0;
-                const avg = nums.length ? (nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
-                const variation = demand.variation_pct;
-                const varText = (hasCmp && variation !== null && variation !== undefined)
-                    ? ' (' + (variation >= 0 ? '+' : '') + variation.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '% vs. ant.)'
-                    : '';
-                $('tcPeak').innerHTML = hasCmp
-                    ? 'Pico máximo: <strong>' + tcShortLabel(labels[peakIdx]) + ' (' + peakVal + ' leads)</strong> vs. <strong>' + tcShortLabel(prevLabels[prevPeakIdx]) + ' (' + prevPeakVal + ')</strong>'
-                    : 'Pico máximo: <strong>' + tcShortLabel(labels[peakIdx]) + ' (' + peakVal + ' leads)</strong>';
-                $('tcAvg').innerHTML = 'Promedio diario: <strong>' + avg.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' leads/día</strong>' + varText;
+                $('tcPeak').innerHTML = 'Mejor día: <strong>' + tcShortLabel(labels[peakIdx]) + ' (' + peakVal + ' leads)</strong>';
+                $('tcAvg').innerHTML = 'Ritmo promedio: <strong>' + avg.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' leads/día</strong>';
 
                 const list = $('tcSourcesList');
                 if (list) {

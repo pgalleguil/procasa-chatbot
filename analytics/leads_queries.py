@@ -96,10 +96,17 @@ def _cohort_indexed_prefilter(start_utc, end_utc) -> dict:
     return {"$match": {"created_at": {"$gte": start_str, "$lt": end_str}}}
 
 
-def _format_date_field(field_expr: str, fmt: str = "%Y-%m-%d") -> dict:
-    return {
-        "$dateToString": {"format": fmt, "date": field_expr}
-    }
+def _format_date_field(field_expr: str, fmt: str = "%Y-%m-%d", timezone: Optional[str] = None) -> dict:
+    """$dateToString con timezone opcional.
+
+    Por defecto sin timezone (UTC). ``query_comparative_trends`` pasa
+    ``timezone="America/Santiago"`` para que el bucket diario corresponda al día
+    Chile y no se desfase ~4h (ni se pierdan leads del último día en el borde).
+    """
+    spec = {"format": fmt, "date": field_expr}
+    if timezone:
+        spec["timezone"] = timezone
+    return {"$dateToString": spec}
 
 
 def build_active_filter() -> dict:
@@ -1493,13 +1500,13 @@ def query_comparative_trends(
         facets = {
             "current": [
                 {"$match": {"_created_normalized": {"$gte": start_utc, "$lt": end_utc}}},
-                {"$group": {"_id": _format_date_field("$_created_normalized"), "received": {"$sum": 1}}},
+                {"$group": {"_id": _format_date_field("$_created_normalized", timezone="America/Santiago"), "received": {"$sum": 1}}},
                 {"$sort": {"_id": 1}},
                 {"$project": {"date": "$_id", "received": 1, "_id": 0}},
             ],
             "previous": [
                 {"$match": {"_created_normalized": {"$gte": prev_start, "$lt": prev_end}}},
-                {"$group": {"_id": _format_date_field("$_created_normalized"), "received": {"$sum": 1}}},
+                {"$group": {"_id": _format_date_field("$_created_normalized", timezone="America/Santiago"), "received": {"$sum": 1}}},
                 {"$sort": {"_id": 1}},
                 {"$project": {"date": "$_id", "received": 1, "_id": 0}},
             ],
@@ -1519,7 +1526,7 @@ def query_comparative_trends(
             _cohort_indexed_prefilter(start_utc, end_utc),
             _normalized_created_at_stage(),
             {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
-            {"$group": {"_id": _format_date_field("$_created_normalized"), "received": {"$sum": 1}}},
+            {"$group": {"_id": _format_date_field("$_created_normalized", timezone="America/Santiago"), "received": {"$sum": 1}}},
             {"$sort": {"_id": 1}},
             {"$project": {"date": "$_id", "received": 1, "_id": 0}},
         ]

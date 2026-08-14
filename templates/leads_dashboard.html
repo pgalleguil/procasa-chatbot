@@ -1032,56 +1032,122 @@
         .cd2-pp-pos { color: #34D399; font-weight: 600; }
         .cd2-pp-neg { color: #FCA5A5; font-weight: 600; }
 
-        /* --- CARD 3: PIPELINE & VALORIZACIÓN UF --- */
+        /* --- CARD 3: CARTERA POTENCIAL & VALORIZACIÓN --- */
         .cd3-info:hover { color: var(--pipeline-accent); }
 
-        .cd3-value {
-            color: var(--text-primary);
-            font-size: 28px;
+        .cd3-kpi {
+            margin: 6px 0 2px;
+            min-width: 0;
+        }
+
+        .cd3-kpi-label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin-bottom: 2px;
+        }
+
+        .cd3-kpi-row {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            flex-wrap: nowrap;
+            min-width: 0;
+        }
+
+        .cd3-kpi-value {
+            font-size: 30px;
             font-weight: 800;
+            color: var(--text-primary);
             letter-spacing: -0.03em;
             line-height: 1;
             font-variant-numeric: tabular-nums;
-        }
-
-        .cd3-comision-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 1px 9px;
-            border-radius: 99px;
-            font-size: 11px;
-            font-weight: 600;
-            background: var(--bg-elevated, #1E293B);
-            color: var(--text-secondary);
-            border: 1px solid rgba(148, 163, 184, 0.3);
             white-space: nowrap;
-            font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
         }
 
-        .cd3-bar-group {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
+        .cd3-kpi-unit {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            white-space: nowrap;
         }
 
-        .cd3-bar-lbl {
+        .cd3-sec {
             display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 10px;
+            align-items: baseline;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin: 6px 0 2px;
+            min-width: 0;
+            font-size: 13px;
             color: var(--text-secondary);
         }
 
-        .cd3-bar-lbl strong { color: var(--text-primary); font-weight: 600; }
+        .cd3-sec strong {
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-right: 6px;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.04em;
+        }
 
-        .cd3-bar-val { color: var(--text-primary); font-weight: 600; }
+        .cd3-sec b {
+            font-weight: 700;
+            color: var(--text-primary);
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
 
-        .cd3-bar-venta { background: var(--pipeline-accent); }
+        .cd3-mix {
+            margin: 12px 0 2px;
+            min-width: 0;
+        }
 
-        .cd3-bar-arriendo { background: var(--pipeline-bronze); }
+        .cd3-mix-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
 
-        .cd3-bar-otro { background: #64748B; }
+        .cd3-mix-head strong {
+            color: var(--text-primary);
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .cd3-mix-track {
+            display: flex;
+            height: 6px;
+            border-radius: 99px;
+            background: var(--border-color);
+            overflow: hidden;
+            gap: 0;
+        }
+
+        .cd3-mix-seg {
+            height: 100%;
+            min-width: 0;
+            border-radius: 0;
+            transition: width 0.6s ease;
+        }
+
+        .cd3-mix-venta { background: var(--pipeline-accent); }
+        .cd3-mix-arriendo { background: var(--spark-target); }
+
+        @media (max-width: 520px) {
+            .cd3-kpi { margin: 4px 0 2px; }
+            .cd3-kpi-value { font-size: 28px; }
+            .cd3-sec { flex-direction: column; align-items: flex-start; gap: 4px; }
+        }
 
         /* --- CARD 4: SLA & VELOCIDAD DE RESPUESTA --- */
         .cd4-info:hover { color: var(--sla-accent); }
@@ -1120,6 +1186,33 @@
         .cd4-bar-hot { background: #EF4444; }
 
         .cd4-bar-normal { background: var(--sla-accent); }
+
+        .cd4-bars {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin: 6px 0 8px;
+        }
+
+        .cd4-bar-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .cd4-bar-lbl {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-secondary);
+            min-width: 0;
+            gap: 8px;
+        }
+
+        .cd4-bar-lbl span:first-child { overflow-wrap: anywhere; }
+
+        .cd4-bar-val { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
 
         /* --- GLASS BLUR REVEAL + TYPEWRITER (efectos de carga) --- */
         @keyframes glassReveal {
@@ -2084,7 +2177,7 @@
         [data-theme="light"] .mobile-tab-select select { color-scheme: light; }
 
         /* --- UF responsive (no cortar valores) --- */
-        .cd3-value { overflow-wrap: anywhere; }
+        .cd3-kpi-value, .cd3-sec b, .cd3-mix-head strong { white-space: nowrap; }
 
         /* --- Barra de desplazamiento de pestañas (desktop/tablet) --- */
         .dash-tabs { position: relative; }
@@ -2313,9 +2406,8 @@
             .period-custom { flex-direction: column; align-items: stretch; }
             .period-custom .apply { width: 100%; justify-content: center; }
 
-            .cd1-value, .cd2-value, .cd3-value, .cd4-value { font-size: 26px; }
-            .cd3-value { font-size: 22px; letter-spacing: -0.02em; }
-            .cd1-sub, .cd1-footer, .cd2-bars, .cd3-bar-group { min-width: 0; overflow-wrap: anywhere; }
+            .cd1-value, .cd2-value, .cd4-value { font-size: 26px; }
+            .cd1-sub, .cd1-footer, .cd2-bars, .cd4-bars, .cd4-bar-group, .cd3-sec, .cd3-kpi-row { min-width: 0; overflow-wrap: anywhere; }
             .cd1-header { flex-wrap: wrap; }
             .cd1-title { white-space: normal; }
             .cd2-bar-row { grid-template-columns: 1fr; }
@@ -2603,30 +2695,39 @@
                             <span class="cd1-title" id="cd3Title"></span>
                             <button type="button" class="cd1-info cd3-info" id="cd3Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd3Tooltip" hidden>
-                                Valorización del inventario vinculado a los leads del período (precio publicado por propiedad única, sin duplicar por lead).<br>
-                                No representa ingreso realizado de la corredora; la comisión esperada y el equivalente en CLP se detallan según la UF del período.
+                                Valorización ACTUAL (snapshot) de las propiedades vinculadas a los leads del período; no es precio histórico.<br>
+                                <strong>Fuente de precio</strong>: fuente canónica de cartera (universo_cartera_prop360). Se usa el precio vigente por operación: UF directo o CLP convertido a UF con la UF del snapshot. El dato embebido del lead se usa solo como respaldo.<br>
+                                <strong>Comisión potencial</strong>: honorario contractual potencial NETO de IVA (Venta + Arriendo).<br>
+                                <strong>Venta</strong>: valor actual publicado de propiedades en venta vinculadas (UF). Comisión 2% con mínimo $1.000.000.<br>
+                                <strong>Arriendo</strong>: renta mensual publicada (UF/mes). Comisión 50% de un canon con mínimo $100.000.<br>
+                                Condiciones contractuales especiales (p. ej. arriendos &gt; 24 meses) pueden modificar el honorario definitivo.<br>
+                                <span id="cd3TooltipOtro" hidden></span>
+                                <span id="cd3TooltipNoCartera" hidden></span><br>
+                                UF aplicada: <span id="cd3TooltipUf">—</span> (fecha <span id="cd3TooltipUfFecha">—</span>).
                             </div>
                         </div>
 
-                        <div class="cd1-kpi-row">
-                            <h2 class="cd1-value cd3-value" id="cd3Value">UF 0</h2>
-                            <span class="cd3-comision-badge" id="cd3ComisionBadge" aria-label="Comisión estimada">Comisión estimada · UF 0</span>
+                        <div class="cd3-kpi">
+                            <span class="cd3-kpi-label">Comisión potencial</span>
+                            <div class="cd3-kpi-row">
+                                <span class="cd3-kpi-value" id="cd3ComisionValue">0</span>
+                                <span class="cd3-kpi-unit">UF neta</span>
+                            </div>
                         </div>
 
-                        <p class="cd1-sub" id="cd3Sub">Valor potencial del inventario vinculado</p>
+                        <div class="cd3-sec">
+                            <span class="cd3-sec-item"><strong>Venta</strong><b id="cd3MontoVenta">0</b>&nbsp;UF</span>
+                            <span class="cd3-sec-item"><strong>Arriendo</strong><b id="cd3MontoArriendo">0</b>&nbsp;UF</span>
+                        </div>
 
-                        <div class="cd2-bars">
-                            <div class="cd3-bar-group">
-                                <div class="cd3-bar-lbl"><span>Venta (<strong id="cd3PctVenta">0%</strong>)</span><span class="cd3-bar-val" id="cd3MontoVenta">UF 0</span></div>
-                                <div class="cd2-bar-track"><div class="cd2-bar cd3-bar-venta" id="cd3BarVenta" style="width:0%"></div></div>
+                        <div class="cd3-mix">
+                            <div class="cd3-mix-head">
+                                <span>Composición comisión potencial</span>
+                                <strong id="cd3MixPct">—</strong>
                             </div>
-                            <div class="cd3-bar-group">
-                                <div class="cd3-bar-lbl"><span>Arriendo (<strong id="cd3PctArriendo">0%</strong>)</span><span class="cd3-bar-val" id="cd3MontoArriendo">UF 0</span></div>
-                                <div class="cd2-bar-track"><div class="cd2-bar cd3-bar-arriendo" id="cd3BarArriendo" style="width:0%"></div></div>
-                            </div>
-                            <div class="cd3-bar-group" id="cd3OtroGroup" hidden>
-                                <div class="cd3-bar-lbl"><span>Otros (<strong id="cd3PctOtro">0%</strong>)</span><span class="cd3-bar-val" id="cd3MontoOtro">UF 0</span></div>
-                                <div class="cd2-bar-track"><div class="cd2-bar cd3-bar-otro" id="cd3BarOtro" style="width:0%"></div></div>
+                            <div class="cd3-mix-track" role="img" aria-label="Composición de la comisión potencial">
+                                <div class="cd3-mix-seg cd3-mix-venta" id="cd3MixVenta" style="width:0%"></div>
+                                <div class="cd3-mix-seg cd3-mix-arriendo" id="cd3MixArriendo" style="width:0%"></div>
                             </div>
                         </div>
 
@@ -2653,13 +2754,13 @@
 
                         <p class="cd1-sub" id="cd4Sub">Mediana de tiempo de primera respuesta comercial</p>
 
-                        <div class="cd2-bars">
-                            <div class="cd3-bar-group">
-                                <div class="cd3-bar-lbl"><span>Lead HOT (Alta Prioridad)</span><span class="cd3-bar-val" id="cd4HotMin">— min</span></div>
+                        <div class="cd4-bars">
+                            <div class="cd4-bar-group">
+                                <div class="cd4-bar-lbl"><span>Lead HOT</span><span class="cd4-bar-val" id="cd4HotMin">— min</span></div>
                                 <div class="cd2-bar-track"><div class="cd2-bar cd4-bar-hot" id="cd4BarHot" style="width:0%"></div></div>
                             </div>
-                            <div class="cd3-bar-group">
-                                <div class="cd3-bar-lbl"><span>Lead Normal</span><span class="cd3-bar-val" id="cd4NormalMin">— min</span></div>
+                            <div class="cd4-bar-group">
+                                <div class="cd4-bar-lbl"><span>Lead Normal</span><span class="cd4-bar-val" id="cd4NormalMin">— min</span></div>
                                 <div class="cd2-bar-track"><div class="cd2-bar cd4-bar-normal" id="cd4BarNormal" style="width:0%"></div></div>
                             </div>
                         </div>
@@ -4124,66 +4225,80 @@
                 const card = $('cardPipeline');
                 if (!card || !OVERVIEW || !OVERVIEW.pipeline) return;
                 const p = OVERVIEW.pipeline;
-                const montoUF = p.monto_uf || 0;
-                const comisionUF = p.comision_estimada_uf || 0;
-                const pctVenta = p.pct_venta || 0;
-                const pctArriendo = p.pct_arriendo || 0;
-                const pctOtro = p.pct_otro || 0;
                 const montoVenta = p.monto_venta_uf || 0;
                 const montoArriendo = p.monto_arriendo_uf || 0;
-                const montoOtro = p.monto_otro_uf || 0;
-                const props = p.propiedades_vinculadas || 0;
+                const comisionUF = p.comision_potencial_uf || 0;
+                const comisionVenta = p.comision_venta_uf || 0;
+                const comisionArriendo = p.comision_arriendo_uf || 0;
+                const props = p.propiedades_cartera || p.propiedades_vinculadas || 0;
 
                 $('cd3Title').textContent = 'Cartera Potencial & Valorización';
-                const fmtCLP = (n) => {
-                    if (n === null || n === undefined) return null;
-                    if (n >= 1000000000) return '$' + (n / 1000000000).toFixed(2).replace('.', ',') + ' mil millones';
-                    if (n >= 1000000) return '$' + (n / 1000000).toFixed(1).replace('.', ',') + ' millones';
-                    return '$' + Math.round(n).toLocaleString('es-CL');
-                };
-                const comClp = fmtCLP(p.comision_clp);
-                const montoClp = fmtCLP(p.monto_clp);
-                const tip3 = $('cd3Tooltip');
-                if (tip3) {
-                    const ufFecha = p.fecha_uf ? String(p.fecha_uf).slice(0, 10) : '—';
-                    tip3.innerHTML = 'Valorización del <strong>inventario vinculado</strong> (precio publicado en UF por propiedad única), no ingreso realizado por la corredora.<br>' +
-                        'Comisión estimada sobre la mesa: <strong>UF ' + comisionUF.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '</strong> (' + (p.comision_policy || '') + ') · ≈ <strong>' + comClp + ' CLP</strong>.<br>' +
-                        '<strong>Importante:</strong> es una comisión potencial; no corresponde a ingresos cobrados ni cerrados.<br>' +
-                        'Equivalente total ≈ <strong>' + montoClp + ' CLP</strong>.<br>' +
-                        'UF aplicada: <strong>' + (p.valor_uf_clp || '—') + ' CLP</strong> (fecha ' + ufFecha + ').';
-                }
-                $('cd3PctVenta').textContent = pctVenta.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
-                $('cd3PctArriendo').textContent = pctArriendo.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
-                const comisionBadge = $('cd3ComisionBadge');
-                if (comisionBadge) {
-                    comisionBadge.textContent = 'Comisión estimada · UF ' + Math.round(comisionUF).toLocaleString('es-CL');
-                }
-                $('cd3MontoVenta').textContent = 'UF ' + Math.round(montoVenta).toLocaleString('es-CL');
-                $('cd3MontoArriendo').textContent = 'UF ' + Math.round(montoArriendo).toLocaleString('es-CL');
-                $('cd3BarVenta').style.width = '0%';
-                $('cd3BarArriendo').style.width = '0%';
-                setTimeout(() => { $('cd3BarVenta').style.width = Math.min(pctVenta, 100) + '%'; }, 920);
-                setTimeout(() => { $('cd3BarArriendo').style.width = Math.min(pctArriendo, 100) + '%'; }, 980);
 
-                if (montoOtro > 0) {
-                    $('cd3OtroGroup').hidden = false;
-                    $('cd3PctOtro').textContent = pctOtro + '%';
-                    $('cd3MontoOtro').textContent = 'UF ' + Math.round(montoOtro).toLocaleString('es-CL');
-                    $('cd3BarOtro').style.width = '0%';
-                    setTimeout(() => { $('cd3BarOtro').style.width = Math.min(pctOtro, 100) + '%'; }, 1040);
+                // KPI principal: comisión potencial (sin prefijo "UF").
+                $('cd3ComisionValue').textContent = Math.round(comisionUF).toLocaleString('es-CL');
+
+                // Métricas secundarias: Venta y Arriendo en una sola línea.
+                $('cd3MontoVenta').textContent = Math.round(montoVenta).toLocaleString('es-CL');
+                $('cd3MontoArriendo').textContent = Math.round(montoArriendo).toLocaleString('es-CL');
+
+                // Micrográfico: composición de comisión potencial (Venta vs Arriendo, UF netas).
+                const mixTotal = comisionVenta + comisionArriendo;
+                const mixVenta = (mixTotal > 0) ? Math.round(comisionVenta / mixTotal * 100) : 0;
+                const mixArriendo = (mixTotal > 0) ? Math.round(comisionArriendo / mixTotal * 100) : 0;
+                const mixVentaEl = $('cd3MixVenta');
+                const mixArriendoEl = $('cd3MixArriendo');
+                if (mixVentaEl) {
+                    mixVentaEl.style.width = '0%';
+                    setTimeout(() => { mixVentaEl.style.width = mixVenta + '%'; }, 700);
+                }
+                if (mixArriendoEl) {
+                    mixArriendoEl.style.width = '0%';
+                    setTimeout(() => { mixArriendoEl.style.width = mixArriendo + '%'; }, 700);
+                }
+                const mixPct = $('cd3MixPct');
+                if (mixPct) {
+                    mixPct.textContent = (mixTotal > 0)
+                        ? 'Venta ' + mixVenta + '% · Arriendo ' + mixArriendo + '%'
+                        : '—';
+                }
+
+                // Tooltip: valor y fecha UF
+                const tUf = $('cd3TooltipUf');
+                if (tUf) tUf.textContent = (p.valor_uf_clp || '—');
+                const tUfF = $('cd3TooltipUfFecha');
+                if (tUfF) tUfF.textContent = p.fecha_uf ? String(p.fecha_uf).slice(0, 10) : '—';
+                // Tooltip: operaciones "Otro" de cartera válida (reporte separado, sin valorización).
+                const otroProps = p.propiedades_otro || 0;
+                const tOtro = $('cd3TooltipOtro');
+                if (tOtro) {
+                    if (otroProps > 0) {
+                        tOtro.textContent = otroProps + ' propiedad(es) de cartera con operación "Otro" (se reportan sin valorización)';
+                        tOtro.hidden = false;
+                    } else {
+                        tOtro.hidden = true;
+                    }
+                }
+
+                // Tooltip: referencias vinculadas fuera de la cartera actual (reporte separado).
+                const noEnCartera = p.propiedades_no_en_cartera || 0;
+                const tNoCartera = $('cd3TooltipNoCartera');
+                if (tNoCartera) {
+                    if (noEnCartera > 0) {
+                        tNoCartera.textContent = noEnCartera + ' referencia(s) vinculada(s) fuera de la cartera actual';
+                        tNoCartera.hidden = false;
+                    } else {
+                        tNoCartera.hidden = true;
+                    }
+                }
+
+                // Footer ejecutivo breve: solo propiedades que pertenecen a la cartera actual.
+                if (props > 0) {
+                    $('cd3Footer').innerHTML = '<strong>' + props + ' propiedades de cartera vinculadas</strong>';
                 } else {
-                    $('cd3OtroGroup').hidden = true;
+                    $('cd3Footer').innerHTML = '<span style="font-style:italic;color:var(--text-secondary)">Sin propiedades de cartera vinculadas en el período</span>';
                 }
-
-                $('cd3Sub').textContent = 'Valor potencial del inventario vinculado';
-                $('cd3Footer').innerHTML = montoUF > 0
-                    ? '<strong>' + props + ' propiedades únicas vinculadas</strong>'
-                    : (props > 0
-                        ? '<strong>' + props + ' propiedades únicas vinculadas</strong> · sin valor UF publicado'
-                        : '<span style="font-style:italic;color:var(--text-secondary)">Sin propiedades vinculadas en el período</span>');
 
                 showCardReveal(card);
-                animateCountUpUF($('cd3Value'), montoUF);
             }
 
             // --- CARD 4: SLA & VELOCIDAD DE RESPUESTA ---
@@ -4268,8 +4383,6 @@
                     if (n >= 1000000) return '$' + (n / 1000000).toFixed(1).replace('.', ',') + ' millones';
                     return '$' + Math.round(n).toLocaleString('es-CL');
                 };
-                const props = pipe.propiedades_vinculadas || 0;
-                const avgPropertyUf = props > 0 ? Math.round((pipe.monto_uf || 0) / props) : 0;
                 const executiveHeadline = total >= metaTarget
                     ? 'La demanda supera la meta del período'
                     : 'La demanda se encuentra bajo la meta del período';
@@ -4296,11 +4409,11 @@
                     </div>
                     <div class="report-card">
                         <h4>Cartera Potencial & Valorización</h4>
-                        <div class="kpi">${fmtUf(pipe.monto_uf)}</div>
-                        <div class="kpi-sub">Valorización total de propiedades vinculadas (${pipe.propiedades_vinculadas || 0} propiedades)</div>
-                        <div class="kpi-sub">Venta: ${fmtUf(pipe.monto_venta_uf)} · Arriendo: ${fmtUf(pipe.monto_arriendo_uf)}</div>
-                        <div class="kpi-sub">Promedio por propiedad: <strong>${fmtUf(avgPropertyUf)}</strong></div>
-                        <div class="kpi-sub">Comisión estimada: <strong>${fmtUf(pipe.comision_estimada_uf)}</strong></div>
+                        <div class="kpi">${fmtUf(pipe.monto_venta_uf)}</div>
+                        <div class="kpi-sub">Venta: ${fmtUf(pipe.monto_venta_uf)} (valor actual de propiedades en venta vinculadas)</div>
+                        <div class="kpi-sub">Arriendo: ${fmtUf(pipe.monto_arriendo_uf)}/mes (renta mensual publicada)</div>
+                        <div class="kpi-sub">Comisión potencial (neta): <strong>${fmtUf(pipe.comision_potencial_uf)}</strong> · Venta UF ${pipe.comision_venta_uf != null ? pipe.comision_venta_uf.toLocaleString('es-CL', { maximumFractionDigits: 1 }) : '—'} · Arriendo UF ${pipe.comision_arriendo_uf != null ? pipe.comision_arriendo_uf.toLocaleString('es-CL', { maximumFractionDigits: 1 }) : '—'}</div>
+                        <div class="kpi-sub">Propiedades de cartera: ${pipe.propiedades_cartera || pipe.propiedades_vinculadas || 0} propiedades de cartera vinculadas${(pipe.propiedades_no_en_cartera || 0) ? ' · ' + pipe.propiedades_no_en_cartera + ' referencia(s) fuera de la cartera actual' : ''}</div>
                     </div>
                     <div class="report-card">
                         <h4>SLA & Velocidad de Respuesta</h4>
@@ -4317,7 +4430,7 @@
                         <p>${executiveReading}</p>
                         <div class="summary-grid">
                             <div><span>Situación</span><strong>${pctAvance}% de meta</strong></div>
-                            <div><span>Comisión estimada sobre la mesa</span><strong>${fmtClpReport(pipe.comision_clp)} CLP</strong></div>
+                            <div><span>Comisión potencial sobre la mesa</span><strong>${fmtClpReport(pipe.comision_clp)} CLP</strong></div>
                             <div><span>Riesgo de gestión</span><strong>${executiveRisk}</strong></div>
                         </div>
                     </div>`;
